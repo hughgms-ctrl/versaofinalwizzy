@@ -78,7 +78,7 @@ export function useNewMessageNotifications() {
             .single();
 
           if (conversation?.contact) {
-            const contact = conversation.contact as { name: string | null; phone: string };
+            const contact = conversation.contact as unknown as { name: string | null; phone: string };
             const contactName = contact.name || contact.phone || 'Contato';
             const messagePreview = message.content || (message.type !== 'text' ? `[${message.type}]` : 'Nova mensagem');
             
