@@ -1,0 +1,144 @@
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
+
+export interface FlowFolder {
+  id: string;
+  organization_id: string;
+  name: string;
+  parent_id: string | null;
+  workspace_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export function useFlowFolders() {
+  return useQuery({
+    queryKey: ['flow-folders'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('flow_folders')
+        .select('*')
+        .order('name');
+
+      if (error) throw error;
+      return data as FlowFolder[];
+    },
+  });
+}
+
+export function useCreateFlowFolder() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ name, parentId, workspaceId }: { name: string; parentId?: string | null; workspaceId?: string | null }) => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('organization_id')
+        .eq('user_id', user.id)
+        .single();
+
+      if (!profile) throw new Error('Profile not found');
+
+      const { data, error } = await supabase
+        .from('flow_folders')
+        .insert({
+          name,
+          organization_id: profile.organization_id,
+          parent_id: parentId || null,
+          workspace_id: workspaceId || null,
+        } as never)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data as unknown as FlowFolder;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['flow-folders'] });
+      toast.success('Pasta criada com sucesso');
+    },
+    onError: (error) => {
+      toast.error('Erro ao criar pasta: ' + error.message);
+    },
+  });
+}
+
+export function useRenameFlowFolder() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ folderId, name, workspaceId }: { folderId: string; name: string; workspaceId?: string | null }) => {
+      const updateData: Record<string, unknown> = { name };
+      if (workspaceId !== undefined) updateData.workspace_id = workspaceId;
+
+      const { error } = await (supabase
+        .from('flow_folders' as 'contacts')
+        .update(updateData as never)
+        .eq('id', folderId) as unknown as Promise<{ error: Error | null }>);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['flow-folders'] });
+      toast.success('Pasta atualizada');
+    },
+    onError: (error) => {
+      toast.error('Erro ao atualizar pasta: ' + error.message);
+    },
+  });
+}
+
+export function useDeleteFlowFolder() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (folderId: string) => {
+      const { error } = await supabase
+        .from('flow_folders')
+        .delete()
+        .eq('id', folderId);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['flow-folders'] });
+      queryClient.invalidateQueries({ queryKey: ['flows'] });
+      toast.success('Pasta excluída');
+    },
+    onError: (error) => {
+      toast.error('Erro ao excluir pasta: ' + error.message);
+    },
+  });
+}
+
+export function useMoveFlowToFolder() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ flowId, folderId, folderWorkspaceId }: { flowId: string; folderId: string | null; folderWorkspaceId?: string | null }) => {
+      const updateData: Record<string, unknown> = { folder_id: folderId };
+      // If the folder has a workspace, auto-assign the flow to it
+      if (folderWorkspaceId !== undefined && folderWorkspaceId !== null) {
+        updateData.workspace_id = folderWorkspaceId;
+      }
+
+      const { error } = await (supabase
+        .from('flows' as 'contacts')
+        .update(updateData as never)
+        .eq('id', flowId) as unknown as Promise<{ error: Error | null }>);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['flows'] });
+      toast.success('Fluxo movido');
+    },
+    onError: (error) => {
+      toast.error('Erro ao mover fluxo: ' + error.message);
+    },
+  });
+}

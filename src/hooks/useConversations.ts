@@ -1,0 +1,187 @@
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from './useAuth';
+
+export interface DbConversation {
+  id: string;
+  contact_id: string;
+  organization_id: string;
+  status: 'open' | 'pending' | 'resolved' | 'archived';
+  unread_count: number;
+  last_message_at: string | null;
+  assigned_to: string | null;
+  created_at: string;
+  updated_at: string;
+  contact: {
+    id: string;
+    name: string | null;
+    phone: string;
+    avatar_url: string | null;
+    email: string | null;
+    created_at: string;
+    metadata: { note?: string } | null;
+  } | null;
+  last_message: {
+    id: string;
+    content: string | null;
+    type: string;
+    direction: 'inbound' | 'outbound';
+    is_from_bot: boolean;
+    read_at: string | null;
+    delivered_at: string | null;
+  }[] | null;
+}
+
+export interface DbProfile {
+  id: string;
+  user_id: string;
+  full_name: string;
+  avatar_url: string | null;
+}
+
+export interface DbMessage {
+  id: string;
+  conversation_id: string;
+  content: string | null;
+  type: 'text' | 'image' | 'audio' | 'video' | 'document' | 'sticker' | 'location';
+  direction: 'inbound' | 'outbound';
+  is_from_bot: boolean;
+  sent_by: string | null;
+  created_at: string;
+  read_at: string | null;
+  delivered_at: string | null;
+  media_url: string | null;
+}
+
+export function useConversations(options?: { includeArchived?: boolean; onlyArchived?: boolean }) {
+  const { session } = useAuth();
+  const queryClient = useQueryClient();
+  const includeArchived = options?.includeArchived ?? false;
+  const onlyArchived = options?.onlyArchived ?? false;
+
+  const query = useQuery({
+    queryKey: ['conversations', { includeArchived, onlyArchived }],
+    queryFn: async (): Promise<DbConversation[]> => {
+      let query = supabase
+        .from('conversations')
+        .select(`
+          *,
+          contact:contacts(id, name, phone, avatar_url, email, created_at, metadata),
+          last_message:messages(id, content, type, direction, is_from_bot, read_at, delivered_at)
+        `)
+        .order('last_message_at', { ascending: false, nullsFirst: false })
+        .order('created_at', { referencedTable: 'messages', ascending: false })
+        .limit(1, { referencedTable: 'messages' });
+
+      if (onlyArchived) {
+        // Show only archived conversations
+        query = query.eq('status', 'archived');
+      } else if (!includeArchived) {
+        // Exclude archived conversations
+        query = query.neq('status', 'archived');
+      }
+
+      const { data, error } = await query;
+
+      if (error) throw error;
+      return (data || []) as DbConversation[];
+    },
+    enabled: !!session,
+  });
+
+  // Subscribe to realtime updates for conversations
+  useEffect(() => {
+    if (!session) return;
+
+    const channel = supabase
+      .channel('conversations-realtime')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'conversations',
+        },
+        (payload) => {
+          console.log('Conversation realtime update:', payload);
+          queryClient.invalidateQueries({ queryKey: ['conversations'] });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [session, queryClient]);
+
+  return query;
+}
+
+export function useMessages(conversationId: string | null) {
+  const { session } = useAuth();
+  const queryClient = useQueryClient();
+
+  const query = useQuery({
+    queryKey: ['messages', conversationId],
+    queryFn: async (): Promise<DbMessage[]> => {
+      if (!conversationId) return [];
+      
+      const { data, error } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('conversation_id', conversationId)
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+      return (data || []) as DbMessage[];
+    },
+    enabled: !!session && !!conversationId,
+  });
+
+  // Subscribe to realtime updates for messages
+  useEffect(() => {
+    if (!session || !conversationId) return;
+
+    const channel = supabase
+      .channel(`messages-realtime-${conversationId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'messages',
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        (payload) => {
+          console.log('Message realtime update:', payload);
+          queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [session, conversationId, queryClient]);
+
+  return query;
+}
+
+export function useProfiles() {
+  const { session } = useAuth();
+
+  return useQuery({
+    queryKey: ['profiles'],
+    queryFn: async (): Promise<DbProfile[]> => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, user_id, full_name, avatar_url')
+        .order('full_name', { ascending: true });
+
+      if (error) throw error;
+      return (data || []) as DbProfile[];
+    },
+    enabled: !!session,
+  });
+}

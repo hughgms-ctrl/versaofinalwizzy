@@ -1,0 +1,338 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* AI-CX Manager Design System - Modern SaaS Helpdesk */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+@layer base {
+  :root {
+    /* Background & Surface */
+    --background: 220 20% 97%;
+    --foreground: 222 47% 11%;
+    
+    /* Cards & Elevated Surfaces */
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    
+    /* Popover & Dropdowns */
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    
+    /* Primary - Deep Indigo */
+    --primary: 234 89% 54%;
+    --primary-foreground: 0 0% 100%;
+    
+    /* Secondary - Slate */
+    --secondary: 220 14% 96%;
+    --secondary-foreground: 222 47% 11%;
+    
+    /* Muted */
+    --muted: 220 14% 96%;
+    --muted-foreground: 220 9% 46%;
+    
+    /* Accent - Soft Indigo */
+    --accent: 234 89% 96%;
+    --accent-foreground: 234 89% 54%;
+    
+    /* Destructive - Red */
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    
+    /* Borders & Inputs */
+    --border: 220 13% 91%;
+    --input: 220 13% 91%;
+    --ring: 234 89% 54%;
+    
+    /* Radius */
+    --radius: 0.75rem;
+    
+    /* Sidebar */
+    --sidebar-background: 222 47% 11%;
+    --sidebar-foreground: 220 14% 96%;
+    --sidebar-primary: 234 89% 60%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 222 40% 18%;
+    --sidebar-accent-foreground: 220 14% 96%;
+    --sidebar-border: 222 40% 18%;
+    --sidebar-ring: 234 89% 60%;
+    
+    /* Status Colors */
+    --status-open: 142 71% 45%;
+    --status-pending: 38 92% 50%;
+    --status-closed: 220 9% 46%;
+    --status-urgent: 0 84% 60%;
+    
+    /* AI Agent Colors */
+    --agent-ai: 234 89% 54%;
+    --agent-human: 142 71% 45%;
+    
+    /* Gradient Tokens */
+    --gradient-primary: linear-gradient(135deg, hsl(234 89% 54%) 0%, hsl(262 83% 58%) 100%);
+    --gradient-success: linear-gradient(135deg, hsl(142 71% 45%) 0%, hsl(166 72% 44%) 100%);
+    --gradient-surface: linear-gradient(180deg, hsl(0 0% 100%) 0%, hsl(220 20% 98%) 100%);
+    
+    /* Shadows */
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+    --shadow-glow: 0 0 20px -5px hsl(234 89% 54% / 0.3);
+  }
+
+  .dark {
+    /* DGFlow-inspired dark theme - Magenta dominant, Green accents */
+    --background: 240 18% 4%;
+    --foreground: 210 20% 92%;
+    
+    --card: 240 16% 7%;
+    --card-foreground: 210 20% 92%;
+    
+    --popover: 240 16% 8%;
+    --popover-foreground: 210 20% 92%;
+    
+    /* Primary - Magenta/Pink (DGFlow dominant) */
+    --primary: 340 82% 55%;
+    --primary-foreground: 0 0% 100%;
+    
+    --secondary: 240 16% 12%;
+    --secondary-foreground: 210 20% 88%;
+    
+    --muted: 240 14% 11%;
+    --muted-foreground: 220 10% 52%;
+    
+    /* Accent - Vibrant Green (DGFlow secondary detail) */
+    --accent: 152 60% 12%;
+    --accent-foreground: 152 85% 55%;
+    
+    --destructive: 0 70% 50%;
+    --destructive-foreground: 0 0% 100%;
+    
+    --border: 340 30% 14%;
+    --input: 240 14% 13%;
+    --ring: 340 82% 55%;
+    
+    --sidebar-background: 240 18% 3%;
+    --sidebar-foreground: 210 20% 88%;
+    --sidebar-primary: 340 82% 55%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 340 60% 12%;
+    --sidebar-accent-foreground: 340 82% 65%;
+    --sidebar-border: 340 20% 12%;
+    --sidebar-ring: 340 82% 55%;
+
+    /* Dark mode gradients - magenta to orange-coral (DGFlow button style) */
+    --gradient-primary: linear-gradient(135deg, hsl(340 82% 55%) 0%, hsl(20 90% 60%) 100%);
+    --gradient-success: linear-gradient(135deg, hsl(152 85% 45%) 0%, hsl(166 72% 44%) 100%);
+    --shadow-glow: 0 0 20px -5px hsl(340 82% 55% / 0.4);
+
+    /* Status colors adjusted */
+    --status-open: 152 85% 50%;
+    --agent-ai: 340 82% 55%;
+    --agent-human: 152 85% 50%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+
+  /* Scrollbar Styling */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-border rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground/30;
+  }
+}
+
+@layer components {
+  /* Metric Card Styles */
+  .metric-card {
+    @apply relative overflow-hidden rounded-xl bg-card p-6 shadow-sm border border-border transition-all duration-200;
+  }
+
+  .metric-card:hover {
+    @apply shadow-md -translate-y-0.5;
+  }
+
+  .metric-card-gradient {
+    @apply absolute inset-0 opacity-5;
+    background: var(--gradient-primary);
+  }
+
+  /* Status Badge Styles */
+  .status-badge {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium;
+  }
+
+  .status-open {
+    @apply bg-green-100 text-green-700;
+  }
+
+  .status-pending {
+    @apply bg-amber-100 text-amber-700;
+  }
+
+  .status-closed {
+    @apply bg-slate-100 text-slate-600;
+  }
+
+  .status-urgent {
+    @apply bg-red-100 text-red-700;
+  }
+
+  /* Pipeline Column Styles */
+  .pipeline-column {
+    @apply flex-shrink-0 w-80 bg-muted/50 rounded-xl p-3 flex flex-col max-h-[calc(100vh-220px)];
+  }
+
+  .pipeline-card {
+    @apply bg-card rounded-lg p-4 shadow-sm border border-border cursor-grab active:cursor-grabbing transition-all duration-200;
+  }
+
+  .pipeline-card:hover {
+    @apply shadow-md border-primary/20;
+  }
+
+  .pipeline-card:active {
+    @apply shadow-lg scale-[1.02] ring-2 ring-primary/30;
+  }
+
+  .pipeline-card.dragging {
+    @apply opacity-60 scale-95 rotate-2 shadow-xl ring-2 ring-primary;
+  }
+
+  /* Conversation List Item */
+  .conversation-item {
+    @apply flex items-start gap-3 p-4 rounded-lg cursor-pointer transition-all duration-150;
+  }
+
+  .conversation-item:hover {
+    @apply bg-accent;
+  }
+
+  .conversation-item.active {
+    @apply bg-accent border-l-2 border-primary;
+  }
+
+  /* AI Agent Card */
+  .agent-card {
+    @apply relative overflow-hidden rounded-xl bg-card p-6 border border-border transition-all duration-200;
+  }
+
+  .agent-card:hover {
+    @apply shadow-lg -translate-y-1 border-primary/30;
+  }
+
+  .agent-card-active {
+    @apply ring-2 ring-primary ring-offset-2;
+  }
+
+  /* Glassmorphism Effect */
+  .glass {
+    @apply backdrop-blur-xl;
+    background: hsl(var(--card) / 0.7);
+    border: 1px solid hsl(var(--border) / 0.3);
+  }
+
+  /* Gradient Icon Box - DGFlow style rounded icon containers */
+  .gradient-icon-box {
+    @apply flex items-center justify-center rounded-xl shadow-lg;
+    background: linear-gradient(135deg, hsl(340 82% 55%) 0%, hsl(20 90% 60%) 100%);
+  }
+
+  /* Gradient Border Card - subtle gradient border on hover */
+  .gradient-border-card {
+    @apply relative rounded-2xl bg-card border border-border transition-all duration-300;
+  }
+
+  .gradient-border-card::before {
+    content: '';
+    @apply absolute inset-0 rounded-2xl opacity-0 transition-opacity duration-300;
+    background: linear-gradient(135deg, hsl(340 82% 55% / 0.15) 0%, hsl(20 90% 60% / 0.1) 100%);
+    pointer-events: none;
+  }
+
+  .gradient-border-card:hover::before {
+    @apply opacity-100;
+  }
+
+  .gradient-border-card:hover {
+    border-color: hsl(340 82% 55% / 0.3);
+    box-shadow: 0 0 30px -10px hsl(340 82% 55% / 0.2);
+  }
+
+  /* Animated Gradient Background - DGFlow magenta theme */
+  .animated-gradient {
+    background: linear-gradient(-45deg, hsl(340 82% 55%), hsl(20 90% 60%), hsl(340 70% 50%), hsl(0 85% 60%));
+    background-size: 400% 400%;
+    animation: gradient 15s ease infinite;
+  }
+
+  @keyframes gradient {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+
+  /* Pulse Animation for Live Indicators */
+  .pulse-live {
+    @apply relative;
+  }
+
+  .pulse-live::before {
+    content: '';
+    @apply absolute inset-0 rounded-full animate-ping opacity-75;
+    background-color: hsl(var(--accent-foreground));
+  }
+
+  /* Smooth Page Transitions */
+  .page-transition {
+    animation: fadeIn 0.3s ease-out;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+}
+
+@layer utilities {
+  .text-gradient {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(135deg, hsl(340 82% 55%) 0%, hsl(20 90% 60%) 100%);
+  }
+
+  .shadow-glow {
+    box-shadow: var(--shadow-glow);
+  }
+
+  .bg-gradient-primary {
+    background: linear-gradient(135deg, hsl(340 82% 55%) 0%, hsl(20 90% 60%) 100%);
+  }
+
+  .bg-gradient-primary-subtle {
+    background: linear-gradient(135deg, hsl(340 82% 55% / 0.1) 0%, hsl(20 90% 60% / 0.05) 100%);
+  }
+
+  .border-gradient {
+    border-image: linear-gradient(135deg, hsl(340 82% 55% / 0.4) 0%, hsl(20 90% 60% / 0.2) 100%) 1;
+  }
+}
