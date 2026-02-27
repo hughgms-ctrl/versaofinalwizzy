@@ -2,17 +2,12 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
-
-function uazapiUrl(baseUrl: string, path: string): string {
-  const base = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
-  return `${base}${path}`;
-}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
+    return new Response('ok', { headers: corsHeaders });
   }
 
   try {
@@ -25,9 +20,18 @@ Deno.serve(async (req) => {
     }
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const uazapiBaseUrl = (Deno.env.get('UAZAPI_BASE_URL') || '').replace(/\/$/, '');
+    const uazapiAdminToken = Deno.env.get('UAZAPI_ADMIN_TOKEN') || '';
 
+    if (!uazapiBaseUrl || !uazapiAdminToken) {
+      return new Response(JSON.stringify({ error: 'UAZAPI not configured' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const supabase = createClient(supabaseUrl, serviceRoleKey);
     const token = authHeader.replace('Bearer ', '');
     const { data: { user }, error: userError } = await supabase.auth.getUser(token);
 
@@ -51,18 +55,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const uazapiBaseUrl = Deno.env.get('UAZAPI_BASE_URL');
-    const uazapiAdminToken = Deno.env.get('UAZAPI_ADMIN_TOKEN');
-
-    if (!uazapiBaseUrl || !uazapiAdminToken) {
-      return new Response(JSON.stringify({ error: 'UAZAPI not configured' }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    // Check for ANY existing instance for this org that might be reusable
-    // (Disconnected or pending without instance ID)
+    // Check if there's an existing instance with a valid token we can reuse
     const { data: existingInstance } = await supabase
       .from('whatsapp_instances')
       .select('*')
@@ -71,107 +64,126 @@ Deno.serve(async (req) => {
       .limit(1)
       .maybeSingle();
 
-    if (existingInstance && existingInstance.zapi_instance_id && existingInstance.status === 'disconnected') {
-      console.log('Reusing disconnected instance:', existingInstance.id);
-      return new Response(JSON.stringify({
-        success: true,
-        instanceId: existingInstance.id,
-        status: 'disconnected',
-        reused: true,
-      }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    if (existingInstance?.zapi_token && existingInstance.zapi_instance_id) {
+      // Validate the existing token
+      try {
+        const statusResp = await fetch(`${uazapiBaseUrl}/instance/status`, {
+          method: 'GET',
+          headers: { token: existingInstance.zapi_token },
+        });
+        if (statusResp.ok) {
+          console.log('Reusing existing instance:', existingInstance.id);
+          return new Response(JSON.stringify({
+            success: true,
+            instanceId: existingInstance.id,
+            status: existingInstance.status,
+            reused: true,
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+      } catch (e) {
+        console.log('Existing token validation failed, creating new instance:', e);
+      }
     }
 
-    // Check for pending instance without credentials
-    const { data: pendingInstance } = await supabase
-      .from('whatsapp_instances')
-      .select('*')
-      .eq('organization_id', profile.organization_id)
-      .is('zapi_instance_id', null)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    // Create a new instance on UAZAPI via POST /instance/init
+    // Create new instance via UAZAPI using the winning auth method:
+    // POST /instance/init with header { admintoken: <admin_token> }
     const instanceName = `org-${profile.organization_id.substring(0, 8)}-${Date.now()}`;
+    console.log(`Creating UAZAPI instance: ${instanceName}`);
 
-    const initUrl = uazapiUrl(uazapiBaseUrl, '/instance/init');
-    console.log(`Creating UAZAPI instance at: ${initUrl}`);
-
-    const uazapiResponse = await fetch(initUrl, {
+    const initResponse = await fetch(`${uazapiBaseUrl}/instance/init`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'admintoken': uazapiAdminToken // Reverted to 'admintoken' as per documentation
+        admintoken: uazapiAdminToken,
       },
       body: JSON.stringify({ name: instanceName }),
     });
 
-    console.log(`UAZAPI create response status: ${uazapiResponse.status}`);
+    const initRaw = await initResponse.text();
+    console.log(`UAZAPI init response: ${initResponse.status}`, initRaw);
 
-    if (!uazapiResponse.ok) {
-      const errorText = await uazapiResponse.text();
-      console.error('UAZAPI create instance error:', errorText);
+    if (!initResponse.ok) {
       return new Response(JSON.stringify({
         error: 'Failed to create UAZAPI instance',
-        details: errorText,
+        details: initRaw,
+        statusCode: initResponse.status,
       }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    const uazapiData = await uazapiResponse.json();
-    console.log('UAZAPI instance created:', JSON.stringify(uazapiData));
-
-    const uazapiInstanceId = uazapiData.name || uazapiData.id || instanceName;
-    const uazapiToken = uazapiData.token || uazapiData.api_token;
-
-    if (!uazapiToken) {
-      console.error('No token returned from UAZAPI:', uazapiData);
-      return new Response(JSON.stringify({ error: 'No token returned from UAZAPI' }), {
+    let initData;
+    try {
+      initData = JSON.parse(initRaw);
+    } catch {
+      return new Response(JSON.stringify({
+        error: 'Invalid JSON from UAZAPI',
+        details: initRaw,
+      }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // Configure webhook on UAZAPI
+    // Extract instance data - UAZAPI returns { instance: { id, token, ... }, token: "..." }
+    const instanceData = initData.instance || initData.data || initData;
+    const uazapiInstanceId = instanceData.id || instanceData.name || instanceName;
+    const uazapiToken = initData.token || instanceData.token;
+
+    if (!uazapiToken) {
+      return new Response(JSON.stringify({
+        error: 'No token returned from UAZAPI',
+        details: initData,
+      }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    console.log(`Instance created: id=${uazapiInstanceId}, token=${uazapiToken.substring(0, 8)}...`);
+
+    // Configure webhook
     const webhookUrl = `${supabaseUrl}/functions/v1/zapi-webhook`;
     try {
-      const webhookResp = await fetch(uazapiUrl(uazapiBaseUrl, '/webhook'), {
+      await fetch(`${uazapiBaseUrl}/webhook`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'token': uazapiToken
+          token: uazapiToken,
         },
         body: JSON.stringify({ url: webhookUrl, enabled: true }),
       });
-      console.log('Webhook set status:', webhookResp.status, await webhookResp.text().catch(() => ''));
+      console.log('Webhook configured:', webhookUrl);
     } catch (err) {
-      console.error('Error configuring webhook:', err);
+      console.error('Webhook config error (non-blocking):', err);
     }
 
+    // Save to database - update existing pending instance or create new one
     let dbInstanceId: string;
 
-    if (pendingInstance) {
+    if (existingInstance && (!existingInstance.zapi_instance_id || existingInstance.status === 'disconnected' || existingInstance.status === 'pending')) {
       const { error: updateError } = await supabase
         .from('whatsapp_instances')
         .update({
           zapi_instance_id: uazapiInstanceId,
           zapi_token: uazapiToken,
           status: 'pending',
+          disconnected_at: null,
+          connected_at: null,
+          is_active: false,
         })
-        .eq('id', pendingInstance.id);
+        .eq('id', existingInstance.id);
 
       if (updateError) {
-        console.error('Update error:', updateError);
-        return new Response(JSON.stringify({ error: 'Failed to save instance' }), {
+        return new Response(JSON.stringify({ error: 'Failed to save instance', details: updateError.message }), {
           status: 500,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
-      dbInstanceId = pendingInstance.id;
+      dbInstanceId = existingInstance.id;
     } else {
       const { data: newInstance, error: insertError } = await supabase
         .from('whatsapp_instances')
@@ -186,8 +198,7 @@ Deno.serve(async (req) => {
         .single();
 
       if (insertError) {
-        console.error('Insert error:', insertError);
-        return new Response(JSON.stringify({ error: 'Failed to create instance' }), {
+        return new Response(JSON.stringify({ error: 'Failed to create instance', details: insertError.message }), {
           status: 500,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
@@ -199,13 +210,13 @@ Deno.serve(async (req) => {
       success: true,
       instanceId: dbInstanceId,
       status: 'pending',
+      reused: false,
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
-
   } catch (error) {
     console.error('Error:', error);
-    return new Response(JSON.stringify({ error: 'Internal server error' }), {
+    return new Response(JSON.stringify({ error: 'Internal server error', details: String(error) }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
