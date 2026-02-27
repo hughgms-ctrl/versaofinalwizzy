@@ -62,7 +62,9 @@ export function WhatsAppInstancesSettings() {
     if (!connectingInstanceId || !qrCode || !session?.access_token) return;
     const interval = setInterval(async () => {
       try {
-        const response = await supabase.functions.invoke('zapi-check-status');
+        const response = await supabase.functions.invoke('zapi-check-status', {
+          headers: { Authorization: `Bearer ${session.access_token}` }
+        });
         const inst = response.data?.instances?.find((i: any) => i.id === connectingInstanceId);
         if (inst?.connected) {
           setConnectingInstanceId(null);
@@ -81,7 +83,9 @@ export function WhatsAppInstancesSettings() {
     setIsAddingNumber(true);
     try {
       // Create a new instance via zapi-create-instance
-      const response = await supabase.functions.invoke('zapi-create-instance');
+      const response = await supabase.functions.invoke('zapi-create-instance', {
+        headers: { Authorization: `Bearer ${session.access_token}` }
+      });
       if (response.error) throw response.error;
       if (response.data?.error) throw new Error(response.data.error);
 
@@ -92,6 +96,7 @@ export function WhatsAppInstancesSettings() {
       if (instanceDbId) {
         // Fetch QR code
         const qrResponse = await supabase.functions.invoke('zapi-get-qrcode', {
+          headers: { Authorization: `Bearer ${session.access_token}` },
           body: { instanceId: instanceDbId },
         });
         if (qrResponse.data?.connected) {
@@ -114,6 +119,7 @@ export function WhatsAppInstancesSettings() {
     setIsActionLoading(instanceId);
     try {
       const response = await supabase.functions.invoke('zapi-get-qrcode', {
+        headers: { Authorization: `Bearer ${session.access_token}` },
         body: { instanceId },
       });
       if (response.error) throw response.error;
@@ -136,6 +142,7 @@ export function WhatsAppInstancesSettings() {
     setIsActionLoading(instanceId);
     try {
       const response = await supabase.functions.invoke('zapi-disconnect', {
+        headers: { Authorization: `Bearer ${session.access_token}` },
         body: { instanceId },
       });
       if (response.error) throw response.error;
@@ -173,6 +180,7 @@ export function WhatsAppInstancesSettings() {
 
     try {
       const response = await supabase.functions.invoke('zapi-sync-chats', {
+        headers: { Authorization: `Bearer ${session.access_token}` },
         body: { instanceId },
       });
       clearInterval(progressInterval);
