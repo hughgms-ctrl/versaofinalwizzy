@@ -109,6 +109,9 @@ Deno.serve(async (req) => {
         error: 'Failed to create UAZAPI instance',
         details: initRaw,
         statusCode: initResponse.status,
+        debug_url: `${uazapiBaseUrl}/instance/init`,
+        debug_token_prefix: uazapiAdminToken.substring(0, 4),
+        debug_token_len: uazapiAdminToken.length
       }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
