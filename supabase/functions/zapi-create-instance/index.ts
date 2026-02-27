@@ -24,6 +24,8 @@ Deno.serve(async (req) => {
     const uazapiBaseUrl = (Deno.env.get('UAZAPI_BASE_URL') || '').replace(/\/$/, '');
     const uazapiAdminToken = Deno.env.get('UAZAPI_ADMIN_TOKEN') || '';
 
+    // Forced redeploy to refresh secrets - 2026-02-27
+
     if (!uazapiBaseUrl || !uazapiAdminToken) {
       return new Response(JSON.stringify({ error: 'UAZAPI not configured' }), {
         status: 500,
