@@ -1,1 +1,19 @@
 project_id = "zaobtetbjpuzibjymhzw"
+
+[functions.zapi-webhook]
+verify_jwt = false
+
+[functions.zapi-contact-profile]
+verify_jwt = false
+
+[functions.zapi-message-actions]
+verify_jwt = false
+
+[functions.zapi-call]
+verify_jwt = false
+
+[functions.zapi-crm]
+verify_jwt = false
+
+[functions.zapi-fix-contacts]
+verify_jwt = false
