@@ -5,28 +5,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// ============================================================
-// UAZAPI (wuzapi) Webhook Handler
-// Payload format (JSON mode):
-// {
-//   "type": "Message" | "ReadReceipt" | "ChatPresence" | "Presence" | "Connected" | ...,
-//   "event": { Info: {...}, Message: {...} },  // raw whatsmeow event
-//   "base64": "...",      // media base64 (if applicable)
-//   "mimeType": "...",
-//   "fileName": "...",
-//   "state": "...",       // for ReadReceipt/Presence
-//   "token": "...",       // instance token
-//   "instanceName": "...",
-//   "userID": "..."       // UAZAPI user ID (= zapi_instance_id)
-// }
-// Form mode: jsonData=<JSON>&token=...&userID=...&instanceName=...
-// ============================================================
-
 // List of notification/event types to ignore
 const IGNORED_EVENT_TYPES = [
-  'call_voice',
-  'call_video',
-  'call_missed',
   'notification',
   'e2e_notification',
   'ciphertext',
@@ -35,10 +15,18 @@ const IGNORED_EVENT_TYPES = [
   'templateButtonReplyMessage',
 ];
 
+// Ensure phone has country code (default Brazil 55)
+function ensureCountryCode(phone: string): string {
+  const clean = phone.replace(/\D/g, '');
+  if (clean.length >= 12) return clean;
+  if (clean.length >= 10 && clean.length <= 11) return `55${clean}`;
+  return clean;
+}
+
 function isValidPhoneNumber(phone: string): boolean {
   if (!phone) return false;
   const cleanPhone = phone.replace('@c.us', '').replace('@s.whatsapp.net', '').replace('@lid', '');
-  if (cleanPhone.length < 8 || cleanPhone.length > 15) return false;
+  if (cleanPhone.length < 10 || cleanPhone.length > 15) return false;
   if (cleanPhone === '0') return false;
   const digitsOnly = cleanPhone.replace(/^\+/, '');
   if (!/^\d+$/.test(digitsOnly)) return false;
@@ -47,29 +35,25 @@ function isValidPhoneNumber(phone: string): boolean {
   return true;
 }
 
-// Extract clean phone from JID (e.g., "5511999887766@s.whatsapp.net" -> "5511999887766")
+// Extract clean phone from JID and ensure country code
 function jidToPhone(jid: string): string {
   if (!jid) return '';
-  return jid.split('@')[0].split('.')[0].split(':')[0];
+  const raw = jid.split('@')[0].split('.')[0].split(':')[0];
+  return ensureCountryCode(raw);
 }
 
-// Check if JID is a group
 function isGroupJid(jid: string): boolean {
   return jid?.includes('@g.us') || jid?.includes('@broadcast') || false;
 }
 
-// Parse UAZAPI payload - handles both JSON and form-encoded formats
 async function parseUazapiPayload(req: Request): Promise<any> {
   const contentType = req.headers.get('content-type') || '';
-  
   if (contentType.includes('application/x-www-form-urlencoded')) {
-    // Form mode: jsonData field contains the JSON
     const formData = await req.text();
     const params = new URLSearchParams(formData);
     const jsonData = params.get('jsonData');
     if (jsonData) {
       const parsed = JSON.parse(jsonData);
-      // Merge top-level form fields
       if (params.get('token')) parsed._token = params.get('token');
       if (params.get('userID')) parsed.userID = params.get('userID');
       if (params.get('instanceName')) parsed.instanceName = params.get('instanceName');
@@ -77,36 +61,15 @@ async function parseUazapiPayload(req: Request): Promise<any> {
     }
     throw new Error('No jsonData in form payload');
   }
-  
-  // JSON mode
   return await req.json();
 }
 
-// Normalize UAZAPI event into a flat structure our handlers understand
-function normalizeMessageEvent(payload: any): {
-  phone: string;
-  fromMe: boolean;
-  messageId: string;
-  isGroup: boolean;
-  pushName: string;
-  timestamp: number;
-  textContent: string | null;
-  mediaBase64: string | null;
-  mediaMimeType: string | null;
-  mediaFileName: string | null;
-  messageType: string;
-  caption: string | null;
-  instanceId: string | null;
-  isLid: boolean;
-  chatLid: string | null;
-  rawEvent: any;
-} {
+function normalizeMessageEvent(payload: any) {
   const event = payload.event || {};
   const info = event.Info || event.info || {};
   const msgSource = info.MessageSource || info.messageSource || info;
   const message = event.Message || event.message || {};
 
-  // Extract phone from Chat JID
   const chatJid = msgSource.Chat || msgSource.chat || info.Chat || info.chat || '';
   const senderJid = msgSource.Sender || msgSource.sender || info.Sender || info.sender || '';
   const phone = jidToPhone(chatJid) || jidToPhone(senderJid);
@@ -116,19 +79,16 @@ function normalizeMessageEvent(payload: any): {
   const isGroup = msgSource.IsGroup ?? msgSource.isGroup ?? info.IsGroup ?? info.isGroup ?? isGroupJid(chatJid);
   const pushName = info.PushName || info.pushName || '';
   
-  // Timestamp
   let timestamp = 0;
   if (info.Timestamp) {
     const ts = new Date(info.Timestamp).getTime();
     timestamp = isNaN(ts) ? 0 : ts;
   }
 
-  // Determine message type and content
   let messageType = 'text';
   let textContent: string | null = null;
   let caption: string | null = null;
 
-  // Text messages
   const conversation = message.conversation || message.Conversation;
   const extendedText = message.extendedTextMessage || message.ExtendedTextMessage;
   const imageMsg = message.imageMessage || message.ImageMessage;
@@ -157,8 +117,7 @@ function normalizeMessageEvent(payload: any): {
     textContent = caption;
   } else if (documentMsg) {
     messageType = 'document';
-    const fileName = documentMsg.fileName || documentMsg.FileName || documentMsg.title || '';
-    textContent = fileName;
+    textContent = documentMsg.fileName || documentMsg.FileName || documentMsg.title || '';
   } else if (stickerMsg) {
     messageType = 'sticker';
   } else if (locationMsg) {
@@ -173,35 +132,17 @@ function normalizeMessageEvent(payload: any): {
     textContent = contactMsg.displayName || contactMsg.DisplayName || '';
   }
 
-  // Media from UAZAPI comes as base64 in the payload
   const mediaBase64 = payload.base64 || null;
   const mediaMimeType = payload.mimeType || null;
   const mediaFileName = payload.fileName || null;
-
-  // Instance identification
   const instanceId = payload.userID || payload.instanceName || null;
-
-  // LID handling
   const isLid = chatJid.includes('@lid') || senderJid.includes('@lid');
   const chatLid = isLid ? phone : null;
 
   return {
-    phone,
-    fromMe,
-    messageId,
-    isGroup,
-    pushName,
-    timestamp,
-    textContent,
-    mediaBase64,
-    mediaMimeType,
-    mediaFileName,
-    messageType,
-    caption,
-    instanceId,
-    isLid,
-    chatLid,
-    rawEvent: payload,
+    phone, fromMe, messageId, isGroup, pushName, timestamp,
+    textContent, mediaBase64, mediaMimeType, mediaFileName,
+    messageType, caption, instanceId, isLid, chatLid, rawEvent: payload,
   };
 }
 
@@ -220,8 +161,6 @@ Deno.serve(async (req) => {
     console.log('=== UAZAPI WEBHOOK RECEIVED ===');
     console.log('Type:', payload.type);
     console.log('UserID:', payload.userID);
-    console.log('InstanceName:', payload.instanceName);
-    console.log('Full payload:', JSON.stringify(payload).slice(0, 2000));
 
     const eventType = (payload.type || '').toLowerCase();
 
@@ -229,23 +168,27 @@ Deno.serve(async (req) => {
     if (eventType === 'connected' || eventType === 'pairsuccess' || 
         eventType === 'connectfailure' || eventType === 'qr' || 
         eventType === 'qrtimeout' || eventType === 'historysync') {
-      console.log('Ignoring system event:', eventType);
       return new Response(JSON.stringify({ success: true, ignored: true, reason: 'system_event' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // Handle Message events
+    // Handle call events
+    if (eventType === 'call_voice' || eventType === 'call_video' || eventType === 'call_missed') {
+      console.log('Call event received:', eventType);
+      return new Response(JSON.stringify({ success: true, type: eventType }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     if (eventType === 'message') {
       return await handleMessage(supabase, payload);
     }
 
-    // Handle ReadReceipt events (delivery/read status)
     if (eventType === 'readreceipt') {
       return await handleReadReceipt(supabase, payload);
     }
 
-    // Handle Presence / ChatPresence events
     if (eventType === 'presence' || eventType === 'chatpresence') {
       return await handlePresenceUpdate(supabase, payload);
     }
@@ -258,8 +201,7 @@ Deno.serve(async (req) => {
   } catch (error) {
     console.error('Webhook error:', error);
     return new Response(JSON.stringify({ error: 'Internal server error' }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
 });
@@ -267,15 +209,12 @@ Deno.serve(async (req) => {
 async function handleMessage(supabase: any, payload: any) {
   const msg = normalizeMessageEvent(payload);
 
-  // Skip group messages
   if (msg.isGroup) {
-    console.log('Skipping group message from:', msg.phone);
     return new Response(JSON.stringify({ success: true, ignored: true, reason: 'group_message' }), {
       headers: { 'Content-Type': 'application/json' },
     });
   }
 
-  // Validate phone
   if (!msg.isLid && !isValidPhoneNumber(msg.phone)) {
     console.log('Skipping invalid phone:', msg.phone);
     return new Response(JSON.stringify({ success: true, ignored: true, reason: 'invalid_phone' }), {
@@ -283,57 +222,43 @@ async function handleMessage(supabase: any, payload: any) {
     });
   }
 
-  // Skip LID without chatLid
   if (msg.isLid && !msg.chatLid) {
-    console.log('Skipping @lid without chatLid:', msg.phone);
     return new Response(JSON.stringify({ success: true, ignored: true, reason: 'lid_without_link' }), {
       headers: { 'Content-Type': 'application/json' },
     });
   }
 
-  // Skip messages without content (system messages)
   if (!msg.textContent && !msg.mediaBase64 && msg.messageType === 'text') {
-    console.log('Skipping empty message');
     return new Response(JSON.stringify({ success: true, ignored: true, reason: 'empty_message' }), {
       headers: { 'Content-Type': 'application/json' },
     });
   }
 
-  // Check for protocol/revoke messages
   const event = payload.event || {};
   const message = event.Message || event.message || {};
   if (message.protocolMessage || message.ProtocolMessage) {
-    console.log('Skipping protocol message');
     return new Response(JSON.stringify({ success: true, ignored: true, reason: 'protocol_message' }), {
       headers: { 'Content-Type': 'application/json' },
     });
   }
 
-  // Find WhatsApp instance by UAZAPI userID (stored in zapi_instance_id)
+  // Find WhatsApp instance
   let whatsappInstance = null;
   if (msg.instanceId) {
     const { data: instance } = await supabase
-      .from('whatsapp_instances')
-      .select('*')
-      .eq('zapi_instance_id', msg.instanceId)
-      .single();
+      .from('whatsapp_instances').select('*')
+      .eq('zapi_instance_id', msg.instanceId).single();
     whatsappInstance = instance;
   }
-
   if (!whatsappInstance) {
     const { data: instances } = await supabase
-      .from('whatsapp_instances')
-      .select('*')
-      .eq('status', 'connected')
-      .limit(1);
+      .from('whatsapp_instances').select('*')
+      .eq('status', 'connected').limit(1);
     whatsappInstance = instances?.[0];
   }
-
   if (!whatsappInstance) {
-    console.error('No connected WhatsApp instance found');
     return new Response(JSON.stringify({ error: 'No connected instance' }), {
-      status: 404,
-      headers: { 'Content-Type': 'application/json' },
+      status: 404, headers: { 'Content-Type': 'application/json' },
     });
   }
 
@@ -343,14 +268,13 @@ async function handleMessage(supabase: any, payload: any) {
   if (msg.isLid) {
     const existingContact = await findContactByPhoneOrLid(supabase, msg.phone, organizationId);
     if (!existingContact) {
-      console.log('Skipping @lid message - no linked contact:', msg.phone);
       return new Response(JSON.stringify({ success: true, ignored: true, reason: 'lid_no_contact' }), {
         headers: { 'Content-Type': 'application/json' },
       });
     }
   }
 
-  // Find or create contact
+  // Find or create contact - also try partial phone match
   let contact = await findOrCreateContactWithLid(supabase, {
     phone: msg.phone,
     isLidIdentifier: msg.isLid,
@@ -360,7 +284,32 @@ async function handleMessage(supabase: any, payload: any) {
     organizationId,
   });
 
-  // Find or create conversation
+  // Fetch profile from UAZAPI if contact has no name
+  if (!contact.name && msg.phone) {
+    try {
+      const uazapiBaseUrl = Deno.env.get('UAZAPI_BASE_URL')!;
+      const resp = await fetch(`${uazapiBaseUrl}/contact/info`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'token': whatsappInstance.zapi_token },
+        body: JSON.stringify({ number: msg.phone }),
+      });
+      if (resp.ok) {
+        const profileData = await resp.json();
+        const updateData: any = {};
+        const profileName = profileData.name || profileData.pushname || profileData.notify;
+        const profilePic = profileData.profilePicUrl || profileData.profilePictureUrl || profileData.imgUrl;
+        if (profileName) updateData.name = profileName;
+        if (profilePic) updateData.avatar_url = profilePic;
+        if (Object.keys(updateData).length > 0) {
+          await supabase.from('contacts').update(updateData).eq('id', contact.id);
+          contact = { ...contact, ...updateData };
+        }
+      }
+    } catch (e) {
+      console.error('Failed to fetch contact profile:', e);
+    }
+  }
+
   const sourcePhone = whatsappInstance.phone_number;
   let conversation = await findOrCreateConversation(supabase, {
     contactId: contact.id,
@@ -369,55 +318,39 @@ async function handleMessage(supabase: any, payload: any) {
     sourcePhone,
   });
 
-  // Handle media: upload base64 to storage if present
+  // Handle media upload
   let mediaUrl: string | null = null;
   if (msg.mediaBase64 && msg.mediaMimeType) {
     try {
-      // Determine file extension
       const extMap: Record<string, string> = {
         'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif',
         'audio/ogg; codecs=opus': 'ogg', 'audio/ogg': 'ogg', 'audio/mpeg': 'mp3', 'audio/mp4': 'm4a',
-        'video/mp4': 'mp4', 'video/3gpp': '3gp',
-        'application/pdf': 'pdf',
+        'video/mp4': 'mp4', 'video/3gpp': '3gp', 'application/pdf': 'pdf',
       };
       const ext = extMap[msg.mediaMimeType] || msg.mediaFileName?.split('.').pop() || 'bin';
       const fileName = `${msg.messageId || Date.now()}.${ext}`;
       const storagePath = `webhook-media/${organizationId}/${fileName}`;
-
-      // Decode base64 and upload to storage
       const binaryData = Uint8Array.from(atob(msg.mediaBase64), c => c.charCodeAt(0));
       
       const { error: uploadError } = await supabase.storage
         .from('chat-media')
-        .upload(storagePath, binaryData, {
-          contentType: msg.mediaMimeType,
-          upsert: true,
-        });
+        .upload(storagePath, binaryData, { contentType: msg.mediaMimeType, upsert: true });
 
-      if (uploadError) {
-        console.error('Failed to upload media:', uploadError);
-      } else {
-        const { data: publicUrl } = supabase.storage
-          .from('chat-media')
-          .getPublicUrl(storagePath);
+      if (!uploadError) {
+        const { data: publicUrl } = supabase.storage.from('chat-media').getPublicUrl(storagePath);
         mediaUrl = publicUrl?.publicUrl || null;
-        console.log('Media uploaded:', mediaUrl);
       }
     } catch (e) {
       console.error('Error processing media:', e);
     }
   }
 
-  // Check if message already exists
+  // Check for duplicate
   if (msg.messageId) {
     const { data: existingMessage } = await supabase
-      .from('messages')
-      .select('id')
-      .eq('zapi_message_id', msg.messageId)
-      .maybeSingle();
-
+      .from('messages').select('id')
+      .eq('zapi_message_id', msg.messageId).maybeSingle();
     if (existingMessage) {
-      console.log('Message already exists, skipping');
       return new Response(JSON.stringify({ success: true, duplicate: true }), {
         headers: { 'Content-Type': 'application/json' },
       });
@@ -437,8 +370,7 @@ async function handleMessage(supabase: any, payload: any) {
       zapi_message_id: msg.messageId,
       metadata: { original_payload: payload },
     })
-    .select()
-    .single();
+    .select().single();
 
   if (messageError) {
     console.error('Error inserting message:', messageError);
@@ -446,18 +378,11 @@ async function handleMessage(supabase: any, payload: any) {
   }
 
   // Update conversation
-  const updateData: any = {
-    last_message_at: new Date().toISOString(),
-    status: 'open',
-  };
-  if (!msg.fromMe) {
-    updateData.unread_count = conversation.unread_count + 1;
-  }
+  const updateData: any = { last_message_at: new Date().toISOString(), status: 'open' };
+  if (!msg.fromMe) updateData.unread_count = conversation.unread_count + 1;
   await supabase.from('conversations').update(updateData).eq('id', conversation.id);
 
-  console.log('Message saved successfully:', savedMessage.id);
-
-  // === AGENT ORCHESTRATOR TRIGGER ===
+  // Agent orchestrator trigger
   if (!msg.fromMe && msg.textContent) {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -465,25 +390,16 @@ async function handleMessage(supabase: any, payload: any) {
 
     if (!shouldTrigger) {
       shouldTrigger = await checkMasterPromptTriggers(supabase, {
-        organizationId,
-        contactId: contact.id,
-        messageContent: msg.textContent,
-        conversationId: conversation.id,
+        organizationId, contactId: contact.id,
+        messageContent: msg.textContent, conversationId: conversation.id,
       });
     }
 
     if (shouldTrigger) {
-      console.log('Triggering agent orchestrator for conversation:', conversation.id);
       fetch(`${supabaseUrl}/functions/v1/agent-orchestrator`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${serviceRoleKey}`,
-        },
-        body: JSON.stringify({
-          conversationId: conversation.id,
-          messageContent: msg.textContent,
-        }),
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
+        body: JSON.stringify({ conversationId: conversation.id, messageContent: msg.textContent }),
       }).catch(err => console.error('Failed to trigger agent orchestrator:', err));
     }
   }
@@ -496,22 +412,16 @@ async function handleMessage(supabase: any, payload: any) {
 async function handleReadReceipt(supabase: any, payload: any) {
   const event = payload.event || {};
   const state = payload.state || '';
-  
-  // UAZAPI sends MessageIDs as an array
   const messageIds: string[] = event.MessageIDs || event.messageIDs || event.messageIds || [];
   
   if (messageIds.length === 0) {
-    console.log('No message IDs in read receipt');
     return new Response(JSON.stringify({ success: true, ignored: true }), {
       headers: { 'Content-Type': 'application/json' },
     });
   }
 
-  console.log(`ReadReceipt: ${messageIds.join(', ')} -> ${state}`);
-
   const updateData: any = {};
   const stateLower = state.toLowerCase();
-
   if (stateLower === 'delivered') {
     updateData.delivered_at = new Date().toISOString();
   } else if (stateLower === 'read' || stateLower === 'readself') {
@@ -521,15 +431,7 @@ async function handleReadReceipt(supabase: any, payload: any) {
 
   if (Object.keys(updateData).length > 0) {
     for (const msgId of messageIds) {
-      const { error } = await supabase
-        .from('messages')
-        .update(updateData)
-        .eq('zapi_message_id', msgId);
-      if (error) {
-        console.error(`Failed to update message ${msgId}:`, error.message);
-      } else {
-        console.log(`Updated message ${msgId} with state ${state}`);
-      }
+      await supabase.from('messages').update(updateData).eq('zapi_message_id', msgId);
     }
   }
 
@@ -541,37 +443,27 @@ async function handleReadReceipt(supabase: any, payload: any) {
 async function handlePresenceUpdate(supabase: any, payload: any) {
   const event = payload.event || {};
   const state = (payload.state || '').toLowerCase();
-  
-  // Extract phone from the "From" JID
   const fromJid = event.From || event.from || '';
   const phone = jidToPhone(fromJid);
   
   if (!phone) {
-    console.log('No phone in presence update');
     return new Response(JSON.stringify({ success: true }), {
       headers: { 'Content-Type': 'application/json' },
     });
   }
 
-  console.log(`Presence update: ${phone} -> ${state}`);
-
-  // Find instance
   const instanceId = payload.userID || payload.instanceName;
   let whatsappInstance = null;
   if (instanceId) {
     const { data: instance } = await supabase
-      .from('whatsapp_instances')
-      .select('*')
-      .eq('zapi_instance_id', instanceId)
-      .single();
+      .from('whatsapp_instances').select('*')
+      .eq('zapi_instance_id', instanceId).single();
     whatsappInstance = instance;
   }
   if (!whatsappInstance) {
     const { data: instances } = await supabase
-      .from('whatsapp_instances')
-      .select('*')
-      .eq('status', 'connected')
-      .limit(1);
+      .from('whatsapp_instances').select('*')
+      .eq('status', 'connected').limit(1);
     whatsappInstance = instances?.[0];
   }
   if (!whatsappInstance) {
@@ -582,70 +474,59 @@ async function handlePresenceUpdate(supabase: any, payload: any) {
 
   const organizationId = whatsappInstance.organization_id;
   const contact = await findContactByPhoneOrLid(supabase, phone, organizationId);
-
   if (!contact) {
-    console.log('Contact not found for presence update');
     return new Response(JSON.stringify({ success: true }), {
       headers: { 'Content-Type': 'application/json' },
     });
   }
 
-  // Map UAZAPI state to our presence type
   let presenceType: string;
   switch (state) {
-    case 'composing':
-    case 'typing':
-      presenceType = 'typing';
-      break;
-    case 'recording':
-      presenceType = 'recording';
-      break;
-    case 'online':
-    case 'available':
-      presenceType = 'online';
-      break;
-    case 'offline':
-    case 'unavailable':
-      presenceType = 'offline';
-      break;
-    default:
-      presenceType = state || 'unknown';
+    case 'composing': case 'typing': presenceType = 'typing'; break;
+    case 'recording': presenceType = 'recording'; break;
+    case 'online': case 'available': presenceType = 'online'; break;
+    case 'offline': case 'unavailable': presenceType = 'offline'; break;
+    default: presenceType = state || 'unknown';
   }
 
   const expiresAt = new Date(Date.now() + 30000).toISOString();
-  await supabase
-    .from('contact_presence')
-    .upsert({
-      contact_id: contact.id,
-      organization_id: organizationId,
-      presence_type: presenceType,
-      started_at: new Date().toISOString(),
-      expires_at: expiresAt,
-    }, { onConflict: 'contact_id' });
+  await supabase.from('contact_presence').upsert({
+    contact_id: contact.id, organization_id: organizationId,
+    presence_type: presenceType, started_at: new Date().toISOString(), expires_at: expiresAt,
+  }, { onConflict: 'contact_id' });
 
-  console.log(`Presence saved: ${contact.id} -> ${presenceType}`);
   return new Response(JSON.stringify({ success: true }), {
     headers: { 'Content-Type': 'application/json' },
   });
 }
 
-// ========== SHARED HELPERS (unchanged business logic) ==========
+// ========== SHARED HELPERS ==========
 
-async function findContactByPhoneOrLid(supabase: any, phoneOrLid: string, organizationId: string): Promise<{ id: string } | null> {
+async function findContactByPhoneOrLid(supabase: any, phoneOrLid: string, organizationId: string) {
+  // Try exact match
   const { data: contactByPhone } = await supabase
-    .from('contacts')
-    .select('id')
-    .eq('phone', phoneOrLid)
-    .eq('organization_id', organizationId)
-    .maybeSingle();
+    .from('contacts').select('id')
+    .eq('phone', phoneOrLid).eq('organization_id', organizationId).maybeSingle();
   if (contactByPhone) return contactByPhone;
 
+  // Try without country code (legacy data)
+  const shortPhone = phoneOrLid.replace(/^55/, '');
+  if (shortPhone !== phoneOrLid) {
+    const { data: contactByShort } = await supabase
+      .from('contacts').select('id')
+      .eq('phone', shortPhone).eq('organization_id', organizationId).maybeSingle();
+    if (contactByShort) {
+      // Fix the number while we're at it
+      await supabase.from('contacts').update({ phone: phoneOrLid }).eq('id', contactByShort.id);
+      return contactByShort;
+    }
+  }
+
+  // Try LID metadata
   const { data: contactByLid } = await supabase
-    .from('contacts')
-    .select('id')
+    .from('contacts').select('id')
     .eq('organization_id', organizationId)
-    .contains('metadata', { chat_lid: phoneOrLid })
-    .maybeSingle();
+    .contains('metadata', { chat_lid: phoneOrLid }).maybeSingle();
   return contactByLid || null;
 }
 
@@ -660,8 +541,7 @@ async function findOrCreateContactWithLid(
     const { data: contactByLid } = await supabase
       .from('contacts').select('*')
       .eq('organization_id', organizationId)
-      .contains('metadata', { chat_lid: chatLid })
-      .maybeSingle();
+      .contains('metadata', { chat_lid: chatLid }).maybeSingle();
     if (contactByLid) {
       if ((name && name !== contactByLid.name) || (avatarUrl && avatarUrl !== contactByLid.avatar_url)) {
         const updateData: any = {};
@@ -673,10 +553,10 @@ async function findOrCreateContactWithLid(
     }
   }
 
+  // Try exact phone match
   const { data: existingContact } = await supabase
     .from('contacts').select('*')
-    .eq('phone', phone).eq('organization_id', organizationId)
-    .maybeSingle();
+    .eq('phone', phone).eq('organization_id', organizationId).maybeSingle();
 
   if (existingContact) {
     const updateData: any = {};
@@ -691,8 +571,19 @@ async function findOrCreateContactWithLid(
     return existingContact;
   }
 
-  if (isLidIdentifier) {
-    console.log('Creating contact with @lid identifier:', phone);
+  // Try short phone match (legacy without country code)
+  const shortPhone = phone.replace(/^55/, '');
+  if (shortPhone !== phone) {
+    const { data: shortContact } = await supabase
+      .from('contacts').select('*')
+      .eq('phone', shortPhone).eq('organization_id', organizationId).maybeSingle();
+    if (shortContact) {
+      const updateData: any = { phone };
+      if (name && name !== shortContact.name) updateData.name = name;
+      if (avatarUrl && avatarUrl !== shortContact.avatar_url) updateData.avatar_url = avatarUrl;
+      await supabase.from('contacts').update(updateData).eq('id', shortContact.id);
+      return { ...shortContact, phone };
+    }
   }
 
   const metadata: any = {};
@@ -713,7 +604,6 @@ async function mergeDuplicateContactsAndConversations(supabase: any, primaryCont
     .neq('id', primaryContactId).maybeSingle();
   if (!duplicateContact) return;
 
-  console.log('Merging duplicate contact:', duplicateContact.id, '-> primary:', primaryContactId);
   const { data: duplicateConversations } = await supabase
     .from('conversations').select('id').eq('contact_id', duplicateContact.id);
 
@@ -771,7 +661,6 @@ async function findOrCreateConversation(
         .limit(1).maybeSingle();
       if (raceExisting) return raceExisting;
     }
-    console.error('Error creating conversation:', error);
     throw error;
   }
   return newConversation;

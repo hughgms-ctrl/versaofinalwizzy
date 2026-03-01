@@ -39,35 +39,61 @@ function isGroupChat(chat: UAZAPIChat): boolean {
   return false;
 }
 
+// Ensure phone has country code (default Brazil 55)
+function ensureCountryCode(phone: string): string {
+  const clean = phone.replace(/\D/g, '');
+  // Already has country code (13+ digits for BR = 55 + DDD(2) + number(9))
+  if (clean.length >= 12) return clean;
+  // Has DDD + number (10-11 digits) - add 55
+  if (clean.length >= 10 && clean.length <= 11) return `55${clean}`;
+  // Too short - return as is
+  return clean;
+}
+
 function extractPhone(chat: UAZAPIChat): string | null {
-  // Try phone field first
+  let raw = '';
   if (chat.phone) {
-    const clean = chat.phone.replace('@c.us', '').replace('@s.whatsapp.net', '').replace(/\D/g, '');
-    if (clean.length >= 8 && clean.length <= 15) return clean;
+    raw = chat.phone.replace('@c.us', '').replace('@s.whatsapp.net', '').split(':')[0];
+  } else if (chat.jid) {
+    raw = chat.jid.split('@')[0].split(':')[0];
+  } else if (chat.id) {
+    raw = chat.id.split('@')[0].split(':')[0];
   }
-  // Try jid
-  if (chat.jid) {
-    const clean = chat.jid.split('@')[0].replace(/\D/g, '');
-    if (clean.length >= 8 && clean.length <= 15) return clean;
-  }
-  // Try id
-  if (chat.id) {
-    const clean = chat.id.split('@')[0].replace(/\D/g, '');
-    if (clean.length >= 8 && clean.length <= 15) return clean;
-  }
-  return null;
+  const clean = raw.replace(/\D/g, '');
+  if (clean.length < 8 || clean.length > 15) return null;
+  return ensureCountryCode(clean);
 }
 
 function isValidPhoneNumber(phone: string): boolean {
   if (!phone) return false;
-  if (phone.length < 8) return false;
+  if (phone.length < 10) return false; // Minimum: country code + area + number
   if (!/^\d+$/.test(phone)) return false;
   if (phone === '0') return false;
   return true;
 }
 
+async function fetchContactProfile(uazapiBaseUrl: string, token: string, phone: string): Promise<{ name?: string; profilePicUrl?: string } | null> {
+  try {
+    const resp = await fetch(`${uazapiBaseUrl}/contact/info`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'token': token },
+      body: JSON.stringify({ number: phone }),
+    });
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    return {
+      name: data.name || data.pushname || data.notify || undefined,
+      profilePicUrl: data.profilePicUrl || data.profilePictureUrl || data.imgUrl || undefined,
+    };
+  } catch (e) {
+    console.error('Failed to fetch contact profile:', e);
+    return null;
+  }
+}
+
 async function processChatsBatch(
-  supabase: any, chats: UAZAPIChat[], organizationId: string, whatsappInstanceId: string
+  supabase: any, chats: UAZAPIChat[], organizationId: string, whatsappInstanceId: string,
+  uazapiBaseUrl: string, instanceToken: string
 ): Promise<{ processed: number; errors: string[] }> {
   let processed = 0;
   const errors: string[] = [];
@@ -77,10 +103,20 @@ async function processChatsBatch(
       const normalizedPhone = extractPhone(chat);
       if (!normalizedPhone || !isValidPhoneNumber(normalizedPhone)) continue;
 
-      const contactName = chat.name || null;
-      const contactPhoto = chat.profilePicture || chat.profileThumbnail || null;
+      let contactName = chat.name || null;
+      let contactPhoto = chat.profilePicture || chat.profileThumbnail || null;
+
+      // If no name from chat list, try fetching profile from UAZAPI
+      if (!contactName) {
+        const profile = await fetchContactProfile(uazapiBaseUrl, instanceToken, normalizedPhone);
+        if (profile) {
+          if (profile.name) contactName = profile.name;
+          if (profile.profilePicUrl) contactPhoto = profile.profilePicUrl;
+        }
+      }
 
       let contact;
+      // Try to find by exact phone or by partial match
       const { data: existingContact } = await supabase
         .from('contacts').select('*')
         .eq('phone', normalizedPhone).eq('organization_id', organizationId).maybeSingle();
@@ -94,11 +130,26 @@ async function processChatsBatch(
           await supabase.from('contacts').update(updateData).eq('id', existingContact.id);
         }
       } else {
-        const { data: newContact, error: contactError } = await supabase
-          .from('contacts').insert({ phone: normalizedPhone, name: contactName, avatar_url: contactPhoto, organization_id: organizationId })
-          .select().single();
-        if (contactError) { errors.push(`Contact ${normalizedPhone}: ${contactError.message}`); continue; }
-        contact = newContact;
+        // Check if contact exists with short number (migration scenario)
+        const shortPhone = normalizedPhone.replace(/^55/, '');
+        const { data: shortContact } = await supabase
+          .from('contacts').select('*')
+          .eq('phone', shortPhone).eq('organization_id', organizationId).maybeSingle();
+        
+        if (shortContact) {
+          // Update the short number to full international format
+          const updateData: Record<string, any> = { phone: normalizedPhone };
+          if (contactName && contactName !== shortContact.name) updateData.name = contactName;
+          if (contactPhoto && contactPhoto !== shortContact.avatar_url) updateData.avatar_url = contactPhoto;
+          await supabase.from('contacts').update(updateData).eq('id', shortContact.id);
+          contact = { ...shortContact, phone: normalizedPhone };
+        } else {
+          const { data: newContact, error: contactError } = await supabase
+            .from('contacts').insert({ phone: normalizedPhone, name: contactName, avatar_url: contactPhoto, organization_id: organizationId })
+            .select().single();
+          if (contactError) { errors.push(`Contact ${normalizedPhone}: ${contactError.message}`); continue; }
+          contact = newContact;
+        }
       }
 
       const unreadCount = typeof chat.unread === 'string' ? parseInt(chat.unread, 10) : (chat.unread || 0);
@@ -219,7 +270,10 @@ Deno.serve(async (req) => {
 
     for (let i = 0; i < individualChats.length; i += BATCH_SIZE) {
       const batch = individualChats.slice(i, i + BATCH_SIZE);
-      const { processed, errors } = await processChatsBatch(supabase, batch, profile.organization_id, instance.id);
+      const { processed, errors } = await processChatsBatch(
+        supabase, batch, profile.organization_id, instance.id,
+        uazapiBaseUrl, instance.zapi_token
+      );
       totalProcessed += processed;
       allErrors.push(...errors);
       if (i + BATCH_SIZE < individualChats.length) await new Promise(resolve => setTimeout(resolve, 100));
