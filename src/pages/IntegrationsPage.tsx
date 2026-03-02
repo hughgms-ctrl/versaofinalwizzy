@@ -192,11 +192,10 @@ export default function IntegrationsPage() {
                         updateField('default_model', models[0].value);
                       }
                     }}
-                    className={`relative p-4 rounded-xl border-2 transition-all text-left ${
-                      isSelected
+                    className={`relative p-4 rounded-xl border-2 transition-all text-left ${isSelected
                         ? 'border-primary bg-primary/5 shadow-md'
                         : 'border-border hover:border-primary/30 bg-card'
-                    }`}
+                      }`}
                   >
                     <div className="flex items-center justify-between mb-2">
                       <span className="font-semibold text-foreground">{PROVIDER_LABELS[provider]}</span>
@@ -234,7 +233,14 @@ export default function IntegrationsPage() {
                 <SelectContent>
                   {MODELS_BY_PROVIDER[formData.ai_provider || 'lovable'].map((m) => (
                     <SelectItem key={m.value} value={m.value}>
-                      {m.label}
+                      <div className="flex flex-col">
+                        <span>{m.label}</span>
+                        <span className="text-[10px] text-muted-foreground">
+                          {m.value.includes('pro') ? 'Ideal para raciocínio complexo' :
+                            m.value.includes('flash') ? 'Ideal para velocidade e triagem' :
+                              'Equilíbrio entre inteligência e custo'}
+                        </span>
+                      </div>
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -292,6 +298,14 @@ export default function IntegrationsPage() {
                     {showOpenAIKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
+                <Button
+                  size="sm"
+                  onClick={handleSave}
+                  disabled={upsertConfig.isPending}
+                  className="bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20"
+                >
+                  Confirmar Chave OpenAI
+                </Button>
               </div>
             </div>
 
@@ -330,6 +344,14 @@ export default function IntegrationsPage() {
                     {showGeminiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
+                <Button
+                  size="sm"
+                  onClick={handleSave}
+                  disabled={upsertConfig.isPending}
+                  className="bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20"
+                >
+                  Confirmar Chave Gemini
+                </Button>
               </div>
             </div>
 

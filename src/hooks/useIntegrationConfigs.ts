@@ -36,23 +36,26 @@ export const PROVIDER_LABELS: Record<AIProvider, string> = {
 
 export const MODELS_BY_PROVIDER: Record<AIProvider, { value: string; label: string }[]> = {
   lovable: [
-    { value: 'google/gemini-3-flash-preview', label: 'Gemini 3 Flash (Rápido)' },
-    { value: 'google/gemini-2.5-flash', label: 'Gemini 2.5 Flash (Equilibrado)' },
-    { value: 'google/gemini-2.5-pro', label: 'Gemini 2.5 Pro (Avançado)' },
-    { value: 'openai/gpt-5-mini', label: 'GPT-5 Mini' },
-    { value: 'openai/gpt-5', label: 'GPT-5 (Premium)' },
+    { value: 'google/gemini-3.1-pro-high', label: 'Gemini 3.1 Pro (High) - New' },
+    { value: 'google/gemini-3.1-pro-low', label: 'Gemini 3.1 Pro (Low) - New' },
+    { value: 'google/gemini-3-flash', label: 'Gemini 3 Flash (Ultra Rápido)' },
+    { value: 'google/gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
+    { value: 'google/gemini-1.5-pro-latest', label: 'Gemini 1.5 Pro (Inteligente)' },
+    { value: 'google/gemini-1.5-flash-latest', label: 'Gemini 1.5 Flash' },
+    { value: 'openai/gpt-4o', label: 'GPT-4o (Premium)' },
+    { value: 'openai/gpt-4o-mini', label: 'GPT-4o Mini' },
   ],
   openai: [
+    { value: 'gpt-4o', label: 'GPT-4o (Inteligente)' },
     { value: 'gpt-4o-mini', label: 'GPT-4o Mini (Rápido)' },
-    { value: 'gpt-4o', label: 'GPT-4o (Equilibrado)' },
     { value: 'gpt-4-turbo', label: 'GPT-4 Turbo' },
-    { value: 'gpt-3.5-turbo', label: 'GPT-3.5 Turbo (Econômico)' },
   ],
   gemini: [
-    { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash (Rápido)' },
-    { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro (Avançado)' },
-    { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
-    { value: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash (Econômico)' },
+    { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash (Nova Geração)' },
+    { value: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro (Raciocínio)' },
+    { value: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash (Velocidade)' },
+    { value: 'gemini-1.5-flash-8b', label: 'Gemini 1.5 Flash-8B (Econômico)' },
+    { value: 'gemini-1.0-pro', label: 'Gemini 1.0 Pro' },
   ],
 };
 
@@ -90,7 +93,7 @@ export function useUpsertIntegrationConfig() {
   return useMutation({
     mutationFn: async (config: Partial<IntegrationConfig>) => {
       if (!profile?.organization_id) throw new Error('No organization');
-      
+
       const payload = {
         ...config,
         organization_id: profile.organization_id,
