@@ -154,32 +154,28 @@ async function checkSingleInstance(
     };
   }
 
-  const isConnected = statusData?.state === 'connected' || statusData?.connected === true;
+  // UAZAPI returns: { instance: { status: "connected", owner: "55..." }, status: { connected: true, jid: "55...@s.whatsapp.net" } }
+  const isConnected = 
+    statusData?.status?.connected === true || 
+    statusData?.instance?.status === 'connected' ||
+    statusData?.state === 'connected' || 
+    statusData?.connected === true;
 
   let connectedPhone: string | null = null;
-  if (isConnected && statusData?.phone) {
-    connectedPhone = sanitizePhone(statusData.phone);
-  }
-
-  if (isConnected && !connectedPhone) {
-    try {
-      const profileResponse = await fetch(
-        uazapiUrl(uazapiBaseUrl, '/instance/profile'),
-        {
-          method: 'GET',
-          headers: { 'token': instance.zapi_token }
-        }
-      );
-      if (profileResponse.ok) {
-        const profileData = await profileResponse.json();
-        if (profileData?.phone) {
-          connectedPhone = sanitizePhone(profileData.phone);
-        } else if (profileData?.jid) {
-          connectedPhone = sanitizePhone(profileData.jid.split('@')[0]);
-        }
-      }
-    } catch (e) {
-      console.error('Error fetching profile info:', e);
+  
+  // Try to extract phone from UAZAPI response
+  if (isConnected) {
+    // From instance.owner
+    if (statusData?.instance?.owner) {
+      connectedPhone = sanitizePhone(statusData.instance.owner);
+    }
+    // From status.jid  
+    if (!connectedPhone && statusData?.status?.jid) {
+      connectedPhone = sanitizePhone(statusData.status.jid.split('@')[0].split(':')[0]);
+    }
+    // From top-level phone
+    if (!connectedPhone && statusData?.phone) {
+      connectedPhone = sanitizePhone(statusData.phone);
     }
   }
 
