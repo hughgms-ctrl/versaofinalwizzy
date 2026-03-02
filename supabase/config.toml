@@ -17,3 +17,33 @@ verify_jwt = false
 
 [functions.zapi-fix-contacts]
 verify_jwt = false
+
+[functions.zapi-check-status]
+verify_jwt = false
+
+[functions.zapi-sync-chats]
+verify_jwt = false
+
+[functions.zapi-sync-messages]
+verify_jwt = false
+
+[functions.zapi-send-message]
+verify_jwt = false
+
+[functions.zapi-save-credentials]
+verify_jwt = false
+
+[functions.zapi-create-instance]
+verify_jwt = false
+
+[functions.zapi-disconnect]
+verify_jwt = false
+
+[functions.zapi-get-qrcode]
+verify_jwt = false
+
+[functions.zapi-load-older-messages]
+verify_jwt = false
+
+[functions.zapi-send-presence]
+verify_jwt = false
