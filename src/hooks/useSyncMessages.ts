@@ -26,11 +26,12 @@ export function useSyncMessages(conversationId: string | null) {
 
   const syncMessages = useCallback(async (): Promise<SyncResult | null> => {
     if (!conversationId || isSyncing) return null;
-    
+
     setIsSyncing(true);
     try {
       const { data, error } = await supabase.functions.invoke('zapi-sync-messages', {
-        body: { conversationId, amount: 30 }
+        body: { conversationId, amount: 30 },
+        headers: { Authorization: `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}` }
       });
 
       if (error) {
@@ -54,11 +55,12 @@ export function useSyncMessages(conversationId: string | null) {
 
   const loadOlderMessages = useCallback(async (lastMessageId?: string): Promise<LoadOlderResult | null> => {
     if (!conversationId || isLoadingOlder || !hasMoreMessages) return null;
-    
+
     setIsLoadingOlder(true);
     try {
       const { data, error } = await supabase.functions.invoke('zapi-load-older-messages', {
-        body: { conversationId, lastMessageId, amount: 30 }
+        body: { conversationId, lastMessageId, amount: 30 },
+        headers: { Authorization: `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}` }
       });
 
       if (error) {
@@ -90,12 +92,12 @@ export function useSyncMessages(conversationId: string | null) {
     setHasMoreMessages(true);
   }, []);
 
-  return { 
-    syncMessages, 
+  return {
+    syncMessages,
     loadOlderMessages,
     resetPagination,
-    isSyncing, 
+    isSyncing,
     isLoadingOlder,
-    hasMoreMessages 
+    hasMoreMessages
   };
 }

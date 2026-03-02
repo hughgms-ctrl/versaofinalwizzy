@@ -300,10 +300,7 @@ async function executeNode(
       return await executeWebhook(data, context);
 
     case 'ai-handoff':
-      return { success: true };
-
-    case 'ai-master':
-      return await executeAIMaster(data, context, supabase);
+      return await executeAIHandoff(data, context, supabase);
 
     case 'ai-return':
       return { success: true };
@@ -314,7 +311,7 @@ async function executeNode(
   }
 }
 
-async function executeAIMaster(
+async function executeAIHandoff(
   data: Record<string, unknown>,
   context: ExecutionContext,
   supabase: SupabaseClientType
@@ -330,9 +327,9 @@ async function executeAIMaster(
       .limit(1)
       .maybeSingle();
 
-    const inputContent = lastMessage?.content || 'Olá'; // Fallback
+    const inputContent = lastMessage?.content || 'Olá';
 
-    // 2. Call agent-orchestrator with override
+    // 2. Call agent-orchestrator with specialized instructions override
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
@@ -340,19 +337,12 @@ async function executeAIMaster(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${supabaseKey}`
+        'Authorization': `Bearer ${supabaseKey}`,
       },
       body: JSON.stringify({
         conversationId: context.conversationId,
         messageContent: inputContent,
-        masterPromptOverride: {
-          id: `node-${Math.random().toString(36).substr(2, 9)}`,
-          name: 'Agente Master (Fluxo)',
-          niche: data.niche || 'Geral',
-          content: data.prompt || '',
-          agent_rules: data.orchestration_rules || {},
-          is_active: true
-        }
+        masterPromptOverride: data.contextMessage || null // This is the "Extra Prompt" from the node
       })
     });
 
@@ -365,7 +355,7 @@ async function executeAIMaster(
     const result = await response.json();
     return { success: result.success };
   } catch (error) {
-    console.error('Error in executeAIMaster:', error);
+    console.error('Error in executeAIHandoff:', error);
     return { success: false, error: String(error) };
   }
 }

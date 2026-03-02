@@ -1,35 +1,41 @@
 import { Handle, Position, NodeProps, Node } from '@xyflow/react';
-import { Tag, Kanban, UserPlus, Clock, Webhook } from 'lucide-react';
+import { Tag, Kanban, UserPlus, Clock, Webhook, IterationCw, FileText, GitBranch } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface ActionNodeData extends Record<string, unknown> {
   label?: string;
   tagName?: string;
   action?: string;
-  pipelineColumn?: string;
+  pipelineName?: string;
+  pipelineColumnName?: string;
   agentName?: string;
   duration?: number;
   unit?: string;
   webhookUrl?: string;
+  flowName?: string;
+  departmentName?: string;
+  templateName?: string;
+  signingMethod?: string;
+  conditionLabel?: string;
 }
 
 type ActionNode = Node<ActionNodeData>;
 
-function BaseActionNode({ 
-  selected, 
-  icon: Icon, 
-  color, 
-  title, 
-  children 
-}: { 
-  selected: boolean; 
-  icon: React.ComponentType<{ className?: string }>; 
+function BaseActionNode({
+  selected,
+  icon: Icon,
+  color,
+  title,
+  children
+}: {
+  selected: boolean;
+  icon: React.ComponentType<{ className?: string }>;
   color: string;
   title: string;
   children?: React.ReactNode;
 }) {
   return (
-    <div 
+    <div
       className={cn(
         "group relative min-w-[180px] max-w-[240px] rounded-xl bg-card shadow-lg border-2 transition-all overflow-visible",
         selected ? 'border-primary ring-2 ring-primary/30' : 'border-border'
@@ -40,16 +46,16 @@ function BaseActionNode({
         position={Position.Left}
         className="!w-3 !h-3 !bg-primary !border-2 !border-background opacity-0 group-hover:opacity-100 transition-opacity !-left-1.5"
       />
-      
+
       <div className={cn("flex items-center gap-2 px-3 py-2 rounded-t-[10px]", color)}>
         <Icon className="h-4 w-4 text-white" />
         <span className="font-medium text-sm text-white">{title}</span>
       </div>
-      
+
       <div className="p-3 bg-card rounded-b-[10px]">
         {children}
       </div>
-      
+
       <Handle
         type="source"
         position={Position.Right}
@@ -73,19 +79,55 @@ export function TagActionNode({ data, selected }: NodeProps<ActionNode>) {
 
 export function PipelineActionNode({ data, selected }: NodeProps<ActionNode>) {
   return (
-    <BaseActionNode selected={!!selected} icon={Kanban} color="bg-green-500" title="Mover Pipeline">
+    <BaseActionNode selected={!!selected} icon={Kanban} color="bg-blue-500" title="Mover Pipeline">
       <p className="text-xs text-muted-foreground">
-        Mover para: <span className="font-medium text-foreground">{data.pipelineColumn || 'Selecionar...'}</span>
+        Para: <span className="font-medium text-foreground">{data.pipelineColumnName || 'Selecionar...'}</span>
       </p>
+    </BaseActionNode>
+  );
+}
+
+export function DepartmentActionNode({ data, selected }: NodeProps<ActionNode>) {
+  return (
+    <BaseActionNode selected={!!selected} icon={Webhook} color="bg-cyan-500" title="Alterar Departamento">
+      <p className="text-xs text-muted-foreground text-cyan-700/70">
+        Destino: <span className="font-medium text-cyan-900 dark:text-cyan-100">{data.departmentName || 'Selecionar...'}</span>
+      </p>
+    </BaseActionNode>
+  );
+}
+
+export function FlowActionNode({ data, selected }: NodeProps<ActionNode>) {
+  return (
+    <BaseActionNode selected={!!selected} icon={IterationCw} color="bg-indigo-500" title="Iniciar Fluxo">
+      <p className="text-xs text-muted-foreground text-indigo-700/70">
+        Fluxo: <span className="font-medium text-indigo-900 dark:text-indigo-100">{data.flowName || 'Selecionar...'}</span>
+      </p>
+    </BaseActionNode>
+  );
+}
+
+export function DocumentActionNode({ data, selected }: NodeProps<ActionNode>) {
+  return (
+    <BaseActionNode selected={!!selected} icon={FileText} color="bg-rose-500" title="Gerar Documento">
+      <div className="space-y-1">
+        <p className="text-xs text-muted-foreground text-rose-700/70 truncate">
+          {data.templateName || 'Selecionar template...'}
+        </p>
+        <div className="flex items-center gap-1 text-[9px] text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded-full w-fit">
+          <Clock className="h-2.5 w-2.5" />
+          <span>Assinatura: {String(data.signingMethod || 'Manual')}</span>
+        </div>
+      </div>
     </BaseActionNode>
   );
 }
 
 export function TransferActionNode({ data, selected }: NodeProps<ActionNode>) {
   return (
-    <BaseActionNode selected={!!selected} icon={UserPlus} color="bg-rose-500" title="Transferir">
+    <BaseActionNode selected={!!selected} icon={UserPlus} color="bg-rose-500" title="Escalação Humana">
       <p className="text-xs text-muted-foreground">
-        Para: <span className="font-medium text-foreground">{data.agentName || 'Selecionar agente...'}</span>
+        Atendimento humano ativado
       </p>
     </BaseActionNode>
   );
@@ -93,10 +135,14 @@ export function TransferActionNode({ data, selected }: NodeProps<ActionNode>) {
 
 export function DelayActionNode({ data, selected }: NodeProps<ActionNode>) {
   return (
-    <BaseActionNode selected={!!selected} icon={Clock} color="bg-slate-500" title="Pausa">
+    <BaseActionNode selected={!!selected} icon={Clock} color="bg-slate-500" title="Pausa (Delay)">
       <p className="text-xs text-muted-foreground">
         Aguardar: <span className="font-medium text-foreground">
-          {data.duration || 3} {data.unit || 'segundos'}
+          {data.delaySeconds ? (
+            (data.delaySeconds as number) >= 60 && (data.delaySeconds as number) % 60 === 0
+              ? `${(data.delaySeconds as number) / 60} min`
+              : `${data.delaySeconds} seg`
+          ) : '5 seg'}
         </span>
       </p>
     </BaseActionNode>
@@ -105,9 +151,9 @@ export function DelayActionNode({ data, selected }: NodeProps<ActionNode>) {
 
 export function WebhookActionNode({ data, selected }: NodeProps<ActionNode>) {
   return (
-    <BaseActionNode selected={!!selected} icon={Webhook} color="bg-orange-500" title="Webhook">
+    <BaseActionNode selected={!!selected} icon={Webhook} color="bg-orange-500" title="Entrada de Dados">
       <p className="text-xs text-muted-foreground truncate">
-        {data.webhookUrl || 'Configurar URL...'}
+        Webhook: {data.webhookUrl || 'Configurar...'}
       </p>
     </BaseActionNode>
   );

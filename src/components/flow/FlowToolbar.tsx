@@ -1,12 +1,12 @@
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { 
-  Save, 
-  Play, 
-  Undo, 
-  Redo, 
-  ZoomIn, 
-  ZoomOut, 
+import {
+  Save,
+  Play,
+  Undo,
+  Redo,
+  ZoomIn,
+  ZoomOut,
   ArrowLeft,
   Loader2,
   Settings2,
@@ -14,8 +14,10 @@ import {
   Hand,
   MessageSquareText,
   UserPlus,
-  Webhook
+  Webhook,
+  Sparkles
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 import {
   DropdownMenu,
@@ -66,6 +68,10 @@ interface FlowToolbarProps {
   onOpenTriggerConfig?: () => void;
   workspaceId?: string | null;
   onWorkspaceChange?: (id: string | null) => void;
+  masterPrompt?: string;
+  onMasterPromptChange?: (prompt: string) => void;
+  isMasterActive?: boolean;
+  onMasterActiveChange?: (active: boolean) => void;
 }
 
 export function FlowToolbar({
@@ -88,6 +94,10 @@ export function FlowToolbar({
   onOpenTriggerConfig,
   workspaceId,
   onWorkspaceChange,
+  masterPrompt = '',
+  onMasterPromptChange,
+  isMasterActive = false,
+  onMasterActiveChange,
 }: FlowToolbarProps) {
   const navigate = useNavigate();
   const { availableWorkspaces, isAdmin } = useWorkspaceContext();
@@ -95,9 +105,9 @@ export function FlowToolbar({
 
   return (
     <div className="flex items-center gap-2">
-      <Button 
-        size="sm" 
-        variant="ghost" 
+      <Button
+        size="sm"
+        variant="ghost"
         onClick={() => navigate('/flows')}
         className="gap-1.5"
       >
@@ -115,35 +125,35 @@ export function FlowToolbar({
 
       <div className="w-px h-6 bg-border" />
 
-      <Button 
-        size="sm" 
-        variant="outline" 
+      <Button
+        size="sm"
+        variant="outline"
         className="gap-1.5"
         onClick={onUndo}
         disabled={!canUndo}
       >
         <Undo className="h-4 w-4" />
       </Button>
-      <Button 
-        size="sm" 
-        variant="outline" 
+      <Button
+        size="sm"
+        variant="outline"
         className="gap-1.5"
         onClick={onRedo}
         disabled={!canRedo}
       >
         <Redo className="h-4 w-4" />
       </Button>
-      <Button 
-        size="sm" 
-        variant="outline" 
+      <Button
+        size="sm"
+        variant="outline"
         className="gap-1.5"
         onClick={onZoomIn}
       >
         <ZoomIn className="h-4 w-4" />
       </Button>
-      <Button 
-        size="sm" 
-        variant="outline" 
+      <Button
+        size="sm"
+        variant="outline"
         className="gap-1.5"
         onClick={onZoomOut}
       >
@@ -176,6 +186,45 @@ export function FlowToolbar({
             <p className="text-xs text-muted-foreground mt-1">
               {isActive ? 'O fluxo será executado quando acionado' : 'O fluxo está pausado'}
             </p>
+          </div>
+          <DropdownMenuSeparator />
+          <div className="p-3 bg-muted/30">
+            <div className="flex items-center justify-between mb-2">
+              <Label className="text-sm font-semibold flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-indigo-500" />
+                Agente Master (Global)
+              </Label>
+              <Switch
+                checked={isMasterActive}
+                onCheckedChange={onMasterActiveChange}
+              />
+            </div>
+            <div className="space-y-2">
+              <div className="relative">
+                <textarea
+                  className="w-full h-32 text-xs p-2 rounded border border-input bg-background resize-none focus:outline-none focus:ring-1 focus:ring-primary"
+                  placeholder="Defina o prompt mestre para este fluxo..."
+                  value={masterPrompt}
+                  onChange={(e) => onMasterPromptChange?.(e.target.value)}
+                />
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="absolute bottom-2 right-2 h-7 w-7 text-indigo-500 hover:text-indigo-600 hover:bg-indigo-50"
+                  onClick={() => {
+                    const template = "Você é o Agente Master deste fluxo de atendimento. \n\nSeu objetivo principal é: [OBJETIVO GLOBAL]. \n\nRegras Gerais: \n1. [REGRA 1]\n2. [REGRA 2]\n\nSempre que necessário, delegue tarefas para os agentes especializados disponíveis no fluxo.";
+                    onMasterPromptChange?.(template);
+                    toast.success("Template de prompt mestre gerado!");
+                  }}
+                  title="Ajudar com IA"
+                >
+                  <Sparkles className="h-4 w-4" />
+                </Button>
+              </div>
+              <p className="text-[10px] text-muted-foreground italic">
+                Este prompt servirá como base para todos os agentes especializados acionados neste fluxo.
+              </p>
+            </div>
           </div>
           <DropdownMenuSeparator />
           <div className="p-2">
@@ -237,9 +286,9 @@ export function FlowToolbar({
         <span className="text-xs">{triggerLabels[triggerType]?.label}</span>
       </Badge>
 
-      <Button 
-        size="sm" 
-        variant="outline" 
+      <Button
+        size="sm"
+        variant="outline"
         className="gap-1.5"
         onClick={onTest}
         disabled={!canTest}
@@ -249,8 +298,8 @@ export function FlowToolbar({
         Testar
       </Button>
 
-      <Button 
-        size="sm" 
+      <Button
+        size="sm"
         className={cn(
           "gap-1.5",
           hasUnsavedChanges && !isSaving && "bg-amber-600 hover:bg-amber-700"

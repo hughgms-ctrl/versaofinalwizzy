@@ -59,35 +59,56 @@ export function WhatsAppInstancesSettings() {
 
   // Poll for connection when showing QR code
   useEffect(() => {
-    if (!connectingInstanceId || !qrCode || !session?.access_token) return;
+    if (!connectingInstanceId || !qrCode) return;
     const interval = setInterval(async () => {
       try {
         const response = await supabase.functions.invoke('zapi-check-status', {
-          headers: { Authorization: `Bearer ${session.access_token}` }
+          headers: { Authorization: `Bearer ${session?.access_token}` }
         });
+
+        // Check the specific connecting instance
         const inst = response.data?.instances?.find((i: any) => i.id === connectingInstanceId);
-        if (inst?.connected) {
+        const isConnected = inst?.connected || inst?.status === 'connected';
+
+        if (isConnected) {
           setConnectingInstanceId(null);
           setQrCode(null);
           queryClient.invalidateQueries({ queryKey: ['whatsapp-instances'] });
-          toast({ title: 'WhatsApp conectado!', description: 'Sincronizando conversas...' });
+          toast({ title: '✅ WhatsApp conectado!', description: 'Sincronizando conversas...' });
           handleSync(connectingInstanceId);
         }
-      } catch { /* ignore */ }
-    }, 5000);
+      } catch (err) {
+        console.error('[UAZAPI Polling Error]', err);
+      }
+    }, 4000);
     return () => clearInterval(interval);
-  }, [connectingInstanceId, qrCode, session?.access_token]);
+  }, [connectingInstanceId, qrCode]);
 
   const handleAddNumber = async () => {
     if (!session?.access_token) return;
     setIsAddingNumber(true);
     try {
       // Create a new instance via zapi-create-instance
+      // NOTE: Do NOT pass Authorization header manually.
+      // The supabase client manages token refresh internally.
       const response = await supabase.functions.invoke('zapi-create-instance', {
-        headers: { Authorization: `Bearer ${session.access_token}` }
+        headers: { Authorization: `Bearer ${session?.access_token}` }
       });
-      if (response.error) throw response.error;
-      if (response.data?.error) throw new Error(response.data.error);
+
+      if (response.error) {
+        const ctx = (response.error as any)?.context;
+        let detail = response.error.message;
+        if (ctx) {
+          try {
+            const ctxBody = typeof ctx === 'string' ? JSON.parse(ctx) : await ctx.json?.();
+            detail = JSON.stringify(ctxBody);
+          } catch {
+            detail = String(ctx);
+          }
+        }
+        throw new Error(detail);
+      }
+      if (response.data?.error) throw new Error(JSON.stringify(response.data));
 
       queryClient.invalidateQueries({ queryKey: ['whatsapp-instances'] });
 
@@ -96,8 +117,8 @@ export function WhatsAppInstancesSettings() {
       if (instanceDbId) {
         // Fetch QR code
         const qrResponse = await supabase.functions.invoke('zapi-get-qrcode', {
-          headers: { Authorization: `Bearer ${session.access_token}` },
           body: { instanceId: instanceDbId },
+          headers: { Authorization: `Bearer ${session?.access_token}` }
         });
         if (qrResponse.data?.connected) {
           toast({ title: 'Já conectado!' });
@@ -108,7 +129,9 @@ export function WhatsAppInstancesSettings() {
         }
       }
     } catch (error: any) {
-      toast({ title: 'Erro', description: error.message || 'Falha ao criar instância', variant: 'destructive' });
+      const msg = error.message || 'Falha ao criar instância';
+      console.error('[UAZAPI ERROR]', msg);
+      toast({ title: 'Erro', description: msg.substring(0, 200), variant: 'destructive' });
     } finally {
       setIsAddingNumber(false);
     }
@@ -119,8 +142,8 @@ export function WhatsAppInstancesSettings() {
     setIsActionLoading(instanceId);
     try {
       const response = await supabase.functions.invoke('zapi-get-qrcode', {
-        headers: { Authorization: `Bearer ${session.access_token}` },
         body: { instanceId },
+        headers: { Authorization: `Bearer ${session?.access_token}` }
       });
       if (response.error) throw response.error;
       if (response.data.connected) {
@@ -142,8 +165,8 @@ export function WhatsAppInstancesSettings() {
     setIsActionLoading(instanceId);
     try {
       const response = await supabase.functions.invoke('zapi-disconnect', {
-        headers: { Authorization: `Bearer ${session.access_token}` },
         body: { instanceId },
+        headers: { Authorization: `Bearer ${session?.access_token}` }
       });
       if (response.error) throw response.error;
       queryClient.invalidateQueries({ queryKey: ['whatsapp-instances'] });
@@ -180,13 +203,29 @@ export function WhatsAppInstancesSettings() {
 
     try {
       const response = await supabase.functions.invoke('zapi-sync-chats', {
-        headers: { Authorization: `Bearer ${session.access_token}` },
         body: { instanceId },
       });
       clearInterval(progressInterval);
       setSyncProgress(100);
       if (response.error) throw response.error;
-      toast({ title: 'Sincronização concluída!', description: `${response.data?.syncedConversations || 0} conversas sincronizadas.` });
+
+      const data = response.data || {};
+      const total = data.totalChats ?? 0;
+      const valid = data.processedChats ?? 0;
+      const synced = data.syncedConversations ?? 0;
+
+      if (synced === 0 && total > 0) {
+        toast({
+          title: 'Sincronização concluída (Zerada)',
+          description: `Achamos ${total} chats, mas o filtro barrou todos (${valid} válidos).`,
+          variant: 'default'
+        });
+      } else {
+        toast({
+          title: 'Sincronização concluída!',
+          description: `${synced} conversas sincronizadas (${total} total na UAZAPI).`
+        });
+      }
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
     } catch (error: any) {
       clearInterval(progressInterval);
@@ -285,85 +324,92 @@ export function WhatsAppInstancesSettings() {
             </div>
           )}
 
-          {/* Instance list */}
-          {instances.length === 0 ? (
-            <div className="text-center py-8">
-              <Smartphone className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <p className="text-lg font-medium">Nenhum número configurado</p>
-              <p className="text-muted-foreground mb-4">Adicione um número WhatsApp para começar.</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {instances.map((instance) => {
-                const workspace = getWorkspaceForInstance(instance.id);
-                const isConnected = instance.status === 'connected';
-                const hasCredentials = !!instance.zapi_instance_id;
+          {/* Instance list - hide instance being connected while QR is showing */}
+          {(() => {
+            const visibleInstances = instances.filter(i =>
+              !(connectingInstanceId && i.id === connectingInstanceId)
+            );
+            if (visibleInstances.length === 0 && !connectingInstanceId) return (
+              <div className="text-center py-8">
+                <Smartphone className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <p className="text-lg font-medium">Nenhum número configurado</p>
+                <p className="text-muted-foreground mb-4">Adicione um número WhatsApp para começar.</p>
+              </div>
+            );
+            if (visibleInstances.length === 0) return null;
+            return (
+              <div className="space-y-3">
+                {visibleInstances.map((instance) => {
+                  const workspace = getWorkspaceForInstance(instance.id);
+                  const isConnected = instance.status === 'connected';
+                  const hasCredentials = !!instance.zapi_instance_id;
 
-                return (
-                  <div key={instance.id} className="flex items-center justify-between p-4 border rounded-lg bg-card hover:bg-muted/30 transition-colors">
-                    <div className="flex items-center gap-3 flex-1 min-w-0">
-                      <div className={`h-10 w-10 rounded-full flex items-center justify-center ${isConnected ? 'bg-green-500' : 'bg-muted'}`}>
-                        <MessageSquare className={`h-5 w-5 ${isConnected ? 'text-white' : 'text-muted-foreground'}`} />
+                  return (
+                    <div key={instance.id} className="flex items-center justify-between p-4 border rounded-lg bg-card hover:bg-muted/30 transition-colors">
+                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                        <div className={`h-10 w-10 rounded-full flex items-center justify-center ${isConnected ? 'bg-green-500' : 'bg-muted'}`}>
+                          <MessageSquare className={`h-5 w-5 ${isConnected ? 'text-white' : 'text-muted-foreground'}`} />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium text-foreground truncate">
+                              {instance.label || 'Sem nome'}
+                            </p>
+                            {isConnected ? (
+                              <Badge className="bg-green-500/10 text-green-500 border-green-500/20 text-[10px]">
+                                <CheckCircle className="h-3 w-3 mr-1" />
+                                Conectado
+                              </Badge>
+                            ) : hasCredentials ? (
+                              <Badge variant="secondary" className="text-[10px]">
+                                <XCircle className="h-3 w-3 mr-1" />
+                                Desconectado
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-[10px]">Pendente</Badge>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
+                            {instance.phone_number && <span>{instance.phone_number}</span>}
+                            {workspace && (
+                              <Badge variant="outline" className="text-[10px] py-0" style={{ borderColor: workspace.color, color: workspace.color }}>
+                                {workspace.name}
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <p className="font-medium text-foreground truncate">
-                            {instance.label || 'Sem nome'}
-                          </p>
-                          {isConnected ? (
-                            <Badge className="bg-green-500/10 text-green-500 border-green-500/20 text-[10px]">
-                              <CheckCircle className="h-3 w-3 mr-1" />
-                              Conectado
-                            </Badge>
-                          ) : hasCredentials ? (
-                            <Badge variant="secondary" className="text-[10px]">
-                              <XCircle className="h-3 w-3 mr-1" />
-                              Desconectado
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline" className="text-[10px]">Pendente</Badge>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
-                          {instance.phone_number && <span>{instance.phone_number}</span>}
-                          {workspace && (
-                            <Badge variant="outline" className="text-[10px] py-0" style={{ borderColor: workspace.color, color: workspace.color }}>
-                              {workspace.name}
-                            </Badge>
-                          )}
-                        </div>
+                      <div className="flex items-center gap-1">
+                        {isConnected && (
+                          <>
+                            <Button variant="ghost" size="sm" onClick={() => handleSync(instance.id)} disabled={!!isSyncing} title="Sincronizar">
+                              <Download className="h-4 w-4" />
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => handleDisconnect(instance.id)} disabled={isActionLoading === instance.id}>
+                              {isActionLoading === instance.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
+                            </Button>
+                          </>
+                        )}
+                        {!isConnected && hasCredentials && (
+                          <Button variant="ghost" size="sm" onClick={() => handleConnect(instance.id)} disabled={isActionLoading === instance.id}>
+                            {isActionLoading === instance.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
+                          </Button>
+                        )}
+                        <Button variant="ghost" size="icon" onClick={() => setEditingInstance(instance)}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        {!isConnected && (
+                          <Button variant="ghost" size="icon" onClick={() => handleDelete(instance.id)} disabled={deleteInstance.isPending}>
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-1">
-                      {isConnected && (
-                        <>
-                          <Button variant="ghost" size="sm" onClick={() => handleSync(instance.id)} disabled={!!isSyncing} title="Sincronizar">
-                            <Download className="h-4 w-4" />
-                          </Button>
-                          <Button variant="ghost" size="sm" onClick={() => handleDisconnect(instance.id)} disabled={isActionLoading === instance.id}>
-                            {isActionLoading === instance.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
-                          </Button>
-                        </>
-                      )}
-                      {!isConnected && hasCredentials && (
-                        <Button variant="ghost" size="sm" onClick={() => handleConnect(instance.id)} disabled={isActionLoading === instance.id}>
-                          {isActionLoading === instance.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
-                        </Button>
-                      )}
-                      <Button variant="ghost" size="icon" onClick={() => setEditingInstance(instance)}>
-                        <Pencil className="h-4 w-4" />
-                      </Button>
-                      {!isConnected && (
-                        <Button variant="ghost" size="icon" onClick={() => handleDelete(instance.id)} disabled={deleteInstance.isPending}>
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+                  );
+                })}
+              </div>
+            );
+          })()}
         </CardContent>
       </Card>
 

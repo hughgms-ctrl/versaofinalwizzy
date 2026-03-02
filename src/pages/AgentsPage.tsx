@@ -1,15 +1,14 @@
 import { MainLayout } from '@/components/layout/MainLayout';
 import { AgentsTab } from '@/components/agents/AgentsTab';
-import { MasterPromptsTab } from '@/components/agents/MasterPromptsTab';
 import { WorkspaceAgentsTab } from '@/components/agents/WorkspaceAgentsTab';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Bot, FileText, Settings2 } from 'lucide-react';
+import { Bot, Settings2 } from 'lucide-react';
 
 const AgentsPage = () => {
   return (
     <MainLayout
-      title="Agentes de IA (V14)"
-      subtitle="[V14] Configure agentes, prompts mestre e orquestração por workspace"
+      title="Agentes de IA (V15)"
+      subtitle="Configure seus agentes especialistas para uso nos fluxos de atendimento"
     >
       <Tabs defaultValue="agents" className="w-full">
         <TabsList className="mb-6">

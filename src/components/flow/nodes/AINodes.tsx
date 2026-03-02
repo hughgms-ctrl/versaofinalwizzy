@@ -27,22 +27,23 @@ export function AIHandoffNode({ data, selected }: NodeProps<AINode>) {
 
       <div className="flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-violet-500 to-purple-600 rounded-t-[10px]">
         <Bot className="h-4 w-4 text-white" />
-        <span className="font-medium text-sm text-white">Transbordo IA</span>
+        <span className="font-medium text-sm text-white">Agente IA</span>
         <Sparkles className="h-3 w-3 text-white/70 ml-auto" />
       </div>
+      {/* Build trigger comment */}
 
       <div className="p-3 bg-card rounded-b-[10px] space-y-2">
         <p className="text-xs text-muted-foreground">
           Agente: <span className="font-medium text-foreground">{data.agentName || 'Selecionar...'}</span>
         </p>
-        {data.contextMessage && (
+        {data.additionalPrompt && (
           <p className="text-xs text-muted-foreground italic">
-            "{data.contextMessage}"
+            "{data.additionalPrompt as string}"
           </p>
         )}
         <div className="flex items-center gap-1.5 text-[10px] text-violet-600 dark:text-violet-400">
           <Sparkles className="h-3 w-3" />
-          <span>A IA assumirá a conversa</span>
+          <span>O Agente IA assumirá a conversa</span>
         </div>
       </div>
 

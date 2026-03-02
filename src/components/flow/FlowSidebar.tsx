@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { 
-  MessageSquare, 
-  Zap, 
-  GitBranch, 
+import {
+  MessageSquare,
+  Zap,
+  GitBranch,
   Sparkles,
   Type,
   Image,
@@ -21,7 +21,8 @@ import {
   GripVertical,
   Layers,
   PanelLeftClose,
-  PanelLeft
+  PanelLeft,
+  FileText
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { flowComponentCategories } from '@/data/flowComponents';
@@ -46,6 +47,7 @@ const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   Bot,
   IterationCw,
   Layers,
+  FileText,
 };
 
 interface FlowSidebarProps {
@@ -55,11 +57,11 @@ interface FlowSidebarProps {
 }
 
 export function FlowSidebar({ onDragStart, isCollapsed, onToggleCollapse }: FlowSidebarProps) {
-  const [expandedCategories, setExpandedCategories] = useState<string[]>(['content', 'actions', 'logic', 'ai']);
+  const [expandedCategories, setExpandedCategories] = useState<string[]>(['agents', 'actions', 'logic']);
 
   const toggleCategory = (categoryId: string) => {
-    setExpandedCategories(prev => 
-      prev.includes(categoryId) 
+    setExpandedCategories(prev =>
+      prev.includes(categoryId)
         ? prev.filter(id => id !== categoryId)
         : [...prev, categoryId]
     );

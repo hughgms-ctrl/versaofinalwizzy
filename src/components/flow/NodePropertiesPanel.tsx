@@ -3,17 +3,23 @@ import { Node } from '@xyflow/react';
 import {
   X, Layers, MousePointerClick, List, Tag, Kanban, UserPlus, Webhook,
   GitBranch, FormInput, Bot, IterationCw, Plus, Trash2, GripVertical,
-  Type, Image, Video, Music, FileText, Clock, Upload, Loader2, Save, Sparkles
+  Type, Image, Video, Music, FileText, Clock, Upload, Loader2, Save, Sparkles,
+  Link
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import { FlowNodeType, ContentItem, ContentItemType } from '@/types/flow';
 import { useTags } from '@/hooks/useTags';
 import { useAIAgents } from '@/hooks/useAIAgents';
+import { useFlows } from '@/hooks/useFlows';
+import { useDepartments } from '@/hooks/useCrmEntities';
+import { useDocumentTemplates } from '@/hooks/useDocumentTemplates';
+import { usePipelines } from '@/hooks/usePipelines';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
@@ -38,27 +44,33 @@ const nodeIcons: Record<string, React.ComponentType<{ className?: string }>> = {
   'action-pipeline': Kanban,
   'action-transfer': UserPlus,
   'action-webhook': Webhook,
+  'action-department': Webhook,
+  'action-flow': IterationCw,
   'condition': GitBranch,
   'user-input': FormInput,
   'ai-handoff': Bot,
   'ai-return': IterationCw,
-  'ai-master': Sparkles,
+  'action-document': FileText,
+  'action-delay': Clock,
 };
 
 const nodeLabels: Record<FlowNodeType, string> = {
   'start': 'Início',
-  'content-block': 'Bloco de Conteúdo',
-  'message-buttons': 'Mensagem com Botões',
-  'message-list': 'Mensagem com Lista',
-  'action-tag': 'Adicionar/Remover Tag',
-  'action-pipeline': 'Mover no Pipeline',
-  'action-transfer': 'Transferir Atendimento',
-  'action-webhook': 'Chamar Webhook',
+  'content-block': 'Conteúdo',
+  'message-buttons': 'Botões',
+  'message-list': 'Lista',
+  'ai-handoff': 'Agente IA',
+  'ai-return': 'Retorna ao Fluxo',
+  'action-document': 'Gerar Documento',
+  'action-delay': 'Intervalo (Delay)',
+  'action-transfer': 'Escalação Humana',
+  'action-department': 'Departamento',
+  'action-flow': 'Iniciar Fluxo',
+  'action-webhook': 'Chamar Fluxo/API',
+  'action-tag': 'Tag',
+  'action-pipeline': 'Mover Pipeline',
   'condition': 'Condição',
-  'user-input': 'Entrada do Usuário',
-  'ai-handoff': 'Passar para IA',
-  'ai-return': 'Retornar da IA',
-  'ai-master': 'Agente Master',
+  'user-input': 'Pergunta',
 };
 
 const contentItemTypes: { type: ContentItemType; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
@@ -413,7 +425,13 @@ function ContentItemEditor({
 
 export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave, isSaving, hasUnsavedChanges }: NodePropertiesPanelProps) {
   const [localData, setLocalData] = useState<Record<string, unknown>>({});
-  const { data: tags } = useTags();
+  const [isGenerating, setIsGenerating] = useState(false);
+  const { data: tags = [] } = useTags();
+  const { data: agents = [] } = useAIAgents();
+  const { data: flows = [] } = useFlows();
+  const { data: departments = [] } = useDepartments();
+  const { data: templates = [] } = useDocumentTemplates();
+  const { data: pipelines = [] } = usePipelines();
 
   useEffect(() => {
     if (node) {
@@ -425,12 +443,48 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
 
   const nodeType = node.type as FlowNodeType;
   const Icon = nodeIcons[nodeType] || Layers;
-  const nodeLabel = nodeLabels[nodeType] || (localData.label as string) || 'Nó';
+  let nodeLabel = nodeLabels[nodeType] || (localData.label as string) || 'Nó';
+
+  // Force label for AI Agent node to avoid legacy overrides
+  if (nodeType === 'ai-handoff') {
+    nodeLabel = 'Agente IA';
+  }
 
   const handleChange = (key: string, value: unknown) => {
     const newData = { ...localData, [key]: value };
     setLocalData(newData);
     onUpdate(node.id, newData);
+  };
+
+  const handleGenerateAgentPrompt = async () => {
+    const promptDescription = localData.aiAssistantPrompt as string;
+    if (!promptDescription) {
+      toast.error("Descreva o que o agente deve fazer primeiro.");
+      return;
+    }
+
+    setIsGenerating(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('generate-agent-prompt', {
+        body: {
+          userDescription: promptDescription,
+          agentName: 'Agente Especialista',
+          agentRole: 'Atendimento e Execução no Fluxo'
+        }
+      });
+
+      if (error) throw error;
+
+      if (data?.prompt) {
+        handleChange('contextMessage', data.prompt);
+        toast.success("Prompt gerado com sucesso!");
+      }
+    } catch (error) {
+      console.error('Error generating prompt:', error);
+      toast.error("Erro ao gerar prompt com IA.");
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const renderContentBlockEditor = () => {
@@ -722,170 +776,349 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
           </div>
         );
 
-      case 'ai-handoff':
+      case 'ai-handoff': {
         return (
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="contextMessage">Contexto para a IA (opcional)</Label>
-              <Textarea
-                id="contextMessage"
-                value={(localData.contextMessage as string) || ''}
-                onChange={(e) => handleChange('contextMessage', e.target.value)}
-                placeholder="Instruções adicionais para a IA..."
-                className="min-h-[100px]"
-              />
-              <p className="text-xs text-muted-foreground">
-                A IA assumirá a conversa e usará este contexto como referência.
-              </p>
-            </div>
-          </div>
-        );
-
-      case 'ai-master': {
-        const { data: agents = [] } = useAIAgents();
-        const currentRules = (localData.orchestration_rules as any) || { orchestration_nodes: [], orchestration_edges: [] };
-        const selectedAgentIds = currentRules.orchestration_nodes
-          ?.filter((n: any) => n.type === 'orch-agent')
-          ?.map((n: any) => n.data?.agentId) || [];
-
-        const toggleAgent = (agentId: string, agentName: string) => {
-          let newNodes = [...(currentRules.orchestration_nodes || [])];
-          let newEdges = [...(currentRules.orchestration_edges || [])];
-
-          if (selectedAgentIds.includes(agentId)) {
-            // Remove
-            newNodes = newNodes.filter((n: any) => !(n.type === 'orch-agent' && n.data?.agentId === agentId));
-            // Also remove edges connected to this agent
-            const nodeToRemove = currentRules.orchestration_nodes.find((n: any) => n.type === 'orch-agent' && n.data?.agentId === agentId);
-            if (nodeToRemove) {
-              newEdges = newEdges.filter((e: any) => e.source !== nodeToRemove.id && e.target !== nodeToRemove.id);
-            }
-          } else {
-            // Add
-            const id = `orch_agent_${Math.random().toString(36).substr(2, 5)}`;
-            newNodes.push({
-              id,
-              type: 'orch-agent',
-              position: { x: 250, y: 100 + (newNodes.length * 80) },
-              data: { label: agentName, agentId }
-            });
-            // Connect from trigger if it exists and is the only one
-            const trigger = newNodes.find((n: any) => n.type === 'orch-trigger' || n.id === 'trigger-1');
-            if (trigger) {
-              newEdges.push({
-                id: `e-${trigger.id}-${id}`,
-                source: trigger.id,
-                target: id,
-                animated: true
-              });
-            } else if (!newNodes.some(n => n.type === 'orch-trigger')) {
-              // Add trigger if missing
-              newNodes.unshift({
-                id: 'trigger-1',
-                type: 'orch-trigger',
-                position: { x: 50, y: 200 },
-                data: { label: 'Entrada' }
-              });
-              newEdges.push({
-                id: `e-trigger-1-${id}`,
-                source: 'trigger-1',
-                target: id,
-                animated: true
-              });
-            }
-          }
-
-          handleChange('orchestration_rules', {
-            orchestration_nodes: newNodes,
-            orchestration_edges: newEdges
-          });
-        };
-
-        return (
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="niche">Nicho / Área de Atuação</Label>
-              <Input
-                id="niche"
-                value={(localData.niche as string) || ''}
-                onChange={(e) => handleChange('niche', e.target.value)}
-                placeholder="Ex.: direito_saude, vendas_premium..."
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="prompt">Instruções do Mestre (System Prompt)</Label>
-              <Textarea
-                id="prompt"
-                value={(localData.prompt as string) || ''}
-                onChange={(e) => handleChange('prompt', e.target.value)}
-                placeholder="Você é um assistente virtual especializado em..."
-                className="min-h-[120px] text-sm"
-              />
-            </div>
-
-            <div className="space-y-3 pt-2 border-t border-border">
-              <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Agentes Especializados Disponíveis
-              </Label>
-              <div className="grid grid-cols-1 gap-2 max-h-[200px] overflow-y-auto pr-1">
-                {agents.map((agent: any) => (
-                  <div
-                    key={agent.id}
-                    onClick={() => toggleAgent(agent.id, agent.name)}
-                    className={cn(
-                      "flex items-center gap-3 p-2 rounded-lg border-2 cursor-pointer transition-all",
-                      selectedAgentIds.includes(agent.id)
-                        ? "border-indigo-500 bg-indigo-500/5 shadow-sm"
-                        : "border-transparent bg-muted/30 hover:bg-muted/50"
-                    )}
-                  >
-                    <div className={cn(
-                      "w-8 h-8 rounded-full flex items-center justify-center",
-                      selectedAgentIds.includes(agent.id) ? "bg-indigo-500 text-white" : "bg-muted text-muted-foreground"
-                    )}>
-                      <Bot className="h-4 w-4" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium truncate">{agent.name}</p>
-                      <p className="text-[10px] text-muted-foreground truncate">{agent.role || 'Especialista'}</p>
-                    </div>
-                    {selectedAgentIds.includes(agent.id) && (
-                      <div className="w-2 h-2 rounded-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.6)]" />
-                    )}
-                  </div>
-                ))}
-                {agents.length === 0 && (
-                  <p className="text-[11px] text-muted-foreground italic text-center py-4">
-                    Nenhum agente especializado encontrado.
-                  </p>
-                )}
-              </div>
-            </div>
-
-            <div className="space-y-2 pt-2 border-t border-border">
-              <Label htmlFor="orchestration_rules" className="text-[10px] text-muted-foreground flex items-center gap-2">
-                <Zap className="h-3 w-3" /> Configuração Avançada (JSON)
-              </Label>
-              <Textarea
-                id="orchestration_rules"
-                value={typeof localData.orchestration_rules === 'string'
-                  ? localData.orchestration_rules
-                  : JSON.stringify(localData.orchestration_rules || {}, null, 2)}
-                onChange={(e) => {
-                  try {
-                    const parsed = JSON.parse(e.target.value);
-                    handleChange('orchestration_rules', parsed);
-                  } catch (err) {
-                    handleChange('orchestration_rules', e.target.value);
-                  }
+              <Label htmlFor="agentId" className="text-xs font-semibold">Agente IA</Label>
+              <Select
+                value={(localData.agentId as string) || ''}
+                onValueChange={(value) => {
+                  const agent = agents.find(a => a.id === value);
+                  const newData = {
+                    ...localData,
+                    agentId: value,
+                    agentName: agent?.name || 'Agente IA'
+                  };
+                  setLocalData(newData);
+                  onUpdate(node.id, newData);
                 }}
-                className="min-h-[80px] font-mono text-[9px] bg-muted/20"
+              >
+                <SelectTrigger id="agentId" className="h-11 border-rose-500/50 focus:ring-rose-500 rounded-xl bg-background/50">
+                  <SelectValue placeholder="Selecionar agente..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {agents.map((agent) => (
+                    <SelectItem key={agent.id} value={agent.id}>
+                      {agent.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="additionalPrompt" className="text-xs font-semibold">Prompt adicional</Label>
+              <p className="text-[10px] text-muted-foreground leading-tight">
+                Instruções específicas para este agente neste fluxo (não altera o agente globalmente).
+              </p>
+              <Textarea
+                id="additionalPrompt"
+                value={(localData.additionalPrompt as string) || ''}
+                onChange={(e) => handleChange('additionalPrompt', e.target.value)}
+                placeholder="Instruções extras para este agente neste contexto..."
+                className="min-h-[100px] text-sm bg-background/50 rounded-xl border-rose-500/20"
               />
+            </div>
+
+            <div className="p-3 rounded-2xl border border-dashed border-rose-500/40 bg-rose-500/5 space-y-3 mt-2">
+              <div className="flex items-center gap-2 text-rose-500">
+                <Sparkles className="h-4 w-4" />
+                <span className="text-xs font-semibold">Assistente IA</span>
+              </div>
+
+              <Textarea
+                placeholder="Descreva o que este agente deve fazer neste fluxo..."
+                className="min-h-[60px] text-xs bg-black/20 border-rose-500/20 focus-visible:ring-rose-500 rounded-xl"
+                value={(localData.aiAssistantPrompt as string) || ''}
+                onChange={(e) => handleChange('aiAssistantPrompt', e.target.value)}
+              />
+
+              <Button
+                size="sm"
+                disabled={isGenerating}
+                className="w-full h-10 gap-2 bg-gradient-to-r from-rose-600 to-rose-800 hover:from-rose-700 hover:to-rose-900 text-white text-xs font-medium rounded-xl border-none shadow-lg shadow-rose-900/20 disabled:opacity-70"
+                onClick={handleGenerateAgentPrompt}
+              >
+                {isGenerating ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Sparkles className="h-3.5 w-3.5" />
+                )}
+                {isGenerating ? 'Gerando...' : 'Gerar com IA'}
+              </Button>
             </div>
           </div>
         );
       }
+
+      case 'action-flow':
+        return (
+          <div className="space-y-4">
+            <div className="p-3 bg-indigo-50 rounded-lg flex items-center gap-3">
+              <IterationCw className="h-5 w-5 text-indigo-500" />
+              <div>
+                <p className="text-xs font-semibold">Iniciar Fluxo</p>
+                <p className="text-[10px] text-muted-foreground text-indigo-700/70">Dispara outro fluxo de automação.</p>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Fluxo</Label>
+              <Select
+                value={(localData.flowId as string) || ''}
+                onValueChange={(val) => {
+                  const flow = flows.find(f => f.id === val);
+                  const newData = {
+                    ...localData,
+                    flowId: val,
+                    flowName: flow?.name || 'Fluxo'
+                  };
+                  setLocalData(newData);
+                  onUpdate(node.id, newData);
+                }}
+              >
+                <SelectTrigger><SelectValue placeholder="Selecione um fluxo..." /></SelectTrigger>
+                <SelectContent>
+                  {flows.map((f) => (
+                    <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center justify-between p-2 rounded-lg bg-indigo-50/50">
+              <div className="space-y-0.5">
+                <Label className="text-xs">Aguardar resposta</Label>
+                <p className="text-[10px] text-muted-foreground">Pausa o orquestrador até o fluxo terminar.</p>
+              </div>
+              <Switch
+                checked={(localData.waitForResponse as boolean) !== false}
+                onCheckedChange={(val) => handleChange('waitForResponse', val)}
+              />
+            </div>
+          </div>
+        );
+
+      case 'action-department':
+        return (
+          <div className="space-y-4">
+            <div className="p-3 bg-cyan-50 rounded-lg flex items-center gap-3">
+              <Webhook className="h-5 w-5 text-cyan-500" />
+              <div>
+                <p className="text-xs font-semibold">Alterar Departamento</p>
+                <p className="text-[10px] text-muted-foreground text-cyan-700/70">Muda a conversa para outro departamento.</p>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Departamento</Label>
+              <Select
+                value={(localData.departmentId as string) || ''}
+                onValueChange={(val) => {
+                  const dept = departments.find(d => d.id === val);
+                  const newData = {
+                    ...localData,
+                    departmentId: val,
+                    departmentName: dept?.name || 'Departamento'
+                  };
+                  setLocalData(newData);
+                  onUpdate(node.id, newData);
+                }}
+              >
+                <SelectTrigger><SelectValue placeholder="Selecione um departamento..." /></SelectTrigger>
+                <SelectContent>
+                  {departments.map((d) => (
+                    <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        );
+
+      case 'action-delay':
+        return (
+          <div className="space-y-4">
+            <div className="p-3 bg-muted/30 rounded-lg flex items-center gap-3">
+              <Clock className="h-5 w-5 text-slate-500" />
+              <div>
+                <p className="text-xs font-semibold">Intervalo de Pausa</p>
+                <p className="text-[10px] text-muted-foreground">Define quanto tempo o fluxo aguardará antes de prosseguir.</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Tempo</Label>
+                <Input
+                  type="number"
+                  value={localData.unit === 'minutes' ? (localData.delaySeconds as number || 300) / 60 : (localData.delaySeconds as number || 5)}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value);
+                    const seconds = localData.unit === 'minutes' ? val * 60 : val;
+                    handleChange('delaySeconds', seconds);
+                  }}
+                  min={1}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Unidade</Label>
+                <Select
+                  value={(localData.unit as string) || 'seconds'}
+                  onValueChange={(val) => {
+                    const currentVal = localData.unit === 'minutes' ? (localData.delaySeconds as number || 300) / 60 : (localData.delaySeconds as number || 5);
+                    const seconds = val === 'minutes' ? currentVal * 60 : currentVal;
+                    setLocalData(prev => ({ ...prev, unit: val, delaySeconds: seconds }));
+                    onUpdate(node.id, { ...localData, unit: val, delaySeconds: seconds });
+                  }}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="seconds">Segundos</SelectItem>
+                    <SelectItem value="minutes">Minutos</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+        );
+
+      case 'action-document':
+        return (
+          <div className="space-y-4">
+            <div className="p-3 bg-rose-50 rounded-lg flex items-center gap-3">
+              <FileText className="h-5 w-5 text-rose-500" />
+              <div>
+                <p className="text-xs font-semibold">Gerar Contrato / Documento</p>
+                <p className="text-[10px] text-muted-foreground text-rose-700/70">Utiliza as variáveis do fluxo para preencher um PDF.</p>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Template do Documento</Label>
+              <Select
+                value={(localData.templateId as string) || ''}
+                onValueChange={(val) => {
+                  const template = templates.find(t => t.id === val);
+                  const newData = {
+                    ...localData,
+                    templateId: val,
+                    templateName: template?.name || 'Template'
+                  };
+                  setLocalData(newData);
+                  onUpdate(node.id, newData);
+                }}
+              >
+                <SelectTrigger><SelectValue placeholder="Selecione um template..." /></SelectTrigger>
+                <SelectContent>
+                  {templates.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Método de Assinatura</Label>
+              <Select
+                value={(localData.signingMethod as string) || 'manual'}
+                onValueChange={(val) => handleChange('signingMethod', val)}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="manual">Manual / PDF Direto</SelectItem>
+                  <SelectItem value="govbr">Gov.br</SelectItem>
+                  <SelectItem value="zapsign">ZapSign</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-3 pt-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">Solicitar confirmação</Label>
+                <Switch
+                  checked={(localData.requireConfirmation as boolean) !== false}
+                  onCheckedChange={(val) => handleChange('requireConfirmation', val)}
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">Enviar PDF no chat</Label>
+                <Switch
+                  checked={(localData.sendPdfInChat as boolean) !== false}
+                  onCheckedChange={(val) => handleChange('sendPdfInChat', val)}
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">Enviar link de assinatura</Label>
+                <Switch
+                  checked={(localData.sendSignatureLink as boolean) !== false}
+                  onCheckedChange={(val) => handleChange('sendSignatureLink', val)}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-xs">Instruções Adicionais</Label>
+              <Textarea
+                value={(localData.additionalInstructions as string) || ''}
+                onChange={(e) => handleChange('additionalInstructions', e.target.value)}
+                placeholder="Ex: Peça o CPF se não tiver..."
+                className="text-xs min-h-[60px]"
+              />
+            </div>
+          </div>
+        );
+
+      case 'condition':
+        return (
+          <div className="space-y-4">
+            <div className="p-3 bg-yellow-50 rounded-lg flex items-center gap-3">
+              <GitBranch className="h-5 w-5 text-yellow-600" />
+              <div>
+                <p className="text-xs font-semibold">Condição de Desvio</p>
+                <p className="text-[10px] text-muted-foreground text-yellow-800/70">Avalia uma variável para decidir o próximo passo.</p>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Descrição da Condição</Label>
+              <Input
+                value={(localData.conditionLabel as string) || ''}
+                onChange={(e) => handleChange('conditionLabel', e.target.value)}
+                placeholder="Ex: Se cliente for VIP"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-2">
+                <Label>Variável</Label>
+                <Input
+                  value={(localData.variable as string) || ''}
+                  onChange={(e) => handleChange('variable', e.target.value)}
+                  placeholder="Ex: status"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Operador</Label>
+                <Select
+                  value={(localData.operator as string) || 'equals'}
+                  onValueChange={(val) => handleChange('operator', val)}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="equals">Igual a</SelectItem>
+                    <SelectItem value="not_equals">Diferente de</SelectItem>
+                    <SelectItem value="contains">Contém</SelectItem>
+                    <SelectItem value="greater_than">Maior que</SelectItem>
+                    <SelectItem value="less_than">Menor que</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Valor</Label>
+              <Input
+                value={(localData.value as string) || ''}
+                onChange={(e) => handleChange('value', e.target.value)}
+                placeholder="Valor para comparar"
+              />
+            </div>
+          </div>
+        );
 
       default:
         return (
@@ -898,6 +1131,7 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
 
   return (
     <div className="w-80 bg-card border-l border-border h-full flex flex-col">
+      {/* Build trigger force comment */}
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-border">
         <div className="flex items-center gap-2">

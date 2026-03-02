@@ -25,10 +25,10 @@ export function useWhatsAppStatus() {
 
   const syncChats = useCallback(async () => {
     if (isSyncing.current || !session?.access_token) return;
-    
+
     isSyncing.current = true;
     console.log('Auto-syncing chats after reconnection...');
-    
+
     try {
       const { data, error } = await supabase.functions.invoke('zapi-sync-chats', {
         headers: { Authorization: `Bearer ${session.access_token}` }
@@ -38,7 +38,16 @@ export function useWhatsAppStatus() {
         console.error('Sync error:', error);
       } else {
         console.log('Sync completed:', data);
-        toast.success(`Sincronização concluída: ${data?.syncedConversations || 0} conversas`);
+        const total = data?.totalChats ?? '0';
+        const valid = data?.processedChats ?? '0';
+        const synced = data?.syncedConversations ?? '0';
+
+        if (synced === 0 && total > 0) {
+          toast.info(`UAZAPI achou ${total} conversas, mas o filtro barrou todas (${valid} válidas).`);
+        } else {
+          toast.success(`Sincronização concluída: ${synced} conversas (${total} total na UAZAPI)`);
+        }
+
         // Invalidate all relevant queries
         queryClient.invalidateQueries({ queryKey: ['conversations'] });
       }
@@ -57,24 +66,24 @@ export function useWhatsAppStatus() {
 
     try {
       const response = await supabase.functions.invoke('zapi-check-status', {
-        headers: { Authorization: `Bearer ${session.access_token}` }
+        headers: { Authorization: `Bearer ${session?.access_token}` }
       });
 
       if (response.error) throw response.error;
 
       const newConnected = response.data.connected;
       const needsSync = response.data.needsSync;
-      
+
       // If connection status changed, invalidate queries
       if (wasConnected !== null && wasConnected !== newConnected) {
         queryClient.invalidateQueries({ queryKey: ['conversations'] });
       }
-      
+
       // Trigger sync if backend indicates it's needed (reconnection or phone change)
       if (needsSync && newConnected && !isSyncing.current) {
         syncChats();
       }
-      
+
       setWasConnected(newConnected);
       setStatus({
         status: newConnected ? 'connected' : response.data.status,

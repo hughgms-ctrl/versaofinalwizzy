@@ -28,7 +28,16 @@ import { FlowTestPanel } from './FlowTestPanel';
 import { StartNode } from './nodes/StartNode';
 import { ContentBlockNode } from './nodes/ContentBlockNode';
 import { ButtonsMessageNode, ListMessageNode } from './nodes/MessageNodes';
-import { TagActionNode, PipelineActionNode, TransferActionNode, DelayActionNode, WebhookActionNode } from './nodes/ActionNodes';
+import {
+  TagActionNode,
+  PipelineActionNode,
+  TransferActionNode,
+  DelayActionNode,
+  WebhookActionNode,
+  DepartmentActionNode,
+  FlowActionNode,
+  DocumentActionNode
+} from './nodes/ActionNodes';
 import { ConditionNode, UserInputNode } from './nodes/LogicNodes';
 import { AIHandoffNode, AIMasterNode, AIReturnNode } from './nodes/AINodes';
 import { FlowNodeType } from '@/types/flow';
@@ -46,10 +55,12 @@ const nodeTypes = {
   'action-transfer': TransferActionNode,
   'action-delay': DelayActionNode,
   'action-webhook': WebhookActionNode,
+  'action-flow': FlowActionNode,
+  'action-department': DepartmentActionNode,
+  'action-document': DocumentActionNode,
   'condition': ConditionNode,
   'user-input': UserInputNode,
   'ai-handoff': AIHandoffNode,
-  'ai-master': AIMasterNode,
   'ai-return': AIReturnNode,
 };
 
@@ -89,6 +100,8 @@ function FlowCanvasInner() {
   const [flowWorkspaceId, setFlowWorkspaceId] = useState<string | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [lastSavedState, setLastSavedState] = useState<string>('');
+  const [masterPrompt, setMasterPrompt] = useState('');
+  const [isMasterActive, setIsMasterActive] = useState(false);
 
   const { zoomIn, zoomOut, setViewport, getViewport, screenToFlowPosition } = useReactFlow();
   const { data: flow, isLoading } = useFlow(flowId);
@@ -104,6 +117,8 @@ function FlowCanvasInner() {
       setTriggerConfig(flow.trigger_config || {});
       setFlowWorkspaceId(flow.workspace_id || null);
       setIsActive(flow.is_active);
+      setMasterPrompt(flow.master_prompt || '');
+      setIsMasterActive(flow.is_master_active || false);
 
       if (flow.nodes && flow.nodes.length > 0) {
         setNodes(flow.nodes as Node[]);
@@ -142,7 +157,7 @@ function FlowCanvasInner() {
     }
 
     if (isInitialized && lastSavedState) {
-      const currentState = JSON.stringify({ nodes, edges, name: flowName });
+      const currentState = JSON.stringify({ nodes, edges, name: flowName, masterPrompt, isMasterActive });
       setHasUnsavedChanges(currentState !== lastSavedState);
     }
   }, [nodes, edges, flowName, isInitialized, lastSavedState, flowId]);
@@ -200,7 +215,7 @@ function FlowCanvasInner() {
               trigger_config: triggerConfig,
             }, {
               onSuccess: () => {
-                const currentState = JSON.stringify({ nodes, edges, name: flowName });
+                const currentState = JSON.stringify({ nodes, edges, name: flowName, masterPrompt, isMasterActive });
                 setLastSavedState(currentState);
                 setHasUnsavedChanges(false);
               }
@@ -220,14 +235,16 @@ function FlowCanvasInner() {
       trigger_type: triggerType,
       trigger_config: triggerConfig,
       workspace_id: flowWorkspaceId,
+      master_prompt: masterPrompt,
+      is_master_active: isMasterActive,
     }, {
       onSuccess: () => {
-        const currentState = JSON.stringify({ nodes, edges, name: flowName });
+        const currentState = JSON.stringify({ nodes, edges, name: flowName, masterPrompt, isMasterActive });
         setLastSavedState(currentState);
         setHasUnsavedChanges(false);
       }
     });
-  }, [flowId, flowName, nodes, edges, isActive, triggerType, triggerConfig, flowWorkspaceId, saveFlow, createFlow, setSearchParams]);
+  }, [flowId, flowName, nodes, edges, isActive, triggerType, triggerConfig, flowWorkspaceId, masterPrompt, isMasterActive, saveFlow, createFlow, setSearchParams]);
 
   const handleNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
     if (node.type !== 'start') {
@@ -411,6 +428,10 @@ function FlowCanvasInner() {
               onOpenTriggerConfig={() => setShowTriggerConfig(true)}
               workspaceId={flowWorkspaceId}
               onWorkspaceChange={setFlowWorkspaceId}
+              masterPrompt={masterPrompt}
+              onMasterPromptChange={setMasterPrompt}
+              isMasterActive={isMasterActive}
+              onMasterActiveChange={setIsMasterActive}
             />
           </Panel>
           <Controls className="!bg-card !border-border !shadow-lg [&>button]:!bg-card [&>button]:!border-border [&>button]:!text-foreground hover:[&>button]:!bg-muted" />

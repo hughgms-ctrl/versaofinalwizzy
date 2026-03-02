@@ -21,6 +21,8 @@ export interface Flow {
   created_by: string | null;
   folder_id: string | null;
   workspace_id: string | null;
+  master_prompt?: string;
+  is_master_active?: boolean;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -42,6 +44,8 @@ function mapRowToFlow(row: any): Flow {
     created_by: row.created_by,
     folder_id: row.folder_id || null,
     workspace_id: row.workspace_id || null,
+    master_prompt: row.master_prompt || '',
+    is_master_active: row.is_master_active || false,
   };
 }
 
@@ -61,7 +65,7 @@ export function useFlows() {
         .order('updated_at', { ascending: false }) as unknown as Promise<{ data: unknown[] | null; error: Error | null }>);
 
       if (error) throw error;
-      
+
       return (data || []).map(row => mapRowToFlow(row));
     },
     enabled: !!profile?.organization_id,
@@ -81,7 +85,7 @@ export function useFlow(flowId: string | null) {
         .single() as unknown as Promise<{ data: unknown | null; error: Error | null }>);
 
       if (error) throw error;
-      
+
       return data ? mapRowToFlow(data) : null;
     },
     enabled: !!flowId,
@@ -139,16 +143,18 @@ export function useSaveFlow() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (data: { 
-      id: string; 
+    mutationFn: async (data: {
+      id: string;
       name?: string;
       description?: string;
-      nodes: Node[]; 
+      nodes: Node[];
       edges: Edge[];
       is_active?: boolean;
       trigger_type?: string;
       trigger_config?: Record<string, unknown>;
       workspace_id?: string | null;
+      master_prompt?: string;
+      is_master_active?: boolean;
     }) => {
       const updateData: Record<string, unknown> = {
         nodes: data.nodes,
@@ -161,6 +167,8 @@ export function useSaveFlow() {
       if (data.trigger_type !== undefined) updateData.trigger_type = data.trigger_type;
       if (data.trigger_config !== undefined) updateData.trigger_config = data.trigger_config;
       if (data.workspace_id !== undefined) updateData.workspace_id = data.workspace_id;
+      if (data.master_prompt !== undefined) updateData.master_prompt = data.master_prompt;
+      if (data.is_master_active !== undefined) updateData.is_master_active = data.is_master_active;
 
       const { data: flow, error } = await (supabase
         .from('flows' as 'contacts')

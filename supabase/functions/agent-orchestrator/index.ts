@@ -297,7 +297,8 @@ async function walkFlowForward(
     console.log('Executing node:', nextNode.id, nextNode.type, nextNode.data?.label);
 
     switch (nextNode.type) {
-      case 'orch-tag': {
+      case 'orch-tag':
+      case 'action-tag': {
         const action = nextNode.data?.action || 'add';
         const tagId = nextNode.data?.tagId;
         if (tagId) {
@@ -320,7 +321,8 @@ async function walkFlowForward(
         continue;
       }
 
-      case 'orch-pipeline': {
+      case 'orch-pipeline':
+      case 'action-pipeline': {
         const pipelineId = nextNode.data?.pipelineId;
         const columnId = nextNode.data?.columnId;
         if (pipelineId && columnId) {
@@ -337,7 +339,8 @@ async function walkFlowForward(
         continue;
       }
 
-      case 'orch-department': {
+      case 'orch-department':
+      case 'action-department': {
         const deptName = nextNode.data?.departmentName;
         if (deptName) {
           const { data: dept } = await supabase.from('departments').select('id')
@@ -354,7 +357,8 @@ async function walkFlowForward(
         continue;
       }
 
-      case 'orch-flow': {
+      case 'orch-flow':
+      case 'action-flow': {
         const flowId = nextNode.data?.flowId;
         if (flowId) {
           console.log('Triggering flow:', flowId);
@@ -382,7 +386,8 @@ async function walkFlowForward(
         continue;
       }
 
-      case 'orch-agent': {
+      case 'orch-agent':
+      case 'ai-handoff': {
         const agentId = nextNode.data?.agentId;
         if (agentId) {
           // Switch agent in conversation
@@ -414,7 +419,8 @@ async function walkFlowForward(
         return { replyText, toolsExecuted };
       }
 
-      case 'orch-document': {
+      case 'orch-document':
+      case 'action-document': {
         // Document/Contract node: load template, set up collection context, invoke document agent
         const templateId = nextNode.data?.templateId;
         if (!templateId) {
@@ -492,7 +498,8 @@ async function walkFlowForward(
         return { replyText, toolsExecuted };
       }
 
-      case 'orch-human': {
+      case 'orch-human':
+      case 'action-transfer': {
         // Escalate to human - switch service mode
         await supabase.from('conversations').update({ service_mode: 'humano' }).eq('id', ctx.conversationId);
         console.log('Escalated to human');
@@ -503,7 +510,8 @@ async function walkFlowForward(
         return { replyText, toolsExecuted };
       }
 
-      case 'orch-delay': {
+      case 'orch-delay':
+      case 'action-delay': {
         const seconds = Math.min(nextNode.data?.delaySeconds || 5, 25);
         if (seconds > 0) {
           console.log('Delay:', seconds, 'seconds');
@@ -514,7 +522,8 @@ async function walkFlowForward(
         continue;
       }
 
-      case 'orch-condition': {
+      case 'orch-condition':
+      case 'condition': {
         // Evaluate condition using AI
         const branch = await evaluateCondition(ctx, nextNode, messageContent);
         console.log('Condition evaluated:', nextNode.data?.conditionLabel, '→', branch);
@@ -1512,6 +1521,26 @@ function buildLegacyTools() {
 
 async function resolveActiveMasterPrompt(supabase: any, conversation: any) {
   const orgId = conversation.organization_id;
+
+  // 1. Check if conversation is in an active flow execution
+  const { data: execution } = await supabase
+    .from('flow_executions')
+    .select('*, flow:flows(*)')
+    .eq('conversation_id', conversation.id)
+    .eq('status', 'running')
+    .maybeSingle();
+
+  if (execution?.flow?.is_master_active && execution.flow.master_prompt) {
+    console.log('Using Flow Master Prompt from flow:', execution.flow.id);
+    return {
+      id: execution.flow.id,
+      name: `Flow Master: ${execution.flow.name}`,
+      content: execution.flow.master_prompt,
+      is_active: true
+    };
+  }
+
+  // 2. Fallback to existing logic (workspace config or default active prompt)
   const { data: configs } = await supabase
     .from('workspace_agent_configs')
     .select('*, master_prompt:master_prompts(*)')

@@ -1,6 +1,21 @@
 project_id = "zaobtetbjpuzibjymhzw"
 
+[functions.zapi-check-status]
+verify_jwt = false
+
+[functions.zapi-disconnect]
+verify_jwt = false
+
+[functions.zapi-send-message]
+verify_jwt = false
+
 [functions.zapi-webhook]
+verify_jwt = false
+
+[functions.zapi-sync-chats]
+verify_jwt = false
+
+[functions.zapi-sync-messages]
 verify_jwt = false
 
 [functions.zapi-contact-profile]
@@ -18,32 +33,38 @@ verify_jwt = false
 [functions.zapi-fix-contacts]
 verify_jwt = false
 
-[functions.zapi-check-status]
-verify_jwt = false
-
-[functions.zapi-sync-chats]
-verify_jwt = false
-
-[functions.zapi-sync-messages]
-verify_jwt = false
-
-[functions.zapi-send-message]
-verify_jwt = false
-
-[functions.zapi-save-credentials]
-verify_jwt = false
-
 [functions.zapi-create-instance]
-verify_jwt = false
-
-[functions.zapi-disconnect]
 verify_jwt = false
 
 [functions.zapi-get-qrcode]
 verify_jwt = false
 
-[functions.zapi-load-older-messages]
+[functions.zapi-save-credentials]
+verify_jwt = false
+
+[functions.zapi-configure-webhook]
 verify_jwt = false
 
 [functions.zapi-send-presence]
+verify_jwt = false
+
+[functions.zapi-load-older-messages]
+verify_jwt = false
+
+[functions.transcribe-audio]
+verify_jwt = false
+
+[functions.transcribe-media]
+verify_jwt = false
+
+[functions.import-whatsapp-history]
+verify_jwt = false
+
+[functions.delete-user]
+verify_jwt = false
+
+[functions.analyze-conversation]
+verify_jwt = false
+
+[functions.zapi-cleanup]
 verify_jwt = false

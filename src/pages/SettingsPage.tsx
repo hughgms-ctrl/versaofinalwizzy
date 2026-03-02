@@ -25,7 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { 
+import {
   MessageSquare,
   Bell,
   Shield,
@@ -62,7 +62,7 @@ export default function SettingsPage() {
   const { session, profile } = useAuth();
   const { settings: notificationSettings, updateSettings: updateNotificationSettings } = useNotificationSettings();
   const { signatureDefault, updateDefaultSignature } = useSignatureSettings();
-  
+
   const [whatsappStatus, setWhatsappStatus] = useState<WhatsAppStatus>({
     status: 'pending',
     connected: false,
@@ -103,10 +103,10 @@ export default function SettingsPage() {
     if (!session?.access_token || isSyncing) return;
     // Only check hasSynced for automatic syncs that aren't first connection
     if (!manual && !isFirstConnection && hasSynced) return;
-    
+
     setIsSyncing(true);
     setSyncProgress(0);
-    
+
     // Simulate progress while waiting for the actual sync
     const progressInterval = setInterval(() => {
       setSyncProgress(prev => {
@@ -125,7 +125,7 @@ export default function SettingsPage() {
       // Complete the progress even on timeout
       setSyncProgress(100);
       setHasSynced(true);
-      
+
       setTimeout(() => {
         setIsSyncing(false);
         setSyncProgress(0);
@@ -135,25 +135,38 @@ export default function SettingsPage() {
         });
       }, 500);
     }, 120000);
-    
+
     try {
       console.log(`Starting ${isFirstConnection ? 'first connection' : manual ? 'manual' : 'automatic'} chat sync...`);
       const response = await supabase.functions.invoke('zapi-sync-chats', {
         headers: { Authorization: `Bearer ${session.access_token}` },
       });
-      
+
       clearTimeout(timeoutId);
       clearInterval(progressInterval);
       setSyncProgress(100);
-      
+
       if (response.error) throw response.error;
-      
+
       setHasSynced(true);
-      toast({
-        title: isFirstConnection ? 'WhatsApp sincronizado!' : 'Conversas atualizadas!',
-        description: `${response.data?.syncedConversations || 0} conversas ${isFirstConnection ? 'importadas' : 'atualizadas'}.`,
-      });
-      
+
+      const data = response.data || {};
+      const total = data.totalChats ?? 0;
+      const valid = data.processedChats ?? 0;
+      const synced = data.syncedConversations ?? 0;
+
+      if (synced === 0 && total > 0) {
+        toast({
+          title: 'Sincronização concluída (Zerada)',
+          description: `Achamos ${total} chats, mas o filtro barrou todos (${valid} válidas).`,
+        });
+      } else {
+        toast({
+          title: isFirstConnection ? 'WhatsApp sincronizado!' : 'Conversas atualizadas!',
+          description: `${synced} conversas sincronizadas (${total} total na UAZAPI).`,
+        });
+      }
+
       // Finish up
       setTimeout(() => {
         setIsSyncing(false);
@@ -163,19 +176,19 @@ export default function SettingsPage() {
       clearTimeout(timeoutId);
       clearInterval(progressInterval);
       console.error('Sync error:', error);
-      
+
       // Complete the progress anyway - partial sync is better than stuck at 95%
       setSyncProgress(100);
       setHasSynced(true);
-      
+
       toast({
         title: manual ? 'Erro na sincronização' : 'Sincronização parcial',
-        description: manual 
-          ? (error.message || 'Ocorreu um erro, mas as conversas disponíveis foram sincronizadas.') 
+        description: manual
+          ? (error.message || 'Ocorreu um erro, mas as conversas disponíveis foram sincronizadas.')
           : 'Algumas conversas podem não ter sido sincronizadas.',
         variant: manual ? 'destructive' : 'default',
       });
-      
+
       setTimeout(() => {
         setIsSyncing(false);
         setSyncProgress(0);
@@ -200,7 +213,7 @@ export default function SettingsPage() {
       const hasCredentials = response.data.status !== 'not_configured' && response.data.status !== 'pending';
       const wasConnecting = whatsappStatus.status === 'connecting';
       const isNowConnected = response.data.connected;
-      
+
       // If connected, update status
       if (isNowConnected) {
         setWhatsappStatus({
@@ -209,7 +222,7 @@ export default function SettingsPage() {
           phoneNumber: response.data.phoneNumber,
           hasCredentials: true,
         });
-        
+
         // Auto-sync when just connected (was connecting, now connected)
         if (wasConnecting) {
           toast({
@@ -385,8 +398,8 @@ export default function SettingsPage() {
 
 
   return (
-    <MainLayout 
-      title="Configurações" 
+    <MainLayout
+      title="Configurações"
       subtitle="Gerencie as configurações do sistema"
     >
       <Tabs defaultValue="whatsapp" className="space-y-4 md:space-y-6">
@@ -465,7 +478,7 @@ export default function SettingsPage() {
                       <p className="text-sm text-muted-foreground">Exibir alerta no topo da tela ao receber mensagens</p>
                     </div>
                   </div>
-                  <Switch 
+                  <Switch
                     checked={notificationSettings.newMessageEnabled}
                     onCheckedChange={(checked) => updateNotificationSettings({ newMessageEnabled: checked })}
                   />
@@ -484,20 +497,20 @@ export default function SettingsPage() {
                       <p className="text-sm text-muted-foreground">Reproduzir som ao receber novas mensagens</p>
                     </div>
                   </div>
-                  <Switch 
+                  <Switch
                     checked={notificationSettings.soundEnabled}
                     onCheckedChange={(checked) => updateNotificationSettings({ soundEnabled: checked })}
                   />
                 </div>
 
                 <Separator />
-                
+
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="font-medium text-foreground">Nova conversa</p>
                     <p className="text-sm text-muted-foreground">Receber alerta quando uma nova conversa iniciar</p>
                   </div>
-                  <Switch 
+                  <Switch
                     checked={notifications.newConversation}
                     onCheckedChange={(checked) => setNotifications(prev => ({ ...prev, newConversation: checked }))}
                   />
@@ -508,7 +521,7 @@ export default function SettingsPage() {
                     <p className="font-medium text-foreground">Menções</p>
                     <p className="text-sm text-muted-foreground">Notificar quando alguém mencionar você</p>
                   </div>
-                  <Switch 
+                  <Switch
                     checked={notifications.mentionAlert}
                     onCheckedChange={(checked) => setNotifications(prev => ({ ...prev, mentionAlert: checked }))}
                   />
@@ -519,7 +532,7 @@ export default function SettingsPage() {
                     <p className="font-medium text-foreground">Relatório diário</p>
                     <p className="text-sm text-muted-foreground">Receber resumo diário por email</p>
                   </div>
-                  <Switch 
+                  <Switch
                     checked={notifications.dailyReport}
                     onCheckedChange={(checked) => setNotifications(prev => ({ ...prev, dailyReport: checked }))}
                   />
@@ -530,7 +543,7 @@ export default function SettingsPage() {
                     <p className="font-medium text-foreground">Relatório semanal</p>
                     <p className="text-sm text-muted-foreground">Receber análise semanal de performance</p>
                   </div>
-                  <Switch 
+                  <Switch
                     checked={notifications.weeklyReport}
                     onCheckedChange={(checked) => setNotifications(prev => ({ ...prev, weeklyReport: checked }))}
                   />
@@ -561,7 +574,7 @@ export default function SettingsPage() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="timezone">Fuso Horário</Label>
-                  <Select 
+                  <Select
                     value={generalSettings.timezone}
                     onValueChange={(value) => setGeneralSettings(prev => ({ ...prev, timezone: value }))}
                   >
@@ -580,7 +593,7 @@ export default function SettingsPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="language">Idioma</Label>
-                  <Select 
+                  <Select
                     value={generalSettings.language}
                     onValueChange={(value) => setGeneralSettings(prev => ({ ...prev, language: value }))}
                   >
@@ -599,7 +612,7 @@ export default function SettingsPage() {
                     <p className="font-medium text-foreground">Modo Escuro</p>
                     <p className="text-sm text-muted-foreground">Usar tema escuro na interface</p>
                   </div>
-                  <Switch 
+                  <Switch
                     checked={generalSettings.darkMode}
                     onCheckedChange={(checked) => setGeneralSettings(prev => ({ ...prev, darkMode: checked }))}
                   />
@@ -631,13 +644,13 @@ export default function SettingsPage() {
                       </p>
                     </div>
                   </div>
-                  <Switch 
+                  <Switch
                     checked={signatureDefault}
                     onCheckedChange={(checked) => {
                       updateDefaultSignature(checked);
                       toast({
                         title: checked ? 'Assinatura ativada' : 'Assinatura desativada',
-                        description: checked 
+                        description: checked
                           ? 'Seu nome será adicionado às mensagens por padrão.'
                           : 'As mensagens serão enviadas sem assinatura por padrão.',
                       });

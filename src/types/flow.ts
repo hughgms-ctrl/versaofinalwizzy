@@ -9,11 +9,14 @@ export type FlowNodeType =
   | 'action-pipeline'
   | 'action-transfer'
   | 'action-webhook'
+  | 'action-flow'
+  | 'action-department'
+  | 'action-document'
+  | 'action-delay'
   | 'condition'
   | 'user-input'
   | 'ai-handoff'
-  | 'ai-return'
-  | 'ai-master';
+  | 'ai-return';
 
 // Content Block Item Types
 export type ContentItemType = 'text' | 'image' | 'video' | 'audio' | 'document' | 'delay';

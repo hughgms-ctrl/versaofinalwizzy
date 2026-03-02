@@ -16,11 +16,12 @@ export function useSendMessage() {
     mutationFn: async ({ conversationId, content, type = 'text', mediaUrl }: SendMessageParams) => {
       const { data, error } = await supabase.functions.invoke('zapi-send-message', {
         body: { conversationId, content, type, mediaUrl },
+        headers: { Authorization: `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}` }
       });
 
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
-      
+
       return data;
     },
     onSuccess: (_, variables) => {

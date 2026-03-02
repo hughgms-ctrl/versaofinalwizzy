@@ -21,7 +21,7 @@ export function useContactNotes(contactId: string | null) {
     queryKey: ['contact-notes', contactId],
     queryFn: async () => {
       if (!contactId) return [];
-      
+
       const { data, error } = await supabase
         .from('contact_notes')
         .select(`
@@ -30,7 +30,7 @@ export function useContactNotes(contactId: string | null) {
         `)
         .eq('contact_id', contactId)
         .order('created_at', { ascending: false });
-      
+
       if (error) throw error;
       return data as ContactNote[];
     },
@@ -68,6 +68,18 @@ export function useAddContactNote() {
         .single();
 
       if (error) throw error;
+
+      // Sync to Uazapi Storage (Dual CRM)
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        await supabase.functions.invoke('zapi-crm', {
+          body: { action: 'save', contactId, data: { content } },
+          headers: { Authorization: `Bearer ${session?.access_token}` }
+        });
+      } catch (e) {
+        console.warn('Failed to sync note to Uazapi Storage:', e);
+      }
+
       return data;
     },
     onSuccess: (_, variables) => {
@@ -101,6 +113,18 @@ export function useUpdateContactNote() {
         .single();
 
       if (error) throw error;
+
+      // Sync to Uazapi Storage (Dual CRM)
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        await supabase.functions.invoke('zapi-crm', {
+          body: { action: 'save', contactId, data: { content } },
+          headers: { Authorization: `Bearer ${session?.access_token}` }
+        });
+      } catch (e) {
+        console.warn('Failed to sync note to Uazapi Storage:', e);
+      }
+
       return { ...data, contactId };
     },
     onSuccess: (data) => {

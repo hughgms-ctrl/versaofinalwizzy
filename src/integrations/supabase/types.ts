@@ -763,54 +763,6 @@ export type Database = {
           },
         ]
       }
-      crm_entries: {
-        Row: {
-          contact_id: string
-          created_at: string
-          custom_fields: Json
-          id: string
-          organization_id: string
-          synced_to_uazapi: boolean
-          uazapi_crm_id: string | null
-          updated_at: string
-        }
-        Insert: {
-          contact_id: string
-          created_at?: string
-          custom_fields?: Json
-          id?: string
-          organization_id: string
-          synced_to_uazapi?: boolean
-          uazapi_crm_id?: string | null
-          updated_at?: string
-        }
-        Update: {
-          contact_id?: string
-          created_at?: string
-          custom_fields?: Json
-          id?: string
-          organization_id?: string
-          synced_to_uazapi?: boolean
-          uazapi_crm_id?: string | null
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "crm_entries_contact_id_fkey"
-            columns: ["contact_id"]
-            isOneToOne: false
-            referencedRelation: "contacts"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "crm_entries_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       departments: {
         Row: {
           color: string
