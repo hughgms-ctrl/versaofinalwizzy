@@ -30,7 +30,7 @@ import { ContentBlockNode } from './nodes/ContentBlockNode';
 import { ButtonsMessageNode, ListMessageNode } from './nodes/MessageNodes';
 import { TagActionNode, PipelineActionNode, TransferActionNode, DelayActionNode, WebhookActionNode } from './nodes/ActionNodes';
 import { ConditionNode, UserInputNode } from './nodes/LogicNodes';
-import { AIHandoffNode, AIReturnNode } from './nodes/AINodes';
+import { AIHandoffNode, AIMasterNode, AIReturnNode } from './nodes/AINodes';
 import { FlowNodeType } from '@/types/flow';
 import { useFlow, useSaveFlow, useCreateFlow } from '@/hooks/useFlows';
 import { Loader2 } from 'lucide-react';
@@ -49,6 +49,7 @@ const nodeTypes = {
   'condition': ConditionNode,
   'user-input': UserInputNode,
   'ai-handoff': AIHandoffNode,
+  'ai-master': AIMasterNode,
   'ai-return': AIReturnNode,
 };
 
@@ -70,7 +71,7 @@ function FlowCanvasInner() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const flowId = searchParams.get('id');
-  
+
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
@@ -88,7 +89,7 @@ function FlowCanvasInner() {
   const [flowWorkspaceId, setFlowWorkspaceId] = useState<string | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [lastSavedState, setLastSavedState] = useState<string>('');
-  
+
   const { zoomIn, zoomOut, setViewport, getViewport, screenToFlowPosition } = useReactFlow();
   const { data: flow, isLoading } = useFlow(flowId);
   const saveFlow = useSaveFlow();
@@ -103,7 +104,7 @@ function FlowCanvasInner() {
       setTriggerConfig(flow.trigger_config || {});
       setFlowWorkspaceId(flow.workspace_id || null);
       setIsActive(flow.is_active);
-      
+
       if (flow.nodes && flow.nodes.length > 0) {
         setNodes(flow.nodes as Node[]);
         // Update nodeId counter to avoid conflicts
@@ -113,11 +114,11 @@ function FlowCanvasInner() {
         }, 0);
         nodeId = maxId + 1;
       }
-      
+
       if (flow.edges) {
         setEdges(flow.edges as Edge[]);
       }
-      
+
       // Store initial state for comparison
       const initialState = JSON.stringify({ nodes: flow.nodes, edges: flow.edges, name: flow.name });
       setLastSavedState(initialState);
@@ -139,7 +140,7 @@ function FlowCanvasInner() {
       setHasUnsavedChanges(true);
       return;
     }
-    
+
     if (isInitialized && lastSavedState) {
       const currentState = JSON.stringify({ nodes, edges, name: flowName });
       setHasUnsavedChanges(currentState !== lastSavedState);
@@ -153,7 +154,7 @@ function FlowCanvasInner() {
       if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
         return;
       }
-      
+
       if ((event.key === 'Delete' || event.key === 'Backspace')) {
         if (selectedNode) {
           // Don't delete start node
@@ -209,7 +210,7 @@ function FlowCanvasInner() {
       );
       return;
     }
-    
+
     saveFlow.mutate({
       id: flowId,
       name: flowName,
@@ -241,7 +242,7 @@ function FlowCanvasInner() {
       )
     );
     // Also update selectedNode so panel reflects changes
-    setSelectedNode((prev) => 
+    setSelectedNode((prev) =>
       prev?.id === nodeId ? { ...prev, data: { ...prev.data, ...data } } : prev
     );
   }, [setNodes]);
@@ -252,8 +253,8 @@ function FlowCanvasInner() {
   }, []);
 
   const onConnect = useCallback(
-    (params: Connection) => setEdges((eds) => addEdge({ 
-      ...params, 
+    (params: Connection) => setEdges((eds) => addEdge({
+      ...params,
       type: 'default',
       animated: true,
       style: { stroke: 'hsl(var(--primary))', strokeWidth: 2 },
@@ -301,7 +302,7 @@ function FlowCanvasInner() {
         id: getId(),
         type,
         position,
-        data: { 
+        data: {
           label,
           // Initialize content-block with empty items
           ...(type === 'content-block' ? { items: [] } : {}),
@@ -345,12 +346,12 @@ function FlowCanvasInner() {
 
   return (
     <div className="flex h-full">
-      <FlowSidebar 
-        onDragStart={onDragStart} 
+      <FlowSidebar
+        onDragStart={onDragStart}
         isCollapsed={sidebarCollapsed}
         onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
       />
-      
+
       <div className="flex-1 h-full" ref={reactFlowWrapper}>
         <ReactFlow
           nodes={nodes}
@@ -413,7 +414,7 @@ function FlowCanvasInner() {
             />
           </Panel>
           <Controls className="!bg-card !border-border !shadow-lg [&>button]:!bg-card [&>button]:!border-border [&>button]:!text-foreground hover:[&>button]:!bg-muted" />
-          <MiniMap 
+          <MiniMap
             className="!bg-card !border-border"
             nodeColor={(node) => {
               switch (node.type) {
@@ -470,7 +471,7 @@ function FlowCanvasInner() {
           flowName={flowName}
         />
       )}
-      
+
       {/* Global styles for showing handles during connection */}
       <style>{`
         .react-flow.connecting .react-flow__node .react-flow__handle {

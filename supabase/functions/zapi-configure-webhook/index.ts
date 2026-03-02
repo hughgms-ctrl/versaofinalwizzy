@@ -28,7 +28,7 @@ Deno.serve(async (req) => {
     const uazapiBaseUrl = Deno.env.get('UAZAPI_BASE_URL')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const token = authHeader.replace('Bearer ', '');
+    const token = authHeader.replace(/^Bearer\s+/i, '');
     const { data: { user }, error: userError } = await supabase.auth.getUser(token);
 
     if (userError || !user) {
@@ -61,19 +61,52 @@ Deno.serve(async (req) => {
     const webhookUrl = `${supabaseUrl}/functions/v1/zapi-webhook`;
     console.log(`Configuring webhook URL: ${webhookUrl}`);
 
-    const response = await fetch(uazapiUrl(uazapiBaseUrl, '/webhook'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'token': instance.zapi_token },
-      body: JSON.stringify({ url: webhookUrl, enabled: true }),
-    });
+    const webhookBody = {
+      url: webhookUrl,
+      enabled: true,
+      events: ["messages", "connection", "history"]
+    };
 
-    const responseData = await response.json();
+    // Try multiple possible webhook endpoints for V1/V2 compatibility
+    const webhoolsEndpoints = [
+      uazapiUrl(uazapiBaseUrl, '/instance/webhook'),
+      uazapiUrl(uazapiBaseUrl, '/webhook'),
+    ];
+
+    let webhookResponse: Response | null = null;
+    let successfulUrl = '';
+
+    for (const endpoint of webhoolsEndpoints) {
+      console.log(`[DEBUG] Attempting to set webhook at: ${endpoint}`);
+      try {
+        const resp = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'token': instance.zapi_token },
+          body: JSON.stringify(webhookBody),
+        });
+        if (resp.ok) {
+          webhookResponse = resp;
+          successfulUrl = endpoint;
+          break;
+        }
+      } catch (e) {
+        console.error(`[DEBUG] Webhook endpoint ${endpoint} failed:`, e);
+      }
+    }
+
+    if (!webhookResponse) {
+      return new Response(JSON.stringify({ error: 'Failed to configure webhook on all endpoints' }), {
+        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const responseData = await webhookResponse.json();
     console.log('Webhook set response:', responseData);
 
     return new Response(JSON.stringify({
-      success: response.ok, webhookUrl, response: responseData,
+      success: webhookResponse.ok, webhookUrl, response: responseData,
     }), {
-      status: response.ok ? 200 : 500,
+      status: webhookResponse.ok ? 200 : 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 

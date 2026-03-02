@@ -219,7 +219,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const token = authHeader.replace('Bearer ', '');
+    const token = authHeader.replace(/^Bearer\s+/i, '');
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
 
     if (authError || !user) {
@@ -263,7 +263,7 @@ Deno.serve(async (req) => {
     const { data: messages, error: messagesError } = messagesResult;
     const { data: conversation } = conversationResult;
     const integrationConfig = integrationResult;
-    
+
     // Resolve AI config for conversation_summary feature
     const aiConfig = resolveAIConfigHelper(integrationConfig, 'conversation_summary', lovableApiKey);
 
@@ -280,7 +280,7 @@ Deno.serve(async (req) => {
         .eq('contact_id', conversation.contact_id)
         .order('created_at', { ascending: false })
         .limit(5);
-      
+
       contactNotes = notes || [];
     }
 
@@ -303,9 +303,9 @@ Deno.serve(async (req) => {
     const mediaIds = mediaMessages.map(m => m.id);
     const { data: cachedTranscriptions } = mediaIds.length > 0
       ? await supabase
-          .from('media_transcriptions')
-          .select('message_id, transcription')
-          .in('message_id', mediaIds)
+        .from('media_transcriptions')
+        .select('message_id, transcription')
+        .in('message_id', mediaIds)
       : { data: [] };
 
     const transcriptionMap = new Map<string, string>();
@@ -352,7 +352,7 @@ Deno.serve(async (req) => {
         enhancedMessages.push(`[${time}] ${direction}: ${msg.content}`);
       } else if ((msg.type === 'audio' || msg.type === 'image') && msg.media_url) {
         const description = transcriptionMap.get(msg.id) || `[${msg.type === 'audio' ? 'Áudio' : 'Imagem'} não processado]`;
-        
+
         mediaAnalysis.push({
           messageId: msg.id,
           type: msg.type,

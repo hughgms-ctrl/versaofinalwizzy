@@ -65,7 +65,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const token = authHeader.replace('Bearer ', '');
+    const token = authHeader.replace(/^Bearer\s+/i, '');
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
 
     if (authError || !user) {
@@ -208,9 +208,9 @@ Deno.serve(async (req) => {
     // Build the request based on the provider
     const isLovableGateway = aiConfig.endpoint.includes('ai.gateway.lovable.dev');
     const dataUrl = `data:${mimeType};base64,${base64Audio}`;
-    
+
     let requestBody: any;
-    
+
     if (isLovableGateway) {
       // Lovable gateway supports input_audio format
       requestBody = {

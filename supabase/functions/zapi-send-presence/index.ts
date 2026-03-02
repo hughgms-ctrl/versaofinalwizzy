@@ -30,7 +30,7 @@ Deno.serve(async (req) => {
     const uazapiBaseUrl = Deno.env.get('UAZAPI_BASE_URL')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const token = authHeader.replace('Bearer ', '');
+    const token = authHeader.replace(/^Bearer\s+/i, '');
     const { data: { user }, error: userError } = await supabase.auth.getUser(token);
 
     if (userError || !user) {

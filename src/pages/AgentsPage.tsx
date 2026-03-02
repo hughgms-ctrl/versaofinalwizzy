@@ -7,19 +7,15 @@ import { Bot, FileText, Settings2 } from 'lucide-react';
 
 const AgentsPage = () => {
   return (
-    <MainLayout 
-      title="Agentes de IA" 
-      subtitle="Configure agentes, prompts mestre e orquestração por workspace"
+    <MainLayout
+      title="Agentes de IA (V14)"
+      subtitle="[V14] Configure agentes, prompts mestre e orquestração por workspace"
     >
       <Tabs defaultValue="agents" className="w-full">
         <TabsList className="mb-6">
           <TabsTrigger value="agents" className="gap-2">
             <Bot className="h-4 w-4" />
             Agentes
-          </TabsTrigger>
-          <TabsTrigger value="master-prompts" className="gap-2">
-            <FileText className="h-4 w-4" />
-            Agente Master
           </TabsTrigger>
           <TabsTrigger value="workspaces" className="gap-2">
             <Settings2 className="h-4 w-4" />
@@ -29,10 +25,6 @@ const AgentsPage = () => {
 
         <TabsContent value="agents" className="mt-0">
           <AgentsTab />
-        </TabsContent>
-
-        <TabsContent value="master-prompts" className="mt-0">
-          <MasterPromptsTab />
         </TabsContent>
 
         <TabsContent value="workspaces" className="mt-0">

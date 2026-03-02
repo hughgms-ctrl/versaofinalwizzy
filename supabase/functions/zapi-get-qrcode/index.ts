@@ -39,7 +39,7 @@ Deno.serve(async (req) => {
     const uazapiBaseUrl = (Deno.env.get('UAZAPI_BASE_URL') || '').replace(/\/$/, '');
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const token = authHeader.replace('Bearer ', '');
+    const token = authHeader.replace(/^Bearer\s+/i, '');
     const { data: { user }, error: userError } = await supabase.auth.getUser(token);
 
     if (userError || !user) {
@@ -108,7 +108,8 @@ Deno.serve(async (req) => {
     }
 
     // Step 1: Call /instance/connect with the instance token
-    console.log(`Connecting instance ${instance.id} via /instance/connect`);
+    console.log(`[DEBUG] Connecting instance ${instance.id} via ${uazapiBaseUrl}/instance/connect`);
+
     const connectResp = await fetch(`${uazapiBaseUrl}/instance/connect`, {
       method: 'POST',
       headers: {
@@ -125,9 +126,6 @@ Deno.serve(async (req) => {
         error: 'Failed to connect instance',
         code: connectResp.status,
         details: connectRaw,
-        hint: connectResp.status === 401
-          ? 'Token inválido. Clique em Adicionar Número para criar nova instância.'
-          : undefined,
       }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -141,12 +139,35 @@ Deno.serve(async (req) => {
       connectData = {};
     }
 
-    // Check if already connected
-    const isConnected =
-      connectData?.state === 'connected' ||
-      connectData?.connected === true ||
-      connectData?.status === 'connected' ||
-      connectData?.instance?.status === 'connected';
+    // Ultra-permissive connection detection (Matching zapi-check-status logic)
+    const getConnectionState = (payload: any): string => {
+      return String(
+        payload?.state ??
+        payload?.status ??
+        payload?.instance?.state ??
+        payload?.instance?.status ??
+        payload?.data?.state ??
+        payload?.data?.status ??
+        ''
+      ).toLowerCase();
+    };
+
+    const isPayloadConnected = (payload: any): boolean => {
+      const state = getConnectionState(payload);
+      return (
+        payload?.connected === true ||
+        payload?.instance?.connected === true ||
+        payload?.data?.connected === true ||
+        state === 'connected' ||
+        state === 'open' ||
+        state === 'online' ||
+        payload?.loggedIn === true ||
+        payload?.loggedIn === 'true' ||
+        payload?.instance?.loggedIn === true
+      );
+    };
+
+    const isConnected = isPayloadConnected(connectData);
 
     if (isConnected) {
       await supabase
@@ -199,10 +220,11 @@ Deno.serve(async (req) => {
     }
 
     if (!qrCode) {
+      console.error('[DEBUG] No QR code found in connectData or dedicated endpoints. Full connectData:', JSON.stringify(connectData));
       return new Response(JSON.stringify({
         error: 'No QR code available',
         details: connectData,
-        note: 'A instância pode estar em estado inesperado. Tente novamente em alguns segundos.',
+        note: 'A instância pode estar inicializando. Tente recarregar a página em instantes.',
       }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

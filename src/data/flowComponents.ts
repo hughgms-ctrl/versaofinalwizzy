@@ -2,6 +2,34 @@ import { FlowComponentCategory } from '@/types/flow';
 
 export const flowComponentCategories: FlowComponentCategory[] = [
   {
+    id: 'agents',
+    label: 'Agentes',
+    icon: 'Bot',
+    components: [
+      {
+        type: 'ai-master',
+        label: 'Agente Master',
+        description: 'IA Orquestradora que decide qual agente usar',
+        icon: 'Sparkles',
+        color: 'bg-indigo-600',
+      },
+      {
+        type: 'ai-handoff',
+        label: 'Agente IA',
+        description: 'Direciona para um agente especializado',
+        icon: 'Bot',
+        color: 'bg-violet-500',
+      },
+      {
+        type: 'action-transfer',
+        label: 'Escalação Humana',
+        description: 'Transfere para atendente humano',
+        icon: 'UserPlus',
+        color: 'bg-rose-500',
+      },
+    ],
+  },
+  {
     id: 'content',
     label: 'Conteúdo',
     icon: 'MessageSquare',
@@ -36,7 +64,7 @@ export const flowComponentCategories: FlowComponentCategory[] = [
     components: [
       {
         type: 'action-tag',
-        label: 'Atribuir Tag',
+        label: 'Tag',
         description: 'Adiciona ou remove uma tag do contato',
         icon: 'Tag',
         color: 'bg-amber-500',
@@ -49,11 +77,11 @@ export const flowComponentCategories: FlowComponentCategory[] = [
         color: 'bg-green-500',
       },
       {
-        type: 'action-transfer',
-        label: 'Transferir',
-        description: 'Transfere para um agente humano ou IA',
-        icon: 'UserPlus',
-        color: 'bg-rose-500',
+        type: 'action-transfer', // Use standard transfer for department in this view
+        label: 'Departamento',
+        description: 'Altera o departamento da conversa',
+        icon: 'Webhook', // Custom icon for dept
+        color: 'bg-sky-500',
       },
       {
         type: 'action-webhook',
@@ -90,13 +118,6 @@ export const flowComponentCategories: FlowComponentCategory[] = [
     label: 'Inteligência Artificial',
     icon: 'Sparkles',
     components: [
-      {
-        type: 'ai-handoff',
-        label: 'Transbordo IA',
-        description: 'Transfere o controle para um agente de IA',
-        icon: 'Bot',
-        color: 'bg-violet-500',
-      },
       {
         type: 'ai-return',
         label: 'Retorno do Fluxo',

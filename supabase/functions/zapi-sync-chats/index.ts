@@ -66,15 +66,29 @@ function extractPhone(chat: UAZAPIChat): string | null {
   return phone;
 }
 
+// List of valid Brazilian DDDs
+const VALID_DDDS = new Set([
+  11, 12, 13, 14, 15, 16, 17, 18, 19,
+  21, 22, 24, 27, 28,
+  31, 32, 33, 34, 35, 37, 38,
+  41, 42, 43, 44, 45, 46, 47, 48, 49,
+  51, 53, 54, 55,
+  61, 62, 63, 64, 65, 66, 67, 68, 69,
+  71, 73, 74, 75, 77, 79,
+  81, 82, 83, 84, 85, 86, 87, 88, 89,
+  91, 92, 93, 94, 95, 96, 97, 98, 99
+]);
+
 function isValidPhoneNumber(phone: string): boolean {
   if (!phone) return false;
-  if (phone.length < 12 || phone.length > 15) return false;
-  if (!/^\d+$/.test(phone)) return false;
-  // Validate Brazilian DDD (11-99)
-  if (phone.startsWith('55')) {
-    const ddd = parseInt(phone.substring(2, 4));
-    if (ddd < 11 || ddd > 99) return false;
-    const numberPart = phone.substring(4);
+  const clean = phone.replace(/\D/g, '');
+  if (clean.length < 12 || clean.length > 15) return false;
+  if (!/^\d+$/.test(clean)) return false;
+  // Validate Brazilian DDD
+  if (clean.startsWith('55')) {
+    const ddd = parseInt(clean.substring(2, 4), 10);
+    if (!VALID_DDDS.has(ddd)) return false;
+    const numberPart = clean.substring(4);
     if (numberPart.length < 8 || numberPart.length > 9) return false;
   }
   return true;
@@ -143,7 +157,7 @@ async function processChatsBatch(
         const { data: shortContact } = await supabase
           .from('contacts').select('*')
           .eq('phone', shortPhone).eq('organization_id', organizationId).maybeSingle();
-        
+
         if (shortContact) {
           // Update the short number to full international format
           const updateData: Record<string, any> = { phone: normalizedPhone };
@@ -221,16 +235,32 @@ Deno.serve(async (req) => {
     }
 
     const url = new URL(req.url);
-    const requestedInstanceId = url.searchParams.get('instanceId');
+    let requestedInstanceId = url.searchParams.get('instanceId');
+
+    // Also check POST body
+    if (req.method === 'POST' && !requestedInstanceId) {
+      try {
+        const body = await req.json();
+        requestedInstanceId = body.instanceId;
+      } catch (e) { /* ignore */ }
+    }
 
     let instance;
     if (requestedInstanceId) {
-      const { data } = await supabase
+      // Try by UUID or by zapi_instance_id
+      const query = supabase
         .from('whatsapp_instances').select('*')
-        .eq('id', requestedInstanceId)
-        .eq('organization_id', profile.organization_id)
-        .eq('status', 'connected')
-        .maybeSingle();
+        .eq('organization_id', profile.organization_id);
+
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-5][0-9a-f]{3}-[089ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestedInstanceId);
+
+      if (isUuid) {
+        query.eq('id', requestedInstanceId);
+      } else {
+        query.eq('zapi_instance_id', requestedInstanceId);
+      }
+
+      const { data } = await query.maybeSingle();
       instance = data;
     } else {
       const { data } = await supabase

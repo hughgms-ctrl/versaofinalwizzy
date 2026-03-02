@@ -131,7 +131,7 @@ serve(async (req) => {
 
     const nodes = flow.nodes as FlowNode[];
     const edges = flow.edges as FlowEdge[];
-    
+
     const context: ExecutionContext = {
       conversationId,
       contactPhone: conversation.contacts?.phone || '',
@@ -152,7 +152,7 @@ serve(async (req) => {
       if (!currentNode) break;
 
       console.log(`Executing node: ${currentNode.id} (${currentNode.type})`);
-      
+
       try {
         const result = await executeNode(currentNode, context, supabase);
         executionLog.push({
@@ -262,7 +262,7 @@ interface NodeResult {
 }
 
 async function executeNode(
-  node: FlowNode, 
+  node: FlowNode,
   context: ExecutionContext,
   supabase: SupabaseClientType
 ): Promise<NodeResult> {
@@ -302,6 +302,9 @@ async function executeNode(
     case 'ai-handoff':
       return { success: true };
 
+    case 'ai-master':
+      return await executeAIMaster(data, context, supabase);
+
     case 'ai-return':
       return { success: true };
 
@@ -311,10 +314,66 @@ async function executeNode(
   }
 }
 
+async function executeAIMaster(
+  data: Record<string, unknown>,
+  context: ExecutionContext,
+  supabase: SupabaseClientType
+): Promise<NodeResult> {
+  try {
+    // 1. Get last message from contact to use as input
+    const { data: lastMessage } = await supabase
+      .from('messages')
+      .select('content')
+      .eq('conversation_id', context.conversationId)
+      .eq('direction', 'inbound')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const inputContent = lastMessage?.content || 'Olá'; // Fallback
+
+    // 2. Call agent-orchestrator with override
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+
+    const response = await fetch(`${supabaseUrl}/functions/v1/agent-orchestrator`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${supabaseKey}`
+      },
+      body: JSON.stringify({
+        conversationId: context.conversationId,
+        messageContent: inputContent,
+        masterPromptOverride: {
+          id: `node-${Math.random().toString(36).substr(2, 9)}`,
+          name: 'Agente Master (Fluxo)',
+          niche: data.niche || 'Geral',
+          content: data.prompt || '',
+          agent_rules: data.orchestration_rules || {},
+          is_active: true
+        }
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Agent Orchestrator call failed:', errorText);
+      return { success: false, error: `Orchestrator error: ${errorText}` };
+    }
+
+    const result = await response.json();
+    return { success: result.success };
+  } catch (error) {
+    console.error('Error in executeAIMaster:', error);
+    return { success: false, error: String(error) };
+  }
+}
+
 // Execute Content Block - processes multiple items sequentially
 async function executeContentBlock(data: Record<string, unknown>, context: ExecutionContext): Promise<NodeResult> {
   const items = (data.items as ContentItem[]) || [];
-  
+
   if (items.length === 0) {
     return { success: true };
   }
@@ -330,7 +389,7 @@ async function executeContentBlock(data: Record<string, unknown>, context: Execu
             await sendTextMessage(item.content, context);
           }
           break;
-          
+
         case 'image':
           if (item.mediaUrl) {
             await sendPresence('typing', context);
@@ -338,7 +397,7 @@ async function executeContentBlock(data: Record<string, unknown>, context: Execu
             await sendMediaItem('image', item.mediaUrl, item.caption, context);
           }
           break;
-          
+
         case 'video':
           if (item.mediaUrl) {
             await sendPresence('typing', context);
@@ -346,7 +405,7 @@ async function executeContentBlock(data: Record<string, unknown>, context: Execu
             await sendMediaItem('video', item.mediaUrl, item.caption, context);
           }
           break;
-          
+
         case 'audio':
           if (item.mediaUrl) {
             // Send RECORDING presence before audio to simulate recording
@@ -355,7 +414,7 @@ async function executeContentBlock(data: Record<string, unknown>, context: Execu
             await sendMediaItem('audio', item.mediaUrl, undefined, context);
           }
           break;
-          
+
         case 'document':
           if (item.mediaUrl) {
             await sendPresence('typing', context);
@@ -363,13 +422,13 @@ async function executeContentBlock(data: Record<string, unknown>, context: Execu
             await sendMediaItem('document', item.mediaUrl, item.caption, context);
           }
           break;
-          
+
         case 'delay':
           const delayMs = (item.delaySeconds || 3) * 1000;
           await new Promise(resolve => setTimeout(resolve, Math.min(delayMs, 30000)));
           break;
       }
-      
+
       // Small delay between items to avoid rate limiting
       if (item.type !== 'delay') {
         await new Promise(resolve => setTimeout(resolve, 500));
@@ -517,7 +576,7 @@ async function sendButtonsMessage(data: Record<string, unknown>, context: Execut
 async function sendListMessage(data: Record<string, unknown>, context: ExecutionContext): Promise<NodeResult> {
   try {
     const content = replaceVariables(String(data.content || ''), context.variables);
-    
+
     const clientToken = Deno.env.get('ZAPI_CLIENT_TOKEN');
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -554,19 +613,19 @@ async function sendListMessage(data: Record<string, unknown>, context: Execution
 async function executeDelay(data: Record<string, unknown>): Promise<NodeResult> {
   const duration = Number(data.duration) || 3;
   const unit = String(data.unit) || 'seconds';
-  
+
   let ms = duration * 1000;
   if (unit === 'minutes') ms = duration * 60 * 1000;
   if (unit === 'hours') ms = duration * 60 * 60 * 1000;
-  
+
   ms = Math.min(ms, 30000);
-  
+
   await new Promise(resolve => setTimeout(resolve, ms));
   return { success: true };
 }
 
 async function executeTagAction(
-  data: Record<string, unknown>, 
+  data: Record<string, unknown>,
   context: ExecutionContext,
   supabase: SupabaseClientType
 ): Promise<NodeResult> {
@@ -606,13 +665,13 @@ async function executeTagAction(
 }
 
 async function executePipelineAction(
-  data: Record<string, unknown>, 
+  data: Record<string, unknown>,
   context: ExecutionContext,
   supabase: SupabaseClientType
 ): Promise<NodeResult> {
   try {
     const status = String(data.pipelineColumn);
-    
+
     await supabase
       .from('conversations')
       .update({ status })
@@ -628,7 +687,7 @@ function executeCondition(data: Record<string, unknown>, context: ExecutionConte
   const variable = String(data.variable || '');
   const operator = String(data.operator || 'equals');
   const compareValue = String(data.value || '');
-  
+
   const actualValue = String(context.variables[variable] || '');
   let result = false;
 
@@ -657,7 +716,7 @@ async function executeWebhook(data: Record<string, unknown>, context: ExecutionC
   try {
     const url = String(data.webhookUrl || data.url || '');
     const method = String(data.method || 'POST');
-    
+
     if (!url) {
       return { success: true };
     }
@@ -735,7 +794,7 @@ function findNextNode(currentNode: FlowNode, edges: FlowEdge[], outputHandle?: s
     }
     return true;
   });
-  
+
   return edge?.target || null;
 }
 

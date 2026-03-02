@@ -1,6 +1,6 @@
 // Flow Builder Types
 
-export type FlowNodeType = 
+export type FlowNodeType =
   | 'start'
   | 'content-block'
   | 'message-buttons'
@@ -12,7 +12,8 @@ export type FlowNodeType =
   | 'condition'
   | 'user-input'
   | 'ai-handoff'
-  | 'ai-return';
+  | 'ai-return'
+  | 'ai-master';
 
 // Content Block Item Types
 export type ContentItemType = 'text' | 'image' | 'video' | 'audio' | 'document' | 'delay';

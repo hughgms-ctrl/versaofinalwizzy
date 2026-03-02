@@ -49,7 +49,7 @@ Deno.serve(async (req) => {
 
     if (!LOVABLE_API_KEY) throw new Error('LOVABLE_API_KEY is not configured');
 
-    const { conversationId, messageContent } = await req.json();
+    const { conversationId, messageContent, masterPromptOverride } = await req.json();
     if (!conversationId || !messageContent) {
       return new Response(JSON.stringify({ error: 'conversationId and messageContent are required' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -76,8 +76,12 @@ Deno.serve(async (req) => {
     const organizationId = conversation.organization_id;
     const contactId = conversation.contact_id;
 
-    // 2. Resolve the active master prompt
-    const masterPrompt = await resolveActiveMasterPrompt(supabase, conversation);
+    // 2. Resolve the active master prompt (use override if provided)
+    let masterPrompt = masterPromptOverride;
+    if (!masterPrompt) {
+      masterPrompt = await resolveActiveMasterPrompt(supabase, conversation);
+    }
+
     if (!masterPrompt) {
       console.log('No active master prompt found');
       return new Response(JSON.stringify({ success: false, reason: 'no_master_prompt' }), {
@@ -113,7 +117,7 @@ Deno.serve(async (req) => {
     const pipelines = pipelinesResult.data || [];
     const pipelinePositions = pipelinePositionsResult.data || [];
     const flows = flowsResult.data || [];
-    
+
     // Resolve AI config: integration_configs > workspace_agent_configs > defaults
     const aiConfig = resolveAIConfig(integrationConfig, 'agents', LOVABLE_API_KEY!);
     const aiModel = aiConfig.model || workspaceConfig?.ai_model || 'google/gemini-3-flash-preview';
@@ -472,7 +476,7 @@ async function walkFlowForward(
 
         console.log('Document collection started:', template.name, 'Fields:', state.document_context.fields.length);
         toolsExecuted.push({
-          name: 'start_document_collection', 
+          name: 'start_document_collection',
           arguments: { template_id: templateId, template_name: template.name },
           result: { success: true, fields_count: state.document_context.fields.length }
         });
@@ -643,7 +647,7 @@ async function invokeAgentAI(
 
   // Ensure last message is the current one
   if (aiMessages[aiMessages.length - 1]?.role !== 'user' ||
-      aiMessages[aiMessages.length - 1]?.content !== messageContent) {
+    aiMessages[aiMessages.length - 1]?.content !== messageContent) {
     aiMessages.push({ role: 'user', content: messageContent });
   }
 
@@ -815,7 +819,7 @@ async function invokeDocumentAgentAI(
   let shouldAdvance = false;
 
   const docCtx = state.document_context!;
-  
+
   // Find the agent connected before this document node (use conversation's current agent)
   const activeAgentId = ctx.conversation.ai_agent_id;
   const agent = ctx.agents.find((a: any) => a.id === activeAgentId);
@@ -835,7 +839,7 @@ async function invokeDocumentAgentAI(
 
   // Document-specific instructions
   systemPrompt += `TAREFA: Coletar todos os dados necessários para preencher o documento/contrato.\n\n`;
-  
+
   systemPrompt += `CAMPOS DO DOCUMENTO (todos são obrigatórios):\n`;
   for (const field of docCtx.fields) {
     const collected = docCtx.collected_data[field.name];
@@ -896,7 +900,7 @@ async function invokeDocumentAgentAI(
   ];
 
   if (aiMessages[aiMessages.length - 1]?.role !== 'user' ||
-      aiMessages[aiMessages.length - 1]?.content !== messageContent) {
+    aiMessages[aiMessages.length - 1]?.content !== messageContent) {
     aiMessages.push({ role: 'user', content: messageContent });
   }
 
@@ -1037,7 +1041,7 @@ async function invokeDocumentAgentAI(
           toolsExecuted.push({ name: 'set_document_field', arguments: fnArgs, result: { success: true } });
         } else {
           // Try fuzzy match
-          const closestField = docCtx.fields.find(f => 
+          const closestField = docCtx.fields.find(f =>
             f.name.toLowerCase().includes(field_name.toLowerCase()) ||
             field_name.toLowerCase().includes(f.name.toLowerCase())
           );
@@ -1142,7 +1146,7 @@ async function invokeDocumentAgentAI(
 
             toolResults.push({ role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify({ success: true, pdf_url: pdfResult.pdf_url, message: resultMsg }) });
             toolsExecuted.push({ name: 'generate_document', arguments: {}, result: { success: true, pdf_url: pdfResult.pdf_url, signature_method: docCtx.signing_method } });
-            
+
             // Document complete - allow advance
             shouldAdvance = hasNextNodes;
           } else {
@@ -1278,7 +1282,7 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
   ];
 
   if (aiMessages[aiMessages.length - 1]?.role !== 'user' ||
-      aiMessages[aiMessages.length - 1]?.content !== messageContent) {
+    aiMessages[aiMessages.length - 1]?.content !== messageContent) {
     aiMessages.push({ role: 'user', content: messageContent });
   }
 
@@ -1562,7 +1566,7 @@ async function sendReplyViaZAPI(supabase: any, conversation: any, message: strin
     await fetch(`https://api.z-api.io/instances/${instance.zapi_instance_id}/token/${instance.zapi_token}/typing`,
       { method: 'POST', headers, body: JSON.stringify({ phone: normalizedPhone, duration: 2000 }) });
     await new Promise(r => setTimeout(r, 1000));
-  } catch {}
+  } catch { }
 
   const resp = await fetch(`https://api.z-api.io/instances/${instance.zapi_instance_id}/token/${instance.zapi_token}/send-text`, {
     method: 'POST', headers, body: JSON.stringify({ phone: normalizedPhone, message }),
@@ -1586,15 +1590,15 @@ async function sendReplyViaZAPI(supabase: any, conversation: any, message: strin
 
 function isInternalThought(text: string): boolean {
   if (!text || text.length < 5) return true;
-  
+
   const trimmed = text.trim();
-  
+
   // Wrapped entirely in parentheses - internal monologue
   if (trimmed.startsWith('(') && trimmed.endsWith(')')) return true;
-  
+
   // Wrapped in brackets - internal notes
   if (trimmed.startsWith('[') && trimmed.endsWith(']')) return true;
-  
+
   // Common AI internal patterns (Portuguese)
   const internalPatterns = [
     /^(\(.*aguardando.*\))$/is,
@@ -1608,7 +1612,7 @@ function isInternalThought(text: string): boolean {
     /aguardando.*dados/i,
     /aguardando.*resposta/i,
   ];
-  
+
   return internalPatterns.some(p => p.test(trimmed));
 }
 

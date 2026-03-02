@@ -215,7 +215,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const token = authHeader.replace('Bearer ', '');
+    const token = authHeader.replace(/^Bearer\s+/i, '');
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
 
     if (authError || !user) {
@@ -244,9 +244,9 @@ Deno.serve(async (req) => {
 
       if (cached?.transcription) {
         console.log(`Cache hit for message ${messageId}`);
-        return new Response(JSON.stringify({ 
+        return new Response(JSON.stringify({
           transcription: cached.transcription,
-          cached: true 
+          cached: true
         }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
@@ -287,9 +287,9 @@ Deno.serve(async (req) => {
       transcription: transcription,
     }, { onConflict: 'message_id' });
 
-    return new Response(JSON.stringify({ 
+    return new Response(JSON.stringify({
       transcription,
-      cached: false 
+      cached: false
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

@@ -36,17 +36,17 @@ interface ImportedChat {
 function normalizePhone(phone: string): string {
   // Remove all non-digits
   let digits = phone.replace(/\D/g, '');
-  
+
   // Handle @c.us or @s.whatsapp.net suffixes
   digits = digits.split('@')[0];
-  
+
   // Ensure it starts with country code (assume Brazil if not)
   if (digits.length === 11 && digits.startsWith('9')) {
     digits = '55' + digits;
   } else if (digits.length === 10) {
     digits = '55' + digits;
   }
-  
+
   return digits;
 }
 
@@ -65,12 +65,12 @@ function parseTimestamp(value: string | number | undefined, date?: string, time?
   }
 
   if (!value) return new Date();
-  
+
   if (typeof value === 'string') {
     const parsed = new Date(value);
     if (!isNaN(parsed.getTime())) return parsed;
   }
-  
+
   if (typeof value === 'number') {
     // Check if seconds or milliseconds
     if (value < 10000000000) {
@@ -78,7 +78,7 @@ function parseTimestamp(value: string | number | undefined, date?: string, time?
     }
     return new Date(value);
   }
-  
+
   return new Date();
 }
 
@@ -110,9 +110,9 @@ Deno.serve(async (req) => {
     );
 
     // Verify user
-    const token = authHeader.replace('Bearer ', '');
+    const token = authHeader.replace(/^Bearer\s+/i, '');
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    
+
     if (authError || !user) {
       return new Response(
         JSON.stringify({ error: 'Invalid token' }),
@@ -263,9 +263,9 @@ Deno.serve(async (req) => {
           // Use upsert with ON CONFLICT DO NOTHING to avoid duplicates
           const { error: insertError, data: inserted } = await supabase
             .from('messages')
-            .upsert(messagesToInsert, { 
+            .upsert(messagesToInsert, {
               onConflict: 'zapi_message_id',
-              ignoreDuplicates: true 
+              ignoreDuplicates: true
             })
             .select('id');
 
@@ -300,18 +300,18 @@ Deno.serve(async (req) => {
         contactsCreated,
         errors: errors.slice(0, 10), // Limit errors returned
       }),
-      { 
-        status: 200, 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+      {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       }
     );
   } catch (error: any) {
     console.error('Import error:', error);
     return new Response(
       JSON.stringify({ error: error.message }),
-      { 
-        status: 500, 
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+      {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       }
     );
   }

@@ -34,7 +34,7 @@ Deno.serve(async (req) => {
     }
 
     const supabase = createClient(supabaseUrl, serviceRoleKey);
-    const token = authHeader.replace('Bearer ', '');
+    const token = authHeader.replace(/^Bearer\s+/i, '');
     const { data: { user }, error: userError } = await supabase.auth.getUser(token);
 
     if (userError || !user) {
@@ -89,12 +89,13 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Create new instance via UAZAPI using the winning auth method:
-    // POST /instance/init with header { admintoken: <admin_token> }
-    const instanceName = `org-${profile.organization_id.substring(0, 8)}-${Date.now()}`;
-    console.log(`Creating UAZAPI instance: ${instanceName}`);
+    // Create or reuse instance via UAZAPI using a FIXED name per organization
+    // This prevents creating dozens of instances and getting charged for them
+    const instanceName = `wizzy-org-${profile.organization_id.substring(0, 10)}`;
+    let createEndpoint = '/instance/init';
+    console.log(`[DEBUG] Ensuring instance with name: ${instanceName} via ${createEndpoint}...`);
 
-    const initResponse = await fetch(`${uazapiBaseUrl}/instance/init`, {
+    let initResponse = await fetch(`${uazapiBaseUrl}${createEndpoint}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -103,14 +104,30 @@ Deno.serve(async (req) => {
       body: JSON.stringify({ name: instanceName }),
     });
 
-    const initRaw = await initResponse.text();
-    console.log(`UAZAPI init response: ${initResponse.status}`, initRaw);
+    // Fallback and probe logic for /instance/create
+    if (initResponse.status === 404) {
+      console.log(`[DEBUG] ${createEndpoint} failed with 404. Trying /instance/create...`);
+      createEndpoint = '/instance/create';
+      initResponse = await fetch(`${uazapiBaseUrl}${createEndpoint}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          admintoken: uazapiAdminToken,
+        },
+        body: JSON.stringify({ name: instanceName }),
+      });
+    }
 
-    if (!initResponse.ok) {
+    const initRaw = await initResponse.text();
+    console.log(`UAZAPI create/init response (${createEndpoint}): ${initResponse.status}`, initRaw);
+
+    // If already exists (409) or success (2xx), proceed to extract data
+    if (!initResponse.ok && initResponse.status !== 409) {
       return new Response(JSON.stringify({
         error: 'Failed to create UAZAPI instance',
         details: initRaw,
         statusCode: initResponse.status,
+        endpoint: createEndpoint
       }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -121,24 +138,45 @@ Deno.serve(async (req) => {
     try {
       initData = JSON.parse(initRaw);
     } catch {
-      return new Response(JSON.stringify({
-        error: 'Invalid JSON from UAZAPI',
-        details: initRaw,
-      }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      initData = {};
     }
 
-    // Extract instance data - UAZAPI returns { instance: { id, token, ... }, token: "..." }
+    // Extract instance data - UAZAPI V2 returns { instance: { id, token, ... }, token: "..." }
     const instanceData = initData.instance || initData.data || initData;
-    const uazapiInstanceId = instanceData.id || instanceData.name || instanceName;
-    const uazapiToken = initData.token || instanceData.token;
+    let uazapiInstanceId = instanceData.id || instanceData.name || instanceData.instanceId || instanceName;
+    let uazapiToken = initData.token || instanceData.token || instanceData.key;
+
+    // SELF-HEALING: If already exists (409) or token is missing, fetch it via admin list
+    if (initResponse.status === 409 || !uazapiToken) {
+      console.log(`[SELF-HEALING] Instance exists or token missing. Fetching current token from UAZAPI list...`);
+      try {
+        const listResp = await fetch(`${uazapiBaseUrl}/instance/list`, {
+          method: 'GET',
+          headers: { admintoken: uazapiAdminToken },
+        });
+        if (listResp.ok) {
+          const listData = await listResp.json();
+          const instancesArray = Array.isArray(listData) ? listData : (listData.data || listData.instances || []);
+          const matched = instancesArray.find((i: any) =>
+            (i.name === instanceName) || (i.instanceName === instanceName) || (i.id === uazapiInstanceId)
+          );
+
+          if (matched) {
+            uazapiToken = matched.token || matched.key || matched.instanceToken;
+            uazapiInstanceId = matched.id || matched.name || uazapiInstanceId;
+            console.log(`[SELF-HEALING] Token recovered for ${instanceName}: ${uazapiToken?.substring(0, 8)}...`);
+          }
+        }
+      } catch (e) {
+        console.error('[SELF-HEALING ERROR] Failed to recover token:', e);
+      }
+    }
 
     if (!uazapiToken) {
       return new Response(JSON.stringify({
         error: 'No token returned from UAZAPI',
         details: initData,
+        statusCode: initResponse.status
       }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

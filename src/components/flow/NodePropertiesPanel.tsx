@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Node } from '@xyflow/react';
-import { 
-  X, Layers, MousePointerClick, List, Tag, Kanban, UserPlus, Webhook, 
+import {
+  X, Layers, MousePointerClick, List, Tag, Kanban, UserPlus, Webhook,
   GitBranch, FormInput, Bot, IterationCw, Plus, Trash2, GripVertical,
-  Type, Image, Video, Music, FileText, Clock, Upload, Loader2, Save
+  Type, Image, Video, Music, FileText, Clock, Upload, Loader2, Save, Sparkles
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { cn } from '@/lib/utils';
 import { FlowNodeType, ContentItem, ContentItemType } from '@/types/flow';
 import { useTags } from '@/hooks/useTags';
+import { useAIAgents } from '@/hooks/useAIAgents';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
@@ -41,6 +42,7 @@ const nodeIcons: Record<string, React.ComponentType<{ className?: string }>> = {
   'user-input': FormInput,
   'ai-handoff': Bot,
   'ai-return': IterationCw,
+  'ai-master': Sparkles,
 };
 
 const nodeLabels: Record<FlowNodeType, string> = {
@@ -56,6 +58,7 @@ const nodeLabels: Record<FlowNodeType, string> = {
   'user-input': 'Entrada do Usuário',
   'ai-handoff': 'Passar para IA',
   'ai-return': 'Retornar da IA',
+  'ai-master': 'Agente Master',
 };
 
 const contentItemTypes: { type: ContentItemType; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
@@ -68,11 +71,11 @@ const contentItemTypes: { type: ContentItemType; label: string; icon: React.Comp
 ];
 
 // Media Upload Field Component with Preview
-function MediaUploadField({ 
-  item, 
-  onUpdate 
-}: { 
-  item: ContentItem; 
+function MediaUploadField({
+  item,
+  onUpdate
+}: {
+  item: ContentItem;
   onUpdate: (item: ContentItem) => void;
 }) {
   const [isUploading, setIsUploading] = useState(false);
@@ -129,17 +132,17 @@ function MediaUploadField({
       case 'image':
         return (
           <div className="relative group rounded-lg overflow-hidden border border-border bg-muted">
-            <img 
-              src={item.mediaUrl} 
-              alt="Preview" 
+            <img
+              src={item.mediaUrl}
+              alt="Preview"
               className="w-full h-32 object-cover"
               onError={(e) => {
                 (e.target as HTMLImageElement).src = '/placeholder.svg';
               }}
             />
             <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-              <Button 
-                variant="destructive" 
+              <Button
+                variant="destructive"
                 size="sm"
                 onClick={handleRemoveMedia}
               >
@@ -153,22 +156,22 @@ function MediaUploadField({
       case 'video':
         return (
           <div className="relative group rounded-lg overflow-hidden border border-border bg-muted">
-            <video 
-              src={item.mediaUrl} 
+            <video
+              src={item.mediaUrl}
               className="w-full h-32 object-cover"
               controls={false}
             />
             <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-              <Button 
-                variant="secondary" 
+              <Button
+                variant="secondary"
                 size="sm"
                 onClick={() => window.open(item.mediaUrl, '_blank')}
               >
                 <Video className="h-4 w-4 mr-1" />
                 Ver
               </Button>
-              <Button 
-                variant="destructive" 
+              <Button
+                variant="destructive"
                 size="sm"
                 onClick={handleRemoveMedia}
               >
@@ -182,8 +185,8 @@ function MediaUploadField({
         return (
           <div className="flex items-center gap-2 p-2 rounded-lg border border-border bg-muted">
             <audio src={item.mediaUrl} controls className="flex-1 h-8" />
-            <Button 
-              variant="ghost" 
+            <Button
+              variant="ghost"
               size="icon"
               className="h-8 w-8 text-destructive"
               onClick={handleRemoveMedia}
@@ -200,17 +203,17 @@ function MediaUploadField({
             <FileText className="h-8 w-8 text-muted-foreground shrink-0" />
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium truncate">{fileName}</p>
-              <a 
-                href={item.mediaUrl} 
-                target="_blank" 
+              <a
+                href={item.mediaUrl}
+                target="_blank"
                 rel="noopener noreferrer"
                 className="text-xs text-primary hover:underline"
               >
                 Abrir documento
               </a>
             </div>
-            <Button 
-              variant="ghost" 
+            <Button
+              variant="ghost"
               size="icon"
               className="h-8 w-8 text-destructive shrink-0"
               onClick={handleRemoveMedia}
@@ -234,13 +237,13 @@ function MediaUploadField({
         onChange={handleFileUpload}
         className="hidden"
       />
-      
+
       {/* Preview Section */}
       {item.mediaUrl && renderPreview()}
-      
+
       {/* Upload Section - show if no media */}
       {!item.mediaUrl && (
-        <div 
+        <div
           onClick={() => !isUploading && fileInputRef.current?.click()}
           className={cn(
             "border-2 border-dashed border-border rounded-lg p-4 text-center cursor-pointer transition-colors hover:border-primary hover:bg-muted/50",
@@ -309,15 +312,15 @@ function MediaUploadField({
 }
 
 function ContentItemEditor({
-  item, 
+  item,
   index,
-  onUpdate, 
+  onUpdate,
   onRemove,
   onMoveUp,
   onMoveDown,
   isFirst,
   isLast,
-}: { 
+}: {
   item: ContentItem;
   index: number;
   onUpdate: (item: ContentItem) => void;
@@ -328,24 +331,24 @@ function ContentItemEditor({
   isLast: boolean;
 }) {
   const ItemIcon = contentItemTypes.find(t => t.type === item.type)?.icon || Type;
-  
+
   return (
     <div className="border border-border rounded-lg p-3 space-y-3 bg-muted/30">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div className="flex flex-col gap-0.5">
-            <Button 
-              variant="ghost" 
-              size="icon" 
+            <Button
+              variant="ghost"
+              size="icon"
               className="h-4 w-4"
               disabled={isFirst}
               onClick={onMoveUp}
             >
               ▲
             </Button>
-            <Button 
-              variant="ghost" 
-              size="icon" 
+            <Button
+              variant="ghost"
+              size="icon"
               className="h-4 w-4"
               disabled={isLast}
               onClick={onMoveDown}
@@ -576,8 +579,8 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
                   {tags?.map((tag) => (
                     <SelectItem key={tag.id} value={tag.id}>
                       <div className="flex items-center gap-2">
-                        <div 
-                          className="h-3 w-3 rounded-full" 
+                        <div
+                          className="h-3 w-3 rounded-full"
                           style={{ backgroundColor: tag.color }}
                         />
                         {tag.name}
@@ -738,6 +741,152 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
           </div>
         );
 
+      case 'ai-master': {
+        const { data: agents = [] } = useAIAgents();
+        const currentRules = (localData.orchestration_rules as any) || { orchestration_nodes: [], orchestration_edges: [] };
+        const selectedAgentIds = currentRules.orchestration_nodes
+          ?.filter((n: any) => n.type === 'orch-agent')
+          ?.map((n: any) => n.data?.agentId) || [];
+
+        const toggleAgent = (agentId: string, agentName: string) => {
+          let newNodes = [...(currentRules.orchestration_nodes || [])];
+          let newEdges = [...(currentRules.orchestration_edges || [])];
+
+          if (selectedAgentIds.includes(agentId)) {
+            // Remove
+            newNodes = newNodes.filter((n: any) => !(n.type === 'orch-agent' && n.data?.agentId === agentId));
+            // Also remove edges connected to this agent
+            const nodeToRemove = currentRules.orchestration_nodes.find((n: any) => n.type === 'orch-agent' && n.data?.agentId === agentId);
+            if (nodeToRemove) {
+              newEdges = newEdges.filter((e: any) => e.source !== nodeToRemove.id && e.target !== nodeToRemove.id);
+            }
+          } else {
+            // Add
+            const id = `orch_agent_${Math.random().toString(36).substr(2, 5)}`;
+            newNodes.push({
+              id,
+              type: 'orch-agent',
+              position: { x: 250, y: 100 + (newNodes.length * 80) },
+              data: { label: agentName, agentId }
+            });
+            // Connect from trigger if it exists and is the only one
+            const trigger = newNodes.find((n: any) => n.type === 'orch-trigger' || n.id === 'trigger-1');
+            if (trigger) {
+              newEdges.push({
+                id: `e-${trigger.id}-${id}`,
+                source: trigger.id,
+                target: id,
+                animated: true
+              });
+            } else if (!newNodes.some(n => n.type === 'orch-trigger')) {
+              // Add trigger if missing
+              newNodes.unshift({
+                id: 'trigger-1',
+                type: 'orch-trigger',
+                position: { x: 50, y: 200 },
+                data: { label: 'Entrada' }
+              });
+              newEdges.push({
+                id: `e-trigger-1-${id}`,
+                source: 'trigger-1',
+                target: id,
+                animated: true
+              });
+            }
+          }
+
+          handleChange('orchestration_rules', {
+            orchestration_nodes: newNodes,
+            orchestration_edges: newEdges
+          });
+        };
+
+        return (
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="niche">Nicho / Área de Atuação</Label>
+              <Input
+                id="niche"
+                value={(localData.niche as string) || ''}
+                onChange={(e) => handleChange('niche', e.target.value)}
+                placeholder="Ex.: direito_saude, vendas_premium..."
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="prompt">Instruções do Mestre (System Prompt)</Label>
+              <Textarea
+                id="prompt"
+                value={(localData.prompt as string) || ''}
+                onChange={(e) => handleChange('prompt', e.target.value)}
+                placeholder="Você é um assistente virtual especializado em..."
+                className="min-h-[120px] text-sm"
+              />
+            </div>
+
+            <div className="space-y-3 pt-2 border-t border-border">
+              <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Agentes Especializados Disponíveis
+              </Label>
+              <div className="grid grid-cols-1 gap-2 max-h-[200px] overflow-y-auto pr-1">
+                {agents.map((agent: any) => (
+                  <div
+                    key={agent.id}
+                    onClick={() => toggleAgent(agent.id, agent.name)}
+                    className={cn(
+                      "flex items-center gap-3 p-2 rounded-lg border-2 cursor-pointer transition-all",
+                      selectedAgentIds.includes(agent.id)
+                        ? "border-indigo-500 bg-indigo-500/5 shadow-sm"
+                        : "border-transparent bg-muted/30 hover:bg-muted/50"
+                    )}
+                  >
+                    <div className={cn(
+                      "w-8 h-8 rounded-full flex items-center justify-center",
+                      selectedAgentIds.includes(agent.id) ? "bg-indigo-500 text-white" : "bg-muted text-muted-foreground"
+                    )}>
+                      <Bot className="h-4 w-4" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium truncate">{agent.name}</p>
+                      <p className="text-[10px] text-muted-foreground truncate">{agent.role || 'Especialista'}</p>
+                    </div>
+                    {selectedAgentIds.includes(agent.id) && (
+                      <div className="w-2 h-2 rounded-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.6)]" />
+                    )}
+                  </div>
+                ))}
+                {agents.length === 0 && (
+                  <p className="text-[11px] text-muted-foreground italic text-center py-4">
+                    Nenhum agente especializado encontrado.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-2 pt-2 border-t border-border">
+              <Label htmlFor="orchestration_rules" className="text-[10px] text-muted-foreground flex items-center gap-2">
+                <Zap className="h-3 w-3" /> Configuração Avançada (JSON)
+              </Label>
+              <Textarea
+                id="orchestration_rules"
+                value={typeof localData.orchestration_rules === 'string'
+                  ? localData.orchestration_rules
+                  : JSON.stringify(localData.orchestration_rules || {}, null, 2)}
+                onChange={(e) => {
+                  try {
+                    const parsed = JSON.parse(e.target.value);
+                    handleChange('orchestration_rules', parsed);
+                  } catch (err) {
+                    handleChange('orchestration_rules', e.target.value);
+                  }
+                }}
+                className="min-h-[80px] font-mono text-[9px] bg-muted/20"
+              />
+            </div>
+          </div>
+        );
+      }
+
       default:
         return (
           <div className="text-sm text-muted-foreground text-center py-8">
@@ -753,11 +902,11 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
       <div className="flex items-center justify-between p-4 border-b border-border">
         <div className="flex items-center gap-2">
           <div className="h-8 w-8 rounded-md bg-primary/10 flex items-center justify-center">
-          <Icon className="h-4 w-4 text-primary" />
-        </div>
-        <div>
-          <h3 className="text-sm font-semibold">{nodeLabel}</h3>
-          <p className="text-xs text-muted-foreground">ID: {node.id}</p>
+            <Icon className="h-4 w-4 text-primary" />
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold">{nodeLabel}</h3>
+            <p className="text-xs text-muted-foreground">ID: {node.id}</p>
           </div>
         </div>
         <Button variant="ghost" size="icon" onClick={onClose}>
@@ -774,8 +923,8 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
       <div className="p-4 border-t border-border space-y-2">
         {/* Save Button */}
         {onSave && hasUnsavedChanges && (
-          <Button 
-            size="sm" 
+          <Button
+            size="sm"
             className="w-full gap-2"
             onClick={onSave}
             disabled={isSaving}
@@ -788,12 +937,12 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
             Salvar Alterações
           </Button>
         )}
-        
+
         {/* Delete Button */}
         {onDelete && (
-          <Button 
-            variant="destructive" 
-            size="sm" 
+          <Button
+            variant="destructive"
+            size="sm"
             className="w-full gap-2"
             onClick={onDelete}
           >

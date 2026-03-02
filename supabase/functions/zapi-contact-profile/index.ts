@@ -1,112 +1,136 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Ensure phone has country code (default Brazil 55)
+function ensureCountryCode(phone: string): string {
+    const clean = phone.replace(/\D/g, '');
+    // Already has country code (12+ digits for BR = 55 + DDD(2) + number(8-9))
+    if (clean.length >= 12) return clean;
+    // Has DDD + number (10-11 digits) - add 55
+    if (clean.length >= 10 && clean.length <= 11) return `55${clean}`;
+    // Too short - not a valid phone number
+    return '';
+}
+
+function isValidPhoneNumber(phone: string): boolean {
+    if (!phone) return false;
+    const clean = phone.replace(/\D/g, '');
+    if (clean.length < 12 || clean.length > 15) return false;
+    if (!/^\d+$/.test(clean)) return false;
+    // Validate Brazilian DDD (11-99)
+    if (clean.startsWith('55')) {
+        const ddd = parseInt(clean.substring(2, 4));
+        if (ddd < 11 || ddd > 99) return false;
+        const numberPart = clean.substring(4);
+        if (numberPart.length < 8 || numberPart.length > 9) return false;
+    }
+    return true;
+}
+
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
-  }
-
-  try {
-    const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    if (req.method === 'OPTIONS') {
+        return new Response(null, { headers: corsHeaders });
     }
 
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const uazapiBaseUrl = (Deno.env.get('UAZAPI_BASE_URL') || '').replace(/\/$/, '');
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    try {
+        const authHeader = req.headers.get('Authorization');
+        if (!authHeader) {
+            return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+                status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+        }
 
-    const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: userError } = await supabase.auth.getUser(token);
-    if (userError || !user) {
-      return new Response(JSON.stringify({ error: 'Invalid token' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+        const uazapiBaseUrl = Deno.env.get('UAZAPI_BASE_URL')!;
+        const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const { data: profile } = await supabase.from('profiles').select('organization_id').eq('user_id', user.id).single();
-    if (!profile) {
-      return new Response(JSON.stringify({ error: 'Profile not found' }), {
-        status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+        const token = authHeader.replace(/^Bearer\s+/i, '');
+        const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+        if (authError || !user) {
+            return new Response(JSON.stringify({ error: 'Unauthorized', details: authError?.message }), {
+                status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+        }
 
-    const { contactId, phone } = await req.json();
-    if (!contactId && !phone) {
-      return new Response(JSON.stringify({ error: 'contactId or phone required' }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+        const { contactId, phone: rawPhone, instanceId } = await req.json();
 
-    // Get instance
-    const { data: instance } = await supabase
-      .from('whatsapp_instances').select('*')
-      .eq('organization_id', profile.organization_id)
-      .eq('status', 'connected')
-      .order('created_at', { ascending: true }).limit(1).maybeSingle();
+        if (!contactId && !rawPhone) {
+            return new Response(JSON.stringify({ error: 'contactId or phone is required' }), {
+                status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+        }
 
-    if (!instance) {
-      return new Response(JSON.stringify({ error: 'No connected instance' }), {
-        status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+        // Resolve instance
+        let instance;
+        if (instanceId) {
+            const { data } = await supabase.from('whatsapp_instances').select('*').eq('id', instanceId).single();
+            instance = data;
+        } else {
+            const { data: instances } = await supabase.from('whatsapp_instances').select('*').eq('status', 'connected').limit(1);
+            instance = instances?.[0];
+        }
 
-    let targetPhone = phone;
-    if (contactId && !phone) {
-      const { data: contact } = await supabase
-        .from('contacts').select('phone')
-        .eq('id', contactId).eq('organization_id', profile.organization_id).single();
-      if (!contact) {
-        return new Response(JSON.stringify({ error: 'Contact not found' }), {
-          status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        if (!instance || !instance.zapi_token) {
+            return new Response(JSON.stringify({ error: 'No connected instance found' }), {
+                status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+        }
+
+        let phone = rawPhone;
+        if (contactId && !phone) {
+            const { data: contact } = await supabase.from('contacts').select('phone').eq('id', contactId).single();
+            phone = contact?.phone;
+        }
+
+        if (!phone) throw new Error('Phone not found');
+
+        // If it's a LID, the UAZAPI might not like 'number' field
+        // Some UAZAPI versions prefer 'phone' or 'jid'
+        const isLid = phone.includes('@lid') || phone.length > 20; // Heuristic for LID
+        const formattedPhone = isLid ? phone : ensureCountryCode(phone);
+
+        console.log(`Fetching profile for ${formattedPhone} (isLid: ${isLid})...`);
+
+        const response = await fetch(`${uazapiBaseUrl}/contact/info`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'token': instance.zapi_token },
+            body: JSON.stringify(isLid ? { phone: formattedPhone } : { number: formattedPhone }),
         });
-      }
-      targetPhone = contact.phone;
+
+        if (!response.ok) {
+            const err = await response.text();
+            console.error('UAZAPI error:', err);
+            return new Response(JSON.stringify({ error: 'UAZAPI failed', details: err }), {
+                status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+        }
+
+        const profileData = await response.json();
+        console.log('Profile data:', profileData);
+
+        const name = profileData.name || profileData.pushname || profileData.verifiedName || null;
+        const avatarUrl = profileData.profilePicture || profileData.profileThumbnail || profileData.imgUrl || null;
+
+        if (contactId && (name || avatarUrl)) {
+            const updateData: any = {};
+            if (name) updateData.name = name;
+            if (avatarUrl) updateData.avatar_url = avatarUrl;
+            await supabase.from('contacts').update(updateData).eq('id', contactId);
+        }
+
+        return new Response(JSON.stringify({ success: true, name, avatarUrl, raw: profileData }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+
+    } catch (error) {
+        console.error('Error:', error);
+        return new Response(JSON.stringify({ error: String(error) }), {
+            status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
     }
-
-    // Fetch profile from UAZAPI
-    const resp = await fetch(`${uazapiBaseUrl}/contact/info`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'token': instance.zapi_token },
-      body: JSON.stringify({ number: targetPhone }),
-    });
-
-    if (!resp.ok) {
-      const errorText = await resp.text();
-      return new Response(JSON.stringify({ error: 'Failed to fetch profile', details: errorText }), {
-        status: resp.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    const profileData = await resp.json();
-
-    // Update contact in DB if contactId provided
-    if (contactId) {
-      const updateData: Record<string, any> = {};
-      const profileName = profileData.name || profileData.pushname || profileData.notify;
-      const profilePic = profileData.profilePicUrl || profileData.profilePictureUrl || profileData.imgUrl;
-      if (profileName) updateData.name = profileName;
-      if (profilePic) updateData.avatar_url = profilePic;
-      if (Object.keys(updateData).length > 0) {
-        await supabase.from('contacts').update(updateData).eq('id', contactId);
-      }
-    }
-
-    return new Response(JSON.stringify({ success: true, profile: profileData }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-
-  } catch (error) {
-    console.error('Error:', error);
-    return new Response(JSON.stringify({ error: 'Internal server error' }), {
-      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-  }
 });

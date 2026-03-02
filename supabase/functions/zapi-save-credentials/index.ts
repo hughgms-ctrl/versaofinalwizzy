@@ -24,7 +24,7 @@ Deno.serve(async (req) => {
     const uazapiBaseUrl = Deno.env.get('UAZAPI_BASE_URL')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const token = authHeader.replace('Bearer ', '');
+    const token = authHeader.replace(/^Bearer\s+/i, '');
     const { data: { user }, error: userError } = await supabase.auth.getUser(token);
 
     if (userError || !user) {
@@ -81,9 +81,24 @@ Deno.serve(async (req) => {
       console.error('UAZAPI validation network error (non-blocking):', validationError);
     }
 
-    let targetInstanceId: string;
+    let targetInstanceId: string = dbInstanceId;
 
-    if (dbInstanceId) {
+    // If no dbInstanceId provided, check if we already have an instance with this token or zapi_instance_id
+    if (!targetInstanceId) {
+      const { data: existing } = await supabase
+        .from('whatsapp_instances')
+        .select('id')
+        .eq('organization_id', profile.organization_id)
+        .or(`zapi_token.eq.${instanceToken.trim()},zapi_instance_id.eq.${instanceId?.trim() || 'NONE'}`)
+        .maybeSingle();
+
+      if (existing) {
+        targetInstanceId = existing.id;
+        console.log(`[SAVE] Found existing instance ${targetInstanceId} for this token/id. Updating instead of inserting.`);
+      }
+    }
+
+    if (targetInstanceId) {
       const { error: updateError } = await supabase
         .from('whatsapp_instances')
         .update({
@@ -92,7 +107,7 @@ Deno.serve(async (req) => {
           status: 'pending',
           label: label || undefined,
         })
-        .eq('id', dbInstanceId)
+        .eq('id', targetInstanceId)
         .eq('organization_id', profile.organization_id);
 
       if (updateError) {
@@ -102,7 +117,6 @@ Deno.serve(async (req) => {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
-      targetInstanceId = dbInstanceId;
     } else {
       const { data: newInstance, error: insertError } = await supabase
         .from('whatsapp_instances')

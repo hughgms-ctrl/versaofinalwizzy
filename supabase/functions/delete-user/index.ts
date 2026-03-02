@@ -13,7 +13,7 @@ Deno.serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    
+
     const supabase = createClient(supabaseUrl, supabaseServiceRoleKey, {
       auth: {
         autoRefreshToken: false,
@@ -32,7 +32,7 @@ Deno.serve(async (req) => {
 
     // Get caller's info
     const { data: { user: caller }, error: callerError } = await supabase.auth.getUser(
-      authHeader.replace('Bearer ', '')
+      authHeader.replace(/^Bearer\s+/i, '')
     );
 
     if (callerError || !caller) {

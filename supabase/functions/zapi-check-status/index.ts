@@ -28,11 +28,12 @@ Deno.serve(async (req) => {
     const uazapiBaseUrl = Deno.env.get('UAZAPI_BASE_URL')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const token = authHeader.replace('Bearer ', '');
+    const token = authHeader.replace(/^Bearer\s+/i, '');
     const { data: { user }, error: userError } = await supabase.auth.getUser(token);
 
     if (userError || !user) {
-      return new Response(JSON.stringify({ error: 'Invalid token' }), {
+      console.error('Auth error (getUser):', userError);
+      return new Response(JSON.stringify({ error: 'Invalid token', details: userError?.message }), {
         status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -52,9 +53,24 @@ Deno.serve(async (req) => {
     const url = new URL(req.url);
     const requestedInstanceId = url.searchParams.get('instanceId');
 
+    const ensureCountryCode = (phone: string): string => {
+      let cleaned = phone.replace(/\D/g, '');
+      if (cleaned.length === 0) return '';
+
+      // WhatsApp standard (55 + DDD + 9? + number)
+      if (cleaned.startsWith('0')) cleaned = cleaned.substring(1);
+
+      // If it has 10-11 digits and doesn't start with 55, add 55 (Brazil)
+      if (cleaned.length >= 10 && cleaned.length <= 11 && !cleaned.startsWith('55')) {
+        cleaned = '55' + cleaned;
+      }
+
+      return cleaned;
+    };
+
     const sanitizePhone = (value: unknown): string | null => {
       if (typeof value !== 'string') return null;
-      const cleaned = value.replace(/\D/g, '');
+      const cleaned = ensureCountryCode(value);
       if (cleaned.length >= 8 && cleaned.length <= 15) return cleaned;
       return null;
     };
@@ -73,7 +89,14 @@ Deno.serve(async (req) => {
         });
       }
 
-      const result = await checkSingleInstance(supabase, instance, uazapiBaseUrl, sanitizePhone);
+      const result = await checkSingleInstance(
+        supabase,
+        instance,
+        uazapiBaseUrl,
+        sanitizePhone,
+        authHeader,
+        supabaseUrl,
+      );
       return new Response(JSON.stringify(result), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -94,14 +117,28 @@ Deno.serve(async (req) => {
     }
 
     const primaryInstance = instances[0];
-    const primaryResult = await checkSingleInstance(supabase, primaryInstance, uazapiBaseUrl, sanitizePhone);
+    const primaryResult = await checkSingleInstance(
+      supabase,
+      primaryInstance,
+      uazapiBaseUrl,
+      sanitizePhone,
+      authHeader,
+      supabaseUrl,
+    );
 
     const allResults = [];
     for (const inst of instances) {
       if (inst.id === primaryInstance.id) {
         allResults.push({ id: inst.id, label: inst.label, ...primaryResult });
       } else {
-        const r = await checkSingleInstance(supabase, inst, uazapiBaseUrl, sanitizePhone);
+        const r = await checkSingleInstance(
+          supabase,
+          inst,
+          uazapiBaseUrl,
+          sanitizePhone,
+          authHeader,
+          supabaseUrl,
+        );
         allResults.push({ id: inst.id, label: inst.label, ...r });
       }
     }
@@ -118,64 +155,232 @@ Deno.serve(async (req) => {
   }
 });
 
+async function bootstrapConnectedInstance(
+  supabase: any,
+  supabaseUrl: string,
+  authHeader: string,
+  organizationId: string,
+  instanceId: string,
+) {
+  try {
+    await fetch(`${supabaseUrl}/functions/v1/zapi-configure-webhook`, {
+      method: 'POST',
+      headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
+    });
+
+    await fetch(`${supabaseUrl}/functions/v1/zapi-sync-chats?instanceId=${instanceId}`, {
+      method: 'POST',
+      headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
+    });
+
+    const { data: recentConversations } = await supabase
+      .from('conversations')
+      .select('id')
+      .eq('organization_id', organizationId)
+      .order('last_message_at', { ascending: false, nullsFirst: false })
+      .limit(40);
+
+    if (!recentConversations?.length) return;
+
+    await Promise.allSettled(
+      recentConversations.slice(0, 25).map((conversation: { id: string }) =>
+        fetch(`${supabaseUrl}/functions/v1/zapi-sync-messages`, {
+          method: 'POST',
+          headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ conversationId: conversation.id, amount: 50 }),
+        })
+      )
+    );
+  } catch (error) {
+    console.error('Bootstrap sync error:', error);
+  }
+}
+
 async function checkSingleInstance(
-  supabase: any, instance: any, uazapiBaseUrl: string,
-  sanitizePhone: (v: unknown) => string | null
+  supabase: any,
+  instance: any,
+  uazapiBaseUrl: string,
+  sanitizePhone: (v: unknown) => string | null,
+  authHeader: string,
+  supabaseUrl: string,
 ) {
   if (!instance.zapi_token) {
     return { status: 'pending', connected: false, hasCredentials: false };
   }
 
-  let statusData: any;
-  try {
-    const statusResponse = await fetch(
-      uazapiUrl(uazapiBaseUrl, '/instance/status'),
-      {
-        method: 'GET',
-        headers: { 'token': instance.zapi_token }
-      }
-    );
+  const instanceToken = String(instance.zapi_token).trim();
 
-    if (!statusResponse.ok) {
-      console.error('UAZAPI status check failed:', statusResponse.status, await statusResponse.text().catch(() => ''));
-      return {
-        status: instance.status, connected: instance.status === 'connected',
-        phoneNumber: instance.phone_number, hasCredentials: true,
-      };
+  const readJsonFromUazapi = async (
+    path: string,
+    init: RequestInit,
+    context: string,
+  ): Promise<any | null> => {
+    try {
+      let response = await fetch(uazapiUrl(uazapiBaseUrl, path), init);
+
+      // SELF-HEALING: If 401/403, try to recover the token and retry once
+      if ((response.status === 401 || response.status === 403) && Deno.env.get('UAZAPI_ADMIN_TOKEN')) {
+        console.warn(`[SELF-HEALING] ${context} failed with ${response.status}. Attempting token recovery...`);
+        try {
+          const instanceName = `wizzy-org-${instance.organization_id.substring(0, 10)}`;
+          const listResp = await fetch(uazapiUrl(uazapiBaseUrl, '/instance/list'), {
+            method: 'GET',
+            headers: { admintoken: Deno.env.get('UAZAPI_ADMIN_TOKEN')! },
+          });
+
+          if (listResp.ok) {
+            const listData = await listResp.json();
+            const instancesArray = Array.isArray(listData) ? listData : (listData.data || listData.instances || []);
+            const matched = instancesArray.find((i: any) =>
+              (i.name === instanceName) || (i.instanceName === instanceName) || (i.id === instance.zapi_instance_id) || (i.id === instanceName)
+            );
+
+            if (matched) {
+              const newToken = matched.token || matched.key || matched.instanceToken;
+              if (newToken && newToken !== instanceToken) {
+                console.log(`[SELF-HEALING] Found new token: ${newToken.substring(0, 8)}... Updating DB.`);
+                await supabase.from('whatsapp_instances').update({ zapi_token: newToken }).eq('id', instance.id);
+
+                // Retry the original request with the new token
+                const newInit = { ...init, headers: { ...init.headers, 'token': newToken } };
+                response = await fetch(uazapiUrl(uazapiBaseUrl, path), newInit);
+              }
+            }
+          }
+        } catch (recoverErr) {
+          console.error('[SELF-HEALING ERROR] Recovery failed:', recoverErr);
+        }
+      }
+
+      const raw = await response.text();
+
+      if (!response.ok) {
+        console.error(`UAZAPI ${context} failed:`, response.status, raw);
+        return null;
+      }
+
+      try {
+        return JSON.parse(raw);
+      } catch {
+        console.error(`UAZAPI ${context} returned invalid JSON:`, raw);
+        return null;
+      }
+    } catch (e) {
+      console.error(`UAZAPI ${context} fetch error:`, e);
+      return null;
+    }
+  };
+
+  const getConnectionState = (payload: any): string => {
+    return String(
+      payload?.state ??
+      payload?.status ??
+      payload?.instance?.state ??
+      payload?.instance?.status ??
+      payload?.data?.state ??
+      payload?.data?.status ??
+      payload?.instanceState ??
+      ''
+    ).toLowerCase();
+  };
+
+  const isPayloadConnected = (payload: any): boolean => {
+    const state = getConnectionState(payload);
+    console.log(`[DEBUG] getConnectionState: ${state} | payload_connected: ${payload?.connected}`);
+    return (
+      payload?.connected === true ||
+      payload?.instance?.connected === true ||
+      payload?.data?.connected === true ||
+      state === 'connected' ||
+      state === 'open' ||
+      state === 'online' ||
+      state === 'loggedin' ||
+      state === 'active'
+    );
+  };
+
+  const extractPhoneFromPayload = (payload: any): string | null => {
+    const candidates = [
+      payload?.phone,
+      payload?.instance?.phone,
+      payload?.data?.phone,
+      payload?.jid,
+      payload?.instance?.jid,
+      payload?.data?.jid,
+    ];
+
+    for (const value of candidates) {
+      if (typeof value === 'string') {
+        const maybePhone = value.includes('@') ? value.split('@')[0] : value;
+        const cleaned = sanitizePhone(maybePhone);
+        if (cleaned) return cleaned;
+      }
     }
 
-    statusData = await statusResponse.json();
-    console.log('UAZAPI status response:', JSON.stringify(statusData));
-  } catch (e) {
-    console.error('UAZAPI status fetch error:', e);
+    return null;
+  };
+
+  // Primary probe: /instance/connect gives the freshest state in UAZAPI
+  const connectProbe = await readJsonFromUazapi(
+    '/instance/connect',
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        token: instanceToken,
+      },
+    },
+    'connect probe',
+  );
+
+  // Fallback: legacy status endpoint
+  const statusProbe = connectProbe
+    ? null
+    : await readJsonFromUazapi(
+      '/instance/status',
+      {
+        method: 'GET',
+        headers: { token: instanceToken },
+      },
+      'status check',
+    );
+
+  const statusData = connectProbe ?? statusProbe;
+
+  if (!statusData) {
     return {
-      status: instance.status, connected: instance.status === 'connected',
-      phoneNumber: instance.phone_number, hasCredentials: true,
+      status: instance.status,
+      connected: instance.status === 'connected',
+      phoneNumber: instance.phone_number,
+      hasCredentials: true,
     };
   }
 
-  // UAZAPI returns: { instance: { status: "connected", owner: "55..." }, status: { connected: true, jid: "55...@s.whatsapp.net" } }
-  const isConnected = 
-    statusData?.status?.connected === true || 
-    statusData?.instance?.status === 'connected' ||
-    statusData?.state === 'connected' || 
-    statusData?.connected === true;
+  console.log('UAZAPI connection probe:', JSON.stringify(statusData));
 
-  let connectedPhone: string | null = null;
-  
-  // Try to extract phone from UAZAPI response
-  if (isConnected) {
-    // From instance.owner
-    if (statusData?.instance?.owner) {
-      connectedPhone = sanitizePhone(statusData.instance.owner);
-    }
-    // From status.jid  
-    if (!connectedPhone && statusData?.status?.jid) {
-      connectedPhone = sanitizePhone(statusData.status.jid.split('@')[0].split(':')[0]);
-    }
-    // From top-level phone
-    if (!connectedPhone && statusData?.phone) {
-      connectedPhone = sanitizePhone(statusData.phone);
+  const isConnected = isPayloadConnected(statusData);
+
+  let connectedPhone: string | null = extractPhoneFromPayload(statusData);
+
+  if (isConnected && !connectedPhone) {
+    try {
+      const profileResponse = await fetch(
+        uazapiUrl(uazapiBaseUrl, '/instance/profile'),
+        {
+          method: 'GET',
+          headers: { token: instanceToken }
+        }
+      );
+      if (profileResponse.ok) {
+        const profileData = await profileResponse.json();
+        if (profileData?.phone) {
+          connectedPhone = sanitizePhone(profileData.phone);
+        } else if (profileData?.jid) {
+          connectedPhone = sanitizePhone(profileData.jid.split('@')[0]);
+        }
+      }
+    } catch (e) {
+      console.error('Error fetching profile info:', e);
     }
   }
 
@@ -195,19 +400,99 @@ async function checkSingleInstance(
       })
       .eq('id', instance.id);
 
+    fetch(`${supabaseUrl}/functions/v1/zapi-configure-webhook`, {
+      method: 'POST',
+      headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
+    }).catch((error) => console.error('Webhook ensure error:', error));
+
+    // Bootstrap synchronization in background (don't await to avoid connection close)
+    if (isReconnection) {
+      console.log(`[BOOTSTRAP] Triggering background sync for instance ${instance.id}`);
+      bootstrapConnectedInstance(
+        supabase,
+        supabaseUrl,
+        authHeader,
+        instance.organization_id,
+        instance.id,
+      ).catch(e => console.error('[BOOTSTRAP ERROR]', e));
+    }
+
     return {
       status: 'connected', connected: true,
       phoneNumber: connectedPhone ?? sanitizePhone(instance.phone_number),
       hasCredentials: true, phoneChanged, isReconnection, needsSync: isReconnection,
     };
-  } else if (instance.status === 'connected') {
+  }
+
+  const probeState = getConnectionState(statusData);
+  const isConnectingState = ['connecting', 'pairing', 'qrcode', 'qr'].includes(probeState);
+
+  if (isConnectingState) {
+    // If it was already connected, and it now says 'connecting/pairing', 
+    // it might be a temporary re-pair or UAZAPI state lag. 
+    // We stay 'connected' in DB for a bit longer if possible.
+    if (instance.status === 'connected') {
+      console.log('[DEBUG] Instance was connected, but UAZAPI says connecting/pairing. Staying connected for now.');
+      return {
+        status: 'connected',
+        connected: true,
+        phoneNumber: instance.phone_number,
+        hasCredentials: true,
+      };
+    }
+
     await supabase
       .from('whatsapp_instances')
       .update({
-        status: 'disconnected', is_active: false,
-        disconnected_at: new Date().toISOString(),
+        status: 'connecting',
+        is_active: true,
       })
       .eq('id', instance.id);
+
+    return {
+      status: 'connecting',
+      connected: false,
+      phoneNumber: instance.phone_number,
+      hasCredentials: true,
+    };
+  }
+
+  // If UAZAPI says something else (like null or error or empty string), 
+  // and we were connected/connecting, we should be VERY CAREFUL.
+  if (!probeState || probeState === 'undefined') {
+    console.log('[DEBUG] Empty probeState, preserving current status:', instance.status);
+    return {
+      status: instance.status,
+      connected: instance.status === 'connected',
+      phoneNumber: instance.phone_number,
+      hasCredentials: true,
+    };
+  }
+
+  if (instance.status === 'connected') {
+    // Only mark as disconnected IF it's explicitly disconnected or loggedout
+    const isExplicitlyDisconnected = ['disconnected', 'loggedout', 'close', 'closed', 'refused'].includes(probeState);
+
+    if (isExplicitlyDisconnected) {
+      await supabase
+        .from('whatsapp_instances')
+        .update({
+          status: 'disconnected', is_active: false,
+          disconnected_at: new Date().toISOString(),
+        })
+        .eq('id', instance.id);
+
+      return {
+        status: 'disconnected', connected: false,
+        phoneNumber: instance.phone_number, hasCredentials: true,
+      };
+    } else {
+      console.log(`[DEBUG] State '${probeState}' is not explicitly disconnected. Keeping 'connected' status.`);
+      return {
+        status: 'connected', connected: true,
+        phoneNumber: instance.phone_number, hasCredentials: true,
+      };
+    }
   }
 
   return {

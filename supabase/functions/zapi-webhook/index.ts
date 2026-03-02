@@ -13,15 +13,27 @@ function ensureCountryCode(phone: string): string {
   return '';
 }
 
+// List of valid Brazilian DDDs
+const VALID_DDDS = new Set([
+  11, 12, 13, 14, 15, 16, 17, 18, 19,
+  21, 22, 24, 27, 28,
+  31, 32, 33, 34, 35, 37, 38,
+  41, 42, 43, 44, 45, 46, 47, 48, 49,
+  51, 53, 54, 55,
+  61, 62, 63, 64, 65, 66, 67, 68, 69,
+  71, 73, 74, 75, 77, 79,
+  81, 82, 83, 84, 85, 86, 87, 88, 89,
+  91, 92, 93, 94, 95, 96, 97, 98, 99
+]);
+
 function isValidPhoneNumber(phone: string): boolean {
   if (!phone) return false;
   const clean = phone.replace(/\D/g, '');
   if (clean.length < 12 || clean.length > 15) return false;
-  if (!/^\d+$/.test(clean)) return false;
-  // Validate Brazilian DDD (11-99)
+
   if (clean.startsWith('55')) {
-    const ddd = parseInt(clean.substring(2, 4));
-    if (ddd < 11 || ddd > 99) return false;
+    const ddd = parseInt(clean.substring(2, 4), 10);
+    if (!VALID_DDDS.has(ddd)) return false;
     const numberPart = clean.substring(4);
     if (numberPart.length < 8 || numberPart.length > 9) return false;
   }
@@ -51,7 +63,7 @@ Deno.serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const payload = await req.json();
-    
+
     // UAZAPI uses EventType, not type
     const eventType = (payload.EventType || payload.eventType || payload.type || '').toLowerCase();
     const instanceName = payload.instanceName || payload.userID || '';
@@ -60,9 +72,37 @@ Deno.serve(async (req) => {
     console.log('EventType:', eventType, '| Instance:', instanceName);
 
     // System events to ignore
-    if (['connected', 'pairsuccess', 'connectfailure', 'qr', 'qrtimeout', 'historysync',
-         'notification', 'e2e_notification', 'ciphertext', 'revoked', 'protocol'].includes(eventType)) {
+    if (['connectfailure', 'qr', 'qrtimeout', 'historysync',
+      'notification', 'e2e_notification', 'ciphertext', 'revoked', 'protocol'].includes(eventType)) {
       return respond({ success: true, ignored: true, reason: 'system_event' });
+    }
+
+    // Handle connection events
+    if (eventType === 'connected' || eventType === 'pairsuccess') {
+      console.log(`[BOOTSTRAP] Instance ${instanceName} connected. Triggering sync...`);
+
+      // Update instance status in background
+      if (instanceName) {
+        supabase.from('whatsapp_instances')
+          .update({ status: 'connected', is_active: true, connected_at: new Date().toISOString() })
+          .eq('zapi_instance_id', instanceName)
+          .then(({ error }) => {
+            if (error) console.error('Error updating instance on connect:', error);
+          });
+      }
+
+      // Trigger sync functions in background
+      const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+      const baseUrl = Deno.env.get('SUPABASE_URL')!;
+
+      // Use internal function call or fetch
+      fetch(`${baseUrl}/functions/v1/zapi-sync-chats`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
+        body: JSON.stringify({ instanceId: instanceName }), // sync-chats now handles instanceName or DB ID
+      }).catch(err => console.error('Auto-sync chats error:', err));
+
+      return respond({ success: true, message: 'connection_handled' });
     }
 
     // Handle message events
@@ -202,7 +242,7 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
       const fileName = `${msgId || Date.now()}.${ext}`;
       const storagePath = `webhook-media/${fileName}`;
       const binaryData = Uint8Array.from(atob(payload.base64), c => c.charCodeAt(0));
-      
+
       const { error: uploadError } = await supabase.storage
         .from('chat-media')
         .upload(storagePath, binaryData, { contentType: payload.mimeType, upsert: true });
@@ -290,7 +330,7 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
       media_url: mediaUrl,
       zapi_message_id: msgId || null,
     })
-    .select().single();
+    .select().maybeSingle();
 
   if (messageError) {
     console.error('Error inserting message:', messageError);
@@ -387,7 +427,7 @@ async function findOrCreateContact(supabase: any, phone: string, organizationId:
   const { data: existing } = await supabase
     .from('contacts').select('*')
     .eq('phone', phone).eq('organization_id', organizationId).maybeSingle();
-  
+
   if (existing) {
     const updateData: any = {};
     if (name && !existing.name) updateData.name = name;
