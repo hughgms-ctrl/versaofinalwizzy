@@ -10,22 +10,30 @@ function ensureCountryCode(phone: string): string {
   const clean = phone.replace(/\D/g, '');
   if (clean.length >= 12) return clean;
   if (clean.length >= 10 && clean.length <= 11) return `55${clean}`;
-  return clean;
+  return '';
 }
 
 function isValidPhoneNumber(phone: string): boolean {
   if (!phone) return false;
   const clean = phone.replace(/\D/g, '');
-  if (clean.length < 10 || clean.length > 15) return false;
-  if (clean === '0') return false;
+  if (clean.length < 12 || clean.length > 15) return false;
+  if (!/^\d+$/.test(clean)) return false;
+  // Validate Brazilian DDD (11-99)
+  if (clean.startsWith('55')) {
+    const ddd = parseInt(clean.substring(2, 4));
+    if (ddd < 11 || ddd > 99) return false;
+    const numberPart = clean.substring(4);
+    if (numberPart.length < 8 || numberPart.length > 9) return false;
+  }
   return true;
 }
 
 function cleanPhone(raw: string): string {
   if (!raw) return '';
-  // Remove JID suffixes, formatting chars
   const stripped = raw.replace(/@.*$/, '').replace(/[:\s\-\+\(\)]/g, '').replace(/\D/g, '');
-  return ensureCountryCode(stripped);
+  const phone = ensureCountryCode(stripped);
+  if (!phone || !isValidPhoneNumber(phone)) return '';
+  return phone;
 }
 
 function isGroupChat(chatid: string): boolean {

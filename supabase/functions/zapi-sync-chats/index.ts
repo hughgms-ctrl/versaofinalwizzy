@@ -42,12 +42,12 @@ function isGroupChat(chat: UAZAPIChat): boolean {
 // Ensure phone has country code (default Brazil 55)
 function ensureCountryCode(phone: string): string {
   const clean = phone.replace(/\D/g, '');
-  // Already has country code (13+ digits for BR = 55 + DDD(2) + number(9))
+  // Already has country code (12+ digits for BR = 55 + DDD(2) + number(8-9))
   if (clean.length >= 12) return clean;
   // Has DDD + number (10-11 digits) - add 55
   if (clean.length >= 10 && clean.length <= 11) return `55${clean}`;
-  // Too short - return as is
-  return clean;
+  // Too short - not a valid phone number
+  return '';
 }
 
 function extractPhone(chat: UAZAPIChat): string | null {
@@ -60,15 +60,23 @@ function extractPhone(chat: UAZAPIChat): string | null {
     raw = chat.id.split('@')[0].split(':')[0];
   }
   const clean = raw.replace(/\D/g, '');
-  if (clean.length < 8 || clean.length > 15) return null;
-  return ensureCountryCode(clean);
+  if (clean.length < 10 || clean.length > 15) return null;
+  const phone = ensureCountryCode(clean);
+  if (!phone || !isValidPhoneNumber(phone)) return null;
+  return phone;
 }
 
 function isValidPhoneNumber(phone: string): boolean {
   if (!phone) return false;
-  if (phone.length < 10) return false; // Minimum: country code + area + number
+  if (phone.length < 12 || phone.length > 15) return false;
   if (!/^\d+$/.test(phone)) return false;
-  if (phone === '0') return false;
+  // Validate Brazilian DDD (11-99)
+  if (phone.startsWith('55')) {
+    const ddd = parseInt(phone.substring(2, 4));
+    if (ddd < 11 || ddd > 99) return false;
+    const numberPart = phone.substring(4);
+    if (numberPart.length < 8 || numberPart.length > 9) return false;
+  }
   return true;
 }
 
