@@ -5,16 +5,6 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// List of notification/event types to ignore
-const IGNORED_EVENT_TYPES = [
-  'notification',
-  'e2e_notification',
-  'ciphertext',
-  'revoked',
-  'protocol',
-  'templateButtonReplyMessage',
-];
-
 // Ensure phone has country code (default Brazil 55)
 function ensureCountryCode(phone: string): string {
   const clean = phone.replace(/\D/g, '');
@@ -25,125 +15,21 @@ function ensureCountryCode(phone: string): string {
 
 function isValidPhoneNumber(phone: string): boolean {
   if (!phone) return false;
-  const cleanPhone = phone.replace('@c.us', '').replace('@s.whatsapp.net', '').replace('@lid', '');
-  if (cleanPhone.length < 10 || cleanPhone.length > 15) return false;
-  if (cleanPhone === '0') return false;
-  const digitsOnly = cleanPhone.replace(/^\+/, '');
-  if (!/^\d+$/.test(digitsOnly)) return false;
-  if (phone.includes('@lid') || phone.includes('lid:')) return false;
-  if (phone.includes('@g.us') || phone.includes('-group') || phone.includes('group')) return false;
+  const clean = phone.replace(/\D/g, '');
+  if (clean.length < 10 || clean.length > 15) return false;
+  if (clean === '0') return false;
   return true;
 }
 
-// Extract clean phone from JID and ensure country code
-function jidToPhone(jid: string): string {
-  if (!jid) return '';
-  const raw = jid.split('@')[0].split('.')[0].split(':')[0];
-  return ensureCountryCode(raw);
+function cleanPhone(raw: string): string {
+  if (!raw) return '';
+  // Remove JID suffixes, formatting chars
+  const stripped = raw.replace(/@.*$/, '').replace(/[:\s\-\+\(\)]/g, '').replace(/\D/g, '');
+  return ensureCountryCode(stripped);
 }
 
-function isGroupJid(jid: string): boolean {
-  return jid?.includes('@g.us') || jid?.includes('@broadcast') || false;
-}
-
-async function parseUazapiPayload(req: Request): Promise<any> {
-  const contentType = req.headers.get('content-type') || '';
-  if (contentType.includes('application/x-www-form-urlencoded')) {
-    const formData = await req.text();
-    const params = new URLSearchParams(formData);
-    const jsonData = params.get('jsonData');
-    if (jsonData) {
-      const parsed = JSON.parse(jsonData);
-      if (params.get('token')) parsed._token = params.get('token');
-      if (params.get('userID')) parsed.userID = params.get('userID');
-      if (params.get('instanceName')) parsed.instanceName = params.get('instanceName');
-      return parsed;
-    }
-    throw new Error('No jsonData in form payload');
-  }
-  return await req.json();
-}
-
-function normalizeMessageEvent(payload: any) {
-  const event = payload.event || {};
-  const info = event.Info || event.info || {};
-  const msgSource = info.MessageSource || info.messageSource || info;
-  const message = event.Message || event.message || {};
-
-  const chatJid = msgSource.Chat || msgSource.chat || info.Chat || info.chat || '';
-  const senderJid = msgSource.Sender || msgSource.sender || info.Sender || info.sender || '';
-  const phone = jidToPhone(chatJid) || jidToPhone(senderJid);
-  
-  const fromMe = msgSource.IsFromMe ?? msgSource.isFromMe ?? info.IsFromMe ?? info.isFromMe ?? false;
-  const messageId = info.ID || info.Id || info.id || '';
-  const isGroup = msgSource.IsGroup ?? msgSource.isGroup ?? info.IsGroup ?? info.isGroup ?? isGroupJid(chatJid);
-  const pushName = info.PushName || info.pushName || '';
-  
-  let timestamp = 0;
-  if (info.Timestamp) {
-    const ts = new Date(info.Timestamp).getTime();
-    timestamp = isNaN(ts) ? 0 : ts;
-  }
-
-  let messageType = 'text';
-  let textContent: string | null = null;
-  let caption: string | null = null;
-
-  const conversation = message.conversation || message.Conversation;
-  const extendedText = message.extendedTextMessage || message.ExtendedTextMessage;
-  const imageMsg = message.imageMessage || message.ImageMessage;
-  const audioMsg = message.audioMessage || message.AudioMessage;
-  const videoMsg = message.videoMessage || message.VideoMessage;
-  const documentMsg = message.documentMessage || message.DocumentMessage;
-  const stickerMsg = message.stickerMessage || message.StickerMessage;
-  const locationMsg = message.locationMessage || message.LocationMessage;
-  const contactMsg = message.contactMessage || message.ContactMessage;
-
-  if (conversation) {
-    messageType = 'text';
-    textContent = conversation;
-  } else if (extendedText) {
-    messageType = 'text';
-    textContent = extendedText.text || extendedText.Text || '';
-  } else if (imageMsg) {
-    messageType = 'image';
-    caption = imageMsg.caption || imageMsg.Caption || null;
-    textContent = caption;
-  } else if (audioMsg) {
-    messageType = 'audio';
-  } else if (videoMsg) {
-    messageType = 'video';
-    caption = videoMsg.caption || videoMsg.Caption || null;
-    textContent = caption;
-  } else if (documentMsg) {
-    messageType = 'document';
-    textContent = documentMsg.fileName || documentMsg.FileName || documentMsg.title || '';
-  } else if (stickerMsg) {
-    messageType = 'sticker';
-  } else if (locationMsg) {
-    messageType = 'location';
-    const lat = locationMsg.degreesLatitude || locationMsg.DegreesLatitude || 0;
-    const lng = locationMsg.degreesLongitude || locationMsg.DegreesLongitude || 0;
-    const name = locationMsg.name || locationMsg.Name || '';
-    const address = locationMsg.address || locationMsg.Address || '';
-    textContent = name || address || `${lat}, ${lng}`;
-  } else if (contactMsg) {
-    messageType = 'contact';
-    textContent = contactMsg.displayName || contactMsg.DisplayName || '';
-  }
-
-  const mediaBase64 = payload.base64 || null;
-  const mediaMimeType = payload.mimeType || null;
-  const mediaFileName = payload.fileName || null;
-  const instanceId = payload.userID || payload.instanceName || null;
-  const isLid = chatJid.includes('@lid') || senderJid.includes('@lid');
-  const chatLid = isLid ? phone : null;
-
-  return {
-    phone, fromMe, messageId, isGroup, pushName, timestamp,
-    textContent, mediaBase64, mediaMimeType, mediaFileName,
-    messageType, caption, instanceId, isLid, chatLid, rawEvent: payload,
-  };
+function isGroupChat(chatid: string): boolean {
+  return chatid?.includes('@g.us') || chatid?.includes('@broadcast') || false;
 }
 
 Deno.serve(async (req) => {
@@ -156,47 +42,52 @@ Deno.serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const payload = await parseUazapiPayload(req);
+    const payload = await req.json();
     
-    console.log('=== UAZAPI WEBHOOK RECEIVED ===');
-    console.log('Type:', payload.type);
-    console.log('UserID:', payload.userID);
+    // UAZAPI uses EventType, not type
+    const eventType = (payload.EventType || payload.eventType || payload.type || '').toLowerCase();
+    const instanceName = payload.instanceName || payload.userID || '';
 
-    const eventType = (payload.type || '').toLowerCase();
+    console.log('=== UAZAPI WEBHOOK ===');
+    console.log('EventType:', eventType, '| Instance:', instanceName);
 
-    // Ignore system events
-    if (eventType === 'connected' || eventType === 'pairsuccess' || 
-        eventType === 'connectfailure' || eventType === 'qr' || 
-        eventType === 'qrtimeout' || eventType === 'historysync') {
-      return new Response(JSON.stringify({ success: true, ignored: true, reason: 'system_event' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    // System events to ignore
+    if (['connected', 'pairsuccess', 'connectfailure', 'qr', 'qrtimeout', 'historysync',
+         'notification', 'e2e_notification', 'ciphertext', 'revoked', 'protocol'].includes(eventType)) {
+      return respond({ success: true, ignored: true, reason: 'system_event' });
     }
 
-    // Handle call events
-    if (eventType === 'call_voice' || eventType === 'call_video' || eventType === 'call_missed') {
-      console.log('Call event received:', eventType);
-      return new Response(JSON.stringify({ success: true, type: eventType }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    // Handle message events
+    if (eventType === 'messages' || eventType === 'message') {
+      return await handleMessage(supabase, payload, instanceName);
     }
 
-    if (eventType === 'message') {
-      return await handleMessage(supabase, payload);
-    }
-
-    if (eventType === 'readreceipt') {
+    // Handle read receipts
+    if (eventType === 'readreceipt' || eventType === 'ack') {
       return await handleReadReceipt(supabase, payload);
     }
 
+    // Handle presence
     if (eventType === 'presence' || eventType === 'chatpresence') {
-      return await handlePresenceUpdate(supabase, payload);
+      return await handlePresence(supabase, payload, instanceName);
+    }
+
+    // Handle call events
+    if (eventType.startsWith('call')) {
+      return respond({ success: true, ignored: true, reason: 'call_event' });
+    }
+
+    // Handle chat updates (UAZAPI sends these too) - extract message from it
+    if (eventType === 'chats' || eventType === 'chat') {
+      // Chat update events sometimes contain messages
+      if (payload.message?.msgid) {
+        return await handleMessage(supabase, payload, instanceName);
+      }
+      return respond({ success: true, ignored: true, reason: 'chat_update' });
     }
 
     console.log('Ignoring unknown event type:', eventType);
-    return new Response(JSON.stringify({ success: true, ignored: true, type: eventType }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return respond({ success: true, ignored: true, type: eventType });
 
   } catch (error) {
     console.error('Webhook error:', error);
@@ -206,48 +97,122 @@ Deno.serve(async (req) => {
   }
 });
 
-async function handleMessage(supabase: any, payload: any) {
-  const msg = normalizeMessageEvent(payload);
+function respond(data: any, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
+}
 
-  if (msg.isGroup) {
-    return new Response(JSON.stringify({ success: true, ignored: true, reason: 'group_message' }), {
-      headers: { 'Content-Type': 'application/json' },
-    });
+async function handleMessage(supabase: any, payload: any, instanceName: string) {
+  const msg = payload.message || {};
+  const chat = payload.chat || {};
+
+  // Extract chatid to determine if group
+  const chatid = msg.chatid || chat.wa_chatid || '';
+  if (isGroupChat(chatid)) {
+    return respond({ success: true, ignored: true, reason: 'group_message' });
   }
 
-  if (!msg.isLid && !isValidPhoneNumber(msg.phone)) {
-    console.log('Skipping invalid phone:', msg.phone);
-    return new Response(JSON.stringify({ success: true, ignored: true, reason: 'invalid_phone' }), {
-      headers: { 'Content-Type': 'application/json' },
-    });
+  // Extract phone number - prefer chat.phone (formatted like "+55 27 99920-9156")
+  // or extract from chatid (like "5527999209156@s.whatsapp.net")
+  let phone = '';
+  if (chat.phone) {
+    phone = cleanPhone(chat.phone);
+  } else if (chatid) {
+    phone = cleanPhone(chatid);
+  } else if (msg.phone) {
+    phone = cleanPhone(msg.phone);
   }
 
-  if (msg.isLid && !msg.chatLid) {
-    return new Response(JSON.stringify({ success: true, ignored: true, reason: 'lid_without_link' }), {
-      headers: { 'Content-Type': 'application/json' },
-    });
+  if (!phone || !isValidPhoneNumber(phone)) {
+    console.log('Skipping invalid phone:', phone, 'from chat.phone:', chat.phone, 'chatid:', chatid);
+    return respond({ success: true, ignored: true, reason: 'invalid_phone' });
   }
 
-  if (!msg.textContent && !msg.mediaBase64 && msg.messageType === 'text') {
-    return new Response(JSON.stringify({ success: true, ignored: true, reason: 'empty_message' }), {
-      headers: { 'Content-Type': 'application/json' },
-    });
+  // Extract message content
+  const fromMe = msg.fromMe === true || msg.fromMe === 'true';
+  const msgId = msg.msgid || msg.id || msg.key?.id || '';
+  const pushName = chat.wa_contactName || chat.name || chat.wa_name || msg.senderName || '';
+
+  // Get text content from various UAZAPI formats
+  let textContent: string | null = null;
+  let messageType = 'text';
+  let mediaUrl: string | null = null;
+
+  // UAZAPI format: message.content.text or message.content directly
+  const content = msg.content || {};
+  if (typeof content === 'string') {
+    textContent = content;
+  } else if (content.text) {
+    textContent = content.text;
+  } else if (msg.text) {
+    textContent = typeof msg.text === 'string' ? msg.text : msg.text?.message || null;
+  } else if (msg.conversation) {
+    textContent = msg.conversation;
   }
 
-  const event = payload.event || {};
-  const message = event.Message || event.message || {};
-  if (message.protocolMessage || message.ProtocolMessage) {
-    return new Response(JSON.stringify({ success: true, ignored: true, reason: 'protocol_message' }), {
-      headers: { 'Content-Type': 'application/json' },
-    });
+  // Check for media types
+  const msgType = (msg.type || msg.messageType || chat.wa_lastMessageType || '').toLowerCase();
+  if (msgType.includes('image')) {
+    messageType = 'image';
+    mediaUrl = msg.mediaUrl || msg.media?.url || null;
+    if (!textContent) textContent = content.caption || msg.caption || null;
+  } else if (msgType.includes('audio') || msgType.includes('ptt')) {
+    messageType = 'audio';
+    mediaUrl = msg.mediaUrl || msg.media?.url || null;
+  } else if (msgType.includes('video')) {
+    messageType = 'video';
+    mediaUrl = msg.mediaUrl || msg.media?.url || null;
+    if (!textContent) textContent = content.caption || msg.caption || null;
+  } else if (msgType.includes('document')) {
+    messageType = 'document';
+    mediaUrl = msg.mediaUrl || msg.media?.url || null;
+    if (!textContent) textContent = content.fileName || msg.fileName || null;
+  } else if (msgType.includes('sticker')) {
+    messageType = 'sticker';
+    mediaUrl = msg.mediaUrl || msg.media?.url || null;
+  } else if (msgType.includes('location')) {
+    messageType = 'location';
+  } else if (msgType.includes('contact')) {
+    messageType = 'contact';
   }
 
-  // Find WhatsApp instance
+  // Skip empty messages
+  if (!textContent && !mediaUrl && messageType === 'text') {
+    return respond({ success: true, ignored: true, reason: 'empty_message' });
+  }
+
+  // Handle base64 media
+  if (payload.base64 && payload.mimeType) {
+    try {
+      const extMap: Record<string, string> = {
+        'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp',
+        'audio/ogg; codecs=opus': 'ogg', 'audio/ogg': 'ogg', 'audio/mpeg': 'mp3',
+        'video/mp4': 'mp4', 'application/pdf': 'pdf',
+      };
+      const ext = extMap[payload.mimeType] || 'bin';
+      const fileName = `${msgId || Date.now()}.${ext}`;
+      const storagePath = `webhook-media/${fileName}`;
+      const binaryData = Uint8Array.from(atob(payload.base64), c => c.charCodeAt(0));
+      
+      const { error: uploadError } = await supabase.storage
+        .from('chat-media')
+        .upload(storagePath, binaryData, { contentType: payload.mimeType, upsert: true });
+      if (!uploadError) {
+        const { data: publicUrl } = supabase.storage.from('chat-media').getPublicUrl(storagePath);
+        mediaUrl = publicUrl?.publicUrl || null;
+      }
+    } catch (e) {
+      console.error('Media upload error:', e);
+    }
+  }
+
+  // Find WhatsApp instance by instanceName
   let whatsappInstance = null;
-  if (msg.instanceId) {
+  if (instanceName) {
     const { data: instance } = await supabase
       .from('whatsapp_instances').select('*')
-      .eq('zapi_instance_id', msg.instanceId).single();
+      .eq('zapi_instance_id', instanceName).single();
     whatsappInstance = instance;
   }
   if (!whatsappInstance) {
@@ -257,47 +222,29 @@ async function handleMessage(supabase: any, payload: any) {
     whatsappInstance = instances?.[0];
   }
   if (!whatsappInstance) {
-    return new Response(JSON.stringify({ error: 'No connected instance' }), {
-      status: 404, headers: { 'Content-Type': 'application/json' },
-    });
+    console.error('No connected instance found for:', instanceName);
+    return respond({ error: 'No connected instance' }, 404);
   }
 
   const organizationId = whatsappInstance.organization_id;
 
-  // For @lid identifiers, try to find existing contact
-  if (msg.isLid) {
-    const existingContact = await findContactByPhoneOrLid(supabase, msg.phone, organizationId);
-    if (!existingContact) {
-      return new Response(JSON.stringify({ success: true, ignored: true, reason: 'lid_no_contact' }), {
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
-  }
+  // Find or create contact
+  let contact = await findOrCreateContact(supabase, phone, organizationId, pushName, chat.imagePreview || chat.image || null);
 
-  // Find or create contact - also try partial phone match
-  let contact = await findOrCreateContactWithLid(supabase, {
-    phone: msg.phone,
-    isLidIdentifier: msg.isLid,
-    chatLid: msg.chatLid,
-    name: msg.pushName,
-    avatarUrl: null,
-    organizationId,
-  });
-
-  // Fetch profile from UAZAPI if contact has no name
-  if (!contact.name && msg.phone) {
+  // Fetch profile from UAZAPI if no name
+  if (!contact.name && phone) {
     try {
       const uazapiBaseUrl = Deno.env.get('UAZAPI_BASE_URL')!;
       const resp = await fetch(`${uazapiBaseUrl}/contact/info`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'token': whatsappInstance.zapi_token },
-        body: JSON.stringify({ number: msg.phone }),
+        body: JSON.stringify({ number: phone }),
       });
       if (resp.ok) {
         const profileData = await resp.json();
-        const updateData: any = {};
         const profileName = profileData.name || profileData.pushname || profileData.notify;
         const profilePic = profileData.profilePicUrl || profileData.profilePictureUrl || profileData.imgUrl;
+        const updateData: any = {};
         if (profileName) updateData.name = profileName;
         if (profilePic) updateData.avatar_url = profilePic;
         if (Object.keys(updateData).length > 0) {
@@ -306,69 +253,34 @@ async function handleMessage(supabase: any, payload: any) {
         }
       }
     } catch (e) {
-      console.error('Failed to fetch contact profile:', e);
+      console.error('Profile fetch error:', e);
     }
   }
 
-  const sourcePhone = whatsappInstance.phone_number;
-  let conversation = await findOrCreateConversation(supabase, {
-    contactId: contact.id,
-    organizationId,
-    whatsappInstanceId: whatsappInstance.id,
-    sourcePhone,
-  });
+  // Find or create conversation for THIS specific contact
+  const conversation = await findOrCreateConversation(supabase, contact.id, organizationId, whatsappInstance.id, whatsappInstance.phone_number);
 
-  // Handle media upload
-  let mediaUrl: string | null = null;
-  if (msg.mediaBase64 && msg.mediaMimeType) {
-    try {
-      const extMap: Record<string, string> = {
-        'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif',
-        'audio/ogg; codecs=opus': 'ogg', 'audio/ogg': 'ogg', 'audio/mpeg': 'mp3', 'audio/mp4': 'm4a',
-        'video/mp4': 'mp4', 'video/3gpp': '3gp', 'application/pdf': 'pdf',
-      };
-      const ext = extMap[msg.mediaMimeType] || msg.mediaFileName?.split('.').pop() || 'bin';
-      const fileName = `${msg.messageId || Date.now()}.${ext}`;
-      const storagePath = `webhook-media/${organizationId}/${fileName}`;
-      const binaryData = Uint8Array.from(atob(msg.mediaBase64), c => c.charCodeAt(0));
-      
-      const { error: uploadError } = await supabase.storage
-        .from('chat-media')
-        .upload(storagePath, binaryData, { contentType: msg.mediaMimeType, upsert: true });
-
-      if (!uploadError) {
-        const { data: publicUrl } = supabase.storage.from('chat-media').getPublicUrl(storagePath);
-        mediaUrl = publicUrl?.publicUrl || null;
-      }
-    } catch (e) {
-      console.error('Error processing media:', e);
-    }
-  }
-
-  // Check for duplicate
-  if (msg.messageId) {
-    const { data: existingMessage } = await supabase
+  // Check for duplicate message
+  if (msgId) {
+    const { data: existing } = await supabase
       .from('messages').select('id')
-      .eq('zapi_message_id', msg.messageId).maybeSingle();
-    if (existingMessage) {
-      return new Response(JSON.stringify({ success: true, duplicate: true }), {
-        headers: { 'Content-Type': 'application/json' },
-      });
+      .eq('zapi_message_id', msgId).maybeSingle();
+    if (existing) {
+      return respond({ success: true, duplicate: true });
     }
   }
 
-  // Insert message
+  // Insert message into the CORRECT conversation
   const { data: savedMessage, error: messageError } = await supabase
     .from('messages')
     .insert({
       conversation_id: conversation.id,
-      content: msg.textContent,
-      type: msg.messageType,
-      direction: msg.fromMe ? 'outbound' : 'inbound',
+      content: textContent,
+      type: messageType,
+      direction: fromMe ? 'outbound' : 'inbound',
       is_from_bot: false,
       media_url: mediaUrl,
-      zapi_message_id: msg.messageId,
-      metadata: { original_payload: payload },
+      zapi_message_id: msgId || null,
     })
     .select().single();
 
@@ -377,201 +289,108 @@ async function handleMessage(supabase: any, payload: any) {
     throw messageError;
   }
 
-  // Update conversation
+  // Update conversation timestamps
   const updateData: any = { last_message_at: new Date().toISOString(), status: 'open' };
-  if (!msg.fromMe) updateData.unread_count = conversation.unread_count + 1;
+  if (!fromMe) updateData.unread_count = (conversation.unread_count || 0) + 1;
   await supabase.from('conversations').update(updateData).eq('id', conversation.id);
 
-  // Agent orchestrator trigger
-  if (!msg.fromMe && msg.textContent) {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  console.log(`Message saved: ${msgId} for contact ${phone} in conversation ${conversation.id}`);
+
+  // Trigger AI agent if needed
+  if (!fromMe && textContent) {
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     let shouldTrigger = conversation.service_mode === 'ia';
 
     if (!shouldTrigger) {
-      shouldTrigger = await checkMasterPromptTriggers(supabase, {
-        organizationId, contactId: contact.id,
-        messageContent: msg.textContent, conversationId: conversation.id,
-      });
+      shouldTrigger = await checkMasterPromptTriggers(supabase, organizationId, contact.id, textContent, conversation.id);
     }
 
     if (shouldTrigger) {
-      fetch(`${supabaseUrl}/functions/v1/agent-orchestrator`, {
+      fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/agent-orchestrator`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
-        body: JSON.stringify({ conversationId: conversation.id, messageContent: msg.textContent }),
-      }).catch(err => console.error('Failed to trigger agent orchestrator:', err));
+        body: JSON.stringify({ conversationId: conversation.id, messageContent: textContent }),
+      }).catch(err => console.error('Agent orchestrator error:', err));
     }
   }
 
-  return new Response(JSON.stringify({ success: true, messageId: savedMessage.id }), {
-    headers: { 'Content-Type': 'application/json' },
-  });
+  return respond({ success: true, messageId: savedMessage.id });
 }
 
 async function handleReadReceipt(supabase: any, payload: any) {
-  const event = payload.event || {};
-  const state = payload.state || '';
-  const messageIds: string[] = event.MessageIDs || event.messageIDs || event.messageIds || [];
-  
-  if (messageIds.length === 0) {
-    return new Response(JSON.stringify({ success: true, ignored: true }), {
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
+  const msg = payload.message || {};
+  const msgId = msg.msgid || msg.id;
+  if (!msgId) return respond({ success: true, ignored: true });
 
+  const ack = msg.ack || payload.ack || 0;
   const updateData: any = {};
-  const stateLower = state.toLowerCase();
-  if (stateLower === 'delivered') {
-    updateData.delivered_at = new Date().toISOString();
-  } else if (stateLower === 'read' || stateLower === 'readself') {
-    updateData.delivered_at = new Date().toISOString();
-    updateData.read_at = new Date().toISOString();
-  }
+  if (ack >= 2) updateData.delivered_at = new Date().toISOString();
+  if (ack >= 3) updateData.read_at = new Date().toISOString();
 
   if (Object.keys(updateData).length > 0) {
-    for (const msgId of messageIds) {
-      await supabase.from('messages').update(updateData).eq('zapi_message_id', msgId);
-    }
+    await supabase.from('messages').update(updateData).eq('zapi_message_id', msgId);
   }
 
-  return new Response(JSON.stringify({ success: true, updated: messageIds.length }), {
-    headers: { 'Content-Type': 'application/json' },
-  });
+  return respond({ success: true });
 }
 
-async function handlePresenceUpdate(supabase: any, payload: any) {
-  const event = payload.event || {};
-  const state = (payload.state || '').toLowerCase();
-  const fromJid = event.From || event.from || '';
-  const phone = jidToPhone(fromJid);
-  
-  if (!phone) {
-    return new Response(JSON.stringify({ success: true }), {
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
+async function handlePresence(supabase: any, payload: any, instanceName: string) {
+  const chat = payload.chat || {};
+  const phone = cleanPhone(chat.phone || chat.wa_chatid || '');
+  if (!phone) return respond({ success: true });
 
-  const instanceId = payload.userID || payload.instanceName;
   let whatsappInstance = null;
-  if (instanceId) {
-    const { data: instance } = await supabase
-      .from('whatsapp_instances').select('*')
-      .eq('zapi_instance_id', instanceId).single();
-    whatsappInstance = instance;
+  if (instanceName) {
+    const { data } = await supabase.from('whatsapp_instances').select('*').eq('zapi_instance_id', instanceName).single();
+    whatsappInstance = data;
   }
   if (!whatsappInstance) {
-    const { data: instances } = await supabase
-      .from('whatsapp_instances').select('*')
-      .eq('status', 'connected').limit(1);
+    const { data: instances } = await supabase.from('whatsapp_instances').select('*').eq('status', 'connected').limit(1);
     whatsappInstance = instances?.[0];
   }
-  if (!whatsappInstance) {
-    return new Response(JSON.stringify({ success: true }), {
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
+  if (!whatsappInstance) return respond({ success: true });
 
-  const organizationId = whatsappInstance.organization_id;
-  const contact = await findContactByPhoneOrLid(supabase, phone, organizationId);
-  if (!contact) {
-    return new Response(JSON.stringify({ success: true }), {
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
+  const { data: contact } = await supabase.from('contacts').select('id')
+    .eq('phone', phone).eq('organization_id', whatsappInstance.organization_id).maybeSingle();
+  if (!contact) return respond({ success: true });
 
+  const state = (payload.state || payload.presenceType || '').toLowerCase();
   let presenceType: string;
   switch (state) {
     case 'composing': case 'typing': presenceType = 'typing'; break;
     case 'recording': presenceType = 'recording'; break;
     case 'online': case 'available': presenceType = 'online'; break;
-    case 'offline': case 'unavailable': presenceType = 'offline'; break;
-    default: presenceType = state || 'unknown';
+    default: presenceType = 'offline';
   }
 
-  const expiresAt = new Date(Date.now() + 30000).toISOString();
   await supabase.from('contact_presence').upsert({
-    contact_id: contact.id, organization_id: organizationId,
-    presence_type: presenceType, started_at: new Date().toISOString(), expires_at: expiresAt,
+    contact_id: contact.id, organization_id: whatsappInstance.organization_id,
+    presence_type: presenceType, started_at: new Date().toISOString(),
+    expires_at: new Date(Date.now() + 30000).toISOString(),
   }, { onConflict: 'contact_id' });
 
-  return new Response(JSON.stringify({ success: true }), {
-    headers: { 'Content-Type': 'application/json' },
-  });
+  return respond({ success: true });
 }
 
-// ========== SHARED HELPERS ==========
+// ========== HELPERS ==========
 
-async function findContactByPhoneOrLid(supabase: any, phoneOrLid: string, organizationId: string) {
-  // Try exact match
-  const { data: contactByPhone } = await supabase
-    .from('contacts').select('id')
-    .eq('phone', phoneOrLid).eq('organization_id', organizationId).maybeSingle();
-  if (contactByPhone) return contactByPhone;
-
-  // Try without country code (legacy data)
-  const shortPhone = phoneOrLid.replace(/^55/, '');
-  if (shortPhone !== phoneOrLid) {
-    const { data: contactByShort } = await supabase
-      .from('contacts').select('id')
-      .eq('phone', shortPhone).eq('organization_id', organizationId).maybeSingle();
-    if (contactByShort) {
-      // Fix the number while we're at it
-      await supabase.from('contacts').update({ phone: phoneOrLid }).eq('id', contactByShort.id);
-      return contactByShort;
-    }
-  }
-
-  // Try LID metadata
-  const { data: contactByLid } = await supabase
-    .from('contacts').select('id')
-    .eq('organization_id', organizationId)
-    .contains('metadata', { chat_lid: phoneOrLid }).maybeSingle();
-  return contactByLid || null;
-}
-
-async function findOrCreateContactWithLid(
-  supabase: any,
-  { phone, isLidIdentifier, chatLid, name, avatarUrl, organizationId }: {
-    phone: string; isLidIdentifier: boolean; chatLid: string | null;
-    name?: string; avatarUrl?: string | null; organizationId: string;
-  }
-) {
-  if (isLidIdentifier && chatLid) {
-    const { data: contactByLid } = await supabase
-      .from('contacts').select('*')
-      .eq('organization_id', organizationId)
-      .contains('metadata', { chat_lid: chatLid }).maybeSingle();
-    if (contactByLid) {
-      if ((name && name !== contactByLid.name) || (avatarUrl && avatarUrl !== contactByLid.avatar_url)) {
-        const updateData: any = {};
-        if (name && name !== contactByLid.name) updateData.name = name;
-        if (avatarUrl && avatarUrl !== contactByLid.avatar_url) updateData.avatar_url = avatarUrl;
-        await supabase.from('contacts').update(updateData).eq('id', contactByLid.id);
-      }
-      return contactByLid;
-    }
-  }
-
+async function findOrCreateContact(supabase: any, phone: string, organizationId: string, name: string | null, avatarUrl: string | null) {
   // Try exact phone match
-  const { data: existingContact } = await supabase
+  const { data: existing } = await supabase
     .from('contacts').select('*')
     .eq('phone', phone).eq('organization_id', organizationId).maybeSingle();
-
-  if (existingContact) {
+  
+  if (existing) {
     const updateData: any = {};
-    const currentMetadata = existingContact.metadata || {};
-    if (chatLid && !currentMetadata.chat_lid) updateData.metadata = { ...currentMetadata, chat_lid: chatLid };
-    if (name && name !== existingContact.name) updateData.name = name;
-    if (avatarUrl && avatarUrl !== existingContact.avatar_url) updateData.avatar_url = avatarUrl;
+    if (name && !existing.name) updateData.name = name;
+    if (avatarUrl && !existing.avatar_url) updateData.avatar_url = avatarUrl;
     if (Object.keys(updateData).length > 0) {
-      await supabase.from('contacts').update(updateData).eq('id', existingContact.id);
+      await supabase.from('contacts').update(updateData).eq('id', existing.id);
     }
-    if (chatLid) await mergeDuplicateContactsAndConversations(supabase, existingContact.id, chatLid, organizationId);
-    return existingContact;
+    return { ...existing, ...updateData };
   }
 
-  // Try short phone match (legacy without country code)
+  // Try without country code (legacy)
   const shortPhone = phone.replace(/^55/, '');
   if (shortPhone !== phone) {
     const { data: shortContact } = await supabase
@@ -579,99 +398,58 @@ async function findOrCreateContactWithLid(
       .eq('phone', shortPhone).eq('organization_id', organizationId).maybeSingle();
     if (shortContact) {
       const updateData: any = { phone };
-      if (name && name !== shortContact.name) updateData.name = name;
-      if (avatarUrl && avatarUrl !== shortContact.avatar_url) updateData.avatar_url = avatarUrl;
+      if (name && !shortContact.name) updateData.name = name;
+      if (avatarUrl && !shortContact.avatar_url) updateData.avatar_url = avatarUrl;
       await supabase.from('contacts').update(updateData).eq('id', shortContact.id);
-      return { ...shortContact, phone };
+      return { ...shortContact, ...updateData };
     }
   }
 
-  const metadata: any = {};
-  if (chatLid) metadata.chat_lid = chatLid;
-
+  // Create new
   const { data: newContact, error } = await supabase
     .from('contacts')
-    .insert({ phone, name: name || null, avatar_url: avatarUrl || null, organization_id: organizationId, metadata })
+    .insert({ phone, name: name || null, avatar_url: avatarUrl || null, organization_id: organizationId })
     .select().single();
-  if (error) { console.error('Error creating contact:', error); throw error; }
+  if (error) throw error;
   return newContact;
 }
 
-async function mergeDuplicateContactsAndConversations(supabase: any, primaryContactId: string, chatLid: string, organizationId: string) {
-  const { data: duplicateContact } = await supabase
-    .from('contacts').select('id')
-    .eq('phone', chatLid).eq('organization_id', organizationId)
-    .neq('id', primaryContactId).maybeSingle();
-  if (!duplicateContact) return;
-
-  const { data: duplicateConversations } = await supabase
-    .from('conversations').select('id').eq('contact_id', duplicateContact.id);
-
-  if (duplicateConversations?.length > 0) {
-    const { data: primaryConversation } = await supabase
-      .from('conversations').select('id')
-      .eq('contact_id', primaryContactId).eq('organization_id', organizationId)
-      .order('created_at', { ascending: false }).limit(1).maybeSingle();
-
-    if (primaryConversation) {
-      for (const dupConv of duplicateConversations) {
-        await supabase.from('messages').update({ conversation_id: primaryConversation.id }).eq('conversation_id', dupConv.id);
-      }
-      await supabase.from('conversations').delete().eq('contact_id', duplicateContact.id);
-    }
-  }
-  await supabase.from('contacts').delete().eq('id', duplicateContact.id);
-}
-
-async function findOrCreateConversation(
-  supabase: any,
-  { contactId, organizationId, whatsappInstanceId, sourcePhone }: {
-    contactId: string; organizationId: string; whatsappInstanceId: string; sourcePhone?: string;
-  }
-) {
-  const { data: anyExisting } = await supabase
+async function findOrCreateConversation(supabase: any, contactId: string, organizationId: string, whatsappInstanceId: string, sourcePhone?: string) {
+  // IMPORTANT: Find conversation by contact_id to avoid mixing messages
+  const { data: existing } = await supabase
     .from('conversations').select('*')
     .eq('contact_id', contactId).eq('organization_id', organizationId)
     .order('created_at', { ascending: false }).limit(1).maybeSingle();
 
-  if (anyExisting) {
-    const updateData: any = {};
-    if (anyExisting.source_phone !== sourcePhone) updateData.source_phone = sourcePhone;
-    if (anyExisting.status !== 'open' && anyExisting.status !== 'pending') updateData.status = 'open';
-    if (Object.keys(updateData).length > 0) {
-      await supabase.from('conversations').update(updateData).eq('id', anyExisting.id);
+  if (existing) {
+    if (existing.whatsapp_instance_id !== whatsappInstanceId) {
+      await supabase.from('conversations').update({ whatsapp_instance_id: whatsappInstanceId }).eq('id', existing.id);
     }
-    return { ...anyExisting, ...updateData };
+    return existing;
   }
 
-  const { data: newConversation, error } = await supabase
+  const { data: newConv, error } = await supabase
     .from('conversations')
-    .upsert({
+    .insert({
       contact_id: contactId, organization_id: organizationId,
-      whatsapp_instance_id: whatsappInstanceId, source_phone: sourcePhone,
+      whatsapp_instance_id: whatsappInstanceId, source_phone: sourcePhone || null,
       status: 'open', unread_count: 0,
-    }, { onConflict: 'contact_id,organization_id', ignoreDuplicates: false })
+    })
     .select().single();
 
   if (error) {
     if (error.code === '23505') {
       const { data: raceExisting } = await supabase
         .from('conversations').select('*')
-        .eq('contact_id', contactId).eq('organization_id', organizationId)
-        .limit(1).maybeSingle();
+        .eq('contact_id', contactId).eq('organization_id', organizationId).limit(1).maybeSingle();
       if (raceExisting) return raceExisting;
     }
     throw error;
   }
-  return newConversation;
+  return newConv;
 }
 
-async function checkMasterPromptTriggers(
-  supabase: any,
-  { organizationId, contactId, messageContent, conversationId }: {
-    organizationId: string; contactId: string; messageContent: string; conversationId: string;
-  }
-): Promise<boolean> {
+async function checkMasterPromptTriggers(supabase: any, organizationId: string, contactId: string, messageContent: string, conversationId: string): Promise<boolean> {
   const { data: masterPrompts } = await supabase
     .from('master_prompts')
     .select('id, trigger_type, trigger_tags, trigger_keywords')
