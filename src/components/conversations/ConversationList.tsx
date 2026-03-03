@@ -47,7 +47,7 @@ export function ConversationList({ conversations, selectedId, onSelect, onSpyVie
           const hasUnread = conversation.unread_count > 0 && !isSelected;
           const lastMessage = conversation.last_message?.[0];
           const isAIActive = lastMessage?.is_from_bot;
-          
+
           const getLastMessagePreview = () => {
             if (!lastMessage) return null;
             if (lastMessage.type !== 'text') {
@@ -79,8 +79,8 @@ export function ConversationList({ conversations, selectedId, onSelect, onSpyVie
               <div className="relative flex-shrink-0">
                 <div className="h-12 w-12 rounded-full bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center">
                   {conversation.contact?.avatar_url ? (
-                    <img 
-                      src={conversation.contact.avatar_url} 
+                    <img
+                      src={conversation.contact.avatar_url}
                       alt={contactName || contactPhone}
                       className="h-12 w-12 rounded-full object-cover"
                     />
@@ -106,44 +106,65 @@ export function ConversationList({ conversations, selectedId, onSelect, onSpyVie
               <div className="flex-1 min-w-0">
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 min-w-0">
-                      {hasName ? (
-                        <p className={cn(
-                          "text-sm truncate flex-shrink",
-                          hasUnread ? "font-bold text-foreground" : "font-semibold text-foreground"
-                        )}>
-                          {contactName}
-                        </p>
-                      ) : (
-                        <p className={cn(
-                          "text-sm truncate flex-shrink",
-                          hasUnread ? "font-bold text-foreground" : "font-semibold text-foreground"
-                        )}>
-                          {formattedPhone}
-                        </p>
-                      )}
-                      {/* Quick Note Badge */}
-                      {(() => {
-                        const metadata = conversation.contact?.metadata as { note?: string } | null;
-                        const note = metadata?.note;
-                        if (note) {
-                          return (
-                            <span 
-                              className="text-[10px] px-1.5 py-0.5 bg-amber-500/10 text-amber-600 dark:text-amber-400 rounded truncate max-w-[120px] flex-shrink-0"
-                              title={note}
-                            >
-                              {note}
-                            </span>
-                          );
-                        }
-                        return null;
-                      })()}
-                    </div>
-                    {hasName && (
-                      <p className="text-xs text-muted-foreground truncate">
-                        {formattedPhone}
-                      </p>
-                    )}
+                    {(() => {
+                      const metadata = conversation.contact?.metadata as { note?: string } | null;
+                      const note = metadata?.note;
+
+                      if (note) {
+                        return (
+                          <div className="flex flex-col gap-0.5">
+                            <div className="flex items-center min-w-0">
+                              <span
+                                className="text-xs font-semibold px-2 py-0.5 bg-amber-500/15 text-amber-700 dark:text-amber-400 rounded truncate max-w-full"
+                                title={note}
+                              >
+                                {note}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <p className={cn(
+                                "text-[11px] truncate",
+                                hasUnread ? "font-bold text-foreground" : "font-medium text-muted-foreground"
+                              )}>
+                                {hasName ? contactName : formattedPhone}
+                              </p>
+                              {hasName && (
+                                <p className="text-[10px] text-muted-foreground/70 truncate flex-shrink-0">
+                                  • {formattedPhone}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="flex flex-col min-w-0">
+                          <div className="flex items-center min-w-0">
+                            {hasName ? (
+                              <p className={cn(
+                                "text-sm truncate",
+                                hasUnread ? "font-bold text-foreground" : "font-semibold text-foreground"
+                              )}>
+                                {contactName}
+                              </p>
+                            ) : (
+                              <p className={cn(
+                                "text-sm truncate",
+                                hasUnread ? "font-bold text-foreground" : "font-semibold text-foreground"
+                              )}>
+                                {formattedPhone}
+                              </p>
+                            )}
+                          </div>
+                          {hasName && (
+                            <p className="text-xs text-muted-foreground truncate mt-0.5">
+                              {formattedPhone}
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0">
                     {conversation.last_message_at && (
@@ -159,14 +180,14 @@ export function ConversationList({ conversations, selectedId, onSelect, onSpyVie
                         {conversation.unread_count}
                       </span>
                     )}
-                    <ConversationCardActions 
+                    <ConversationCardActions
                       conversation={conversation}
                       variant="minimal"
                       onSpyView={onSpyView ? () => onSpyView(conversation) : undefined}
                     />
                   </div>
                 </div>
-                
+
                 {/* Last message preview + status */}
                 <div className="flex items-center gap-1 mt-1">
                   {/* Status checkmarks for outbound messages */}
@@ -192,7 +213,7 @@ export function ConversationList({ conversations, selectedId, onSelect, onSpyVie
                       {messagePreview}
                     </p>
                   ) : (
-                    <span 
+                    <span
                       className={cn(
                         "px-2 py-0.5 rounded-full text-[10px] font-medium",
                         conversation.status === 'open' && "bg-green-500/10 text-green-500",
@@ -239,10 +260,10 @@ function ContactTagsDisplay({ contactId }: { contactId: string }) {
   return (
     <div className="flex items-center gap-1 mt-1 flex-wrap">
       {tagDetails.map((tag: { id: string; name: string; color: string }) => (
-        <span 
+        <span
           key={tag.id}
           className="text-[10px] px-1.5 py-0.5 rounded-full"
-          style={{ 
+          style={{
             backgroundColor: `${tag.color}20`,
             color: tag.color,
           }}

@@ -344,9 +344,29 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
 
   console.log(`Message saved: ${msgId} for contact ${phone} in conversation ${conversation.id}`);
 
-  // Trigger AI agent if needed
+  // Trigger AI agent or Campaigns if needed
   if (!fromMe && textContent) {
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+
+    // 1. Check for Campaign Triggers (highest priority)
+    const campaignFlowId = await checkCampaignTriggers(supabase, organizationId, textContent);
+
+    if (campaignFlowId) {
+      console.log(`[CAMPAIGN TRIGGERED] Starting flow ${campaignFlowId} for conversation ${conversation.id}`);
+      // Mark as IA mode to prevent human collision if needed, or leave as is. We'll set to ia.
+      await supabase.from('conversations').update({ service_mode: 'ia' }).eq('id', conversation.id);
+
+      // Call flow execution engine
+      fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/flow-execute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
+        body: JSON.stringify({ flowId: campaignFlowId, conversationId: conversation.id }),
+      }).catch(err => console.error('Campaign flow execute error:', err));
+
+      return respond({ success: true, messageId: savedMessage.id, triggeredCampaign: true });
+    }
+
+    // 2. Check for Master Prompt / AI routing
     let shouldTrigger = conversation.service_mode === 'ia';
 
     if (!shouldTrigger) {
@@ -537,4 +557,47 @@ async function checkMasterPromptTriggers(supabase: any, organizationId: string, 
     }
   }
   return false;
+}
+
+// Check for exact, contains, or starts_with matches in active campaigns
+async function checkCampaignTriggers(supabase: any, organizationId: string, messageContent: string): Promise<string | null> {
+  const { data: campaigns } = await supabase
+    .from('campaigns')
+    .select('id, trigger_keyword, match_type, flow_id')
+    .eq('organization_id', organizationId)
+    .eq('is_active', true);
+
+  if (!campaigns?.length) return null;
+
+  const msgLower = messageContent.toLowerCase().trim();
+
+  for (const campaign of campaigns) {
+    if (!campaign.trigger_keyword) continue;
+
+    // words might be comma separated "sim, quero, gosto"
+    const keywords = campaign.trigger_keyword.split(',').map((k: string) => k.trim().toLowerCase()).filter(Boolean);
+
+    for (const kw of keywords) {
+      let matched = false;
+      switch (campaign.match_type) {
+        case 'exact':
+          matched = msgLower === kw;
+          break;
+        case 'contains':
+          matched = msgLower.includes(kw);
+          break;
+        case 'starts_with':
+          matched = msgLower.startsWith(kw);
+          break;
+        default:
+          matched = msgLower === kw;
+      }
+
+      if (matched) {
+        return campaign.flow_id;
+      }
+    }
+  }
+
+  return null;
 }

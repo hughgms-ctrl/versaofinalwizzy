@@ -23,6 +23,8 @@ export interface Flow {
   workspace_id: string | null;
   master_prompt?: string;
   is_master_active?: boolean;
+  provider?: string | null;
+  model?: string | null;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -46,6 +48,8 @@ function mapRowToFlow(row: any): Flow {
     workspace_id: row.workspace_id || null,
     master_prompt: row.master_prompt || '',
     is_master_active: row.is_master_active || false,
+    provider: row.provider || null,
+    model: row.model || null,
   };
 }
 
@@ -155,6 +159,8 @@ export function useSaveFlow() {
       workspace_id?: string | null;
       master_prompt?: string;
       is_master_active?: boolean;
+      provider?: string | null;
+      model?: string | null;
     }) => {
       const updateData: Record<string, unknown> = {
         nodes: data.nodes,
@@ -169,6 +175,8 @@ export function useSaveFlow() {
       if (data.workspace_id !== undefined) updateData.workspace_id = data.workspace_id;
       if (data.master_prompt !== undefined) updateData.master_prompt = data.master_prompt;
       if (data.is_master_active !== undefined) updateData.is_master_active = data.is_master_active;
+      if (data.provider !== undefined) updateData.provider = data.provider;
+      if (data.model !== undefined) updateData.model = data.model;
 
       const { data: flow, error } = await (supabase
         .from('flows' as 'contacts')

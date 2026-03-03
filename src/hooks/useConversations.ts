@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './useAuth';
@@ -126,7 +126,7 @@ export function useMessages(conversationId: string | null) {
     queryKey: ['messages', conversationId],
     queryFn: async (): Promise<DbMessage[]> => {
       if (!conversationId) return [];
-      
+
       const { data, error } = await supabase
         .from('messages')
         .select('*')
@@ -183,5 +183,92 @@ export function useProfiles() {
       return (data || []) as DbProfile[];
     },
     enabled: !!session,
+  });
+}
+
+export function useCreateConversation() {
+  const queryClient = useQueryClient();
+  const { session, profile } = useAuth();
+
+  return useMutation({
+    mutationFn: async (data: { phone: string, name: string | null }) => {
+      if (!profile?.organization_id) throw new Error('Organization ID is required');
+
+      // Format phone: ensure it has country code '55' for BR assuming 10 or 11 digits
+      let formattedPhone = data.phone.replace(/\D/g, '');
+      if (formattedPhone.length === 10 || formattedPhone.length === 11) {
+        formattedPhone = `55${formattedPhone}`;
+      }
+
+      // 1. Check if contact exists
+      let contactId = null;
+      const { data: existingContact } = await supabase
+        .from('contacts')
+        .select('id')
+        .eq('phone', formattedPhone)
+        .eq('organization_id', profile.organization_id)
+        .limit(1)
+        .maybeSingle();
+
+      if (existingContact) {
+        contactId = existingContact.id;
+      } else {
+        // 2. Create contact if doesn't exist
+        const { data: newContact, error: contactError } = await supabase
+          .from('contacts')
+          .insert({
+            phone: formattedPhone,
+            name: data.name,
+            organization_id: profile.organization_id,
+          } as any)
+          .select()
+          .single();
+
+        if (contactError) throw new Error(`Erro ao criar contato: ${contactError.message}`);
+        contactId = newContact.id;
+      }
+
+      // 3. Check for existing open/pending conversation
+      const { data: existingConv } = await supabase
+        .from('conversations')
+        .select('*, contact:contacts(*)')
+        .eq('contact_id', contactId)
+        .in('status', ['open', 'pending'])
+        .maybeSingle();
+
+      if (existingConv) {
+        return {
+          conversation: { ...existingConv, last_message: [] } as unknown as DbConversation,
+          isNew: false
+        };
+      }
+
+      // 4. Create new conversation
+      const { data: newConv, error: convError } = await supabase
+        .from('conversations')
+        .insert({
+          contact_id: contactId,
+          organization_id: profile.organization_id,
+          status: 'open',
+          service_mode: 'ativo', // Outbound feature starts as "ativo" generally
+          unread_count: 0
+        } as any)
+        .select('*, contact:contacts(*)')
+        .single();
+
+      if (convError) throw new Error(`Erro ao criar conversa: ${convError.message}`);
+      return {
+        conversation: { ...newConv, last_message: [] } as unknown as DbConversation,
+        isNew: true
+      };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['contacts'] });
+    },
+    onError: (error: any) => {
+      // toast or error reporting can be handled where the hook is used
+      throw error;
+    }
   });
 }

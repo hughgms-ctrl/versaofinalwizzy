@@ -25,7 +25,7 @@ export interface Contact {
 
 export function useContacts() {
   const { session } = useAuth();
-  
+
   return useQuery({
     queryKey: ['contacts'],
     queryFn: async (): Promise<Contact[]> => {
@@ -49,7 +49,7 @@ export function useContacts() {
 
 export function useUpdateContact() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<Contact> }) => {
       const { error } = await supabase
@@ -77,11 +77,77 @@ export function useUpdateContact() {
   });
 }
 
+export function useCreateContact() {
+  const queryClient = useQueryClient();
+  const { profile } = useAuth();
+
+  return useMutation({
+    mutationFn: async (data: Partial<Contact>) => {
+      if (!profile?.organization_id) throw new Error('Organization ID is required');
+
+      // Format phone: ensure it has country code '55' for BR assuming 10 or 11 digits
+      let formattedPhone = data.phone;
+      if (formattedPhone) {
+        formattedPhone = formattedPhone.replace(/\D/g, '');
+        if (formattedPhone.length === 10 || formattedPhone.length === 11) {
+          formattedPhone = `55${formattedPhone}`;
+        }
+      }
+
+      // Check if contact with this phone already exists
+      if (formattedPhone) {
+        const { data: existingContact } = await supabase
+          .from('contacts')
+          .select('id')
+          .eq('phone', formattedPhone)
+          .eq('organization_id', profile.organization_id)
+          .limit(1)
+          .maybeSingle();
+
+        if (existingContact) {
+          throw new Error('Já existe um contato com este telefone.');
+        }
+      }
+
+      const { data: newContact, error } = await supabase
+        .from('contacts')
+        .insert({
+          ...data,
+          phone: formattedPhone || data.phone, // use formatted if available
+          organization_id: profile.organization_id,
+        } as any)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return newContact;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['contacts'] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Erro ao criar',
+        description: error.message || 'Não foi possível criar o contato.',
+        variant: 'destructive',
+      });
+    },
+  });
+}
+
 export function useDeleteContact() {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: async (id: string) => {
+      // Delete conversations first to avoid foreign key constraint errors
+      const { error: convError } = await supabase
+        .from('conversations')
+        .delete()
+        .eq('contact_id', id);
+
+      if (convError) console.error("Error deleting conversations:", convError);
+
       const { error } = await supabase
         .from('contacts')
         .delete()

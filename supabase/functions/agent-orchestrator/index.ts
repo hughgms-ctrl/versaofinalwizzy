@@ -118,15 +118,19 @@ Deno.serve(async (req) => {
     const pipelinePositions = pipelinePositionsResult.data || [];
     const flows = flowsResult.data || [];
 
-    // Resolve AI config: integration_configs > workspace_agent_configs > defaults
-    const aiConfig = resolveAIConfig(integrationConfig, 'agents', LOVABLE_API_KEY!);
-    const aiModel = aiConfig.model || workspaceConfig?.ai_model || 'google/gemini-3-flash-preview';
+    // Resolve AI config: masterPrompt > integration_configs > workspace_agent_configs > defaults
+    const masterProvider = masterPrompt.provider || integrationConfig?.ai_provider || 'lovable';
+    const masterModel = masterPrompt.model || integrationConfig?.default_model || 'google/gemini-3-flash-preview';
+
+    const aiConfig = resolveAIConfig(integrationConfig, 'agents', LOVABLE_API_KEY!, masterProvider, masterModel);
+    const aiModel = aiConfig.model;
 
     const context = {
       conversationId, contactId, organizationId, conversation,
       messages, agents, allTags, contactTags, pipelines, pipelinePositions,
       flows, aiModel, masterPrompt, LOVABLE_API_KEY,
       aiEndpoint: aiConfig.endpoint, aiApiKey: aiConfig.apiKey,
+      integrationConfig,
     };
 
     // 4. Check for flow-based orchestration
@@ -734,13 +738,14 @@ async function invokeAgentAI(
     round++;
     console.log(`--- Agent AI Round ${round} ---`);
 
-    const aiResponse = await fetch(ctx.aiEndpoint, {
+    const agentConfig = resolveAgentConfig(ctx, agent, ctx.integrationConfig);
+    const aiResponse = await fetch(agentConfig.endpoint, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${ctx.aiApiKey}`,
+        Authorization: `Bearer ${agentConfig.apiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ model: ctx.aiModel, messages: aiMessages, tools, tool_choice: 'auto' }),
+      body: JSON.stringify({ model: agentConfig.model, messages: aiMessages, tools, tool_choice: 'auto' }),
     });
 
     if (!aiResponse.ok) {
@@ -1645,6 +1650,15 @@ function isInternalThought(text: string): boolean {
   return internalPatterns.some(p => p.test(trimmed));
 }
 
+function resolveAgentConfig(ctx: any, agent: any, integrationConfig: any): AIConfigResult {
+  if (agent?.provider || agent?.model) {
+    const provider = agent.provider || integrationConfig?.ai_provider || 'lovable';
+    const model = agent.model || integrationConfig?.default_model || 'google/gemini-3-flash-preview';
+    return resolveAIConfig(integrationConfig, 'agents', ctx.LOVABLE_API_KEY, provider, model);
+  }
+  return { endpoint: ctx.aiEndpoint, apiKey: ctx.aiApiKey, model: ctx.aiModel };
+}
+
 // ==================== AI CONFIG RESOLUTION ====================
 
 interface AIConfigResult {
@@ -1665,33 +1679,44 @@ async function resolveIntegrationConfig(supabase: any, organizationId: string) {
 function resolveAIConfig(
   integrationConfig: any,
   feature: string,
-  lovableApiKey: string
+  lovableApiKey: string,
+  overrideProvider?: string,
+  overrideModel?: string
 ): AIConfigResult {
   const LOVABLE_ENDPOINT = 'https://ai.gateway.lovable.dev/v1/chat/completions';
   const OPENAI_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
   const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
 
   if (!integrationConfig) {
-    return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model: 'google/gemini-3-flash-preview' };
+    return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model: 'google/gemini-1.5-flash-latest' };
   }
 
   // Check feature-specific override first
   const featureProvider = integrationConfig[`${feature}_provider`];
   const featureModel = integrationConfig[`${feature}_model`];
-  const provider = featureProvider || integrationConfig.ai_provider || 'lovable';
-  const model = featureModel || integrationConfig.default_model || 'google/gemini-3-flash-preview';
+  let provider = overrideProvider || featureProvider || integrationConfig.ai_provider || 'lovable';
+  let model = overrideModel || featureModel || integrationConfig.default_model || 'google/gemini-1.5-flash-latest';
+
+  // Ensure format is correct depending on provider
+  if (provider === 'gemini') {
+    model = model.replace('google/', ''); // Google API doesn't use prefix
+  } else if (provider === 'lovable') {
+    if (!model.startsWith('google/') && !model.startsWith('openai/')) {
+      model = model.includes('gpt') ? `openai/${model}` : `google/${model}`;
+    }
+  }
 
   switch (provider) {
     case 'openai':
       if (!integrationConfig.openai_api_key) {
         console.warn('OpenAI selected but no API key, falling back to Lovable');
-        return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model: 'google/gemini-3-flash-preview' };
+        return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model: 'google/gemini-1.5-flash-latest' };
       }
       return { endpoint: OPENAI_ENDPOINT, apiKey: integrationConfig.openai_api_key, model };
     case 'gemini':
       if (!integrationConfig.gemini_api_key) {
         console.warn('Gemini selected but no API key, falling back to Lovable');
-        return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model: 'google/gemini-3-flash-preview' };
+        return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model: 'google/gemini-1.5-flash-latest' };
       }
       return { endpoint: GEMINI_ENDPOINT, apiKey: integrationConfig.gemini_api_key, model };
     default:

@@ -17,25 +17,34 @@ function resolveAIConfig(integrationConfig: any, feature: string, lovableApiKey:
   const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
 
   if (!integrationConfig) {
-    return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model: 'google/gemini-2.5-flash' };
+    return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model: 'google/gemini-1.5-flash-latest' };
   }
 
   const featureProvider = integrationConfig[`${feature}_provider`];
   const featureModel = integrationConfig[`${feature}_model`];
-  const provider = featureProvider || integrationConfig.ai_provider || 'lovable';
-  const model = featureModel || integrationConfig.default_model || 'google/gemini-2.5-flash';
+  let provider = featureProvider || integrationConfig.ai_provider || 'lovable';
+  let model = featureModel || integrationConfig.default_model || 'google/gemini-1.5-flash-latest';
+
+  // Ensure format is correct depending on provider
+  if (provider === 'gemini') {
+    model = model.replace('google/', ''); // Google API doesn't use prefix
+  } else if (provider === 'lovable') {
+    if (!model.startsWith('google/') && !model.startsWith('openai/')) {
+      model = model.includes('gpt') ? `openai/${model}` : `google/${model}`;
+    }
+  }
 
   switch (provider) {
     case 'openai':
       if (!integrationConfig.openai_api_key) {
         console.warn('OpenAI selected but no API key, falling back to Lovable');
-        return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model: 'google/gemini-2.5-flash' };
+        return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model: 'google/gemini-1.5-flash-latest' };
       }
       return { endpoint: OPENAI_ENDPOINT, apiKey: integrationConfig.openai_api_key, model };
     case 'gemini':
       if (!integrationConfig.gemini_api_key) {
         console.warn('Gemini selected but no API key, falling back to Lovable');
-        return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model: 'google/gemini-2.5-flash' };
+        return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model: 'google/gemini-1.5-flash-latest' };
       }
       return { endpoint: GEMINI_ENDPOINT, apiKey: integrationConfig.gemini_api_key, model };
     default:

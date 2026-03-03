@@ -9,13 +9,14 @@ import { useConversations, DbConversation } from '@/hooks/useConversations';
 import { useWhatsAppStatus } from '@/hooks/useWhatsAppStatus';
 import { supabase } from '@/integrations/supabase/client';
 import { isWithinInterval, parseISO } from 'date-fns';
-import { MessageSquare, Loader2, Inbox, Search, X, Smartphone, Settings, ArrowLeft, Archive, EyeOff } from 'lucide-react';
+import { MessageSquare, Loader2, Inbox, Search, X, Smartphone, Settings, ArrowLeft, Archive, EyeOff, MessageSquarePlus } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useQuery } from '@tanstack/react-query';
 import { useTags } from '@/hooks/useTags';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
+import { NewConversationDialog } from '@/components/conversations/NewConversationDialog';
 
 const ConversationsPage = () => {
   const [selectedConversation, setSelectedConversation] = useState<DbConversation | null>(null);
@@ -24,6 +25,7 @@ const ConversationsPage = () => {
   const [serviceMode, setServiceMode] = useState<ServiceMode>('all');
   const [showArchived, setShowArchived] = useState(false);
   const [isSpyMode, setIsSpyMode] = useState(false);
+  const [showNewConversationDialog, setShowNewConversationDialog] = useState(false);
   const { data: conversations, isLoading, error, refetch } = useConversations({ onlyArchived: showArchived });
   const { connected: whatsappConnected, isLoading: whatsappLoading } = useWhatsAppStatus();
   const { selectedWorkspace, selectedWorkspaceId } = useWorkspaceContext();
@@ -43,7 +45,7 @@ const ConversationsPage = () => {
   // Filter conversations by search query, all filters, and service mode
   const filteredConversations = useMemo(() => {
     if (!conversations) return [];
-    
+
     return conversations.filter(conv => {
       // === WORKSPACE FILTER ===
       if (selectedWorkspaceId && selectedWorkspace) {
@@ -60,7 +62,7 @@ const ConversationsPage = () => {
         const convServiceMode = (conv as any).service_mode || 'pendente';
         if (convServiceMode !== serviceMode) return false;
       }
-      
+
       // Search filter
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase().trim();
@@ -68,31 +70,31 @@ const ConversationsPage = () => {
         const phone = conv.contact?.phone || '';
         if (!name.includes(query) && !phone.includes(query)) return false;
       }
-      
+
       // Status filter
       if (filters.statusFilter !== 'all' && conv.status !== filters.statusFilter) return false;
-      
+
       // Assignee filter
       if (filters.assigneeFilter !== 'all') {
         if (filters.assigneeFilter === 'unassigned' && conv.assigned_to !== null) return false;
         if (filters.assigneeFilter !== 'unassigned' && conv.assigned_to !== filters.assigneeFilter) return false;
       }
-      
+
       // Tag filter
       if (filters.tagFilter !== 'all' && conv.contact?.id) {
         const contactTagIds = allContactTags?.filter(ct => ct.contact_id === conv.contact?.id).map(ct => ct.tag_id) || [];
         if (!contactTagIds.includes(filters.tagFilter)) return false;
       }
-      
+
       // Unread filter
       if (filters.showOnlyUnread && conv.unread_count === 0) return false;
-      
+
       // AI filter - check if last message is from bot
       if (filters.showOnlyAI) {
         const lastMessage = conv.last_message?.[0];
         if (!lastMessage?.is_from_bot) return false;
       }
-      
+
       // Date filter
       if (filters.dateRange?.from && conv.last_message_at) {
         const convDate = parseISO(conv.last_message_at);
@@ -102,7 +104,7 @@ const ConversationsPage = () => {
           return false;
         }
       }
-      
+
       return true;
     });
   }, [conversations, searchQuery, filters, allContactTags, serviceMode, showArchived, selectedWorkspaceId, selectedWorkspace]);
@@ -110,7 +112,7 @@ const ConversationsPage = () => {
   // Count conversations by service mode (filtered by workspace)
   const serviceModeCounts = useMemo(() => {
     if (!conversations) return { ia: 0, ativo: 0, pendente: 0 };
-    
+
     // First filter by workspace, then count by service mode
     const workspaceFiltered = conversations.filter(conv => {
       if (conv.status === 'archived') return false;
@@ -124,7 +126,7 @@ const ConversationsPage = () => {
       }
       return true;
     });
-    
+
     return workspaceFiltered.reduce((acc, conv) => {
       const mode = (conv as any).service_mode || 'pendente';
       if (mode in acc) {
@@ -138,7 +140,7 @@ const ConversationsPage = () => {
   const handleSelectConversation = useCallback(async (conversation: DbConversation) => {
     setSelectedConversation(conversation);
     setIsSpyMode(false);
-    
+
     // If there are unread messages, mark as read
     if (conversation.unread_count > 0) {
       try {
@@ -146,7 +148,7 @@ const ConversationsPage = () => {
           .from('conversations')
           .update({ unread_count: 0 })
           .eq('id', conversation.id);
-        
+
         // Refetch to update the list
         refetch();
       } catch (error) {
@@ -180,8 +182,8 @@ const ConversationsPage = () => {
   // Show disconnected state if WhatsApp is not connected
   if (!whatsappLoading && !whatsappConnected) {
     return (
-      <MainLayout 
-        title="Conversas" 
+      <MainLayout
+        title="Conversas"
         subtitle="Gerencie todas as suas conversas"
         showSearch={false}
         fullWidth
@@ -208,8 +210,8 @@ const ConversationsPage = () => {
   }
 
   return (
-    <MainLayout 
-      title="Conversas" 
+    <MainLayout
+      title="Conversas"
       subtitle="Gerencie todas as suas conversas"
       showSearch={false}
       fullWidth
@@ -218,8 +220,8 @@ const ConversationsPage = () => {
         {/* Fixed Header Row - Search + Filters aligned */}
         <div className="hidden md:flex items-center justify-between gap-4 px-4 py-2 border-b border-border bg-muted/30 flex-shrink-0">
           {/* Search - left side, fixed width to match sidebar */}
-          <div className="w-80 lg:w-96 flex-shrink-0">
-            <div className="relative">
+          <div className="w-80 lg:w-96 flex-shrink-0 flex items-center gap-2">
+            <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 placeholder="Pesquisar conversas..."
@@ -238,8 +240,16 @@ const ConversationsPage = () => {
                 </Button>
               )}
             </div>
+            <Button
+              size="icon"
+              className="h-9 w-9 shrink-0 flex-none"
+              title="Nova Conversa"
+              onClick={() => setShowNewConversationDialog(true)}
+            >
+              <MessageSquarePlus className="h-4 w-4" />
+            </Button>
           </div>
-          
+
           {/* Filters - centered */}
           <div className="flex-1 flex items-center justify-center">
             <ConversationFilters
@@ -249,7 +259,7 @@ const ConversationsPage = () => {
               showCount={false}
             />
           </div>
-          
+
           {/* Spacer to balance layout */}
           <div className="w-80 lg:w-96 flex-shrink-0" />
         </div>
@@ -262,8 +272,8 @@ const ConversationsPage = () => {
             selectedConversation && "hidden md:flex"
           )}>
             {/* Mobile Search Bar */}
-            <div className="p-2 border-b border-border md:hidden">
-              <div className="relative">
+            <div className="p-2 border-b border-border md:hidden flex gap-2">
+              <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   placeholder="Pesquisar conversas..."
@@ -286,8 +296,8 @@ const ConversationsPage = () => {
 
             {/* Service Mode Tabs */}
             <div className="px-2 py-2 border-b border-border">
-              <ServiceModeTabs 
-                value={serviceMode} 
+              <ServiceModeTabs
+                value={serviceMode}
                 onChange={(mode) => {
                   setServiceMode(mode);
                   setShowArchived(false);
@@ -304,8 +314,8 @@ const ConversationsPage = () => {
                 }}
                 className={cn(
                   "flex items-center gap-1.5 text-xs mt-2 transition-colors",
-                  showArchived 
-                    ? "text-primary font-medium" 
+                  showArchived
+                    ? "text-primary font-medium"
                     : "text-muted-foreground hover:text-foreground"
                 )}
               >
@@ -413,6 +423,16 @@ const ConversationsPage = () => {
           </div>
         </div>
       </div>
+
+      {/* New Conversation Dialog */}
+      <NewConversationDialog
+        open={showNewConversationDialog}
+        onOpenChange={setShowNewConversationDialog}
+        onConversationCreated={(conv) => {
+          setSelectedConversation(conv);
+          refetch(); // Ensure list updates
+        }}
+      />
     </MainLayout>
   );
 };

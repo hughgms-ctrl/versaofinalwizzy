@@ -40,6 +40,7 @@ import { useQueryClient } from '@tanstack/react-query';
 
 interface ConversationDetailProps {
   conversation: DbConversation;
+  headerActions?: React.ReactNode;
 }
 
 // Helper to get initials
@@ -57,7 +58,7 @@ const statusLabels: Record<string, string> = {
   archived: 'Arquivado',
 };
 
-export function ConversationDetail({ conversation }: ConversationDetailProps) {
+export function ConversationDetail({ conversation, headerActions }: ConversationDetailProps) {
   const [newMessage, setNewMessage] = useState('');
   const [isAIActive, setIsAIActive] = useState(() => (conversation as any).service_mode === 'ia');
   const [showHistoryLimitMessage, setShowHistoryLimitMessage] = useState(false);
@@ -66,7 +67,7 @@ export function ConversationDetail({ conversation }: ConversationDetailProps) {
   const [isSendingMedia, setIsSendingMedia] = useState(false);
   const [showProfilePanel, setShowProfilePanel] = useState(false);
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
-  
+
   const queryClient = useQueryClient();
   const { profile } = useAuth();
   const { signatureEnabled, toggleSignature } = useSignatureSettings();
@@ -75,13 +76,13 @@ export function ConversationDetail({ conversation }: ConversationDetailProps) {
   const sendMessage = useSendMessage();
   const { sendTyping } = useWhatsAppPresence();
   const { uploadFile, uploadAudioBlob, isUploading } = useMediaUpload();
-  const { 
-    syncMessages, 
-    loadOlderMessages, 
+  const {
+    syncMessages,
+    loadOlderMessages,
     resetPagination,
-    isSyncing, 
+    isSyncing,
     isLoadingOlder,
-    hasMoreMessages 
+    hasMoreMessages
   } = useSyncMessages(conversation.id);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -122,14 +123,14 @@ export function ConversationDetail({ conversation }: ConversationDetailProps) {
   // Scroll to bottom on initial load (instant) and new messages (smooth)
   const hasInitialScrolled = useRef(false);
   const [showScrollButton, setShowScrollButton] = useState(false);
-  
+
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
     messagesEndRef.current?.scrollIntoView({ behavior });
   }, []);
-  
+
   useEffect(() => {
     if (!messages || messages.length === 0) return;
-    
+
     // First load: instant scroll, no animation
     if (!hasInitialScrolled.current && !loadingMessages && !isSyncing) {
       hasInitialScrolled.current = true;
@@ -153,12 +154,12 @@ export function ConversationDetail({ conversation }: ConversationDetailProps) {
   // Handle scroll for infinite scroll (reverse) and show/hide scroll button
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     const container = e.currentTarget;
-    
+
     // If scrolled near top (first 100px) and we have messages
     if (container.scrollTop < 100 && !isLoadingOlder && hasMoreMessages && messages && messages.length > 0) {
       loadOlderMessages();
     }
-    
+
     // Show scroll button when user is not at the bottom
     const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 150;
     setShowScrollButton(!isNearBottom);
@@ -167,7 +168,7 @@ export function ConversationDetail({ conversation }: ConversationDetailProps) {
   // Send typing presence when user types
   const handleInputChange = useCallback((value: string) => {
     setNewMessage(value);
-    
+
     // Only send typing status if user is actually typing something
     // and we haven't sent it recently (throttle to avoid spam)
     const now = Date.now();
@@ -175,7 +176,7 @@ export function ConversationDetail({ conversation }: ConversationDetailProps) {
       lastTypingSentRef.current = now;
       sendTyping(conversation.contact.phone, 5000);
     }
-    
+
     // Clear any existing timeout
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current);
@@ -189,7 +190,7 @@ export function ConversationDetail({ conversation }: ConversationDetailProps) {
 
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
-      
+
       // Check for image data
       if (item.type.startsWith('image/')) {
         e.preventDefault();
@@ -209,7 +210,7 @@ export function ConversationDetail({ conversation }: ConversationDetailProps) {
         return;
       }
     }
-    
+
     // Text paste is handled normally by the input
   }, []);
 
@@ -254,21 +255,21 @@ export function ConversationDetail({ conversation }: ConversationDetailProps) {
 
     // Normal text message
     if (!newMessage.trim() || sendMessage.isPending) return;
-    
+
     // Replace message variables with actual values
     const variables: Record<string, string> = {
       nome: conversation.contact?.name || conversation.contact?.phone || 'Cliente',
       telefone: conversation.contact?.phone || '',
     };
     let messageContent = parseMessageVariables(newMessage.trim(), variables);
-    
+
     // Add signature if enabled
     if (signatureEnabled && profile?.full_name) {
       messageContent = `*_${profile.full_name}_*\n\n${messageContent}`;
     }
-    
+
     setNewMessage('');
-    
+
     // If AI was active, user is taking over - persist to DB
     if (isAIActive) {
       setIsAIActive(false);
@@ -297,7 +298,7 @@ export function ConversationDetail({ conversation }: ConversationDetailProps) {
 
   const handleToggleAI = async (active: boolean) => {
     setIsAIActive(active);
-    
+
     // Persist to DB
     const newMode = active ? 'ia' : 'ativo';
     await supabase
@@ -335,12 +336,12 @@ export function ConversationDetail({ conversation }: ConversationDetailProps) {
       type: mediaPreview.type,
       previewUrl,
     });
-    
+
     // Set caption as message
     if (caption) {
       setNewMessage(caption);
     }
-    
+
     // Close preview dialog
     setMediaPreview(null);
   };
@@ -382,414 +383,421 @@ export function ConversationDetail({ conversation }: ConversationDetailProps) {
   return (
     <div className="flex h-full overflow-hidden">
       <div className="flex flex-col flex-1 min-w-0 h-full overflow-hidden">
-      {/* Header - Responsive */}
-      <div className="flex items-center justify-between p-3 md:p-4 border-b border-border bg-card gap-2">
-        <div className="flex items-center gap-2 md:gap-3 min-w-0 flex-1">
-          <div className="relative flex-shrink-0">
-            <div className="h-10 w-10 md:h-12 md:w-12 rounded-full bg-gradient-to-br from-primary/20 to-purple-500/20 flex items-center justify-center">
-              {conversation.contact?.avatar_url ? (
-                <img 
-                  src={conversation.contact.avatar_url} 
-                  alt={getDisplayName()}
-                  className="h-10 w-10 md:h-12 md:w-12 rounded-full object-cover"
-                />
-              ) : (
-                <span className="text-xs md:text-sm font-semibold text-primary">
-                  {getInitials()}
-                </span>
-              )}
-            </div>
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1 md:gap-2 flex-wrap">
-              <h3 className="font-semibold text-foreground text-sm md:text-base truncate max-w-[120px] md:max-w-none">{getDisplayName()}</h3>
-              <span className={cn(
-                "status-badge text-[9px] md:text-[10px] hidden xs:inline-flex",
-                conversation.status === 'open' && "status-open",
-                conversation.status === 'pending' && "status-pending",
-                conversation.status === 'resolved' && "bg-blue-500/10 text-blue-500",
-                conversation.status === 'archived' && "bg-muted text-muted-foreground"
-              )}>
-                {statusLabels[conversation.status]}
-              </span>
-              {/* Quick Note Badge - Hidden on very small screens */}
-              {(() => {
-                const metadata = conversation.contact?.metadata as { note?: string } | null;
-                const note = metadata?.note;
-                if (note) {
-                  return (
-                    <span 
-                      className="hidden sm:inline-flex text-[10px] px-1.5 py-0.5 bg-amber-500/10 text-amber-600 dark:text-amber-400 rounded truncate max-w-[100px] md:max-w-[150px]"
-                      title={note}
-                    >
-                      {note}
-                    </span>
-                  );
-                }
-                return null;
-              })()}
-            </div>
-            <p className="text-[10px] md:text-xs text-muted-foreground truncate">{conversation.contact?.phone || 'Sem número'}</p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-1 md:gap-2 flex-shrink-0">
-          {/* Message Search */}
-          <MessageSearch 
-            messages={messages || []} 
-            onScrollToMessage={(messageId) => {
-              setHighlightedMessageId(messageId);
-              const element = document.getElementById(`message-${messageId}`);
-              if (element) {
-                element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                setTimeout(() => setHighlightedMessageId(null), 2000);
-              }
-            }}
-          />
-
-          {/* Archive Button */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="h-8 gap-1.5 text-xs hidden sm:flex"
-                onClick={async () => {
-                  try {
-                    await supabase
-                      .from('conversations')
-                      .update({ status: 'archived' })
-                      .eq('id', conversation.id);
-                    queryClient.invalidateQueries({ queryKey: ['conversations'] });
-                    toast({
-                      title: 'Conversa arquivada',
-                      description: 'A conversa foi movida para o arquivo.',
-                    });
-                  } catch (error) {
-                    toast({
-                      title: 'Erro',
-                      description: 'Não foi possível arquivar a conversa',
-                      variant: 'destructive',
-                    });
-                  }
-                }}
-              >
-                <Archive className="h-3.5 w-3.5" />
-                Arquivar Ticket
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Arquivar conversa</TooltipContent>
-          </Tooltip>
-
-          {/* AI Toggle - Compact on mobile */}
-          <div className={cn(
-            "flex items-center gap-1 md:gap-2 px-2 md:px-3 py-1 md:py-1.5 rounded-full border transition-colors",
-            isAIActive 
-              ? "bg-primary/10 border-primary/30" 
-              : "bg-muted border-border"
-          )}>
-            {isAIActive ? (
-              <Bot className="h-3.5 w-3.5 md:h-4 md:w-4 text-primary" />
-            ) : (
-              <User className="h-3.5 w-3.5 md:h-4 md:w-4 text-muted-foreground" />
-            )}
-            <span className="text-[10px] md:text-xs font-medium hidden sm:inline">
-              {isAIActive ? 'IA Ativa' : 'Manual'}
-            </span>
-            <Switch 
-              checked={isAIActive}
-              onCheckedChange={handleToggleAI}
-              className="data-[state=checked]:bg-primary scale-90 md:scale-100"
-            />
-          </div>
-
-          {/* Flow Trigger Dropdown - Hidden on small screens */}
-          <div className="hidden sm:block">
-            <FlowTriggerDropdown conversationId={conversation.id} />
-          </div>
-
-          <Button variant="ghost" size="icon" className="h-8 w-8 md:h-9 md:w-9" onClick={() => setShowProfilePanel(!showProfilePanel)}>
-            <UserCircle className="h-4 w-4" />
-          </Button>
-          <ConversationActionsMenu conversation={conversation} />
-        </div>
-      </div>
-
-      {/* Messages */}
-      <div className="relative flex-1 overflow-hidden">
-        {/* Scroll to bottom button */}
-        <ScrollToBottomButton 
-          visible={showScrollButton}
-          onClick={() => scrollToBottom('smooth')}
-        />
-        <div 
-          ref={messagesContainerRef}
-          className="h-full overflow-y-auto p-4 space-y-4 bg-muted/30"
-          onScroll={handleScroll}
-        >
-        {/* History limit info */}
-        {showHistoryLimitMessage && (
-          <div className="flex items-center justify-center py-3">
-            <div className="bg-amber-500/10 text-amber-600 dark:text-amber-400 px-4 py-2 rounded-lg text-xs text-center max-w-md">
-              <p className="font-medium">Histórico anterior indisponível</p>
-              <p className="opacity-80 mt-1">Mensagens anteriores não podem ser importadas pelo provedor. Novas mensagens serão sincronizadas automaticamente.</p>
-            </div>
-          </div>
-        )}
-
-        {/* Loading older messages indicator */}
-        {isLoadingOlder && (
-          <div className="flex items-center justify-center py-2">
-            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-            <span className="ml-2 text-xs text-muted-foreground">Carregando mensagens antigas...</span>
-          </div>
-        )}
-        
-        {/* Load more button when not at end */}
-        {!isLoadingOlder && hasMoreMessages && messages && messages.length > 0 && !showHistoryLimitMessage && (
-          <div className="flex items-center justify-center py-2">
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              onClick={() => loadOlderMessages()}
-              className="text-xs text-muted-foreground"
-            >
-              <ArrowUp className="h-3 w-3 mr-1" />
-              Carregar mensagens anteriores
-            </Button>
-          </div>
-        )}
-
-        {(loadingMessages || isSyncing) && !messages?.length ? (
-          <div className="flex items-center justify-center h-full">
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            <span className="ml-2 text-muted-foreground">{isSyncing ? 'Sincronizando...' : 'Carregando...'}</span>
-          </div>
-        ) : !messages || messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
-            <MessageCircle className="h-12 w-12 mb-4 opacity-50" />
-            <p className="text-sm">Nenhuma mensagem ainda</p>
-            <p className="text-xs mt-2 text-center max-w-xs">
-              {showHistoryLimitMessage 
-                ? 'Mensagens novas aparecerão aqui automaticamente.'
-                : 'Inicie uma conversa ou aguarde novas mensagens.'}
-            </p>
-          </div>
-        ) : (
-        <>
-            {(() => {
-              // Get message IDs that need transcriptions
-              const mediaMessageIds = messages
-                .filter(m => (m.type === 'audio' || m.type === 'image' || m.type === 'video') && m.media_url)
-                .map(m => m.id);
-              
-              return (
-                <MessageBubbleList 
-                  messages={messages}
-                  mediaMessageIds={mediaMessageIds}
-                  contactAvatar={conversation.contact?.avatar_url}
-                  contactName={conversation.contact?.name}
-                  contactPhone={conversation.contact?.phone}
-                  contactId={conversation.contact?.id}
-                  senderAvatar={profile?.avatar_url}
-                  senderName={profile?.full_name}
-                />
-              );
-            })()}
-            <div ref={messagesEndRef} />
-          </>
-        )}
-        {/* Typing/Recording Indicator */}
-        {(isTyping || isRecording) && (
-          <div className="flex items-center gap-2 px-4 py-2 animate-fade-in">
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted border border-border">
-              {isTyping ? (
-                <>
-                  <div className="flex gap-1">
-                    <span className="w-2 h-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: '0ms' }} />
-                    <span className="w-2 h-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: '150ms' }} />
-                    <span className="w-2 h-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: '300ms' }} />
-                  </div>
-                  <span className="text-xs text-muted-foreground">Digitando...</span>
-                </>
-              ) : (
-                <>
-                  <Mic className="h-4 w-4 text-destructive animate-pulse" />
-                  <span className="text-xs text-muted-foreground">Gravando áudio...</span>
-                </>
-              )}
-            </div>
-          </div>
-        )}
-        </div>
-      </div>
-
-      {/* AI Context Bar */}
-      <AIContextBar 
-        conversationId={conversation.id} 
-        isAIActive={isAIActive} 
-      />
-
-      {/* Input */}
-      <div className="border-t border-border bg-card">
-        {/* Attached Media Preview */}
-        {attachedMedia && (
-          <div className="px-4 pt-3 pb-0">
-            <div className="relative inline-flex items-center gap-2 p-2 pr-8 bg-muted rounded-lg border border-border">
-              {attachedMedia.type === 'image' && (
-                <img 
-                  src={attachedMedia.previewUrl} 
-                  alt="Anexo" 
-                  className="h-16 w-16 object-cover rounded"
-                />
-              )}
-              {attachedMedia.type === 'document' && (
-                <div className="h-16 w-16 bg-primary/10 rounded flex items-center justify-center">
-                  <FileText className="h-6 w-6 text-primary" />
-                </div>
-              )}
-              {attachedMedia.type === 'audio' && (
-                <div className="h-16 w-16 bg-primary/10 rounded flex items-center justify-center">
-                  <Mic className="h-6 w-6 text-primary" />
-                </div>
-              )}
-              <div className="flex flex-col min-w-0">
-                <span className="text-xs text-muted-foreground">
-                  {attachedMedia.type === 'image' && 'Imagem anexada'}
-                  {attachedMedia.type === 'document' && 'Documento anexado'}
-                  {attachedMedia.type === 'audio' && 'Áudio anexado'}
-                </span>
-                <span className="text-xs text-foreground truncate max-w-[150px]">
-                  {attachedMedia.file.name}
-                </span>
-              </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="absolute top-1 right-1 h-6 w-6"
-                onClick={handleRemoveAttachedMedia}
-              >
-                <X className="h-3 w-3" />
-              </Button>
-            </div>
-          </div>
-        )}
-
-        <div className="flex items-center gap-1 md:gap-2 p-3 md:p-4">
-          <MediaUploadButton 
-            onUpload={handleFileSelect}
-            disabled={sendMessage.isPending || isUploading || isSendingMedia}
-          />
-          
-          {/* Variable insertion button */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button 
-                variant="ghost" 
-                size="icon"
-                className="h-9 w-9 md:h-10 md:w-10 flex-shrink-0"
-                title="Inserir variável"
-              >
-                <Variable className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-48 bg-popover">
-              {messageVariables.map((variable) => (
-                <DropdownMenuItem
-                  key={variable.key}
-                  onClick={() => {
-                    setNewMessage(prev => prev + `{${variable.key}}`);
-                  }}
-                >
-                  <div className="flex flex-col">
-                    <span className="text-sm font-medium">{`{${variable.key}}`}</span>
-                    <span className="text-xs text-muted-foreground">{variable.label}</span>
-                  </div>
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* Signature toggle button */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button 
-                variant={signatureEnabled ? "default" : "ghost"} 
-                size="icon"
-                className={cn(
-                  "h-9 w-9 md:h-10 md:w-10 flex-shrink-0 transition-colors",
-                  signatureEnabled && "bg-primary/20 text-primary hover:bg-primary/30"
-                )}
-                onClick={() => toggleSignature(!signatureEnabled)}
-              >
-                <PenLine className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              <p className="text-xs">
-                {signatureEnabled ? 'Assinatura ativa' : 'Assinatura desativada'}
-                {profile?.full_name && signatureEnabled && (
-                  <span className="block text-muted-foreground mt-0.5">
-                    {profile.full_name}
+        {/* Header - Responsive */}
+        <div className="flex items-center justify-between p-3 md:p-4 border-b border-border bg-card gap-2">
+          <div className="flex items-center gap-2 md:gap-3 min-w-0 flex-1">
+            <div className="relative flex-shrink-0">
+              <div className="h-10 w-10 md:h-12 md:w-12 rounded-full bg-gradient-to-br from-primary/20 to-purple-500/20 flex items-center justify-center">
+                {conversation.contact?.avatar_url ? (
+                  <img
+                    src={conversation.contact.avatar_url}
+                    alt={getDisplayName()}
+                    className="h-10 w-10 md:h-12 md:w-12 rounded-full object-cover"
+                  />
+                ) : (
+                  <span className="text-xs md:text-sm font-semibold text-primary">
+                    {getInitials()}
                   </span>
                 )}
-              </p>
-            </TooltipContent>
-          </Tooltip>
+              </div>
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1 md:gap-2 flex-wrap">
+                <h3 className="font-semibold text-foreground text-sm md:text-base truncate max-w-[120px] md:max-w-none">{getDisplayName()}</h3>
+                <span className={cn(
+                  "status-badge text-[9px] md:text-[10px] hidden xs:inline-flex",
+                  conversation.status === 'open' && "status-open",
+                  conversation.status === 'pending' && "status-pending",
+                  conversation.status === 'resolved' && "bg-blue-500/10 text-blue-500",
+                  conversation.status === 'archived' && "bg-muted text-muted-foreground"
+                )}>
+                  {statusLabels[conversation.status]}
+                </span>
+                {/* Quick Note Badge - Hidden on very small screens */}
+                {(() => {
+                  const metadata = conversation.contact?.metadata as { note?: string } | null;
+                  const note = metadata?.note;
+                  if (note) {
+                    return (
+                      <span
+                        className="hidden sm:inline-flex text-[10px] px-1.5 py-0.5 bg-amber-500/10 text-amber-600 dark:text-amber-400 rounded truncate max-w-[100px] md:max-w-[150px]"
+                        title={note}
+                      >
+                        {note}
+                      </span>
+                    );
+                  }
+                  return null;
+                })()}
+              </div>
+              <p className="text-[10px] md:text-xs text-muted-foreground truncate">{conversation.contact?.phone || 'Sem número'}</p>
+            </div>
+          </div>
 
-          <Input
-            value={newMessage}
-            onChange={(e) => handleInputChange(e.target.value)}
-            onPaste={handlePaste}
-            placeholder={
-              attachedMedia 
-                ? "Adicione uma legenda (opcional)..." 
-                : isAIActive 
-                  ? "A IA está respondendo... Digite para assumir" 
-                  : "Digite sua mensagem ou cole uma imagem..."
-            }
-            className="flex-1"
-            onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
-            disabled={sendMessage.isPending || isSendingMedia}
-          />
-          {(newMessage.trim() || attachedMedia) ? (
-            <Button 
-              onClick={handleSend} 
-              disabled={(!newMessage.trim() && !attachedMedia) || sendMessage.isPending || isSendingMedia}
-            >
-              {(sendMessage.isPending || isSendingMedia) ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+          <div className="flex items-center gap-1 md:gap-2 flex-shrink-0">
+            {/* Message Search */}
+            <MessageSearch
+              messages={messages || []}
+              onScrollToMessage={(messageId) => {
+                setHighlightedMessageId(messageId);
+                const element = document.getElementById(`message-${messageId}`);
+                if (element) {
+                  element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  setTimeout(() => setHighlightedMessageId(null), 2000);
+                }
+              }}
+            />
+
+            {/* Archive Button */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 gap-1.5 text-xs hidden sm:flex"
+                  onClick={async () => {
+                    try {
+                      await supabase
+                        .from('conversations')
+                        .update({ status: 'archived' })
+                        .eq('id', conversation.id);
+                      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+                      toast({
+                        title: 'Conversa arquivada',
+                        description: 'A conversa foi movida para o arquivo.',
+                      });
+                    } catch (error) {
+                      toast({
+                        title: 'Erro',
+                        description: 'Não foi possível arquivar a conversa',
+                        variant: 'destructive',
+                      });
+                    }
+                  }}
+                >
+                  <Archive className="h-3.5 w-3.5" />
+                  Arquivar Ticket
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Arquivar conversa</TooltipContent>
+            </Tooltip>
+
+            {/* AI Toggle - Compact on mobile */}
+            <div className={cn(
+              "flex items-center gap-1 md:gap-2 px-2 md:px-3 py-1 md:py-1.5 rounded-full border transition-colors",
+              isAIActive
+                ? "bg-primary/10 border-primary/30"
+                : "bg-muted border-border"
+            )}>
+              {isAIActive ? (
+                <Bot className="h-3.5 w-3.5 md:h-4 md:w-4 text-primary" />
               ) : (
-                <Send className="h-4 w-4 mr-2" />
+                <User className="h-3.5 w-3.5 md:h-4 md:w-4 text-muted-foreground" />
               )}
-              {(sendMessage.isPending || isSendingMedia) ? 'Enviando...' : 'Enviar'}
+              <span className="text-[10px] md:text-xs font-medium hidden sm:inline">
+                {isAIActive ? 'IA Ativa' : 'Manual'}
+              </span>
+              <Switch
+                checked={isAIActive}
+                onCheckedChange={handleToggleAI}
+                className="data-[state=checked]:bg-primary scale-90 md:scale-100"
+              />
+            </div>
+
+            {/* Flow Trigger Dropdown - Hidden on small screens */}
+            <div className="hidden sm:block">
+              <FlowTriggerDropdown conversationId={conversation.id} />
+            </div>
+
+            <Button variant="ghost" size="icon" className="h-8 w-8 md:h-9 md:w-9" onClick={() => setShowProfilePanel(!showProfilePanel)}>
+              <UserCircle className="h-4 w-4" />
             </Button>
-          ) : (
-            <AudioRecordButton
-              onRecordComplete={handleAudioRecordComplete}
+            <ConversationActionsMenu conversation={conversation} />
+
+            {headerActions && (
+              <>
+                <div className="w-px h-5 bg-border hidden sm:block mx-1" />
+                {headerActions}
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Messages */}
+        <div className="relative flex-1 overflow-hidden">
+          {/* Scroll to bottom button */}
+          <ScrollToBottomButton
+            visible={showScrollButton}
+            onClick={() => scrollToBottom('smooth')}
+          />
+          <div
+            ref={messagesContainerRef}
+            className="h-full overflow-y-auto p-4 space-y-4 bg-muted/30"
+            onScroll={handleScroll}
+          >
+            {/* History limit info */}
+            {showHistoryLimitMessage && (
+              <div className="flex items-center justify-center py-3">
+                <div className="bg-amber-500/10 text-amber-600 dark:text-amber-400 px-4 py-2 rounded-lg text-xs text-center max-w-md">
+                  <p className="font-medium">Histórico anterior indisponível</p>
+                  <p className="opacity-80 mt-1">Mensagens anteriores não podem ser importadas pelo provedor. Novas mensagens serão sincronizadas automaticamente.</p>
+                </div>
+              </div>
+            )}
+
+            {/* Loading older messages indicator */}
+            {isLoadingOlder && (
+              <div className="flex items-center justify-center py-2">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                <span className="ml-2 text-xs text-muted-foreground">Carregando mensagens antigas...</span>
+              </div>
+            )}
+
+            {/* Load more button when not at end */}
+            {!isLoadingOlder && hasMoreMessages && messages && messages.length > 0 && !showHistoryLimitMessage && (
+              <div className="flex items-center justify-center py-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => loadOlderMessages()}
+                  className="text-xs text-muted-foreground"
+                >
+                  <ArrowUp className="h-3 w-3 mr-1" />
+                  Carregar mensagens anteriores
+                </Button>
+              </div>
+            )}
+
+            {(loadingMessages || isSyncing) && !messages?.length ? (
+              <div className="flex items-center justify-center h-full">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                <span className="ml-2 text-muted-foreground">{isSyncing ? 'Sincronizando...' : 'Carregando...'}</span>
+              </div>
+            ) : !messages || messages.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+                <MessageCircle className="h-12 w-12 mb-4 opacity-50" />
+                <p className="text-sm">Nenhuma mensagem ainda</p>
+                <p className="text-xs mt-2 text-center max-w-xs">
+                  {showHistoryLimitMessage
+                    ? 'Mensagens novas aparecerão aqui automaticamente.'
+                    : 'Inicie uma conversa ou aguarde novas mensagens.'}
+                </p>
+              </div>
+            ) : (
+              <>
+                {(() => {
+                  // Get message IDs that need transcriptions
+                  const mediaMessageIds = messages
+                    .filter(m => (m.type === 'audio' || m.type === 'image' || m.type === 'video') && m.media_url)
+                    .map(m => m.id);
+
+                  return (
+                    <MessageBubbleList
+                      messages={messages}
+                      mediaMessageIds={mediaMessageIds}
+                      contactAvatar={conversation.contact?.avatar_url}
+                      contactName={conversation.contact?.name}
+                      contactPhone={conversation.contact?.phone}
+                      contactId={conversation.contact?.id}
+                      senderAvatar={profile?.avatar_url}
+                      senderName={profile?.full_name}
+                    />
+                  );
+                })()}
+                <div ref={messagesEndRef} />
+              </>
+            )}
+            {/* Typing/Recording Indicator */}
+            {(isTyping || isRecording) && (
+              <div className="flex items-center gap-2 px-4 py-2 animate-fade-in">
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted border border-border">
+                  {isTyping ? (
+                    <>
+                      <div className="flex gap-1">
+                        <span className="w-2 h-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: '0ms' }} />
+                        <span className="w-2 h-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: '150ms' }} />
+                        <span className="w-2 h-2 rounded-full bg-primary animate-bounce" style={{ animationDelay: '300ms' }} />
+                      </div>
+                      <span className="text-xs text-muted-foreground">Digitando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Mic className="h-4 w-4 text-destructive animate-pulse" />
+                      <span className="text-xs text-muted-foreground">Gravando áudio...</span>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* AI Context Bar */}
+        <AIContextBar
+          conversationId={conversation.id}
+          isAIActive={isAIActive}
+        />
+
+        {/* Input */}
+        <div className="border-t border-border bg-card">
+          {/* Attached Media Preview */}
+          {attachedMedia && (
+            <div className="px-4 pt-3 pb-0">
+              <div className="relative inline-flex items-center gap-2 p-2 pr-8 bg-muted rounded-lg border border-border">
+                {attachedMedia.type === 'image' && (
+                  <img
+                    src={attachedMedia.previewUrl}
+                    alt="Anexo"
+                    className="h-16 w-16 object-cover rounded"
+                  />
+                )}
+                {attachedMedia.type === 'document' && (
+                  <div className="h-16 w-16 bg-primary/10 rounded flex items-center justify-center">
+                    <FileText className="h-6 w-6 text-primary" />
+                  </div>
+                )}
+                {attachedMedia.type === 'audio' && (
+                  <div className="h-16 w-16 bg-primary/10 rounded flex items-center justify-center">
+                    <Mic className="h-6 w-6 text-primary" />
+                  </div>
+                )}
+                <div className="flex flex-col min-w-0">
+                  <span className="text-xs text-muted-foreground">
+                    {attachedMedia.type === 'image' && 'Imagem anexada'}
+                    {attachedMedia.type === 'document' && 'Documento anexado'}
+                    {attachedMedia.type === 'audio' && 'Áudio anexado'}
+                  </span>
+                  <span className="text-xs text-foreground truncate max-w-[150px]">
+                    {attachedMedia.file.name}
+                  </span>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="absolute top-1 right-1 h-6 w-6"
+                  onClick={handleRemoveAttachedMedia}
+                >
+                  <X className="h-3 w-3" />
+                </Button>
+              </div>
+            </div>
+          )}
+
+          <div className="flex items-center gap-1 md:gap-2 p-3 md:p-4">
+            <MediaUploadButton
+              onUpload={handleFileSelect}
               disabled={sendMessage.isPending || isUploading || isSendingMedia}
             />
-          )}
-        </div>
-      </div>
 
-      {/* Media Preview Dialog */}
-      <MediaPreviewDialog
-        open={!!mediaPreview}
-        onOpenChange={(open) => !open && setMediaPreview(null)}
-        file={mediaPreview?.file || null}
-        type={mediaPreview?.type || 'image'}
-        onSend={handleConfirmMedia}
-        isSending={false}
-        confirmLabel="Anexar"
-      />
+            {/* Variable insertion button */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9 md:h-10 md:w-10 flex-shrink-0"
+                  title="Inserir variável"
+                >
+                  <Variable className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-48 bg-popover">
+                {messageVariables.map((variable) => (
+                  <DropdownMenuItem
+                    key={variable.key}
+                    onClick={() => {
+                      setNewMessage(prev => prev + `{${variable.key}}`);
+                    }}
+                  >
+                    <div className="flex flex-col">
+                      <span className="text-sm font-medium">{`{${variable.key}}`}</span>
+                      <span className="text-xs text-muted-foreground">{variable.label}</span>
+                    </div>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* Signature toggle button */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant={signatureEnabled ? "default" : "ghost"}
+                  size="icon"
+                  className={cn(
+                    "h-9 w-9 md:h-10 md:w-10 flex-shrink-0 transition-colors",
+                    signatureEnabled && "bg-primary/20 text-primary hover:bg-primary/30"
+                  )}
+                  onClick={() => toggleSignature(!signatureEnabled)}
+                >
+                  <PenLine className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p className="text-xs">
+                  {signatureEnabled ? 'Assinatura ativa' : 'Assinatura desativada'}
+                  {profile?.full_name && signatureEnabled && (
+                    <span className="block text-muted-foreground mt-0.5">
+                      {profile.full_name}
+                    </span>
+                  )}
+                </p>
+              </TooltipContent>
+            </Tooltip>
+
+            <Input
+              value={newMessage}
+              onChange={(e) => handleInputChange(e.target.value)}
+              onPaste={handlePaste}
+              placeholder={
+                attachedMedia
+                  ? "Adicione uma legenda (opcional)..."
+                  : isAIActive
+                    ? "A IA está respondendo... Digite para assumir"
+                    : "Digite sua mensagem ou cole uma imagem..."
+              }
+              className="flex-1"
+              onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
+              disabled={sendMessage.isPending || isSendingMedia}
+            />
+            {(newMessage.trim() || attachedMedia) ? (
+              <Button
+                onClick={handleSend}
+                disabled={(!newMessage.trim() && !attachedMedia) || sendMessage.isPending || isSendingMedia}
+              >
+                {(sendMessage.isPending || isSendingMedia) ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4 mr-2" />
+                )}
+                {(sendMessage.isPending || isSendingMedia) ? 'Enviando...' : 'Enviar'}
+              </Button>
+            ) : (
+              <AudioRecordButton
+                onRecordComplete={handleAudioRecordComplete}
+                disabled={sendMessage.isPending || isUploading || isSendingMedia}
+              />
+            )}
+          </div>
+        </div>
+
+        {/* Media Preview Dialog */}
+        <MediaPreviewDialog
+          open={!!mediaPreview}
+          onOpenChange={(open) => !open && setMediaPreview(null)}
+          file={mediaPreview?.file || null}
+          type={mediaPreview?.type || 'image'}
+          onSend={handleConfirmMedia}
+          isSending={false}
+          confirmLabel="Anexar"
+        />
       </div>
 
       {/* Contact Profile Panel */}
       {showProfilePanel && (
-        <ContactProfilePanel 
-          conversation={conversation} 
-          onClose={() => setShowProfilePanel(false)} 
+        <ContactProfilePanel
+          conversation={conversation}
+          onClose={() => setShowProfilePanel(false)}
         />
       )}
     </div>
@@ -814,22 +822,22 @@ function MessageBubbleList({ messages, mediaMessageIds, contactAvatar, contactNa
   const handleTranscriptionUpdate = useCallback((messageId: string, transcription: string) => {
     setLocalTranscriptions(prev => ({ ...prev, [messageId]: transcription }));
   }, []);
-  
+
   // Merge remote + local transcriptions
   const mergedTranscriptions = useMemo(() => ({ ...transcriptions, ...localTranscriptions }), [transcriptions, localTranscriptions]);
-  
+
   // Group messages by date for date separators
   const getDateKey = (dateStr: string) => {
     const date = new Date(dateStr);
     return format(date, 'yyyy-MM-dd');
   };
-  
+
   const formatDateSeparator = (dateStr: string) => {
     const date = new Date(dateStr);
     const today = new Date();
     const yesterday = new Date(today);
     yesterday.setDate(yesterday.getDate() - 1);
-    
+
     if (format(date, 'yyyy-MM-dd') === format(today, 'yyyy-MM-dd')) {
       return 'Hoje';
     }
@@ -838,16 +846,16 @@ function MessageBubbleList({ messages, mediaMessageIds, contactAvatar, contactNa
     }
     return format(date, 'dd/MM/yyyy', { locale: ptBR });
   };
-  
+
   let lastDateKey: string | null = null;
-  
+
   return (
     <>
       {messages.map((message) => {
         const currentDateKey = getDateKey(message.created_at);
         const showDateSeparator = currentDateKey !== lastDateKey;
         lastDateKey = currentDateKey;
-        
+
         return (
           <div key={message.id}>
             {showDateSeparator && (
@@ -857,7 +865,7 @@ function MessageBubbleList({ messages, mediaMessageIds, contactAvatar, contactNa
                 </span>
               </div>
             )}
-            <MessageBubble 
+            <MessageBubble
               message={message}
               contactAvatar={contactAvatar}
               contactName={contactName}
@@ -896,20 +904,20 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
   // Render media content based on type
   const renderMediaContent = () => {
     const { type, media_url, content } = message;
-    
+
     if (type === 'image' && media_url) {
       return (
         <div className="mb-2">
-          <img 
-            src={media_url} 
-            alt={content || 'Imagem'} 
+          <img
+            src={media_url}
+            alt={content || 'Imagem'}
             className="max-w-full rounded-lg max-h-64 object-cover cursor-pointer hover:opacity-90 transition-opacity"
             onClick={() => window.open(media_url, '_blank')}
           />
           {content && <p className="text-sm mt-2">{content}</p>}
-          <MediaTranscription 
-            transcription={transcription} 
-            isLoading={!!isTranscriptionLoading} 
+          <MediaTranscription
+            transcription={transcription}
+            isLoading={!!isTranscriptionLoading}
             type="image"
             isInbound={isInbound}
             messageId={message.id}
@@ -927,7 +935,7 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
         </div>
       );
     }
-    
+
     if (type === 'audio' && media_url) {
       return (
         <div className="min-w-[200px]">
@@ -940,9 +948,9 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
               Seu navegador não suporta áudio.
             </audio>
           </div>
-          <MediaTranscription 
-            transcription={transcription} 
-            isLoading={!!isTranscriptionLoading} 
+          <MediaTranscription
+            transcription={transcription}
+            isLoading={!!isTranscriptionLoading}
             type="audio"
             isInbound={isInbound}
             messageId={message.id}
@@ -960,12 +968,12 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
         </div>
       );
     }
-    
+
     if (type === 'video' && media_url) {
       return (
         <div className="mb-2">
-          <video 
-            controls 
+          <video
+            controls
             className="max-w-full rounded-lg max-h-64"
             preload="metadata"
           >
@@ -973,9 +981,9 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
             Seu navegador não suporta vídeo.
           </video>
           {content && <p className="text-sm mt-2">{content}</p>}
-          <MediaTranscription 
-            transcription={transcription} 
-            isLoading={!!isTranscriptionLoading} 
+          <MediaTranscription
+            transcription={transcription}
+            isLoading={!!isTranscriptionLoading}
             type="video"
             isInbound={isInbound}
             messageId={message.id}
@@ -985,12 +993,12 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
         </div>
       );
     }
-    
+
     if (type === 'document' && media_url) {
       return (
-        <a 
-          href={media_url} 
-          target="_blank" 
+        <a
+          href={media_url}
+          target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-3 p-3 rounded-lg bg-background/50 hover:bg-background/80 transition-colors"
         >
@@ -1004,17 +1012,17 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
         </a>
       );
     }
-    
+
     if (type === 'sticker' && media_url) {
       return (
-        <img 
-          src={media_url} 
-          alt="Sticker" 
+        <img
+          src={media_url}
+          alt="Sticker"
           className="max-w-[128px] max-h-[128px]"
         />
       );
     }
-    
+
     if (type === 'location') {
       return (
         <div className="flex items-center gap-2 p-3 rounded-lg bg-background/50">
@@ -1023,11 +1031,11 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
         </div>
       );
     }
-    
+
     // Text or unknown type - format with WhatsApp markdown
     const formattedContent = formatWhatsAppMessage(content || '');
     return (
-      <p 
+      <p
         className="text-sm leading-relaxed whitespace-pre-wrap"
         dangerouslySetInnerHTML={{ __html: formattedContent || '[Mídia não suportada]' }}
       />
@@ -1050,12 +1058,12 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
           )}
         </div>
       )}
-      
+
       <div className={cn(
         "max-w-[70%] rounded-2xl px-4 py-3",
-        isInbound 
-          ? "bg-card border border-border rounded-tl-sm" 
-          : isBot 
+        isInbound
+          ? "bg-card border border-border rounded-tl-sm"
+          : isBot
             ? "bg-gradient-to-br from-primary to-purple-500 text-white rounded-tr-sm"
             : "bg-green-500 text-white rounded-tr-sm"
       )}>
@@ -1094,8 +1102,8 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
       {!isInbound && (
         <div className={cn(
           "h-8 w-8 rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden",
-          isBot 
-            ? "bg-gradient-to-br from-primary to-purple-500" 
+          isBot
+            ? "bg-gradient-to-br from-primary to-purple-500"
             : "bg-gradient-to-br from-green-500 to-emerald-500"
         )}>
           {isBot ? (

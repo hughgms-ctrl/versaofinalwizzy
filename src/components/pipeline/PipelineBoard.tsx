@@ -60,9 +60,9 @@ export function PipelineBoard({ onConversationClick }: PipelineBoardProps) {
           .from('conversations')
           .update({ status: columnId as DbConversation['status'] })
           .eq('id', draggedCard);
-        
+
         if (error) throw error;
-        
+
         await refetch();
         toast({
           title: 'Conversa movida',
@@ -122,7 +122,7 @@ export function PipelineBoard({ onConversationClick }: PipelineBoardProps) {
   }
 
   return (
-    <div className="flex gap-4 overflow-x-auto pb-4">
+    <div className="flex gap-4 h-[calc(100vh-140px)] overflow-x-auto">
       {columns.map((column) => {
         const columnConversations = getConversationsByColumn(column.id);
         const isDragOver = dragOverColumn === column.id;
@@ -175,8 +175,8 @@ export function PipelineBoard({ onConversationClick }: PipelineBoardProps) {
                         <div className="flex items-center gap-2">
                           <div className="h-8 w-8 rounded-full bg-gradient-to-br from-primary/20 to-purple-500/20 flex items-center justify-center">
                             {conversation.contact?.avatar_url ? (
-                              <img 
-                                src={conversation.contact.avatar_url} 
+                              <img
+                                src={conversation.contact.avatar_url}
                                 alt={getDisplayName(conversation)}
                                 className="h-8 w-8 rounded-full object-cover"
                               />
@@ -186,15 +186,40 @@ export function PipelineBoard({ onConversationClick }: PipelineBoardProps) {
                               </span>
                             )}
                           </div>
-                          <div>
-                            <p className="text-sm font-medium text-foreground truncate max-w-[140px]">
-                              {getDisplayName(conversation)}
-                            </p>
-                            {conversation.last_message_at && (
-                              <p className="text-[10px] text-muted-foreground">
-                                {formatDistanceToNow(new Date(conversation.last_message_at), { addSuffix: true, locale: ptBR })}
-                              </p>
-                            )}
+                          <div className="flex-1 min-w-0">
+                            {(() => {
+                              const metadata = conversation.contact?.metadata as { note?: string } | null;
+                              const note = metadata?.note;
+
+                              if (note) {
+                                return (
+                                  <div className="flex flex-col gap-0.5">
+                                    <span
+                                      className="text-[10px] font-semibold px-1.5 py-0.5 bg-amber-500/15 text-amber-700 dark:text-amber-400 rounded truncate max-w-full inline-block"
+                                      title={note}
+                                    >
+                                      {note}
+                                    </span>
+                                    <p className="text-[11px] font-medium text-muted-foreground truncate max-w-[140px]">
+                                      {getDisplayName(conversation)}
+                                    </p>
+                                  </div>
+                                );
+                              }
+
+                              return (
+                                <>
+                                  <p className="text-sm font-medium text-foreground truncate max-w-[140px]">
+                                    {getDisplayName(conversation)}
+                                  </p>
+                                  {conversation.last_message_at && (
+                                    <p className="text-[10px] text-muted-foreground">
+                                      {formatDistanceToNow(new Date(conversation.last_message_at), { addSuffix: true, locale: ptBR })}
+                                    </p>
+                                  )}
+                                </>
+                              );
+                            })()}
                           </div>
                         </div>
                       </div>

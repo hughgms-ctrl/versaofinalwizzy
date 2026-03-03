@@ -1,0 +1,122 @@
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
+import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
+import { toast } from 'sonner';
+
+export interface Campaign {
+    id: string;
+    organization_id: string;
+    name: string;
+    trigger_keyword: string;
+    match_type: string;
+    flow_id: string;
+    is_active: boolean;
+    created_at: string;
+    updated_at: string;
+    flow?: {
+        id: string;
+        name: string;
+    };
+}
+
+export function useCampaigns() {
+    const { currentOrganizationId } = useWorkspaceContext();
+
+    return useQuery({
+        queryKey: ['campaigns', currentOrganizationId],
+        queryFn: async () => {
+            if (!currentOrganizationId) return [];
+
+            const { data, error } = await supabase
+                .from('campaigns')
+                .select(`
+          *,
+          flow:flows(id, name)
+        `)
+                .eq('organization_id', currentOrganizationId)
+                .order('created_at', { ascending: false });
+
+            if (error) throw error;
+            return data as unknown as Campaign[];
+        },
+        enabled: !!currentOrganizationId,
+    });
+}
+
+export function useCreateCampaign() {
+    const queryClient = useQueryClient();
+    const { currentOrganizationId } = useWorkspaceContext();
+
+    return useMutation({
+        mutationFn: async (campaign: Partial<Campaign>) => {
+            if (!currentOrganizationId) throw new Error('No organization selected');
+
+            const { data, error } = await supabase
+                .from('campaigns')
+                .insert([{ ...campaign, organization_id: currentOrganizationId }])
+                .select()
+                .single();
+
+            if (error) throw error;
+            return data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['campaigns'] });
+            toast.success('Campanha criada com sucesso!');
+        },
+        onError: (error) => {
+            console.error('Error creating campaign:', error);
+            toast.error('Erro ao criar campanha');
+        },
+    });
+}
+
+export function useUpdateCampaign() {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: async ({ id, ...updates }: Partial<Campaign> & { id: string }) => {
+            const { data, error } = await supabase
+                .from('campaigns')
+                .update(updates)
+                .eq('id', id)
+                .select()
+                .single();
+
+            if (error) throw error;
+            return data;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['campaigns'] });
+            toast.success('Campanha atualizada!');
+        },
+        onError: (error) => {
+            console.error('Error updating campaign:', error);
+            toast.error('Erro ao atualizar campanha');
+        },
+    });
+}
+
+export function useDeleteCampaign() {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: async (id: string) => {
+            const { error } = await supabase
+                .from('campaigns')
+                .delete()
+                .eq('id', id);
+
+            if (error) throw error;
+            return id;
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['campaigns'] });
+            toast.success('Campanha excluída!');
+        },
+        onError: (error) => {
+            console.error('Error deleting campaign:', error);
+            toast.error('Erro ao excluir campanha');
+        },
+    });
+}

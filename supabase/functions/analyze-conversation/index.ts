@@ -424,7 +424,8 @@ Responda no formato JSON:
 }`
             }
           ],
-          response_format: { type: 'json_object' },
+          // Support both OpenAI and Gemini formats for JSON
+          ...(aiConfig.model.includes('gpt') ? { response_format: { type: 'json_object' } } : {}),
         }),
         signal: summaryController.signal,
       });
@@ -432,8 +433,13 @@ Responda no formato JSON:
       clearTimeout(summaryTimeout);
 
       if (!summaryResponse.ok) {
-        console.error('Summary generation failed:', await summaryResponse.text());
-        throw new Error('Failed to generate summary');
+        const errText = await summaryResponse.text();
+        console.error('Summary generation failed:', errText);
+        return new Response(JSON.stringify({
+          error: `Erro ao gerar resumo na API de IA (${summaryResponse.status}): ${errText}`
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
       }
 
       const summaryData = await summaryResponse.json();
@@ -474,8 +480,10 @@ Responda no formato JSON:
 
   } catch (error) {
     console.error('Analysis error:', error);
-    return new Response(JSON.stringify({ error: 'Internal server error' }), {
-      status: 500,
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    return new Response(JSON.stringify({ error: `Erro na Edge Function: ${errorMessage}` }), {
+      // Return 200 so the Supabase client doesn't throw a generic 500 error,
+      // allowing the frontend to read the specialized error message.
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
@@ -487,20 +495,29 @@ function resolveAIConfigHelper(integrationConfig: any, feature: string, lovableA
   const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
 
   if (!integrationConfig) {
-    return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model: 'google/gemini-2.5-flash' };
+    return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model: 'google/gemini-1.5-flash-latest' };
   }
 
   const featureProvider = integrationConfig[`${feature}_provider`];
   const featureModel = integrationConfig[`${feature}_model`];
-  const provider = featureProvider || integrationConfig.ai_provider || 'lovable';
-  const model = featureModel || integrationConfig.default_model || 'google/gemini-2.5-flash';
+  let provider = featureProvider || integrationConfig.ai_provider || 'lovable';
+  let model = featureModel || integrationConfig.default_model || 'google/gemini-1.5-flash-latest';
+
+  // Ensure format is correct depending on provider
+  if (provider === 'gemini') {
+    model = model.replace('google/', ''); // Google API doesn't use prefix
+  } else if (provider === 'lovable') {
+    if (!model.startsWith('google/') && !model.startsWith('openai/')) {
+      model = model.includes('gpt') ? `openai/${model}` : `google/${model}`;
+    }
+  }
 
   switch (provider) {
     case 'openai':
-      if (!integrationConfig.openai_api_key) return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model: 'google/gemini-2.5-flash' };
+      if (!integrationConfig.openai_api_key) return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model: 'google/gemini-1.5-flash-latest' };
       return { endpoint: OPENAI_ENDPOINT, apiKey: integrationConfig.openai_api_key, model };
     case 'gemini':
-      if (!integrationConfig.gemini_api_key) return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model: 'google/gemini-2.5-flash' };
+      if (!integrationConfig.gemini_api_key) return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model: 'google/gemini-1.5-flash-latest' };
       return { endpoint: GEMINI_ENDPOINT, apiKey: integrationConfig.gemini_api_key, model };
     default:
       return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model };

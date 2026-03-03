@@ -21,6 +21,8 @@ export interface MasterPrompt {
   trigger_type: 'disabled' | 'tag' | 'keyword';
   trigger_tags: string[];
   trigger_keywords: TriggerKeyword[];
+  provider?: string | null;
+  model?: string | null;
   created_at: string;
   updated_at: string;
 }

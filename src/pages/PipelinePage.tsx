@@ -12,7 +12,7 @@ import { useWhatsAppStatus } from '@/hooks/useWhatsAppStatus';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { 
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -33,7 +33,7 @@ const PipelinePage = () => {
   // Filter pipelines by selected workspace (global/empty array + matching workspace)
   const pipelines = useMemo(() => {
     if (!selectedWorkspaceId) return allPipelines;
-    return allPipelines.filter(p => 
+    return allPipelines.filter(p =>
       !p.workspace_ids || p.workspace_ids.length === 0 || p.workspace_ids.includes(selectedWorkspaceId)
     );
   }, [allPipelines, selectedWorkspaceId]);
@@ -86,8 +86,8 @@ const PipelinePage = () => {
   // Show disconnected state if WhatsApp is not connected
   if (!whatsappLoading && !whatsappConnected) {
     return (
-      <MainLayout 
-        title="Pipeline de Atendimento" 
+      <MainLayout
+        title="Pipeline de Atendimento"
         subtitle="Visualize e gerencie o fluxo de conversas"
         showSearch={false}
         showNewButton={false}
@@ -115,8 +115,8 @@ const PipelinePage = () => {
 
   if (isLoading) {
     return (
-      <MainLayout 
-        title="Pipeline de Atendimento" 
+      <MainLayout
+        title="Pipeline de Atendimento"
         subtitle="Carregando..."
         showSearch={false}
         showNewButton={false}
@@ -129,84 +129,87 @@ const PipelinePage = () => {
   }
 
   return (
-    <MainLayout 
-      title="Pipeline de Atendimento" 
+    <MainLayout
+      title="Pipeline de Atendimento"
       subtitle="Visualize e gerencie o fluxo de conversas"
       showSearch={false}
       showNewButton={false}
+      fullWidth
     >
-      {/* Header Controls */}
-      <div className="flex items-center justify-between mb-6 flex-wrap gap-4">
-        <div className="flex items-center gap-4">
-          <PipelineSelector
-            pipelines={pipelines}
-            selectedPipeline={selectedPipeline}
-            onSelect={setSelectedPipeline}
-            onDelete={setDeleteId}
-          />
-          
-          {/* Search Input */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              placeholder="Buscar por nome ou número..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 pr-9 w-64 bg-secondary/50 border-0"
+      <div className="flex flex-col h-[calc(100vh-4rem)] overflow-hidden">
+        {/* Header Controls */}
+        <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-muted/30 flex-shrink-0 flex-wrap gap-4">
+          <div className="flex items-center gap-4">
+            <PipelineSelector
+              pipelines={pipelines}
+              selectedPipeline={selectedPipeline}
+              onSelect={setSelectedPipeline}
+              onDelete={setDeleteId}
             />
-            {searchQuery && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
-                onClick={() => setSearchQuery('')}
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            )}
+
+            {/* Search Input */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Buscar por nome ou número..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9 pr-9 w-64 bg-secondary/50 border-0"
+              />
+              {searchQuery && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
+                  onClick={() => setSearchQuery('')}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+
+            <ConversationFilters
+              conversations={conversations}
+              filters={filters}
+              onFiltersChange={setFilters}
+              showCount={false}
+            />
           </div>
-          
-          <ConversationFilters
-            conversations={conversations}
-            filters={filters}
-            onFiltersChange={setFilters}
-            showCount={false}
-          />
         </div>
+
+        {/* Pipeline Board */}
+        <PipelineBoard
+          pipeline={selectedPipeline}
+          filters={filters}
+          searchQuery={searchQuery}
+          onConversationClick={handleConversationClick}
+        />
+
+        {/* Chat Modal */}
+        <PipelineChatModal
+          conversation={chatConversation}
+          open={chatOpen}
+          onOpenChange={setChatOpen}
+        />
+
+        {/* Delete Confirmation */}
+        <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Excluir pipeline?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Esta ação não pode ser desfeita. Todas as configurações de colunas e posições de conversas serão perdidas.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction onClick={handleDeletePipeline}>
+                Excluir
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
-
-      {/* Pipeline Board */}
-      <PipelineBoard 
-        pipeline={selectedPipeline}
-        filters={filters}
-        searchQuery={searchQuery}
-        onConversationClick={handleConversationClick}
-      />
-
-      {/* Chat Modal */}
-      <PipelineChatModal
-        conversation={chatConversation}
-        open={chatOpen}
-        onOpenChange={setChatOpen}
-      />
-
-      {/* Delete Confirmation */}
-      <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Excluir pipeline?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Esta ação não pode ser desfeita. Todas as configurações de colunas e posições de conversas serão perdidas.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDeletePipeline}>
-              Excluir
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </MainLayout>
   );
 };

@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { 
-  LayoutDashboard, 
-  MessageSquare, 
-  Kanban, 
-  Bot, 
-  Settings, 
+import {
+  LayoutDashboard,
+  MessageSquare,
+  Kanban,
+  Bot,
+  Settings,
   Users,
   BarChart3,
   Workflow,
@@ -13,7 +13,8 @@ import {
   LogOut,
   Menu,
   X,
-  BookUser
+  BookUser,
+  Megaphone
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -37,6 +38,7 @@ const navigation: NavItem[] = [
   { name: 'Contatos', href: '/contacts', icon: BookUser, module: 'conversations' },
   { name: 'Pipeline', href: '/pipeline', icon: Kanban, module: 'pipeline' },
   { name: 'Fluxos', href: '/flows', icon: Workflow, module: 'flows' },
+  { name: 'Campanhas', href: '/campaigns', icon: Megaphone, module: 'flows' },
   { name: 'Agendamentos', href: '/scheduled', icon: CalendarClock, module: 'flows' },
   { name: 'Agentes IA', href: '/agents', icon: Bot, module: 'agents' },
   { name: 'Equipe', href: '/team', icon: Users, module: 'team' },
@@ -56,7 +58,7 @@ export function MobileNav() {
     if (!module) return true;
     if (userRole === 'owner' || userRole === 'admin') return true;
     if (!permissions) return false;
-    
+
     const moduleMap: Record<string, keyof typeof permissions> = {
       conversations: 'can_access_conversations',
       pipeline: 'can_access_pipeline',
@@ -66,7 +68,7 @@ export function MobileNav() {
       settings: 'can_access_settings',
       team: 'can_access_team',
     };
-    
+
     const key = moduleMap[module];
     return key ? !!permissions[key] : false;
   };
@@ -98,9 +100,9 @@ export function MobileNav() {
       <SheetContent side="left" className="w-[280px] p-0">
         <SheetHeader className="p-4 border-b border-border">
           <SheetTitle className="flex items-center gap-3">
-            <img 
-              src={wizzyLogo} 
-              alt="Wizzy" 
+            <img
+              src={wizzyLogo}
+              alt="Wizzy"
               className="h-8 w-8 rounded-lg"
             />
             <span className="text-lg font-bold">Wizzy</span>
@@ -116,8 +118,8 @@ export function MobileNav() {
                 onClick={() => handleNavigate(item.href)}
                 className={cn(
                   "w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
-                  isActive 
-                    ? "bg-primary/10 text-primary" 
+                  isActive
+                    ? "bg-primary/10 text-primary"
                     : "text-muted-foreground hover:bg-muted hover:text-foreground"
                 )}
               >
@@ -140,7 +142,7 @@ export function MobileNav() {
 
         {/* User Profile */}
         <div className="border-t border-border p-4">
-          <button 
+          <button
             onClick={() => handleNavigate('/profile')}
             className="flex items-center gap-3 w-full rounded-lg p-1 -m-1 hover:bg-muted transition-colors"
           >

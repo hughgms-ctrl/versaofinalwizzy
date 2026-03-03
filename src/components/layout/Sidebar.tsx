@@ -1,10 +1,10 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { 
-  LayoutDashboard, 
-  MessageSquare, 
-  Kanban, 
-  Bot, 
-  Settings, 
+import {
+  LayoutDashboard,
+  MessageSquare,
+  Kanban,
+  Bot,
+  Settings,
   Users,
   BarChart3,
   ChevronLeft,
@@ -16,7 +16,8 @@ import {
   BookUser,
   MousePointerClick,
   FileText,
-  Plug
+  Plug,
+  Megaphone
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -41,6 +42,7 @@ const navigation: NavItem[] = [
   { name: 'Contatos', href: '/contacts', icon: BookUser, module: 'conversations' },
   { name: 'Pipeline', href: '/pipeline', icon: Kanban, module: 'pipeline' },
   { name: 'Fluxos', href: '/flows', icon: Workflow, module: 'flows' },
+  { name: 'Campanhas', href: '/campaigns', icon: Megaphone, module: 'flows' },
   { name: 'Widgets', href: '/widgets', icon: MousePointerClick, module: 'flows' },
   { name: 'Documentos', href: '/documents', icon: FileText, module: 'flows' },
   { name: 'Agendamentos', href: '/scheduled', icon: CalendarClock, module: 'flows' },
@@ -67,7 +69,7 @@ export function Sidebar() {
     if (userRole === 'owner' || userRole === 'admin') return true;
     // Check permissions
     if (!permissions) return false;
-    
+
     const moduleMap: Record<string, keyof typeof permissions> = {
       conversations: 'can_access_conversations',
       pipeline: 'can_access_pipeline',
@@ -77,7 +79,7 @@ export function Sidebar() {
       settings: 'can_access_settings',
       team: 'can_access_team',
     };
-    
+
     const key = moduleMap[module];
     return key ? !!permissions[key] : false;
   };
@@ -89,7 +91,7 @@ export function Sidebar() {
   };
 
   return (
-    <aside 
+    <aside
       className={cn(
         "fixed left-0 top-0 z-40 h-screen bg-sidebar transition-all duration-300 ease-in-out",
         collapsed ? "w-20" : "w-64"
@@ -101,9 +103,9 @@ export function Sidebar() {
           "flex h-16 items-center border-b border-sidebar-border px-4",
           collapsed ? "justify-center" : "gap-3"
         )}>
-          <img 
-            src={wizzyLogo} 
-            alt="Wizzy" 
+          <img
+            src={wizzyLogo}
+            alt="Wizzy"
             className="h-10 w-10 rounded-xl shadow-lg"
           />
           {!collapsed && (
@@ -127,8 +129,8 @@ export function Sidebar() {
                 to={item.href}
                 className={cn(
                   "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
-                  isActive 
-                    ? "bg-sidebar-accent text-sidebar-primary shadow-sm" 
+                  isActive
+                    ? "bg-sidebar-accent text-sidebar-primary shadow-sm"
                     : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
                   collapsed && "justify-center px-2"
                 )}
@@ -189,7 +191,7 @@ export function Sidebar() {
 function UserProfileSection({ collapsed }: { collapsed: boolean }) {
   const { profile } = useAuth();
   const navigate = useNavigate();
-  
+
   const getInitials = (name: string) => {
     return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
   };
@@ -206,7 +208,7 @@ function UserProfileSection({ collapsed }: { collapsed: boolean }) {
       "border-t border-sidebar-border p-4",
       collapsed && "px-2"
     )}>
-      <button 
+      <button
         onClick={handleClick}
         className={cn(
           "flex items-center gap-3 w-full rounded-lg p-1 -m-1 hover:bg-sidebar-accent/50 transition-colors cursor-pointer",

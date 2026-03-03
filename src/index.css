@@ -11,43 +11,43 @@
     /* Background & Surface */
     --background: 220 20% 97%;
     --foreground: 222 47% 11%;
-    
+
     /* Cards & Elevated Surfaces */
     --card: 0 0% 100%;
     --card-foreground: 222 47% 11%;
-    
+
     /* Popover & Dropdowns */
     --popover: 0 0% 100%;
     --popover-foreground: 222 47% 11%;
-    
+
     /* Primary - Deep Indigo */
     --primary: 234 89% 54%;
     --primary-foreground: 0 0% 100%;
-    
+
     /* Secondary - Slate */
     --secondary: 220 14% 96%;
     --secondary-foreground: 222 47% 11%;
-    
+
     /* Muted */
     --muted: 220 14% 96%;
     --muted-foreground: 220 9% 46%;
-    
+
     /* Accent - Soft Indigo */
     --accent: 234 89% 96%;
     --accent-foreground: 234 89% 54%;
-    
+
     /* Destructive - Red */
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
-    
+
     /* Borders & Inputs */
     --border: 220 13% 91%;
     --input: 220 13% 91%;
     --ring: 234 89% 54%;
-    
+
     /* Radius */
     --radius: 0.75rem;
-    
+
     /* Sidebar */
     --sidebar-background: 222 47% 11%;
     --sidebar-foreground: 220 14% 96%;
@@ -57,22 +57,22 @@
     --sidebar-accent-foreground: 220 14% 96%;
     --sidebar-border: 222 40% 18%;
     --sidebar-ring: 234 89% 60%;
-    
+
     /* Status Colors */
     --status-open: 142 71% 45%;
     --status-pending: 38 92% 50%;
     --status-closed: 220 9% 46%;
     --status-urgent: 0 84% 60%;
-    
+
     /* AI Agent Colors */
     --agent-ai: 234 89% 54%;
     --agent-human: 142 71% 45%;
-    
+
     /* Gradient Tokens */
     --gradient-primary: linear-gradient(135deg, hsl(234 89% 54%) 0%, hsl(262 83% 58%) 100%);
     --gradient-success: linear-gradient(135deg, hsl(142 71% 45%) 0%, hsl(166 72% 44%) 100%);
     --gradient-surface: linear-gradient(180deg, hsl(0 0% 100%) 0%, hsl(220 20% 98%) 100%);
-    
+
     /* Shadows */
     --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
     --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
@@ -84,34 +84,34 @@
     /* DGFlow-inspired dark theme - Magenta dominant, Green accents */
     --background: 240 18% 4%;
     --foreground: 210 20% 92%;
-    
+
     --card: 240 16% 7%;
     --card-foreground: 210 20% 92%;
-    
+
     --popover: 240 16% 8%;
     --popover-foreground: 210 20% 92%;
-    
+
     /* Primary - Magenta/Pink (DGFlow dominant) */
     --primary: 340 82% 55%;
     --primary-foreground: 0 0% 100%;
-    
+
     --secondary: 240 16% 12%;
     --secondary-foreground: 210 20% 88%;
-    
+
     --muted: 240 14% 11%;
     --muted-foreground: 220 10% 52%;
-    
+
     /* Accent - Vibrant Green (DGFlow secondary detail) */
     --accent: 152 60% 12%;
     --accent-foreground: 152 85% 55%;
-    
+
     --destructive: 0 70% 50%;
     --destructive-foreground: 0 0% 100%;
-    
+
     --border: 340 30% 14%;
     --input: 240 14% 13%;
     --ring: 340 82% 55%;
-    
+
     --sidebar-background: 240 18% 3%;
     --sidebar-foreground: 210 20% 88%;
     --sidebar-primary: 340 82% 55%;
@@ -136,6 +136,18 @@
 @layer base {
   * {
     @apply border-border;
+  }
+
+  html {
+    /* Por padrão mantém 100% no mobile */
+    font-size: 100%;
+  }
+
+  @media (min-width: 1024px) {
+    html {
+      /* Reduz a escala da interface para 75% em notebooks/desktops (1rem = ~12px) */
+      font-size: 75%;
+    }
   }
 
   body {
@@ -163,6 +175,7 @@
 }
 
 @layer components {
+
   /* Metric Card Styles */
   .metric-card {
     @apply relative overflow-hidden rounded-xl bg-card p-6 shadow-sm border border-border transition-all duration-200;
@@ -200,7 +213,7 @@
 
   /* Pipeline Column Styles */
   .pipeline-column {
-    @apply flex-shrink-0 w-80 bg-muted/50 rounded-xl p-3 flex flex-col max-h-[calc(100vh-220px)];
+    @apply flex-shrink-0 w-[420px] bg-muted/50 rounded-xl p-3 flex flex-col max-h-[calc(100vh-140px)];
   }
 
   .pipeline-card {
@@ -287,9 +300,17 @@
   }
 
   @keyframes gradient {
-    0% { background-position: 0% 50%; }
-    50% { background-position: 100% 50%; }
-    100% { background-position: 0% 50%; }
+    0% {
+      background-position: 0% 50%;
+    }
+
+    50% {
+      background-position: 100% 50%;
+    }
+
+    100% {
+      background-position: 0% 50%;
+    }
   }
 
   /* Pulse Animation for Live Indicators */
@@ -309,8 +330,15 @@
   }
 
   @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(8px); }
-    to { opacity: 1; transform: translateY(0); }
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
   }
 }
 

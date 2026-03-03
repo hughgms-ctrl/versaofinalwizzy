@@ -14,6 +14,8 @@ import { OrchestratorHistoryDialog } from '@/components/orchestrator/Orchestrato
 import { ReactFlowProvider } from '@xyflow/react';
 import { Node, Edge } from '@xyflow/react';
 import { toast } from '@/hooks/use-toast';
+import { MODELS_BY_PROVIDER, AIProvider } from '@/hooks/useIntegrationConfigs';
+import { Sparkles } from 'lucide-react';
 
 const MasterAgentEditorPage = () => {
   const { promptId } = useParams();
@@ -28,6 +30,8 @@ const MasterAgentEditorPage = () => {
   const [niche, setNiche] = useState('');
   const [content, setContent] = useState('');
   const [isActive, setIsActive] = useState(false);
+  const [provider, setProvider] = useState('lovable');
+  const [model, setModel] = useState('default');
 
   // Trigger state
   const [triggerType, setTriggerType] = useState<'disabled' | 'tag' | 'keyword'>('disabled');
@@ -55,6 +59,8 @@ const MasterAgentEditorPage = () => {
       setTriggerType(prompt.trigger_type || 'disabled');
       setTriggerTags(prompt.trigger_tags || []);
       setTriggerKeywords(prompt.trigger_keywords || []);
+      setProvider(prompt.provider || 'lovable');
+      setModel(prompt.model || 'default');
 
       // Load orchestration nodes/edges from agent_rules
       const rules = prompt.agent_rules || {};
@@ -90,6 +96,8 @@ const MasterAgentEditorPage = () => {
       trigger_type: saveTriggerType,
       trigger_tags: saveTriggerTags,
       trigger_keywords: saveTriggerKeywords,
+      provider: provider,
+      model: model === 'default' ? null : model,
       agent_rules: {
         orchestration_nodes: nodes,
         orchestration_edges: edges,
@@ -182,6 +190,35 @@ const MasterAgentEditorPage = () => {
               <div className="flex items-center gap-1.5">
                 <span className="text-xs text-muted-foreground">Ativo</span>
                 <Switch checked={isActive} onCheckedChange={setIsActive} />
+              </div>
+              <div className="h-5 w-px bg-border" />
+
+              <div className="flex items-center gap-2">
+                <Select value={provider} onValueChange={setProvider}>
+                  <SelectTrigger className="h-8 w-32 text-[10px]"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="lovable">Wizzy IA (Padrão)</SelectItem>
+                    <SelectItem value="gemini">Google Gemini</SelectItem>
+                    <SelectItem value="openai">OpenAI</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <Select value={model} onValueChange={setModel}>
+                  <SelectTrigger className="h-8 w-40 text-[10px]"><SelectValue placeholder="Modelo Mestre" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="default">Padrão Global</SelectItem>
+                    {Array.isArray(MODELS_BY_PROVIDER[provider as AIProvider]) && MODELS_BY_PROVIDER[provider as AIProvider].map(m => (
+                      <SelectItem key={m.value} value={m.value}>
+                        <div className="flex flex-col text-left">
+                          <span className="text-[10px]">{m.label}</span>
+                          <span className="text-[9px] text-muted-foreground">
+                            {m.value.includes('pro') ? 'Raciocínio Complexo' : 'Velocidade'}
+                          </span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="h-5 w-px bg-border" />
               <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => canvasRef.current?.undo()} title="Desfazer (última versão)">
@@ -339,6 +376,7 @@ const MasterAgentEditorPage = () => {
                 <Select onValueChange={addTriggerTag}>
                   <SelectTrigger className="w-full max-w-xs"><SelectValue placeholder="Adicionar tag..." /></SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="ignore" disabled className="hidden">Selecione uma tag</SelectItem>
                     {availableTags.map(tag => (
                       <SelectItem key={tag.id} value={tag.id}>
                         <span className="flex items-center gap-2">

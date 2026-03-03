@@ -7,10 +7,10 @@ import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { isWithinInterval, parseISO } from 'date-fns';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { 
-  Search, 
-  X, 
-  Users, 
+import {
+  Search,
+  X,
+  Users,
   Smartphone,
   Settings,
 } from 'lucide-react';
@@ -25,6 +25,7 @@ import {
 import { ContactProfilePanel } from '@/components/conversations/ContactProfilePanel';
 import { ContactFilters, ContactFiltersState, defaultContactFilters } from '@/components/contacts/ContactFilters';
 import { ContactListItem } from '@/components/contacts/ContactListItem';
+import { NewContactDialog } from '@/components/contacts/NewContactDialog';
 
 const ContactsPage = () => {
   const { data: contacts, isLoading } = useContacts();
@@ -46,11 +47,12 @@ const ContactsPage = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filters, setFilters] = useState<ContactFiltersState>(defaultContactFilters);
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
+  const [showNewContactDialog, setShowNewContactDialog] = useState(false);
 
   // Filter contacts
   const filteredContacts = useMemo(() => {
     if (!contacts) return [];
-    
+
     return contacts.filter(contact => {
       // === WORKSPACE FILTER ===
       if (selectedWorkspaceId && selectedWorkspace) {
@@ -96,11 +98,12 @@ const ContactsPage = () => {
   // Show disconnected state if WhatsApp is not connected
   if (!whatsappLoading && !whatsappConnected) {
     return (
-      <MainLayout 
-        title="Contatos" 
+      <MainLayout
+        title="Contatos"
         subtitle="Gerencie todos os seus contatos"
         showSearch={false}
-        showNewButton={false}
+        showNewButton={true}
+        onNewClick={() => setShowNewContactDialog(true)}
       >
         <div className="flex items-center justify-center h-64">
           <div className="text-center p-8 max-w-md">
@@ -124,11 +127,12 @@ const ContactsPage = () => {
   }
 
   return (
-    <MainLayout 
-      title="Contatos" 
+    <MainLayout
+      title="Contatos"
       subtitle="Gerencie todos os seus contatos"
       showSearch={false}
-      showNewButton={false}
+      showNewButton={true}
+      onNewClick={() => setShowNewContactDialog(true)}
     >
       {/* Filters Bar */}
       <div className="flex items-center gap-2 md:gap-3 mb-3 flex-wrap">
@@ -205,7 +209,7 @@ const ContactsPage = () => {
         <Dialog open={!!selectedContact} onOpenChange={() => setSelectedContact(null)}>
           <DialogContent className="max-w-lg p-0 max-h-[80vh] overflow-hidden">
             <div className="overflow-y-auto max-h-[80vh]">
-              <ContactProfilePanel 
+              <ContactProfilePanel
                 conversation={{
                   id: '',
                   contact_id: selectedContact.id,
@@ -234,8 +238,15 @@ const ContactsPage = () => {
           </DialogContent>
         </Dialog>
       )}
+
+      {/* New Contact Dialog */}
+      <NewContactDialog
+        open={showNewContactDialog}
+        onOpenChange={setShowNewContactDialog}
+      />
     </MainLayout>
   );
 };
 
 export default ContactsPage;
+

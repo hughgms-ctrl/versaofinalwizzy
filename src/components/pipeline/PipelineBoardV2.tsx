@@ -9,11 +9,11 @@ import { GripVertical, Loader2, Inbox, MessageCircle, Bot } from 'lucide-react';
 import { ConversationCardActions } from '@/components/conversations/ConversationCardActions';
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/use-mobile';
-import { 
-  Pipeline, 
-  usePipelineColumns, 
-  useConversationPositions, 
-  useMoveConversation 
+import {
+  Pipeline,
+  usePipelineColumns,
+  useConversationPositions,
+  useMoveConversation
 } from '@/hooks/usePipelines';
 import { ConversationFiltersState } from '@/components/shared/ConversationFilters';
 import { useUserPermissions, useCurrentUserRole } from '@/hooks/useUserPermissions';
@@ -84,7 +84,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
     stopRaf();
     Object.assign(pan.current, { active: true, lastX: e.clientX, vel: 0, lastT: performance.now(), moved: false, acc: 0, pid: e.pointerId });
     setCursor(true);
-    try { c.setPointerCapture(e.pointerId); } catch {}
+    try { c.setPointerCapture(e.pointerId); } catch { }
   }, [stopRaf, setCursor, draggedCard]);
 
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
@@ -108,7 +108,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
     p.active = false;
     setCursor(false);
     const c = scrollContainerRef.current;
-    if (c && p.pid >= 0) try { c.releasePointerCapture(p.pid); } catch {}
+    if (c && p.pid >= 0) try { c.releasePointerCapture(p.pid); } catch { }
     document.body.style.userSelect = '';
     if (p.moved) momentum();
   }, [momentum, setCursor]);
@@ -151,31 +151,31 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
         const phone = conv.contact?.phone || '';
         if (!name.includes(query) && !phone.includes(query)) return false;
       }
-      
+
       // Status filter
       if (filters.statusFilter !== 'all' && conv.status !== filters.statusFilter) return false;
-      
+
       // Assignee filter
       if (filters.assigneeFilter !== 'all') {
         if (filters.assigneeFilter === 'unassigned' && conv.assigned_to !== null) return false;
         if (filters.assigneeFilter !== 'unassigned' && conv.assigned_to !== filters.assigneeFilter) return false;
       }
-      
+
       // Tag filter
       if (filters.tagFilter !== 'all' && conv.contact?.id) {
         const contactTagIds = allContactTags?.filter(ct => ct.contact_id === conv.contact?.id).map(ct => ct.tag_id) || [];
         if (!contactTagIds.includes(filters.tagFilter)) return false;
       }
-      
+
       // Unread filter
       if (filters.showOnlyUnread && conv.unread_count === 0) return false;
-      
+
       // AI filter - check if last message is from bot
       if (filters.showOnlyAI) {
         const lastMessage = conv.last_message?.[0];
         if (!lastMessage?.is_from_bot) return false;
       }
-      
+
       // Date filter
       if (filters.dateRange?.from && conv.last_message_at) {
         const convDate = parseISO(conv.last_message_at);
@@ -185,7 +185,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
           return false;
         }
       }
-      
+
       return true;
     });
   }, [conversations, filters, searchQuery, allContactTags, selectedWorkspaceId, selectedWorkspace]);
@@ -212,14 +212,14 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
     e.preventDefault();
     e.stopPropagation();
     setDragOverColumn(columnId);
-    
+
     // Auto-scroll horizontally when dragging near edges
     const container = scrollContainerRef.current;
     if (container) {
       const rect = container.getBoundingClientRect();
       const scrollSpeed = 15;
       const edgeThreshold = 80;
-      
+
       if (e.clientX < rect.left + edgeThreshold) {
         container.scrollLeft -= scrollSpeed;
       } else if (e.clientX > rect.right - edgeThreshold) {
@@ -352,13 +352,13 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
       >
         <div className="flex items-start gap-2">
           <GripVertical className="h-4 w-4 text-muted-foreground/50 mt-1 cursor-grab flex-shrink-0" />
-          
+
           {/* Avatar with indicator */}
           <div className="relative flex-shrink-0">
             <div className="h-10 w-10 rounded-full bg-gradient-to-br from-primary/20 to-purple-500/20 flex items-center justify-center">
               {conversation.contact?.avatar_url ? (
-                <img 
-                  src={conversation.contact.avatar_url} 
+                <img
+                  src={conversation.contact.avatar_url}
                   alt={contactName || contactPhone}
                   className="h-10 w-10 rounded-full object-cover"
                 />
@@ -382,61 +382,106 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
 
           {/* Content - overflow hidden to contain all truncated text */}
           <div className="flex-1 min-w-0 overflow-hidden">
-            {/* Line 1: Name/Phone + Timestamp + Badge + Menu */}
-            <div className="flex items-center gap-2">
-              <p className={cn(
-                "text-sm truncate flex-1 min-w-0",
-                hasUnread ? "font-bold text-foreground" : "font-medium text-foreground"
-              )}>
-                {hasName ? contactName : formattedPhone}
-              </p>
-              
-              {/* Actions area - never shrinks */}
-              <div className="flex items-center gap-1 flex-shrink-0">
-                {conversation.last_message_at && (
-                  <span className={cn(
-                    "text-[10px] whitespace-nowrap",
-                    hasUnread ? "text-primary font-medium" : "text-muted-foreground"
-                  )}>
-                    {formatDistanceToNow(new Date(conversation.last_message_at), { addSuffix: false, locale: ptBR })}
-                  </span>
-                )}
-                {hasUnread && (
-                  <span className="h-5 min-w-[20px] px-1 rounded-full bg-primary text-[10px] font-bold text-primary-foreground flex items-center justify-center">
-                    {conversation.unread_count}
-                  </span>
-                )}
-                <ConversationCardActions 
-                  conversation={conversation} 
-                  variant="minimal"
-                  onOpenChat={() => onConversationClick(conversation)}
-                />
-              </div>
-            </div>
-
-            {/* Line 2: Quick Note Badge (if exists) */}
+            {/* Content Lines */}
             {(() => {
               const metadata = conversation.contact?.metadata as { note?: string } | null;
               const note = metadata?.note;
+
               if (note) {
                 return (
-                  <span 
-                    className="inline-block text-[9px] px-1.5 py-0.5 bg-amber-500/10 text-amber-600 dark:text-amber-400 rounded max-w-full truncate"
-                    title={note}
-                  >
-                    {note}
-                  </span>
+                  <div className="flex flex-col gap-0.5">
+                    {/* Line 1: Quick Note */}
+                    <div className="flex items-center justify-between gap-2 min-w-0">
+                      <span
+                        className="text-xs font-semibold px-2 py-0.5 bg-amber-500/15 text-amber-700 dark:text-amber-400 rounded truncate max-w-full"
+                        title={note}
+                      >
+                        {note}
+                      </span>
+
+                      {/* Actions Area */}
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        {conversation.last_message_at && (
+                          <span className={cn(
+                            "text-[10px] whitespace-nowrap",
+                            hasUnread ? "text-primary font-medium" : "text-muted-foreground"
+                          )}>
+                            {formatDistanceToNow(new Date(conversation.last_message_at), { addSuffix: false, locale: ptBR })}
+                          </span>
+                        )}
+                        {hasUnread && (
+                          <span className="h-5 min-w-[20px] px-1 rounded-full bg-primary text-[10px] font-bold text-primary-foreground flex items-center justify-center">
+                            {conversation.unread_count}
+                          </span>
+                        )}
+                        <ConversationCardActions
+                          conversation={conversation}
+                          variant="minimal"
+                          onOpenChat={() => onConversationClick(conversation)}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Line 2: Name + Phone */}
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <p className={cn(
+                        "text-[11px] truncate",
+                        hasUnread ? "font-bold text-foreground" : "font-medium text-muted-foreground"
+                      )}>
+                        {hasName ? contactName : formattedPhone}
+                      </p>
+                      {hasName && (
+                        <p className="text-[10px] text-muted-foreground/70 truncate flex-shrink-0">
+                          • {formattedPhone}
+                        </p>
+                      )}
+                    </div>
+                  </div>
                 );
               }
-              return null;
-            })()}
 
-            {/* Line 3: Phone (only if has name, otherwise shown in line 1) */}
-            {hasName && (
-              <p className="text-[10px] text-muted-foreground truncate">
-                {formattedPhone}
-              </p>
-            )}
+              return (
+                <div className="flex flex-col gap-0.5">
+                  {/* Line 1: Name/Phone */}
+                  <div className="flex items-center justify-between gap-2 min-w-0">
+                    <p className={cn(
+                      "text-sm truncate flex-1 min-w-0",
+                      hasUnread ? "font-bold text-foreground" : "font-medium text-foreground"
+                    )}>
+                      {hasName ? contactName : formattedPhone}
+                    </p>
+
+                    {/* Actions Area */}
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      {conversation.last_message_at && (
+                        <span className={cn(
+                          "text-[10px] whitespace-nowrap",
+                          hasUnread ? "text-primary font-medium" : "text-muted-foreground"
+                        )}>
+                          {formatDistanceToNow(new Date(conversation.last_message_at), { addSuffix: false, locale: ptBR })}
+                        </span>
+                      )}
+                      {hasUnread && (
+                        <span className="h-5 min-w-[20px] px-1 rounded-full bg-primary text-[10px] font-bold text-primary-foreground flex items-center justify-center">
+                          {conversation.unread_count}
+                        </span>
+                      )}
+                      <ConversationCardActions
+                        conversation={conversation}
+                        variant="minimal"
+                        onOpenChat={() => onConversationClick(conversation)}
+                      />
+                    </div>
+                  </div>
+                  {/* Line 2: Phone details */}
+                  {hasName && (
+                    <p className="text-[10px] text-muted-foreground truncate">
+                      {formattedPhone}
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Line 4: Last message preview */}
             {messagePreview && (
@@ -521,13 +566,13 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
   const isDragOverUnassigned = dragOverColumn === 'unassigned';
 
   return (
-    <div 
+    <div
       ref={scrollContainerRef}
       className={cn(
-        "flex gap-4 pb-4 h-[calc(100vh-200px)]",
+        "flex gap-4 h-[calc(100vh-140px)]",
         isMobile ? "select-auto overflow-x-auto overflow-y-hidden" : "select-none cursor-grab overflow-x-auto overflow-y-hidden"
       )}
-      style={{ 
+      style={{
         touchAction: isMobile ? 'pan-x pan-y' : 'pan-y',
         WebkitOverflowScrolling: 'touch',
       }}
@@ -543,7 +588,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
           const rect = container.getBoundingClientRect();
           const scrollSpeed = 15;
           const edgeThreshold = 80;
-          
+
           if (e.clientX < rect.left + edgeThreshold) {
             container.scrollLeft -= scrollSpeed;
           } else if (e.clientX > rect.right - edgeThreshold) {
@@ -554,7 +599,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
     >
       {/* Unassigned column - show when allowed and there are items OR when dragging */}
       {!shouldHideUnassigned && (unassignedConversations.length > 0 || draggedCard) && (
-        <div 
+        <div
           className={cn(
             "pipeline-column border-dashed transition-all duration-200",
             isDragOverUnassigned && "ring-2 ring-primary ring-offset-2"
@@ -594,17 +639,17 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
             onDragOver={(e) => handleDragOver(e, column.id)}
             onDrop={(e) => handleDrop(e, column.id)}
           >
-            <div 
+            <div
               className="flex items-center justify-between mb-3 px-2 py-1.5 -mx-3 -mt-3 rounded-t-xl"
               style={{ backgroundColor: `${column.color}15` }}
             >
               <div className="flex items-center gap-2">
-                <div 
-                  className="h-3 w-3 rounded-full" 
+                <div
+                  className="h-3 w-3 rounded-full"
                   style={{ backgroundColor: column.color }}
                 />
                 <h3 className="font-semibold text-foreground text-sm">{column.name}</h3>
-                <span 
+                <span
                   className="flex items-center justify-center h-5 min-w-[20px] px-1 rounded-full text-[10px] font-bold text-white"
                   style={{ backgroundColor: column.color }}
                 >

@@ -19,6 +19,8 @@ export interface AIAgent {
   pipeline_column_ids: string[];
   flow_ids: string[];
   folder_id: string | null;
+  provider: string | null;
+  model: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -64,6 +66,8 @@ export function useCreateAIAgent() {
       pipeline_column_ids?: string[];
       flow_ids?: string[];
       workspace_id?: string | null;
+      provider?: string;
+      model?: string;
     }) => {
       if (!profile?.organization_id) throw new Error('No organization');
       const { data, error } = await supabase

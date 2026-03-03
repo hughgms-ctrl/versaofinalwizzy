@@ -36,9 +36,6 @@ export const PROVIDER_LABELS: Record<AIProvider, string> = {
 
 export const MODELS_BY_PROVIDER: Record<AIProvider, { value: string; label: string }[]> = {
   lovable: [
-    { value: 'google/gemini-3.1-pro-high', label: 'Gemini 3.1 Pro (High) - New' },
-    { value: 'google/gemini-3.1-pro-low', label: 'Gemini 3.1 Pro (Low) - New' },
-    { value: 'google/gemini-3-flash', label: 'Gemini 3 Flash (Ultra Rápido)' },
     { value: 'google/gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
     { value: 'google/gemini-1.5-pro-latest', label: 'Gemini 1.5 Pro (Inteligente)' },
     { value: 'google/gemini-1.5-flash-latest', label: 'Gemini 1.5 Flash' },
@@ -51,9 +48,6 @@ export const MODELS_BY_PROVIDER: Record<AIProvider, { value: string; label: stri
     { value: 'gpt-4-turbo', label: 'GPT-4 Turbo' },
   ],
   gemini: [
-    { value: 'gemini-3.1-pro-high', label: 'Gemini 3.1 Pro (High) - New' },
-    { value: 'gemini-3.1-pro-low', label: 'Gemini 3.1 Pro (Low) - New' },
-    { value: 'gemini-3-flash', label: 'Gemini 3 Flash (Ultra Rápido)' },
     { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash (Nova Geração)' },
     { value: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro (Raciocínio)' },
     { value: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash (Velocidade)' },
