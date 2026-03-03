@@ -57,7 +57,7 @@ interface FlowSidebarProps {
 }
 
 export function FlowSidebar({ onDragStart, isCollapsed, onToggleCollapse }: FlowSidebarProps) {
-  const [expandedCategories, setExpandedCategories] = useState<string[]>(['agents', 'actions', 'logic']);
+  const [expandedCategories, setExpandedCategories] = useState<string[]>(['content', 'ia', 'actions', 'logic']);
 
   const toggleCategory = (categoryId: string) => {
     setExpandedCategories(prev =>
