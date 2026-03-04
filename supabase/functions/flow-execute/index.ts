@@ -53,6 +53,7 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const { flowId, conversationId, startNodeId } = await req.json();
+    console.log(`[FLOW EXECUTE] Received request: flowId=${flowId}, conversationId=${conversationId}, startNodeId=${startNodeId}`);
 
     if (!flowId || !conversationId) {
       return new Response(
@@ -69,12 +70,13 @@ serve(async (req) => {
       .single();
 
     if (flowError || !flow) {
-      console.error('Flow not found:', flowError);
+      console.error(`[FLOW EXECUTE] Flow ${flowId} not found:`, flowError);
       return new Response(
         JSON.stringify({ error: 'Flow not found' }),
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+    console.log(`[FLOW EXECUTE] Found flow: ${flow.name} (${flow.id})`);
 
     // Get conversation and contact
     const { data: conversation, error: convError } = await supabase

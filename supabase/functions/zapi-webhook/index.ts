@@ -75,6 +75,8 @@ Deno.serve(async (req) => {
     const payload = await req.json();
 
     // UAZAPI uses EventType, not type
+    console.log('UAZAPI Full Payload:', JSON.stringify(payload, null, 2));
+
     const eventType = (payload.EventType || payload.eventType || payload.type || '').toLowerCase();
     const instanceName = payload.instanceName || payload.userID || '';
 
@@ -357,12 +359,14 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
 
   // Trigger AI agent or Campaigns if needed
   if (!fromMe && textContent) {
+    console.log(`Checking triggers for message: "${textContent}" in org: ${organizationId}`);
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
     // 1. Check for Campaign Triggers (highest priority)
     const campaignTrigger = await checkCampaignTriggers(supabase, organizationId, textContent);
 
     if (campaignTrigger) {
+      console.log('Campaign trigger matched:', JSON.stringify(campaignTrigger));
       const { flowId: campaignFlowId, campaignId } = campaignTrigger;
       console.log(`[CAMPAIGN TRIGGERED] Starting flow ${campaignFlowId} for conversation ${conversation.id}`);
       // Mark as IA mode to prevent human collision if needed, or leave as is. We'll set to ia.
@@ -601,21 +605,30 @@ async function checkMasterPromptTriggers(supabase: any, organizationId: string, 
 
 // Check for exact, contains, or starts_with matches in active campaigns
 async function checkCampaignTriggers(supabase: any, organizationId: string, messageContent: string): Promise<{ flowId: string, campaignId: string } | null> {
-  const { data: campaigns } = await supabase
+  const { data: campaigns, error: campaignsError } = await supabase
     .from('campaigns')
-    .select('id, trigger_keyword, match_type, flow_id')
+    .select('id, trigger_keyword, match_type, flow_id, is_active')
     .eq('organization_id', organizationId)
     .eq('is_active', true);
+
+  if (campaignsError) {
+    console.error('Error fetching campaigns:', campaignsError);
+    return null;
+  }
+
+  console.log(`Found ${campaigns?.length || 0} active campaigns for org ${organizationId}`);
 
   if (!campaigns?.length) return null;
 
   const msgLower = messageContent.toLowerCase().trim();
+  console.log(`Comparing message "${msgLower}" against campaigns...`);
 
   for (const campaign of campaigns) {
     if (!campaign.trigger_keyword) continue;
 
     // words might be comma separated "sim, quero, gosto"
     const keywords = campaign.trigger_keyword.split(',').map((k: string) => k.trim().toLowerCase()).filter(Boolean);
+    console.log(`Campaign ${campaign.id} keywords:`, keywords, `Match type: ${campaign.match_type}`);
 
     for (const kw of keywords) {
       let matched = false;
@@ -634,10 +647,12 @@ async function checkCampaignTriggers(supabase: any, organizationId: string, mess
       }
 
       if (matched) {
+        console.log(`MATCH FOUND! Campaign: ${campaign.id}, Keyword: ${kw}`);
         return { flowId: campaign.flow_id, campaignId: campaign.id };
       }
     }
   }
 
+  console.log('No campaign match found for message:', msgLower);
   return null;
 }
