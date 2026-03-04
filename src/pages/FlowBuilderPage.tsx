@@ -4,14 +4,14 @@ import { ReactFlowProvider } from '@xyflow/react';
 
 const FlowBuilderPage = () => {
   return (
-    <MainLayout 
-      title="Flow Builder" 
+    <MainLayout
+      title="Flow Builder"
       subtitle="Crie automações visuais para seus atendimentos"
       showSearch={false}
       showNewButton={true}
       newButtonLabel="Novo Fluxo"
     >
-      <div className="h-[calc(100vh-180px)] -mx-6 -mb-6 border-t border-border">
+      <div className="h-[calc(100vh-120px)] -mx-6 -mb-6 border-t border-border">
         <ReactFlowProvider>
           <FlowCanvas />
         </ReactFlowProvider>

@@ -102,6 +102,7 @@ function FlowCanvasInner() {
   const [lastSavedState, setLastSavedState] = useState<string>('');
   const [masterPrompt, setMasterPrompt] = useState('');
   const [isMasterActive, setIsMasterActive] = useState(false);
+  const [showMinimap, setShowMinimap] = useState(false);
 
   const { zoomIn, zoomOut, setViewport, getViewport, screenToFlowPosition } = useReactFlow();
   const { data: flow, isLoading } = useFlow(flowId);
@@ -432,30 +433,34 @@ function FlowCanvasInner() {
               onMasterPromptChange={setMasterPrompt}
               isMasterActive={isMasterActive}
               onMasterActiveChange={setIsMasterActive}
+              showMinimap={showMinimap}
+              onMinimapToggle={() => setShowMinimap(!showMinimap)}
             />
           </Panel>
           <Controls className="!bg-card !border-border !shadow-lg [&>button]:!bg-card [&>button]:!border-border [&>button]:!text-foreground hover:[&>button]:!bg-muted" />
-          <MiniMap
-            className="!bg-card !border-border"
-            nodeColor={(node) => {
-              switch (node.type) {
-                case 'start': return '#22c55e';
-                case 'content-block': return '#3b82f6';
-                case 'message-buttons': return '#6366f1';
-                case 'message-list': return '#06b6d4';
-                case 'action-tag': return '#f59e0b';
-                case 'action-pipeline': return '#22c55e';
-                case 'action-transfer': return '#f43f5e';
-                case 'action-delay': return '#64748b';
-                case 'action-webhook': return '#f97316';
-                case 'condition': return '#eab308';
-                case 'user-input': return '#14b8a6';
-                case 'ai-handoff': return '#8b5cf6';
-                case 'ai-return': return '#d946ef';
-                default: return '#6b7280';
-              }
-            }}
-          />
+          {showMinimap && (
+            <MiniMap
+              className="!bg-card !border-border"
+              nodeColor={(node) => {
+                switch (node.type) {
+                  case 'start': return '#22c55e';
+                  case 'content-block': return '#3b82f6';
+                  case 'message-buttons': return '#6366f1';
+                  case 'message-list': return '#06b6d4';
+                  case 'action-tag': return '#f59e0b';
+                  case 'action-pipeline': return '#22c55e';
+                  case 'action-transfer': return '#f43f5e';
+                  case 'action-delay': return '#64748b';
+                  case 'action-webhook': return '#f97316';
+                  case 'condition': return '#eab308';
+                  case 'user-input': return '#14b8a6';
+                  case 'ai-handoff': return '#8b5cf6';
+                  case 'ai-return': return '#d946ef';
+                  default: return '#6b7280';
+                }
+              }}
+            />
+          )}
           <Background variant={BackgroundVariant.Dots} gap={20} size={1} className="!bg-background" />
         </ReactFlow>
       </div>

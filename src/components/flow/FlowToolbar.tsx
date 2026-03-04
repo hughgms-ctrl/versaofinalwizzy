@@ -15,7 +15,9 @@ import {
   MessageSquareText,
   UserPlus,
   Webhook,
-  Sparkles
+  Sparkles,
+  Map as MapIcon,
+  MapPinned
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
@@ -72,6 +74,8 @@ interface FlowToolbarProps {
   onMasterPromptChange?: (prompt: string) => void;
   isMasterActive?: boolean;
   onMasterActiveChange?: (active: boolean) => void;
+  showMinimap?: boolean;
+  onMinimapToggle?: () => void;
 }
 
 export function FlowToolbar({
@@ -98,6 +102,8 @@ export function FlowToolbar({
   onMasterPromptChange,
   isMasterActive = false,
   onMasterActiveChange,
+  showMinimap = false,
+  onMinimapToggle,
 }: FlowToolbarProps) {
   const navigate = useNavigate();
   const { availableWorkspaces, isAdmin } = useWorkspaceContext();
@@ -158,6 +164,15 @@ export function FlowToolbar({
         onClick={onZoomOut}
       >
         <ZoomOut className="h-4 w-4" />
+      </Button>
+      <Button
+        size="sm"
+        variant={showMinimap ? "default" : "outline"}
+        className={cn("gap-1.5 transition-colors", showMinimap && "bg-indigo-600 hover:bg-indigo-700")}
+        onClick={onMinimapToggle}
+        title={showMinimap ? "Esconder Minimapa" : "Mostrar Minimapa"}
+      >
+        {showMinimap ? <MapPinned className="h-4 w-4" /> : <MapIcon className="h-4 w-4" />}
       </Button>
 
       <div className="w-px h-6 bg-border mx-1" />
