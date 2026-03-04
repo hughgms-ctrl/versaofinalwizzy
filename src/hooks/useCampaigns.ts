@@ -11,6 +11,7 @@ export interface Campaign {
     match_type: string;
     flow_id: string;
     is_active: boolean;
+    trigger_count: number;
     created_at: string;
     updated_at: string;
     flow?: {

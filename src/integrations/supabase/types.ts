@@ -242,6 +242,7 @@ export type Database = {
           organization_id: string
           trigger_keyword: string
           updated_at: string
+          trigger_count: number
         }
         Insert: {
           created_at?: string
@@ -253,6 +254,7 @@ export type Database = {
           organization_id: string
           trigger_keyword: string
           updated_at?: string
+          trigger_count?: number
         }
         Update: {
           created_at?: string
@@ -264,6 +266,7 @@ export type Database = {
           organization_id?: string
           trigger_keyword?: string
           updated_at?: string
+          trigger_count?: number
         }
         Relationships: [
           {

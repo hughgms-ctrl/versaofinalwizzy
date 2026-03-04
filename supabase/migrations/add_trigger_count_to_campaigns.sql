@@ -1,0 +1,1 @@
+ALTER TABLE public.campaigns ADD COLUMN IF NOT EXISTS trigger_count BIGINT DEFAULT 0 NOT NULL;

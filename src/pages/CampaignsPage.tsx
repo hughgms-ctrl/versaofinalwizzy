@@ -88,6 +88,7 @@ const CampaignsPage = () => {
                                     <TableHead className="w-[20%]">Gatilho</TableHead>
                                     <TableHead className="w-[25%]">Fluxo</TableHead>
                                     <TableHead className="w-[10%] text-center">Status</TableHead>
+                                    <TableHead className="w-[10%] text-center">Disparos</TableHead>
                                     <TableHead className="w-[15%] text-right">Ações</TableHead>
                                 </TableRow>
                             </TableHeader>
@@ -149,6 +150,9 @@ const CampaignsPage = () => {
                                                     {campaign.is_active ? "Ativo" : "Inativo"}
                                                 </span>
                                             </div>
+                                        </TableCell>
+                                        <TableCell className="text-center font-medium">
+                                            {campaign.trigger_count || 0}
                                         </TableCell>
                                         <TableCell className="text-right">
                                             <div className="flex justify-end gap-2">
