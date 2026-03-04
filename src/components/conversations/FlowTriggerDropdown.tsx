@@ -34,30 +34,33 @@ export function FlowTriggerDropdown({ conversationId }: FlowTriggerDropdownProps
     return !wsId || wsId === selectedWorkspaceId;
   };
 
-  // Filter only active flows matching workspace
-  const activeFlows = flows?.filter(f => f.is_active && matchesWorkspace(f.workspace_id)) || [];
-  const filteredFolders = folders?.filter(f => matchesWorkspace(f.workspace_id)) || [];
-  
+  // Filter only active flows matching workspace and sort by position
+  const activeFlows = flows?.filter(f => f.is_active && matchesWorkspace(f.workspace_id))
+    .sort((a, b) => a.position - b.position) || [];
+
+  const filteredFolders = folders?.filter(f => matchesWorkspace(f.workspace_id))
+    .sort((a, b) => a.position - b.position) || [];
+
   // Get root folders that have at least one active flow (directly or in subfolders)
   const getFolderHasActiveFlows = (folderId: string): boolean => {
     const directFlows = activeFlows.filter(f => f.folder_id === folderId);
     if (directFlows.length > 0) return true;
-    
+
     // Check subfolders recursively
     const subfolders = filteredFolders.filter(f => f.parent_id === folderId);
     return subfolders.some(sf => getFolderHasActiveFlows(sf.id));
   };
 
   const rootFolders = filteredFolders.filter(f => !f.parent_id && getFolderHasActiveFlows(f.id));
-  
+
   // Get active flows without folder
   const rootFlows = activeFlows.filter(f => !f.folder_id);
-  
+
   // Get flows in selected folder
   const getFlowsInFolder = (folderId: string): Flow[] => {
     return activeFlows.filter(f => f.folder_id === folderId);
   };
-  
+
   // Get subfolders with active flows
   const getSubfoldersWithFlows = (parentId: string): FlowFolder[] => {
     return filteredFolders.filter(f => f.parent_id === parentId && getFolderHasActiveFlows(f.id));
@@ -113,7 +116,7 @@ export function FlowTriggerDropdown({ conversationId }: FlowTriggerDropdownProps
               {rootFlows.length > 0 && <DropdownMenuSeparator />}
             </>
           )}
-          
+
           {rootFlows.map((flow) => (
             <DropdownMenuItem
               key={flow.id}
@@ -152,13 +155,13 @@ export function FlowTriggerDropdown({ conversationId }: FlowTriggerDropdownProps
           <ChevronLeft className="h-4 w-4" />
           <span>Voltar</span>
         </DropdownMenuItem>
-        
+
         {/* Current folder header */}
         <div className="px-2 py-1.5 flex items-center gap-2 border-b border-border mb-1">
           <FolderOpen className="h-4 w-4 text-primary" />
           <span className="font-semibold text-sm">{selectedFolder.name}</span>
         </div>
-        
+
         {/* Subfolders */}
         {subfolders.map((folder) => (
           <DropdownMenuItem
@@ -174,9 +177,9 @@ export function FlowTriggerDropdown({ conversationId }: FlowTriggerDropdownProps
             <ChevronDown className="h-3 w-3 opacity-50 -rotate-90" />
           </DropdownMenuItem>
         ))}
-        
+
         {subfolders.length > 0 && folderFlows.length > 0 && <DropdownMenuSeparator />}
-        
+
         {/* Flows in folder */}
         {folderFlows.map((flow) => (
           <DropdownMenuItem
@@ -195,7 +198,7 @@ export function FlowTriggerDropdown({ conversationId }: FlowTriggerDropdownProps
             </div>
           </DropdownMenuItem>
         ))}
-        
+
         {folderFlows.length === 0 && subfolders.length === 0 && (
           <div className="p-3 text-center">
             <p className="text-sm text-muted-foreground">
@@ -212,9 +215,9 @@ export function FlowTriggerDropdown({ conversationId }: FlowTriggerDropdownProps
   return (
     <DropdownMenu open={open} onOpenChange={handleOpenChange}>
       <DropdownMenuTrigger asChild>
-        <Button 
-          variant="outline" 
-          size="sm" 
+        <Button
+          variant="outline"
+          size="sm"
           className="gap-1.5"
           disabled={executeFlow.isPending}
         >

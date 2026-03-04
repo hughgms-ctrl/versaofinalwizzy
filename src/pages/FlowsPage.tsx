@@ -64,6 +64,27 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
+import { useUpdateFlowPositions } from '@/hooks/useFlows';
+import { useUpdateFolderPositions } from '@/hooks/useFlowFolders';
+import { GripVertical } from 'lucide-react';
 
 interface Flow {
   id: string;
@@ -95,7 +116,20 @@ const FlowsPage = () => {
   const deleteFolder = useDeleteFlowFolder();
   const renameFolder = useRenameFlowFolder();
   const moveFlow = useMoveFlowToFolder();
+  const updateFlowPositions = useUpdateFlowPositions();
+  const updateFolderPositions = useUpdateFolderPositions();
   const { selectedWorkspaceId, availableWorkspaces, isAdmin } = useWorkspaceContext();
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
   const isLoading = flowsLoading || foldersLoading;
 
@@ -186,12 +220,77 @@ const FlowsPage = () => {
   const getSubfolders = (parentId: string) =>
     filteredFolders.filter(f => f.parent_id === parentId);
 
+  const handleDragEnd = async (event: DragEndEvent, items: any[], type: 'root' | string) => {
+    const { active, over } = event;
 
-  const FlowRow = ({ flow, nested = false }: { flow: Flow, nested?: boolean }) => (
+    if (over && active.id !== over.id) {
+      const oldIndex = items.findIndex((item) => item.id === active.id);
+      const newIndex = items.findIndex((item) => item.id === over.id);
+
+      if (oldIndex !== -1 && newIndex !== -1) {
+        const newOrder = arrayMove(items, oldIndex, newIndex);
+
+        // Prepare updates
+        const flowUpdates: { id: string; position: number }[] = [];
+        const folderUpdates: { id: string; position: number }[] = [];
+
+        newOrder.forEach((item, index) => {
+          if ('is_active' in item) {
+            flowUpdates.push({ id: item.id, position: index });
+          } else {
+            folderUpdates.push({ id: item.id, position: index });
+          }
+        });
+
+        if (flowUpdates.length > 0) {
+          await updateFlowPositions.mutateAsync(flowUpdates);
+        }
+        if (folderUpdates.length > 0) {
+          await updateFolderPositions.mutateAsync(folderUpdates);
+        }
+      }
+    }
+  };
+
+  const SortableRow = ({ id, children }: { id: string; children: React.ReactNode }) => {
+    const {
+      attributes,
+      listeners,
+      setNodeRef,
+      transform,
+      transition,
+      isDragging,
+    } = useSortable({ id });
+
+    const style = {
+      transform: CSS.Transform.toString(transform),
+      transition,
+      zIndex: isDragging ? 50 : undefined,
+      position: 'relative' as const,
+    };
+
+    return (
+      <div ref={setNodeRef} style={style} className={cn(isDragging && "opacity-50 ring-1 ring-[#ff2d85]/30")}>
+        {React.Children.map(children, child => {
+          if (React.isValidElement(child)) {
+            return React.cloneElement(child as React.ReactElement<any>, { dragHandleProps: { ...attributes, ...listeners } });
+          }
+          return child;
+        })}
+      </div>
+    );
+  };
+
+  const FlowRow = ({ flow, nested = false, dragHandleProps }: { flow: Flow, nested?: boolean, dragHandleProps?: any }) => (
     <div className={cn(
       "flex items-center gap-4 px-4 py-4 hover:bg-muted/10 transition-colors border-b border-border/50 last:border-b-0",
       nested && "bg-[#111114]"
     )}>
+      {/* Drag Handle */}
+      <div {...dragHandleProps} className="cursor-grab hover:text-[#ff2d85] transition-colors p-1 -ml-2 text-muted-foreground/30">
+        <GripVertical className="h-4 w-4" />
+      </div>
+
       {/* Icon */}
       <div className={cn(
         "h-9 w-9 rounded-xl flex items-center justify-center shrink-0 shadow-sm",
@@ -322,11 +421,14 @@ const FlowsPage = () => {
     </div>
   );
 
-  const FolderSection = ({ folder, depth = 0 }: { folder: FlowFolder; depth?: number }) => {
+  const FolderSection = ({ folder, depth = 0, dragHandleProps }: { folder: FlowFolder; depth?: number; dragHandleProps?: any }) => {
     const isExpanded = expandedFolders.has(folder.id);
     const folderFlows = getFlowsInFolder(folder.id);
     const subfolders = getSubfolders(folder.id);
     const itemCount = folderFlows.length + subfolders.length;
+
+    // Combined items for sorting within a folder
+    const innerItems = [...subfolders, ...folderFlows].sort((a, b) => (a.position - b.position));
 
     return (
       <div className="border-b border-border/50 last:border-b-0">
@@ -338,6 +440,15 @@ const FlowsPage = () => {
           )}
           onClick={() => toggleFolderExpand(folder.id)}
         >
+          {/* Drag Handle */}
+          <div
+            {...dragHandleProps}
+            className="cursor-grab hover:text-[#ff2d85] transition-colors p-1 -ml-2 text-muted-foreground/30"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <GripVertical className="h-4 w-4" />
+          </div>
+
           <div className="flex items-center gap-1 flex-1">
             {isExpanded ? (
               <ChevronDown className="h-5 w-5 text-muted-foreground mr-2" />
@@ -415,15 +526,24 @@ const FlowsPage = () => {
         {/* Folder Contents */}
         {isExpanded && (
           <div className="bg-[#0a0a0c]">
-            {/* Subfolders */}
-            {subfolders.map(subfolder => (
-              <FolderSection key={subfolder.id} folder={subfolder} depth={depth + 1} />
-            ))}
-
-            {/* Flows in folder */}
-            {folderFlows.map(flow => (
-              <FlowRow key={flow.id} flow={flow} nested={true} />
-            ))}
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={(event) => handleDragEnd(event, innerItems, folder.id)}
+              modifiers={[restrictToVerticalAxis]}
+            >
+              <SortableContext items={innerItems.map(i => i.id)} strategy={verticalListSortingStrategy}>
+                {innerItems.map(item => (
+                  <SortableRow key={item.id} id={item.id}>
+                    {'is_active' in item ? (
+                      <FlowRow flow={item as Flow} nested={true} />
+                    ) : (
+                      <FolderSection folder={item as FlowFolder} depth={depth + 1} />
+                    )}
+                  </SortableRow>
+                ))}
+              </SortableContext>
+            </DndContext>
           </div>
         )}
       </div>
@@ -626,15 +746,27 @@ const FlowsPage = () => {
             </div>
 
             <div className="bg-[#0a0a0c]">
-              {/* Folders */}
-              {rootFolders.map(folder => (
-                <FolderSection key={folder.id} folder={folder} />
-              ))}
-
-              {/* Root level flows (without folder) */}
-              {rootFlows.map(flow => (
-                <FlowRow key={flow.id} flow={flow} />
-              ))}
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={(event) => handleDragEnd(event, [...rootFolders, ...rootFlows], 'root')}
+                modifiers={[restrictToVerticalAxis]}
+              >
+                <SortableContext
+                  items={[...rootFolders, ...rootFlows].map(i => i.id)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  {[...rootFolders, ...rootFlows].sort((a, b) => a.position - b.position).map(item => (
+                    <SortableRow key={item.id} id={item.id}>
+                      {'is_active' in item ? (
+                        <FlowRow flow={item as Flow} />
+                      ) : (
+                        <FolderSection folder={item as FlowFolder} />
+                      )}
+                    </SortableRow>
+                  ))}
+                </SortableContext>
+              </DndContext>
             </div>
           </div>
         </div>

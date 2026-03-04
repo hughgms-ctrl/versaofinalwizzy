@@ -25,6 +25,7 @@ export interface Flow {
   is_master_active?: boolean;
   provider?: string | null;
   model?: string | null;
+  position: number;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -50,6 +51,7 @@ function mapRowToFlow(row: any): Flow {
     is_master_active: row.is_master_active || false,
     provider: row.provider || null,
     model: row.model || null,
+    position: row.position || 0,
   };
 }
 
@@ -66,6 +68,7 @@ export function useFlows() {
         .from('flows' as 'contacts') // Temporary workaround
         .select('*')
         .eq('organization_id', profile.organization_id)
+        .order('position', { ascending: true })
         .order('updated_at', { ascending: false }) as unknown as Promise<{ data: unknown[] | null; error: Error | null }>);
 
       if (error) throw error;
@@ -241,6 +244,34 @@ export function useToggleFlowActive() {
     onError: (error) => {
       console.error('Error toggling flow:', error);
       toast.error('Erro ao alterar status do fluxo');
+    },
+  });
+}
+
+export function useUpdateFlowPositions() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (updates: { id: string; position: number }[]) => {
+      // Supabase doesn't support batch updates easily with different values per row
+      // So we'll run them in parallel for now, or we could use a RPC if available
+      const promises = updates.map(update =>
+        supabase
+          .from('flows' as 'contacts')
+          .update({ position: update.position } as never)
+          .eq('id', update.id)
+      );
+
+      const results = await Promise.all(promises);
+      const firstError = results.find(r => r.error)?.error;
+      if (firstError) throw firstError;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['flows'] });
+    },
+    onError: (error) => {
+      console.error('Error updating flow positions:', error);
+      toast.error('Erro ao atualizar ordem dos fluxos');
     },
   });
 }

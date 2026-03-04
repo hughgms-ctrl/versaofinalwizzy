@@ -10,6 +10,7 @@ export interface FlowFolder {
   workspace_id: string | null;
   created_at: string;
   updated_at: string;
+  position: number;
 }
 
 export function useFlowFolders() {
@@ -19,6 +20,7 @@ export function useFlowFolders() {
       const { data, error } = await supabase
         .from('flow_folders')
         .select('*')
+        .order('position', { ascending: true })
         .order('name');
 
       if (error) throw error;
@@ -139,6 +141,32 @@ export function useMoveFlowToFolder() {
     },
     onError: (error) => {
       toast.error('Erro ao mover fluxo: ' + error.message);
+    },
+  });
+}
+
+export function useUpdateFolderPositions() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (updates: { id: string; position: number }[]) => {
+      const promises = updates.map(update =>
+        supabase
+          .from('flow_folders')
+          .update({ position: update.position } as never)
+          .eq('id', update.id)
+      );
+
+      const results = await Promise.all(promises);
+      const firstError = results.find(r => r.error)?.error;
+      if (firstError) throw firstError;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['flow-folders'] });
+    },
+    onError: (error: Error) => {
+      console.error('Error updating folder positions:', error);
+      toast.error('Erro ao atualizar ordem das pastas: ' + error.message);
     },
   });
 }
