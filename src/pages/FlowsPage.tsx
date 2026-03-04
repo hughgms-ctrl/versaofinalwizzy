@@ -189,60 +189,58 @@ const FlowsPage = () => {
 
   const FlowRow = ({ flow, nested = false }: { flow: Flow, nested?: boolean }) => (
     <div className={cn(
-      "flex items-center gap-4 px-4 py-3 hover:bg-muted/30 transition-colors border-b border-border last:border-b-0",
-      nested && "bg-muted/10"
+      "flex items-center gap-4 px-4 py-4 hover:bg-muted/10 transition-colors border-b border-border/50 last:border-b-0",
+      nested && "bg-[#111114]"
     )}>
       {/* Icon */}
       <div className={cn(
-        "h-9 w-9 rounded-xl flex items-center justify-center shrink-0 shadow-lg",
+        "h-9 w-9 rounded-xl flex items-center justify-center shrink-0 shadow-sm",
         flow.is_active
-          ? "bg-gradient-to-br from-[#ff2d85] to-[#ff7b54]"
+          ? "bg-[#ff2d85]"
           : "bg-[#2a2a2e]"
       )}>
         <Workflow className={cn(
-          "h-4 w-4",
+          "h-5 w-5",
           flow.is_active ? "text-white" : "text-muted-foreground"
         )} />
       </div>
 
       {/* Name & Description */}
       <div className="flex-1 min-w-0">
-        <h3 className="font-medium text-foreground truncate">{flow.name}</h3>
-        <p className="text-xs text-muted-foreground truncate">
+        <h3 className="font-medium text-foreground text-sm">{flow.name}</h3>
+        <p className="text-[11px] text-muted-foreground">
           {flow.description || 'Sem descrição'}
         </p>
       </div>
 
       {/* Stats */}
-      <div className="hidden md:flex items-center gap-12 text-sm text-muted-foreground">
-        <div className="flex items-center gap-1.5 w-12 justify-center">
+      <div className="hidden md:flex items-center gap-10 text-muted-foreground">
+        <div className="flex items-center gap-1.5 w-10">
           <Zap className="h-4 w-4" />
-          <span className="font-medium">{flow.triggers_count}</span>
+          <span className="text-sm">{flow.triggers_count}</span>
         </div>
-        <div className="flex items-center gap-1.5 w-12 justify-center">
+        <div className="flex items-center gap-1.5 w-10">
           <GitBranch className="h-4 w-4" />
-          <span className="font-medium">{(flow.nodes as unknown[])?.length || 0}</span>
+          <span className="text-sm">{(flow.nodes as unknown[])?.length || 0}</span>
         </div>
-        <div className="flex items-center gap-1.5 w-32 justify-end text-xs whitespace-nowrap">
-          <Clock className="h-3.5 w-3.5" />
-          <span>{formatDistanceToNow(new Date(flow.updated_at), { addSuffix: true, locale: ptBR })}</span>
+        <div className="flex items-center gap-2 w-36 text-[11px]">
+          <Clock className="h-4 w-4" />
+          <span>há {formatDistanceToNow(new Date(flow.updated_at), { locale: ptBR })}</span>
         </div>
       </div>
 
       {/* Status Toggle */}
-      <div className="flex items-center gap-3 w-32 justify-center">
-        <div className="h-6 w-11 relative">
-          <Switch
-            checked={flow.is_active}
-            onCheckedChange={(checked) => handleToggleActive(flow.id, checked)}
-            className="data-[state=checked]:bg-[#ff2d85]"
-          />
-        </div>
+      <div className="flex items-center gap-3 w-40 justify-center">
+        <Switch
+          checked={flow.is_active}
+          onCheckedChange={(checked) => handleToggleActive(flow.id, checked)}
+          className="data-[state=checked]:bg-[#ff2d85]"
+        />
         <Badge
           className={cn(
-            "text-[10px] uppercase font-bold px-2 py-0.5 rounded-sm min-w-[70px] justify-center",
+            "text-[10px] font-medium px-3 py-1 rounded-full min-w-[70px] justify-center border-none",
             flow.is_active
-              ? "bg-[#ff2d85]/10 text-[#ff2d85] border border-[#ff2d85]/20"
+              ? "bg-[#ff2d85]/10 text-[#ff2d85]"
               : "bg-muted text-muted-foreground"
           )}
         >
@@ -253,7 +251,6 @@ const FlowsPage = () => {
             </>
           ) : (
             <>
-              <Pause className="h-2.5 w-2.5 mr-1 fill-current" />
               Pausado
             </>
           )}
@@ -261,11 +258,11 @@ const FlowsPage = () => {
       </div>
 
       {/* Actions */}
-      <div className="flex items-center gap-1 shrink-0">
+      <div className="flex items-center gap-2 shrink-0 pr-2">
         <Button
           variant="ghost"
           size="sm"
-          className="text-foreground hover:bg-muted/50 font-semibold"
+          className="text-foreground hover:bg-muted/20 font-bold text-sm h-9 px-3"
           onClick={() => handleEditFlow(flow.id)}
         >
           <Edit className="h-4 w-4 mr-1.5" />
@@ -274,11 +271,11 @@ const FlowsPage = () => {
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
+            <Button variant="ghost" size="icon" className="h-8 w-8 text-foreground">
               <MoreVertical className="h-5 w-5" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-52 bg-[#1a1a1e] border-[#2a2a2e]">
+          <DropdownMenuContent align="end" className="w-52 bg-[#0f0f12] border-[#2a2a2e]">
             <DropdownMenuItem onClick={() => handleEditFlow(flow.id)}>
               <Edit className="h-4 w-4 mr-2" />
               Editar
@@ -293,7 +290,7 @@ const FlowsPage = () => {
                 <FolderInput className="h-4 w-4 mr-2" />
                 Mover para pasta
               </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent className="bg-[#1a1a1e] border-[#2a2a2e]">
+              <DropdownMenuSubContent className="bg-[#0f0f12] border-[#2a2a2e]">
                 <DropdownMenuItem onClick={() => handleMoveToFolder(flow.id, null)}>
                   <Folder className="h-4 w-4 mr-2" />
                   Raiz (sem pasta)
@@ -332,57 +329,54 @@ const FlowsPage = () => {
     const itemCount = folderFlows.length + subfolders.length;
 
     return (
-      <div className="border-b border-border last:border-b-0">
+      <div className="border-b border-border/50 last:border-b-0">
         {/* Folder Header */}
         <div
           className={cn(
-            "flex items-center gap-3 px-4 py-3 hover:bg-muted/30 transition-colors cursor-pointer group",
+            "flex items-center gap-3 px-4 py-4 hover:bg-muted/10 transition-colors cursor-pointer group",
             depth > 0 && "pl-12"
           )}
           onClick={() => toggleFolderExpand(folder.id)}
         >
-          <div className="flex items-center gap-2 flex-1">
+          <div className="flex items-center gap-1 flex-1">
             {isExpanded ? (
-              <ChevronDown className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
+              <ChevronDown className="h-5 w-5 text-muted-foreground mr-2" />
             ) : (
-              <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
+              <ChevronRight className="h-5 w-5 text-muted-foreground mr-2" />
             )}
 
-            <div className="h-8 w-8 rounded-lg bg-orange-500/10 flex items-center justify-center shrink-0">
-              <Folder className={cn(
-                "h-5 w-5 transition-colors",
-                isExpanded ? "text-orange-500 fill-orange-500/20" : "text-muted-foreground group-hover:text-orange-500"
-              )} />
-            </div>
+            <Folder className={cn(
+              "h-5 w-5 mr-3 transition-colors",
+              isExpanded ? "text-muted-foreground" : "text-muted-foreground"
+            )} />
 
-            <span className="font-semibold text-foreground">{folder.name}</span>
+            <span className="font-semibold text-foreground text-sm">{folder.name}</span>
           </div>
 
-          <div className="flex items-center gap-4 shrink-0">
+          <div className="flex items-center gap-4 shrink-0 pr-2">
             {folder.workspace_id && (() => {
               const ws = availableWorkspaces.find(w => w.id === folder.workspace_id);
               if (!ws) return null;
               return (
                 <div
-                  className="flex items-center gap-2 px-3 py-1 rounded-sm bg-[#1a1a1e] border border-orange-500/20"
+                  className="px-2 py-0.5 rounded-[4px] bg-[#2e1f18] border border-[#4a2e21]"
                 >
-                  <div className="h-2 w-2 rounded-full" style={{ backgroundColor: ws.color }} />
-                  <span className="text-[10px] font-bold text-orange-500 uppercase tracking-wider">{ws.name}</span>
+                  <span className="text-[10px] font-medium text-[#b36b39]">{ws.name}</span>
                 </div>
               );
             })()}
 
-            <span className="text-xs font-semibold text-muted-foreground min-w-[60px] text-right">
+            <span className="text-[11px] text-muted-foreground min-w-[50px] text-right">
               {itemCount} {itemCount === 1 ? 'item' : 'itens'}
             </span>
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
+                <Button variant="ghost" size="icon" className="h-8 w-8 text-foreground">
                   <MoreVertical className="h-5 w-5" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48 bg-[#1a1a1e] border-[#2a2a2e]">
+              <DropdownMenuContent align="end" className="w-48 bg-[#0f0f12] border-[#2a2a2e]">
                 <DropdownMenuItem onClick={(e) => {
                   e.stopPropagation();
                   setEditingFolder(folder);
@@ -420,7 +414,7 @@ const FlowsPage = () => {
 
         {/* Folder Contents */}
         {isExpanded && (
-          <div className="bg-[#0f0f12]">
+          <div className="bg-[#0a0a0c]">
             {/* Subfolders */}
             {subfolders.map(subfolder => (
               <FolderSection key={subfolder.id} folder={subfolder} depth={depth + 1} />
@@ -428,16 +422,8 @@ const FlowsPage = () => {
 
             {/* Flows in folder */}
             {folderFlows.map(flow => (
-              <div key={flow.id} className={cn("border-b border-border/50 last:border-b-0", depth === 0 ? "pl-0" : "pl-0")}>
-                <FlowRow flow={flow} nested={true} />
-              </div>
+              <FlowRow key={flow.id} flow={flow} nested={true} />
             ))}
-
-            {itemCount === 0 && (
-              <div className="pl-16 py-4 text-sm text-muted-foreground italic">
-                Crie ou arraste fluxos para esta pasta...
-              </div>
-            )}
           </div>
         )}
       </div>
@@ -470,32 +456,32 @@ const FlowsPage = () => {
 
       {/* Create Folder Dialog */}
       <Dialog open={showFolderDialog} onOpenChange={setShowFolderDialog}>
-        <DialogContent className="bg-[#1a1a1e] border-[#ff2d85]/30">
+        <DialogContent className="bg-[#0f0f12] border-white/10 max-w-md p-6 rounded-2xl">
           <DialogHeader>
-            <DialogTitle className="text-[#ff2d85]">Nova Pasta</DialogTitle>
+            <DialogTitle className="text-xl font-bold">Nova Pasta</DialogTitle>
           </DialogHeader>
           <div className="grid gap-6 py-4">
             <div className="grid gap-2">
-              <Label className="text-muted-foreground font-bold uppercase text-[10px]">Nome da pasta</Label>
+              <Label className="text-sm font-medium">Nome da pasta</Label>
               <Input
                 placeholder="Ex: Auxílio Reclusão"
                 value={newFolderName}
                 onChange={(e) => setNewFolderName(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleCreateFolder()}
-                className="bg-[#0f0f12] border-[#2a2a2e] focus:border-[#ff2d85]/50 h-10"
+                className="bg-[#1a1a1e] border-[#2a2a2e] focus:ring-0 focus:border-white/20 h-11 rounded-lg"
               />
             </div>
             {isAdmin && (
               <div className="grid gap-2">
-                <Label className="text-muted-foreground font-bold uppercase text-[10px]">Workspace</Label>
+                <Label className="text-sm font-medium">Workspace</Label>
                 <Select
                   value={folderWorkspaceId || 'all'}
                   onValueChange={(val) => setFolderWorkspaceId(val === 'all' ? null : val)}
                 >
-                  <SelectTrigger className="bg-[#0f0f12] border-[#2a2a2e]">
+                  <SelectTrigger className="bg-[#1a1a1e] border-[#2a2a2e] h-11 rounded-lg">
                     <SelectValue placeholder="Selecione" />
                   </SelectTrigger>
-                  <SelectContent className="bg-[#1a1a1e] border-[#2a2a2e]">
+                  <SelectContent className="bg-[#0f0f12] border-[#2a2a2e]">
                     <SelectItem value="all">Todos os Workspaces</SelectItem>
                     {availableWorkspaces.map(ws => (
                       <SelectItem key={ws.id} value={ws.id}>
@@ -507,58 +493,58 @@ const FlowsPage = () => {
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="text-[10px] text-muted-foreground/60 italic">Fluxos movidos para esta pasta herdarão o workspace selecionado.</p>
+                <p className="text-[11px] text-muted-foreground/80 mt-1">Fluxos movidos para esta pasta herdarão o workspace selecionado.</p>
               </div>
             )}
           </div>
-          <DialogFooter className="gap-2">
+          <DialogFooter className="flex items-center justify-end gap-3 mt-2">
             <Button variant="ghost" onClick={() => {
               setShowFolderDialog(false);
               setNewFolderName('');
               setCurrentFolderId(null);
               setFolderWorkspaceId(null);
-            }} className="hover:bg-muted/30">
+            }} className="text-foreground hover:bg-muted/20 px-6 font-bold">
               Cancelar
             </Button>
             <Button
               onClick={handleCreateFolder}
               disabled={!newFolderName.trim()}
-              className="bg-gradient-to-r from-[#ff2d85] to-[#ff7b54] hover:opacity-90 font-bold"
+              className="bg-gradient-to-r from-[#ff2d85] to-[#ff7b54] hover:opacity-90 font-bold px-8 rounded-lg"
             >
-              Criar Pasta
+              Criar
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* ... Rest of dialogs and layout ... */}
+      {/* Rename/Edit Folder Dialog */}
       <Dialog open={showRenameDialog} onOpenChange={setShowRenameDialog}>
-        <DialogContent className="bg-[#1a1a1e] border-[#ff2d85]/30">
+        <DialogContent className="bg-[#0f0f12] border-white/10 max-w-md p-6 rounded-2xl">
           <DialogHeader>
-            <DialogTitle className="text-[#ff2d85]">Editar Pasta</DialogTitle>
+            <DialogTitle className="text-xl font-bold">Editar Pasta</DialogTitle>
           </DialogHeader>
           <div className="grid gap-6 py-4">
             <div className="grid gap-2">
-              <Label className="text-muted-foreground font-bold uppercase text-[10px]">Nome da pasta</Label>
+              <Label className="text-sm font-medium">Nome da pasta</Label>
               <Input
                 placeholder="Nome da pasta"
                 value={newFolderName}
                 onChange={(e) => setNewFolderName(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleRenameFolder()}
-                className="bg-[#0f0f12] border-[#2a2a2e] focus:border-[#ff2d85]/50 h-10"
+                className="bg-[#1a1a1e] border-[#2a2a2e] focus:ring-0 focus:border-white/20 h-11 rounded-lg"
               />
             </div>
             {isAdmin && (
               <div className="grid gap-2">
-                <Label className="text-muted-foreground font-bold uppercase text-[10px]">Workspace</Label>
+                <Label className="text-sm font-medium">Workspace</Label>
                 <Select
                   value={folderWorkspaceId || 'all'}
                   onValueChange={(val) => setFolderWorkspaceId(val === 'all' ? null : val)}
                 >
-                  <SelectTrigger className="bg-[#0f0f12] border-[#2a2a2e]">
+                  <SelectTrigger className="bg-[#1a1a1e] border-[#2a2a2e] h-11 rounded-lg">
                     <SelectValue placeholder="Selecione" />
                   </SelectTrigger>
-                  <SelectContent className="bg-[#1a1a1e] border-[#2a2a2e]">
+                  <SelectContent className="bg-[#0f0f12] border-[#2a2a2e]">
                     <SelectItem value="all">Todos os Workspaces</SelectItem>
                     {availableWorkspaces.map(ws => (
                       <SelectItem key={ws.id} value={ws.id}>
@@ -570,43 +556,40 @@ const FlowsPage = () => {
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="text-[10px] text-muted-foreground/60 italic">Fluxos movidos para esta pasta herdarão o workspace selecionado.</p>
+                <p className="text-[11px] text-muted-foreground/80 mt-1">Fluxos movidos para esta pasta herdarão o workspace selecionado.</p>
               </div>
             )}
           </div>
-          <DialogFooter className="gap-2">
+          <DialogFooter className="flex items-center justify-end gap-3 mt-2">
             <Button variant="ghost" onClick={() => {
               setShowRenameDialog(false);
               setNewFolderName('');
               setFolderWorkspaceId(null);
               setEditingFolder(null);
-            }}>
+            }} className="text-foreground hover:bg-muted/20 px-6 font-bold">
               Cancelar
             </Button>
             <Button
               onClick={handleRenameFolder}
               disabled={!newFolderName.trim()}
-              className="bg-gradient-to-r from-[#ff2d85] to-[#ff7b54] font-bold"
+              className="bg-gradient-to-r from-[#ff2d85] to-[#ff7b54] hover:opacity-90 font-bold px-8 rounded-lg"
             >
-              Salvar Alterações
+              Salvar
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {(!flows || flows.length === 0) && (!folders || folders.length === 0) ? (
-        <div className="flex flex-col items-center justify-center min-h-[400px] text-center bg-card/30 rounded-2xl border border-border/50 border-dashed">
-          <div className="h-20 w-20 rounded-full bg-muted/30 flex items-center justify-center mb-6">
-            <Workflow className="h-10 w-10 text-muted-foreground/50" />
-          </div>
-          <h3 className="text-xl font-bold mb-2">Sua jornada começa aqui</h3>
-          <p className="text-muted-foreground max-w-xs mx-auto mb-8">Crie seu primeiro fluxo de automação e transforme seu atendimento.</p>
+        <div className="flex flex-col items-center justify-center min-h-[400px]">
+          <Workflow className="h-16 w-16 text-muted-foreground/30 mb-6" />
+          <h3 className="text-xl font-bold mb-2">Nenhum fluxo encontrado</h3>
+          <p className="text-muted-foreground mb-8 text-sm">Crie pastas ou fluxos para começar.</p>
           <Button
             onClick={() => setShowCreateDialog(true)}
-            className="bg-gradient-to-r from-[#ff2d85] to-[#ff7b54] font-bold px-8"
+            className="bg-gradient-to-r from-[#ff2d85] to-[#ff7b54] font-bold px-8 h-12 rounded-xl"
           >
-            <Play className="h-4 w-4 mr-2 fill-current" />
-            Criar Meu Primeiro Fluxo
+            Começar Agora
           </Button>
         </div>
       ) : (
@@ -616,34 +599,34 @@ const FlowsPage = () => {
             <Button
               variant="outline"
               size="sm"
-              className="bg-[#0f0f12] border-[#2a2a2e] hover:bg-[#1a1a1e] font-bold text-xs px-4"
+              className="bg-[#0a0a0c] border-[#2a2a2e] hover:bg-[#1a1a1e] font-bold h-10 px-4 rounded-lg flex items-center gap-2"
               onClick={() => {
                 setCurrentFolderId(null);
-                setFolderWorkspaceId(selectedWorkspaceId); // Auto-assign to current workspace
+                setFolderWorkspaceId(selectedWorkspaceId);
                 setShowFolderDialog(true);
               }}
             >
-              <FolderPlus className="h-4 w-4 mr-2 text-orange-500" />
+              <FolderPlus className="h-4 w-4" />
               Nova Pasta
             </Button>
           </div>
 
           {/* List Container */}
-          <div className="bg-[#0f0f12] rounded-xl border border-[#2a2a2e] overflow-hidden shadow-2xl">
+          <div className="bg-[#0a0a0c] rounded-2xl border border-border/40 overflow-hidden shadow-sm">
             {/* Header */}
-            <div className="flex items-center gap-4 px-4 py-3 bg-[#1a1a1e] border-b border-[#2a2a2e] text-[10px] font-bold text-muted-foreground uppercase tracking-[0.1em]">
-              <div className="w-9" /> {/* Icon space */}
-              <div className="flex-1">Nome do Fluxo / Pasta</div>
-              <div className="hidden md:flex items-center gap-12 text-center">
-                <div className="w-12">Disparos</div>
-                <div className="w-12">Blocos</div>
-                <div className="w-32 text-right">Atualizado</div>
+            <div className="flex items-center gap-4 px-4 py-4 border-b border-border/40 text-[11px] font-bold text-muted-foreground/70 uppercase tracking-widest bg-[#0a0a0c]">
+              <div className="w-10" /> {/* Chevron space */}
+              <div className="flex-1">Nome</div>
+              <div className="hidden md:flex items-center gap-10 text-center">
+                <div className="w-10 text-center">Disparos</div>
+                <div className="w-10 text-center">Blocos</div>
+                <div className="w-36 text-right">Atualizado</div>
               </div>
-              <div className="w-32 text-center">Status</div>
-              <div className="w-28 text-right pr-2">Ações</div>
+              <div className="w-40 text-center">Status</div>
+              <div className="w-28 text-right pr-4">Ações</div>
             </div>
 
-            <div className="min-h-[200px]">
+            <div className="bg-[#0a0a0c]">
               {/* Folders */}
               {rootFolders.map(folder => (
                 <FolderSection key={folder.id} folder={folder} />
@@ -653,12 +636,6 @@ const FlowsPage = () => {
               {rootFlows.map(flow => (
                 <FlowRow key={flow.id} flow={flow} />
               ))}
-
-              {filteredFlows.length === 0 && filteredFolders.length === 0 && (
-                <div className="py-20 text-center text-muted-foreground italic">
-                  Nenhum item encontrado neste workspace.
-                </div>
-              )}
             </div>
           </div>
         </div>
