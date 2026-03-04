@@ -70,28 +70,19 @@ Deno.serve(async (req) => {
     }
 
     const normalizedPhone = phone.replace(/\D/g, '');
-    let presencePath: string;
-    switch (presence) {
-      case 'typing':
-      case 'composing':
-        presencePath = '/send/typing';
-        break;
-      case 'recording':
-        presencePath = '/send/recording';
-        break;
-      default:
-        return new Response(JSON.stringify({ error: 'Invalid presence type' }), {
-          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-    }
+    const presenceType = presence === 'typing' ? 'composing' : (presence === 'recording' ? 'recording' : 'paused');
 
-    const response = await fetch(uazapiUrl(uazapiBaseUrl, presencePath), {
+    const response = await fetch(uazapiUrl(uazapiBaseUrl, '/message/presence'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'token': instance.zapi_token
       },
-      body: JSON.stringify({ number: normalizedPhone, duration: Math.min(duration, 25000) }),
+      body: JSON.stringify({
+        number: normalizedPhone,
+        presence: presenceType,
+        delay: duration
+      }),
     });
 
     if (!response.ok) {

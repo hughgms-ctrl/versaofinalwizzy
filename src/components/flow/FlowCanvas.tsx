@@ -149,6 +149,24 @@ function FlowCanvasInner() {
     setHasUnsavedChanges(false);
   }, [flowId]);
 
+  // Listen for simulation events to highlight nodes
+  useEffect(() => {
+    const handleNodeHighlight = (event: any) => {
+      const { nodeId } = event.detail;
+      setNodes((nds) =>
+        nds.map((node) => ({
+          ...node,
+          className: node.id === nodeId
+            ? 'ring-4 ring-green-500 ring-offset-2 transition-all duration-300'
+            : node.className?.replace(/ring-4 ring-green-500 ring-offset-2 transition-all duration-300/g, '')
+        }))
+      );
+    };
+
+    window.addEventListener('flow:node:executing', handleNodeHighlight);
+    return () => window.removeEventListener('flow:node:executing', handleNodeHighlight);
+  }, [setNodes]);
+
   // Track unsaved changes
   useEffect(() => {
     if (!isInitialized && !flowId) {

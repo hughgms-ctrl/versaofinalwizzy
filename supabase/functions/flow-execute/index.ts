@@ -436,22 +436,20 @@ async function sendTextMessage(content: string, context: ExecutionContext): Prom
   const message = replaceVariables(content, context.variables);
   if (!message) return;
 
-  const clientToken = Deno.env.get('ZAPI_CLIENT_TOKEN');
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  };
-  if (clientToken) {
-    headers['Client-Token'] = clientToken;
-  }
+  const uazapiBaseUrl = Deno.env.get('UAZAPI_BASE_URL')!;
+  const normalizedPhone = context.contactPhone.replace(/\D/g, '');
 
   const response = await fetch(
-    `https://api.z-api.io/instances/${context.zapiInstanceId}/token/${context.zapiToken}/send-text`,
+    `${uazapiBaseUrl}/send/text`,
     {
       method: 'POST',
-      headers,
+      headers: {
+        'Content-Type': 'application/json',
+        'token': context.zapiToken
+      },
       body: JSON.stringify({
-        phone: context.contactPhone,
-        message,
+        number: normalizedPhone,
+        text: message,
       }),
     }
   );
@@ -468,48 +466,26 @@ async function sendMediaItem(
   caption: string | undefined,
   context: ExecutionContext
 ): Promise<void> {
-  const endpoint = mediaType === 'document' ? 'send-document' : `send-${mediaType}`;
+  const uazapiBaseUrl = Deno.env.get('UAZAPI_BASE_URL')!;
+  const normalizedPhone = context.contactPhone.replace(/\D/g, '');
   const processedCaption = caption ? replaceVariables(caption, context.variables) : undefined;
 
-  const clientToken = Deno.env.get('ZAPI_CLIENT_TOKEN');
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  };
-  if (clientToken) {
-    headers['Client-Token'] = clientToken;
-  }
-
   const body: Record<string, unknown> = {
-    phone: context.contactPhone,
+    number: normalizedPhone,
+    file: mediaUrl,
+    type: mediaType
   };
 
-  // Different payload structure based on media type
-  if (mediaType === 'image') {
-    body.image = mediaUrl;
-    if (processedCaption) body.caption = processedCaption;
-  } else if (mediaType === 'video') {
-    body.video = mediaUrl;
-    if (processedCaption) body.caption = processedCaption;
-  } else if (mediaType === 'audio') {
-    body.audio = mediaUrl;
-    // Only send as voice message (PTT/waveform) if the file is OGG format
-    // MP3 files should NOT use waveform as it causes audio quality issues
-    const urlLower = mediaUrl.toLowerCase();
-    const isOggFormat = urlLower.includes('.ogg') || urlLower.includes('ogg');
-    if (isOggFormat) {
-      body.waveform = true;
-    }
-    // MP3, WAV, and other formats will be sent as regular audio (no waveform)
-  } else if (mediaType === 'document') {
-    body.document = mediaUrl;
-    if (processedCaption) body.caption = processedCaption;
-  }
+  if (processedCaption) body.caption = processedCaption;
 
   const response = await fetch(
-    `https://api.z-api.io/instances/${context.zapiInstanceId}/token/${context.zapiToken}/${endpoint}`,
+    `${uazapiBaseUrl}/send/media`,
     {
       method: 'POST',
-      headers,
+      headers: {
+        'Content-Type': 'application/json',
+        'token': context.zapiToken
+      },
       body: JSON.stringify(body),
     }
   );
@@ -751,22 +727,22 @@ async function sendPresence(
   context: ExecutionContext
 ): Promise<void> {
   try {
-    const clientToken = Deno.env.get('ZAPI_CLIENT_TOKEN');
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
-    if (clientToken) {
-      headers['Client-Token'] = clientToken;
-    }
+    const uazapiBaseUrl = Deno.env.get('UAZAPI_BASE_URL')!;
+    const normalizedPhone = context.contactPhone.replace(/\D/g, '');
+    const type = presenceType === 'typing' ? 'composing' : 'recording';
 
     await fetch(
-      `https://api.z-api.io/instances/${context.zapiInstanceId}/token/${context.zapiToken}/send-presence`,
+      `${uazapiBaseUrl}/message/presence`,
       {
         method: 'POST',
-        headers,
+        headers: {
+          'Content-Type': 'application/json',
+          'token': context.zapiToken
+        },
         body: JSON.stringify({
-          phone: context.contactPhone,
-          presence: presenceType,
+          number: normalizedPhone,
+          presence: type,
+          delay: 5000
         }),
       }
     );

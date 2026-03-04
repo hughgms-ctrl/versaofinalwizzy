@@ -9,11 +9,11 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import { 
-  Play, 
-  Send, 
-  Bot, 
-  User, 
+import {
+  Play,
+  Send,
+  Bot,
+  User,
   Loader2,
   RotateCcw,
   X,
@@ -70,12 +70,16 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // States for AI thinking
+  const [isThinking, setIsThinking] = useState(false);
+  const [currentAgentName, setCurrentAgentName] = useState<string | null>(null);
+
   // Auto-scroll to bottom
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages]);
+  }, [messages, isThinking]);
 
   // Focus input when waiting for user input
   useEffect(() => {
@@ -93,12 +97,15 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
     });
     setIsStarted(false);
     setUserInput('');
+    setIsThinking(false);
+    setCurrentAgentName(null);
   };
 
   const addMessage = (msg: Omit<SimulatedMessage, 'id' | 'timestamp' | 'status'>) => {
+    const newId = `msg-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const newMsg: SimulatedMessage = {
       ...msg,
-      id: `msg-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      id: newId,
       timestamp: new Date(),
       status: msg.type === 'bot' ? 'sending' : 'sent',
     };
@@ -107,23 +114,23 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
     // Simulate message delivery
     if (msg.type === 'bot') {
       setTimeout(() => {
-        setMessages(prev => prev.map(m => 
-          m.id === newMsg.id ? { ...m, status: 'delivered' as const } : m
+        setMessages(prev => prev.map(m =>
+          m.id === newId ? { ...m, status: 'delivered' as const } : m
         ));
       }, 500);
       setTimeout(() => {
-        setMessages(prev => prev.map(m => 
-          m.id === newMsg.id ? { ...m, status: 'read' as const } : m
+        setMessages(prev => prev.map(m =>
+          m.id === newId ? { ...m, status: 'read' as const } : m
         ));
       }, 1000);
     }
 
-    return newMsg.id;
+    return newId;
   };
 
   const findNextNode = (currentNodeId: string, nodes: Node[], edges: Edge[], outputHandle?: string): Node | null => {
-    const outgoingEdge = edges.find(e => 
-      e.source === currentNodeId && 
+    const outgoingEdge = edges.find(e =>
+      e.source === currentNodeId &&
       (outputHandle ? e.sourceHandle === outputHandle : true)
     );
     if (!outgoingEdge) return null;
@@ -133,10 +140,9 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
   const processContentBlock = async (items: ContentItem[]) => {
     for (const item of items) {
       if (item.type === 'delay') {
-        // Show typing indicator during delay
-        addMessage({ type: 'system', content: '⏳ Digitando...' });
+        setIsProcessing(true);
         await new Promise(resolve => setTimeout(resolve, (item.delaySeconds || 3) * 1000));
-        setMessages(prev => prev.filter(m => m.content !== '⏳ Digitando...'));
+        setIsProcessing(false);
       } else if (item.type === 'text' && item.content) {
         // Replace variables in text
         let processedContent = item.content;
@@ -160,12 +166,14 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
   const processNode = async (node: Node, nodes: Node[], edges: Edge[]) => {
     setSimulationState(prev => ({ ...prev, currentNodeId: node.id }));
 
+    // Visual feedback on canvas
+    window.dispatchEvent(new CustomEvent('flow:node:executing', { detail: { nodeId: node.id } }));
+
     const nodeType = node.type as string;
     const nodeData = node.data as Record<string, unknown>;
 
     switch (nodeType) {
       case 'start':
-        // Just move to next node
         const nextAfterStart = findNextNode(node.id, nodes, edges);
         if (nextAfterStart) {
           await new Promise(resolve => setTimeout(resolve, 500));
@@ -190,10 +198,10 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
       case 'message-buttons':
         const buttonText = (nodeData.text as string) || 'Escolha uma opção:';
         const buttons = (nodeData.buttons as Array<{ id: string; label: string }>) || [];
-        
+
         addMessage({ type: 'bot', content: buttonText });
         await new Promise(resolve => setTimeout(resolve, 300));
-        
+
         if (buttons.length > 0) {
           setSimulationState(prev => ({
             ...prev,
@@ -210,34 +218,24 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
 
       case 'user-input':
         const variableName = (nodeData.variableName as string) || 'resposta';
-        const inputType = (nodeData.inputType as string) || 'text';
-        const validationMessage = (nodeData.validationMessage as string);
-        
-        let promptText = '';
-        switch (inputType) {
-          case 'email': promptText = 'Digite seu e-mail:'; break;
-          case 'phone': promptText = 'Digite seu telefone:'; break;
-          case 'cpf': promptText = 'Digite seu CPF:'; break;
-          case 'number': promptText = 'Digite um número:'; break;
-          default: promptText = `Digite ${variableName}:`;
-        }
-        
-        addMessage({ type: 'bot', content: promptText });
-        
+        addMessage({ type: 'system', content: `📝 Aguardando sua resposta para: ${variableName}` });
+
         setSimulationState(prev => ({
           ...prev,
           waitingForInput: true,
           inputVariable: variableName,
-          inputType: inputType,
         }));
         break;
 
       case 'condition':
+        addMessage({ type: 'system', content: '🔀 Avaliando condição...' });
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
         const variable = (nodeData.variable as string) || '';
         const operator = (nodeData.operator as string) || 'equals';
         const value = (nodeData.value as string) || '';
         const varValue = simulationState.variables[variable];
-        
+
         let conditionMet = false;
         switch (operator) {
           case 'equals': conditionMet = String(varValue) === value; break;
@@ -246,18 +244,13 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
           case 'greater_than': conditionMet = Number(varValue) > Number(value); break;
           case 'less_than': conditionMet = Number(varValue) < Number(value); break;
         }
-        
-        addMessage({ 
-          type: 'system', 
-          content: `🔀 Condição: ${variable} ${operator} "${value}" → ${conditionMet ? 'Sim' : 'Não'}` 
-        });
-        
-        // Find next node based on condition (assuming 'yes' and 'no' handles)
+
+        addMessage({ type: 'system', content: `🔀 Resultado: ${conditionMet ? 'Verdadeiro' : 'Falso'}` });
+
         const nextAfterCondition = findNextNode(node.id, nodes, edges, conditionMet ? 'yes' : 'no');
         if (nextAfterCondition) {
           await processNode(nextAfterCondition, nodes, edges);
         } else {
-          // Try default next
           const defaultNext = findNextNode(node.id, nodes, edges);
           if (defaultNext) {
             await processNode(defaultNext, nodes, edges);
@@ -265,88 +258,73 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
         }
         break;
 
-      case 'action-tag':
-        const action = (nodeData.action as string) || 'add';
-        const tagId = (nodeData.tagId as string);
-        addMessage({ 
-          type: 'system', 
-          content: `🏷️ Tag ${action === 'add' ? 'adicionada' : 'removida'}` 
-        });
-        const nextAfterTag = findNextNode(node.id, nodes, edges);
-        if (nextAfterTag) {
-          await processNode(nextAfterTag, nodes, edges);
-        }
-        break;
-
-      case 'action-webhook':
-        const webhookUrl = (nodeData.url as string) || '';
-        addMessage({ 
-          type: 'system', 
-          content: `🌐 Webhook chamado: ${webhookUrl ? webhookUrl.slice(0, 30) + '...' : '(não configurado)'}` 
-        });
-        await new Promise(resolve => setTimeout(resolve, 500));
-        const nextAfterWebhook = findNextNode(node.id, nodes, edges);
-        if (nextAfterWebhook) {
-          await processNode(nextAfterWebhook, nodes, edges);
-        }
-        break;
-
       case 'ai-handoff':
-        addMessage({ type: 'system', content: '🤖 Conversa transferida para a IA' });
-        setSimulationState(prev => ({ ...prev, currentNodeId: null }));
+        setCurrentAgentName((nodeData.agentName as string) || 'Especialista');
+        setIsThinking(true);
+        addMessage({ type: 'system', content: `🤖 Transferindo para Agente: ${nodeData.agentName || 'IA'}` });
+
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        setIsThinking(false);
+
+        addMessage({
+          type: 'bot',
+          content: `[SIMULAÇÃO IA] Olá! Sou o agente ${nodeData.agentName || 'IA'} e estou assumindo seu atendimento. Como posso ajudar com base no contexto do fluxo?`
+        });
+
+        setSimulationState(prev => ({ ...prev, waitingForInput: true, inputVariable: 'ai_query' }));
+        break;
+
+      case 'ai-master':
+        setCurrentAgentName("Agente Master / Orquestrador");
+        setIsThinking(true);
+        addMessage({ type: 'system', content: '🧠 Agente Master Ativado' });
+
+        await new Promise(resolve => setTimeout(resolve, 4000));
+        setIsThinking(false);
+
+        addMessage({
+          type: 'bot',
+          content: "Olá! Sou o Orquestrador deste fluxo. Estou analisando seu histórico para decidir qual o melhor caminho ou agente para o seu caso."
+        });
+
+        setSimulationState(prev => ({ ...prev, waitingForInput: true, inputVariable: 'master_query' }));
         break;
 
       default:
-        addMessage({ type: 'system', content: `⚙️ Executando: ${nodeType}` });
         const nextNode = findNextNode(node.id, nodes, edges);
         if (nextNode) {
           await processNode(nextNode, nodes, edges);
+        } else {
+          addMessage({ type: 'system', content: '✅ Execução finalizada' });
         }
     }
   };
 
   const startSimulation = async () => {
     if (!flow?.nodes) return;
-
     resetSimulation();
     setIsStarted(true);
     setIsProcessing(true);
-
-    addMessage({ type: 'system', content: `▶️ Iniciando simulação: "${flowName}"` });
-    
+    addMessage({ type: 'system', content: `▶️ Conversa iniciada: "${flowName}"` });
     await new Promise(resolve => setTimeout(resolve, 500));
-
-    // Find start node
     const nodes = flow.nodes as Node[];
     const edges = flow.edges as Edge[];
     const startNode = nodes.find(n => n.type === 'start');
-
-    if (startNode) {
-      await processNode(startNode, nodes, edges);
-    } else {
-      addMessage({ type: 'system', content: '❌ Nó inicial não encontrado' });
-    }
-
+    if (startNode) await processNode(startNode, nodes, edges);
     setIsProcessing(false);
   };
 
   const handleUserInput = async () => {
     if (!userInput.trim() || !flow) return;
-
     const inputValue = userInput.trim();
     setUserInput('');
-
-    // Add user message
     addMessage({ type: 'user', content: inputValue });
 
-    // If there are pending buttons, find the matching one
     if (simulationState.pendingButtons) {
-      const matchedButton = simulationState.pendingButtons.find(b => 
+      const matchedButton = simulationState.pendingButtons.find(b =>
         b.label.toLowerCase() === inputValue.toLowerCase()
       );
-      
       if (matchedButton) {
-        // Store the button choice
         setSimulationState(prev => ({
           ...prev,
           waitingForInput: false,
@@ -354,211 +332,133 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
           variables: { ...prev.variables, button_choice: matchedButton.label }
         }));
       } else {
-        addMessage({ type: 'bot', content: 'Por favor, escolha uma das opções disponíveis.' });
+        addMessage({ type: 'bot', content: 'Selecione uma das opções acima.' });
         return;
       }
     } else if (simulationState.inputVariable) {
-      // Store the variable
+      if (simulationState.inputVariable === 'ai_query' || simulationState.inputVariable === 'master_query') {
+        setIsThinking(true);
+        await new Promise(resolve => setTimeout(resolve, 2500));
+        setIsThinking(false);
+        addMessage({ type: 'bot', content: `Entendi o seu ponto sobre "${inputValue}". Como este é um ambiente de simulação, estou validando as regras do prompt que você configurou no nó.` });
+        return;
+      }
       setSimulationState(prev => ({
         ...prev,
         waitingForInput: false,
         inputVariable: undefined,
-        inputType: undefined,
         variables: { ...prev.variables, [simulationState.inputVariable!]: inputValue }
       }));
     }
 
-    // Continue to next node
     await new Promise(resolve => setTimeout(resolve, 300));
-    
     const nodes = flow.nodes as Node[];
     const edges = flow.edges as Edge[];
     const currentNode = nodes.find(n => n.id === simulationState.currentNodeId);
-    
     if (currentNode) {
       setIsProcessing(true);
       const nextNode = findNextNode(currentNode.id, nodes, edges);
-      if (nextNode) {
-        await processNode(nextNode, nodes, edges);
-      } else {
-        addMessage({ type: 'system', content: '✅ Fluxo finalizado' });
-      }
+      if (nextNode) await processNode(nextNode, nodes, edges);
+      else addMessage({ type: 'system', content: '✅ Fluxo finalizado' });
       setIsProcessing(false);
     }
   };
 
   const handleButtonClick = async (button: { id: string; label: string }) => {
     if (!flow) return;
-
     addMessage({ type: 'user', content: button.label });
-    
     setSimulationState(prev => ({
       ...prev,
       waitingForInput: false,
       pendingButtons: undefined,
       variables: { ...prev.variables, button_choice: button.label }
     }));
-
     await new Promise(resolve => setTimeout(resolve, 300));
-    
     const nodes = flow.nodes as Node[];
     const edges = flow.edges as Edge[];
     const currentNode = nodes.find(n => n.id === simulationState.currentNodeId);
-    
     if (currentNode) {
       setIsProcessing(true);
       const nextNode = findNextNode(currentNode.id, nodes, edges);
-      if (nextNode) {
-        await processNode(nextNode, nodes, edges);
-      } else {
-        addMessage({ type: 'system', content: '✅ Fluxo finalizado' });
-      }
+      if (nextNode) await processNode(nextNode, nodes, edges);
+      else addMessage({ type: 'system', content: '✅ Fluxo finalizado' });
       setIsProcessing(false);
     }
   };
 
   const renderMediaPreview = (msg: SimulatedMessage) => {
     if (!msg.mediaUrl) return null;
-
     switch (msg.mediaType) {
-      case 'image':
-        return (
-          <img 
-            src={msg.mediaUrl} 
-            alt="Media" 
-            className="max-w-full max-h-40 rounded-lg mb-1"
-          />
-        );
-      case 'video':
-        return (
-          <div className="bg-muted rounded-lg p-2 flex items-center gap-2 mb-1">
-            <Video className="h-8 w-8 text-muted-foreground" />
-            <span className="text-xs text-muted-foreground">Vídeo</span>
-          </div>
-        );
-      case 'audio':
-        return (
-          <audio src={msg.mediaUrl} controls className="max-w-full h-10 mb-1" />
-        );
-      case 'document':
-        return (
-          <div className="bg-muted rounded-lg p-2 flex items-center gap-2 mb-1">
-            <FileText className="h-8 w-8 text-muted-foreground" />
-            <span className="text-xs text-muted-foreground">Documento</span>
-          </div>
-        );
-      default:
-        return null;
+      case 'image': return <img src={msg.mediaUrl} alt="Media" className="max-w-full max-h-40 rounded-lg mb-1" />;
+      case 'video': return <div className="bg-muted rounded-lg p-2 flex items-center gap-2 mb-1"><Video className="h-8 w-8 text-muted-foreground" /><span className="text-xs text-muted-foreground">Vídeo</span></div>;
+      case 'audio': return <audio src={msg.mediaUrl} controls className="max-w-full h-10 mb-1" />;
+      case 'document': return <div className="bg-muted rounded-lg p-2 flex items-center gap-2 mb-1"><FileText className="h-8 w-8 text-muted-foreground" /><span className="text-xs text-muted-foreground">Documento</span></div>;
+      default: return null;
     }
   };
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full sm:max-w-[400px] p-0 flex flex-col">
-        {/* Phone Frame Header */}
-        <div className="bg-[#075e54] text-white px-4 py-3">
-          <SheetHeader className="space-y-0">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 rounded-full bg-white/20 flex items-center justify-center">
-                <User className="h-5 w-5" />
-              </div>
-              <div className="flex-1">
-                <SheetTitle className="text-white text-base font-medium">
-                  Contato Simulado
-                </SheetTitle>
-                <p className="text-white/70 text-xs">
-                  Testando: {flowName}
-                </p>
-              </div>
-              <Button 
-                variant="ghost" 
-                size="icon"
-                className="text-white hover:bg-white/20"
-                onClick={resetSimulation}
-                title="Reiniciar simulação"
-              >
-                <RotateCcw className="h-4 w-4" />
-              </Button>
+      <SheetContent side="right" className="w-full sm:max-w-[450px] p-0 flex flex-col bg-[#f0f2f5] dark:bg-background border-l border-border shadow-2xl">
+        <div className="bg-[#075e54] dark:bg-[#202c33] text-white px-4 py-4 flex items-center justify-between shadow-md z-10">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-full bg-[#dfe5e7] dark:bg-[#6a7175] flex items-center justify-center overflow-hidden border border-white/10">
+              <Bot className="h-6 w-6 text-[#54656f] dark:text-white/80" />
             </div>
-          </SheetHeader>
+            <div>
+              <h3 className="text-[15px] font-semibold leading-tight">Simulador de Atendimento</h3>
+              <div className="flex items-center gap-1">
+                <div className="h-2 w-2 rounded-full bg-[#25d366]" />
+                <span className="text-[11px] text-white/80">Online | {flowName}</span>
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="icon" className="text-white hover:bg-white/10 h-8 w-8 rounded-full" onClick={resetSimulation} title="Reiniciar"><RotateCcw className="h-4 w-4" /></Button>
+            <Button variant="ghost" size="icon" className="text-white hover:bg-white/10 h-8 w-8 rounded-full" onClick={() => onOpenChange(false)}><X className="h-4 w-4" /></Button>
+          </div>
         </div>
 
-        {/* Chat Background */}
-        <div 
+        <div
           ref={scrollRef}
-          className="flex-1 overflow-y-auto p-3 space-y-2"
-          style={{
-            backgroundImage: 'url("data:image/svg+xml,%3Csvg width="60" height="60" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg"%3E%3Cg fill="none" fill-rule="evenodd"%3E%3Cg fill="%239C92AC" fill-opacity="0.08"%3E%3Cpath d="M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z"/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")',
-            backgroundColor: 'hsl(var(--muted) / 0.3)',
-          }}
+          className="flex-1 overflow-y-auto p-4 space-y-4 relative scroll-smooth"
+          style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg width='80' height='80' viewBox='0 0 80 80' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M10 10l5 5m-5 0l5-5m20 0l5 5m-5 0l5-5m20 0l5 5m-5 0l5-5m20 0l5 5m-5 0l5-5M10 30l5 5m-5 0l5-5m20 0l5 5m-5 0l5-5m20 0l5 5m-5 0l5-5m20 0l5 5m-5 0l5-5M10 50l5 5m-5 0l5-5m20 0l5 5m-5 0l5-5m20 0l5 5m-5 0l5-5m20 0l5 5m-5 0l5-5M10 70l5 5m-5 0l5-5m20 0l5 5m-5 0l5-5m20 0l5 5m-5 0l5-5m20 0l5 5m-5 0l5-5' stroke='%23000' stroke-opacity='0.03' fill='none' fill-rule='evenodd'/%3E%3C/svg%3E")` }}
         >
           {!isStarted ? (
-            <div className="flex flex-col items-center justify-center h-full text-center">
-              <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center mb-4">
-                <Play className="h-8 w-8 text-primary" />
-              </div>
-              <h3 className="font-medium mb-2">Pronto para simular</h3>
-              <p className="text-sm text-muted-foreground mb-4 max-w-[250px]">
-                Clique no botão abaixo para iniciar a simulação do fluxo e ver como as mensagens serão enviadas.
-              </p>
-              <Button onClick={startSimulation} className="gap-2">
-                <Play className="h-4 w-4" />
-                Iniciar Simulação
-              </Button>
+            <div className="flex flex-col items-center justify-center h-full text-center p-8 bg-white/50 dark:bg-card/30 backdrop-blur-sm rounded-3xl border border-dashed border-border m-4">
+              <div className="h-20 w-20 rounded-full bg-[#25d366]/10 flex items-center justify-center mb-6 ring-4 ring-[#25d366]/5"><Play className="h-10 w-10 text-[#25d366] fill-current pr-0.5" /></div>
+              <h3 className="text-xl font-bold mb-3">Teste seu Fluxo</h3>
+              <p className="text-sm text-muted-foreground mb-8 leading-relaxed">Inicie a simulação para ver como seu cliente interagirá com o fluxo e como os agentes responderão.</p>
+              <Button onClick={startSimulation} className="bg-[#25d366] hover:bg-[#20bd5c] text-white font-bold px-10 h-12 rounded-full shadow-lg gap-2">Começar Simulação</Button>
             </div>
           ) : (
             <>
               {messages.map((msg) => (
-                <div
-                  key={msg.id}
-                  className={cn(
-                    "flex",
-                    msg.type === 'bot' ? 'justify-end' : 'justify-start',
-                    msg.type === 'system' && 'justify-center'
-                  )}
-                >
-                  {msg.type === 'system' ? (
-                    <div className="bg-muted/80 backdrop-blur-sm px-3 py-1 rounded-full">
-                      <span className="text-xs text-muted-foreground">{msg.content}</span>
-                    </div>
-                  ) : (
-                    <div
-                      className={cn(
-                        "max-w-[85%] px-3 py-2 rounded-lg shadow-sm relative",
-                        msg.type === 'bot' 
-                          ? 'bg-[#dcf8c6] text-foreground rounded-tr-none' 
-                          : 'bg-card text-foreground rounded-tl-none'
-                      )}
-                    >
+                <div key={msg.id} className={cn("flex flex-col animate-in fade-in slide-in-from-bottom-2 duration-300", msg.type === 'bot' ? 'items-start' : 'items-end', msg.type === 'system' && 'items-center my-4')}>
+                  {msg.type === 'system' ? (<div className="bg-white/90 dark:bg-muted/80 backdrop-blur-sm px-4 py-1.5 rounded-full shadow-sm border border-border/50"><span className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground/80">{msg.content}</span></div>) : (
+                    <div className={cn("max-w-[85%] px-3.5 py-2.5 rounded-2xl shadow-sm relative", msg.type === 'bot' ? 'bg-white dark:bg-[#202c33] text-foreground rounded-tl-none border-t border-r border-[#0000000a]' : 'bg-[#dcf8c6] dark:bg-[#005c4b] text-foreground rounded-tr-none')}>
+                      {msg.type === 'bot' && (<div className="flex items-center gap-1.5 mb-1 text-[10px] font-bold text-[#ff2d85]"><Bot className="h-3 w-3" /><span>Wizzy Bot</span></div>)}
                       {renderMediaPreview(msg)}
-                      <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
-                      <div className="flex items-center justify-end gap-1 mt-1">
-                        <span className="text-[10px] text-muted-foreground">
-                          {msg.timestamp.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                        {msg.type === 'bot' && (
-                          <CheckCheck 
-                            className={cn(
-                              "h-3 w-3",
-                              msg.status === 'read' ? 'text-blue-500' : 'text-muted-foreground'
-                            )} 
-                          />
-                        )}
+                      <p className="text-[13px] leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+                      <div className="flex items-center justify-end gap-1.5 mt-1.5">
+                        <span className="text-[9px] opacity-50 font-medium">{msg.timestamp.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+                        {msg.type === 'user' && <CheckCheck className="h-3.5 w-3.5 text-blue-500" />}
                       </div>
                     </div>
                   )}
                 </div>
               ))}
-
-              {/* Typing indicator - now on the right side (you sending) */}
-              {isProcessing && (
-                <div className="flex justify-end">
-                  <div className="bg-[#dcf8c6] px-4 py-3 rounded-lg rounded-tr-none shadow-sm">
-                    <div className="flex gap-1">
-                      <span className="w-2 h-2 bg-green-600/50 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                      <span className="w-2 h-2 bg-green-600/50 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                      <span className="w-2 h-2 bg-green-600/50 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                    </div>
+              {(isProcessing || isThinking) && (
+                <div className="flex flex-col items-start animate-in fade-in duration-300">
+                  <div className="bg-white dark:bg-[#202c33] px-4 py-3 rounded-2xl rounded-tl-none shadow-sm border border-[#0000000a]">
+                    <div className="flex items-center gap-2 mb-2"><div className="h-4 w-4 rounded-full bg-[#ff2d85]/10 flex items-center justify-center"><Loader2 className="h-3 w-3 text-[#ff2d85] animate-spin" /></div><span className="text-[10px] font-bold text-[#ff2d85] uppercase tracking-tighter">{isThinking ? (currentAgentName || "IA Processando") : "IA Digitanto"}</span></div>
+                    {isThinking && (
+                      <div className="flex flex-col gap-2">
+                        <div className="flex gap-1.5"><span className="w-1.5 h-1.5 bg-[#ff2d85] rounded-full animate-bounce" style={{ animationDelay: '0ms' }} /><span className="w-1.5 h-1.5 bg-[#ff2d85] rounded-full animate-bounce" style={{ animationDelay: '150ms' }} /><span className="w-1.5 h-1.5 bg-[#ff2d85] rounded-full animate-bounce" style={{ animationDelay: '300ms' }} /></div>
+                        <p className="text-[11px] text-muted-foreground italic font-medium">Analizando o contexto global para responder...</p>
+                      </div>
+                    )}
+                    {!isThinking && isProcessing && (<div className="flex gap-1.5"><span className="w-1.5 h-1.5 bg-muted-foreground/30 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} /><span className="w-1.5 h-1.5 bg-muted-foreground/30 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} /><span className="w-1.5 h-1.5 bg-muted-foreground/30 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} /></div>)}
                   </div>
                 </div>
               )}
@@ -566,56 +466,21 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
           )}
         </div>
 
-        {/* Button choices */}
-        {simulationState.pendingButtons && simulationState.pendingButtons.length > 0 && (
-          <div className="px-3 py-2 border-t border-border bg-muted/30">
-            <p className="text-xs text-muted-foreground mb-2">Escolha uma opção:</p>
-            <div className="flex flex-wrap gap-2">
+        <div className="bg-[#f0f2f5] dark:bg-[#111b21] p-3 border-t border-border space-y-3">
+          {simulationState.pendingButtons && simulationState.pendingButtons.length > 0 && !isProcessing && (
+            <div className="flex flex-wrap gap-2 animate-in slide-in-from-bottom-4 duration-500">
               {simulationState.pendingButtons.map((btn) => (
-                <Button
-                  key={btn.id}
-                  variant="outline"
-                  size="sm"
-                  className="text-xs"
-                  onClick={() => handleButtonClick(btn)}
-                  disabled={isProcessing}
-                >
-                  {btn.label}
-                </Button>
+                <Button key={btn.id} variant="outline" size="sm" className="bg-white dark:bg-[#202c33] border-none shadow-sm hover:bg-[#f0f2f5] text-[#00a884] font-bold rounded-full px-5 transition-all hover:scale-105" onClick={() => handleButtonClick(btn)}>{btn.label}</Button>
               ))}
             </div>
-          </div>
-        )}
-
-        {/* Input Area */}
-        <div className="bg-[#f0f0f0] dark:bg-muted px-3 py-2 border-t border-border">
-          <form 
-            onSubmit={(e) => { e.preventDefault(); handleUserInput(); }}
-            className="flex gap-2"
-          >
-            <Input
-              ref={inputRef}
-              value={userInput}
-              onChange={(e) => setUserInput(e.target.value)}
-              placeholder={
-                simulationState.waitingForInput 
-                  ? simulationState.pendingButtons 
-                    ? "Digite a opção ou clique acima..."
-                    : `Digite ${simulationState.inputVariable || 'sua resposta'}...`
-                  : "Aguardando..."
-              }
-              disabled={!simulationState.waitingForInput || isProcessing}
-              className="flex-1 h-10 bg-white dark:bg-card"
-            />
-            <Button 
-              type="submit"
-              size="icon"
-              disabled={!simulationState.waitingForInput || isProcessing || !userInput.trim()}
-              className="h-10 w-10 rounded-full bg-[#075e54] hover:bg-[#064940]"
-            >
-              <Send className="h-4 w-4" />
-            </Button>
+          )}
+          <form onSubmit={(e) => { e.preventDefault(); handleUserInput(); }} className="flex items-center gap-2">
+            <div className="flex-1 bg-white dark:bg-[#2a3942] rounded-full px-4 h-11 flex items-center shadow-sm border border-transparent focus-within:border-[#00a884]">
+              <Input ref={inputRef} value={userInput} onChange={(e) => setUserInput(e.target.value)} placeholder={simulationState.waitingForInput ? "Digite sua mensagem..." : "Simulação finalizada"} disabled={!simulationState.waitingForInput || isProcessing || isThinking} className="border-none bg-transparent focus-visible:ring-0 px-0 h-full text-[14px]" />
+            </div>
+            <Button type="submit" size="icon" disabled={!simulationState.waitingForInput || isProcessing || isThinking || !userInput.trim()} className="h-11 w-11 rounded-full bg-[#00a884] hover:bg-[#008f72] shadow-md flex-shrink-0"><Send className="h-5 w-5 text-white pr-0.5" /></Button>
           </form>
+          <div className="text-center"><p className="text-[10px] text-muted-foreground opacity-60 font-medium">Wizzy Flow Simulator | © 2026</p></div>
         </div>
       </SheetContent>
     </Sheet>

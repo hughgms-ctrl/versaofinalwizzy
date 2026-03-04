@@ -21,6 +21,10 @@ export interface DbConversation {
     email: string | null;
     created_at: string;
     metadata: { note?: string } | null;
+    contact_presence?: {
+      presence_type: string;
+      expires_at: string;
+    } | { presence_type: string; expires_at: string }[] | null;
   } | null;
   last_message: {
     id: string;
@@ -52,6 +56,7 @@ export interface DbMessage {
   read_at: string | null;
   delivered_at: string | null;
   media_url: string | null;
+  metadata?: any;
 }
 
 export function useConversations(options?: { includeArchived?: boolean; onlyArchived?: boolean }) {
@@ -67,7 +72,7 @@ export function useConversations(options?: { includeArchived?: boolean; onlyArch
         .from('conversations')
         .select(`
           *,
-          contact:contacts(id, name, phone, avatar_url, email, created_at, metadata),
+          contact:contacts(id, name, phone, avatar_url, email, created_at, metadata, contact_presence(presence_type, expires_at)),
           last_message:messages(id, content, type, direction, is_from_bot, read_at, delivered_at)
         `)
         .order('last_message_at', { ascending: false, nullsFirst: false })
@@ -85,7 +90,7 @@ export function useConversations(options?: { includeArchived?: boolean; onlyArch
       const { data, error } = await query;
 
       if (error) throw error;
-      return (data || []) as DbConversation[];
+      return (data || []) as unknown as DbConversation[];
     },
     enabled: !!session,
   });
@@ -105,6 +110,17 @@ export function useConversations(options?: { includeArchived?: boolean; onlyArch
         },
         (payload) => {
           console.log('Conversation realtime update:', payload);
+          queryClient.invalidateQueries({ queryKey: ['conversations'] });
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'contact_presence',
+        },
+        () => {
           queryClient.invalidateQueries({ queryKey: ['conversations'] });
         }
       )

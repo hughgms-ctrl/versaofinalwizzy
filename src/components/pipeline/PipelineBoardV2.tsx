@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { formatDistanceToNow, isWithinInterval, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { GripVertical, Loader2, Inbox, MessageCircle, Bot } from 'lucide-react';
+import { GripVertical, Loader2, Inbox, MessageCircle, Bot, Check, CheckCheck } from 'lucide-react';
 import { ConversationCardActions } from '@/components/conversations/ConversationCardActions';
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -276,6 +276,11 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
     return phone;
   };
 
+  const stripMarkdown = (text: string | null) => {
+    if (!text) return null;
+    return text.replace(/[*_~`]/g, '');
+  };
+
   const getLastMessagePreview = (conversation: DbConversation) => {
     const lastMessage = conversation.last_message?.[0];
     if (!lastMessage) return null;
@@ -290,7 +295,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
       };
       return typeLabels[lastMessage.type] || '📎 Mídia';
     }
-    return lastMessage.content;
+    return stripMarkdown(lastMessage.content);
   };
 
   const isLoading = conversationsLoading || columnsLoading;
@@ -337,6 +342,14 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
     const isAIActive = lastMessage?.is_from_bot;
     const messagePreview = getLastMessagePreview(conversation);
 
+    // Real presence logic using contact_presence table
+    const presenceData = conversation.contact?.contact_presence;
+    const presence = Array.isArray(presenceData) ? presenceData[0] : presenceData;
+    const isActive = presence ? new Date(presence.expires_at) > new Date() : false;
+    const isOnline = isActive && presence?.presence_type !== 'offline';
+    const isTyping = isActive && presence?.presence_type === 'typing';
+    const isRecording = isActive && presence?.presence_type === 'recording';
+
     return (
       <div
         key={conversation.id}
@@ -355,7 +368,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
 
           {/* Avatar with indicator */}
           <div className="relative flex-shrink-0">
-            <div className="h-10 w-10 rounded-full bg-gradient-to-br from-primary/20 to-purple-500/20 flex items-center justify-center">
+            <div className="h-10 w-10 rounded-full bg-gradient-to-br from-primary/20 to-purple-500/20 flex items-center justify-center relative">
               {conversation.contact?.avatar_url ? (
                 <img
                   src={conversation.contact.avatar_url}
@@ -367,7 +380,14 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
                   {getInitials(contactName || null, contactPhone)}
                 </span>
               )}
+
+              {/* Online Status Dot */}
+              <div className={cn(
+                "absolute top-0 right-0 h-2.5 w-2.5 rounded-full ring-2 ring-card",
+                isOnline ? "bg-green-500" : "bg-gray-400"
+              )} />
             </div>
+
             <div className={cn(
               "absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-full flex items-center justify-center ring-2 ring-card",
               isAIActive ? "bg-purple-500" : "bg-green-500"
@@ -393,14 +413,14 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
                     {/* Line 1: Quick Note */}
                     <div className="flex items-center justify-between gap-2 min-w-0">
                       <span
-                        className="text-xs font-semibold px-2 py-0.5 bg-amber-500/15 text-amber-700 dark:text-amber-400 rounded truncate max-w-full"
+                        className="text-xs font-semibold px-2 py-0.5 bg-amber-500/15 text-amber-700 dark:text-amber-400 rounded truncate max-w-full min-w-0 flex-1"
                         title={note}
                       >
                         {note}
                       </span>
 
                       {/* Actions Area */}
-                      <div className="flex items-center gap-1 flex-shrink-0">
+                      <div className="flex items-center gap-1 flex-shrink-0 ml-auto">
                         {conversation.last_message_at && (
                           <span className={cn(
                             "text-[10px] whitespace-nowrap",
@@ -425,7 +445,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
                     {/* Line 2: Name + Phone */}
                     <div className="flex items-center gap-1.5 min-w-0">
                       <p className={cn(
-                        "text-[11px] truncate",
+                        "text-[11px] truncate flex-1 min-w-0",
                         hasUnread ? "font-bold text-foreground" : "font-medium text-muted-foreground"
                       )}>
                         {hasName ? contactName : formattedPhone}
@@ -452,7 +472,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
                     </p>
 
                     {/* Actions Area */}
-                    <div className="flex items-center gap-1 flex-shrink-0">
+                    <div className="flex items-center gap-1 flex-shrink-0 ml-auto">
                       {conversation.last_message_at && (
                         <span className={cn(
                           "text-[10px] whitespace-nowrap",
@@ -475,8 +495,11 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
                   </div>
                   {/* Line 2: Phone details */}
                   {hasName && (
-                    <p className="text-[10px] text-muted-foreground truncate">
-                      {formattedPhone}
+                    <p className={cn(
+                      "text-[9px] leading-tight truncate",
+                      (isTyping || isRecording) ? "text-green-500 font-medium animate-pulse" : "text-muted-foreground"
+                    )}>
+                      {isTyping ? 'Digitando...' : isRecording ? 'Gravando áudio...' : messagePreview}
                     </p>
                   )}
                 </div>
@@ -489,11 +512,11 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
                 {lastMessage?.direction === 'outbound' && (
                   <span className="flex-shrink-0 flex items-center">
                     {lastMessage.read_at ? (
-                      <span className="text-blue-500 text-[10px]">✓✓</span>
-                    ) : lastMessage.delivered_at ? (
-                      <span className="text-muted-foreground text-[10px]">✓✓</span>
+                      <CheckCheck className="text-blue-500 h-3 w-3 stroke-[3]" />
+                    ) : (lastMessage.delivered_at || lastMessage.read_at) ? (
+                      <CheckCheck className="text-muted-foreground/60 h-3 w-3 stroke-[3]" />
                     ) : (
-                      <span className="text-muted-foreground text-[10px]">✓</span>
+                      <Check className="text-muted-foreground/60 h-3 w-3 stroke-[3]" />
                     )}
                   </span>
                 )}

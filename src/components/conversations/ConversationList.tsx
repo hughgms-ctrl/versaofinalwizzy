@@ -2,7 +2,7 @@ import { DbConversation, useProfiles } from '@/hooks/useConversations';
 import { useContactTags, useTags } from '@/hooks/useTags';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Bot, MessageCircle } from 'lucide-react';
+import { Bot, MessageCircle, Check, CheckCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ConversationCardActions } from './ConversationCardActions';
 
@@ -34,10 +34,15 @@ export function ConversationList({ conversations, selectedId, onSelect, onSpyVie
     return phone;
   };
 
+  const stripMarkdown = (text: string | null) => {
+    if (!text) return null;
+    return text.replace(/[*_~`]/g, '');
+  };
+
   return (
     <div className="flex flex-col h-full">
       {/* List */}
-      <div className="flex-1 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+      <div className="flex-1 overflow-y-auto p-2 space-y-2" style={{ WebkitOverflowScrolling: 'touch' }}>
         {conversations.map((conversation) => {
           const isSelected = selectedId === conversation.id;
           const hasName = !!conversation.contact?.name;
@@ -47,8 +52,7 @@ export function ConversationList({ conversations, selectedId, onSelect, onSpyVie
           const hasUnread = conversation.unread_count > 0 && !isSelected;
           const lastMessage = conversation.last_message?.[0];
           const isAIActive = lastMessage?.is_from_bot;
-
-          const getLastMessagePreview = () => {
+          const messagePreview = (() => {
             if (!lastMessage) return null;
             if (lastMessage.type !== 'text') {
               const typeLabels: Record<string, string> = {
@@ -61,78 +65,96 @@ export function ConversationList({ conversations, selectedId, onSelect, onSpyVie
               };
               return typeLabels[lastMessage.type] || '📎 Mídia';
             }
-            return lastMessage.content;
-          };
-          const messagePreview = getLastMessagePreview();
+            return stripMarkdown(lastMessage.content);
+          })();
+
+          // Real presence logic using contact_presence table
+          const presenceData = conversation.contact?.contact_presence;
+          const presence = Array.isArray(presenceData) ? presenceData[0] : presenceData;
+          const isActive = presence ? new Date(presence.expires_at) > new Date() : false;
+          const isOnline = isActive && presence?.presence_type !== 'offline';
+          const isTyping = isActive && presence?.presence_type === 'typing';
+          const isRecording = isActive && presence?.presence_type === 'recording';
 
           return (
             <div
               key={conversation.id}
               onClick={() => onSelect(conversation)}
               className={cn(
-                "conversation-item border-b border-border/50",
-                isSelected && "active",
+                "pipeline-card !cursor-pointer transition-all duration-200 relative overflow-hidden",
+                isSelected ? "bg-primary/10 border-primary/30 shadow-sm" : "hover:bg-accent/30",
                 hasUnread && "bg-primary/5"
               )}
             >
-              {/* Avatar */}
-              <div className="relative flex-shrink-0">
-                <div className="h-12 w-12 rounded-full bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center">
-                  {conversation.contact?.avatar_url ? (
-                    <img
-                      src={conversation.contact.avatar_url}
-                      alt={contactName || contactPhone}
-                      className="h-12 w-12 rounded-full object-cover"
-                    />
-                  ) : (
-                    <span className="text-sm font-semibold text-primary">
-                      {getInitials(contactName || null, contactPhone)}
-                    </span>
-                  )}
-                </div>
-                <div className={cn(
-                  "absolute -bottom-1 -right-1 h-5 w-5 rounded-full flex items-center justify-center ring-2 ring-background",
-                  isAIActive ? "bg-primary" : "bg-green-500"
-                )}>
-                  {isAIActive ? (
-                    <Bot className="h-3 w-3 text-primary-foreground" />
-                  ) : (
-                    <MessageCircle className="h-3 w-3 text-white" />
-                  )}
-                </div>
-              </div>
+              {/* Selection Indicator Bar */}
+              {isSelected && (
+                <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary rounded-r-full" />
+              )}
+              <div className="flex items-start gap-2">
+                {/* Avatar with indicator */}
+                <div className="relative flex-shrink-0">
+                  <div className="h-10 w-10 rounded-full bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center relative">
+                    {conversation.contact?.avatar_url ? (
+                      <img
+                        src={conversation.contact.avatar_url}
+                        alt={contactName || contactPhone}
+                        className="h-10 w-10 rounded-full object-cover"
+                      />
+                    ) : (
+                      <span className="text-xs font-semibold text-primary">
+                        {getInitials(contactName || null, contactPhone)}
+                      </span>
+                    )}
 
-              {/* Content */}
-              <div className="flex-1 min-w-0">
-                <div className="flex flex-col gap-0.5 min-w-0">
+                    {/* Online Status Dot */}
+                    <div className={cn(
+                      "absolute top-0 right-0 h-2.5 w-2.5 rounded-full ring-2 ring-card",
+                      isOnline ? "bg-green-500" : "bg-gray-400"
+                    )} />
+                  </div>
+
+                  <div className={cn(
+                    "absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-full flex items-center justify-center ring-2 ring-card",
+                    isAIActive ? "bg-primary" : "bg-green-500"
+                  )}>
+                    {isAIActive ? (
+                      <Bot className="h-2.5 w-2.5 text-primary-foreground" />
+                    ) : (
+                      <MessageCircle className="h-2.5 w-2.5 text-white" />
+                    )}
+                  </div>
+                </div>
+
+                {/* Content */}
+                <div className="flex-1 min-w-0 overflow-hidden">
                   {(() => {
                     const metadata = conversation.contact?.metadata as { note?: string } | null;
                     const note = metadata?.note;
 
                     return (
-                      <>
-                        {/* Row 1: Note (if exists) + Actions */}
+                      <div className="flex flex-col gap-0.5">
+                        {/* Row 1: Note (if exists) + Time/Unread/Actions */}
                         <div className="flex items-center justify-between gap-2 min-w-0">
-                          {note ? (
+                          {note && (
                             <span
-                              className="text-[10px] font-semibold px-2 py-0.5 bg-amber-500/15 text-amber-700 dark:text-amber-400 rounded truncate max-w-[120px]"
+                              className="text-xs font-semibold px-2 py-0.5 bg-amber-500/15 text-amber-700 dark:text-amber-400 rounded truncate min-w-0 flex-1"
                               title={note}
                             >
                               {note}
                             </span>
-                          ) : <div />}
+                          )}
 
-                          <div className="flex items-center gap-1 flex-shrink-0">
+                          <div className="flex items-center gap-1 flex-shrink-0 ml-auto">
                             {conversation.last_message_at && (
                               <span className={cn(
-                                "text-[10px]",
+                                "text-[10px] whitespace-nowrap",
                                 hasUnread ? "text-primary font-medium" : "text-muted-foreground"
                               )}>
                                 {formatDistanceToNow(new Date(conversation.last_message_at), { addSuffix: false, locale: ptBR })}
                               </span>
                             )}
                             {hasUnread && (
-                              <span className="flex h-4 min-w-[16px] items-center justify-center rounded-full bg-primary px-1 text-[9px] font-bold text-primary-foreground">
+                              <span className="h-5 min-w-[20px] px-1 rounded-full bg-primary text-[10px] font-bold text-primary-foreground flex items-center justify-center">
                                 {conversation.unread_count}
                               </span>
                             )}
@@ -145,70 +167,82 @@ export function ConversationList({ conversations, selectedId, onSelect, onSpyVie
                         </div>
 
                         {/* Row 2: Name + Phone */}
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <p className={cn(
-                            "text-sm truncate",
-                            hasUnread ? "font-bold text-foreground" : "font-semibold text-foreground"
-                          )}>
-                            {hasName ? contactName : formattedPhone}
-                          </p>
-                          {hasName && (
-                            <p className="text-[10px] text-muted-foreground/70 truncate flex-shrink-0">
-                              • {formattedPhone}
+                        {note ? (
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <p className={cn(
+                              "text-[11px] truncate flex-1 min-w-0",
+                              hasUnread ? "font-bold text-foreground" : "font-medium text-muted-foreground"
+                            )}>
+                              {hasName ? contactName : formattedPhone}
                             </p>
-                          )}
-                        </div>
-                      </>
+                            {hasName && (
+                              <p className="text-[10px] text-muted-foreground/70 truncate flex-shrink-0">
+                                • {formattedPhone}
+                              </p>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between gap-2 min-w-0">
+                            <p className={cn(
+                              "text-sm truncate flex-1 min-w-0",
+                              hasUnread ? "font-bold text-foreground" : "font-medium text-foreground"
+                            )}>
+                              {hasName ? contactName : formattedPhone}
+                            </p>
+                          </div>
+                        )}
+                        {!note && hasName && (
+                          <p className="text-[10px] text-muted-foreground truncate">
+                            {formattedPhone}
+                          </p>
+                        )}
+                      </div>
                     );
                   })()}
-                </div>
 
-                {/* Last message preview + status */}
-                <div className="flex items-center gap-1 mt-1">
-                  {/* Status checkmarks for outbound messages */}
-                  {lastMessage?.direction === 'outbound' && (
-                    <span className="flex-shrink-0 flex items-center">
-                      {lastMessage.read_at ? (
-                        // Read - double blue checkmark
-                        <span className="text-blue-500 text-xs">✓✓</span>
-                      ) : lastMessage.delivered_at ? (
-                        // Delivered - double gray checkmark
-                        <span className="text-muted-foreground text-xs">✓✓</span>
-                      ) : (
-                        // Sent - single gray checkmark
-                        <span className="text-muted-foreground text-xs">✓</span>
-                      )}
-                    </span>
-                  )}
-                  {messagePreview ? (
-                    <p className={cn(
-                      "text-xs truncate flex-1",
-                      hasUnread ? "text-foreground font-medium" : "text-muted-foreground"
-                    )}>
-                      {messagePreview}
-                    </p>
-                  ) : (
-                    <span
-                      className={cn(
-                        "px-2 py-0.5 rounded-full text-[10px] font-medium",
-                        conversation.status === 'open' && "bg-green-500/10 text-green-500",
-                        conversation.status === 'pending' && "bg-yellow-500/10 text-yellow-500",
-                        conversation.status === 'resolved' && "bg-blue-500/10 text-blue-500",
-                        conversation.status === 'archived' && "bg-muted text-muted-foreground"
-                      )}
-                    >
-                      {conversation.status === 'open' && 'Aberto'}
-                      {conversation.status === 'pending' && 'Pendente'}
-                      {conversation.status === 'resolved' && 'Resolvido'}
-                      {conversation.status === 'archived' && 'Arquivado'}
-                    </span>
+                  {/* Row 3: Last message preview */}
+                  <div className="flex items-center gap-1 mt-1">
+                    {lastMessage?.direction === 'outbound' && (
+                      <span className="flex-shrink-0 flex items-center">
+                        {lastMessage.read_at ? (
+                          <CheckCheck className="text-blue-500 h-3 w-3 stroke-[3]" />
+                        ) : (lastMessage.delivered_at || lastMessage.read_at) ? (
+                          <CheckCheck className="text-muted-foreground/60 h-3 w-3 stroke-[3]" />
+                        ) : (
+                          <Check className="text-muted-foreground/60 h-3 w-3 stroke-[3]" />
+                        )}
+                      </span>
+                    )}
+                    {messagePreview ? (
+                      <p className={cn(
+                        "text-[11px] truncate flex-1 min-w-0",
+                        hasUnread ? "text-foreground font-medium" : "text-muted-foreground"
+                      )}>
+                        {messagePreview}
+                      </p>
+                    ) : (
+                      <span
+                        className={cn(
+                          "px-2 py-0.5 rounded-full text-[10px] font-medium",
+                          conversation.status === 'open' && "bg-green-500/10 text-green-500",
+                          conversation.status === 'pending' && "bg-yellow-500/10 text-yellow-500",
+                          conversation.status === 'resolved' && "bg-blue-500/10 text-blue-500",
+                          conversation.status === 'archived' && "bg-muted text-muted-foreground"
+                        )}
+                      >
+                        {conversation.status === 'open' && 'Aberto'}
+                        {conversation.status === 'pending' && 'Pendente'}
+                        {conversation.status === 'resolved' && 'Resolvido'}
+                        {conversation.status === 'archived' && 'Arquivado'}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Row 4: Contact Tags */}
+                  {conversation.contact?.id && (
+                    <ContactTagsDisplay contactId={conversation.contact.id} />
                   )}
                 </div>
-
-                {/* Contact Tags */}
-                {conversation.contact?.id && (
-                  <ContactTagsDisplay contactId={conversation.contact.id} />
-                )}
               </div>
             </div>
           );
@@ -237,7 +271,7 @@ function ContactTagsDisplay({ contactId }: { contactId: string }) {
       {tagDetails.map((tag: { id: string; name: string; color: string }) => (
         <span
           key={tag.id}
-          className="text-[10px] px-1.5 py-0.5 rounded-full"
+          className="text-[9px] px-1.5 py-0.5 rounded truncate max-w-[80px]"
           style={{
             backgroundColor: `${tag.color}20`,
             color: tag.color,

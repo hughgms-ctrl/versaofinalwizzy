@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -95,6 +95,7 @@ interface Flow {
   nodes: unknown[];
   updated_at: string;
   folder_id?: string | null;
+  position: number;
 }
 
 const FlowsPage = () => {
@@ -220,10 +221,28 @@ const FlowsPage = () => {
   const getSubfolders = (parentId: string) =>
     filteredFolders.filter(f => f.parent_id === parentId);
 
-  const handleDragEnd = async (event: DragEndEvent, items: any[], type: 'root' | string) => {
+  const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
 
     if (over && active.id !== over.id) {
+      // Find which list this item belongs to
+      let items: any[] = [];
+
+      // Check root
+      const rootItems = [...rootFolders, ...rootFlows];
+      if (rootItems.some(i => i.id === active.id)) {
+        items = rootItems;
+      } else {
+        // Check folders
+        for (const folder of filteredFolders) {
+          const folderItems = [...getSubfolders(folder.id), ...getFlowsInFolder(folder.id)];
+          if (folderItems.some(i => i.id === active.id)) {
+            items = folderItems;
+            break;
+          }
+        }
+      }
+
       const oldIndex = items.findIndex((item) => item.id === active.id);
       const newIndex = items.findIndex((item) => item.id === over.id);
 
@@ -526,24 +545,17 @@ const FlowsPage = () => {
         {/* Folder Contents */}
         {isExpanded && (
           <div className="bg-[#0a0a0c]">
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCenter}
-              onDragEnd={(event) => handleDragEnd(event, innerItems, folder.id)}
-              modifiers={[restrictToVerticalAxis]}
-            >
-              <SortableContext items={innerItems.map(i => i.id)} strategy={verticalListSortingStrategy}>
-                {innerItems.map(item => (
-                  <SortableRow key={item.id} id={item.id}>
-                    {'is_active' in item ? (
-                      <FlowRow flow={item as Flow} nested={true} />
-                    ) : (
-                      <FolderSection folder={item as FlowFolder} depth={depth + 1} />
-                    )}
-                  </SortableRow>
-                ))}
-              </SortableContext>
-            </DndContext>
+            <SortableContext items={innerItems.map(i => i.id)} strategy={verticalListSortingStrategy}>
+              {innerItems.map(item => (
+                <SortableRow key={item.id} id={item.id}>
+                  {'is_active' in item ? (
+                    <FlowRow flow={item as Flow} nested={true} />
+                  ) : (
+                    <FolderSection folder={item as FlowFolder} depth={depth + 1} />
+                  )}
+                </SortableRow>
+              ))}
+            </SortableContext>
           </div>
         )}
       </div>
@@ -749,14 +761,14 @@ const FlowsPage = () => {
               <DndContext
                 sensors={sensors}
                 collisionDetection={closestCenter}
-                onDragEnd={(event) => handleDragEnd(event, [...rootFolders, ...rootFlows], 'root')}
+                onDragEnd={handleDragEnd}
                 modifiers={[restrictToVerticalAxis]}
               >
                 <SortableContext
                   items={[...rootFolders, ...rootFlows].map(i => i.id)}
                   strategy={verticalListSortingStrategy}
                 >
-                  {[...rootFolders, ...rootFlows].sort((a, b) => a.position - b.position).map(item => (
+                  {[...rootFolders, ...rootFlows].sort((a, b) => (a as any).position - (b as any).position).map(item => (
                     <SortableRow key={item.id} id={item.id}>
                       {'is_active' in item ? (
                         <FlowRow flow={item as Flow} />

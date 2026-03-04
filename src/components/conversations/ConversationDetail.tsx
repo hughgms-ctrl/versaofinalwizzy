@@ -59,6 +59,8 @@ const statusLabels: Record<string, string> = {
 };
 
 export function ConversationDetail({ conversation, headerActions }: ConversationDetailProps) {
+  const { session } = useAuth();
+  const { sendPresence, sendRecording } = useWhatsAppPresence();
   const [newMessage, setNewMessage] = useState('');
   const [isAIActive, setIsAIActive] = useState(() => (conversation as any).service_mode === 'ia');
   const [showHistoryLimitMessage, setShowHistoryLimitMessage] = useState(false);
@@ -72,7 +74,7 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
   const { profile } = useAuth();
   const { signatureEnabled, toggleSignature } = useSignatureSettings();
   const { data: messages, isLoading: loadingMessages } = useMessages(conversation.id);
-  const { isTyping, isRecording } = useContactPresence(conversation.contact?.id || null);
+  const { isTyping, isRecording, isOnline } = useContactPresence(conversation.contact?.id || null);
   const sendMessage = useSendMessage();
   const { sendTyping } = useWhatsAppPresence();
   const { uploadFile, uploadAudioBlob, isUploading } = useMediaUpload();
@@ -406,12 +408,14 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
                 <h3 className="font-semibold text-foreground text-sm md:text-base truncate max-w-[120px] md:max-w-none">{getDisplayName()}</h3>
                 <span className={cn(
                   "status-badge text-[9px] md:text-[10px] hidden xs:inline-flex",
-                  conversation.status === 'open' && "status-open",
-                  conversation.status === 'pending' && "status-pending",
-                  conversation.status === 'resolved' && "bg-blue-500/10 text-blue-500",
-                  conversation.status === 'archived' && "bg-muted text-muted-foreground"
+                  (isTyping || isRecording) ? "bg-green-500/10 text-green-500 animate-pulse" : (
+                    conversation.status === 'open' && "status-open",
+                    conversation.status === 'pending' && "status-pending",
+                    conversation.status === 'resolved' && "bg-blue-500/10 text-blue-500",
+                    conversation.status === 'archived' && "bg-muted text-muted-foreground"
+                  )
                 )}>
-                  {statusLabels[conversation.status]}
+                  {isTyping ? 'Digitando...' : isRecording ? 'Gravando áudio...' : statusLabels[conversation.status]}
                 </span>
                 {/* Quick Note Badge - Hidden on very small screens */}
                 {(() => {
@@ -430,7 +434,12 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
                   return null;
                 })()}
               </div>
-              <p className="text-[10px] md:text-xs text-muted-foreground truncate">{conversation.contact?.phone || 'Sem número'}</p>
+              <p className="text-[10px] md:text-xs text-muted-foreground truncate flex items-center gap-2">
+                {conversation.contact?.phone || 'Sem número'}
+                {isOnline && !isTyping && !isRecording && (
+                  <span className="flex h-1.5 w-1.5 rounded-full bg-green-500" />
+                )}
+              </p>
             </div>
           </div>
 
@@ -775,6 +784,17 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
             ) : (
               <AudioRecordButton
                 onRecordComplete={handleAudioRecordComplete}
+                onStart={() => {
+                  if (conversation.contact?.phone) {
+                    sendRecording(conversation.contact.phone, 15000);
+                  }
+                }}
+                onStop={() => {
+                  // Sending a short 'typing' effectively cancels the recording status
+                  if (conversation.contact?.phone) {
+                    sendPresence(conversation.contact.phone, 'typing', 100);
+                  }
+                }}
                 disabled={sendMessage.isPending || isUploading || isSendingMedia}
               />
             )}
@@ -937,11 +957,20 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
     }
 
     if (type === 'audio' && media_url) {
+      const metadata = message.metadata as any;
+      const isPlayed = !!metadata?.played_at;
+
       return (
         <div className="min-w-[200px]">
           <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center h-10 w-10 rounded-full bg-primary/20">
-              <Play className="h-5 w-5 text-primary" />
+            <div className={cn(
+              "flex items-center justify-center h-10 w-10 rounded-full transition-colors",
+              isPlayed ? "bg-blue-500/20" : "bg-primary/20"
+            )}>
+              <Mic className={cn(
+                "h-5 w-5",
+                isPlayed ? "text-blue-500" : "text-primary"
+              )} />
             </div>
             <audio controls className="flex-1 max-w-[250px]" preload="metadata">
               <source src={media_url} />
@@ -1088,13 +1117,20 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
             {format(new Date(message.created_at), 'HH:mm', { locale: ptBR })}
           </span>
           {!isInbound && (
-            message.read_at ? (
-              <CheckCheck className="h-3 w-3 text-blue-400" />
-            ) : message.delivered_at ? (
-              <CheckCheck className="h-3 w-3" />
-            ) : (
-              <Check className="h-3 w-3 opacity-70" />
-            )
+            (() => {
+              const metadata = message.metadata as any;
+              const isPlayed = metadata?.played_at;
+              const isRead = !!message.read_at;
+              const isDelivered = !!message.delivered_at;
+
+              if (isPlayed || isRead) {
+                return <CheckCheck className={cn("h-3 w-3 stroke-[3]", isPlayed ? "text-blue-500" : "text-blue-400")} />;
+              }
+              if (isDelivered) {
+                return <CheckCheck className="h-3 w-3 stroke-[2]" />;
+              }
+              return <Check className="h-3 w-3 opacity-70 stroke-[2]" />;
+            })()
           )}
         </div>
       </div>

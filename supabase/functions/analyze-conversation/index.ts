@@ -206,7 +206,10 @@ Deno.serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const lovableApiKey = Deno.env.get('LOVABLE_API_KEY')!;
+    const lovableApiKey = Deno.env.get('LOVABLE_API_KEY') || '';
+
+    console.log('[analyze-conversation] Starting analysis...');
+    console.log('[analyze-conversation] LOVABLE_API_KEY present:', !!lovableApiKey);
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
@@ -266,6 +269,22 @@ Deno.serve(async (req) => {
 
     // Resolve AI config for conversation_summary feature
     const aiConfig = resolveAIConfigHelper(integrationConfig, 'conversation_summary', lovableApiKey);
+
+    console.log('[analyze-conversation] AI Config resolved:', {
+      endpoint: aiConfig.endpoint,
+      model: aiConfig.model,
+      hasApiKey: !!aiConfig.apiKey,
+      apiKeyLen: aiConfig.apiKey?.length || 0,
+    });
+
+    if (!aiConfig.apiKey) {
+      console.error('[analyze-conversation] No API key available!');
+      return new Response(JSON.stringify({
+        error: 'Nenhuma chave de API configurada. Acesse Configurações > Integrações e configure um provedor de IA (OpenAI ou Gemini) ou verifique se a LOVABLE_API_KEY está nos secrets do Supabase.'
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     if (messagesError) {
       throw messagesError;
@@ -434,10 +453,18 @@ Responda no formato JSON:
 
       if (!summaryResponse.ok) {
         const errText = await summaryResponse.text();
-        console.error('Summary generation failed:', errText);
-        return new Response(JSON.stringify({
-          error: `Erro ao gerar resumo na API de IA (${summaryResponse.status}): ${errText}`
-        }), {
+        console.error('[analyze-conversation] Summary generation failed:', summaryResponse.status, errText);
+
+        let userMessage = `Erro na API de IA (${summaryResponse.status})`;
+        if (summaryResponse.status === 401 || summaryResponse.status === 403) {
+          userMessage = 'Chave de API inválida ou expirada. Verifique suas configurações de integração.';
+        } else if (summaryResponse.status === 429) {
+          userMessage = 'Limite de requisições da API atingido. Tente novamente em alguns segundos.';
+        } else if (summaryResponse.status >= 500) {
+          userMessage = 'Servidor de IA temporariamente indisponível. Tente novamente.';
+        }
+
+        return new Response(JSON.stringify({ error: userMessage }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }

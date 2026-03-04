@@ -10,8 +10,9 @@ const FlowBuilderPage = () => {
       showSearch={false}
       showNewButton={true}
       newButtonLabel="Novo Fluxo"
+      fullWidth={true}
     >
-      <div className="h-[calc(100vh-120px)] -mx-6 -mb-6 border-t border-border">
+      <div className="h-[calc(100vh-64px)] border-t border-border">
         <ReactFlowProvider>
           <FlowCanvas />
         </ReactFlowProvider>

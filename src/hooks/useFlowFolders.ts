@@ -174,12 +174,41 @@ export function useUpdateFolderPositions() {
       const firstError = results.find(r => r.error)?.error;
       if (firstError) throw firstError;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['flow-folders'] });
+    onMutate: async (updates) => {
+      await queryClient.cancelQueries({ queryKey: ['flow-folders'] });
+
+      const previousFolders = queryClient.getQueryData<FlowFolder[]>(['flow-folders']);
+
+      if (previousFolders) {
+        const newFolders = [...previousFolders];
+        updates.forEach(update => {
+          const index = newFolders.findIndex(f => f.id === update.id);
+          if (index !== -1) {
+            newFolders[index] = { ...newFolders[index], position: update.position };
+          }
+        });
+
+        newFolders.sort((a, b) => a.position - b.position);
+
+        queryClient.setQueryData(['flow-folders'], newFolders);
+      }
+
+      return { previousFolders };
     },
-    onError: (error: Error) => {
+    onError: (error, _updates, context) => {
+      if (context?.previousFolders) {
+        queryClient.setQueryData(['flow-folders'], context.previousFolders);
+      }
+
       console.error('Error updating folder positions:', error);
-      toast.error('Erro ao atualizar ordem das pastas: ' + error.message);
+      if ((error as any).code === '42703') {
+        toast.error('Coluna "position" não encontrada no banco de dados. A ordem não será persistida.');
+      } else {
+        toast.error('Erro ao atualizar ordem das pastas: ' + (error as any).message);
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['flow-folders'] });
     },
   });
 }

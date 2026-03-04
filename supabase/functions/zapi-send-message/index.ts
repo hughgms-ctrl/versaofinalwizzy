@@ -119,19 +119,28 @@ Deno.serve(async (req) => {
     const phone = conversation.contact.phone;
     const normalizedPhone = phone.replace(/\D/g, '');
 
-    // Typing presence via UAZAPI
+    // Typing/Recording presence via UAZAPI
     try {
-      await fetch(uazapiUrl(uazapiBaseUrl, '/send/typing'), {
+      const presenceType = type === 'audio' ? 'recording' : 'composing';
+      console.log(`[Presence] Sending ${presenceType} to ${normalizedPhone}`);
+
+      await fetch(uazapiUrl(uazapiBaseUrl, '/message/presence'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'token': instanceToken
         },
-        body: JSON.stringify({ number: normalizedPhone, duration: 2000 }),
+        body: JSON.stringify({
+          number: normalizedPhone,
+          presence: presenceType,
+          delay: 5000
+        }),
       });
-      await new Promise(resolve => setTimeout(resolve, 500));
+
+      // Delay to let the client "see" the status
+      await new Promise(resolve => setTimeout(resolve, 1500));
     } catch (e) {
-      console.log('Typing presence failed:', e);
+      console.log('Presence update failed:', e);
     }
 
     let endpoint: string;

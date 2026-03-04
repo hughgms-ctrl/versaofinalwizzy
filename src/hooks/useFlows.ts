@@ -261,11 +261,10 @@ export function useToggleFlowActive() {
 
 export function useUpdateFlowPositions() {
   const queryClient = useQueryClient();
+  const { profile } = useAuth();
 
   return useMutation({
     mutationFn: async (updates: { id: string; position: number }[]) => {
-      // Supabase doesn't support batch updates easily with different values per row
-      // So we'll run them in parallel for now, or we could use a RPC if available
       const promises = updates.map(update =>
         supabase
           .from('flows' as 'contacts')
@@ -277,12 +276,47 @@ export function useUpdateFlowPositions() {
       const firstError = results.find(r => r.error)?.error;
       if (firstError) throw firstError;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['flows'] });
+    onMutate: async (updates) => {
+      // Cancel any outgoing refetches (so they don't overwrite our optimistic update)
+      await queryClient.cancelQueries({ queryKey: ['flows', profile?.organization_id] });
+
+      // Snapshot the previous value
+      const previousFlows = queryClient.getQueryData<Flow[]>(['flows', profile?.organization_id]);
+
+      // Optimistically update to the new value
+      if (previousFlows) {
+        const newFlows = [...previousFlows];
+        updates.forEach(update => {
+          const index = newFlows.findIndex(f => f.id === update.id);
+          if (index !== -1) {
+            newFlows[index] = { ...newFlows[index], position: update.position };
+          }
+        });
+
+        // Sort by position
+        newFlows.sort((a, b) => a.position - b.position);
+
+        queryClient.setQueryData(['flows', profile?.organization_id], newFlows);
+      }
+
+      return { previousFlows };
     },
-    onError: (error) => {
+    onError: (error, _updates, context) => {
+      // If the mutation fails, use the context returned from onMutate to roll back
+      if (context?.previousFlows) {
+        queryClient.setQueryData(['flows', profile?.organization_id], context.previousFlows);
+      }
+
       console.error('Error updating flow positions:', error);
-      toast.error('Erro ao atualizar ordem dos fluxos');
+      if ((error as any).code === '42703') {
+        toast.error('Coluna "position" não encontrada no banco de dados. A ordem não será persistida.');
+      } else {
+        toast.error('Erro ao atualizar ordem dos fluxos');
+      }
+    },
+    onSettled: () => {
+      // Always refetch after error or success to guarantee we are in sync with the server
+      queryClient.invalidateQueries({ queryKey: ['flows', profile?.organization_id] });
     },
   });
 }

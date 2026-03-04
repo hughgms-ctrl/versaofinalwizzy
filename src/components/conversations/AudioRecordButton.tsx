@@ -6,15 +6,17 @@ import { toast } from '@/hooks/use-toast';
 
 interface AudioRecordButtonProps {
   onRecordComplete: (audioBlob: Blob) => void;
+  onStart?: () => void;
+  onStop?: () => void;
   disabled?: boolean;
 }
 
-export function AudioRecordButton({ onRecordComplete, disabled }: AudioRecordButtonProps) {
+export function AudioRecordButton({ onRecordComplete, onStart, onStop, disabled }: AudioRecordButtonProps) {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
-  
+
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
@@ -35,42 +37,44 @@ export function AudioRecordButton({ onRecordComplete, disabled }: AudioRecordBut
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
-      
+
       const mediaRecorder = new MediaRecorder(stream, {
         mimeType: MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4'
       });
-      
+
       mediaRecorderRef.current = mediaRecorder;
       chunksRef.current = [];
-      
+
       mediaRecorder.ondataavailable = (e) => {
         if (e.data.size > 0) {
           chunksRef.current.push(e.data);
         }
       };
-      
+
       mediaRecorder.onstop = () => {
-        const blob = new Blob(chunksRef.current, { 
-          type: mediaRecorder.mimeType 
+        const blob = new Blob(chunksRef.current, {
+          type: mediaRecorder.mimeType
         });
         setAudioBlob(blob);
         setAudioUrl(URL.createObjectURL(blob));
-        
+
         // Stop all tracks
         if (streamRef.current) {
           streamRef.current.getTracks().forEach(track => track.stop());
         }
       };
-      
+
       mediaRecorder.start();
       setIsRecording(true);
       setRecordingTime(0);
-      
+
+      if (onStart) onStart();
+
       // Start timer
       timerRef.current = setInterval(() => {
         setRecordingTime(prev => prev + 1);
       }, 1000);
-      
+
     } catch (error) {
       console.error('Error starting recording:', error);
       toast({
@@ -85,7 +89,9 @@ export function AudioRecordButton({ onRecordComplete, disabled }: AudioRecordBut
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
-      
+
+      if (onStop) onStop();
+
       if (timerRef.current) {
         clearInterval(timerRef.current);
         timerRef.current = null;
@@ -127,13 +133,13 @@ export function AudioRecordButton({ onRecordComplete, disabled }: AudioRecordBut
         >
           <Trash2 className="h-4 w-4" />
         </Button>
-        
+
         <audio controls src={audioUrl} className="h-8 max-w-[200px]" />
-        
+
         <span className="text-xs text-muted-foreground min-w-[40px]">
           {formatTime(recordingTime)}
         </span>
-        
+
         <Button
           size="icon"
           className="h-8 w-8"

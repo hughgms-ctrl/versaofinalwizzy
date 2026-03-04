@@ -390,10 +390,21 @@ async function handleReadReceipt(supabase: any, payload: any) {
   const msgId = msg.msgid || msg.id;
   if (!msgId) return respond({ success: true, ignored: true });
 
-  const ack = msg.ack || payload.ack || 0;
+  const ack = msg.ack || payload.ack || 0; // Update status
   const updateData: any = {};
-  if (ack >= 2) updateData.delivered_at = new Date().toISOString();
-  if (ack >= 3) updateData.read_at = new Date().toISOString();
+  if (ack >= 1) updateData.sent_at = updateData.sent_at || new Date().toISOString();
+  if (ack >= 2) updateData.delivered_at = updateData.delivered_at || new Date().toISOString();
+  if (ack >= 3) updateData.read_at = updateData.read_at || new Date().toISOString();
+
+  if (ack >= 4) {
+    // Audio played status
+    updateData.metadata = {
+      ...(msg.metadata || {}),
+      played_at: msg.metadata?.played_at || new Date().toISOString()
+    };
+    // Ensure it's marked as read too
+    updateData.read_at = updateData.read_at || new Date().toISOString();
+  }
 
   if (Object.keys(updateData).length > 0) {
     await supabase.from('messages').update(updateData).eq('zapi_message_id', msgId);
@@ -404,8 +415,14 @@ async function handleReadReceipt(supabase: any, payload: any) {
 
 async function handlePresence(supabase: any, payload: any, instanceName: string) {
   const chat = payload.chat || {};
-  const phone = cleanPhone(chat.phone || chat.wa_chatid || '');
-  if (!phone) return respond({ success: true });
+  // Fallback to chatId, sender or number if phone is missing
+  const rawPhone = chat.phone || chat.wa_chatid || payload.chatId || payload.sender || payload.number || '';
+  const phone = cleanPhone(rawPhone);
+
+  if (!phone) {
+    console.log(`[Presence] No phone found in payload for instance ${instanceName}`);
+    return new Response(JSON.stringify({ error: 'Phone not found' }), { status: 400 });
+  }
 
   let whatsappInstance = null;
   if (instanceName) {
@@ -422,12 +439,12 @@ async function handlePresence(supabase: any, payload: any, instanceName: string)
     .eq('phone', phone).eq('organization_id', whatsappInstance.organization_id).maybeSingle();
   if (!contact) return respond({ success: true });
 
-  const state = (payload.state || payload.presenceType || '').toLowerCase();
+  const state = (payload.state || payload.presenceType || payload.presence || '').toLowerCase();
   let presenceType: string;
   switch (state) {
     case 'composing': case 'typing': presenceType = 'typing'; break;
     case 'recording': presenceType = 'recording'; break;
-    case 'online': case 'available': presenceType = 'online'; break;
+    case 'online': case 'available': case 'active': presenceType = 'online'; break;
     default: presenceType = 'offline';
   }
 

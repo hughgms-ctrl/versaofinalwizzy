@@ -42,10 +42,13 @@ Deno.serve(async (req) => {
 
         if (!instance) throw new Error('No instance');
 
-        const response = await fetch(`${uazapiBaseUrl}/call/offer`, {
+        const normalizedPhone = phone.replace(/\D/g, '');
+        console.log(`[Call] Initiating ${type} call to ${normalizedPhone}`);
+
+        const response = await fetch(`${uazapiBaseUrl}/call/make`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'token': instance.zapi_token },
-            body: JSON.stringify({ number: phone, type }), // type: 'audio' | 'video'
+            body: JSON.stringify({ number: normalizedPhone, type }), // type: 'audio' | 'video'
         });
 
         const data = await response.json();
