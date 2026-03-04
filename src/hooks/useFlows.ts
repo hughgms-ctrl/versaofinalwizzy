@@ -26,6 +26,7 @@ export interface Flow {
   provider?: string | null;
   model?: string | null;
   position: number;
+  visible_in_chat: boolean;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -52,6 +53,7 @@ function mapRowToFlow(row: any): Flow {
     provider: row.provider || null,
     model: row.model || null,
     position: row.position || 0,
+    visible_in_chat: row.visible_in_chat !== false,
   };
 }
 
@@ -255,6 +257,29 @@ export function useToggleFlowActive() {
     onError: (error) => {
       console.error('Error toggling flow:', error);
       toast.error('Erro ao alterar status do fluxo');
+    },
+  });
+}
+
+export function useToggleFlowVisibleInChat() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ flowId, visibleInChat }: { flowId: string; visibleInChat: boolean }) => {
+      const { error } = await (supabase
+        .from('flows' as 'contacts')
+        .update({ visible_in_chat: visibleInChat } as never)
+        .eq('id', flowId) as unknown as Promise<{ error: Error | null }>);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['flows'] });
+      toast.success('Visibilidade atualizada');
+    },
+    onError: (error) => {
+      console.error('Error toggling flow visibility:', error);
+      toast.error('Erro ao alterar visibilidade');
     },
   });
 }

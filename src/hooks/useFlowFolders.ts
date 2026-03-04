@@ -11,6 +11,7 @@ export interface FlowFolder {
   created_at: string;
   updated_at: string;
   position: number;
+  visible_in_chat: boolean;
 }
 
 export function useFlowFolders() {
@@ -36,7 +37,8 @@ export function useFlowFolders() {
       if (error) throw error;
       return (data || []).map(folder => ({
         ...folder,
-        position: folder.position || 0
+        position: folder.position || 0,
+        visible_in_chat: folder.visible_in_chat !== false,
       })) as FlowFolder[];
     },
   });
@@ -209,6 +211,29 @@ export function useUpdateFolderPositions() {
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['flow-folders'] });
+    },
+  });
+}
+
+export function useToggleFolderVisibleInChat() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ folderId, visibleInChat }: { folderId: string; visibleInChat: boolean }) => {
+      const { error } = await (supabase
+        .from('flow_folders' as 'contacts')
+        .update({ visible_in_chat: visibleInChat } as never)
+        .eq('id', folderId) as unknown as Promise<{ error: Error | null }>);
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['flow-folders'] });
+      toast.success('Visibilidade da pasta atualizada');
+    },
+    onError: (error) => {
+      console.error('Error toggling folder visibility:', error);
+      toast.error('Erro ao alterar visibilidade da pasta');
     },
   });
 }

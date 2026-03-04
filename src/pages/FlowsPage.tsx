@@ -22,7 +22,9 @@ import {
   ChevronRight,
   ChevronDown,
   FolderInput,
-  Pencil
+  Pencil,
+  MessageSquare,
+  MessageSquareOff,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
@@ -45,13 +47,14 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { useNavigate } from 'react-router-dom';
-import { useFlows, useToggleFlowActive, useDeleteFlow } from '@/hooks/useFlows';
+import { useFlows, useToggleFlowActive, useDeleteFlow, useToggleFlowVisibleInChat } from '@/hooks/useFlows';
 import {
   useFlowFolders,
   useCreateFlowFolder,
   useDeleteFlowFolder,
   useRenameFlowFolder,
   useMoveFlowToFolder,
+  useToggleFolderVisibleInChat,
   FlowFolder
 } from '@/hooks/useFlowFolders';
 import { CreateFlowDialog } from '@/components/flows/CreateFlowDialog';
@@ -96,6 +99,7 @@ interface Flow {
   updated_at: string;
   folder_id?: string | null;
   position: number;
+  visible_in_chat: boolean;
 }
 
 const FlowsPage = () => {
@@ -119,6 +123,8 @@ const FlowsPage = () => {
   const moveFlow = useMoveFlowToFolder();
   const updateFlowPositions = useUpdateFlowPositions();
   const updateFolderPositions = useUpdateFolderPositions();
+  const toggleFlowVisibility = useToggleFlowVisibleInChat();
+  const toggleFolderVisibility = useToggleFolderVisibleInChat();
   const { selectedWorkspaceId, availableWorkspaces, isAdmin } = useWorkspaceContext();
 
   const sensors = useSensors(
@@ -325,7 +331,12 @@ const FlowsPage = () => {
 
       {/* Name & Description */}
       <div className="flex-1 min-w-0">
-        <h3 className="font-medium text-foreground text-sm">{flow.name}</h3>
+        <div className="flex items-center gap-1.5">
+          <h3 className="font-medium text-foreground text-sm">{flow.name}</h3>
+          {!flow.visible_in_chat && (
+            <MessageSquareOff className="h-3.5 w-3.5 text-muted-foreground/50" />
+          )}
+        </div>
         <p className="text-[11px] text-muted-foreground">
           {flow.description || 'Sem descrição'}
         </p>
@@ -397,6 +408,15 @@ const FlowsPage = () => {
             <DropdownMenuItem onClick={() => handleEditFlow(flow.id)}>
               <Edit className="h-4 w-4 mr-2" />
               Editar
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => toggleFlowVisibility.mutate({ flowId: flow.id, visibleInChat: !flow.visible_in_chat })}
+            >
+              {flow.visible_in_chat ? (
+                <><MessageSquareOff className="h-4 w-4 mr-2" />Ocultar do Chat</>
+              ) : (
+                <><MessageSquare className="h-4 w-4 mr-2" />Mostrar no Chat</>
+              )}
             </DropdownMenuItem>
             <DropdownMenuItem>
               <Copy className="h-4 w-4 mr-2" />
@@ -481,6 +501,9 @@ const FlowsPage = () => {
             )} />
 
             <span className="font-semibold text-foreground text-sm">{folder.name}</span>
+            {!folder.visible_in_chat && (
+              <MessageSquareOff className="h-3.5 w-3.5 text-muted-foreground/50 ml-1" />
+            )}
           </div>
 
           <div className="flex items-center gap-4 shrink-0 pr-2">
@@ -525,6 +548,16 @@ const FlowsPage = () => {
                 }}>
                   <FolderPlus className="h-4 w-4 mr-2" />
                   Nova subpasta
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={(e) => {
+                  e.stopPropagation();
+                  toggleFolderVisibility.mutate({ folderId: folder.id, visibleInChat: !folder.visible_in_chat });
+                }}>
+                  {folder.visible_in_chat ? (
+                    <><MessageSquareOff className="h-4 w-4 mr-2" />Ocultar do Chat</>
+                  ) : (
+                    <><MessageSquare className="h-4 w-4 mr-2" />Mostrar no Chat</>
+                  )}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator className="bg-[#2a2a2e]" />
                 <DropdownMenuItem

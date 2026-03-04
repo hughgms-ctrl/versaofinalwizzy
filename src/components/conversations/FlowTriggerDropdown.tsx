@@ -34,11 +34,11 @@ export function FlowTriggerDropdown({ conversationId }: FlowTriggerDropdownProps
     return !wsId || wsId === selectedWorkspaceId;
   };
 
-  // Filter only active flows matching workspace and sort by position
-  const activeFlows = flows?.filter(f => f.is_active && matchesWorkspace(f.workspace_id))
+  // Filter only active flows matching workspace and visible in chat, sort by position
+  const activeFlows = flows?.filter(f => f.is_active && matchesWorkspace(f.workspace_id) && f.visible_in_chat !== false)
     .sort((a, b) => a.position - b.position) || [];
 
-  const filteredFolders = folders?.filter(f => matchesWorkspace(f.workspace_id))
+  const filteredFolders = folders?.filter(f => matchesWorkspace(f.workspace_id) && f.visible_in_chat !== false)
     .sort((a, b) => a.position - b.position) || [];
 
   // Get root folders that have at least one active flow (directly or in subfolders)
