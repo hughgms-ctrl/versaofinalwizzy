@@ -1,5 +1,15 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
+declare const EdgeRuntime: any;
+
+function runBackground(promise: Promise<any>) {
+  if (typeof EdgeRuntime !== 'undefined' && typeof EdgeRuntime.waitUntil === 'function') {
+    EdgeRuntime.waitUntil(promise);
+  } else {
+    promise.catch(err => console.error('Background task error:', err));
+  }
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -96,11 +106,12 @@ Deno.serve(async (req) => {
       const baseUrl = Deno.env.get('SUPABASE_URL')!;
 
       // Use internal function call or fetch
-      fetch(`${baseUrl}/functions/v1/zapi-sync-chats`, {
+      const syncPromise = fetch(`${baseUrl}/functions/v1/zapi-sync-chats`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
         body: JSON.stringify({ instanceId: instanceName }), // sync-chats now handles instanceName or DB ID
-      }).catch(err => console.error('Auto-sync chats error:', err));
+      });
+      runBackground(syncPromise);
 
       return respond({ success: true, message: 'connection_handled' });
     }
@@ -367,11 +378,12 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
       }
 
       // Call flow execution engine
-      fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/flow-execute`, {
+      const flowExecPromise = fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/flow-execute`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
         body: JSON.stringify({ flowId: campaignFlowId, conversationId: conversation.id }),
-      }).catch(err => console.error('Campaign flow execute error:', err));
+      });
+      runBackground(flowExecPromise);
 
       return respond({ success: true, messageId: savedMessage.id, triggeredCampaign: true });
     }
@@ -384,11 +396,12 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
     }
 
     if (shouldTrigger) {
-      fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/agent-orchestrator`, {
+      const agentPromise = fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/agent-orchestrator`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
         body: JSON.stringify({ conversationId: conversation.id, messageContent: textContent }),
-      }).catch(err => console.error('Agent orchestrator error:', err));
+      });
+      runBackground(agentPromise);
     }
   }
 

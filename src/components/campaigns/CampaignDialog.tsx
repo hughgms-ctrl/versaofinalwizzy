@@ -58,14 +58,6 @@ export function CampaignDialog({
             setName(campaignToEdit.name);
             setFlowId(campaignToEdit.flow_id);
 
-            // Se o fluxo selecionado estiver em uma pasta, precisamos garantir que ela inicie expandida
-            if (flows && campaignToEdit.flow_id) {
-                const selectedFlow = flows.find(f => f.id === campaignToEdit.flow_id);
-                if (selectedFlow && selectedFlow.folder_id) {
-                    setExpandedFolders(prev => new Set([...prev, selectedFlow.folder_id]));
-                }
-            }
-
             // Infer triggerType from match_type
             if (['exact', 'contains', 'starts_with'].includes(campaignToEdit.match_type)) {
                 setTriggerType("keyword");
@@ -266,8 +258,9 @@ export function CampaignDialog({
                                                 </SelectGroup>
                                             )}
                                             {foldersToRender.map((folder) => {
-                                                const isOpen = expandedFolders.has(folder.id);
                                                 const folderFlows = allFlows.filter(f => f.folder_id === folder.id);
+                                                const isSelectedFolder = folderFlows.some(f => f.id === flowId);
+                                                const isOpen = expandedFolders.has(folder.id) || isSelectedFolder;
                                                 return (
                                                     <SelectGroup key={folder.id}>
                                                         <div
