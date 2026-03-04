@@ -64,12 +64,23 @@ export function useFlows() {
       if (!profile?.organization_id) return [];
 
       // Using type assertion since flows table is new and types aren't regenerated yet
-      const { data, error } = await (supabase
+      let { data, error } = await (supabase
         .from('flows' as 'contacts') // Temporary workaround
         .select('*')
         .eq('organization_id', profile.organization_id)
         .order('position', { ascending: true })
-        .order('updated_at', { ascending: false }) as unknown as Promise<{ data: unknown[] | null; error: Error | null }>);
+        .order('updated_at', { ascending: false }) as unknown as Promise<{ data: unknown[] | null; error: any }>);
+
+      if (error && error.code === '42703') { // Column does not exist
+        console.warn('Position column missing in flows, falling back to updated_at');
+        const retry = await (supabase
+          .from('flows' as 'contacts')
+          .select('*')
+          .eq('organization_id', profile.organization_id)
+          .order('updated_at', { ascending: false }) as unknown as Promise<{ data: unknown[] | null; error: any }>);
+        data = retry.data;
+        error = retry.error;
+      }
 
       if (error) throw error;
 

@@ -17,11 +17,21 @@ export function useFlowFolders() {
   return useQuery({
     queryKey: ['flow-folders'],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let { data, error } = await (supabase
         .from('flow_folders')
         .select('*')
         .order('position', { ascending: true })
-        .order('name');
+        .order('name') as unknown as Promise<{ data: any[] | null; error: any }>);
+
+      if (error && error.code === '42703') { // Column does not exist
+        console.warn('Position column missing in flow_folders, falling back to name');
+        const retry = await (supabase
+          .from('flow_folders')
+          .select('*')
+          .order('name') as unknown as Promise<{ data: any[] | null; error: any }>);
+        data = retry.data;
+        error = retry.error;
+      }
 
       if (error) throw error;
       return data as FlowFolder[];
