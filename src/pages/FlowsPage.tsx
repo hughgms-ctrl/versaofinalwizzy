@@ -611,19 +611,18 @@ const FlowsPage = () => {
             </Button>
           </div>
 
-          {/* List Container */}
-          <div className="bg-[#0a0a0c] rounded-2xl border border-border/40 overflow-hidden shadow-sm">
+          <div className="bg-[#0f0f12] rounded-xl border border-[#2a2a2e] overflow-hidden shadow-2xl">
             {/* Header */}
-            <div className="flex items-center gap-4 px-4 py-4 border-b border-border/40 text-[11px] font-bold text-muted-foreground/70 uppercase tracking-widest bg-[#0a0a0c]">
-              <div className="w-10" /> {/* Chevron space */}
+            <div className="flex items-center gap-4 px-4 py-3 bg-[#1a1a1e] border-b border-[#2a2a2e] text-[10px] font-bold text-muted-foreground uppercase tracking-[0.1em]">
+              <div className="w-9" /> {/* Icon space */}
               <div className="flex-1">Nome</div>
-              <div className="hidden md:flex items-center gap-10 text-center">
-                <div className="w-10 text-center">Disparos</div>
-                <div className="w-10 text-center">Blocos</div>
-                <div className="w-36 text-right">Atualizado</div>
+              <div className="hidden md:flex items-center gap-12 text-center">
+                <div className="w-12">Disparos</div>
+                <div className="w-12">Blocos</div>
+                <div className="w-32 text-right">Atualizado</div>
               </div>
-              <div className="w-40 text-center">Status</div>
-              <div className="w-28 text-right pr-4">Ações</div>
+              <div className="w-32 text-center">Status</div>
+              <div className="w-28 text-right pr-2">Ações</div>
             </div>
 
             <div className="bg-[#0a0a0c]">
