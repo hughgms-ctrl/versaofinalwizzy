@@ -630,8 +630,13 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
                 value={(localData.tagId as string) || ''}
                 onValueChange={(value) => {
                   const tag = tags.find(t => t.id === value);
-                  handleChange('tagId', value);
-                  handleChange('tagName', tag?.name || 'tag');
+                  const newData = {
+                    ...localData,
+                    tagId: value,
+                    tagName: tag?.name || 'tag'
+                  };
+                  setLocalData(newData);
+                  onUpdate(node.id, newData);
                 }}
               >
                 <SelectTrigger id="tagId">
@@ -1272,19 +1277,22 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
       {/* Footer with Save and Delete Buttons */}
       <div className="p-4 border-t border-border space-y-2">
         {/* Save Button */}
-        {onSave && hasUnsavedChanges && (
+        {onSave && (
           <Button
             size="sm"
-            className="w-full gap-2"
+            className={cn(
+              "w-full gap-2 transition-colors",
+              hasUnsavedChanges && !isSaving && "bg-amber-600 hover:bg-amber-700 text-white"
+            )}
             onClick={onSave}
-            disabled={isSaving}
+            disabled={isSaving || !hasUnsavedChanges}
           >
             {isSaving ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               <Save className="h-4 w-4" />
             )}
-            Salvar Alterações
+            {hasUnsavedChanges ? 'Salvar Alterações*' : 'Tudo Salvo'}
           </Button>
         )}
 
