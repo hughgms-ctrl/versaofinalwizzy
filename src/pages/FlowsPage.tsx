@@ -599,7 +599,7 @@ const FlowsPage = () => {
             <Button
               variant="outline"
               size="sm"
-              className="bg-[#0a0a0c] border-[#2a2a2e] hover:bg-[#1a1a1e] font-bold h-10 px-4 rounded-lg flex items-center gap-2"
+              className="bg-[#0f0f12] border-[#2a2a2e] hover:bg-[#1a1a1e] font-bold text-xs px-4"
               onClick={() => {
                 setCurrentFolderId(null);
                 setFolderWorkspaceId(selectedWorkspaceId);
