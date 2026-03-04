@@ -58,6 +58,14 @@ export function CampaignDialog({
             setName(campaignToEdit.name);
             setFlowId(campaignToEdit.flow_id);
 
+            // Se o fluxo selecionado estiver em uma pasta, precisamos garantir que ela inicie expandida
+            if (flows && campaignToEdit.flow_id) {
+                const selectedFlow = flows.find(f => f.id === campaignToEdit.flow_id);
+                if (selectedFlow && selectedFlow.folder_id) {
+                    setExpandedFolders(prev => new Set([...prev, selectedFlow.folder_id]));
+                }
+            }
+
             // Infer triggerType from match_type
             if (['exact', 'contains', 'starts_with'].includes(campaignToEdit.match_type)) {
                 setTriggerType("keyword");
@@ -74,7 +82,7 @@ export function CampaignDialog({
             setFlowId("");
             setTriggerType("keyword");
         }
-    }, [campaignToEdit, open]);
+    }, [campaignToEdit, open, flows]);
 
     const handleSubmit = () => {
         if (!name.trim() || !flowId) return;

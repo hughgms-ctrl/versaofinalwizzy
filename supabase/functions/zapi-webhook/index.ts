@@ -349,12 +349,22 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
     // 1. Check for Campaign Triggers (highest priority)
-    const campaignFlowId = await checkCampaignTriggers(supabase, organizationId, textContent);
+    const campaignTrigger = await checkCampaignTriggers(supabase, organizationId, textContent);
 
-    if (campaignFlowId) {
+    if (campaignTrigger) {
+      const { flowId: campaignFlowId, campaignId } = campaignTrigger;
       console.log(`[CAMPAIGN TRIGGERED] Starting flow ${campaignFlowId} for conversation ${conversation.id}`);
       // Mark as IA mode to prevent human collision if needed, or leave as is. We'll set to ia.
       await supabase.from('conversations').update({ service_mode: 'ia' }).eq('id', conversation.id);
+
+      try {
+        const { data: c } = await supabase.from('campaigns').select('trigger_count').eq('id', campaignId).single();
+        if (c) {
+          await supabase.from('campaigns').update({ trigger_count: (c.trigger_count || 0) + 1 }).eq('id', campaignId);
+        }
+      } catch (err) {
+        console.error('Failed to increment trigger_count:', err);
+      }
 
       // Call flow execution engine
       fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/flow-execute`, {
@@ -577,7 +587,7 @@ async function checkMasterPromptTriggers(supabase: any, organizationId: string, 
 }
 
 // Check for exact, contains, or starts_with matches in active campaigns
-async function checkCampaignTriggers(supabase: any, organizationId: string, messageContent: string): Promise<string | null> {
+async function checkCampaignTriggers(supabase: any, organizationId: string, messageContent: string): Promise<{ flowId: string, campaignId: string } | null> {
   const { data: campaigns } = await supabase
     .from('campaigns')
     .select('id, trigger_keyword, match_type, flow_id')
@@ -611,7 +621,7 @@ async function checkCampaignTriggers(supabase: any, organizationId: string, mess
       }
 
       if (matched) {
-        return campaign.flow_id;
+        return { flowId: campaign.flow_id, campaignId: campaign.id };
       }
     }
   }
