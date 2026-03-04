@@ -36,11 +36,7 @@ export function AIHandoffNode({ data, selected }: NodeProps<AINode>) {
         <p className="text-xs text-muted-foreground">
           Agente: <span className="font-medium text-foreground">{data.agentName || 'Selecionar...'}</span>
         </p>
-        {data.additionalPrompt && (
-          <p className="text-xs text-muted-foreground italic">
-            "{data.additionalPrompt as string}"
-          </p>
-        )}
+
         <div className="flex items-center gap-1.5 text-[10px] text-violet-600 dark:text-violet-400">
           <Sparkles className="h-3 w-3" />
           <span>O Agente IA assumirá a conversa</span>
