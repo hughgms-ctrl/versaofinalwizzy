@@ -10,13 +10,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import { FlowNodeType, ContentItem, ContentItemType } from '@/types/flow';
 import { useTags } from '@/hooks/useTags';
 import { useAIAgents } from '@/hooks/useAIAgents';
 import { useFlows } from '@/hooks/useFlows';
+import { useFlowFolders } from '@/hooks/useFlowFolders';
 import { useDepartments } from '@/hooks/useCrmEntities';
 import { useDocumentTemplates } from '@/hooks/useDocumentTemplates';
 import { usePipelines } from '@/hooks/usePipelines';
@@ -429,6 +430,7 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
   const { data: tags = [] } = useTags();
   const { data: agents = [] } = useAIAgents();
   const { data: flows = [] } = useFlows();
+  const { data: flowFolders = [] } = useFlowFolders();
   const { data: departments = [] } = useDepartments();
   const { data: templates = [] } = useDocumentTemplates();
   const { data: pipelines = [] } = usePipelines();
@@ -879,9 +881,33 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
               >
                 <SelectTrigger><SelectValue placeholder="Selecione um fluxo..." /></SelectTrigger>
                 <SelectContent>
-                  {flows.map((f) => (
-                    <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>
-                  ))}
+                  {(() => {
+                    const rootFlows = flows.filter(f => !f.folder_id);
+                    const foldersWithFlows = flowFolders.filter(folder =>
+                      flows.some(f => f.folder_id === folder.id)
+                    );
+                    return (
+                      <>
+                        {rootFlows.length > 0 && (
+                          <SelectGroup>
+                            {rootFlows.map((f) => (
+                              <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>
+                            ))}
+                          </SelectGroup>
+                        )}
+                        {foldersWithFlows.map((folder) => (
+                          <SelectGroup key={folder.id}>
+                            <SelectLabel className="text-xs text-muted-foreground font-semibold px-2 py-1.5 flex items-center gap-1.5">
+                              📁 {folder.name}
+                            </SelectLabel>
+                            {flows.filter(f => f.folder_id === folder.id).map((f) => (
+                              <SelectItem key={f.id} value={f.id} className="pl-6">{f.name}</SelectItem>
+                            ))}
+                          </SelectGroup>
+                        ))}
+                      </>
+                    );
+                  })()}
                 </SelectContent>
               </Select>
             </div>
