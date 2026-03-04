@@ -6,38 +6,34 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-function resolveAIConfig(integrationConfig: any, feature: string, lovableApiKey: string) {
-  const LOVABLE_ENDPOINT = 'https://ai.gateway.lovable.dev/v1/chat/completions';
+function resolveAIConfig(integrationConfig: any, feature: string) {
   const OPENAI_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
   const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
 
-  if (!integrationConfig) {
-    return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model: 'google/gemini-1.5-flash-latest' };
-  }
+  if (!integrationConfig) return null;
 
   const featureProvider = integrationConfig[`${feature}_provider`];
   const featureModel = integrationConfig[`${feature}_model`];
-  let provider = featureProvider || integrationConfig.ai_provider || 'lovable';
-  let model = featureModel || integrationConfig.default_model || 'google/gemini-1.5-flash-latest';
+  let provider = featureProvider || integrationConfig.ai_provider;
+  let model = featureModel || integrationConfig.default_model;
 
-  // Ensure format is correct depending on provider
-  if (provider === 'gemini') {
-    model = model.replace('google/', ''); // Google API doesn't use prefix
-  } else if (provider === 'lovable') {
-    if (!model.startsWith('google/') && !model.startsWith('openai/')) {
-      model = model.includes('gpt') ? `openai/${model}` : `google/${model}`;
-    }
+  if (!provider || provider === 'lovable') {
+    if (integrationConfig.openai_api_key) { provider = 'openai'; model = model || 'gpt-4o-mini'; }
+    else if (integrationConfig.gemini_api_key) { provider = 'gemini'; model = model || 'gemini-2.0-flash'; }
+    else return null;
   }
+  if (provider === 'gemini') model = (model || 'gemini-2.0-flash').replace('google/', '');
+  else if (provider === 'openai') model = (model || 'gpt-4o-mini').replace('openai/', '');
 
   switch (provider) {
     case 'openai':
-      if (!integrationConfig.openai_api_key) return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model: 'google/gemini-1.5-flash-latest' };
+      if (!integrationConfig.openai_api_key) return null;
       return { endpoint: OPENAI_ENDPOINT, apiKey: integrationConfig.openai_api_key, model };
     case 'gemini':
-      if (!integrationConfig.gemini_api_key) return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model: 'google/gemini-1.5-flash-latest' };
+      if (!integrationConfig.gemini_api_key) return null;
       return { endpoint: GEMINI_ENDPOINT, apiKey: integrationConfig.gemini_api_key, model };
     default:
-      return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model };
+      return null;
   }
 }
 
@@ -46,17 +42,19 @@ serve(async (req) => {
 
   try {
     const { userDescription, agentName, agentRole, organizationId } = await req.json();
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
 
-    // Resolve AI config from org integration settings
     let integrationConfig = null;
     if (organizationId) {
       const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
       const { data } = await supabase.from('integration_configs').select('*').eq('organization_id', organizationId).maybeSingle();
       integrationConfig = data;
     }
-    const aiConfig = resolveAIConfig(integrationConfig, 'prompt_generation', LOVABLE_API_KEY);
+    const aiConfig = resolveAIConfig(integrationConfig, 'prompt_generation');
+    if (!aiConfig) {
+      return new Response(JSON.stringify({ error: "Nenhum provedor de IA configurado. Acesse Configurações > Integrações e adicione sua chave de API." }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     const systemPrompt = `Você é um especialista em criar prompts para agentes de IA de atendimento ao cliente via WhatsApp em escritórios de advocacia.
 

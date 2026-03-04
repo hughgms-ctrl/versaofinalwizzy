@@ -12,35 +12,34 @@ interface AIConfigResult {
   model: string;
 }
 
-function resolveAIConfig(integrationConfig: any, feature: string, lovableApiKey: string): AIConfigResult {
-  const LOVABLE_ENDPOINT = 'https://ai.gateway.lovable.dev/v1/chat/completions';
+function resolveAIConfig(integrationConfig: any, feature: string): AIConfigResult | null {
   const OPENAI_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
   const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
 
-  if (!integrationConfig) {
-    return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model: 'google/gemini-2.5-flash' };
-  }
+  if (!integrationConfig) return null;
 
   const featureProvider = integrationConfig[`${feature}_provider`];
   const featureModel = integrationConfig[`${feature}_model`];
-  const provider = featureProvider || integrationConfig.ai_provider || 'lovable';
-  const model = featureModel || integrationConfig.default_model || 'google/gemini-2.5-flash';
+  let provider = featureProvider || integrationConfig.ai_provider;
+  let model = featureModel || integrationConfig.default_model;
+
+  if (!provider || provider === 'lovable') {
+    if (integrationConfig.openai_api_key) { provider = 'openai'; model = model || 'gpt-4o-mini'; }
+    else if (integrationConfig.gemini_api_key) { provider = 'gemini'; model = model || 'gemini-2.0-flash'; }
+    else return null;
+  }
+  if (provider === 'gemini') model = (model || 'gemini-2.0-flash').replace('google/', '');
+  else if (provider === 'openai') model = (model || 'gpt-4o-mini').replace('openai/', '');
 
   switch (provider) {
     case 'openai':
-      if (!integrationConfig.openai_api_key) {
-        console.warn('OpenAI selected but no API key, falling back to Lovable');
-        return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model: 'google/gemini-2.5-flash' };
-      }
+      if (!integrationConfig.openai_api_key) return null;
       return { endpoint: OPENAI_ENDPOINT, apiKey: integrationConfig.openai_api_key, model };
     case 'gemini':
-      if (!integrationConfig.gemini_api_key) {
-        console.warn('Gemini selected but no API key, falling back to Lovable');
-        return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model: 'google/gemini-2.5-flash' };
-      }
+      if (!integrationConfig.gemini_api_key) return null;
       return { endpoint: GEMINI_ENDPOINT, apiKey: integrationConfig.gemini_api_key, model };
     default:
-      return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model };
+      return null;
   }
 }
 
@@ -52,7 +51,6 @@ Deno.serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const lovableApiKey = Deno.env.get('LOVABLE_API_KEY')!;
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
@@ -142,8 +140,13 @@ Deno.serve(async (req) => {
       .eq('organization_id', profile.organization_id)
       .maybeSingle();
 
-    const aiConfig = resolveAIConfig(integrationConfig, 'transcription', lovableApiKey);
-    console.log(`AI Config resolved: provider=${integrationConfig?.transcription_provider || integrationConfig?.ai_provider || 'lovable'}, model=${aiConfig.model}`);
+    const aiConfig = resolveAIConfig(integrationConfig, 'transcription');
+    if (!aiConfig) {
+      return new Response(JSON.stringify({ error: 'Nenhum provedor de IA configurado. Acesse Configurações > Integrações e adicione sua chave de API.' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+    console.log(`AI Config resolved: provider=${integrationConfig?.transcription_provider || integrationConfig?.ai_provider || 'configured'}, model=${aiConfig.model}`);
 
     // Check cache first
     const { data: cached } = await supabase

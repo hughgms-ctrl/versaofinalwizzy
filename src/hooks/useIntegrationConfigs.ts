@@ -29,7 +29,7 @@ export interface IntegrationConfig {
 }
 
 export const PROVIDER_LABELS: Record<AIProvider, string> = {
-  lovable: 'Wizzy IA (Padrão)',
+  lovable: 'Wizzy IA (Em breve)',
   openai: 'OpenAI',
   gemini: 'Google Gemini',
 };

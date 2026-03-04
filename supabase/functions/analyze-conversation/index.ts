@@ -206,10 +206,8 @@ Deno.serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const lovableApiKey = Deno.env.get('LOVABLE_API_KEY') || '';
 
     console.log('[analyze-conversation] Starting analysis...');
-    console.log('[analyze-conversation] LOVABLE_API_KEY present:', !!lovableApiKey);
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
@@ -268,23 +266,22 @@ Deno.serve(async (req) => {
     const integrationConfig = integrationResult;
 
     // Resolve AI config for conversation_summary feature
-    const aiConfig = resolveAIConfigHelper(integrationConfig, 'conversation_summary', lovableApiKey);
+    const aiConfig = resolveAIConfigHelper(integrationConfig, 'conversation_summary');
+
+    if (!aiConfig) {
+      console.error('[analyze-conversation] No AI config resolved!');
+      return new Response(JSON.stringify({
+        error: 'Nenhum provedor de IA configurado. Acesse Configurações > Integrações e adicione sua chave de API (OpenAI ou Gemini).'
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     console.log('[analyze-conversation] AI Config resolved:', {
       endpoint: aiConfig.endpoint,
       model: aiConfig.model,
       hasApiKey: !!aiConfig.apiKey,
-      apiKeyLen: aiConfig.apiKey?.length || 0,
     });
-
-    if (!aiConfig.apiKey) {
-      console.error('[analyze-conversation] No API key available!');
-      return new Response(JSON.stringify({
-        error: 'Nenhuma chave de API configurada. Acesse Configurações > Integrações e configure um provedor de IA (OpenAI ou Gemini) ou verifique se a LOVABLE_API_KEY está nos secrets do Supabase.'
-      }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
 
     if (messagesError) {
       throw messagesError;
@@ -516,37 +513,56 @@ Responda no formato JSON:
   }
 });
 
-function resolveAIConfigHelper(integrationConfig: any, feature: string, lovableApiKey: string) {
-  const LOVABLE_ENDPOINT = 'https://ai.gateway.lovable.dev/v1/chat/completions';
+function resolveAIConfigHelper(integrationConfig: any, feature: string, _lovableApiKey?: string) {
   const OPENAI_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
   const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
 
   if (!integrationConfig) {
-    return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model: 'google/gemini-1.5-flash-latest' };
+    console.error('[resolveAIConfig] No integration config found. User must configure AI provider in Settings > Integrations.');
+    return null;
   }
 
   const featureProvider = integrationConfig[`${feature}_provider`];
   const featureModel = integrationConfig[`${feature}_model`];
-  let provider = featureProvider || integrationConfig.ai_provider || 'lovable';
-  let model = featureModel || integrationConfig.default_model || 'google/gemini-1.5-flash-latest';
+  let provider = featureProvider || integrationConfig.ai_provider;
+  let model = featureModel || integrationConfig.default_model;
+
+  if (!provider || provider === 'lovable') {
+    // Try openai first, then gemini
+    if (integrationConfig.openai_api_key) {
+      provider = 'openai';
+      model = model || 'gpt-4o-mini';
+    } else if (integrationConfig.gemini_api_key) {
+      provider = 'gemini';
+      model = model || 'gemini-2.0-flash';
+    } else {
+      console.error('[resolveAIConfig] No AI provider or API key configured.');
+      return null;
+    }
+  }
 
   // Ensure format is correct depending on provider
   if (provider === 'gemini') {
-    model = model.replace('google/', ''); // Google API doesn't use prefix
-  } else if (provider === 'lovable') {
-    if (!model.startsWith('google/') && !model.startsWith('openai/')) {
-      model = model.includes('gpt') ? `openai/${model}` : `google/${model}`;
-    }
+    model = (model || 'gemini-2.0-flash').replace('google/', '');
+  } else if (provider === 'openai') {
+    model = (model || 'gpt-4o-mini').replace('openai/', '');
   }
 
   switch (provider) {
     case 'openai':
-      if (!integrationConfig.openai_api_key) return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model: 'google/gemini-1.5-flash-latest' };
+      if (!integrationConfig.openai_api_key) {
+        console.error('[resolveAIConfig] OpenAI selected but no API key configured.');
+        return null;
+      }
       return { endpoint: OPENAI_ENDPOINT, apiKey: integrationConfig.openai_api_key, model };
     case 'gemini':
-      if (!integrationConfig.gemini_api_key) return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model: 'google/gemini-1.5-flash-latest' };
+      if (!integrationConfig.gemini_api_key) {
+        console.error('[resolveAIConfig] Gemini selected but no API key configured.');
+        return null;
+      }
       return { endpoint: GEMINI_ENDPOINT, apiKey: integrationConfig.gemini_api_key, model };
     default:
-      return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model };
+      console.error(`[resolveAIConfig] Unknown provider: ${provider}`);
+      return null;
   }
 }
