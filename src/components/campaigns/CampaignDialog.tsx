@@ -236,12 +236,12 @@ export function CampaignDialog({
                             </SelectTrigger>
                             <SelectContent>
                                 {(() => {
-                                    const activeFlows = flows?.filter(f => f.is_active) || [];
-                                    const rootFlows = activeFlows.filter(f => !f.folder_id);
+                                    const allFlows = flows || [];
+                                    const rootFlows = allFlows.filter(f => !f.folder_id);
                                     const foldersWithFlows = flowFolders.filter(folder =>
-                                        activeFlows.some(f => f.folder_id === folder.id)
+                                        allFlows.some(f => f.folder_id === folder.id)
                                     );
-                                    if (activeFlows.length === 0) {
+                                    if (allFlows.length === 0) {
                                         return (
                                             <SelectItem value="none" disabled>
                                                 Nenhum fluxo disponível
@@ -261,7 +261,7 @@ export function CampaignDialog({
                                             )}
                                             {foldersWithFlows.map((folder) => {
                                                 const isOpen = expandedFolders.has(folder.id);
-                                                const folderFlows = activeFlows.filter(f => f.folder_id === folder.id);
+                                                const folderFlows = allFlows.filter(f => f.folder_id === folder.id);
                                                 return (
                                                     <SelectGroup key={folder.id}>
                                                         <div
