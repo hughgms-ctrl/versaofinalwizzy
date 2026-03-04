@@ -172,6 +172,21 @@ const FlowsPage = () => {
   const filteredFlows = (flows as Flow[] | undefined)?.filter(f => matchesWorkspace((f as any).workspace_id)) || [];
   const filteredFolders = folders?.filter(f => matchesWorkspace(f.workspace_id)) || [];
 
+  // Get flows without folder (root level)
+  const rootFlows = filteredFlows.filter(f => !f.folder_id);
+
+  // Get flows for a specific folder
+  const getFlowsInFolder = (folderId: string) =>
+    filteredFlows.filter(f => f.folder_id === folderId);
+
+  // Get root folders (no parent)
+  const rootFolders = filteredFolders.filter(f => !f.parent_id);
+
+  // Get subfolders
+  const getSubfolders = (parentId: string) =>
+    filteredFolders.filter(f => f.parent_id === parentId);
+
+
   const FlowRow = ({ flow, nested = false }: { flow: Flow, nested?: boolean }) => (
     <div className={cn(
       "flex items-center gap-4 px-4 py-3 hover:bg-muted/30 transition-colors border-b border-border last:border-b-0",
