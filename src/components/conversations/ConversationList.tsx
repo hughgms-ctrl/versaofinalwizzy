@@ -104,88 +104,63 @@ export function ConversationList({ conversations, selectedId, onSelect, onSpyVie
 
               {/* Content */}
               <div className="flex-1 min-w-0">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    {(() => {
-                      const metadata = conversation.contact?.metadata as { note?: string } | null;
-                      const note = metadata?.note;
+                <div className="flex flex-col gap-0.5 min-w-0">
+                  {(() => {
+                    const metadata = conversation.contact?.metadata as { note?: string } | null;
+                    const note = metadata?.note;
 
-                      if (note) {
-                        return (
-                          <div className="flex flex-col gap-0.5">
-                            <div className="flex items-center min-w-0">
-                              <span
-                                className="text-xs font-semibold px-2 py-0.5 bg-amber-500/15 text-amber-700 dark:text-amber-400 rounded truncate max-w-full"
-                                title={note}
-                              >
-                                {note}
+                    return (
+                      <>
+                        {/* Row 1: Note (if exists) + Actions */}
+                        <div className="flex items-center justify-between gap-2 min-w-0">
+                          {note ? (
+                            <span
+                              className="text-[10px] font-semibold px-2 py-0.5 bg-amber-500/15 text-amber-700 dark:text-amber-400 rounded truncate max-w-[120px]"
+                              title={note}
+                            >
+                              {note}
+                            </span>
+                          ) : <div />}
+
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            {conversation.last_message_at && (
+                              <span className={cn(
+                                "text-[10px]",
+                                hasUnread ? "text-primary font-medium" : "text-muted-foreground"
+                              )}>
+                                {formatDistanceToNow(new Date(conversation.last_message_at), { addSuffix: false, locale: ptBR })}
                               </span>
-                            </div>
-                            <div className="flex items-center gap-1.5 min-w-0">
-                              <p className={cn(
-                                "text-[11px] truncate",
-                                hasUnread ? "font-bold text-foreground" : "font-medium text-muted-foreground"
-                              )}>
-                                {hasName ? contactName : formattedPhone}
-                              </p>
-                              {hasName && (
-                                <p className="text-[10px] text-muted-foreground/70 truncate flex-shrink-0">
-                                  • {formattedPhone}
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      }
-
-                      return (
-                        <div className="flex flex-col min-w-0">
-                          <div className="flex items-center min-w-0">
-                            {hasName ? (
-                              <p className={cn(
-                                "text-sm truncate",
-                                hasUnread ? "font-bold text-foreground" : "font-semibold text-foreground"
-                              )}>
-                                {contactName}
-                              </p>
-                            ) : (
-                              <p className={cn(
-                                "text-sm truncate",
-                                hasUnread ? "font-bold text-foreground" : "font-semibold text-foreground"
-                              )}>
-                                {formattedPhone}
-                              </p>
                             )}
+                            {hasUnread && (
+                              <span className="flex h-4 min-w-[16px] items-center justify-center rounded-full bg-primary px-1 text-[9px] font-bold text-primary-foreground">
+                                {conversation.unread_count}
+                              </span>
+                            )}
+                            <ConversationCardActions
+                              conversation={conversation}
+                              variant="minimal"
+                              onSpyView={onSpyView ? () => onSpyView(conversation) : undefined}
+                            />
                           </div>
+                        </div>
+
+                        {/* Row 2: Name + Phone */}
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <p className={cn(
+                            "text-sm truncate",
+                            hasUnread ? "font-bold text-foreground" : "font-semibold text-foreground"
+                          )}>
+                            {hasName ? contactName : formattedPhone}
+                          </p>
                           {hasName && (
-                            <p className="text-xs text-muted-foreground truncate mt-0.5">
-                              {formattedPhone}
+                            <p className="text-[10px] text-muted-foreground/70 truncate flex-shrink-0">
+                              • {formattedPhone}
                             </p>
                           )}
                         </div>
-                      );
-                    })()}
-                  </div>
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    {conversation.last_message_at && (
-                      <span className={cn(
-                        "text-xs",
-                        hasUnread ? "text-primary font-medium" : "text-muted-foreground"
-                      )}>
-                        {formatDistanceToNow(new Date(conversation.last_message_at), { addSuffix: false, locale: ptBR })}
-                      </span>
-                    )}
-                    {hasUnread && (
-                      <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-bold text-primary-foreground">
-                        {conversation.unread_count}
-                      </span>
-                    )}
-                    <ConversationCardActions
-                      conversation={conversation}
-                      variant="minimal"
-                      onSpyView={onSpyView ? () => onSpyView(conversation) : undefined}
-                    />
-                  </div>
+                      </>
+                    );
+                  })()}
                 </div>
 
                 {/* Last message preview + status */}
