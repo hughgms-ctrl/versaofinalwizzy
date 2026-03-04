@@ -34,7 +34,10 @@ export function useFlowFolders() {
       }
 
       if (error) throw error;
-      return data as FlowFolder[];
+      return (data || []).map(folder => ({
+        ...folder,
+        position: folder.position || 0
+      })) as FlowFolder[];
     },
   });
 }
