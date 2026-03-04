@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
-import { Hand, MessageSquareText, UserPlus, Webhook, Copy, Check } from "lucide-react";
+import { Hand, MessageSquareText, UserPlus, Webhook, Copy, Check, ChevronRight, ChevronDown, Folder } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
     useCreateCampaign,
@@ -46,6 +46,7 @@ export function CampaignDialog({
     const [matchType, setMatchType] = useState("exact");
     const [flowId, setFlowId] = useState("");
     const [triggerType, setTriggerType] = useState("keyword");
+    const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
 
     const createCampaign = useCreateCampaign();
     const updateCampaign = useUpdateCampaign();
@@ -258,18 +259,40 @@ export function CampaignDialog({
                                                     ))}
                                                 </SelectGroup>
                                             )}
-                                            {foldersWithFlows.map((folder) => (
-                                                <SelectGroup key={folder.id}>
-                                                    <SelectLabel className="text-xs text-muted-foreground font-semibold px-2 py-1.5">
-                                                        📁 {folder.name}
-                                                    </SelectLabel>
-                                                    {activeFlows.filter(f => f.folder_id === folder.id).map((flow) => (
-                                                        <SelectItem key={flow.id} value={flow.id} className="pl-6">
-                                                            {flow.name}
-                                                        </SelectItem>
-                                                    ))}
-                                                </SelectGroup>
-                                            ))}
+                                            {foldersWithFlows.map((folder) => {
+                                                const isOpen = expandedFolders.has(folder.id);
+                                                const folderFlows = activeFlows.filter(f => f.folder_id === folder.id);
+                                                return (
+                                                    <SelectGroup key={folder.id}>
+                                                        <div
+                                                            className="flex items-center gap-1.5 px-2 py-1.5 text-xs font-semibold text-muted-foreground cursor-pointer hover:bg-muted/50 rounded-sm select-none"
+                                                            onClick={(e) => {
+                                                                e.preventDefault();
+                                                                e.stopPropagation();
+                                                                setExpandedFolders(prev => {
+                                                                    const next = new Set(prev);
+                                                                    if (next.has(folder.id)) next.delete(folder.id);
+                                                                    else next.add(folder.id);
+                                                                    return next;
+                                                                });
+                                                            }}
+                                                        >
+                                                            {isOpen ? (
+                                                                <ChevronDown className="h-3 w-3" />
+                                                            ) : (
+                                                                <ChevronRight className="h-3 w-3" />
+                                                            )}
+                                                            <Folder className="h-3.5 w-3.5" />
+                                                            {folder.name}
+                                                        </div>
+                                                        {isOpen && folderFlows.map((flow) => (
+                                                            <SelectItem key={flow.id} value={flow.id} className="pl-7">
+                                                                {flow.name}
+                                                            </SelectItem>
+                                                        ))}
+                                                    </SelectGroup>
+                                                );
+                                            })}
                                         </>
                                     );
                                 })()}

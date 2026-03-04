@@ -4,7 +4,7 @@ import {
   X, Layers, MousePointerClick, List, Tag, Kanban, UserPlus, Webhook,
   GitBranch, FormInput, Bot, IterationCw, Plus, Trash2, GripVertical,
   Type, Image, Video, Music, FileText, Clock, Upload, Loader2, Save, Sparkles,
-  Link
+  Link, ChevronRight, ChevronDown, Folder
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -427,6 +427,7 @@ function ContentItemEditor({
 export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave, isSaving, hasUnsavedChanges }: NodePropertiesPanelProps) {
   const [localData, setLocalData] = useState<Record<string, unknown>>({});
   const [isGenerating, setIsGenerating] = useState(false);
+  const [expandedFlowFolders, setExpandedFlowFolders] = useState<Set<string>>(new Set());
   const { data: tags = [] } = useTags();
   const { data: agents = [] } = useAIAgents();
   const { data: flows = [] } = useFlows();
@@ -895,16 +896,38 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
                             ))}
                           </SelectGroup>
                         )}
-                        {foldersWithFlows.map((folder) => (
-                          <SelectGroup key={folder.id}>
-                            <SelectLabel className="text-xs text-muted-foreground font-semibold px-2 py-1.5 flex items-center gap-1.5">
-                              📁 {folder.name}
-                            </SelectLabel>
-                            {flows.filter(f => f.folder_id === folder.id).map((f) => (
-                              <SelectItem key={f.id} value={f.id} className="pl-6">{f.name}</SelectItem>
-                            ))}
-                          </SelectGroup>
-                        ))}
+                        {foldersWithFlows.map((folder) => {
+                          const isOpen = expandedFlowFolders.has(folder.id);
+                          const folderFlows = flows.filter(f => f.folder_id === folder.id);
+                          return (
+                            <SelectGroup key={folder.id}>
+                              <div
+                                className="flex items-center gap-1.5 px-2 py-1.5 text-xs font-semibold text-muted-foreground cursor-pointer hover:bg-muted/50 rounded-sm select-none"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  setExpandedFlowFolders(prev => {
+                                    const next = new Set(prev);
+                                    if (next.has(folder.id)) next.delete(folder.id);
+                                    else next.add(folder.id);
+                                    return next;
+                                  });
+                                }}
+                              >
+                                {isOpen ? (
+                                  <ChevronDown className="h-3 w-3" />
+                                ) : (
+                                  <ChevronRight className="h-3 w-3" />
+                                )}
+                                <Folder className="h-3.5 w-3.5" />
+                                {folder.name}
+                              </div>
+                              {isOpen && folderFlows.map((f) => (
+                                <SelectItem key={f.id} value={f.id} className="pl-7">{f.name}</SelectItem>
+                              ))}
+                            </SelectGroup>
+                          );
+                        })}
                       </>
                     );
                   })()}
