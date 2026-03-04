@@ -12,7 +12,9 @@ import { Label } from "@/components/ui/label";
 import {
     Select,
     SelectContent,
+    SelectGroup,
     SelectItem,
+    SelectLabel,
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
@@ -26,6 +28,7 @@ import {
     Campaign,
 } from "@/hooks/useCampaigns";
 import { useFlows } from "@/hooks/useFlows";
+import { useFlowFolders } from "@/hooks/useFlowFolders";
 
 interface CampaignDialogProps {
     open: boolean;
@@ -47,6 +50,7 @@ export function CampaignDialog({
     const createCampaign = useCreateCampaign();
     const updateCampaign = useUpdateCampaign();
     const { data: flows } = useFlows();
+    const { data: flowFolders = [] } = useFlowFolders();
 
     useEffect(() => {
         if (campaignToEdit && open) {
@@ -230,16 +234,45 @@ export function CampaignDialog({
                                 <SelectValue placeholder="Selecione um fluxo..." />
                             </SelectTrigger>
                             <SelectContent>
-                                {flows?.filter(f => f.is_active).map((flow) => (
-                                    <SelectItem key={flow.id} value={flow.id}>
-                                        {flow.name}
-                                    </SelectItem>
-                                ))}
-                                {(!flows || flows.length === 0) && (
-                                    <SelectItem value="none" disabled>
-                                        Nenhum fluxo disponível
-                                    </SelectItem>
-                                )}
+                                {(() => {
+                                    const activeFlows = flows?.filter(f => f.is_active) || [];
+                                    const rootFlows = activeFlows.filter(f => !f.folder_id);
+                                    const foldersWithFlows = flowFolders.filter(folder =>
+                                        activeFlows.some(f => f.folder_id === folder.id)
+                                    );
+                                    if (activeFlows.length === 0) {
+                                        return (
+                                            <SelectItem value="none" disabled>
+                                                Nenhum fluxo disponível
+                                            </SelectItem>
+                                        );
+                                    }
+                                    return (
+                                        <>
+                                            {rootFlows.length > 0 && (
+                                                <SelectGroup>
+                                                    {rootFlows.map((flow) => (
+                                                        <SelectItem key={flow.id} value={flow.id}>
+                                                            {flow.name}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectGroup>
+                                            )}
+                                            {foldersWithFlows.map((folder) => (
+                                                <SelectGroup key={folder.id}>
+                                                    <SelectLabel className="text-xs text-muted-foreground font-semibold px-2 py-1.5">
+                                                        📁 {folder.name}
+                                                    </SelectLabel>
+                                                    {activeFlows.filter(f => f.folder_id === folder.id).map((flow) => (
+                                                        <SelectItem key={flow.id} value={flow.id} className="pl-6">
+                                                            {flow.name}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectGroup>
+                                            ))}
+                                        </>
+                                    );
+                                })()}
                             </SelectContent>
                         </Select>
                     </div>
