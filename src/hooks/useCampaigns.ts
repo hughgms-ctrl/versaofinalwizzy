@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
+import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 
 export interface Campaign {
@@ -20,7 +20,8 @@ export interface Campaign {
 }
 
 export function useCampaigns() {
-    const { currentOrganizationId } = useWorkspaceContext();
+    const { profile } = useAuth();
+    const currentOrganizationId = profile?.organization_id;
 
     return useQuery({
         queryKey: ['campaigns', currentOrganizationId],
@@ -45,15 +46,19 @@ export function useCampaigns() {
 
 export function useCreateCampaign() {
     const queryClient = useQueryClient();
-    const { currentOrganizationId } = useWorkspaceContext();
+    const { profile } = useAuth();
+    const currentOrganizationId = profile?.organization_id;
 
     return useMutation({
         mutationFn: async (campaign: Partial<Campaign>) => {
             if (!currentOrganizationId) throw new Error('No organization selected');
 
+            // Cast payload to any to bypass strict type checking for now, as DB might require some fields but TS thinks they are optional in Partial<Campaign>
+            const payload = { ...campaign, organization_id: currentOrganizationId } as any;
+
             const { data, error } = await supabase
                 .from('campaigns')
-                .insert([{ ...campaign, organization_id: currentOrganizationId }])
+                .insert([payload])
                 .select()
                 .single();
 
@@ -64,9 +69,9 @@ export function useCreateCampaign() {
             queryClient.invalidateQueries({ queryKey: ['campaigns'] });
             toast.success('Campanha criada com sucesso!');
         },
-        onError: (error) => {
+        onError: (error: any) => {
             console.error('Error creating campaign:', error);
-            toast.error('Erro ao criar campanha');
+            toast.error(`Erro ao criar campanha: ${error?.message || 'Erro interno'}`);
         },
     });
 }

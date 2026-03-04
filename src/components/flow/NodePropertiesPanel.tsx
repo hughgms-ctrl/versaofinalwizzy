@@ -884,9 +884,7 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
                 <SelectContent>
                   {(() => {
                     const rootFlows = flows.filter(f => !f.folder_id);
-                    const foldersWithFlows = flowFolders.filter(folder =>
-                      flows.some(f => f.folder_id === folder.id)
-                    );
+                    const foldersToRender = flowFolders;
                     return (
                       <>
                         {rootFlows.length > 0 && (
@@ -896,7 +894,7 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
                             ))}
                           </SelectGroup>
                         )}
-                        {foldersWithFlows.map((folder) => {
+                        {foldersToRender.map((folder) => {
                           const isOpen = expandedFlowFolders.has(folder.id);
                           const folderFlows = flows.filter(f => f.folder_id === folder.id);
                           return (

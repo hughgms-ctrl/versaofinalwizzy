@@ -238,10 +238,8 @@ export function CampaignDialog({
                                 {(() => {
                                     const allFlows = flows || [];
                                     const rootFlows = allFlows.filter(f => !f.folder_id);
-                                    const foldersWithFlows = flowFolders.filter(folder =>
-                                        allFlows.some(f => f.folder_id === folder.id)
-                                    );
-                                    if (allFlows.length === 0) {
+                                    const foldersToRender = flowFolders; // Show all folders
+                                    if (allFlows.length === 0 && foldersToRender.length === 0) {
                                         return (
                                             <SelectItem value="none" disabled>
                                                 Nenhum fluxo disponível
@@ -259,7 +257,7 @@ export function CampaignDialog({
                                                     ))}
                                                 </SelectGroup>
                                             )}
-                                            {foldersWithFlows.map((folder) => {
+                                            {foldersToRender.map((folder) => {
                                                 const isOpen = expandedFolders.has(folder.id);
                                                 const folderFlows = allFlows.filter(f => f.folder_id === folder.id);
                                                 return (
