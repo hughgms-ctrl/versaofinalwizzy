@@ -20,7 +20,7 @@ import { useFlows } from '@/hooks/useFlows';
 import { useFlowFolders } from '@/hooks/useFlowFolders';
 import { useDepartments } from '@/hooks/useCrmEntities';
 import { useDocumentTemplates } from '@/hooks/useDocumentTemplates';
-import { usePipelines } from '@/hooks/usePipelines';
+import { usePipelines, usePipelineColumns } from '@/hooks/usePipelines';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
@@ -435,6 +435,7 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
   const { data: departments = [] } = useDepartments();
   const { data: templates = [] } = useDocumentTemplates();
   const { data: pipelines = [] } = usePipelines();
+  const { data: pipelineColumns = [] } = usePipelineColumns(localData.pipelineId as string);
 
   useEffect(() => {
     if (node) {
@@ -627,7 +628,11 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
               <Label htmlFor="tagId">Tag</Label>
               <Select
                 value={(localData.tagId as string) || ''}
-                onValueChange={(value) => handleChange('tagId', value)}
+                onValueChange={(value) => {
+                  const tag = tags.find(t => t.id === value);
+                  handleChange('tagId', value);
+                  handleChange('tagName', tag?.name || 'tag');
+                }}
               >
                 <SelectTrigger id="tagId">
                   <SelectValue placeholder="Selecione uma tag" />
@@ -643,6 +648,70 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
                         {tag.name}
                       </div>
                     </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        );
+
+      case 'action-pipeline':
+        return (
+          <div className="space-y-4">
+            <div className="p-3 bg-blue-50 rounded-lg flex items-center gap-3">
+              <Kanban className="h-5 w-5 text-blue-500" />
+              <div>
+                <p className="text-xs font-semibold">Mover Pipeline</p>
+                <p className="text-[10px] text-muted-foreground text-blue-700/70">Move o contato para uma etapa do funil.</p>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Pipeline</Label>
+              <Select
+                value={(localData.pipelineId as string) || ''}
+                onValueChange={(val) => {
+                  const pipeline = pipelines.find(p => p.id === val);
+                  const newData = {
+                    ...localData,
+                    pipelineId: val,
+                    pipelineName: pipeline?.name || 'Pipeline',
+                    pipelineColumnId: '',
+                    pipelineColumnName: ''
+                  };
+                  setLocalData(newData);
+                  onUpdate(node.id, newData);
+                }}
+              >
+                <SelectTrigger><SelectValue placeholder="Selecione o funil..." /></SelectTrigger>
+                <SelectContent>
+                  {pipelines.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Etapa (Coluna)</Label>
+              <Select
+                value={(localData.pipelineColumnId as string) || ''}
+                onValueChange={(val) => {
+                  const col = pipelineColumns.find(c => c.id === val);
+                  const newData = {
+                    ...localData,
+                    pipelineColumnId: val,
+                    pipelineColumnName: col?.name || 'Etapa'
+                  };
+                  setLocalData(newData);
+                  onUpdate(node.id, newData);
+                }}
+                disabled={!localData.pipelineId}
+              >
+                <SelectTrigger><SelectValue placeholder="Selecione a etapa..." /></SelectTrigger>
+                <SelectContent>
+                  {pipelineColumns.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
