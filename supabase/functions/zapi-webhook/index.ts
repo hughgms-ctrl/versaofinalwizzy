@@ -347,10 +347,58 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
   console.log(`[WEBHOOK] Processing message: type=${messageType}, fromMe=${fromMe}, phone=${phone}, hasBase64=${hasBase64}, isMediaType=${isMediaType}, mimeType=${payload.mimeType || payload.MimeType || 'none'}`);
 
   // Handle media upload (UAZAPI sends media as base64 in the payload)
-  // Try multiple field name variations for base64 and mimeType
-  const base64Data = payload.base64 || payload.Base64 || null;
-  const mimeType = payload.mimeType || payload.MimeType || payload.mimetype || null;
+  // Try multiple field name variations for base64 and mimeType (Evolution v1/v2, Z-API, Wuzapi)
+  let base64Data = payload.base64 || payload.Base64 || null;
+  if (!base64Data && payload.data?.message?.base64) base64Data = payload.data.message.base64;
+  if (!base64Data && payload.message?.base64) base64Data = payload.message.base64;
+  if (!base64Data && payload.data?.base64) base64Data = payload.data.base64;
+  if (!base64Data && eventMessage?.base64) base64Data = eventMessage.base64;
+
+  let mimeType = payload.mimeType || payload.MimeType || payload.mimetype || null;
+  if (!mimeType) mimeType = payload.data?.message?.mimetype || payload.message?.mimetype || payload.data?.mimetype;
+  if (!mimeType) mimeType = documentMsg?.mimetype || audioMsg?.mimetype || videoMsg?.mimetype || imageMsg?.mimetype || null;
+
   const directMediaUrl = payload.mediaUrl || payload.MediaUrl || msg.mediaUrl || msg.media?.url || null;
+
+  // Fetch WhatsApp Instance early for API calls
+  let whatsappInstance = null;
+  if (instanceName) {
+    const { data: instance } = await supabase.from('whatsapp_instances').select('*').eq('zapi_instance_id', instanceName).single();
+    whatsappInstance = instance;
+  }
+  if (!whatsappInstance) {
+    const { data: instances } = await supabase.from('whatsapp_instances').select('*').eq('status', 'connected').limit(1);
+    whatsappInstance = instances?.[0];
+  }
+  if (!whatsappInstance) {
+    console.error('No connected instance found for:', instanceName);
+    return respond({ error: 'No connected instance' }, 404);
+  }
+
+  // Fetch missing Base64 directly from Evolution API if not in payload
+  if (!base64Data && isMediaType && whatsappInstance && (payload.data?.message || payload.message)) {
+    try {
+      console.log('[WEBHOOK] Base64 missing from payload, fetching from Evolution API...');
+      const uazapiBaseUrl = Deno.env.get('UAZAPI_BASE_URL')!;
+      const resp = await fetch(`${uazapiBaseUrl}/chat/getBase64FromMediaMessage/${whatsappInstance.zapi_instance_id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'apikey': whatsappInstance.zapi_token },
+        body: JSON.stringify({ message: payload.data?.message || payload.message })
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data && data.base64) {
+          base64Data = data.base64;
+          if (!mimeType) mimeType = data.mimetype || null;
+          console.log(`[WEBHOOK] Extracted base64 from API: ${base64Data.length} chars, mimeType=${mimeType}`);
+        }
+      } else {
+        console.error(`[WEBHOOK] Failed to fetch base64 from API: ${resp.status} ${await resp.text()}`);
+      }
+    } catch (e) {
+      console.error('[WEBHOOK] Base64 API Fetch exception:', e);
+    }
+  }
 
   console.log(`[WEBHOOK] Media check: hasBase64=${!!base64Data} (${base64Data ? base64Data.length + ' chars' : '0'}), mimeType=${mimeType}, directUrl=${!!directMediaUrl}`);
 
@@ -437,29 +485,13 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
     }
   }
 
-  // Find WhatsApp instance by instanceName
-  let whatsappInstance = null;
-  if (instanceName) {
-    const { data: instance } = await supabase
-      .from('whatsapp_instances').select('*')
-      .eq('zapi_instance_id', instanceName).single();
-    whatsappInstance = instance;
-  }
-  if (!whatsappInstance) {
-    const { data: instances } = await supabase
-      .from('whatsapp_instances').select('*')
-      .eq('status', 'connected').limit(1);
-    whatsappInstance = instances?.[0];
-  }
-  if (!whatsappInstance) {
-    console.error('No connected instance found for:', instanceName);
-    return respond({ error: 'No connected instance' }, 404);
-  }
-
   const organizationId = whatsappInstance.organization_id;
 
   // Find or create contact
-  let contact = await findOrCreateContact(supabase, phone, organizationId, pushName, chat.imagePreview || chat.image || null);
+  // If the message is fromMe, pushName is our own pushName, not the client's.
+  // We should pass null so we don't accidentally rename the client's profile.
+  const contactNameToSave = fromMe ? null : pushName;
+  let contact = await findOrCreateContact(supabase, phone, organizationId, contactNameToSave, chat.imagePreview || chat.image || null);
 
   // Fetch profile from UAZAPI if no name
   if (!contact.name && phone) {
