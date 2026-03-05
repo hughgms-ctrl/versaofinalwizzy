@@ -118,8 +118,8 @@ Deno.serve(async (req) => {
       return respond({ success: true, message: 'connection_handled' });
     }
 
-    // Handle message events
-    if (eventType === 'messages' || eventType === 'message') {
+    // Handle message and media events
+    if (eventType === 'messages' || eventType === 'message' || eventType === 'media') {
       return await handleMessage(supabase, payload, instanceName);
     }
 
@@ -246,12 +246,14 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
     textContent = imageMsg.caption || imageMsg.Caption || null;
   } else if (audioMsg) {
     messageType = 'audio';
+    console.log('[DEBUG] Audio message detected:', JSON.stringify(audioMsg));
   } else if (videoMsg) {
     messageType = 'video';
     textContent = videoMsg.caption || videoMsg.Caption || null;
   } else if (documentMsg) {
     messageType = 'document';
     textContent = documentMsg.fileName || documentMsg.FileName || documentMsg.title || null;
+    console.log('[DEBUG] Document message detected:', JSON.stringify(documentMsg));
   } else if (stickerMsg) {
     messageType = 'sticker';
   } else if (locationMsg) {
@@ -262,6 +264,15 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
   } else if (contactMsg) {
     messageType = 'contact';
     textContent = contactMsg.displayName || contactMsg.DisplayName || '';
+  } else if (payload.caption || payload.text || payload.content) {
+    // Fallback for media payloads that might have root fields
+    textContent = payload.caption || payload.text || (typeof payload.content === 'string' ? payload.content : null);
+
+    const pType = (payload.type || '').toLowerCase();
+    if (pType === 'image') messageType = 'image';
+    else if (pType === 'audio' || pType === 'ptt') messageType = 'audio';
+    else if (pType === 'video') messageType = 'video';
+    else if (pType === 'document') messageType = 'document';
   } else {
     // Fallback to legacy format parsing
     const content = msg.content || {};
@@ -319,11 +330,14 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
     try {
       const extMap: Record<string, string> = {
         'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif',
-        'audio/ogg; codecs=opus': 'ogg', 'audio/ogg': 'ogg', 'audio/mpeg': 'mp3', 'audio/mp4': 'm4a',
+        'audio/ogg; codecs=opus': 'ogg', 'audio/ogg': 'ogg', 'audio/mpeg': 'mp3', 'audio/mp4': 'm4a', 'audio/wav': 'wav',
         'video/mp4': 'mp4', 'video/3gpp': '3gp',
-        'application/pdf': 'pdf',
+        'application/pdf': 'pdf', 'application/msword': 'doc', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+        'application/vnd.ms-excel': 'xls', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+        'text/plain': 'txt',
       };
-      const ext = extMap[payload.mimeType] || payload.fileName?.split('.').pop() || 'bin';
+
+      const ext = extMap[payload.mimeType] || payload.fileName?.split('.').pop() || payload.event.Message?.documentMessage?.fileName?.split('.').pop() || 'bin';
       const fileName = `${msgId || Date.now()}.${ext}`;
       const storagePath = `webhook-media/${fileName}`;
       const binaryData = Uint8Array.from(atob(payload.base64), c => c.charCodeAt(0));
@@ -331,16 +345,21 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
       const { error: uploadError } = await supabase.storage
         .from('chat-media')
         .upload(storagePath, binaryData, { contentType: payload.mimeType, upsert: true });
+
       if (!uploadError) {
         const { data: publicUrl } = supabase.storage.from('chat-media').getPublicUrl(storagePath);
         mediaUrl = publicUrl?.publicUrl || null;
-        console.log(`[WEBHOOK] Media uploaded: ${mediaUrl?.substring(0, 80)}`);
+        console.log(`[WEBHOOK] Media uploaded successfully: ${mediaUrl}`);
       } else {
         console.error('[WEBHOOK] Media upload error:', uploadError);
       }
     } catch (e) {
       console.error('Media upload error:', e);
     }
+  } else if (msg.mediaUrl || msg.media?.url || payload.mediaUrl) {
+    // Fallback if UAZAPI sends a direct URL instead of base64
+    mediaUrl = msg.mediaUrl || msg.media?.url || payload.mediaUrl;
+    console.log(`[WEBHOOK] Using direct media URL: ${mediaUrl}`);
   }
 
   // Find WhatsApp instance by instanceName
@@ -396,13 +415,34 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
   // Find or create conversation for THIS specific contact
   const conversation = await findOrCreateConversation(supabase, contact.id, organizationId, whatsappInstance.id, whatsappInstance.phone_number);
 
-  // Check for duplicate message
+  // Check for duplicate message (Deduplication)
   if (msgId) {
     const { data: existing } = await supabase
-      .from('messages').select('id')
+      .from('messages').select('*')
       .eq('zapi_message_id', msgId).maybeSingle();
+
     if (existing) {
+      console.log(`[WEBHOOK] Duplicate message detected (msgId: ${msgId}). Updating status only.`);
+
+      // If it exists, just update timestamps/metadata if needed and skip insert
+      if (fromMe) {
+        // If it's an eco and we already have it, it's definitely the one we sent.
+        return respond({ success: true, duplicate: true });
+      }
+
+      // If it's NOT from me (inbound) and we have it, it's also a duplicate.
       return respond({ success: true, duplicate: true });
+    }
+  }
+
+  // Determine final is_from_bot status
+  // If it's from me AND specifically marked as a bot/flow response
+  let finalIsFromBot = false;
+  if (fromMe) {
+    // If conversation is in IA mode, we assume outbound messages from the instance ARE from the IA
+    // UNLESS we find evidence it was a manual user response (which we can't easily do without more context)
+    if (conversation.service_mode === 'ia') {
+      finalIsFromBot = true;
     }
   }
 
@@ -414,7 +454,7 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
       content: textContent,
       type: messageType,
       direction: fromMe ? 'outbound' : 'inbound',
-      is_from_bot: false,
+      is_from_bot: finalIsFromBot,
       media_url: mediaUrl,
       zapi_message_id: msgId || null,
     })

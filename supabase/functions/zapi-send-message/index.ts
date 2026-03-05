@@ -119,12 +119,10 @@ Deno.serve(async (req) => {
     const phone = conversation.contact.phone;
     const normalizedPhone = phone.replace(/\D/g, '');
 
-    // Typing/Recording presence via UAZAPI
+    // Typing/Recording presence via UAZAPI (Fire and forget, no delay)
     try {
       const presenceType = type === 'audio' ? 'recording' : 'composing';
-      console.log(`[Presence] Sending ${presenceType} to ${normalizedPhone}`);
-
-      await fetch(uazapiUrl(uazapiBaseUrl, '/message/presence'), {
+      fetch(uazapiUrl(uazapiBaseUrl, '/message/presence'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -136,9 +134,6 @@ Deno.serve(async (req) => {
           delay: 5000
         }),
       });
-
-      // Delay to let the client "see" the status
-      await new Promise(resolve => setTimeout(resolve, 1500));
     } catch (e) {
       console.log('Presence update failed:', e);
     }
@@ -192,7 +187,7 @@ Deno.serve(async (req) => {
     }
 
     const uazapiResult = await response.json();
-    const zapiMsgId = uazapiResult.messageId || uazapiResult.id || uazapiResult.key?.id || null;
+    const zapiMsgId = uazapiResult.messageId || uazapiResult.id || uazapiResult.ID || uazapiResult.key?.id || null;
 
     // Manual check since we don't have UNIQUE constraint yet
     if (zapiMsgId) {

@@ -21,6 +21,7 @@ interface FlowTriggerDropdownProps {
 export function FlowTriggerDropdown({ conversationId }: FlowTriggerDropdownProps) {
   const [open, setOpen] = useState(false);
   const [selectedFolder, setSelectedFolder] = useState<FlowFolder | null>(null);
+  const [isTriggering, setIsTriggering] = useState(false);
   const { data: flows, isLoading: loadingFlows } = useFlows();
   const { data: folders, isLoading: loadingFolders } = useFlowFolders();
   const executeFlow = useFlowExecution();
@@ -66,10 +67,15 @@ export function FlowTriggerDropdown({ conversationId }: FlowTriggerDropdownProps
     return filteredFolders.filter(f => f.parent_id === parentId && getFolderHasActiveFlows(f.id));
   };
 
-  const handleTriggerFlow = async (flowId: string) => {
+  const handleTriggerFlow = (flowId: string) => {
     setOpen(false);
     setSelectedFolder(null);
-    await executeFlow.mutateAsync({ flowId, conversationId });
+    setIsTriggering(true);
+
+    // Reset local loading after 1 second
+    setTimeout(() => setIsTriggering(false), 1000);
+
+    executeFlow.mutate({ flowId, conversationId });
   };
 
   const handleOpenChange = (isOpen: boolean) => {
@@ -219,9 +225,9 @@ export function FlowTriggerDropdown({ conversationId }: FlowTriggerDropdownProps
           variant="outline"
           size="sm"
           className="gap-1.5"
-          disabled={executeFlow.isPending}
+          disabled={isTriggering}
         >
-          {executeFlow.isPending ? (
+          {isTriggering ? (
             <Loader2 className="h-4 w-4 animate-spin" />
           ) : (
             <Zap className="h-4 w-4" />

@@ -11,14 +11,14 @@ export function useFlowExecution() {
 
       if (error) throw error;
       if (!data.success && data.error) throw new Error(data.error);
-      
+
       return data;
     },
     onSuccess: (data) => {
       if (data.status === 'waiting_input') {
         toast.info('Fluxo aguardando resposta do cliente');
       } else {
-        toast.success('Fluxo executado com sucesso!');
+        toast.success('Fluxo iniciado com sucesso!');
       }
     },
     onError: (error) => {

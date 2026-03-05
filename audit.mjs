@@ -1,59 +1,75 @@
 import { createClient } from '@supabase/supabase-js';
+import * as dotenv from 'dotenv';
+dotenv.config();
 
-const supabaseUrl = 'https://zaobtetbjpuzibjymhzw.supabase.co';
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inphb2J0ZXRianB1emxpYW5ltaHp3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MjEzNzg3OSwiZXhwIjoyMDg3NzEzOTM5fQ.xNtxSTwkenbVWJ1IHEDRCuQu_XMsLdWW92gE2WQgy_0';
+const supabaseUrl = process.env.VITE_SUPABASE_URL;
+const supabaseKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-async function run() {
-    console.log('Fetching profiles...');
-    const { data: profiles, error: err1 } = await supabase.from('profiles').select('*');
-    if (err1) {
-        console.error('Error profiles:', err1);
-        return;
-    }
+async function audit() {
+    console.log('--- AUDIT START ---');
 
-    let hugo = profiles.find(p => p.email && p.email.includes('hughgms'));
-    if (!hugo) hugo = profiles.find(p => p.organization_id === '48dcff79-d58e-4a94-9642-f860579e2760');
+    try {
+        // 1. Check Integration Configs
+        console.log('\n1. Checking Integration Configs:');
+        const { data: configs, error: configError } = await supabase
+            .from('integration_configs')
+            .select('organization_id, ai_provider, openai_api_key, gemini_api_key');
 
-    const orgId = hugo?.organization_id || '48dcff79-d58e-4a94-9642-f860579e2760';
-    console.log('Hugo Organization ID:', orgId);
-
-    console.log('Fetching instances...');
-    const { data: instances, error: err2 } = await supabase.from('whatsapp_instances').select('*');
-    if (err2) {
-        console.error('Error instances:', err2);
-        return;
-    }
-
-    const targetOrgs = [orgId];
-    const hugoInstances = instances.filter(i => targetOrgs.includes(i.organization_id));
-
-    console.log('Hugo Instances:');
-    console.table(hugoInstances.map(i => ({
-        id: i.id,
-        label: i.label,
-        status: i.status,
-        phone: i.phone_number,
-        zapi_id: i.zapi_instance_id
-    })));
-
-    // Force update ALL pending/connecting instances to connected to unblock Hugo right now!
-    for (const inst of hugoInstances) {
-        if (inst.status !== 'connected') {
-            console.log(`Forcing status to 'connected' for instance ${inst.id}...`);
-            const { error: updateErr } = await supabase.from('whatsapp_instances').update({
-                status: 'connected',
-                is_active: true,
-                connected_at: new Date().toISOString()
-            }).eq('id', inst.id);
-
-            if (updateErr) console.error('Update error:', updateErr);
-            else console.log(`Instance ${inst.id} successfully forced to 'connected'.`);
+        if (configError) {
+            console.error('Error fetching configs:', configError);
         } else {
-            console.log(`Instance ${inst.id} is already connected.`);
+            console.log(`Found ${configs?.length || 0} configs.`);
+            configs?.forEach(c => {
+                console.log(`Org: ${c.organization_id}`);
+                console.log(`  OpenAI Key set: ${!!c.openai_api_key}`);
+                console.log(`  Gemini Key set: ${!!c.gemini_api_key}`);
+                console.log(`  AI Provider: ${c.ai_provider}`);
+            });
         }
+
+        // 2. Check Last Campaigns (scheduled_messages)
+        console.log('\n2. Last Scheduled Messages:');
+        const { data: scheduled, error: schedError } = await supabase
+            .from('scheduled_messages')
+            .select('id, status, content_type, error_message, created_at')
+            .order('created_at', { ascending: false })
+            .limit(5);
+
+        if (schedError) {
+            console.error('Error fetching scheduled:', schedError);
+        } else {
+            scheduled?.forEach(s => {
+                console.log(`Message ${s.id}:`);
+                console.log(`  Status: ${s.status}`);
+                console.log(`  Content Type: ${s.content_type}`);
+                console.log(`  Error: ${s.error_message}`);
+            });
+        }
+
+        // 3. Check Flow Executions
+        console.log('\n3. Last Flow Executions:');
+        const { data: executions, error: execError } = await supabase
+            .from('flow_executions')
+            .select('id, status, error_message, created_at')
+            .order('created_at', { ascending: false })
+            .limit(5);
+
+        if (execError) {
+            console.error('Error fetching executions:', execError);
+        } else {
+            executions?.forEach(e => {
+                console.log(`Execution ${e.id}:`);
+                console.log(`  Status: ${e.status}`);
+                console.log(`  Error: ${e.error_message}`);
+            });
+        }
+    } catch (err) {
+        console.error('Audit script exploded:', err);
     }
+
+    console.log('\n--- AUDIT END ---');
 }
 
-run();
+audit();

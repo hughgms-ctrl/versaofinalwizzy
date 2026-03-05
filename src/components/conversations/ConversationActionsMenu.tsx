@@ -1,15 +1,15 @@
 import { useState } from 'react';
-import { 
-  MoreVertical, 
-  Archive, 
-  CheckCircle, 
-  Ban, 
-  Tag, 
-  Kanban, 
-  Star, 
-  Image, 
-  Link, 
-  FileDown, 
+import {
+  MoreVertical,
+  Archive,
+  CheckCircle,
+  Ban,
+  Tag,
+  Kanban,
+  Star,
+  Image,
+  Link,
+  FileDown,
   RefreshCw,
   Loader2,
   RotateCcw,
@@ -57,28 +57,28 @@ export function ConversationActionsMenu({ conversation, onShowMediaGallery }: Co
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const queryClient = useQueryClient();
   const isArchived = conversation.status === 'archived';
-  
+
   const { data: tags } = useTags();
   const { data: contactTags } = useContactTags(conversation.contact?.id || null);
   const { data: pipelines } = usePipelines();
-  
+
   const addTagMutation = useAddTagToContact();
   const removeTagMutation = useRemoveTagFromContact();
   const moveConversation = useMoveConversation();
 
   // Fetch all columns for all pipelines
   const [allColumns, setAllColumns] = useState<Record<string, any[]>>({});
-  
+
   // Load columns when pipelines are available
   const loadColumnsForPipeline = async (pipelineId: string) => {
     if (allColumns[pipelineId]) return allColumns[pipelineId];
-    
+
     const { data } = await (supabase as any)
       .from('pipeline_columns')
       .select('*')
       .eq('pipeline_id', pipelineId)
       .order('order');
-    
+
     if (data) {
       setAllColumns(prev => ({ ...prev, [pipelineId]: data }));
     }
@@ -120,17 +120,17 @@ export function ConversationActionsMenu({ conversation, onShowMediaGallery }: Co
         .select('metadata')
         .eq('id', conversation.id)
         .single();
-      
+
       const currentMetadata = (currentConv?.metadata as Record<string, unknown>) || {};
       const currentPriority = currentMetadata?.priority || false;
-      
+
       const { error } = await supabase
         .from('conversations')
-        .update({ 
-          metadata: { 
-            ...currentMetadata, 
-            priority: !currentPriority 
-          } 
+        .update({
+          metadata: {
+            ...currentMetadata,
+            priority: !currentPriority
+          }
         })
         .eq('id', conversation.id);
 
@@ -153,7 +153,7 @@ export function ConversationActionsMenu({ conversation, onShowMediaGallery }: Co
 
   const handleBlockContact = async () => {
     if (!conversation.contact?.id) return;
-    
+
     setIsUpdating(true);
     try {
       const { data: currentContact } = await supabase
@@ -161,16 +161,16 @@ export function ConversationActionsMenu({ conversation, onShowMediaGallery }: Co
         .select('metadata')
         .eq('id', conversation.contact.id)
         .single();
-      
+
       const currentMetadata = (currentContact?.metadata as Record<string, unknown>) || {};
-      
+
       const { error } = await supabase
         .from('contacts')
-        .update({ 
-          metadata: { 
-            ...currentMetadata, 
-            blocked: true 
-          } 
+        .update({
+          metadata: {
+            ...currentMetadata,
+            blocked: true
+          }
         })
         .eq('id', conversation.contact.id);
 
@@ -194,7 +194,7 @@ export function ConversationActionsMenu({ conversation, onShowMediaGallery }: Co
 
   const handleTagToggle = async (tagId: string) => {
     if (!conversation.contact?.id) return;
-    
+
     const isTagged = contactTags?.some(ct => ct.tag_id === tagId);
     if (isTagged) {
       await removeTagMutation.mutateAsync({ contactId: conversation.contact.id, tagId });
@@ -229,7 +229,7 @@ export function ConversationActionsMenu({ conversation, onShowMediaGallery }: Co
       if (format === 'txt') {
         content = messages.map(m => {
           const time = new Date(m.created_at).toLocaleString('pt-BR');
-          const sender = m.direction === 'inbound' ? 'Cliente' : (m.is_from_bot ? 'Bot' : 'Atendente');
+          const sender = m.direction === 'inbound' ? 'Cliente' : (m.is_from_bot ? 'IA' : 'Atendente');
           return `[${time}] ${sender}: ${m.content || `[${m.type}]`}`;
         }).join('\n');
         filename = `conversa-${conversation.contact?.phone || conversation.id}.txt`;
@@ -391,7 +391,7 @@ export function ConversationActionsMenu({ conversation, onShowMediaGallery }: Co
                 queryClient.invalidateQueries({ queryKey: ['conversations'] });
                 toast({
                   title: isIA ? 'IA desativada' : 'IA ativada',
-                  description: isIA 
+                  description: isIA
                     ? 'O agente não responderá mais nesta conversa.'
                     : 'O agente master foi ativado para esta conversa.',
                 });
@@ -435,7 +435,7 @@ export function ConversationActionsMenu({ conversation, onShowMediaGallery }: Co
           <MailWarning className="h-4 w-4 mr-2 text-amber-500" />
           Marcar como não lida
         </DropdownMenuItem>
-        
+
         <DropdownMenuSeparator />
 
         {/* Tags Submenu */}
@@ -451,13 +451,13 @@ export function ConversationActionsMenu({ conversation, onShowMediaGallery }: Co
               tags.map(tag => {
                 const isTagged = contactTags?.some(ct => ct.tag_id === tag.id);
                 return (
-                  <DropdownMenuItem 
-                    key={tag.id} 
+                  <DropdownMenuItem
+                    key={tag.id}
                     onClick={() => handleTagToggle(tag.id)}
                   >
-                    <div 
-                      className="h-3 w-3 rounded-full mr-2" 
-                      style={{ backgroundColor: tag.color }} 
+                    <div
+                      className="h-3 w-3 rounded-full mr-2"
+                      style={{ backgroundColor: tag.color }}
                     />
                     <span className="flex-1">{tag.name}</span>
                     {isTagged && <CheckCircle className="h-3 w-3 text-primary" />}
@@ -479,7 +479,7 @@ export function ConversationActionsMenu({ conversation, onShowMediaGallery }: Co
               <DropdownMenuItem disabled>Nenhum pipeline criado</DropdownMenuItem>
             ) : (
               pipelines.map(pipeline => (
-                <PipelineSubmenu 
+                <PipelineSubmenu
                   key={pipeline.id}
                   pipeline={pipeline}
                   onSelectColumn={(columnId) => handleMoveToColumn(pipeline.id, columnId)}
@@ -502,7 +502,7 @@ export function ConversationActionsMenu({ conversation, onShowMediaGallery }: Co
           <Link className="h-4 w-4 mr-2" />
           Copiar link da conversa
         </DropdownMenuItem>
-        
+
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>
             <FileDown className="h-4 w-4 mr-2" />
@@ -534,7 +534,7 @@ export function ConversationActionsMenu({ conversation, onShowMediaGallery }: Co
         )}
 
         {/* Delete - always available */}
-        <DropdownMenuItem 
+        <DropdownMenuItem
           onClick={() => setShowDeleteDialog(true)}
           className="text-destructive focus:text-destructive"
         >
@@ -543,7 +543,7 @@ export function ConversationActionsMenu({ conversation, onShowMediaGallery }: Co
         </DropdownMenuItem>
 
         {/* Danger Zone */}
-        <DropdownMenuItem 
+        <DropdownMenuItem
           onClick={handleBlockContact}
           className="text-destructive focus:text-destructive"
         >
@@ -558,13 +558,13 @@ export function ConversationActionsMenu({ conversation, onShowMediaGallery }: Co
           <AlertDialogHeader>
             <AlertDialogTitle>Excluir conversa permanentemente?</AlertDialogTitle>
             <AlertDialogDescription>
-              Esta ação não pode ser desfeita. Todas as mensagens, arquivos e histórico 
+              Esta ação não pode ser desfeita. Todas as mensagens, arquivos e histórico
               desta conversa serão removidos permanentemente do sistema.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction 
+            <AlertDialogAction
               onClick={handleDeletePermanently}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
@@ -583,15 +583,15 @@ export function ConversationActionsMenu({ conversation, onShowMediaGallery }: Co
 }
 
 // Submenu for pipeline columns (loaded on demand)
-function PipelineSubmenu({ 
-  pipeline, 
-  onSelectColumn 
-}: { 
-  pipeline: { id: string; name: string }; 
+function PipelineSubmenu({
+  pipeline,
+  onSelectColumn
+}: {
+  pipeline: { id: string; name: string };
   onSelectColumn: (columnId: string) => void;
 }) {
   const { data: columns } = usePipelineColumns(pipeline.id);
-  
+
   return (
     <DropdownMenuSub>
       <DropdownMenuSubTrigger>{pipeline.name}</DropdownMenuSubTrigger>
@@ -600,13 +600,13 @@ function PipelineSubmenu({
           <DropdownMenuItem disabled>Sem colunas</DropdownMenuItem>
         ) : (
           columns.map(column => (
-            <DropdownMenuItem 
+            <DropdownMenuItem
               key={column.id}
               onClick={() => onSelectColumn(column.id)}
             >
-              <div 
-                className="h-2 w-2 rounded-full mr-2" 
-                style={{ backgroundColor: column.color || '#888' }} 
+              <div
+                className="h-2 w-2 rounded-full mr-2"
+                style={{ backgroundColor: column.color || '#888' }}
               />
               {column.name}
             </DropdownMenuItem>

@@ -6,12 +6,12 @@ import { supabase } from '@/integrations/supabase/client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { 
-  X, 
-  Phone, 
-  Mail, 
-  Calendar, 
-  Plus, 
+import {
+  X,
+  Phone,
+  Mail,
+  Calendar,
+  Plus,
   MessageSquare,
   Bot,
   UserCircle,
@@ -60,13 +60,13 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const contact = conversation.contact;
-  
+
   const { data: tags } = useTags();
   const { data: contactTags, isLoading: loadingContactTags } = useContactTags(contact?.id || null);
   const addTagToContact = useAddTagToContact();
   const removeTagFromContact = useRemoveTagFromContact();
   const createTag = useCreateTag();
-  
+
   const [isAddingTag, setIsAddingTag] = useState(false);
   const [isCreatingTag, setIsCreatingTag] = useState(false);
   const [newTagName, setNewTagName] = useState('');
@@ -87,18 +87,18 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
         .from('messages')
         .select('direction, is_from_bot, created_at')
         .eq('conversation_id', conversation.id);
-      
+
       if (error) throw error;
-      
+
       const inbound = messages?.filter(m => m.direction === 'inbound').length || 0;
       const outbound = messages?.filter(m => m.direction === 'outbound').length || 0;
-      const botMessages = messages?.filter(m => m.is_from_bot).length || 0;
-      
+      const aiMessages = messages?.filter(m => m.is_from_bot).length || 0;
+
       return {
         totalMessages: messages?.length || 0,
         inbound,
         outbound,
-        botMessages,
+        aiMessages,
       };
     },
   });
@@ -141,13 +141,13 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
 
   const handleCreateTag = async () => {
     if (!newTagName.trim() || !contact?.id) return;
-    
+
     try {
       const newTag = await createTag.mutateAsync({
         name: newTagName.trim(),
         color: newTagColor,
       });
-      
+
       // Add the new tag to the contact
       if (newTag) {
         await addTagToContact.mutateAsync({
@@ -156,7 +156,7 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
           addedByType: 'manual',
         });
       }
-      
+
       setNewTagName('');
       setNewTagColor('#6366f1');
       setIsCreatingTag(false);
@@ -168,16 +168,16 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
 
   const handleSaveName = async () => {
     if (!contact?.id || !editedName.trim()) return;
-    
+
     setIsSavingName(true);
     try {
       const { error } = await supabase
         .from('contacts')
         .update({ name: editedName.trim() })
         .eq('id', contact.id);
-      
+
       if (error) throw error;
-      
+
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
       toast({
         title: 'Nome atualizado',
@@ -208,8 +208,8 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
   return (
     <div className={cn(
       "bg-card flex flex-col overflow-hidden",
-      embedded 
-        ? "w-full h-full" 
+      embedded
+        ? "w-full h-full"
         : "w-80 min-w-[320px] max-w-80 border-l border-border h-full flex-shrink-0"
     )}>
       {/* Header */}
@@ -224,9 +224,9 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
 
       {/* Tabs at the TOP - before avatar */}
       {contact?.id && (
-        <ContactProfileTabs 
-          conversation={conversation} 
-          contactId={contact.id} 
+        <ContactProfileTabs
+          conversation={conversation}
+          contactId={contact.id}
         />
       )}
 
@@ -236,8 +236,8 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
           <div className="flex flex-col items-center text-center">
             <div className="h-20 w-20 rounded-full bg-gradient-to-br from-primary/20 to-purple-500/20 flex items-center justify-center mb-3">
               {contact?.avatar_url ? (
-                <img 
-                  src={contact.avatar_url} 
+                <img
+                  src={contact.avatar_url}
                   alt={contact?.name || 'Contato'}
                   className="h-20 w-20 rounded-full object-cover"
                 />
@@ -247,7 +247,7 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
                 </span>
               )}
             </div>
-            
+
             {isEditingName ? (
               <div className="flex items-center gap-2 w-full">
                 <Input
@@ -269,7 +269,7 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
                 </Button>
               </div>
             ) : (
-              <button 
+              <button
                 className="font-semibold text-lg text-foreground hover:text-primary transition-colors"
                 onClick={() => {
                   setEditedName(contact?.name || '');
@@ -279,7 +279,7 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
                 {contact?.name || 'Sem nome'}
               </button>
             )}
-            
+
             <Badge variant="secondary" className="mt-2">
               {conversation.status === 'open' && 'Aberto'}
               {conversation.status === 'pending' && 'Pendente'}
@@ -288,9 +288,9 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
             </Badge>
 
             {/* Schedule Button */}
-            <Button 
-              variant="outline" 
-              size="sm" 
+            <Button
+              variant="outline"
+              size="sm"
               className="mt-3"
               onClick={() => setIsScheduleOpen(true)}
             >
@@ -321,7 +321,7 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
             <Label className="text-xs text-muted-foreground uppercase tracking-wider">
               Informações
             </Label>
-            
+
             <div className="space-y-2">
               <div className="flex items-center gap-3 p-2 rounded-lg bg-muted/50">
                 <Phone className="h-4 w-4 text-muted-foreground" />
@@ -329,14 +329,14 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
                   {contact?.phone ? formatPhone(contact.phone) : 'Sem telefone'}
                 </span>
               </div>
-              
+
               {contact?.email && (
                 <div className="flex items-center gap-3 p-2 rounded-lg bg-muted/50">
                   <Mail className="h-4 w-4 text-muted-foreground" />
                   <span className="text-sm text-foreground">{contact.email}</span>
                 </div>
               )}
-              
+
               <div className="flex items-center gap-3 p-2 rounded-lg bg-muted/50">
                 <Calendar className="h-4 w-4 text-muted-foreground" />
                 <span className="text-sm text-foreground">
@@ -355,9 +355,9 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
                 Nota Rápida
               </Label>
               {!isEditingNote && (
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
+                <Button
+                  variant="ghost"
+                  size="sm"
                   className="h-6 px-2"
                   onClick={() => {
                     setEditedNote((contact?.metadata as { note?: string } | null)?.note || '');
@@ -369,7 +369,7 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
                 </Button>
               )}
             </div>
-            
+
             {isEditingNote ? (
               <div className="space-y-2">
                 <Input
@@ -382,9 +382,9 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] text-muted-foreground">{editedNote.length}/50</span>
                   <div className="flex gap-2">
-                    <Button 
-                      size="sm" 
-                      variant="ghost" 
+                    <Button
+                      size="sm"
+                      variant="ghost"
                       onClick={() => setIsEditingNote(false)}
                       disabled={isSavingNote}
                     >
@@ -398,19 +398,19 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
                         try {
                           const currentMetadata = (contact?.metadata as Record<string, any>) || {};
                           const newMetadata = { ...currentMetadata, note: editedNote.trim() || null };
-                          
+
                           // Remove note key if empty
                           if (!editedNote.trim()) {
                             delete newMetadata.note;
                           }
-                          
+
                           const { error } = await supabase
                             .from('contacts')
                             .update({ metadata: Object.keys(newMetadata).length > 0 ? newMetadata : null })
                             .eq('id', contact.id);
-                          
+
                           if (error) throw error;
-                          
+
                           queryClient.invalidateQueries({ queryKey: ['conversations'] });
                           toast({
                             title: 'Nota salva',
@@ -528,9 +528,9 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
                             <p className="text-xs text-muted-foreground mb-2">
                               Nenhuma tag criada
                             </p>
-                            <Button 
-                              size="sm" 
-                              variant="outline" 
+                            <Button
+                              size="sm"
+                              variant="outline"
                               className="w-full"
                               onClick={() => setIsCreatingTag(true)}
                             >
@@ -543,9 +543,9 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
                             <p className="text-xs text-muted-foreground mb-2">
                               Todas as tags já foram atribuídas
                             </p>
-                            <Button 
-                              size="sm" 
-                              variant="outline" 
+                            <Button
+                              size="sm"
+                              variant="outline"
                               className="w-full"
                               onClick={() => setIsCreatingTag(true)}
                             >
@@ -572,9 +572,9 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
                               ))}
                             </div>
                             <Separator />
-                            <Button 
-                              size="sm" 
-                              variant="ghost" 
+                            <Button
+                              size="sm"
+                              variant="ghost"
                               className="w-full"
                               onClick={() => setIsCreatingTag(true)}
                             >
@@ -599,7 +599,7 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
                 {contactTags.map((ct) => (
                   <Badge
                     key={ct.id}
-                    style={{ 
+                    style={{
                       backgroundColor: `${ct.tag.color}20`,
                       color: ct.tag.color,
                       borderColor: `${ct.tag.color}40`,

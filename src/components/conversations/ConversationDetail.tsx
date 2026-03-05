@@ -515,7 +515,7 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
 
             {/* Flow Trigger Dropdown - Hidden on small screens */}
             <div className="hidden sm:block">
-              <FlowTriggerDropdown conversationId={conversation.id} />
+              <FlowTriggerDropdown key={conversation.id} conversationId={conversation.id} />
             </div>
 
             <Button variant="ghost" size="icon" className="h-8 w-8 md:h-9 md:w-9" onClick={() => setShowProfilePanel(!showProfilePanel)}>
@@ -1105,7 +1105,7 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
         {!isInbound && isBot && (
           <div className="flex items-center gap-1.5 mb-1">
             <Bot className="h-3 w-3" />
-            <span className="text-xs font-medium opacity-80">Bot</span>
+            <span className="text-xs font-medium opacity-80">IA</span>
           </div>
         )}
         {renderMediaContent()}

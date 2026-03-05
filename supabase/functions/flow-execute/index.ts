@@ -43,7 +43,7 @@ interface ExecutionContext {
 // deno-lint-ignore no-explicit-any
 type SupabaseClientType = any;
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -57,200 +57,104 @@ serve(async (req) => {
     console.log(`[FLOW EXECUTE] Received request: flowId=${flowId}, conversationId=${conversationId}, startNodeId=${startNodeId}, isFromOrchestrator=${isFromOrchestrator}`);
 
     if (!flowId || !conversationId) {
-      console.error(`[FLOW EXECUTE] Missing required params: flowId=${flowId}, conversationId=${conversationId}`);
       return new Response(
         JSON.stringify({ error: 'flowId and conversationId are required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Get the flow
-    const { data: flow, error: flowError } = await supabase
-      .from('flows')
-      .select('*')
-      .eq('id', flowId)
-      .single();
-
-    if (flowError || !flow) {
-      console.error(`[FLOW EXECUTE] Flow ${flowId} not found:`, flowError);
-      return new Response(
-        JSON.stringify({ error: 'Flow not found' }),
-        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-    console.log(`[FLOW EXECUTE] Found flow: ${flow.name} (${flow.id})`);
-
-    // Get conversation and contact
-    const { data: conversation, error: convError } = await supabase
-      .from('conversations')
-      .select('*, contacts(*)')
-      .eq('id', conversationId)
-      .single();
-
-    if (convError || !conversation) {
-      console.error('Conversation not found:', convError);
-      return new Response(
-        JSON.stringify({ error: 'Conversation not found' }),
-        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Get WhatsApp instance
-    const { data: instance, error: instanceError } = await supabase
-      .from('whatsapp_instances')
-      .select('*')
-      .eq('organization_id', flow.organization_id)
-      .eq('status', 'connected')
-      .single();
-
-    if (instanceError || !instance) {
-      console.error('No connected WhatsApp instance:', instanceError);
-      return new Response(
-        JSON.stringify({ error: 'No connected WhatsApp instance' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Create flow execution record
-    const { data: execution, error: execError } = await supabase
-      .from('flow_executions')
-      .insert({
-        flow_id: flowId,
-        conversation_id: conversationId,
-        organization_id: flow.organization_id,
-        status: 'running',
-        current_node_id: startNodeId || 'start-1',
-        variables: {},
-      })
-      .select()
-      .single();
-
-    if (execError) {
-      console.error('[FLOW EXECUTE] Error creating execution record:', execError);
-      return new Response(
-        JSON.stringify({ error: `Error creating execution: ${execError.message}` }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-    console.log(`[FLOW EXECUTE] Execution record created: ${execution.id}`);
-
-    const nodes = flow.nodes as FlowNode[];
-    const edges = flow.edges as FlowEdge[];
-
-    const context: ExecutionContext = {
-      conversationId,
-      contactPhone: conversation.contacts?.phone || '',
-      contactId: conversation.contact_id,
-      variables: {},
-      organizationId: flow.organization_id,
-      zapiInstanceId: instance.zapi_instance_id!,
-      zapiToken: instance.zapi_token!,
-      isFromOrchestrator: !!isFromOrchestrator,
-    };
-
-    // Find start node
-    let currentNodeId: string | null = startNodeId || nodes.find(n => n.type === 'start')?.id || null;
-    const executionLog: Array<{ nodeId: string; type: string; result: string; timestamp: string }> = [];
-
-    // Execute flow nodes
-    while (currentNodeId) {
-      const currentNode = nodes.find(n => n.id === currentNodeId);
-      if (!currentNode) break;
-
-      console.log(`Executing node: ${currentNode.id} (${currentNode.type})`);
-
+    // Start background execution
+    const executionPromise = (async () => {
       try {
-        const result = await executeNode(currentNode, context, supabase);
-        console.log(`[FLOW EXECUTE] Node ${currentNode.id} result:`, JSON.stringify(result));
-        executionLog.push({
-          nodeId: currentNode.id,
-          type: currentNode.type,
-          result: result.success ? 'success' : 'failed',
-          timestamp: new Date().toISOString(),
-        });
+        // 1. Get the flow
+        const { data: flow, error: flowError } = await supabase
+          .from('flows')
+          .select('*')
+          .eq('id', flowId)
+          .single();
 
-        if (!result.success) {
-          // Update execution as failed
-          await supabase
-            .from('flow_executions')
-            .update({
-              status: 'failed',
-              error_message: result.error,
-              execution_log: executionLog,
-              completed_at: new Date().toISOString(),
-            })
-            .eq('id', execution.id);
-
-          return new Response(
-            JSON.stringify({ success: false, error: result.error, executionId: execution.id }),
-            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
+        if (flowError || !flow) {
+          console.error(`[FLOW EXECUTE] Flow ${flowId} not found:`, flowError);
+          return;
         }
 
-        // Handle special cases
-        if (result.waitForInput) {
-          await supabase
-            .from('flow_executions')
-            .update({
-              status: 'waiting_input',
-              current_node_id: currentNode.id,
-              variables: context.variables,
-              execution_log: executionLog,
-            })
-            .eq('id', execution.id);
+        // 2. Get conversation and contact
+        const { data: conversation, error: convError } = await supabase
+          .from('conversations')
+          .select('*, contacts(*)')
+          .eq('id', conversationId)
+          .single();
 
-          return new Response(
-            JSON.stringify({ success: true, status: 'waiting_input', executionId: execution.id }),
-            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
+        if (convError || !conversation) {
+          console.error(`[FLOW EXECUTE] Conversation ${conversationId} not found`);
+          return;
         }
 
-        // Update variables if changed
-        if (result.variables) {
-          Object.assign(context.variables, result.variables);
+        // 3. Get WhatsApp instance
+        const { data: instance, error: instanceError } = await supabase
+          .from('whatsapp_instances')
+          .select('*')
+          .eq('organization_id', flow.organization_id)
+          .eq('status', 'connected')
+          .single();
+
+        if (instanceError || !instance) {
+          console.error(`[FLOW EXECUTE] No connected instance for org ${flow.organization_id}`);
+          return;
         }
 
-        // Find next node
-        const nextNodeId = findNextNode(currentNode, edges, result.outputHandle);
-        currentNodeId = nextNodeId;
+        // 4. Create flow execution record
+        const { data: execution, error: execError } = await supabase
+          .from('flow_executions')
+          .insert({
+            flow_id: flowId,
+            conversation_id: conversationId,
+            organization_id: flow.organization_id,
+            status: 'running',
+            current_node_id: startNodeId || 'start-1',
+            variables: {},
+          })
+          .select()
+          .single();
 
-        // Add delay between nodes to avoid rate limiting
-        if (currentNodeId && (currentNode.type.startsWith('message-') || currentNode.type === 'content-block')) {
-          await new Promise(resolve => setTimeout(resolve, 500));
+        if (execError) {
+          console.error('[FLOW EXECUTE] Error creating execution:', execError);
+          return;
         }
-      } catch (error) {
-        console.error(`Error executing node ${currentNode.id}:`, error);
-        executionLog.push({
-          nodeId: currentNode.id,
-          type: currentNode.type,
-          result: 'error',
-          timestamp: new Date().toISOString(),
-        });
-        break;
+
+        const nodes = flow.nodes as FlowNode[];
+        const edges = flow.edges as FlowEdge[];
+
+        const context: ExecutionContext = {
+          conversationId,
+          contactPhone: conversation.contacts?.phone || '',
+          contactId: conversation.contact_id,
+          variables: {},
+          organizationId: flow.organization_id,
+          zapiInstanceId: instance.zapi_instance_id!,
+          zapiToken: instance.zapi_token!,
+          isFromOrchestrator: !!isFromOrchestrator,
+        };
+
+        await runFlowExecution(execution.id, flow, nodes, edges, context, supabase);
+      } catch (err) {
+        console.error('[FLOW EXECUTE] Background processing error:', err);
       }
+    })();
+
+    // @ts-ignore
+    if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime.waitUntil) {
+      EdgeRuntime.waitUntil(executionPromise);
     }
-
-    // Update execution as completed
-    await supabase
-      .from('flow_executions')
-      .update({
-        status: 'completed',
-        execution_log: executionLog,
-        variables: context.variables,
-        completed_at: new Date().toISOString(),
-      })
-      .eq('id', execution.id);
-
-    // Increment triggers count
-    await supabase
-      .from('flows')
-      .update({ triggers_count: flow.triggers_count + 1 })
-      .eq('id', flowId);
 
     return new Response(
-      JSON.stringify({ success: true, executionId: execution.id, log: executionLog }),
+      JSON.stringify({
+        success: true,
+        message: 'Flow queued for background execution'
+      }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
+
   } catch (error) {
     console.error('Flow execution error:', error);
     return new Response(
@@ -259,6 +163,94 @@ serve(async (req) => {
     );
   }
 });
+
+async function runFlowExecution(
+  executionId: string,
+  flow: any,
+  nodes: FlowNode[],
+  edges: FlowEdge[],
+  context: ExecutionContext,
+  supabase: SupabaseClientType
+) {
+  let currentNodeId: string | null = (await supabase.from('flow_executions').select('current_node_id').eq('id', executionId).single()).data?.current_node_id || nodes.find(n => n.type === 'start')?.id || null;
+  const executionLog: Array<{ nodeId: string; type: string; result: string; timestamp: string }> = [];
+
+  while (currentNodeId) {
+    const currentNode = nodes.find(n => n.id === currentNodeId);
+    if (!currentNode) break;
+
+    try {
+      const result = await executeNode(currentNode, context, supabase);
+      executionLog.push({
+        nodeId: currentNode.id,
+        type: currentNode.type,
+        result: result.success ? 'success' : 'failed',
+        timestamp: new Date().toISOString(),
+      });
+
+      if (!result.success) {
+        await supabase
+          .from('flow_executions')
+          .update({
+            status: 'failed',
+            error_message: result.error,
+            execution_log: executionLog,
+            completed_at: new Date().toISOString(),
+          })
+          .eq('id', executionId);
+        return;
+      }
+
+      if (result.waitForInput) {
+        await supabase
+          .from('flow_executions')
+          .update({
+            status: 'waiting_input',
+            current_node_id: currentNode.id,
+            variables: context.variables,
+            execution_log: executionLog,
+          })
+          .eq('id', executionId);
+        return;
+      }
+
+      if (result.variables) {
+        Object.assign(context.variables, result.variables);
+      }
+
+      const nextNodeId = findNextNode(currentNode, edges, result.outputHandle);
+      currentNodeId = nextNodeId;
+
+      if (currentNodeId && (currentNode.type.startsWith('message-') || currentNode.type === 'content-block')) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    } catch (error) {
+      console.error(`Error executing node ${currentNode.id}:`, error);
+      executionLog.push({
+        nodeId: currentNode.id,
+        type: currentNode.type,
+        result: 'error',
+        timestamp: new Date().toISOString(),
+      });
+      break;
+    }
+  }
+
+  await supabase
+    .from('flow_executions')
+    .update({
+      status: 'completed',
+      execution_log: executionLog,
+      variables: context.variables,
+      completed_at: new Date().toISOString(),
+    })
+    .eq('id', executionId);
+
+  await supabase
+    .from('flows')
+    .update({ triggers_count: flow.triggers_count + 1 })
+    .eq('id', flow.id);
+}
 
 interface NodeResult {
   success: boolean;
@@ -473,7 +465,7 @@ async function sendTextMessage(content: string, context: ExecutionContext, supab
   let zapiMessageId: string | null = null;
   try {
     const result = await response.clone().json();
-    zapiMessageId = result?.messageId || result?.key?.id || null;
+    zapiMessageId = result?.messageId || result?.id || result?.ID || result?.key?.id || null;
   } catch { /* ignore parse errors */ }
 
   // Save message to database so it appears in the UI immediately
@@ -537,10 +529,10 @@ async function sendMediaItem(
   } else {
     // Parse UAZAPI response to get message ID
     try {
-      const result = await response.json();
-      zapiMessageId = result?.messageId || result?.key?.id || null;
+      const result = await response.clone().json();
+      zapiMessageId = result?.messageId || result?.id || result?.ID || result?.key?.id || null;
     } catch { /* ignore parse errors */ }
-    console.log(`[FLOW EXECUTE] ${mediaType} sent successfully via UAZAPI`);
+    console.log(`[FLOW EXECUTE] ${mediaType} sent successfully via UAZAPI (ID: ${zapiMessageId})`);
   }
 
   // Save media message to database so it appears in the UI immediately
@@ -602,7 +594,7 @@ async function sendButtonsMessage(data: Record<string, unknown>, context: Execut
       let zapiMessageId: string | null = null;
       try {
         const result = await response.clone().json();
-        zapiMessageId = result?.messageId || result?.key?.id || result?.id || null;
+        zapiMessageId = result?.messageId || result?.id || result?.ID || result?.key?.id || null;
       } catch { }
 
       const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
