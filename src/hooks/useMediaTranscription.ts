@@ -83,14 +83,18 @@ export function useMediaTranscriptions(messageIds: string[]) {
   useEffect(() => {
     if (messageIds.length === 0) return;
 
+    // Filter out temp IDs (non-UUID) to avoid Supabase 400 errors
+    const validIds = messageIds.filter(id => !id.startsWith('temp-'));
+
     const fetchAll = async () => {
+      if (validIds.length === 0) return;
       setIsLoading(true);
       try {
         // First, fetch all cached transcriptions
         const { data, error } = await supabase
           .from('media_transcriptions')
           .select('message_id, transcription')
-          .in('message_id', messageIds);
+          .in('message_id', validIds);
 
         if (error) throw error;
 
@@ -101,7 +105,7 @@ export function useMediaTranscriptions(messageIds: string[]) {
         setTranscriptions(map);
 
         // Find messages without transcription and not already pending
-        const missingIds = messageIds.filter(id => !map[id] && !pendingRef.current.has(id));
+        const missingIds = validIds.filter(id => !map[id] && !pendingRef.current.has(id));
         
         // Trigger analysis for missing ones (in background, don't block)
         if (missingIds.length > 0) {
