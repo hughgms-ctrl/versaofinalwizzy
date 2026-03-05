@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { decode as decodeBase64 } from 'https://deno.land/std@0.168.0/encoding/base64.ts';
 
 declare const EdgeRuntime: any;
 
@@ -77,8 +78,8 @@ Deno.serve(async (req) => {
     // UAZAPI uses EventType, not type
     console.log('UAZAPI Full Payload:', JSON.stringify(payload, null, 2));
 
-    const eventType = (payload.EventType || payload.eventType || payload.type || '').toLowerCase();
-    const instanceName = payload.instanceName || payload.userID || '';
+    const eventType = (payload.EventType || payload.eventType || payload.type || payload.event || '').toLowerCase();
+    const instanceName = payload.instanceName || payload.userID || payload.instance || '';
 
     console.log('=== UAZAPI WEBHOOK ===');
     console.log('EventType:', eventType, '| Instance:', instanceName);
@@ -118,7 +119,7 @@ Deno.serve(async (req) => {
     }
 
     // Handle message and media events - catch ALL possible UAZAPI event types for messages/media
-    const messageEventTypes = ['messages', 'message', 'media', 'document', 'audio', 'video', 'image', 'sticker', 'location', 'contact', 'ptt'];
+    const messageEventTypes = ['messages', 'message', 'media', 'document', 'audio', 'video', 'image', 'sticker', 'location', 'contact', 'ptt', 'messages-upsert', 'messages.upsert'];
     if (messageEventTypes.includes(eventType)) {
       return await handleMessage(supabase, payload, instanceName);
     }
@@ -224,9 +225,9 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
   }
 
   // --- Extract fromMe, msgId, pushName ---
-  const fromMe = (eventInfo.IsFromMe ?? eventInfo.isFromMe) || msg.fromMe === true || msg.fromMe === 'true';
-  const msgId = eventInfo.ID || eventInfo.Id || eventInfo.id || msg.msgid || msg.id || msg.key?.id || '';
-  const pushName = eventInfo.PushName || eventInfo.pushName || chat.wa_contactName || chat.name || chat.wa_name || msg.senderName || '';
+  const fromMe = (eventInfo.IsFromMe ?? eventInfo.isFromMe) || msg.fromMe === true || msg.fromMe === 'true' || payload.data?.key?.fromMe === true;
+  const msgId = eventInfo.ID || eventInfo.Id || eventInfo.id || msg.msgid || msg.id || msg.key?.id || payload.data?.key?.id || '';
+  const pushName = eventInfo.PushName || eventInfo.pushName || chat.wa_contactName || chat.name || chat.wa_name || msg.senderName || payload.data?.pushName || '';
 
   // --- Determine message type and content ---
   let textContent: string | null = null;
@@ -438,11 +439,7 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
       const padLen = 4 - (pureBase64.length % 4);
       if (padLen < 4 && padLen > 0) pureBase64 += '='.repeat(padLen);
 
-      const byteString = atob(pureBase64);
-      const binaryData = new Uint8Array(byteString.length);
-      for (let i = 0; i < byteString.length; i++) {
-        binaryData[i] = byteString.charCodeAt(i);
-      }
+      const binaryData = decodeBase64(pureBase64);
 
       // Try upload, create bucket if it doesn't exist
       let uploadResult = await supabase.storage
