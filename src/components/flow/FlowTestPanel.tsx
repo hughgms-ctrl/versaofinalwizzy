@@ -356,8 +356,8 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
             activeFlowData: subFlowData
           }));
 
-          const subNodes = subFlowData.nodes as Node[];
-          const subEdges = subFlowData.edges as Edge[];
+          const subNodes = (subFlowData as any).nodes as Node[];
+          const subEdges = (subFlowData as any).edges as Edge[];
           const startNode = subNodes.find(n => n.type === 'start');
 
           if (startNode) {
