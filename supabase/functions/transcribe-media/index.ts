@@ -9,6 +9,7 @@ interface AIConfigResult {
   endpoint: string;
   apiKey: string;
   model: string;
+  provider: string;
 }
 
 function resolveAIConfig(integrationConfig: any, feature: string): AIConfigResult | null {
@@ -33,12 +34,128 @@ function resolveAIConfig(integrationConfig: any, feature: string): AIConfigResul
   switch (provider) {
     case 'openai':
       if (!integrationConfig.openai_api_key) return null;
-      return { endpoint: OPENAI_ENDPOINT, apiKey: integrationConfig.openai_api_key, model };
+      return { endpoint: OPENAI_ENDPOINT, apiKey: integrationConfig.openai_api_key, model, provider: 'openai' };
     case 'gemini':
       if (!integrationConfig.gemini_api_key) return null;
-      return { endpoint: GEMINI_ENDPOINT, apiKey: integrationConfig.gemini_api_key, model };
+      return { endpoint: GEMINI_ENDPOINT, apiKey: integrationConfig.gemini_api_key, model, provider: 'gemini' };
     default:
       return null;
+  }
+}
+
+async function transcribeAudioWithWhisper(mediaUrl: string, apiKey: string): Promise<string> {
+  try {
+    console.log(`[WHISPER] Fetching audio from: ${mediaUrl}`);
+    const audioResponse = await fetch(mediaUrl);
+    if (!audioResponse.ok) {
+      console.error('[WHISPER] Failed to fetch audio:', audioResponse.status);
+      return '[Áudio não disponível]';
+    }
+
+    const audioBuffer = await audioResponse.arrayBuffer();
+    console.log(`[WHISPER] Audio size: ${audioBuffer.byteLength} bytes`);
+
+    // Determine file extension from URL
+    let ext = 'ogg';
+    if (mediaUrl.includes('.mp3')) ext = 'mp3';
+    else if (mediaUrl.includes('.wav')) ext = 'wav';
+    else if (mediaUrl.includes('.m4a')) ext = 'm4a';
+    else if (mediaUrl.includes('.webm')) ext = 'webm';
+    else if (mediaUrl.includes('.mp4')) ext = 'mp4';
+
+    const mimeMap: Record<string, string> = {
+      'ogg': 'audio/ogg',
+      'mp3': 'audio/mpeg',
+      'wav': 'audio/wav',
+      'm4a': 'audio/mp4',
+      'webm': 'audio/webm',
+      'mp4': 'audio/mp4',
+    };
+
+    // Use OpenAI Whisper API for audio transcription
+    const formData = new FormData();
+    const blob = new Blob([audioBuffer], { type: mimeMap[ext] || 'audio/ogg' });
+    formData.append('file', blob, `audio.${ext}`);
+    formData.append('model', 'whisper-1');
+    formData.append('language', 'pt');
+    formData.append('response_format', 'text');
+
+    console.log(`[WHISPER] Sending to Whisper API, ext=${ext}, size=${audioBuffer.byteLength}`);
+
+    const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error('[WHISPER] Transcription failed:', response.status, errText);
+      return '[Transcrição não disponível]';
+    }
+
+    const transcription = await response.text();
+    console.log('[WHISPER] Result:', transcription.substring(0, 100));
+    return transcription.trim() || '[Áudio vazio]';
+  } catch (error) {
+    console.error('[WHISPER] Error:', error);
+    return '[Erro na transcrição]';
+  }
+}
+
+async function transcribeAudioWithGemini(mediaUrl: string, apiKey: string, model: string): Promise<string> {
+  try {
+    const audioResponse = await fetch(mediaUrl);
+    if (!audioResponse.ok) return '[Áudio não disponível]';
+
+    const audioBuffer = await audioResponse.arrayBuffer();
+    const bytes = new Uint8Array(audioBuffer);
+    let binary = '';
+    const chunkSize = 8192;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const chunk = bytes.slice(i, i + chunkSize);
+      binary += String.fromCharCode(...chunk);
+    }
+    const base64Audio = btoa(binary);
+
+    let mimeType = 'audio/ogg';
+    if (mediaUrl.includes('.mp3')) mimeType = 'audio/mpeg';
+    else if (mediaUrl.includes('.wav')) mimeType = 'audio/wav';
+    else if (mediaUrl.includes('.m4a')) mimeType = 'audio/mp4';
+    else if (mediaUrl.includes('.webm')) mimeType = 'audio/webm';
+
+    // Gemini supports inline audio in chat completions via the OpenAI-compatible endpoint
+    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Transcreva este áudio em português brasileiro. Forneça APENAS a transcrição literal, sem comentários. Se não entender, responda "[Áudio inaudível]".' },
+            { type: 'input_audio', input_audio: { data: base64Audio, format: mimeType.split('/')[1]?.split(';')[0] || 'ogg' } },
+          ],
+        }],
+      }),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error('Gemini audio transcription failed:', response.status, errText);
+      return '[Transcrição não disponível]';
+    }
+
+    const data = await response.json();
+    return data.choices?.[0]?.message?.content || '[Transcrição não disponível]';
+  } catch (error) {
+    console.error('Gemini audio error:', error);
+    return '[Erro na transcrição]';
   }
 }
 
@@ -48,87 +165,16 @@ async function analyzeMedia(
   aiConfig: AIConfigResult
 ): Promise<string> {
   try {
-    const isLovableGateway = aiConfig.endpoint.includes('ai.gateway.lovable.dev');
-
+    // Audio: use dedicated transcription APIs
     if (mediaType === 'audio') {
-      const audioResponse = await fetch(mediaUrl);
-      if (!audioResponse.ok) {
-        console.error('Failed to fetch audio:', audioResponse.status);
-        return '[Áudio não disponível]';
-      }
-
-      const audioBuffer = await audioResponse.arrayBuffer();
-      const bytes = new Uint8Array(audioBuffer);
-      let binary = '';
-      const chunkSize = 8192;
-      for (let i = 0; i < bytes.length; i += chunkSize) {
-        const chunk = bytes.slice(i, i + chunkSize);
-        binary += String.fromCharCode(...chunk);
-      }
-      const base64Audio = btoa(binary);
-
-      let mimeType = 'audio/ogg';
-      if (mediaUrl.includes('.mp3')) mimeType = 'audio/mpeg';
-      else if (mediaUrl.includes('.wav')) mimeType = 'audio/wav';
-      else if (mediaUrl.includes('.m4a')) mimeType = 'audio/mp4';
-      else if (mediaUrl.includes('.webm')) mimeType = 'audio/webm';
-
-      const dataUrl = `data:${mimeType};base64,${base64Audio}`;
-      console.log(`Transcribing audio: ${audioBuffer.byteLength} bytes, mimeType: ${mimeType}`);
-
-      let requestBody: any;
-      if (isLovableGateway) {
-        let format = 'ogg';
-        if (mimeType.includes('mpeg')) format = 'mp3';
-        else if (mimeType.includes('wav')) format = 'wav';
-        else if (mimeType.includes('mp4')) format = 'm4a';
-        else if (mimeType.includes('webm')) format = 'webm';
-
-        requestBody = {
-          model: aiConfig.model,
-          messages: [{
-            role: 'user',
-            content: [
-              { type: 'text', text: 'Transcreva este áudio de mensagem de voz em português brasileiro. Forneça APENAS a transcrição literal do que foi dito, sem comentários, marcações ou formatação. Se não conseguir entender, responda "[Áudio inaudível]".' },
-              { type: 'input_audio', input_audio: { data: base64Audio, format } },
-            ],
-          }],
-        };
+      if (aiConfig.provider === 'openai') {
+        return await transcribeAudioWithWhisper(mediaUrl, aiConfig.apiKey);
       } else {
-        requestBody = {
-          model: aiConfig.model,
-          messages: [{
-            role: 'user',
-            content: [
-              { type: 'text', text: 'Transcreva este áudio de mensagem de voz em português brasileiro. Forneça APENAS a transcrição literal do que foi dito, sem comentários, marcações ou formatação. Se não conseguir entender, responda "[Áudio inaudível]".' },
-              { type: 'image_url', image_url: { url: dataUrl } },
-            ],
-          }],
-        };
+        return await transcribeAudioWithGemini(mediaUrl, aiConfig.apiKey, aiConfig.model);
       }
-
-      const response = await fetch(aiConfig.endpoint, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${aiConfig.apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestBody),
-      });
-
-      if (!response.ok) {
-        const errText = await response.text();
-        console.error('Audio transcription failed:', response.status, errText);
-        return '[Transcrição não disponível]';
-      }
-
-      const data = await response.json();
-      const transcription = data.choices?.[0]?.message?.content || '[Transcrição não disponível]';
-      console.log('Transcription result:', transcription.substring(0, 100));
-      return transcription;
     }
 
-    // For images
+    // For images - use vision API
     if (mediaType === 'image') {
       const response = await fetch(aiConfig.endpoint, {
         method: 'POST',
@@ -141,7 +187,7 @@ async function analyzeMedia(
           messages: [{
             role: 'user',
             content: [
-              { type: 'text', text: 'Descreva esta imagem de forma MUITO BREVE (máximo 15 palavras) em português. Foque apenas no elemento principal. Se for texto/documento, cite o conteúdo principal.' },
+              { type: 'text', text: 'Descreva esta imagem de forma MUITO BREVE (máximo 15 palavras) em português. Foque apenas no elemento principal.' },
               { type: 'image_url', image_url: { url: mediaUrl } },
             ],
           }],
@@ -170,18 +216,14 @@ async function analyzeMedia(
           messages: [{
             role: 'user',
             content: [
-              { type: 'text', text: 'Este é um link de vídeo. Analise o vídeo e forneça uma descrição MUITO BREVE (máximo 20 palavras) do conteúdo visual e transcrição do áudio se houver. Responda em português.' },
+              { type: 'text', text: 'Descreva este vídeo brevemente (máx 20 palavras) em português.' },
               { type: 'image_url', image_url: { url: mediaUrl } },
             ],
           }],
         }),
       });
 
-      if (!response.ok) {
-        console.error('Video analysis failed:', response.status);
-        return '[Vídeo não analisado]';
-      }
-
+      if (!response.ok) return '[Vídeo não analisado]';
       const data = await response.json();
       return data.choices?.[0]?.message?.content || '[Vídeo não analisado]';
     }
@@ -201,26 +243,21 @@ Deno.serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Verify auth - support both user auth (UI) and service role (webhook auto-transcription)
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
     const token = authHeader.replace(/^Bearer\s+/i, '');
-
     const { messageId, mediaUrl, mediaType, force, organizationId: bodyOrgId } = await req.json();
 
     if (!messageId || !mediaUrl || !mediaType) {
       return new Response(JSON.stringify({ error: 'messageId, mediaUrl, and mediaType are required' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
@@ -234,29 +271,22 @@ Deno.serve(async (req) => {
 
       if (cached?.transcription) {
         console.log(`Cache hit for message ${messageId}`);
-        return new Response(JSON.stringify({
-          transcription: cached.transcription,
-          cached: true
-        }), {
+        return new Response(JSON.stringify({ transcription: cached.transcription, cached: true }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
     } else {
       console.log(`Force transcription for message ${messageId}`);
-      // Delete existing cache entry
       await supabase.from('media_transcriptions').delete().eq('message_id', messageId);
     }
 
-    // Resolve organization ID - either from body (webhook) or from user auth (UI)
+    // Resolve organization ID
     let resolvedOrgId = bodyOrgId || null;
-
     if (!resolvedOrgId) {
-      // Try user auth (UI context)
       const { data: { user }, error: authError } = await supabase.auth.getUser(token);
       if (authError || !user) {
         return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-          status: 401,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
       const { data: profile } = await supabase
@@ -279,12 +309,12 @@ Deno.serve(async (req) => {
 
     const aiConfig = resolveAIConfig(integrationConfig, 'transcription');
     if (!aiConfig) {
-      return new Response(JSON.stringify({ error: 'Nenhum provedor de IA configurado. Acesse Configurações > Integrações e adicione sua chave de API.' }), {
+      return new Response(JSON.stringify({ error: 'Nenhum provedor de IA configurado.' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
-    console.log(`Cache miss for message ${messageId}, analyzing ${mediaType} with provider=${integrationConfig?.transcription_provider || integrationConfig?.ai_provider || 'configured'}`);
 
+    console.log(`Analyzing ${mediaType} for message ${messageId} with ${aiConfig.provider}`);
     const transcription = await analyzeMedia(mediaUrl, mediaType, aiConfig);
 
     // Save to cache
@@ -295,18 +325,14 @@ Deno.serve(async (req) => {
       transcription: transcription,
     }, { onConflict: 'message_id' });
 
-    return new Response(JSON.stringify({
-      transcription,
-      cached: false
-    }), {
+    return new Response(JSON.stringify({ transcription, cached: false }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 
   } catch (error) {
     console.error('Transcribe media error:', error);
     return new Response(JSON.stringify({ error: 'Internal server error' }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
 });
