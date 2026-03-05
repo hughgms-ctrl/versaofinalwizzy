@@ -369,8 +369,23 @@ async function executeContentBlock(data: Record<string, unknown>, context: Execu
     return { success: true };
   }
 
-  for (const item of items) {
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
     try {
+      // Look ahead for presence type
+      let nextPresenceType: 'typing' | 'recording' | null = null;
+
+      // Find the next non-delay item to determine presence type
+      for (let j = i; j < items.length; j++) {
+        if (items[j].type === 'audio') {
+          nextPresenceType = 'recording';
+          break;
+        } else if (['text', 'image', 'video', 'document'].includes(items[j].type)) {
+          nextPresenceType = 'typing';
+          break;
+        }
+      }
+
       switch (item.type) {
         case 'text':
           if (item.content) {
@@ -384,7 +399,7 @@ async function executeContentBlock(data: Record<string, unknown>, context: Execu
         case 'image':
           if (item.mediaUrl) {
             await sendPresence('typing', context);
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            await new Promise(resolve => setTimeout(resolve, 1500));
             await sendMediaItem('image', item.mediaUrl, item.caption, context, supabase);
           }
           break;
@@ -392,7 +407,7 @@ async function executeContentBlock(data: Record<string, unknown>, context: Execu
         case 'video':
           if (item.mediaUrl) {
             await sendPresence('typing', context);
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            await new Promise(resolve => setTimeout(resolve, 1500));
             await sendMediaItem('video', item.mediaUrl, item.caption, context, supabase);
           }
           break;
@@ -409,28 +424,52 @@ async function executeContentBlock(data: Record<string, unknown>, context: Execu
         case 'document':
           if (item.mediaUrl) {
             await sendPresence('typing', context);
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            await new Promise(resolve => setTimeout(resolve, 1500));
             await sendMediaItem('document', item.mediaUrl, item.caption, context, supabase);
           }
           break;
 
         case 'delay':
-          const delayMs = (item.delaySeconds || 3) * 1000;
-          await new Promise(resolve => setTimeout(resolve, Math.min(delayMs, 30000)));
+          const delaySeconds = item.delaySeconds || 3;
+          console.log(`[FLOW EXECUTE] Delay of ${delaySeconds}s with presence: ${nextPresenceType || 'none'}`);
+          if (nextPresenceType) {
+            await waitForDelayWithPresence(delaySeconds, nextPresenceType, context);
+          } else {
+            await new Promise(resolve => setTimeout(resolve, Math.min(delaySeconds * 1000, 30000)));
+          }
           break;
       }
 
       // Small delay between items to avoid rate limiting
-      if (item.type !== 'delay') {
-        await new Promise(resolve => setTimeout(resolve, 500));
+      if (item.type !== 'delay' && i < items.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 800));
       }
     } catch (error) {
-      console.error(`Error executing content item ${item.id}:`, error);
+      console.error(`[FLOW EXECUTE] Error executing content item ${item.id}:`, error);
       return { success: false, error: `Failed to execute content item: ${error}` };
     }
   }
 
   return { success: true };
+}
+
+// Helper to maintain presence during a delay
+async function waitForDelayWithPresence(seconds: number, type: 'typing' | 'recording', context: ExecutionContext) {
+  const totalMs = Math.min(seconds * 1000, 45000); // Cap at 45s
+  const intervalMs = 8000; // Refresh every 8s
+  let elapsedMs = 0;
+
+  while (elapsedMs < totalMs) {
+    const remainingMs = totalMs - elapsedMs;
+    const currentWait = Math.min(remainingMs, intervalMs);
+
+    // Send presence
+    await sendPresence(type, context, currentWait);
+
+    // Wait
+    await new Promise(resolve => setTimeout(resolve, currentWait));
+    elapsedMs += currentWait;
+  }
 }
 
 async function sendTextMessage(content: string, context: ExecutionContext, supabase: SupabaseClientType): Promise<void> {
@@ -713,44 +752,48 @@ async function executeTagAction(
   supabase: SupabaseClientType
 ): Promise<NodeResult> {
   try {
-    const tagId = String(data.tagId || '');
+    let tagId = String(data.tagId || '');
+    const tagName = String(data.tagName || '');
     const action = String(data.action) || 'add';
 
+    if (!tagId && !tagName) {
+      console.log('[FLOW EXECUTE] Tag action skipped: no tagId or tagName');
+      return { success: true };
+    }
+
+    // Resolve tagId by name if ID is missing (robust fallback)
+    if (!tagId && tagName) {
+      console.log(`[FLOW EXECUTE] Resolving tag by name: ${tagName}`);
+      const { data: tag } = await supabase
+        .from('tags')
+        .select('id')
+        .eq('organization_id', context.organizationId)
+        .eq('name', tagName)
+        .maybeSingle();
+      if (tag) tagId = tag.id;
+    }
+
     if (!tagId) {
-      console.log('[FLOW EXECUTE] Tag action skipped: no tagId');
+      console.warn(`[FLOW EXECUTE] Could not find tag: ${tagName || tagId}`);
       return { success: true };
     }
 
     console.log(`[FLOW EXECUTE] Tag action: ${action} tagId=${tagId} for contact=${context.contactId}`);
 
     if (action === 'add') {
-      // First check if tag already exists
-      const { data: existing } = await supabase
+      const { error } = await supabase
         .from('contact_tags')
-        .select('id')
-        .eq('contact_id', context.contactId)
-        .eq('tag_id', tagId)
-        .maybeSingle();
+        .upsert({
+          contact_id: context.contactId,
+          tag_id: tagId,
+          added_by_type: 'flow',
+        }, { onConflict: 'contact_id,tag_id' });
 
-      if (!existing) {
-        const { error } = await supabase
-          .from('contact_tags')
-          .insert({
-            contact_id: context.contactId,
-            tag_id: tagId,
-            added_by_type: 'flow',
-          });
-        if (error) {
-          // Ignore duplicate key errors (race condition)
-          if (error.code !== '23505') {
-            console.error('[FLOW EXECUTE] Tag insert error:', error);
-            return { success: false, error: `Tag add failed: ${error.message}` };
-          }
-        }
-        console.log(`[FLOW EXECUTE] Tag ${tagId} added to contact ${context.contactId}`);
-      } else {
-        console.log(`[FLOW EXECUTE] Tag ${tagId} already exists on contact ${context.contactId}`);
+      if (error) {
+        console.error('[FLOW EXECUTE] Tag upsert error:', error);
+        return { success: false, error: `Tag add failed: ${error.message}` };
       }
+      console.log(`[FLOW EXECUTE] Tag ${tagId} (${tagName}) added/verified for contact ${context.contactId}`);
     } else if (action === 'remove') {
       const { error } = await supabase
         .from('contact_tags')
@@ -864,7 +907,8 @@ async function executeWebhook(data: Record<string, unknown>, context: ExecutionC
 // Send presence to WhatsApp (typing or recording)
 async function sendPresence(
   presenceType: 'typing' | 'recording',
-  context: ExecutionContext
+  context: ExecutionContext,
+  durationMs: number = 5000
 ): Promise<void> {
   try {
     const uazapiBaseUrl = Deno.env.get('UAZAPI_BASE_URL')!;
@@ -873,9 +917,11 @@ async function sendPresence(
 
     // Try multiple UAZAPI presence endpoints (varies by server version)
     const presenceEndpoints = [
-      { path: '/chat/presence', body: { phone: normalizedPhone, state: presenceState } },
-      { path: '/send/presence', body: { phone: normalizedPhone, presence: presenceState, duration: 5000 } },
-      { path: '/send/typing', body: { number: normalizedPhone, duration: 5000 } },
+      { path: '/chat/presence', body: { phone: normalizedPhone, state: presenceState, duration: Math.floor(durationMs / 1000) } },
+      { path: '/send/presence', body: { phone: normalizedPhone, presence: presenceState, duration: durationMs } },
+      { path: '/send/typing', body: { number: normalizedPhone, duration: durationMs } },
+      // V2 Webhook style
+      { path: '/message/presence', body: { number: normalizedPhone, presence: presenceState, delay: durationMs } },
     ];
 
     for (const ep of presenceEndpoints) {
@@ -890,7 +936,7 @@ async function sendPresence(
         });
         if (response.ok) return; // Success, stop trying
         if (response.status === 404 || response.status === 405) continue; // Try next
-        return; // Other error, stop trying (auth issue etc.)
+        return; // Other error, stop trying
       } catch {
         continue; // Network error, try next
       }
