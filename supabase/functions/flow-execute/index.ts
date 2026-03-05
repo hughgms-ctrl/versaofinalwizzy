@@ -1,4 +1,3 @@
-import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
@@ -142,9 +141,12 @@ Deno.serve(async (req) => {
       }
     })();
 
-    // @ts-ignore
-    if (typeof EdgeRuntime !== 'undefined' && EdgeRuntime.waitUntil) {
-      EdgeRuntime.waitUntil(executionPromise);
+    // @ts-ignore: EdgeRuntime may not exist in all environments
+    if (typeof globalThis.EdgeRuntime !== 'undefined' && globalThis.EdgeRuntime.waitUntil) {
+      // @ts-ignore
+      globalThis.EdgeRuntime.waitUntil(executionPromise);
+    } else {
+      executionPromise.catch(err => console.error('[FLOW EXECUTE] Background error:', err));
     }
 
     return new Response(
@@ -715,32 +717,55 @@ async function executeTagAction(
     const action = String(data.action) || 'add';
 
     if (!tagId) {
+      console.log('[FLOW EXECUTE] Tag action skipped: no tagId');
       return { success: true };
     }
 
+    console.log(`[FLOW EXECUTE] Tag action: ${action} tagId=${tagId} for contact=${context.contactId}`);
+
     if (action === 'add') {
-      // Add tag to contact
-      await supabase
+      // First check if tag already exists
+      const { data: existing } = await supabase
         .from('contact_tags')
-        .upsert({
-          contact_id: context.contactId,
-          tag_id: tagId,
-          added_by_type: 'flow',
-        }, {
-          onConflict: 'contact_id,tag_id',
-          ignoreDuplicates: true,
-        });
+        .select('id')
+        .eq('contact_id', context.contactId)
+        .eq('tag_id', tagId)
+        .maybeSingle();
+
+      if (!existing) {
+        const { error } = await supabase
+          .from('contact_tags')
+          .insert({
+            contact_id: context.contactId,
+            tag_id: tagId,
+            added_by_type: 'flow',
+          });
+        if (error) {
+          // Ignore duplicate key errors (race condition)
+          if (error.code !== '23505') {
+            console.error('[FLOW EXECUTE] Tag insert error:', error);
+            return { success: false, error: `Tag add failed: ${error.message}` };
+          }
+        }
+        console.log(`[FLOW EXECUTE] Tag ${tagId} added to contact ${context.contactId}`);
+      } else {
+        console.log(`[FLOW EXECUTE] Tag ${tagId} already exists on contact ${context.contactId}`);
+      }
     } else if (action === 'remove') {
-      // Remove tag from contact
-      await supabase
+      const { error } = await supabase
         .from('contact_tags')
         .delete()
         .eq('contact_id', context.contactId)
         .eq('tag_id', tagId);
+      if (error) {
+        console.error('[FLOW EXECUTE] Tag remove error:', error);
+      }
+      console.log(`[FLOW EXECUTE] Tag ${tagId} removed from contact ${context.contactId}`);
     }
 
     return { success: true };
   } catch (error) {
+    console.error('[FLOW EXECUTE] Tag action exception:', error);
     return { success: false, error: String(error) };
   }
 }

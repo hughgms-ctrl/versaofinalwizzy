@@ -47,8 +47,8 @@ Deno.serve(async (req) => {
         const { data: weird } = await supabase.from('contacts').select('id, phone, name').or('phone.ilike.5580%,phone.ilike.5540%,phone.ilike.80%,phone.ilike.40%').limit(20);
         audit.weird_numbers = weird || [];
 
-    } catch (e) {
-        audit.error = e.message;
+    } catch (e: unknown) {
+        audit.error = e instanceof Error ? e.message : String(e);
     }
 
     return new Response(JSON.stringify(audit), { headers: { 'Content-Type': 'application/json' } });

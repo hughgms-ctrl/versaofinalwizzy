@@ -376,8 +376,8 @@ const FlowsPage = () => {
       </div>
 
       {/* Workspace Tag (for flows) */}
-      {flow.workspace_id && (() => {
-        const ws = availableWorkspaces.find(w => w.id === flow.workspace_id);
+      {(flow as any).workspace_id && (() => {
+        const ws = availableWorkspaces.find(w => w.id === (flow as any).workspace_id);
         if (!ws) return null;
         return (
           <div

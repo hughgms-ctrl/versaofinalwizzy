@@ -107,19 +107,19 @@ Deno.serve(async (req) => {
       const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
       const baseUrl = Deno.env.get('SUPABASE_URL')!;
 
-      // Use internal function call or fetch
       const syncPromise = fetch(`${baseUrl}/functions/v1/zapi-sync-chats`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
-        body: JSON.stringify({ instanceId: instanceName }), // sync-chats now handles instanceName or DB ID
+        body: JSON.stringify({ instanceId: instanceName }),
       });
       runBackground(syncPromise);
 
       return respond({ success: true, message: 'connection_handled' });
     }
 
-    // Handle message and media events
-    if (eventType === 'messages' || eventType === 'message' || eventType === 'media') {
+    // Handle message and media events - catch ALL possible UAZAPI event types for messages/media
+    const messageEventTypes = ['messages', 'message', 'media', 'document', 'audio', 'video', 'image', 'sticker', 'location', 'contact', 'ptt'];
+    if (messageEventTypes.includes(eventType)) {
       return await handleMessage(supabase, payload, instanceName);
     }
 
@@ -141,7 +141,7 @@ Deno.serve(async (req) => {
     // Handle chat updates (UAZAPI sends these too) - extract message from it
     if (eventType === 'chats' || eventType === 'chat') {
       // Chat update events sometimes contain messages
-      if (payload.message?.msgid) {
+      if (payload.message?.msgid || payload.event?.Info?.ID) {
         return await handleMessage(supabase, payload, instanceName);
       }
       return respond({ success: true, ignored: true, reason: 'chat_update' });
@@ -572,53 +572,47 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
   }
 
   // Trigger AI agent or Campaigns if needed
-  if (!fromMe && textContent) {
-    console.log(`Checking triggers for message: "${textContent}" in org: ${organizationId}`);
+  if (!fromMe) {
+    const triggerText = textContent || '';
+    console.log(`Checking triggers for message: "${triggerText}" type=${messageType} in org: ${organizationId}`);
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
-    // 1. Check for Campaign Triggers (highest priority)
-    const campaignTrigger = await checkCampaignTriggers(supabase, organizationId, textContent);
+    // 1. Check for Campaign Triggers (highest priority) - only for text messages with content
+    if (triggerText) {
+      const campaignTrigger = await checkCampaignTriggers(supabase, organizationId, triggerText);
 
-    if (campaignTrigger) {
-      console.log('Campaign trigger matched:', JSON.stringify(campaignTrigger));
-      const { flowId: campaignFlowId, campaignId } = campaignTrigger;
-      console.log(`[CAMPAIGN TRIGGERED] Starting flow ${campaignFlowId} for conversation ${conversation.id}`);
-      // Mark as IA mode to prevent human collision if needed, or leave as is. We'll set to ia.
-      await supabase.from('conversations').update({ service_mode: 'ia' }).eq('id', conversation.id);
+      if (campaignTrigger) {
+        console.log('Campaign trigger matched:', JSON.stringify(campaignTrigger));
+        const { flowId: campaignFlowId, campaignId } = campaignTrigger;
+        console.log(`[CAMPAIGN TRIGGERED] Starting flow ${campaignFlowId} for conversation ${conversation.id}`);
+        // Mark as IA mode
+        await supabase.from('conversations').update({ service_mode: 'ia' }).eq('id', conversation.id);
 
-      try {
-        const { data: c } = await supabase.from('campaigns').select('trigger_count').eq('id', campaignId).single();
-        if (c) {
-          await supabase.from('campaigns').update({ trigger_count: (c.trigger_count || 0) + 1 }).eq('id', campaignId);
-        }
-      } catch (err) {
-        console.error('[WEBHOOK] Failed to increment trigger_count:', err);
+        console.log(`[WEBHOOK] Invoking flow-execute for campaign ${campaignId}, flow ${campaignFlowId}`);
+        // Call flow execution engine
+        const flowExecPromise = fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/flow-execute`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
+          body: JSON.stringify({ flowId: campaignFlowId, conversationId: conversation.id }),
+        });
+        runBackground(flowExecPromise);
+
+        return respond({ success: true, messageId: savedMessage.id, triggeredCampaign: true });
       }
-
-      console.log(`[WEBHOOK] Invoking flow-execute for campaign ${campaignId}, flow ${campaignFlowId}`);
-      // Call flow execution engine
-      const flowExecPromise = fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/flow-execute`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
-        body: JSON.stringify({ flowId: campaignFlowId, conversationId: conversation.id }),
-      });
-      runBackground(flowExecPromise);
-
-      return respond({ success: true, messageId: savedMessage.id, triggeredCampaign: true });
     }
 
     // 2. Check for Master Prompt / AI routing
     let shouldTrigger = conversation.service_mode === 'ia';
 
-    if (!shouldTrigger) {
-      shouldTrigger = await checkMasterPromptTriggers(supabase, organizationId, contact.id, textContent, conversation.id);
+    if (!shouldTrigger && triggerText) {
+      shouldTrigger = await checkMasterPromptTriggers(supabase, organizationId, contact.id, triggerText, conversation.id);
     }
 
-    if (shouldTrigger) {
+    if (shouldTrigger && triggerText) {
       const agentPromise = fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/agent-orchestrator`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
-        body: JSON.stringify({ conversationId: conversation.id, messageContent: textContent }),
+        body: JSON.stringify({ conversationId: conversation.id, messageContent: triggerText }),
       });
       runBackground(agentPromise);
     }
