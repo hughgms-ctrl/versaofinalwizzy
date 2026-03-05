@@ -381,7 +381,8 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
 
       console.log(`[WEBHOOK] Uploading media: path=${storagePath}, mimeType=${mimeType}, base64Length=${base64Data.length}`);
 
-      const binaryData = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+      const cleanBase64 = base64Data.includes('base64,') ? base64Data.split('base64,')[1] : base64Data;
+      const binaryData = Uint8Array.from(atob(cleanBase64), c => c.charCodeAt(0));
 
       // Try upload, create bucket if it doesn't exist
       let uploadResult = await supabase.storage
