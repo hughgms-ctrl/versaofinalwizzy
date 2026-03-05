@@ -10,14 +10,10 @@ import {
   ArrowLeft,
   Loader2,
   Settings2,
-  Zap,
   Hand,
-  MessageSquareText,
-  UserPlus,
-  Webhook,
-  Sparkles,
   Map as MapIcon,
-  MapPinned
+  MapPinned,
+  Wand2
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
@@ -32,7 +28,6 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { TriggerType } from './TriggerConfigDialog';
 import { cn } from '@/lib/utils';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import {
@@ -42,13 +37,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-
-const triggerLabels: Record<TriggerType, { label: string; icon: React.ComponentType<{ className?: string }> }> = {
-  manual: { label: 'Manual', icon: Hand },
-  keyword: { label: 'Palavra-chave', icon: MessageSquareText },
-  new_conversation: { label: 'Nova Conversa', icon: UserPlus },
-  webhook: { label: 'Webhook', icon: Webhook },
-};
 
 interface FlowToolbarProps {
   flowName: string;
@@ -66,16 +54,13 @@ interface FlowToolbarProps {
   canRedo?: boolean;
   onUndo?: () => void;
   onRedo?: () => void;
-  triggerType?: TriggerType;
-  onOpenTriggerConfig?: () => void;
-  workspaceId?: string | null;
-  onWorkspaceChange?: (id: string | null) => void;
-  masterPrompt?: string;
-  onMasterPromptChange?: (prompt: string) => void;
-  isMasterActive?: boolean;
-  onMasterActiveChange?: (active: boolean) => void;
   showMinimap?: boolean;
   onMinimapToggle?: () => void;
+  masterPrompt?: string;
+  onMasterPromptChange?: (val: string) => void;
+  isMasterActive?: boolean;
+  onMasterActiveChange?: (val: boolean) => void;
+  onOpenMasterPrompt?: () => void;
 }
 
 export function FlowToolbar({
@@ -94,20 +79,16 @@ export function FlowToolbar({
   canRedo,
   onUndo,
   onRedo,
-  triggerType = 'manual',
-  onOpenTriggerConfig,
-  workspaceId,
-  onWorkspaceChange,
+  showMinimap = false,
+  onMinimapToggle,
   masterPrompt = '',
   onMasterPromptChange,
   isMasterActive = false,
   onMasterActiveChange,
-  showMinimap = false,
-  onMinimapToggle,
+  onOpenMasterPrompt,
 }: FlowToolbarProps) {
   const navigate = useNavigate();
   const { availableWorkspaces, isAdmin } = useWorkspaceContext();
-  const TriggerIcon = triggerLabels[triggerType]?.icon || Hand;
 
   return (
     <div className="flex items-center gap-2">
@@ -203,103 +184,41 @@ export function FlowToolbar({
             </p>
           </div>
           <DropdownMenuSeparator />
-          <div className="p-3 bg-muted/30">
-            <div className="flex items-center justify-between mb-2">
-              <Label className="text-sm font-semibold flex items-center gap-2">
-                <Sparkles className="h-4 w-4 text-indigo-500" />
-                Agente Master (Global)
+          <div className="p-2">
+            <Label className="text-sm mb-1.5 block">Informações</Label>
+            <p className="text-[10px] text-muted-foreground italic px-2">
+              Utilize as Campanhas para definir os gatilhos de entrada deste fluxo.
+            </p>
+          </div>
+          <DropdownMenuSeparator />
+          <div className="p-2 space-y-3">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="master-toggle" className="text-sm font-medium text-indigo-600 dark:text-indigo-400">
+                Prompt Mestre
               </Label>
               <Switch
+                id="master-toggle"
                 checked={isMasterActive}
                 onCheckedChange={onMasterActiveChange}
               />
             </div>
-            <div className="space-y-2">
-              <div className="relative">
-                <textarea
-                  className="w-full h-32 text-xs p-2 rounded border border-input bg-background resize-none focus:outline-none focus:ring-1 focus:ring-primary"
-                  placeholder="Defina o prompt mestre para este fluxo..."
-                  value={masterPrompt}
-                  onChange={(e) => onMasterPromptChange?.(e.target.value)}
-                />
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="absolute bottom-2 right-2 h-7 w-7 text-indigo-500 hover:text-indigo-600 hover:bg-indigo-50"
-                  onClick={() => {
-                    const template = "Você é o Agente Master deste fluxo de atendimento. \n\nSeu objetivo principal é: [OBJETIVO GLOBAL]. \n\nRegras Gerais: \n1. [REGRA 1]\n2. [REGRA 2]\n\nSempre que necessário, delegue tarefas para os agentes especializados disponíveis no fluxo.";
-                    onMasterPromptChange?.(template);
-                    toast.success("Template de prompt mestre gerado!");
-                  }}
-                  title="Ajudar com IA"
-                >
-                  <Sparkles className="h-4 w-4" />
-                </Button>
-              </div>
-              <p className="text-[10px] text-muted-foreground italic">
-                Este prompt servirá como base para todos os agentes especializados acionados neste fluxo.
-              </p>
-            </div>
-          </div>
-          <DropdownMenuSeparator />
-          <div className="p-2">
-            <Label className="text-sm mb-1.5 block">Workspace</Label>
-            {isAdmin ? (
-              <Select
-                value={workspaceId || 'all'}
-                onValueChange={(val) => onWorkspaceChange?.(val === 'all' ? null : val)}
+            <p className="text-[10px] text-muted-foreground leading-tight">
+              Ativa regras globais de personalidade e comportamento para todos os agentes.
+            </p>
+            {isMasterActive && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full h-8 text-xs gap-1.5 border-indigo-200 bg-indigo-50/30 hover:bg-indigo-50 text-indigo-700 dark:border-indigo-900 dark:bg-indigo-900/20 dark:text-indigo-400"
+                onClick={onOpenMasterPrompt}
               >
-                <SelectTrigger className="h-8 text-xs">
-                  <SelectValue placeholder="Selecione" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos os Workspaces</SelectItem>
-                  {availableWorkspaces.map(ws => (
-                    <SelectItem key={ws.id} value={ws.id}>
-                      <div className="flex items-center gap-2">
-                        <div
-                          className="h-2 w-2 rounded-full shrink-0"
-                          style={{ backgroundColor: ws.color }}
-                        />
-                        {ws.name}
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : (
-              <div className="flex items-center gap-2 px-2 py-1.5 rounded border border-input bg-muted/50 text-xs">
-                {(() => {
-                  const ws = availableWorkspaces.find(w => w.id === workspaceId);
-                  if (ws) {
-                    return (
-                      <>
-                        <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: ws.color }} />
-                        {ws.name}
-                      </>
-                    );
-                  }
-                  return <span className="text-muted-foreground">Todos os Workspaces</span>;
-                })()}
-              </div>
+                <Wand2 className="h-3.5 w-3.5" />
+                Editar Prompt Mestre
+              </Button>
             )}
           </div>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={onOpenTriggerConfig}>
-            <Zap className="h-4 w-4 mr-2" />
-            Configurar Gatilho
-          </DropdownMenuItem>
-          <DropdownMenuItem>
-            Variáveis
-          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-
-      {/* Trigger Badge */}
-      <Badge variant="outline" className="gap-1.5 px-2 py-1">
-        <TriggerIcon className="h-3 w-3" />
-        <span className="text-xs">{triggerLabels[triggerType]?.label}</span>
-      </Badge>
 
       <Button
         size="sm"

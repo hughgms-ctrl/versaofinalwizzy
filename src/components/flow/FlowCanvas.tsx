@@ -23,8 +23,8 @@ import '@xyflow/react/dist/style.css';
 import { FlowSidebar } from './FlowSidebar';
 import { FlowToolbar } from './FlowToolbar';
 import { NodePropertiesPanel } from './NodePropertiesPanel';
-import { TriggerConfigDialog, TriggerType } from './TriggerConfigDialog';
 import { FlowTestPanel } from './FlowTestPanel';
+import { MasterPromptDialog } from './MasterPromptDialog';
 import { StartNode } from './nodes/StartNode';
 import { ContentBlockNode } from './nodes/ContentBlockNode';
 import { ButtonsMessageNode, ListMessageNode } from './nodes/MessageNodes';
@@ -92,10 +92,7 @@ function FlowCanvasInner() {
   const [isInitialized, setIsInitialized] = useState(false);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [selectedEdge, setSelectedEdge] = useState<string | null>(null);
-  const [showTriggerConfig, setShowTriggerConfig] = useState(false);
   const [showTestPanel, setShowTestPanel] = useState(false);
-  const [triggerType, setTriggerType] = useState<TriggerType>('manual');
-  const [triggerConfig, setTriggerConfig] = useState<Record<string, unknown>>({});
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [flowWorkspaceId, setFlowWorkspaceId] = useState<string | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -103,6 +100,7 @@ function FlowCanvasInner() {
   const [masterPrompt, setMasterPrompt] = useState('');
   const [isMasterActive, setIsMasterActive] = useState(false);
   const [showMinimap, setShowMinimap] = useState(false);
+  const [showMasterPromptDialog, setShowMasterPromptDialog] = useState(false);
 
   const { zoomIn, zoomOut, setViewport, getViewport, screenToFlowPosition } = useReactFlow();
   const { data: flow, isLoading } = useFlow(flowId);
@@ -114,10 +112,7 @@ function FlowCanvasInner() {
     if (flow && !isInitialized) {
       setFlowName(flow.name);
       setIsActive(flow.is_active);
-      setTriggerType((flow.trigger_type as TriggerType) || 'manual');
-      setTriggerConfig(flow.trigger_config || {});
       setFlowWorkspaceId(flow.workspace_id || null);
-      setIsActive(flow.is_active);
       setMasterPrompt(flow.master_prompt || '');
       setIsMasterActive(flow.is_master_active || false);
 
@@ -230,8 +225,8 @@ function FlowCanvasInner() {
               nodes,
               edges,
               is_active: isActive,
-              trigger_type: triggerType,
-              trigger_config: triggerConfig,
+              master_prompt: masterPrompt,
+              is_master_active: isMasterActive,
             }, {
               onSuccess: () => {
                 const currentState = JSON.stringify({ nodes, edges, name: flowName, masterPrompt, isMasterActive });
@@ -251,9 +246,6 @@ function FlowCanvasInner() {
       nodes,
       edges,
       is_active: isActive,
-      trigger_type: triggerType,
-      trigger_config: triggerConfig,
-      workspace_id: flowWorkspaceId,
       master_prompt: masterPrompt,
       is_master_active: isMasterActive,
     }, {
@@ -263,7 +255,7 @@ function FlowCanvasInner() {
         setHasUnsavedChanges(false);
       }
     });
-  }, [flowId, flowName, nodes, edges, isActive, triggerType, triggerConfig, flowWorkspaceId, masterPrompt, isMasterActive, saveFlow, createFlow, setSearchParams]);
+  }, [flowId, flowName, nodes, edges, isActive, flowWorkspaceId, masterPrompt, isMasterActive, saveFlow, createFlow, setSearchParams]);
 
   const handleNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
     if (node.type !== 'start') {
@@ -282,11 +274,6 @@ function FlowCanvasInner() {
       prev?.id === nodeId ? { ...prev, data: { ...prev.data, ...data } } : prev
     );
   }, [setNodes]);
-
-  const handleTriggerSave = useCallback((type: TriggerType, config: Record<string, unknown>) => {
-    setTriggerType(type);
-    setTriggerConfig(config);
-  }, []);
 
   const onConnect = useCallback(
     (params: Connection) => setEdges((eds) => addEdge({
@@ -328,7 +315,6 @@ function FlowCanvasInner() {
 
       if (!reactFlowWrapper.current) return;
 
-      const reactFlowBounds = reactFlowWrapper.current.getBoundingClientRect();
       const position = screenToFlowPosition({
         x: event.clientX,
         y: event.clientY,
@@ -443,16 +429,13 @@ function FlowCanvasInner() {
               hasUnsavedChanges={hasUnsavedChanges}
               onZoomIn={() => zoomIn()}
               onZoomOut={() => zoomOut()}
-              triggerType={triggerType}
-              onOpenTriggerConfig={() => setShowTriggerConfig(true)}
-              workspaceId={flowWorkspaceId}
-              onWorkspaceChange={setFlowWorkspaceId}
+              showMinimap={showMinimap}
+              onMinimapToggle={() => setShowMinimap(!showMinimap)}
               masterPrompt={masterPrompt}
               onMasterPromptChange={setMasterPrompt}
               isMasterActive={isMasterActive}
               onMasterActiveChange={setIsMasterActive}
-              showMinimap={showMinimap}
-              onMinimapToggle={() => setShowMinimap(!showMinimap)}
+              onOpenMasterPrompt={() => setShowMasterPromptDialog(true)}
             />
           </Panel>
           <Controls className="!bg-card !border-border !shadow-lg [&>button]:!bg-card [&>button]:!border-border [&>button]:!text-foreground hover:[&>button]:!bg-muted" />
@@ -496,16 +479,6 @@ function FlowCanvasInner() {
         />
       )}
 
-      {/* Trigger Config Dialog */}
-      <TriggerConfigDialog
-        open={showTriggerConfig}
-        onOpenChange={setShowTriggerConfig}
-        triggerType={triggerType}
-        triggerConfig={triggerConfig}
-        onSave={handleTriggerSave}
-        flowId={flowId || undefined}
-      />
-
       {/* Test Panel */}
       {flowId && (
         <FlowTestPanel
@@ -522,6 +495,16 @@ function FlowCanvasInner() {
           opacity: 1 !important;
         }
       `}</style>
+      <MasterPromptDialog
+        open={showMasterPromptDialog}
+        onOpenChange={setShowMasterPromptDialog}
+        prompt={masterPrompt}
+        onSave={(newPrompt) => {
+          setMasterPrompt(newPrompt);
+          setHasUnsavedChanges(true);
+        }}
+        organizationId={flow?.organization_id}
+      />
     </div>
   );
 }

@@ -1401,7 +1401,11 @@ async function executeToolDirect(supabase: any, toolName: string, args: any, ctx
         const resp = await fetch(`${supabaseUrl}/functions/v1/flow-execute`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseKey}` },
-          body: JSON.stringify({ flowId: flow_id, conversationId: ctx.conversationId }),
+          body: JSON.stringify({
+            flowId: flow_id,
+            conversationId: ctx.conversationId,
+            isFromOrchestrator: true // Per user request: IA messages if in orchestrator
+          }),
         });
         const result = await resp.json();
         return { success: result.success };
@@ -1589,35 +1593,51 @@ async function sendReplyViaZAPI(supabase: any, conversation: any, message: strin
       .order('created_at', { ascending: true }).limit(1).maybeSingle();
     instance = data;
   }
-  if (!instance) return;
+  if (!instance || !instance.zapi_token) return;
 
   const normalizedPhone = contactPhone.replace(/\D/g, '');
-  const clientToken = Deno.env.get('ZAPI_CLIENT_TOKEN');
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (clientToken) headers['Client-Token'] = clientToken;
+  const uazapiBaseUrl = Deno.env.get('UAZAPI_BASE_URL')!;
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'token': instance.zapi_token
+  };
 
   try {
-    await fetch(`https://api.z-api.io/instances/${instance.zapi_instance_id}/token/${instance.zapi_token}/typing`,
-      { method: 'POST', headers, body: JSON.stringify({ phone: normalizedPhone, duration: 2000 }) });
+    // Typing indicator fallback
+    await fetch(`${uazapiBaseUrl}/chat/presence`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ number: normalizedPhone, presenceType: 'composing' })
+    }).catch(() => { });
     await new Promise(r => setTimeout(r, 1000));
   } catch { }
 
-  const resp = await fetch(`https://api.z-api.io/instances/${instance.zapi_instance_id}/token/${instance.zapi_token}/send-text`, {
-    method: 'POST', headers, body: JSON.stringify({ phone: normalizedPhone, message }),
+  const resp = await fetch(`${uazapiBaseUrl}/send/text`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ number: normalizedPhone, text: message }),
   });
 
-  if (!resp.ok) { console.error('Z-API send error:', await resp.text()); return; }
+  if (!resp.ok) {
+    console.error('UAZAPI send error:', await resp.text());
+    return;
+  }
 
   const zapiResult = await resp.json();
+  const zapiMessageId = zapiResult.messageId || zapiResult.zapiMessageId || zapiResult.id || null;
+
   await supabase.from('messages').insert({
-    conversation_id: conversation.id, content: message, type: 'text',
-    direction: 'outbound', is_from_bot: true,
-    zapi_message_id: zapiResult.messageId || zapiResult.zapiMessageId || null,
+    conversation_id: conversation.id,
+    content: message,
+    type: 'text',
+    direction: 'outbound',
+    is_from_bot: true, // Orchestrator IS an AI agent
+    zapi_message_id: zapiMessageId,
     metadata: { zapi_response: zapiResult, ai_generated: true },
   });
 
   await supabase.from('conversations').update({ last_message_at: new Date().toISOString() }).eq('id', conversation.id);
-  console.log('Reply sent via Z-API');
+  console.log('Reply sent via UAZAPI');
 }
 
 // ==================== INTERNAL THOUGHT FILTER ====================

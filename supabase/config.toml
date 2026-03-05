@@ -71,3 +71,23 @@ verify_jwt = false
 
 [functions.zapi-cleanup]
 verify_jwt = false
+[functions.flow-execute]
+verify_jwt = false
+
+[functions.agent-orchestrator]
+verify_jwt = false
+
+[functions.generate-agent-prompt]
+verify_jwt = false
+
+[functions.flow-to-prompt]
+verify_jwt = false
+
+[functions.prompt-to-flow]
+verify_jwt = false
+
+[functions.process-scheduled-messages]
+verify_jwt = false
+
+[functions.widget-submit]
+verify_jwt = false

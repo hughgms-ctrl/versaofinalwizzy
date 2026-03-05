@@ -37,6 +37,7 @@ interface ExecutionContext {
   organizationId: string;
   zapiInstanceId: string;
   zapiToken: string;
+  isFromOrchestrator?: boolean;
 }
 
 // deno-lint-ignore no-explicit-any
@@ -52,10 +53,11 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const { flowId, conversationId, startNodeId } = await req.json();
-    console.log(`[FLOW EXECUTE] Received request: flowId=${flowId}, conversationId=${conversationId}, startNodeId=${startNodeId}`);
+    const { flowId, conversationId, startNodeId, isFromOrchestrator } = await req.json();
+    console.log(`[FLOW EXECUTE] Received request: flowId=${flowId}, conversationId=${conversationId}, startNodeId=${startNodeId}, isFromOrchestrator=${isFromOrchestrator}`);
 
     if (!flowId || !conversationId) {
+      console.error(`[FLOW EXECUTE] Missing required params: flowId=${flowId}, conversationId=${conversationId}`);
       return new Response(
         JSON.stringify({ error: 'flowId and conversationId are required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -124,12 +126,13 @@ serve(async (req) => {
       .single();
 
     if (execError) {
-      console.error('Error creating execution:', execError);
+      console.error('[FLOW EXECUTE] Error creating execution record:', execError);
       return new Response(
-        JSON.stringify({ error: 'Error creating execution' }),
+        JSON.stringify({ error: `Error creating execution: ${execError.message}` }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+    console.log(`[FLOW EXECUTE] Execution record created: ${execution.id}`);
 
     const nodes = flow.nodes as FlowNode[];
     const edges = flow.edges as FlowEdge[];
@@ -142,6 +145,7 @@ serve(async (req) => {
       organizationId: flow.organization_id,
       zapiInstanceId: instance.zapi_instance_id!,
       zapiToken: instance.zapi_token!,
+      isFromOrchestrator: !!isFromOrchestrator,
     };
 
     // Find start node
@@ -157,6 +161,7 @@ serve(async (req) => {
 
       try {
         const result = await executeNode(currentNode, context, supabase);
+        console.log(`[FLOW EXECUTE] Node ${currentNode.id} result:`, JSON.stringify(result));
         executionLog.push({
           nodeId: currentNode.id,
           type: currentNode.type,
@@ -275,7 +280,7 @@ async function executeNode(
       return { success: true };
 
     case 'content-block':
-      return await executeContentBlock(data, context);
+      return await executeContentBlock(data, context, supabase);
 
     case 'message-buttons':
       return await sendButtonsMessage(data, context);
@@ -363,7 +368,7 @@ async function executeAIHandoff(
 }
 
 // Execute Content Block - processes multiple items sequentially
-async function executeContentBlock(data: Record<string, unknown>, context: ExecutionContext): Promise<NodeResult> {
+async function executeContentBlock(data: Record<string, unknown>, context: ExecutionContext, supabase: SupabaseClientType): Promise<NodeResult> {
   const items = (data.items as ContentItem[]) || [];
 
   if (items.length === 0) {
@@ -378,7 +383,7 @@ async function executeContentBlock(data: Record<string, unknown>, context: Execu
             // Send typing presence before text
             await sendPresence('typing', context);
             await new Promise(resolve => setTimeout(resolve, 1500));
-            await sendTextMessage(item.content, context);
+            await sendTextMessage(item.content, context, supabase);
           }
           break;
 
@@ -386,7 +391,7 @@ async function executeContentBlock(data: Record<string, unknown>, context: Execu
           if (item.mediaUrl) {
             await sendPresence('typing', context);
             await new Promise(resolve => setTimeout(resolve, 1000));
-            await sendMediaItem('image', item.mediaUrl, item.caption, context);
+            await sendMediaItem('image', item.mediaUrl, item.caption, context, supabase);
           }
           break;
 
@@ -394,7 +399,7 @@ async function executeContentBlock(data: Record<string, unknown>, context: Execu
           if (item.mediaUrl) {
             await sendPresence('typing', context);
             await new Promise(resolve => setTimeout(resolve, 1000));
-            await sendMediaItem('video', item.mediaUrl, item.caption, context);
+            await sendMediaItem('video', item.mediaUrl, item.caption, context, supabase);
           }
           break;
 
@@ -403,7 +408,7 @@ async function executeContentBlock(data: Record<string, unknown>, context: Execu
             // Send RECORDING presence before audio to simulate recording
             await sendPresence('recording', context);
             await new Promise(resolve => setTimeout(resolve, 2000));
-            await sendMediaItem('audio', item.mediaUrl, undefined, context);
+            await sendMediaItem('audio', item.mediaUrl, undefined, context, supabase);
           }
           break;
 
@@ -411,7 +416,7 @@ async function executeContentBlock(data: Record<string, unknown>, context: Execu
           if (item.mediaUrl) {
             await sendPresence('typing', context);
             await new Promise(resolve => setTimeout(resolve, 1000));
-            await sendMediaItem('document', item.mediaUrl, item.caption, context);
+            await sendMediaItem('document', item.mediaUrl, item.caption, context, supabase);
           }
           break;
 
@@ -434,12 +439,14 @@ async function executeContentBlock(data: Record<string, unknown>, context: Execu
   return { success: true };
 }
 
-async function sendTextMessage(content: string, context: ExecutionContext): Promise<void> {
+async function sendTextMessage(content: string, context: ExecutionContext, supabase: SupabaseClientType): Promise<void> {
   const message = replaceVariables(content, context.variables);
   if (!message) return;
 
   const uazapiBaseUrl = Deno.env.get('UAZAPI_BASE_URL')!;
   const normalizedPhone = context.contactPhone.replace(/\D/g, '');
+
+  console.log(`[FLOW EXECUTE] sendTextMessage: phone=${normalizedPhone}`);
 
   const response = await fetch(
     `${uazapiBaseUrl}/send/text`,
@@ -458,20 +465,49 @@ async function sendTextMessage(content: string, context: ExecutionContext): Prom
 
   if (!response.ok) {
     const error = await response.text();
+    console.error(`[FLOW EXECUTE] Failed to send text message. Status: ${response.status}, Error: ${error}`);
     throw new Error(`Failed to send text message: ${error}`);
   }
+
+  // Parse UAZAPI response to get message ID
+  let zapiMessageId: string | null = null;
+  try {
+    const result = await response.clone().json();
+    zapiMessageId = result?.messageId || result?.key?.id || null;
+  } catch { /* ignore parse errors */ }
+
+  // Save message to database so it appears in the UI immediately
+  try {
+    await supabase.from('messages').insert({
+      conversation_id: context.conversationId,
+      content: message,
+      type: 'text',
+      direction: 'outbound',
+      is_from_bot: !!context.isFromOrchestrator,
+      zapi_message_id: zapiMessageId,
+      metadata: { source: 'flow_execute', is_from_orchestrator: !!context.isFromOrchestrator },
+    });
+    console.log('[FLOW EXECUTE] Text message saved to DB');
+  } catch (dbError) {
+    console.error('[FLOW EXECUTE] Failed to save text to DB:', dbError);
+  }
+
+  // Update conversation last_message_at
+  await supabase.from('conversations').update({ last_message_at: new Date().toISOString() }).eq('id', context.conversationId);
 }
 
 async function sendMediaItem(
   mediaType: 'image' | 'video' | 'audio' | 'document',
   mediaUrl: string,
   caption: string | undefined,
-  context: ExecutionContext
+  context: ExecutionContext,
+  supabase: SupabaseClientType
 ): Promise<void> {
   const uazapiBaseUrl = Deno.env.get('UAZAPI_BASE_URL')!;
   const normalizedPhone = context.contactPhone.replace(/\D/g, '');
   const processedCaption = caption ? replaceVariables(caption, context.variables) : undefined;
 
+  // UAZAPI uses unified /send/media endpoint for all media types
   const body: Record<string, unknown> = {
     number: normalizedPhone,
     file: mediaUrl,
@@ -480,22 +516,52 @@ async function sendMediaItem(
 
   if (processedCaption) body.caption = processedCaption;
 
-  const response = await fetch(
-    `${uazapiBaseUrl}/send/media`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'token': context.zapiToken
-      },
-      body: JSON.stringify(body),
-    }
-  );
+  const endpoint = `${uazapiBaseUrl}/send/media`;
+  console.log(`[FLOW EXECUTE] sendMediaItem: type=${mediaType}, file=${mediaUrl?.substring(0, 80)}`);
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'token': context.zapiToken
+    },
+    body: JSON.stringify(body),
+  });
+
+  let zapiMessageId: string | null = null;
 
   if (!response.ok) {
     const error = await response.text();
-    throw new Error(`Failed to send ${mediaType}: ${error}`);
+    console.error(`[FLOW EXECUTE] Failed to send ${mediaType}. Status: ${response.status}, Error: ${error}`);
+    // Don't throw — still save to DB so user sees it was attempted
+  } else {
+    // Parse UAZAPI response to get message ID
+    try {
+      const result = await response.json();
+      zapiMessageId = result?.messageId || result?.key?.id || null;
+    } catch { /* ignore parse errors */ }
+    console.log(`[FLOW EXECUTE] ${mediaType} sent successfully via UAZAPI`);
   }
+
+  // Save media message to database so it appears in the UI immediately
+  try {
+    await supabase.from('messages').insert({
+      conversation_id: context.conversationId,
+      content: processedCaption || null,
+      type: mediaType,
+      direction: 'outbound',
+      is_from_bot: !!context.isFromOrchestrator,
+      media_url: mediaUrl,
+      zapi_message_id: zapiMessageId,
+      metadata: { source: 'flow_execute', is_from_orchestrator: !!context.isFromOrchestrator },
+    });
+    console.log(`[FLOW EXECUTE] ${mediaType} message saved to DB`);
+  } catch (dbError) {
+    console.error(`[FLOW EXECUTE] Failed to save ${mediaType} to DB:`, dbError);
+  }
+
+  // Update conversation last_message_at
+  await supabase.from('conversations').update({ last_message_at: new Date().toISOString() }).eq('id', context.conversationId);
 }
 
 async function sendButtonsMessage(data: Record<string, unknown>, context: ExecutionContext): Promise<NodeResult> {
@@ -507,34 +573,57 @@ async function sendButtonsMessage(data: Record<string, unknown>, context: Execut
       return { success: true };
     }
 
-    const clientToken = Deno.env.get('ZAPI_CLIENT_TOKEN');
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
-    if (clientToken) {
-      headers['Client-Token'] = clientToken;
-    }
+    // UAZAPI: send buttons as formatted text since native buttons may not be supported
+    const uazapiBaseUrl = Deno.env.get('UAZAPI_BASE_URL')!;
+    const normalizedPhone = context.contactPhone.replace(/\D/g, '');
+    const buttonsText = buttons.map((b, i) => `${i + 1}. ${b.label}`).join('\n');
+    const fullMessage = `${content}\n\n${buttonsText}`;
 
-    const response = await fetch(
-      `https://api.z-api.io/instances/${context.zapiInstanceId}/token/${context.zapiToken}/send-button-list`,
-      {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          phone: context.contactPhone,
-          message: content,
-          buttonList: {
-            buttons: buttons.map(b => ({ id: b.id, label: b.label })),
-          },
-        }),
-      }
-    );
+    const response = await fetch(`${uazapiBaseUrl}/send/text`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'token': context.zapiToken
+      },
+      body: JSON.stringify({
+        number: normalizedPhone,
+        text: fullMessage,
+      }),
+    });
 
     if (!response.ok) {
       const error = await response.text();
+      console.error(`[FLOW EXECUTE] Failed to send buttons. Status: ${response.status}, Error: ${error}`);
       return { success: false, error: `Failed to send buttons: ${error}` };
     }
 
+    // Save message to database
+    try {
+      let zapiMessageId: string | null = null;
+      try {
+        const result = await response.clone().json();
+        zapiMessageId = result?.messageId || result?.key?.id || result?.id || null;
+      } catch { }
+
+      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+      const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+      const supabase = createClient(supabaseUrl, supabaseKey);
+
+      await supabase.from('messages').insert({
+        conversation_id: context.conversationId,
+        content: fullMessage,
+        type: 'text',
+        direction: 'outbound',
+        is_from_bot: !!context.isFromOrchestrator,
+        zapi_message_id: zapiMessageId,
+        metadata: { source: 'flow_execute', type: 'buttons', is_from_orchestrator: !!context.isFromOrchestrator },
+      });
+      await supabase.from('conversations').update({ last_message_at: new Date().toISOString() }).eq('id', context.conversationId);
+    } catch (dbError) {
+      console.error('[FLOW EXECUTE] Failed to save buttons message to DB:', dbError);
+    }
+
+    console.log('[FLOW EXECUTE] Buttons message sent successfully');
     return { success: true };
   } catch (error) {
     return { success: false, error: String(error) };
@@ -545,33 +634,65 @@ async function sendListMessage(data: Record<string, unknown>, context: Execution
   try {
     const content = replaceVariables(String(data.content || ''), context.variables);
 
-    const clientToken = Deno.env.get('ZAPI_CLIENT_TOKEN');
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
-    if (clientToken) {
-      headers['Client-Token'] = clientToken;
+    // UAZAPI: send list as formatted text since native lists may not be supported
+    const uazapiBaseUrl = Deno.env.get('UAZAPI_BASE_URL')!;
+    const normalizedPhone = context.contactPhone.replace(/\D/g, '');
+    const sections = data.sections as Array<{ title: string; rows: Array<{ title: string; description?: string }> }> || [];
+
+    let listText = content;
+    for (const section of sections) {
+      if (section.title) listText += `\n\n*${section.title}*`;
+      for (const row of section.rows || []) {
+        listText += `\n• ${row.title}`;
+        if (row.description) listText += ` - ${row.description}`;
+      }
     }
 
-    const response = await fetch(
-      `https://api.z-api.io/instances/${context.zapiInstanceId}/token/${context.zapiToken}/send-option-list`,
-      {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          phone: context.contactPhone,
-          message: content,
-          optionList: data.sections || [],
-          buttonLabel: data.buttonText || 'Ver opções',
-        }),
-      }
-    );
+    const response = await fetch(`${uazapiBaseUrl}/send/text`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'token': context.zapiToken
+      },
+      body: JSON.stringify({
+        number: normalizedPhone,
+        text: listText,
+      }),
+    });
 
     if (!response.ok) {
       const error = await response.text();
+      console.error(`[FLOW EXECUTE] Failed to send list. Status: ${response.status}, Error: ${error}`);
       return { success: false, error: `Failed to send list: ${error}` };
     }
 
+    // Save message to database
+    try {
+      let zapiMessageId: string | null = null;
+      try {
+        const result = await response.clone().json();
+        zapiMessageId = result?.messageId || result?.key?.id || result?.id || null;
+      } catch { }
+
+      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+      const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+      const supabase = createClient(supabaseUrl, supabaseKey);
+
+      await supabase.from('messages').insert({
+        conversation_id: context.conversationId,
+        content: listText,
+        type: 'text',
+        direction: 'outbound',
+        is_from_bot: !!context.isFromOrchestrator,
+        zapi_message_id: zapiMessageId,
+        metadata: { source: 'flow_execute', type: 'list', is_from_orchestrator: !!context.isFromOrchestrator },
+      });
+      await supabase.from('conversations').update({ last_message_at: new Date().toISOString() }).eq('id', context.conversationId);
+    } catch (dbError) {
+      console.error('[FLOW EXECUTE] Failed to save list message to DB:', dbError);
+    }
+
+    console.log('[FLOW EXECUTE] List message sent successfully');
     return { success: true };
   } catch (error) {
     return { success: false, error: String(error) };
@@ -731,23 +852,32 @@ async function sendPresence(
   try {
     const uazapiBaseUrl = Deno.env.get('UAZAPI_BASE_URL')!;
     const normalizedPhone = context.contactPhone.replace(/\D/g, '');
-    const type = presenceType === 'typing' ? 'composing' : 'recording';
+    const presenceState = presenceType === 'typing' ? 'composing' : 'recording';
 
-    await fetch(
-      `${uazapiBaseUrl}/message/presence`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'token': context.zapiToken
-        },
-        body: JSON.stringify({
-          number: normalizedPhone,
-          presence: type,
-          delay: 5000
-        }),
+    // Try multiple UAZAPI presence endpoints (varies by server version)
+    const presenceEndpoints = [
+      { path: '/chat/presence', body: { phone: normalizedPhone, state: presenceState } },
+      { path: '/send/presence', body: { phone: normalizedPhone, presence: presenceState, duration: 5000 } },
+      { path: '/send/typing', body: { number: normalizedPhone, duration: 5000 } },
+    ];
+
+    for (const ep of presenceEndpoints) {
+      try {
+        const response = await fetch(`${uazapiBaseUrl}${ep.path}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'token': context.zapiToken
+          },
+          body: JSON.stringify(ep.body),
+        });
+        if (response.ok) return; // Success, stop trying
+        if (response.status === 404 || response.status === 405) continue; // Try next
+        return; // Other error, stop trying (auth issue etc.)
+      } catch {
+        continue; // Network error, try next
       }
-    );
+    }
   } catch (error) {
     // Presence is optional, don't fail the flow
     console.log('Presence send failed (non-critical):', error);

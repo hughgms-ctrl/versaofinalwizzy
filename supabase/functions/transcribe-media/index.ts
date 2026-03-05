@@ -204,7 +204,7 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Verify auth
+    // Verify auth - support both user auth (UI) and service role (webhook auto-transcription)
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
@@ -214,16 +214,8 @@ Deno.serve(async (req) => {
     }
 
     const token = authHeader.replace(/^Bearer\s+/i, '');
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
 
-    if (authError || !user) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    const { messageId, mediaUrl, mediaType, force } = await req.json();
+    const { messageId, mediaUrl, mediaType, force, organizationId: bodyOrgId } = await req.json();
 
     if (!messageId || !mediaUrl || !mediaType) {
       return new Response(JSON.stringify({ error: 'messageId, mediaUrl, and mediaType are required' }), {
@@ -255,19 +247,32 @@ Deno.serve(async (req) => {
       await supabase.from('media_transcriptions').delete().eq('message_id', messageId);
     }
 
-    // Resolve AI config from org
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('organization_id')
-      .eq('user_id', user.id)
-      .maybeSingle();
+    // Resolve organization ID - either from body (webhook) or from user auth (UI)
+    let resolvedOrgId = bodyOrgId || null;
+
+    if (!resolvedOrgId) {
+      // Try user auth (UI context)
+      const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('organization_id')
+        .eq('user_id', user.id)
+        .maybeSingle();
+      resolvedOrgId = profile?.organization_id;
+    }
 
     let integrationConfig = null;
-    if (profile?.organization_id) {
+    if (resolvedOrgId) {
       const { data } = await supabase
         .from('integration_configs')
         .select('*')
-        .eq('organization_id', profile.organization_id)
+        .eq('organization_id', resolvedOrgId)
         .maybeSingle();
       integrationConfig = data;
     }

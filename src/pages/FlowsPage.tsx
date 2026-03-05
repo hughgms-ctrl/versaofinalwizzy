@@ -25,6 +25,7 @@ import {
   Pencil,
   MessageSquare,
   MessageSquareOff,
+  MapPinned,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
@@ -57,6 +58,7 @@ import {
   useToggleFolderVisibleInChat,
   FlowFolder
 } from '@/hooks/useFlowFolders';
+import { useSaveFlow } from '@/hooks/useFlows';
 import { CreateFlowDialog } from '@/components/flows/CreateFlowDialog';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { Label } from '@/components/ui/label';
@@ -125,6 +127,7 @@ const FlowsPage = () => {
   const updateFolderPositions = useUpdateFolderPositions();
   const toggleFlowVisibility = useToggleFlowVisibleInChat();
   const toggleFolderVisibility = useToggleFolderVisibleInChat();
+  const saveFlow = useSaveFlow();
   const { selectedWorkspaceId, availableWorkspaces, isAdmin } = useWorkspaceContext();
 
   const sensors = useSensors(
@@ -202,6 +205,20 @@ const FlowsPage = () => {
   const handleMoveToFolder = (flowId: string, folderId: string | null) => {
     const folder = folders?.find(f => f.id === folderId);
     moveFlow.mutate({ flowId, folderId, folderWorkspaceId: folder?.workspace_id || null });
+  };
+
+  const handleUpdateFlowWorkspace = (flowId: string, workspaceId: string | null) => {
+    // We use the same mutator from useFlows for saving a flow
+    const flow = (flows as any[])?.find(f => f.id === flowId);
+    if (flow) {
+      // Create a full save object as expected by useSaveFlow
+      saveFlow.mutate({
+        id: flowId,
+        nodes: flow.nodes || [],
+        edges: flow.edges || [],
+        workspace_id: workspaceId
+      });
+    }
   };
 
   // Filter flows and folders by selected workspace
@@ -358,6 +375,28 @@ const FlowsPage = () => {
         </div>
       </div>
 
+      {/* Workspace Tag (for flows) */}
+      {flow.workspace_id && (() => {
+        const ws = availableWorkspaces.find(w => w.id === flow.workspace_id);
+        if (!ws) return null;
+        return (
+          <div
+            className="px-2 py-0.5 rounded-[4px] border shrink-0 hidden md:block"
+            style={{
+              backgroundColor: `${ws.color}15`,
+              borderColor: `${ws.color}30`
+            }}
+          >
+            <span
+              className="text-[10px] font-medium"
+              style={{ color: ws.color }}
+            >
+              {ws.name}
+            </span>
+          </div>
+        );
+      })()}
+
       {/* Status Toggle */}
       <div className="flex items-center gap-3 w-40 justify-center">
         <Switch
@@ -434,13 +473,42 @@ const FlowsPage = () => {
                   Raiz (sem pasta)
                 </DropdownMenuItem>
                 <DropdownMenuSeparator className="bg-[#2a2a2e]" />
-                {folders?.map(folder => (
+                {folders?.filter(folder =>
+                  folder.workspace_id === (flow as any).workspace_id
+                ).map(folder => (
                   <DropdownMenuItem
                     key={folder.id}
                     onClick={() => handleMoveToFolder(flow.id, folder.id)}
                   >
                     <Folder className="h-4 w-4 mr-2" />
                     {folder.name}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <MapPinned className="h-4 w-4 mr-2" />
+                Workspace
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="bg-[#0f0f12] border-[#2a2a2e] w-48">
+                <DropdownMenuItem onClick={() => handleUpdateFlowWorkspace(flow.id, null)}>
+                  <div className="flex items-center gap-2">
+                    <div className="h-2.5 w-2.5 rounded-full border border-dashed border-muted-foreground shrink-0" />
+                    Nenhum (Todos)
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator className="bg-[#2a2a2e]" />
+                {availableWorkspaces.map(ws => (
+                  <DropdownMenuItem
+                    key={ws.id}
+                    onClick={() => handleUpdateFlowWorkspace(flow.id, ws.id)}
+                  >
+                    <div className="flex items-center gap-2">
+                      <div className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: ws.color }} />
+                      {ws.name}
+                    </div>
                   </DropdownMenuItem>
                 ))}
               </DropdownMenuSubContent>
@@ -512,9 +580,18 @@ const FlowsPage = () => {
               if (!ws) return null;
               return (
                 <div
-                  className="px-2 py-0.5 rounded-[4px] bg-[#2e1f18] border border-[#4a2e21]"
+                  className="px-2 py-0.5 rounded-[4px] border"
+                  style={{
+                    backgroundColor: `${ws.color}15`,
+                    borderColor: `${ws.color}30`
+                  }}
                 >
-                  <span className="text-[10px] font-medium text-[#b36b39]">{ws.name}</span>
+                  <span
+                    className="text-[10px] font-medium"
+                    style={{ color: ws.color }}
+                  >
+                    {ws.name}
+                  </span>
                 </div>
               );
             })()}
@@ -538,7 +615,7 @@ const FlowsPage = () => {
                   setShowRenameDialog(true);
                 }}>
                   <Pencil className="h-4 w-4 mr-2" />
-                  Renomear
+                  Editar
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={(e) => {
                   e.stopPropagation();

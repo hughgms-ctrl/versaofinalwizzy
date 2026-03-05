@@ -29,6 +29,7 @@ import { useFlow } from '@/hooks/useFlows';
 import { Node, Edge } from '@xyflow/react';
 import { ContentItem } from '@/types/flow';
 import { cn } from '@/lib/utils';
+import { supabase } from '@/integrations/supabase/client';
 
 interface FlowTestPanelProps {
   open: boolean;
@@ -54,24 +55,47 @@ interface SimulationState {
   inputType?: string;
   variables: Record<string, unknown>;
   pendingButtons?: Array<{ id: string; label: string }>;
+  activeFlowId: string;
+  activeFlowData: any;
 }
+
+const SYSTEM_LOG_ICONS = {
+  tag: '🏷️',
+  pipeline: '📋',
+  flow: '🔄',
+  wait: '⏳',
+  agent: '🤖',
+  master: '🧠',
+  start: '▶️',
+  finish: '✅'
+};
 
 export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTestPanelProps) {
   const { data: flow } = useFlow(flowId);
   const [messages, setMessages] = useState<SimulatedMessage[]>([]);
   const [userInput, setUserInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const { data: initialFlow } = useFlow(flowId);
   const [simulationState, setSimulationState] = useState<SimulationState>({
     currentNodeId: null,
     waitingForInput: false,
     variables: {},
+    activeFlowId: flowId,
+    activeFlowData: null
   });
+
+  useEffect(() => {
+    if (initialFlow && !simulationState.activeFlowData) {
+      setSimulationState(prev => ({ ...prev, activeFlowData: initialFlow }));
+    }
+  }, [initialFlow]);
   const [isStarted, setIsStarted] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // States for AI thinking
   const [isThinking, setIsThinking] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
   const [currentAgentName, setCurrentAgentName] = useState<string | null>(null);
 
   // Auto-scroll to bottom
@@ -94,10 +118,13 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
       currentNodeId: null,
       waitingForInput: false,
       variables: {},
+      activeFlowId: flowId,
+      activeFlowData: initialFlow
     });
     setIsStarted(false);
     setUserInput('');
     setIsThinking(false);
+    setIsRecording(false);
     setCurrentAgentName(null);
   };
 
@@ -128,6 +155,23 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
     return newId;
   };
 
+  const finalizeSimulation = (silent = false) => {
+    if (!silent) {
+      addMessage({
+        type: 'system',
+        content: `${SYSTEM_LOG_ICONS.finish} [IA_TRANSITION] O FLUXO TERMINOU. AGORA VOCÊ PODE FALAR COM A IA!`
+      });
+    }
+    setSimulationState(prev => ({
+      ...prev,
+      waitingForInput: true,
+      inputVariable: 'ai_query',
+      currentNodeId: null
+    }));
+    setIsProcessing(false);
+    setIsThinking(false);
+  };
+
   const findNextNode = (currentNodeId: string, nodes: Node[], edges: Edge[], outputHandle?: string): Node | null => {
     const outgoingEdge = edges.find(e =>
       e.source === currentNodeId &&
@@ -139,26 +183,41 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
 
   const processContentBlock = async (items: ContentItem[]) => {
     for (const item of items) {
+      const waitTime = (item.delaySeconds || 2) * 1000;
+
       if (item.type === 'delay') {
         setIsProcessing(true);
-        await new Promise(resolve => setTimeout(resolve, (item.delaySeconds || 3) * 1000));
+        await new Promise(resolve => setTimeout(resolve, waitTime));
         setIsProcessing(false);
       } else if (item.type === 'text' && item.content) {
+        setIsProcessing(true);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+
         // Replace variables in text
         let processedContent = item.content;
         Object.entries(simulationState.variables).forEach(([key, value]) => {
           processedContent = processedContent.replace(new RegExp(`{{${key}}}`, 'g'), String(value));
         });
         addMessage({ type: 'bot', content: processedContent });
-        await new Promise(resolve => setTimeout(resolve, 800));
+        setIsProcessing(false);
+        await new Promise(resolve => setTimeout(resolve, 500));
       } else if (['image', 'video', 'audio', 'document'].includes(item.type)) {
+        if (item.type === 'audio') {
+          setIsRecording(true);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+          setIsRecording(false);
+        } else {
+          setIsProcessing(true);
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+          setIsProcessing(false);
+        }
         addMessage({
           type: 'bot',
           content: item.caption || `[${item.type.toUpperCase()}]`,
           mediaType: item.type as 'image' | 'video' | 'audio' | 'document',
           mediaUrl: item.mediaUrl,
         });
-        await new Promise(resolve => setTimeout(resolve, 800));
+        await new Promise(resolve => setTimeout(resolve, 500));
       }
     }
   };
@@ -170,14 +229,16 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
     window.dispatchEvent(new CustomEvent('flow:node:executing', { detail: { nodeId: node.id } }));
 
     const nodeType = node.type as string;
-    const nodeData = node.data as Record<string, unknown>;
+    const nodeData = node.data as Record<string, any>;
 
     switch (nodeType) {
       case 'start':
         const nextAfterStart = findNextNode(node.id, nodes, edges);
         if (nextAfterStart) {
-          await new Promise(resolve => setTimeout(resolve, 500));
+          await new Promise(resolve => setTimeout(resolve, 800));
           await processNode(nextAfterStart, nodes, edges);
+        } else {
+          setSimulationState(prev => ({ ...prev, waitingForInput: true, inputVariable: 'ai_query' }));
         }
         break;
 
@@ -190,8 +251,13 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
         if (nextAfterContent) {
           await processNode(nextAfterContent, nodes, edges);
         } else {
-          addMessage({ type: 'system', content: '✅ Fluxo finalizado' });
-          setSimulationState(prev => ({ ...prev, currentNodeId: null }));
+          // Transition to continuous AI conversation
+          addMessage({ type: 'system', content: `${SYSTEM_LOG_ICONS.finish} FLUXO FINALIZADO - AGENTE DE IA ASSUMINDO` });
+          setSimulationState(prev => ({
+            ...prev,
+            waitingForInput: true,
+            inputVariable: 'ai_query'
+          }));
         }
         break;
 
@@ -200,7 +266,7 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
         const buttons = (nodeData.buttons as Array<{ id: string; label: string }>) || [];
 
         addMessage({ type: 'bot', content: buttonText });
-        await new Promise(resolve => setTimeout(resolve, 300));
+        await new Promise(resolve => setTimeout(resolve, 500));
 
         if (buttons.length > 0) {
           setSimulationState(prev => ({
@@ -212,6 +278,9 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
           const nextAfterButtons = findNextNode(node.id, nodes, edges);
           if (nextAfterButtons) {
             await processNode(nextAfterButtons, nodes, edges);
+          } else {
+            addMessage({ type: 'system', content: `${SYSTEM_LOG_ICONS.finish} FLUXO FINALIZADO - AGENTE DE IA ASSUMINDO` });
+            setSimulationState(prev => ({ ...prev, waitingForInput: true, inputVariable: 'ai_query' }));
           }
         }
         break;
@@ -227,67 +296,107 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
         }));
         break;
 
-      case 'condition':
-        addMessage({ type: 'system', content: '🔀 Avaliando condição...' });
-        await new Promise(resolve => setTimeout(resolve, 1000));
-
-        const variable = (nodeData.variable as string) || '';
-        const operator = (nodeData.operator as string) || 'equals';
-        const value = (nodeData.value as string) || '';
-        const varValue = simulationState.variables[variable];
-
-        let conditionMet = false;
-        switch (operator) {
-          case 'equals': conditionMet = String(varValue) === value; break;
-          case 'not_equals': conditionMet = String(varValue) !== value; break;
-          case 'contains': conditionMet = String(varValue).includes(value); break;
-          case 'greater_than': conditionMet = Number(varValue) > Number(value); break;
-          case 'less_than': conditionMet = Number(varValue) < Number(value); break;
-        }
-
-        addMessage({ type: 'system', content: `🔀 Resultado: ${conditionMet ? 'Verdadeiro' : 'Falso'}` });
-
-        const nextAfterCondition = findNextNode(node.id, nodes, edges, conditionMet ? 'yes' : 'no');
-        if (nextAfterCondition) {
-          await processNode(nextAfterCondition, nodes, edges);
+      case 'wait':
+      case 'action-delay':
+        const seconds = Number(nodeData.seconds || nodeData.delaySeconds) || 5;
+        addMessage({ type: 'system', content: `${SYSTEM_LOG_ICONS.wait} Aguardando ${seconds} segundos...` });
+        setIsProcessing(true);
+        await new Promise(resolve => setTimeout(resolve, seconds * 1000));
+        setIsProcessing(false);
+        const nextAfterWait = findNextNode(node.id, nodes, edges); // Define nextAfterWait
+        if (nextAfterWait) {
+          await processNode(nextAfterWait, nodes, edges);
         } else {
-          const defaultNext = findNextNode(node.id, nodes, edges);
-          if (defaultNext) {
-            await processNode(defaultNext, nodes, edges);
-          }
+          finalizeSimulation();
         }
+        break;
+
+      case 'add-tag':
+      case 'action-tag':
+        addMessage({ type: 'system', content: `${SYSTEM_LOG_ICONS.tag} Atribuindo Tag: ${nodeData.tagName || 'Sem nome'}` });
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        const nextAfterTag = findNextNode(node.id, nodes, edges); // Define nextAfterTag
+        if (nextAfterTag) {
+          await processNode(nextAfterTag, nodes, edges);
+        } else {
+          finalizeSimulation();
+        }
+        break;
+
+      case 'pipeline-handoff':
+      case 'action-pipeline':
+        addMessage({ type: 'system', content: `${SYSTEM_LOG_ICONS.pipeline} Movendo para Pipeline: ${nodeData.pipelineName || '...'} -> ${nodeData.columnName || '...'}` });
+        await new Promise(resolve => setTimeout(resolve, 1200));
+        const nextAfterPipe = findNextNode(node.id, nodes, edges); // Define nextAfterPipe
+        if (nextAfterPipe) {
+          await processNode(nextAfterPipe, nodes, edges);
+        } else {
+          finalizeSimulation();
+        }
+        break;
+
+      case 'sub-flow':
+      case 'action-flow':
+        const targetFlowId = nodeData.flowId;
+        addMessage({ type: 'system', content: `${SYSTEM_LOG_ICONS.flow} Iniciando sub-fluxo: ${nodeData.flowName || '...'}` });
+        setIsProcessing(true);
+
+        try {
+          const { data: subFlowData, error } = await supabase
+            .from('flows' as any)
+            .select('*')
+            .eq('id', targetFlowId)
+            .single();
+
+          if (error) throw error;
+
+          setSimulationState(prev => ({
+            ...prev,
+            activeFlowId: targetFlowId,
+            activeFlowData: subFlowData
+          }));
+
+          const subNodes = subFlowData.nodes as Node[];
+          const subEdges = subFlowData.edges as Edge[];
+          const startNode = subNodes.find(n => n.type === 'start');
+
+          if (startNode) {
+            await new Promise(resolve => setTimeout(resolve, 1500));
+            await processNode(startNode, subNodes, subEdges);
+          }
+
+          // CRITICAL: After sub-flow finishes, check if parent flow continues
+          const nextInParent = findNextNode(node.id, nodes, edges);
+          if (nextInParent) {
+            await processNode(nextInParent, nodes, edges);
+          } else {
+            finalizeSimulation();
+          }
+        } catch (err) {
+          console.error('Error loading sub-flow:', err);
+          addMessage({ type: 'system', content: `❌ Erro ao carregar sub-fluxo: ${nodeData.flowName || 'ID não encontrado'}` });
+          finalizeSimulation(true);
+        }
+        setIsProcessing(false);
         break;
 
       case 'ai-handoff':
-        setCurrentAgentName((nodeData.agentName as string) || 'Especialista');
-        setIsThinking(true);
-        addMessage({ type: 'system', content: `🤖 Transferindo para Agente: ${nodeData.agentName || 'IA'}` });
-
-        await new Promise(resolve => setTimeout(resolve, 3000));
-        setIsThinking(false);
-
-        addMessage({
-          type: 'bot',
-          content: `[SIMULAÇÃO IA] Olá! Sou o agente ${nodeData.agentName || 'IA'} e estou assumindo seu atendimento. Como posso ajudar com base no contexto do fluxo?`
-        });
-
-        setSimulationState(prev => ({ ...prev, waitingForInput: true, inputVariable: 'ai_query' }));
-        break;
-
       case 'ai-master':
-        setCurrentAgentName("Agente Master / Orquestrador");
+        const isMaster = nodeType === 'ai-master';
+        const agentName = isMaster ? "Orquestrador Master" : ((nodeData.agentName as string) || 'Especialista');
+        const agentPrompt = isMaster ? (simulationState.activeFlowData?.master_prompt || '') : (nodeData.prompt as string || '');
+
+        setCurrentAgentName(agentName);
         setIsThinking(true);
-        addMessage({ type: 'system', content: '🧠 Agente Master Ativado' });
+        addMessage({ type: 'system', content: `${isMaster ? SYSTEM_LOG_ICONS.master : SYSTEM_LOG_ICONS.agent} Transferindo para ${agentName}` });
 
-        await new Promise(resolve => setTimeout(resolve, 4000));
-        setIsThinking(false);
-
-        addMessage({
-          type: 'bot',
-          content: "Olá! Sou o Orquestrador deste fluxo. Estou analisando seu histórico para decidir qual o melhor caminho ou agente para o seu caso."
-        });
-
-        setSimulationState(prev => ({ ...prev, waitingForInput: true, inputVariable: 'master_query' }));
+        // First message for real AI simulation
+        if (!messages.some(m => m.type === 'user')) {
+          finalizeSimulation(true);
+        } else {
+          // If we already have a user message, trigger AI response immediately
+          handleAIRealCall(agentPrompt, isMaster);
+        }
         break;
 
       default:
@@ -295,22 +404,88 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
         if (nextNode) {
           await processNode(nextNode, nodes, edges);
         } else {
-          addMessage({ type: 'system', content: '✅ Execução finalizada' });
+          // If no next node, transition to AI conversation instead of finishing
+          addMessage({ type: 'system', content: `${SYSTEM_LOG_ICONS.finish} FLUXO FINALIZADO - AGENTE DE IA ASSUMINDO` });
+          setIsProcessing(false);
+          setSimulationState(prev => ({
+            ...prev,
+            waitingForInput: true,
+            inputVariable: 'ai_query' // This enables continuous AI interaction
+          }));
         }
     }
   };
 
+  const handleAIRealCall = async (prompt: string, useMasterPrompt: boolean = false) => {
+    setIsThinking(true);
+    try {
+      // Get conversation history from messages
+      const history = messages
+        .filter(m => m.type === 'user' || m.type === 'bot')
+        .map(m => ({
+          role: m.type === 'user' ? 'user' : 'assistant',
+          content: m.content
+        }));
+
+      const organizationId = simulationState.activeFlowData?.organization_id;
+
+      const systemPrompt = `Você é um agente de atendimento virtual inteligente para um escritório de advocacia.
+      
+PERSONALIDADE E REGRAS GERAIS:
+${useMasterPrompt ? (simulationState.activeFlowData?.master_prompt || '') : ''}
+
+INSTRUÇÕES DO AGENTE ATUAL:
+${prompt}
+
+Responda sempre em português brasileiro de forma profissional e prestativa.`;
+
+      const { data, error } = await supabase.functions.invoke('generate-agent-prompt', {
+        body: {
+          mode: 'chat',
+          organizationId,
+          messages: history,
+          systemPrompt
+        }
+      });
+
+      if (error) throw error;
+
+      setIsThinking(false);
+
+      // Use the content returned by the Edge Function in chat mode
+      const aiReply = data.content || "Entendido. Como posso ajudar agora?";
+
+      addMessage({
+        type: 'bot',
+        content: aiReply
+      });
+
+      setSimulationState(prev => ({ ...prev, waitingForInput: true, inputVariable: 'ai_query' }));
+    } catch (err) {
+      console.error('AI Call error:', err);
+      setIsThinking(false);
+      addMessage({ type: 'bot', content: "⚠️ Erro técnico ao conectar com o Agente de IA. Verifique sua chave de API ou conexão." });
+      setSimulationState(prev => ({ ...prev, waitingForInput: true, inputVariable: 'ai_query' }));
+    }
+  };
+
   const startSimulation = async () => {
-    if (!flow?.nodes) return;
+    if (!simulationState.activeFlowData) return;
     resetSimulation();
     setIsStarted(true);
     setIsProcessing(true);
-    addMessage({ type: 'system', content: `▶️ Conversa iniciada: "${flowName}"` });
-    await new Promise(resolve => setTimeout(resolve, 500));
-    const nodes = flow.nodes as Node[];
-    const edges = flow.edges as Edge[];
-    const startNode = nodes.find(n => n.type === 'start');
-    if (startNode) await processNode(startNode, nodes, edges);
+
+    addMessage({ type: 'system', content: `${SYSTEM_LOG_ICONS.start} Simulando entrada do usuário para ativar fluxo...` });
+    await new Promise(resolve => setTimeout(resolve, 800));
+    addMessage({ type: 'user', content: 'Olá! Gostaria de falar sobre o meu caso.' });
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    addMessage({ type: 'system', content: `${SYSTEM_LOG_ICONS.start} Gatilho detectado. Iniciando execução de: "${flowName}"` });
+    await new Promise(resolve => setTimeout(resolve, 800));
+
+    const { nodes, edges } = simulationState.activeFlowData;
+    const startNode = (nodes as Node[]).find(n => n.type === 'start');
+    if (startNode) await processNode(startNode, nodes as Node[], edges as Edge[]);
     setIsProcessing(false);
   };
 
@@ -337,10 +512,10 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
       }
     } else if (simulationState.inputVariable) {
       if (simulationState.inputVariable === 'ai_query' || simulationState.inputVariable === 'master_query') {
-        setIsThinking(true);
-        await new Promise(resolve => setTimeout(resolve, 2500));
-        setIsThinking(false);
-        addMessage({ type: 'bot', content: `Entendi o seu ponto sobre "${inputValue}". Como este é um ambiente de simulação, estou validando as regras do prompt que você configurou no nó.` });
+        const isMaster = simulationState.inputVariable === 'master_query';
+        const currentNode = (simulationState.activeFlowData.nodes as Node[]).find(n => n.id === simulationState.currentNodeId);
+        const prompt = isMaster ? (simulationState.activeFlowData.master_prompt || '') : (currentNode?.data?.prompt as string || '');
+        await handleAIRealCall(prompt, isMaster);
         return;
       }
       setSimulationState(prev => ({
@@ -352,14 +527,23 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
     }
 
     await new Promise(resolve => setTimeout(resolve, 300));
-    const nodes = flow.nodes as Node[];
-    const edges = flow.edges as Edge[];
+    const nodes = simulationState.activeFlowData.nodes as Node[];
+    const edges = simulationState.activeFlowData.edges as Edge[];
     const currentNode = nodes.find(n => n.id === simulationState.currentNodeId);
     if (currentNode) {
       setIsProcessing(true);
       const nextNode = findNextNode(currentNode.id, nodes, edges);
-      if (nextNode) await processNode(nextNode, nodes, edges);
-      else addMessage({ type: 'system', content: '✅ Fluxo finalizado' });
+      if (nextNode) {
+        await processNode(nextNode, nodes, edges);
+      } else {
+        // Transition to continuous AI conversation
+        addMessage({ type: 'system', content: `${SYSTEM_LOG_ICONS.finish} FLUXO FINALIZADO - AGENTE DE IA ASSUMINDO` });
+        setSimulationState(prev => ({
+          ...prev,
+          waitingForInput: true,
+          inputVariable: 'ai_query'
+        }));
+      }
       setIsProcessing(false);
     }
   };
@@ -374,14 +558,23 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
       variables: { ...prev.variables, button_choice: button.label }
     }));
     await new Promise(resolve => setTimeout(resolve, 300));
-    const nodes = flow.nodes as Node[];
-    const edges = flow.edges as Edge[];
+    const nodes = simulationState.activeFlowData.nodes as Node[];
+    const edges = simulationState.activeFlowData.edges as Edge[];
     const currentNode = nodes.find(n => n.id === simulationState.currentNodeId);
     if (currentNode) {
       setIsProcessing(true);
       const nextNode = findNextNode(currentNode.id, nodes, edges);
-      if (nextNode) await processNode(nextNode, nodes, edges);
-      else addMessage({ type: 'system', content: '✅ Fluxo finalizado' });
+      if (nextNode) {
+        await processNode(nextNode, nodes, edges);
+      } else {
+        // Transition to continuous AI conversation
+        addMessage({ type: 'system', content: `${SYSTEM_LOG_ICONS.finish} FLUXO FINALIZADO - AGENTE DE IA ASSUMINDO` });
+        setSimulationState(prev => ({
+          ...prev,
+          waitingForInput: true,
+          inputVariable: 'ai_query'
+        }));
+      }
       setIsProcessing(false);
     }
   };
@@ -448,17 +641,33 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
                   )}
                 </div>
               ))}
-              {(isProcessing || isThinking) && (
+              {(isProcessing || isThinking || isRecording) && (
                 <div className="flex flex-col items-start animate-in fade-in duration-300">
                   <div className="bg-white dark:bg-[#202c33] px-4 py-3 rounded-2xl rounded-tl-none shadow-sm border border-[#0000000a]">
-                    <div className="flex items-center gap-2 mb-2"><div className="h-4 w-4 rounded-full bg-[#ff2d85]/10 flex items-center justify-center"><Loader2 className="h-3 w-3 text-[#ff2d85] animate-spin" /></div><span className="text-[10px] font-bold text-[#ff2d85] uppercase tracking-tighter">{isThinking ? (currentAgentName || "IA Processando") : "IA Digitanto"}</span></div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="h-4 w-4 rounded-full bg-[#ff2d85]/10 flex items-center justify-center">
+                        <Loader2 className="h-3 w-3 text-[#ff2d85] animate-spin" />
+                      </div>
+                      <span className="text-[10px] font-bold text-[#ff2d85] uppercase tracking-tighter">
+                        {isThinking ? (currentAgentName || "IA Processando") : isRecording ? "IA Gravando Áudio" : "IA Digitando"}
+                      </span>
+                    </div>
                     {isThinking && (
                       <div className="flex flex-col gap-2">
                         <div className="flex gap-1.5"><span className="w-1.5 h-1.5 bg-[#ff2d85] rounded-full animate-bounce" style={{ animationDelay: '0ms' }} /><span className="w-1.5 h-1.5 bg-[#ff2d85] rounded-full animate-bounce" style={{ animationDelay: '150ms' }} /><span className="w-1.5 h-1.5 bg-[#ff2d85] rounded-full animate-bounce" style={{ animationDelay: '300ms' }} /></div>
-                        <p className="text-[11px] text-muted-foreground italic font-medium">Analizando o contexto global para responder...</p>
+                        <p className="text-[11px] text-muted-foreground italic font-medium">Analisando o contexto global para responder...</p>
                       </div>
                     )}
-                    {!isThinking && isProcessing && (<div className="flex gap-1.5"><span className="w-1.5 h-1.5 bg-muted-foreground/30 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} /><span className="w-1.5 h-1.5 bg-muted-foreground/30 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} /><span className="w-1.5 h-1.5 bg-muted-foreground/30 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} /></div>)}
+                    {(isProcessing || isRecording) && !isThinking && (
+                      <div className="flex flex-col gap-2">
+                        <div className="flex gap-1.5">
+                          <span className={cn("w-1.5 h-1.5 rounded-full animate-bounce", isRecording ? "bg-red-500" : "bg-muted-foreground/30")} style={{ animationDelay: '0ms' }} />
+                          <span className={cn("w-1.5 h-1.5 rounded-full animate-bounce", isRecording ? "bg-red-500" : "bg-muted-foreground/30")} style={{ animationDelay: '150ms' }} />
+                          <span className={cn("w-1.5 h-1.5 rounded-full animate-bounce", isRecording ? "bg-red-500" : "bg-muted-foreground/30")} style={{ animationDelay: '300ms' }} />
+                        </div>
+                        {isRecording && <p className="text-[10px] text-muted-foreground italic">Gravando áudio de alta qualidade...</p>}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -476,7 +685,7 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
           )}
           <form onSubmit={(e) => { e.preventDefault(); handleUserInput(); }} className="flex items-center gap-2">
             <div className="flex-1 bg-white dark:bg-[#2a3942] rounded-full px-4 h-11 flex items-center shadow-sm border border-transparent focus-within:border-[#00a884]">
-              <Input ref={inputRef} value={userInput} onChange={(e) => setUserInput(e.target.value)} placeholder={simulationState.waitingForInput ? "Digite sua mensagem..." : "Simulação finalizada"} disabled={!simulationState.waitingForInput || isProcessing || isThinking} className="border-none bg-transparent focus-visible:ring-0 px-0 h-full text-[14px]" />
+              <Input ref={inputRef} value={userInput} onChange={(e) => setUserInput(e.target.value)} placeholder={simulationState.waitingForInput ? "Digite sua mensagem..." : "Conversa com IA liberada"} disabled={!simulationState.waitingForInput || isProcessing || isThinking} className="border-none bg-transparent focus-visible:ring-0 px-0 h-full text-[14px]" />
             </div>
             <Button type="submit" size="icon" disabled={!simulationState.waitingForInput || isProcessing || isThinking || !userInput.trim()} className="h-11 w-11 rounded-full bg-[#00a884] hover:bg-[#008f72] shadow-md flex-shrink-0"><Send className="h-5 w-5 text-white pr-0.5" /></Button>
           </form>

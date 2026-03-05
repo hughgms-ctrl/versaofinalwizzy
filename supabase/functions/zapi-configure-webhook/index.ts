@@ -64,7 +64,8 @@ Deno.serve(async (req) => {
     const webhookBody = {
       url: webhookUrl,
       enabled: true,
-      events: ["messages", "connection", "history"]
+      base64: true,
+      events: ["messages", "connection", "history", "presence", "status", "documents"]
     };
 
     // Try multiple possible webhook endpoints for V1/V2 compatibility

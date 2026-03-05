@@ -41,7 +41,16 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { userDescription, agentName, agentRole, organizationId } = await req.json();
+    const payload = await req.json();
+    const {
+      userDescription,
+      agentName,
+      agentRole,
+      organizationId,
+      mode = 'generation',
+      messages: chatMessages = [],
+      systemPrompt: customSystemPrompt
+    } = payload;
 
     let integrationConfig = null;
     if (organizationId) {
@@ -49,14 +58,19 @@ serve(async (req) => {
       const { data } = await supabase.from('integration_configs').select('*').eq('organization_id', organizationId).maybeSingle();
       integrationConfig = data;
     }
-    const aiConfig = resolveAIConfig(integrationConfig, 'prompt_generation');
+
+    const aiConfig = resolveAIConfig(integrationConfig, mode === 'chat' ? 'agents' : 'prompt_generation');
     if (!aiConfig) {
       return new Response(JSON.stringify({ error: "Nenhum provedor de IA configurado. Acesse Configurações > Integrações e adicione sua chave de API." }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const systemPrompt = `Você é um especialista em criar prompts para agentes de IA de atendimento ao cliente via WhatsApp em escritórios de advocacia.
+    let finalSystemPrompt = customSystemPrompt;
+    let finalMessages = chatMessages;
+
+    if (mode === 'generation') {
+      finalSystemPrompt = `Você é um especialista em criar prompts para agentes de IA de atendimento ao cliente via WhatsApp em escritórios de advocacia.
 
 O usuário vai descrever com suas palavras o que precisa que o agente faça. Sua tarefa é transformar essa descrição em um prompt-base profissional, claro e bem estruturado.
 
@@ -74,6 +88,22 @@ Informações do agente:
 
 Retorne APENAS o prompt gerado, sem explicações adicionais.`;
 
+      finalMessages = [
+        { role: "system", content: finalSystemPrompt },
+        { role: "user", content: userDescription },
+      ];
+    } else {
+      // Chat mode - use provided messages and system prompt
+      if (finalSystemPrompt) {
+        finalMessages = [
+          { role: "system", content: finalSystemPrompt },
+          ...chatMessages
+        ];
+      }
+    }
+
+    console.log(`[generate-agent-prompt] Mode: ${mode}, Model: ${aiConfig.model}`);
+
     const response = await fetch(aiConfig.endpoint, {
       method: "POST",
       headers: {
@@ -82,33 +112,31 @@ Retorne APENAS o prompt gerado, sem explicações adicionais.`;
       },
       body: JSON.stringify({
         model: aiConfig.model,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userDescription },
-        ],
+        messages: finalMessages,
       }),
     });
 
     if (!response.ok) {
-      if (response.status === 429) {
+      const status = response.status;
+      if (status === 429) {
         return new Response(JSON.stringify({ error: "Rate limit excedido. Tente novamente em alguns segundos." }), {
           status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      if (response.status === 402) {
+      if (status === 402) {
         return new Response(JSON.stringify({ error: "Créditos insuficientes." }), {
           status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
       const t = await response.text();
-      console.error("AI gateway error:", response.status, t);
-      throw new Error("AI gateway error");
+      console.error("AI gateway error:", status, t);
+      throw new Error(`AI gateway error: ${status}`);
     }
 
     const data = await response.json();
-    const prompt = data.choices?.[0]?.message?.content || "";
+    const content = data.choices?.[0]?.message?.content || "";
 
-    return new Response(JSON.stringify({ prompt }), {
+    return new Response(JSON.stringify(mode === 'generation' ? { prompt: content } : { content }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {

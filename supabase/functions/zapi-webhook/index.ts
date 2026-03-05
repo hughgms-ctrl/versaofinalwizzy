@@ -165,93 +165,165 @@ function respond(data: any, status = 200) {
 }
 
 async function handleMessage(supabase: any, payload: any, instanceName: string) {
+  // ==================================================================
+  // UAZAPI sends messages in TWO possible formats:
+  //   Format A (wuzapi/UAZAPI native):
+  //     payload.type = "Message"
+  //     payload.event = { Info: { ID, IsFromMe, MessageSource: { Chat } }, Message: { conversation, audioMessage, imageMessage, ... } }
+  //     payload.base64, payload.mimeType (for media)
+  //   Format B (legacy/alternative):
+  //     payload.message = { msgid, fromMe, type, content, chatid, ... }
+  //     payload.chat = { phone, wa_chatid, ... }
+  // We handle BOTH formats by normalizing into common variables.
+  // ==================================================================
+
+  const event = payload.event || {};
+  const eventInfo = event.Info || event.info || {};
+  const eventMessage = event.Message || event.message || {};
+  const msgSource = eventInfo.MessageSource || eventInfo.messageSource || eventInfo;
   const msg = payload.message || {};
   const chat = payload.chat || {};
 
-  // Extract chatid to determine if group
-  const chatid = msg.chatid || chat.wa_chatid || '';
-  if (isGroupChat(chatid)) {
+  // --- Extract phone (JID -> phone) ---
+  const chatJid = msgSource.Chat || msgSource.chat || eventInfo.Chat || eventInfo.chat || '';
+  const senderJid = msgSource.Sender || msgSource.sender || eventInfo.Sender || eventInfo.sender || '';
+  const chatid = msg.chatid || chat.wa_chatid || chatJid || '';
+
+  if (isGroupChat(chatid) || chatid.includes('@g.us')) {
     return respond({ success: true, ignored: true, reason: 'group_message' });
   }
 
-  // Extract phone number - prefer chat.phone (formatted like "+55 27 99920-9156")
-  // or extract from chatid (like "5527999209156@s.whatsapp.net")
-  let phone = '';
-  if (chat.phone) {
-    phone = cleanPhone(chat.phone);
-  } else if (chatid) {
-    phone = cleanPhone(chatid);
-  } else if (msg.phone) {
-    phone = cleanPhone(msg.phone);
+  // Skip LID identifiers
+  if (chatid.includes('@lid') || senderJid.includes('@lid')) {
+    console.log('Skipping @lid message');
+    return respond({ success: true, ignored: true, reason: 'lid_message' });
   }
 
+  let phone = '';
+  // Try UAZAPI JID format first
+  if (chatJid && !chatJid.includes('@lid')) {
+    phone = cleanPhone(chatJid.split('@')[0]);
+  }
+  // Fallback to legacy format
+  if (!phone && chat.phone) phone = cleanPhone(chat.phone);
+  if (!phone && chatid) phone = cleanPhone(chatid);
+  if (!phone && msg.phone) phone = cleanPhone(msg.phone);
+
   if (!phone || !isValidPhoneNumber(phone)) {
-    console.log('Skipping invalid phone:', phone, 'from chat.phone:', chat.phone, 'chatid:', chatid);
+    console.log('Skipping invalid phone:', phone, 'chatJid:', chatJid, 'chatid:', chatid);
     return respond({ success: true, ignored: true, reason: 'invalid_phone' });
   }
 
-  // Extract message content
-  const fromMe = msg.fromMe === true || msg.fromMe === 'true';
-  const msgId = msg.msgid || msg.id || msg.key?.id || '';
-  const pushName = chat.wa_contactName || chat.name || chat.wa_name || msg.senderName || '';
+  // --- Extract fromMe, msgId, pushName ---
+  const fromMe = (eventInfo.IsFromMe ?? eventInfo.isFromMe) || msg.fromMe === true || msg.fromMe === 'true';
+  const msgId = eventInfo.ID || eventInfo.Id || eventInfo.id || msg.msgid || msg.id || msg.key?.id || '';
+  const pushName = eventInfo.PushName || eventInfo.pushName || chat.wa_contactName || chat.name || chat.wa_name || msg.senderName || '';
 
-  // Get text content from various UAZAPI formats
+  // --- Determine message type and content ---
   let textContent: string | null = null;
   let messageType = 'text';
   let mediaUrl: string | null = null;
 
-  // UAZAPI format: message.content.text or message.content directly
-  const content = msg.content || {};
-  if (typeof content === 'string') {
-    textContent = content;
-  } else if (content.text) {
-    textContent = content.text;
-  } else if (msg.text) {
-    textContent = typeof msg.text === 'string' ? msg.text : msg.text?.message || null;
-  } else if (msg.conversation) {
-    textContent = msg.conversation;
-  }
+  // Check UAZAPI native format first (payload.event.Message sub-objects)
+  const conversationText = eventMessage.conversation || eventMessage.Conversation;
+  const extendedText = eventMessage.extendedTextMessage || eventMessage.ExtendedTextMessage;
+  const imageMsg = eventMessage.imageMessage || eventMessage.ImageMessage;
+  const audioMsg = eventMessage.audioMessage || eventMessage.AudioMessage;
+  const videoMsg = eventMessage.videoMessage || eventMessage.VideoMessage;
+  const documentMsg = eventMessage.documentMessage || eventMessage.DocumentMessage;
+  const stickerMsg = eventMessage.stickerMessage || eventMessage.StickerMessage;
+  const locationMsg = eventMessage.locationMessage || eventMessage.LocationMessage;
+  const contactMsg = eventMessage.contactMessage || eventMessage.ContactMessage;
 
-  // Check for media types
-  const msgType = (msg.type || msg.messageType || chat.wa_lastMessageType || '').toLowerCase();
-  if (msgType.includes('image')) {
+  if (conversationText) {
+    messageType = 'text';
+    textContent = conversationText;
+  } else if (extendedText) {
+    messageType = 'text';
+    textContent = extendedText.text || extendedText.Text || '';
+  } else if (imageMsg) {
     messageType = 'image';
-    mediaUrl = msg.mediaUrl || msg.media?.url || null;
-    if (!textContent) textContent = content.caption || msg.caption || null;
-  } else if (msgType.includes('audio') || msgType.includes('ptt')) {
+    textContent = imageMsg.caption || imageMsg.Caption || null;
+  } else if (audioMsg) {
     messageType = 'audio';
-    mediaUrl = msg.mediaUrl || msg.media?.url || null;
-  } else if (msgType.includes('video')) {
+  } else if (videoMsg) {
     messageType = 'video';
-    mediaUrl = msg.mediaUrl || msg.media?.url || null;
-    if (!textContent) textContent = content.caption || msg.caption || null;
-  } else if (msgType.includes('document')) {
+    textContent = videoMsg.caption || videoMsg.Caption || null;
+  } else if (documentMsg) {
     messageType = 'document';
-    mediaUrl = msg.mediaUrl || msg.media?.url || null;
-    if (!textContent) textContent = content.fileName || msg.fileName || null;
-  } else if (msgType.includes('sticker')) {
+    textContent = documentMsg.fileName || documentMsg.FileName || documentMsg.title || null;
+  } else if (stickerMsg) {
     messageType = 'sticker';
-    mediaUrl = msg.mediaUrl || msg.media?.url || null;
-  } else if (msgType.includes('location')) {
+  } else if (locationMsg) {
     messageType = 'location';
-  } else if (msgType.includes('contact')) {
+    const lat = locationMsg.degreesLatitude || locationMsg.DegreesLatitude || 0;
+    const lng = locationMsg.degreesLongitude || locationMsg.DegreesLongitude || 0;
+    textContent = locationMsg.name || locationMsg.address || `${lat}, ${lng}`;
+  } else if (contactMsg) {
     messageType = 'contact';
+    textContent = contactMsg.displayName || contactMsg.DisplayName || '';
+  } else {
+    // Fallback to legacy format parsing
+    const content = msg.content || {};
+    if (typeof content === 'string') {
+      textContent = content;
+    } else if (content.text) {
+      textContent = content.text;
+    } else if (msg.text) {
+      textContent = typeof msg.text === 'string' ? msg.text : msg.text?.message || null;
+    } else if (msg.conversation) {
+      textContent = msg.conversation;
+    }
+
+    // Check for media types from legacy msg.type
+    const msgType = (msg.type || msg.messageType || chat.wa_lastMessageType || '').toLowerCase();
+    if (msgType.includes('image')) {
+      messageType = 'image';
+      mediaUrl = msg.mediaUrl || msg.media?.url || null;
+      if (!textContent) textContent = content.caption || msg.caption || null;
+    } else if (msgType.includes('audio') || msgType.includes('ptt')) {
+      messageType = 'audio';
+      mediaUrl = msg.mediaUrl || msg.media?.url || null;
+    } else if (msgType.includes('video')) {
+      messageType = 'video';
+      mediaUrl = msg.mediaUrl || msg.media?.url || null;
+      if (!textContent) textContent = content.caption || msg.caption || null;
+    } else if (msgType.includes('document')) {
+      messageType = 'document';
+      mediaUrl = msg.mediaUrl || msg.media?.url || null;
+      if (!textContent) textContent = content.fileName || msg.fileName || null;
+    } else if (msgType.includes('sticker')) {
+      messageType = 'sticker';
+      mediaUrl = msg.mediaUrl || msg.media?.url || null;
+    } else if (msgType.includes('location')) {
+      messageType = 'location';
+    } else if (msgType.includes('contact')) {
+      messageType = 'contact';
+    }
   }
 
-  // Skip empty messages
-  if (!textContent && !mediaUrl && messageType === 'text') {
+  // Skip protocol/system messages
+  if (eventMessage.protocolMessage || eventMessage.ProtocolMessage) {
+    return respond({ success: true, ignored: true, reason: 'protocol_message' });
+  }
+
+  // Skip empty text messages (but allow media-only messages)
+  if (!textContent && !mediaUrl && messageType === 'text' && !payload.base64) {
     return respond({ success: true, ignored: true, reason: 'empty_message' });
   }
 
-  // Handle base64 media
+  console.log(`[WEBHOOK] Message: type=${messageType}, fromMe=${fromMe}, phone=${phone}, hasBase64=${!!payload.base64}`);
+
+  // Handle base64 media (UAZAPI sends media as base64 in the payload)
   if (payload.base64 && payload.mimeType) {
     try {
       const extMap: Record<string, string> = {
-        'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp',
-        'audio/ogg; codecs=opus': 'ogg', 'audio/ogg': 'ogg', 'audio/mpeg': 'mp3',
-        'video/mp4': 'mp4', 'application/pdf': 'pdf',
+        'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif',
+        'audio/ogg; codecs=opus': 'ogg', 'audio/ogg': 'ogg', 'audio/mpeg': 'mp3', 'audio/mp4': 'm4a',
+        'video/mp4': 'mp4', 'video/3gpp': '3gp',
+        'application/pdf': 'pdf',
       };
-      const ext = extMap[payload.mimeType] || 'bin';
+      const ext = extMap[payload.mimeType] || payload.fileName?.split('.').pop() || 'bin';
       const fileName = `${msgId || Date.now()}.${ext}`;
       const storagePath = `webhook-media/${fileName}`;
       const binaryData = Uint8Array.from(atob(payload.base64), c => c.charCodeAt(0));
@@ -262,6 +334,9 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
       if (!uploadError) {
         const { data: publicUrl } = supabase.storage.from('chat-media').getPublicUrl(storagePath);
         mediaUrl = publicUrl?.publicUrl || null;
+        console.log(`[WEBHOOK] Media uploaded: ${mediaUrl?.substring(0, 80)}`);
+      } else {
+        console.error('[WEBHOOK] Media upload error:', uploadError);
       }
     } catch (e) {
       console.error('Media upload error:', e);
@@ -357,6 +432,51 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
 
   console.log(`Message saved: ${msgId} for contact ${phone} in conversation ${conversation.id}`);
 
+  // Auto-transcribe media messages in background (audio, image, video)
+  if (savedMessage && mediaUrl && ['audio', 'image', 'video'].includes(messageType)) {
+    console.log(`[WEBHOOK] Triggering auto-transcription for ${messageType} message ${savedMessage.id}`);
+    const transcribePromise = (async () => {
+      try {
+        // Get org integration config for AI
+        const { data: intConfig } = await supabase
+          .from('integration_configs')
+          .select('*')
+          .eq('organization_id', organizationId)
+          .maybeSingle();
+
+        if (!intConfig) {
+          console.log('[WEBHOOK] No AI integration config, skipping auto-transcription');
+          return;
+        }
+
+        // Call transcribe-media with service role key (bypasses user auth)
+        const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+        const resp = await fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/transcribe-media`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${serviceRoleKey}`,
+          },
+          body: JSON.stringify({
+            messageId: savedMessage.id,
+            mediaUrl: mediaUrl,
+            mediaType: messageType,
+            organizationId: organizationId,
+          }),
+        });
+        if (resp.ok) {
+          const result = await resp.json();
+          console.log(`[WEBHOOK] Auto-transcription result for ${savedMessage.id}: ${result.transcription?.substring(0, 80) || 'empty'}`);
+        } else {
+          console.log(`[WEBHOOK] Auto-transcription failed: ${resp.status}`);
+        }
+      } catch (e) {
+        console.error('[WEBHOOK] Auto-transcription error:', e);
+      }
+    })();
+    runBackground(transcribePromise);
+  }
+
   // Trigger AI agent or Campaigns if needed
   if (!fromMe && textContent) {
     console.log(`Checking triggers for message: "${textContent}" in org: ${organizationId}`);
@@ -378,9 +498,10 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
           await supabase.from('campaigns').update({ trigger_count: (c.trigger_count || 0) + 1 }).eq('id', campaignId);
         }
       } catch (err) {
-        console.error('Failed to increment trigger_count:', err);
+        console.error('[WEBHOOK] Failed to increment trigger_count:', err);
       }
 
+      console.log(`[WEBHOOK] Invoking flow-execute for campaign ${campaignId}, flow ${campaignFlowId}`);
       // Call flow execution engine
       const flowExecPromise = fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/flow-execute`, {
         method: 'POST',
@@ -653,6 +774,6 @@ async function checkCampaignTriggers(supabase: any, organizationId: string, mess
     }
   }
 
-  console.log('No campaign match found for message:', msgLower);
+  console.log('[WEBHOOK] No campaign match found for message:', msgLower);
   return null;
 }
