@@ -43,7 +43,7 @@ async function auditAudio() {
                 console.log(`Execution ${e.id}: Status: ${e.status}`);
                 if (e.error_message) console.log(`  Error: ${e.error_message}`);
                 // Check if log contains audio nodes
-                const nodes = e.execution_log as any[];
+                const nodes = e.execution_log;
                 if (nodes) {
                     const audioNodes = nodes.filter(n => n.type === 'content-block' || n.type === 'audio');
                     if (audioNodes.length > 0) {
