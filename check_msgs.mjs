@@ -7,7 +7,7 @@ let url = '';
 let key = '';
 for (const line of lines) {
     if (line.startsWith('VITE_SUPABASE_URL=')) url = line.split('=')[1].trim().replace(/['"]+/g, '');
-    if (line.startsWith('VITE_SUPABASE_PUBLISHABLE_KEY=')) key = line.split('=')[1].trim().replace(/['"]+/g, '');
+    if (line.startsWith('SUPABASE_SERVICE_ROLE_KEY=')) key = line.split('=')[1].trim().replace(/['"]+/g, '');
 }
 
 async function run() {
@@ -18,6 +18,7 @@ async function run() {
         }
     });
     const data = await res.json();
+    console.log("Response:", data);
     console.log("Recent Inbound Messages:");
     for (const m of data) {
         console.log(`- [${m.type}] ID: ${m.id} | Media: ${m.media_url ? m.media_url.substring(0, 100) : 'none'} | Content: ${m.content ? m.content.substring(0, 50) : 'none'}`);
