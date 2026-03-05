@@ -376,28 +376,43 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
     return respond({ error: 'No connected instance' }, 404);
   }
 
-  // Fetch missing Base64 directly from Evolution API if not in payload
-  if (!base64Data && isMediaType && whatsappInstance && (payload.data?.message || payload.message)) {
+  // Fetch missing Base64 directly from UAZAPI if not in payload
+  if (!base64Data && isMediaType && whatsappInstance && msgId) {
     try {
-      console.log('[WEBHOOK] Base64 missing from payload, fetching from Evolution API...');
+      console.log(`[WEBHOOK] Fetching decrypted media via /message/download for ID: ${msgId}...`);
       const uazapiBaseUrl = Deno.env.get('UAZAPI_BASE_URL')!;
-      const resp = await fetch(`${uazapiBaseUrl}/chat/getBase64FromMediaMessage/${whatsappInstance.zapi_instance_id}`, {
+      // Documentation at https://docs.uazapi.com/endpoint/post/message~download
+      const resp = await fetch(`${uazapiBaseUrl}/message/download`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'apikey': whatsappInstance.zapi_token },
-        body: JSON.stringify({ message: payload.data?.message || payload.message })
+        headers: {
+          'Content-Type': 'application/json',
+          'token': whatsappInstance.zapi_token
+        },
+        body: JSON.stringify({
+          id: msgId,
+          return_base64: true,
+          generate_mp3: true,
+          return_link: true
+        })
       });
+
       if (resp.ok) {
         const data = await resp.json();
-        if (data && data.base64) {
-          base64Data = data.base64;
+        if (data && data.base64Data) {
+          base64Data = data.base64Data;
           if (!mimeType) mimeType = data.mimetype || null;
-          console.log(`[WEBHOOK] Extracted base64 from API: ${base64Data.length} chars, mimeType=${mimeType}`);
+          console.log(`[WEBHOOK] Successfully downloaded media: ${base64Data.length} chars, mimeType=${mimeType}`);
+        } else if (data && data.fileURL && !base64Data) {
+          // If only link is returned but no base64, we can use the link directly
+          directMediaUrl = data.fileURL;
+          console.log(`[WEBHOOK] Using temporary decrypted URL from API: ${directMediaUrl}`);
         }
       } else {
-        console.error(`[WEBHOOK] Failed to fetch base64 from API: ${resp.status} ${await resp.text()}`);
+        const errText = await resp.text();
+        console.error(`[WEBHOOK] Failed to download media via API: ${resp.status} ${errText}`);
       }
     } catch (e) {
-      console.error('[WEBHOOK] Base64 API Fetch exception:', e);
+      console.error('[WEBHOOK] Media Download API exception:', e);
     }
   }
 
