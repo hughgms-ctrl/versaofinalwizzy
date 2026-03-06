@@ -224,7 +224,18 @@ async function runFlowExecution(
       const nextNodeId = findNextNode(currentNode, edges, result.outputHandle);
       currentNodeId = nextNodeId;
 
-      if (currentNodeId && (currentNode.type.startsWith('message-') || currentNode.type === 'content-block')) {
+      // Update execution log in building state for real-time UI feel
+      await supabase
+        .from('flow_executions')
+        .update({
+          execution_log: executionLog,
+          current_node_id: currentNodeId,
+          variables: context.variables,
+        })
+        .eq('id', executionId);
+
+      if (currentNodeId && (currentNode.type.startsWith('message-') || currentNode.type === 'content-block' || currentNode.type === 'action-delay')) {
+        // Small delay to prevent race conditions and allow DB to propagate
         await new Promise(resolve => setTimeout(resolve, 500));
       }
     } catch (error) {
@@ -835,15 +846,52 @@ async function executePipelineAction(
   supabase: SupabaseClientType
 ): Promise<NodeResult> {
   try {
-    const status = String(data.pipelineColumn);
+    const columnId = String(data.pipelineColumnId || '');
+    const pipelineId = String(data.pipelineId || '');
+    const columnName = String(data.pipelineColumnName || 'Etapa');
 
+    if (!columnId || !pipelineId) {
+      return { success: false, error: 'Pipeline ID or Column ID missing in node data' };
+    }
+
+    // 1. Update the status in conversations for legacy/display compatibility
     await supabase
       .from('conversations')
-      .update({ status })
+      .update({ status: 'open' }) // Ensure it's open if moved in pipeline
       .eq('id', context.conversationId);
 
-    return { success: true };
+    // 2. Update/Upsert the position in conversation_pipeline_positions (The Kanban state)
+    const { data: existing } = await supabase
+      .from('conversation_pipeline_positions')
+      .select('id')
+      .eq('conversation_id', context.conversationId)
+      .eq('pipeline_id', pipelineId)
+      .maybeSingle();
+
+    if (existing) {
+      const { error } = await supabase
+        .from('conversation_pipeline_positions')
+        .update({
+          column_id: columnId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existing.id);
+      if (error) throw error;
+    } else {
+      const { error } = await supabase
+        .from('conversation_pipeline_positions')
+        .insert({
+          conversation_id: context.conversationId,
+          pipeline_id: pipelineId,
+          column_id: columnId,
+          order: 0,
+        });
+      if (error) throw error;
+    }
+
+    return { success: true, metadata: { pipelineId, columnId, columnName } };
   } catch (error) {
+    console.error('[FLOW EXECUTE] Pipeline move error:', error);
     return { success: false, error: String(error) };
   }
 }
