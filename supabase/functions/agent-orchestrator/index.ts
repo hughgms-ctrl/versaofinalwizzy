@@ -49,7 +49,7 @@ Deno.serve(async (req) => {
 
     if (!LOVABLE_API_KEY) throw new Error('LOVABLE_API_KEY is not configured');
 
-    const { conversationId, messageContent, masterPromptOverride } = await req.json();
+    const { conversationId, messageContent, masterPromptOverride, additionalContext } = await req.json();
     if (!conversationId || !messageContent) {
       return new Response(JSON.stringify({ error: 'conversationId and messageContent are required' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -58,6 +58,8 @@ Deno.serve(async (req) => {
 
     console.log('=== AGENT ORCHESTRATOR START ===');
     console.log('ConversationId:', conversationId);
+    console.log('Has masterPromptOverride:', !!masterPromptOverride, typeof masterPromptOverride);
+    console.log('Has additionalContext:', !!additionalContext);
 
     // 1. Load conversation with contact
     const { data: conversation, error: convError } = await supabase
@@ -76,10 +78,32 @@ Deno.serve(async (req) => {
     const organizationId = conversation.organization_id;
     const contactId = conversation.contact_id;
 
-    // 2. Resolve the active master prompt (use override if provided)
-    let masterPrompt = masterPromptOverride;
-    if (!masterPrompt) {
+    // 2. Resolve the active master prompt
+    let masterPrompt = null;
+
+    if (masterPromptOverride && typeof masterPromptOverride === 'object' && masterPromptOverride.content) {
+      // Proper object override from flow-execute (has id, name, content)
+      masterPrompt = masterPromptOverride;
+      console.log('Using provided masterPromptOverride object:', masterPrompt.name);
+    } else if (masterPromptOverride && typeof masterPromptOverride === 'string') {
+      // Legacy: string override — wrap it as a prompt object
+      masterPrompt = {
+        id: 'override',
+        name: 'Override Prompt',
+        content: masterPromptOverride,
+        is_active: true,
+      };
+      console.log('Using string masterPromptOverride (wrapped)');
+    } else {
       masterPrompt = await resolveActiveMasterPrompt(supabase, conversation);
+    }
+
+    // Append additionalContext to the master prompt content if provided
+    if (additionalContext && masterPrompt?.content) {
+      masterPrompt = {
+        ...masterPrompt,
+        content: masterPrompt.content + `\n\n---\nINSTRUÇÕES ADICIONAIS DO NÓ DO FLUXO:\n${additionalContext}`,
+      };
     }
 
     if (!masterPrompt) {

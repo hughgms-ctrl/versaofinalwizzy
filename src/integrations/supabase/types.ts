@@ -231,37 +231,114 @@ export type Database = {
           },
         ]
       }
+      campaign_queue: {
+        Row: {
+          campaign_id: string | null
+          contact_id: string | null
+          conversation_id: string | null
+          created_at: string | null
+          id: string
+          message_content: string | null
+          organization_id: string | null
+          processed_at: string | null
+          scheduled_for: string
+          status: string
+        }
+        Insert: {
+          campaign_id?: string | null
+          contact_id?: string | null
+          conversation_id?: string | null
+          created_at?: string | null
+          id?: string
+          message_content?: string | null
+          organization_id?: string | null
+          processed_at?: string | null
+          scheduled_for: string
+          status?: string
+        }
+        Update: {
+          campaign_id?: string | null
+          contact_id?: string | null
+          conversation_id?: string | null
+          created_at?: string | null
+          id?: string
+          message_content?: string | null
+          organization_id?: string | null
+          processed_at?: string | null
+          scheduled_for?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_queue_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_queue_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_queue_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_queue_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       campaigns: {
         Row: {
           created_at: string
+          end_hour: number | null
           flow_id: string
           id: string
           is_active: boolean | null
           match_type: string
           name: string
           organization_id: string
+          start_hour: number | null
+          trigger_count: number
           trigger_keyword: string
           updated_at: string
         }
         Insert: {
           created_at?: string
+          end_hour?: number | null
           flow_id: string
           id?: string
           is_active?: boolean | null
           match_type?: string
           name: string
           organization_id: string
+          start_hour?: number | null
+          trigger_count?: number
           trigger_keyword: string
           updated_at?: string
         }
         Update: {
           created_at?: string
+          end_hour?: number | null
           flow_id?: string
           id?: string
           is_active?: boolean | null
           match_type?: string
           name?: string
           organization_id?: string
+          start_hour?: number | null
+          trigger_count?: number
           trigger_keyword?: string
           updated_at?: string
         }
@@ -2772,6 +2849,10 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      increment_campaign_count: {
+        Args: { campaign_id: string }
+        Returns: undefined
       }
       user_belongs_to_org: {
         Args: { _org_id: string; _user_id: string }

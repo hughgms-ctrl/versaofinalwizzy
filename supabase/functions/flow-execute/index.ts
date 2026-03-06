@@ -182,7 +182,7 @@ async function runFlowExecution(
     if (!currentNode) break;
 
     try {
-      const result = await executeNode(currentNode, context, supabase);
+      const result = await executeNode(currentNode, context, supabase, flow);
       executionLog.push({
         nodeId: currentNode.id,
         type: currentNode.type,
@@ -278,7 +278,8 @@ interface NodeResult {
 async function executeNode(
   node: FlowNode,
   context: ExecutionContext,
-  supabase: SupabaseClientType
+  supabase: SupabaseClientType,
+  flow?: any
 ): Promise<NodeResult> {
   const { type, data } = node;
 
@@ -314,10 +315,16 @@ async function executeNode(
       return await executeWebhook(data, context);
 
     case 'ai-handoff':
-      return await executeAIHandoff(data, context, supabase);
+      return await executeAIHandoff(data, context, supabase, flow);
 
     case 'ai-return':
       return { success: true };
+
+    case 'action-flow':
+      return await executeSubFlow(data, context, supabase);
+
+    case 'action-transfer':
+      return await executeTransfer(data, context, supabase);
 
     default:
       console.log(`Unknown node type: ${type}`);
@@ -328,10 +335,23 @@ async function executeNode(
 async function executeAIHandoff(
   data: Record<string, unknown>,
   context: ExecutionContext,
-  supabase: SupabaseClientType
+  supabase: SupabaseClientType,
+  flow?: any
 ): Promise<NodeResult> {
   try {
-    // 1. Get last message from contact to use as input
+    const agentId = String(data.agentId || '');
+    const contextMessage = String(data.contextMessage || '');
+
+    // 1. Set the agent on the conversation so orchestrator knows which agent to use
+    if (agentId) {
+      await supabase.from('conversations').update({
+        ai_agent_id: agentId,
+        service_mode: 'ia',
+      }).eq('id', context.conversationId);
+      console.log(`[FLOW EXECUTE] AI Handoff: set agent ${agentId} on conversation`);
+    }
+
+    // 2. Get last inbound message
     const { data: lastMessage } = await supabase
       .from('messages')
       .select('content')
@@ -343,7 +363,31 @@ async function executeAIHandoff(
 
     const inputContent = lastMessage?.content || 'Olá';
 
-    // 2. Call agent-orchestrator with specialized instructions override
+    // 3. Build a proper master prompt override object (NOT a string)
+    // Combine: flow's master_prompt + node's contextMessage
+    let masterPromptOverride = null;
+    const flowMasterPrompt = flow?.master_prompt;
+    const flowMasterActive = flow?.is_master_active;
+
+    if (flowMasterActive && flowMasterPrompt) {
+      // Use flow's master prompt as base, append node context
+      let combinedContent = flowMasterPrompt;
+      if (contextMessage) {
+        combinedContent += `\n\n---\nINSTRUÇÕES ADICIONAIS DO NÓ:\n${contextMessage}`;
+      }
+      masterPromptOverride = {
+        id: flow.id,
+        name: `Flow Master: ${flow.name}`,
+        content: combinedContent,
+        is_active: true,
+      };
+    } else if (contextMessage) {
+      // No flow master prompt, but node has context — pass as additional context
+      // Let orchestrator resolve the real master prompt, but pass context separately
+      masterPromptOverride = null; // Will be resolved by orchestrator
+    }
+
+    // 4. Call agent-orchestrator
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
@@ -356,7 +400,8 @@ async function executeAIHandoff(
       body: JSON.stringify({
         conversationId: context.conversationId,
         messageContent: inputContent,
-        masterPromptOverride: data.contextMessage || null // This is the "Extra Prompt" from the node
+        masterPromptOverride: masterPromptOverride,
+        additionalContext: contextMessage || null,
       })
     });
 
@@ -367,9 +412,75 @@ async function executeAIHandoff(
     }
 
     const result = await response.json();
-    return { success: result.success };
+    return { success: result.success !== false };
   } catch (error) {
     console.error('Error in executeAIHandoff:', error);
+    return { success: false, error: String(error) };
+  }
+}
+
+// Execute sub-flow (action-flow node)
+async function executeSubFlow(
+  data: Record<string, unknown>,
+  context: ExecutionContext,
+  supabase: SupabaseClientType
+): Promise<NodeResult> {
+  const flowId = String(data.flowId || '');
+  const flowName = String(data.flowName || data.label || 'Sub-fluxo');
+
+  if (!flowId) {
+    console.log('[FLOW EXECUTE] action-flow: no flowId configured');
+    return { success: true, metadata: { skipped: 'no_flow_id' } };
+  }
+
+  console.log(`[FLOW EXECUTE] Triggering sub-flow: ${flowId} (${flowName})`);
+
+  try {
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+
+    const response = await fetch(`${supabaseUrl}/functions/v1/flow-execute`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${supabaseKey}`,
+      },
+      body: JSON.stringify({
+        flowId,
+        conversationId: context.conversationId,
+        isFromOrchestrator: context.isFromOrchestrator,
+      }),
+    });
+
+    const result = await response.json();
+    console.log(`[FLOW EXECUTE] Sub-flow ${flowId} result:`, result.success ? 'success' : 'failed');
+
+    // Wait a bit for sub-flow to process before continuing
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    return { success: true, metadata: { flowId, flowName, triggered: true } };
+  } catch (error) {
+    console.error(`[FLOW EXECUTE] Sub-flow trigger error:`, error);
+    return { success: false, error: `Sub-flow trigger failed: ${error}` };
+  }
+}
+
+// Execute transfer to human
+async function executeTransfer(
+  data: Record<string, unknown>,
+  context: ExecutionContext,
+  supabase: SupabaseClientType
+): Promise<NodeResult> {
+  try {
+    const departmentId = String(data.departmentId || '');
+    const updateData: Record<string, unknown> = { service_mode: 'humano' };
+    if (departmentId) updateData.department_id = departmentId;
+
+    await supabase.from('conversations').update(updateData).eq('id', context.conversationId);
+    console.log('[FLOW EXECUTE] Transferred to human');
+    return { success: true, metadata: { transferred: true, departmentId } };
+  } catch (error) {
+    console.error('[FLOW EXECUTE] Transfer error:', error);
     return { success: false, error: String(error) };
   }
 }
@@ -802,18 +913,28 @@ async function executeTagAction(
     }
 
     if (action === 'add') {
-      console.log(`[FLOW EXECUTE] Attempting upsert tag ${tagId} for contact ${context.contactId}`);
-      const { error } = await supabase
+      console.log(`[FLOW EXECUTE] Attempting add tag ${tagId} for contact ${context.contactId}`);
+      // Check if already exists first (avoids needing unique constraint)
+      const { data: existing } = await supabase
         .from('contact_tags')
-        .upsert({
-          contact_id: context.contactId,
-          tag_id: tagId,
-          added_by_type: 'flow',
-        }, { onConflict: 'contact_id,tag_id' });
+        .select('id')
+        .eq('contact_id', context.contactId)
+        .eq('tag_id', tagId)
+        .maybeSingle();
 
-      if (error) {
-        console.error('[FLOW EXECUTE] Tag upsert error:', error);
-        return { success: false, error: `Tag add failed: ${error.message}` };
+      if (!existing) {
+        const { error } = await supabase
+          .from('contact_tags')
+          .insert({
+            contact_id: context.contactId,
+            tag_id: tagId,
+            added_by_type: 'flow',
+          });
+
+        if (error) {
+          console.error('[FLOW EXECUTE] Tag insert error:', error);
+          return { success: false, error: `Tag add failed: ${error.message}` };
+        }
       }
       console.log(`[FLOW EXECUTE] Tag ${tagId} (${tagName}) added/verified for contact ${context.contactId}`);
       return { success: true, metadata: { tagId, tagName, action: 'add' } };
