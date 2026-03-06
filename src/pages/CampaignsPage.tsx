@@ -89,6 +89,7 @@ const CampaignsPage = () => {
                                     <TableHead className="w-[25%]">Fluxo</TableHead>
                                     <TableHead className="w-[10%] text-center">Status</TableHead>
                                     <TableHead className="w-[10%] text-center">Disparos</TableHead>
+                                    <TableHead className="w-[10%] text-center">Em espera</TableHead>
                                     <TableHead className="w-[15%] text-right">Ações</TableHead>
                                 </TableRow>
                             </TableHeader>
@@ -153,6 +154,9 @@ const CampaignsPage = () => {
                                         </TableCell>
                                         <TableCell className="text-center font-medium">
                                             {campaign.trigger_count || 0}
+                                        </TableCell>
+                                        <TableCell className="text-center font-medium text-amber-500">
+                                            {campaign.pending_count || 0}
                                         </TableCell>
                                         <TableCell className="text-right">
                                             <div className="flex justify-end gap-2">

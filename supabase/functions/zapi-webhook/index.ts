@@ -359,7 +359,7 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
   if (!mimeType) mimeType = payload.data?.message?.mimetype || payload.message?.mimetype || payload.data?.mimetype;
   if (!mimeType) mimeType = documentMsg?.mimetype || audioMsg?.mimetype || videoMsg?.mimetype || imageMsg?.mimetype || null;
 
-  const directMediaUrl = payload.mediaUrl || payload.MediaUrl || msg.mediaUrl || msg.media?.url || null;
+  let directMediaUrl = payload.mediaUrl || payload.MediaUrl || msg.mediaUrl || msg.media?.url || null;
 
   // Fetch WhatsApp Instance early for API calls
   let whatsappInstance = null;
@@ -652,6 +652,33 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
         console.log(`[CAMPAIGN TRIGGERED] Starting flow ${campaignFlowId} for conversation ${conversation.id}`);
         // Mark as IA mode
         await supabase.from('conversations').update({ service_mode: 'ia' }).eq('id', conversation.id);
+
+        // Increment campaign counter
+        await supabase.rpc('increment_campaign_count', { campaign_id: campaignId });
+
+        // Check if within business hours
+        const now = new Date();
+        const hour = now.getHours(); // Local hour of the server/edge function (usually UTC, might need offset or user config)
+        // For simplicity, we assume the server time matches user's expectation or we should allow timezone config
+        // The user suggested "08:00" and "22:00". We'll use start_hour and end_hour from campaign.
+
+        const { data: campaignData } = await supabase.from('campaigns').select('start_hour, end_hour').eq('id', campaignId).single();
+        const startH = campaignData?.start_hour ?? 0;
+        const endH = campaignData?.end_hour ?? 23;
+
+        if (hour < startH || hour >= endH) {
+          console.log(`[CAMPAIGN QUEUED] Outside hours (${hour} vs ${startH}-${endH}). Adding to queue.`);
+          await supabase.from('campaign_queue').insert({
+            organization_id: organizationId,
+            campaign_id: campaignId,
+            conversation_id: conversation.id,
+            contact_id: contact.id,
+            message_content: triggerText,
+            scheduled_for: new Date(now.getFullYear(), now.getMonth(), now.getDate() + (hour >= endH ? 1 : 0), startH, 0, 0).toISOString(),
+            status: 'pending'
+          });
+          return respond({ success: true, messageId: savedMessage.id, queued: true });
+        }
 
         console.log(`[WEBHOOK] Invoking flow-execute for campaign ${campaignId}, flow ${campaignFlowId}`);
         // Call flow execution engine

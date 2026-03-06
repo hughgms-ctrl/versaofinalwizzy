@@ -12,6 +12,9 @@ export interface Campaign {
     flow_id: string;
     is_active: boolean;
     trigger_count: number;
+    start_hour: number;
+    end_hour: number;
+    pending_count?: number; // Virtual field calculated in query or elsewhere
     created_at: string;
     updated_at: string;
     flow?: {
@@ -32,14 +35,22 @@ export function useCampaigns() {
             const { data, error } = await supabase
                 .from('campaigns')
                 .select(`
-          *,
-          flow:flows(id, name)
-        `)
+                  *,
+                  flow:flows(id, name),
+                  pending_count:campaign_queue(count)
+                `)
                 .eq('organization_id', currentOrganizationId)
                 .order('created_at', { ascending: false });
 
             if (error) throw error;
-            return data as unknown as Campaign[];
+
+            // Map the pending_count from the joined count query
+            const mappedData = (data || []).map((c: any) => ({
+                ...c,
+                pending_count: c.pending_count?.[0]?.count || 0
+            }));
+
+            return mappedData as unknown as Campaign[];
         },
         enabled: !!currentOrganizationId,
     });

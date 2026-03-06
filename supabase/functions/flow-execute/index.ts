@@ -175,7 +175,7 @@ async function runFlowExecution(
   supabase: SupabaseClientType
 ) {
   let currentNodeId: string | null = (await supabase.from('flow_executions').select('current_node_id').eq('id', executionId).single()).data?.current_node_id || nodes.find(n => n.type === 'start')?.id || null;
-  const executionLog: Array<{ nodeId: string; type: string; result: string; timestamp: string }> = [];
+  const executionLog: Array<{ nodeId: string; type: string; result: string; timestamp: string; metadata?: any }> = [];
 
   while (currentNodeId) {
     const currentNode = nodes.find(n => n.id === currentNodeId);
@@ -187,6 +187,7 @@ async function runFlowExecution(
         nodeId: currentNode.id,
         type: currentNode.type,
         result: result.success ? 'success' : 'failed',
+        metadata: result.metadata, // Include metadata for debugging
         timestamp: new Date().toISOString(),
       });
 
@@ -260,6 +261,7 @@ interface NodeResult {
   outputHandle?: string;
   variables?: Record<string, unknown>;
   waitForInput?: boolean;
+  metadata?: any;
 }
 
 async function executeNode(
@@ -752,35 +754,44 @@ async function executeTagAction(
   supabase: SupabaseClientType
 ): Promise<NodeResult> {
   try {
+    const action = (data.action as string) || 'add';
     let tagId = String(data.tagId || '');
     const tagName = String(data.tagName || '');
-    const action = String(data.action) || 'add';
+
+    console.log(`[FLOW EXECUTE] executeTagAction: action=${action}, tagId=${tagId}, tagName=${tagName}, contactId=${context.contactId}`);
 
     if (!tagId && !tagName) {
       console.log('[FLOW EXECUTE] Tag action skipped: no tagId or tagName');
-      return { success: true };
+      return { success: true, metadata: { skipped: 'no_data' } };
     }
 
     // Resolve tagId by name if ID is missing (robust fallback)
     if (!tagId && tagName) {
       console.log(`[FLOW EXECUTE] Resolving tag by name: ${tagName}`);
-      const { data: tag } = await supabase
+      const { data: tag, error: fetchError } = await supabase
         .from('tags')
         .select('id')
         .eq('organization_id', context.organizationId)
         .eq('name', tagName)
         .maybeSingle();
-      if (tag) tagId = tag.id;
+
+      if (fetchError) {
+        console.error('[FLOW EXECUTE] Tag fetch error:', fetchError);
+      }
+
+      if (tag) {
+        tagId = tag.id;
+        console.log(`[FLOW EXECUTE] Resolved tag ${tagName} to ${tagId}`);
+      }
     }
 
     if (!tagId) {
-      console.warn(`[FLOW EXECUTE] Could not find tag: ${tagName || tagId}`);
-      return { success: true };
+      console.warn(`[FLOW EXECUTE] Could not resolve tag: ${tagName || tagId}`);
+      return { success: true, metadata: { skipped: 'not_resolved', tagName } };
     }
 
-    console.log(`[FLOW EXECUTE] Tag action: ${action} tagId=${tagId} for contact=${context.contactId}`);
-
     if (action === 'add') {
+      console.log(`[FLOW EXECUTE] Attempting upsert tag ${tagId} for contact ${context.contactId}`);
       const { error } = await supabase
         .from('contact_tags')
         .upsert({
@@ -794,22 +805,27 @@ async function executeTagAction(
         return { success: false, error: `Tag add failed: ${error.message}` };
       }
       console.log(`[FLOW EXECUTE] Tag ${tagId} (${tagName}) added/verified for contact ${context.contactId}`);
-    } else if (action === 'remove') {
+      return { success: true, metadata: { tagId, tagName, action: 'add' } };
+    }
+    else if (action === 'remove') {
       const { error } = await supabase
         .from('contact_tags')
         .delete()
         .eq('contact_id', context.contactId)
         .eq('tag_id', tagId);
+
       if (error) {
-        console.error('[FLOW EXECUTE] Tag remove error:', error);
+        console.error('[FLOW EXECUTE] Tag delete error:', error);
+        return { success: false, error: `Tag remove failed: ${error.message}` };
       }
       console.log(`[FLOW EXECUTE] Tag ${tagId} removed from contact ${context.contactId}`);
+      return { success: true, metadata: { tagId, tagName, action: 'remove' } };
     }
 
-    return { success: true };
+    return { success: true, metadata: { action: 'none' } };
   } catch (error) {
-    console.error('[FLOW EXECUTE] Tag action exception:', error);
-    return { success: false, error: String(error) };
+    console.error('[FLOW EXECUTE] executeTagAction catch:', error);
+    return { success: false, error: `Tag action exception: ${error}` };
   }
 }
 
