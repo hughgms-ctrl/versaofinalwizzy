@@ -407,71 +407,19 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
               const metadata = conversation.contact?.metadata as { note?: string } | null;
               const note = metadata?.note;
 
-              if (note) {
-                return (
-                  <div className="flex flex-col gap-0.5">
-                    {/* Line 1: Quick Note */}
-                    <div className="flex items-center justify-between gap-2 min-w-0">
+              return (
+                <div className="flex flex-col gap-0.5">
+                  {/* Row 1: Note (if exists) + Time/Unread/Actions */}
+                  <div className="flex items-center justify-between gap-2 min-w-0">
+                    {note && (
                       <span
-                        className="text-xs font-semibold px-2 py-0.5 bg-amber-500/15 text-amber-700 dark:text-amber-400 rounded truncate max-w-full min-w-0 flex-1"
+                        className="text-xs font-semibold px-2 py-0.5 bg-amber-500/15 text-amber-700 dark:text-amber-400 rounded truncate min-w-0 flex-1"
                         title={note}
                       >
                         {note}
                       </span>
+                    )}
 
-                      {/* Actions Area */}
-                      <div className="flex items-center gap-1 flex-shrink-0 ml-auto">
-                        {conversation.last_message_at && (
-                          <span className={cn(
-                            "text-[10px] whitespace-nowrap",
-                            hasUnread ? "text-primary font-medium" : "text-muted-foreground"
-                          )}>
-                            {formatDistanceToNow(new Date(conversation.last_message_at), { addSuffix: false, locale: ptBR })}
-                          </span>
-                        )}
-                        {hasUnread && (
-                          <span className="h-5 min-w-[20px] px-1 rounded-full bg-primary text-[10px] font-bold text-primary-foreground flex items-center justify-center">
-                            {conversation.unread_count}
-                          </span>
-                        )}
-                        <ConversationCardActions
-                          conversation={conversation}
-                          variant="minimal"
-                          onOpenChat={() => onConversationClick(conversation)}
-                        />
-                      </div>
-                    </div>
-
-                    {/* Line 2: Name + Phone */}
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <p className={cn(
-                        "text-[11px] truncate flex-1 min-w-0",
-                        hasUnread ? "font-bold text-foreground" : "font-medium text-muted-foreground"
-                      )}>
-                        {hasName ? contactName : formattedPhone}
-                      </p>
-                      {hasName && (
-                        <p className="text-[10px] text-muted-foreground/70 truncate flex-shrink-0">
-                          • {formattedPhone}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                );
-              }
-
-              return (
-                <div className="flex flex-col gap-0.5">
-                  {/* Line 1: Name/Phone */}
-                  <div className="flex items-center justify-between gap-2 min-w-0">
-                    <p className={cn(
-                      "text-sm truncate flex-1 min-w-0",
-                      hasUnread ? "font-bold text-foreground" : "font-medium text-foreground"
-                    )}>
-                      {hasName ? contactName : formattedPhone}
-                    </p>
-
-                    {/* Actions Area */}
                     <div className="flex items-center gap-1 flex-shrink-0 ml-auto">
                       {conversation.last_message_at && (
                         <span className={cn(
@@ -493,41 +441,82 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
                       />
                     </div>
                   </div>
-                  {/* Line 2: Phone details */}
-                  {hasName && (
-                    <p className={cn(
-                      "text-[9px] leading-tight truncate",
-                      (isTyping || isRecording) ? "text-green-500 font-medium animate-pulse" : "text-muted-foreground"
-                    )}>
-                      {isTyping ? 'Digitando...' : isRecording ? 'Gravando áudio...' : messagePreview}
+
+                  {/* Row 2: Name + Phone */}
+                  {note ? (
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <p className={cn(
+                        "text-[11px] truncate flex-1 min-w-0",
+                        hasUnread ? "font-bold text-foreground" : "font-medium text-muted-foreground"
+                      )}>
+                        {hasName ? contactName : formattedPhone}
+                      </p>
+                      {hasName && (
+                        <p className="text-[10px] text-muted-foreground/70 truncate flex-shrink-0">
+                          • {formattedPhone}
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between gap-2 min-w-0">
+                      <p className={cn(
+                        "text-sm truncate flex-1 min-w-0",
+                        hasUnread ? "font-bold text-foreground" : "font-medium text-foreground"
+                      )}>
+                        {hasName ? contactName : formattedPhone}
+                      </p>
+                    </div>
+                  )}
+                  {!note && hasName && (
+                    <p className="text-[10px] text-muted-foreground truncate">
+                      {formattedPhone}
                     </p>
                   )}
                 </div>
               );
             })()}
 
-            {/* Line 4: Last message preview */}
-            {messagePreview && (
-              <div className="flex items-center gap-1 mt-1">
-                {lastMessage?.direction === 'outbound' && (
-                  <span className="flex-shrink-0 flex items-center">
-                    {lastMessage.read_at ? (
-                      <CheckCheck className="text-blue-500 h-3 w-3 stroke-[3]" />
-                    ) : (lastMessage.delivered_at || lastMessage.read_at) ? (
-                      <CheckCheck className="text-muted-foreground/60 h-3 w-3 stroke-[3]" />
-                    ) : (
-                      <Check className="text-muted-foreground/60 h-3 w-3 stroke-[3]" />
-                    )}
-                  </span>
-                )}
+            {/* Row 3: Last message preview / Status indicator */}
+            <div className="flex items-center gap-1 mt-1">
+              {lastMessage?.direction === 'outbound' && (
+                <span className="flex-shrink-0 flex items-center">
+                  {lastMessage.read_at ? (
+                    <CheckCheck className="text-blue-500 h-3 w-3 stroke-[3]" />
+                  ) : (lastMessage.delivered_at || lastMessage.read_at) ? (
+                    <CheckCheck className="text-muted-foreground/60 h-3 w-3 stroke-[3]" />
+                  ) : (
+                    <Check className="text-muted-foreground/60 h-3 w-3 stroke-[3]" />
+                  )}
+                </span>
+              )}
+              {isTyping || isRecording ? (
+                <p className="text-[11px] text-green-500 font-medium animate-pulse truncate flex-1 min-w-0">
+                  {isTyping ? 'Digitando...' : 'Gravando áudio...'}
+                </p>
+              ) : messagePreview ? (
                 <p className={cn(
                   "text-[11px] truncate flex-1 min-w-0",
                   hasUnread ? "text-foreground font-medium" : "text-muted-foreground"
                 )}>
                   {messagePreview}
                 </p>
-              </div>
-            )}
+              ) : (
+                <span
+                  className={cn(
+                    "px-2 py-0.5 rounded-full text-[10px] font-medium",
+                    conversation.status === 'open' && "bg-green-500/10 text-green-500",
+                    conversation.status === 'pending' && "bg-yellow-500/10 text-yellow-500",
+                    conversation.status === 'resolved' && "bg-blue-500/10 text-blue-500",
+                    conversation.status === 'archived' && "bg-muted text-muted-foreground"
+                  )}
+                >
+                  {conversation.status === 'open' && 'Aberto'}
+                  {conversation.status === 'pending' && 'Pendente'}
+                  {conversation.status === 'resolved' && 'Resolvido'}
+                  {conversation.status === 'archived' && 'Arquivado'}
+                </span>
+              )}
+            </div>
 
             {/* Line 5: Contact Tags */}
             {(() => {
