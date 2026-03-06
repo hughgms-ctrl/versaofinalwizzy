@@ -301,20 +301,17 @@ async function executeNode(
     case 'action-tag':
       return await executeTagAction(data, context, supabase);
 
-    case 'action-pipeline':
-      return await executePipelineAction(data, context, supabase);
+    case 'action-flow':
+      return await executeFlowAction(data, context, supabase);
 
-    case 'condition':
-      return executeCondition(data, context);
+    case 'action-department':
+      return await executeDepartmentAction(data, context, supabase);
 
-    case 'user-input':
-      return { success: true, waitForInput: true };
+    case 'action-transfer':
+      return await executeTransferAction(data, context, supabase);
 
-    case 'action-webhook':
-      return await executeWebhook(data, context);
-
-    case 'ai-handoff':
-      return await executeAIHandoff(data, context, supabase);
+    case 'action-document':
+      return await executeDocumentAction(data, context, supabase);
 
     case 'ai-return':
       return { success: true };
@@ -846,7 +843,7 @@ async function executePipelineAction(
   supabase: SupabaseClientType
 ): Promise<NodeResult> {
   try {
-    const columnId = String(data.pipelineColumnId || '');
+    const columnId = String(data.pipelineColumnId || data.columnId || '');
     const pipelineId = String(data.pipelineId || '');
     const columnName = String(data.pipelineColumnName || 'Etapa');
 
@@ -892,6 +889,117 @@ async function executePipelineAction(
     return { success: true, metadata: { pipelineId, columnId, columnName } };
   } catch (error) {
     console.error('[FLOW EXECUTE] Pipeline move error:', error);
+    return { success: false, error: String(error) };
+  }
+}
+
+async function executeFlowAction(
+  data: Record<string, unknown>,
+  context: ExecutionContext,
+  supabase: SupabaseClientType
+): Promise<NodeResult> {
+  try {
+    const flowId = String(data.flowId || '');
+    const flowName = String(data.flowName || 'Subfluxo');
+
+    if (!flowId) {
+      return { success: false, error: 'Flow ID missing in node data' };
+    }
+
+    console.log(`[FLOW EXECUTE] Triggering subflow: ${flowName} (${flowId})`);
+
+    // Call the same function recursively/as a child
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+
+    const response = await fetch(`${supabaseUrl}/functions/v1/flow-execute`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${supabaseKey}`,
+      },
+      body: JSON.stringify({
+        flowId: flowId,
+        conversationId: context.conversationId,
+        isFromOrchestrator: context.isFromOrchestrator
+      })
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return { success: false, error: `Subflow trigger failed: ${errorText}` };
+    }
+
+    return { success: true, metadata: { flowId, flowName } };
+  } catch (error) {
+    console.error('[FLOW EXECUTE] Flow action error:', error);
+    return { success: false, error: String(error) };
+  }
+}
+
+async function executeDepartmentAction(
+  data: Record<string, unknown>,
+  context: ExecutionContext,
+  supabase: SupabaseClientType
+): Promise<NodeResult> {
+  try {
+    const departmentId = String(data.departmentId || '');
+    const departmentName = String(data.departmentName || 'Departamento');
+
+    if (!departmentId) {
+      return { success: false, error: 'Department ID missing' };
+    }
+
+    const { error } = await supabase
+      .from('conversations')
+      .update({ department_id: departmentId })
+      .eq('id', context.conversationId);
+
+    if (error) throw error;
+
+    return { success: true, metadata: { departmentId, departmentName } };
+  } catch (error) {
+    console.error('[FLOW EXECUTE] Department change error:', error);
+    return { success: false, error: String(error) };
+  }
+}
+
+async function executeTransferAction(
+  _data: Record<string, unknown>,
+  context: ExecutionContext,
+  supabase: SupabaseClientType
+): Promise<NodeResult> {
+  try {
+    const { error } = await supabase
+      .from('conversations')
+      .update({ service_mode: 'humano' })
+      .eq('id', context.conversationId);
+
+    if (error) throw error;
+
+    return { success: true, metadata: { transfer: 'humano' } };
+  } catch (error) {
+    console.error('[FLOW EXECUTE] Human transfer error:', error);
+    return { success: false, error: String(error) };
+  }
+}
+
+async function executeDocumentAction(
+  data: Record<string, unknown>,
+  context: ExecutionContext,
+  supabase: SupabaseClientType
+): Promise<NodeResult> {
+  try {
+    const templateId = String(data.templateId || '');
+    if (!templateId) return { success: false, error: 'Template ID missing' };
+
+    // This usually triggers a separate process or notifies the agent
+    // For now, let's just log it. In a full implementation, we'd call a generate-doc function.
+    console.log(`[FLOW EXECUTE] Document generation requested: ${templateId}`);
+
+    return { success: true, metadata: { templateId } };
+  } catch (error) {
+    console.error('[FLOW EXECUTE] Document action error:', error);
     return { success: false, error: String(error) };
   }
 }

@@ -77,8 +77,19 @@ Deno.serve(async (req) => {
     const contactId = conversation.contact_id;
 
     // 2. Resolve the active master prompt (use override if provided)
-    let masterPrompt = masterPromptOverride;
-    if (!masterPrompt) {
+    let masterPrompt = null;
+    if (masterPromptOverride) {
+      if (typeof masterPromptOverride === 'string') {
+        masterPrompt = {
+          id: 'override',
+          name: 'Override',
+          content: masterPromptOverride,
+          is_active: true
+        };
+      } else {
+        masterPrompt = masterPromptOverride;
+      }
+    } else {
       masterPrompt = await resolveActiveMasterPrompt(supabase, conversation);
     }
 
@@ -253,12 +264,12 @@ async function executeFlowOrchestration(
   } else {
     // Not waiting - walk forward (first run or continuing)
     if (!state.current_node_id) {
-      // Initialize: find trigger node
-      const triggerNode = flowNodes.find((n: any) => n.type === 'orch-trigger');
+      // Initialize: find start node or trigger node
+      const triggerNode = flowNodes.find((n: any) => n.type === 'start' || n.type === 'orch-trigger');
       if (triggerNode) {
         state.current_node_id = triggerNode.id;
         state.completed_nodes.push(triggerNode.id);
-        console.log('Starting from trigger node:', triggerNode.id);
+        console.log('Starting from node:', triggerNode.id, `(${triggerNode.type})`);
       }
     }
     const walkResult = await walkFlowForward(supabase, ctx, state, flowNodes, flowEdges, messageContent);

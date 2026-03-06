@@ -384,7 +384,26 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
       case 'ai-master':
         const isMaster = nodeType === 'ai-master';
         const agentName = isMaster ? "Orquestrador Master" : ((nodeData.agentName as string) || 'Especialista');
-        const agentPrompt = isMaster ? (simulationState.activeFlowData?.master_prompt || '') : (nodeData.prompt as string || '');
+
+        let agentPrompt = isMaster ? (simulationState.activeFlowData?.master_prompt || '') : (nodeData.prompt as string || '');
+
+        // CRITICAL FIX: If not master, fetch the actual base prompt from the agent table if prompt is empty or to complement
+        if (!isMaster && nodeData.agentId) {
+          try {
+            const { data: agentData } = await supabase
+              .from('agents' as any)
+              .select('prompt, name')
+              .eq('id', nodeData.agentId)
+              .single();
+
+            if (agentData?.prompt) {
+              // Combine base prompt with node-specific instructions
+              agentPrompt = `${agentData.prompt}\n\n[INSTRUÇÕES ESPECÍFICAS DESTE NÓ]:\n${agentPrompt}`;
+            }
+          } catch (err) {
+            console.error('Error fetching agent prompt:', err);
+          }
+        }
 
         setCurrentAgentName(agentName);
         setIsThinking(true);
@@ -514,7 +533,26 @@ Responda sempre em português brasileiro de forma profissional e prestativa.`;
       if (simulationState.inputVariable === 'ai_query' || simulationState.inputVariable === 'master_query') {
         const isMaster = simulationState.inputVariable === 'master_query';
         const currentNode = (simulationState.activeFlowData.nodes as Node[]).find(n => n.id === simulationState.currentNodeId);
-        const prompt = isMaster ? (simulationState.activeFlowData.master_prompt || '') : (currentNode?.data?.prompt as string || '');
+
+        let prompt = isMaster ? (simulationState.activeFlowData.master_prompt || '') : (currentNode?.data?.prompt as string || '');
+
+        // Fetch agent base prompt if needed during active chat
+        if (!isMaster && currentNode?.data?.agentId) {
+          try {
+            const { data: agentData } = await supabase
+              .from('agents' as any)
+              .select('prompt')
+              .eq('id', currentNode.data.agentId)
+              .single();
+
+            if (agentData?.prompt) {
+              prompt = `${agentData.prompt}\n\n[INSTRUÇÕES ESPECÍFICAS DESTE NÓ]:\n${prompt}`;
+            }
+          } catch (err) {
+            console.error('Error fetching agent prompt during chat:', err);
+          }
+        }
+
         await handleAIRealCall(prompt, isMaster);
         return;
       }
@@ -592,30 +630,53 @@ Responda sempre em português brasileiro de forma profissional e prestativa.`;
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full sm:max-w-[450px] p-0 flex flex-col bg-[#f0f2f5] dark:bg-background border-l border-border shadow-2xl">
-        <div className="bg-[#075e54] dark:bg-[#202c33] text-white px-4 py-4 flex items-center justify-between shadow-md z-10">
+      <SheetContent side="right" className="w-full sm:max-w-[480px] p-0 flex flex-col bg-slate-50 dark:bg-[#0B0F1A] border-l border-white/10 shadow-2xl overflow-hidden">
+        {/* Header - Glassmorphism */}
+        <div className="bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl px-5 py-4 flex items-center justify-between border-b border-black/5 dark:border-white/5 z-20 sticky top-0">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-full bg-[#dfe5e7] dark:bg-[#6a7175] flex items-center justify-center overflow-hidden border border-white/10">
-              <Bot className="h-6 w-6 text-[#54656f] dark:text-white/80" />
+            <div className="relative">
+              <div className="h-11 w-11 rounded-2xl bg-gradient-to-tr from-primary/20 via-primary/10 to-transparent flex items-center justify-center border border-primary/20 shadow-inner">
+                <Bot className="h-6 w-6 text-primary" />
+              </div>
+              <div className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full bg-green-500 border-2 border-white dark:border-slate-900 shadow-sm" />
             </div>
             <div>
-              <h3 className="text-[15px] font-semibold leading-tight">Simulador de Atendimento</h3>
-              <div className="flex items-center gap-1">
-                <div className="h-2 w-2 rounded-full bg-[#25d366]" />
-                <span className="text-[11px] text-white/80">Online | {flowName}</span>
+              <h3 className="text-[16px] font-bold tracking-tight text-slate-800 dark:text-white leading-tight">Simulador de Atendimento</h3>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                  Fluxo Ativo: <span className="text-primary font-semibold">{flowName}</span>
+                </span>
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-1">
-            <Button variant="ghost" size="icon" className="text-white hover:bg-white/10 h-8 w-8 rounded-full" onClick={resetSimulation} title="Reiniciar"><RotateCcw className="h-4 w-4" /></Button>
-            <Button variant="ghost" size="icon" className="text-white hover:bg-white/10 h-8 w-8 rounded-full" onClick={() => onOpenChange(false)}><X className="h-4 w-4" /></Button>
+          <div className="flex items-center gap-1.5">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 transition-colors"
+              onClick={resetSimulation}
+              title="Reiniciar Simulação"
+            >
+              <RotateCcw className="h-4 w-4 text-slate-500" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 transition-colors"
+              onClick={() => onOpenChange(false)}
+            >
+              <X className="h-4 w-4 text-slate-500" />
+            </Button>
           </div>
         </div>
 
         <div
           ref={scrollRef}
-          className="flex-1 overflow-y-auto p-4 space-y-4 relative scroll-smooth"
-          style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg width='80' height='80' viewBox='0 0 80 80' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M10 10l5 5m-5 0l5-5m20 0l5 5m-5 0l5-5m20 0l5 5m-5 0l5-5m20 0l5 5m-5 0l5-5M10 30l5 5m-5 0l5-5m20 0l5 5m-5 0l5-5m20 0l5 5m-5 0l5-5m20 0l5 5m-5 0l5-5M10 50l5 5m-5 0l5-5m20 0l5 5m-5 0l5-5m20 0l5 5m-5 0l5-5m20 0l5 5m-5 0l5-5M10 70l5 5m-5 0l5-5m20 0l5 5m-5 0l5-5m20 0l5 5m-5 0l5-5m20 0l5 5m-5 0l5-5' stroke='%23000' stroke-opacity='0.03' fill='none' fill-rule='evenodd'/%3E%3C/svg%3E")` }}
+          className="flex-1 overflow-y-auto p-6 space-y-6 relative scroll-smooth bg-slate-50/50 dark:bg-[#0B0F1A]/50"
+          style={{
+            backgroundImage: `radial-gradient(circle at 2px 2px, rgba(0,0,0,0.03) 1px, transparent 0)`,
+            backgroundSize: '24px 24px'
+          }}
         >
           {!isStarted ? (
             <div className="flex flex-col items-center justify-center h-full text-center p-8 bg-white/50 dark:bg-card/30 backdrop-blur-sm rounded-3xl border border-dashed border-border m-4">
@@ -627,45 +688,64 @@ Responda sempre em português brasileiro de forma profissional e prestativa.`;
           ) : (
             <>
               {messages.map((msg) => (
-                <div key={msg.id} className={cn("flex flex-col animate-in fade-in slide-in-from-bottom-2 duration-300", msg.type === 'bot' ? 'items-start' : 'items-end', msg.type === 'system' && 'items-center my-4')}>
-                  {msg.type === 'system' ? (<div className="bg-white/90 dark:bg-muted/80 backdrop-blur-sm px-4 py-1.5 rounded-full shadow-sm border border-border/50"><span className="text-[10px] uppercase tracking-wider font-bold text-muted-foreground/80">{msg.content}</span></div>) : (
-                    <div className={cn("max-w-[85%] px-3.5 py-2.5 rounded-2xl shadow-sm relative", msg.type === 'bot' ? 'bg-white dark:bg-[#202c33] text-foreground rounded-tl-none border-t border-r border-[#0000000a]' : 'bg-[#dcf8c6] dark:bg-[#005c4b] text-foreground rounded-tr-none')}>
-                      {msg.type === 'bot' && (<div className="flex items-center gap-1.5 mb-1 text-[10px] font-bold text-[#ff2d85]"><Bot className="h-3 w-3" /><span>Wizzy Bot</span></div>)}
+                <div key={msg.id} className={cn("flex flex-col animate-in fade-in slide-in-from-bottom-3 duration-500 ease-out", msg.type === 'bot' ? 'items-start' : 'items-end', msg.type === 'system' && 'items-center my-6')}>
+                  {msg.type === 'system' ? (
+                    <div className="bg-white/40 dark:bg-white/5 backdrop-blur-md px-5 py-2 rounded-2xl shadow-sm border border-black/5 dark:border-white/5 max-w-[90%] text-center">
+                      <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 capitalize">
+                        {msg.content.toLowerCase().replace(/\[.*?\]\s*/g, '')}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className={cn(
+                      "max-w-[85%] px-4 py-3 rounded-2xl shadow-md relative group transition-all duration-300",
+                      msg.type === 'bot'
+                        ? 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-tl-sm border border-slate-100 dark:border-slate-700/50'
+                        : 'bg-primary text-white rounded-tr-sm shadow-primary/20'
+                    )}>
+                      {msg.type === 'bot' && (
+                        <div className="flex items-center gap-1.5 mb-1.5 text-[10px] font-bold text-primary dark:text-primary-foreground opacity-90">
+                          <Bot className="h-3 w-3" />
+                          <span className="tracking-wide">WIZZY AI</span>
+                        </div>
+                      )}
                       {renderMediaPreview(msg)}
-                      <p className="text-[13px] leading-relaxed whitespace-pre-wrap">{msg.content}</p>
-                      <div className="flex items-center justify-end gap-1.5 mt-1.5">
-                        <span className="text-[9px] opacity-50 font-medium">{msg.timestamp.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
-                        {msg.type === 'user' && <CheckCheck className="h-3.5 w-3.5 text-blue-500" />}
+                      <p className="text-[14px] leading-[1.6] whitespace-pre-wrap font-medium">{msg.content}</p>
+                      <div className="flex items-center justify-end gap-1.5 mt-2 opacity-60">
+                        <span className="text-[10px] font-medium">{msg.timestamp.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+                        {msg.type === 'user' && <CheckCheck className="h-3.5 w-3.5" />}
                       </div>
                     </div>
                   )}
                 </div>
               ))}
               {(isProcessing || isThinking || isRecording) && (
-                <div className="flex flex-col items-start animate-in fade-in duration-300">
-                  <div className="bg-white dark:bg-[#202c33] px-4 py-3 rounded-2xl rounded-tl-none shadow-sm border border-[#0000000a]">
-                    <div className="flex items-center gap-2 mb-2">
-                      <div className="h-4 w-4 rounded-full bg-[#ff2d85]/10 flex items-center justify-center">
-                        <Loader2 className="h-3 w-3 text-[#ff2d85] animate-spin" />
+                <div className="flex flex-col items-start animate-in fade-in duration-500">
+                  <div className="bg-white dark:bg-slate-800 px-5 py-4 rounded-2xl rounded-tl-sm shadow-md border border-slate-100 dark:border-slate-700/50 min-w-[140px]">
+                    <div className="flex items-center gap-2.5 mb-2.5">
+                      <div className="h-4.5 w-4.5 rounded-lg bg-primary/10 flex items-center justify-center">
+                        <Loader2 className="h-3.5 w-3.5 text-primary animate-spin" />
                       </div>
-                      <span className="text-[10px] font-bold text-[#ff2d85] uppercase tracking-tighter">
-                        {isThinking ? (currentAgentName || "IA Processando") : isRecording ? "IA Gravando Áudio" : "IA Digitando"}
+                      <span className="text-[11px] font-bold text-primary tracking-tight">
+                        {isThinking ? (currentAgentName || "Wizzy AI Pensando") : isRecording ? "IA Gravando Áudio" : "Wizzy AI Digitando"}
                       </span>
                     </div>
                     {isThinking && (
-                      <div className="flex flex-col gap-2">
-                        <div className="flex gap-1.5"><span className="w-1.5 h-1.5 bg-[#ff2d85] rounded-full animate-bounce" style={{ animationDelay: '0ms' }} /><span className="w-1.5 h-1.5 bg-[#ff2d85] rounded-full animate-bounce" style={{ animationDelay: '150ms' }} /><span className="w-1.5 h-1.5 bg-[#ff2d85] rounded-full animate-bounce" style={{ animationDelay: '300ms' }} /></div>
-                        <p className="text-[11px] text-muted-foreground italic font-medium">Analisando o contexto global para responder...</p>
+                      <div className="flex flex-col gap-2.5">
+                        <div className="flex gap-1.5">
+                          <span className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce [animation-duration:0.8s]" style={{ animationDelay: '0ms' }} />
+                          <span className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce [animation-duration:0.8s]" style={{ animationDelay: '150ms' }} />
+                          <span className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce [animation-duration:0.8s]" style={{ animationDelay: '300ms' }} />
+                        </div>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium leading-tight">Preparando uma resposta personalizada para você...</p>
                       </div>
                     )}
                     {(isProcessing || isRecording) && !isThinking && (
                       <div className="flex flex-col gap-2">
                         <div className="flex gap-1.5">
-                          <span className={cn("w-1.5 h-1.5 rounded-full animate-bounce", isRecording ? "bg-red-500" : "bg-muted-foreground/30")} style={{ animationDelay: '0ms' }} />
-                          <span className={cn("w-1.5 h-1.5 rounded-full animate-bounce", isRecording ? "bg-red-500" : "bg-muted-foreground/30")} style={{ animationDelay: '150ms' }} />
-                          <span className={cn("w-1.5 h-1.5 rounded-full animate-bounce", isRecording ? "bg-red-500" : "bg-muted-foreground/30")} style={{ animationDelay: '300ms' }} />
+                          <span className={cn("w-1.5 h-1.5 rounded-full animate-bounce [animation-duration:0.8s]", isRecording ? "bg-red-500" : "bg-primary/40")} style={{ animationDelay: '0ms' }} />
+                          <span className={cn("w-1.5 h-1.5 rounded-full animate-bounce [animation-duration:0.8s]", isRecording ? "bg-red-500" : "bg-primary/40")} style={{ animationDelay: '150ms' }} />
+                          <span className={cn("w-1.5 h-1.5 rounded-full animate-bounce [animation-duration:0.8s]", isRecording ? "bg-red-500" : "bg-primary/40")} style={{ animationDelay: '300ms' }} />
                         </div>
-                        {isRecording && <p className="text-[10px] text-muted-foreground italic">Gravando áudio de alta qualidade...</p>}
                       </div>
                     )}
                   </div>
@@ -675,21 +755,47 @@ Responda sempre em português brasileiro de forma profissional e prestativa.`;
           )}
         </div>
 
-        <div className="bg-[#f0f2f5] dark:bg-[#111b21] p-3 border-t border-border space-y-3">
+        <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl p-4 border-t border-black/5 dark:border-white/5 space-y-4 shadow-xl z-20">
           {simulationState.pendingButtons && simulationState.pendingButtons.length > 0 && !isProcessing && (
-            <div className="flex flex-wrap gap-2 animate-in slide-in-from-bottom-4 duration-500">
+            <div className="flex flex-wrap gap-2 animate-in slide-in-from-bottom-4 duration-700 ease-out px-1">
               {simulationState.pendingButtons.map((btn) => (
-                <Button key={btn.id} variant="outline" size="sm" className="bg-white dark:bg-[#202c33] border-none shadow-sm hover:bg-[#f0f2f5] text-[#00a884] font-bold rounded-full px-5 transition-all hover:scale-105" onClick={() => handleButtonClick(btn)}>{btn.label}</Button>
+                <Button
+                  key={btn.id}
+                  variant="outline"
+                  size="sm"
+                  className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 shadow-sm hover:border-primary text-primary font-bold rounded-xl px-4 py-4 h-auto transition-all hover:scale-[1.03] active:scale-95 text-xs"
+                  onClick={() => handleButtonClick(btn)}
+                >
+                  {btn.label}
+                </Button>
               ))}
             </div>
           )}
-          <form onSubmit={(e) => { e.preventDefault(); handleUserInput(); }} className="flex items-center gap-2">
-            <div className="flex-1 bg-white dark:bg-[#2a3942] rounded-full px-4 h-11 flex items-center shadow-sm border border-transparent focus-within:border-[#00a884]">
-              <Input ref={inputRef} value={userInput} onChange={(e) => setUserInput(e.target.value)} placeholder={simulationState.waitingForInput ? "Digite sua mensagem..." : "Conversa com IA liberada"} disabled={!simulationState.waitingForInput || isProcessing || isThinking} className="border-none bg-transparent focus-visible:ring-0 px-0 h-full text-[14px]" />
+          <form onSubmit={(e) => { e.preventDefault(); handleUserInput(); }} className="flex items-center gap-2.5 px-1">
+            <div className="flex-1 bg-slate-100 dark:bg-slate-800/50 rounded-2xl px-4 h-12 flex items-center shadow-inner border border-transparent focus-within:border-primary/30 transition-all focus-within:bg-white dark:focus-within:bg-slate-800 focus-within:shadow-md">
+              <Input
+                ref={inputRef}
+                value={userInput}
+                onChange={(e) => setUserInput(e.target.value)}
+                placeholder={simulationState.waitingForInput ? "Escreva aqui sua resposta..." : "Aguarde o simulador..."}
+                disabled={!simulationState.waitingForInput || isProcessing || isThinking}
+                className="border-none bg-transparent focus-visible:ring-0 px-0 h-full text-[14px] placeholder:text-slate-400 font-medium"
+              />
             </div>
-            <Button type="submit" size="icon" disabled={!simulationState.waitingForInput || isProcessing || isThinking || !userInput.trim()} className="h-11 w-11 rounded-full bg-[#00a884] hover:bg-[#008f72] shadow-md flex-shrink-0"><Send className="h-5 w-5 text-white pr-0.5" /></Button>
+            <Button
+              type="submit"
+              size="icon"
+              disabled={!simulationState.waitingForInput || isProcessing || isThinking || !userInput.trim()}
+              className="h-12 w-12 rounded-2xl bg-primary hover:bg-primary/90 shadow-lg shadow-primary/20 transition-all hover:scale-105 active:scale-95 disabled:grayscale disabled:opacity-50"
+            >
+              <Send className="h-5 w-5 text-white" />
+            </Button>
           </form>
-          <div className="text-center"><p className="text-[10px] text-muted-foreground opacity-60 font-medium">Wizzy Flow Simulator | © 2026</p></div>
+          <div className="pt-1">
+            <p className="text-[10px] text-slate-400 dark:text-slate-500 text-center font-bold tracking-widest uppercase opacity-70">
+              Wizzy Simulator Engine 2026
+            </p>
+          </div>
         </div>
       </SheetContent>
     </Sheet>
