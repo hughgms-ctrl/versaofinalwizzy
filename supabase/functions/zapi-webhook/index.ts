@@ -693,20 +693,35 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
       }
     }
 
-    // 2. Check for Master Prompt / AI routing
-    let shouldTrigger = conversation.service_mode === 'ia';
+    // 2. Check for active flow execution — if a flow is running or waiting input,
+    //    do NOT independently trigger the agent-orchestrator; the flow handles it.
+    const { data: activeFlowExec } = await supabase
+      .from('flow_executions')
+      .select('id, status')
+      .eq('conversation_id', conversation.id)
+      .in('status', ['running', 'waiting_input'])
+      .order('started_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-    if (!shouldTrigger && triggerText) {
-      shouldTrigger = await checkMasterPromptTriggers(supabase, organizationId, contact.id, triggerText, conversation.id);
-    }
+    if (activeFlowExec) {
+      console.log(`[WEBHOOK] Active flow execution ${activeFlowExec.id} (status=${activeFlowExec.status}) — skipping independent agent trigger`);
+    } else {
+      // 3. Check for Master Prompt / AI routing
+      let shouldTrigger = conversation.service_mode === 'ia';
 
-    if (shouldTrigger && triggerText) {
-      const agentPromise = fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/agent-orchestrator`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
-        body: JSON.stringify({ conversationId: conversation.id, messageContent: triggerText }),
-      });
-      runBackground(agentPromise);
+      if (!shouldTrigger && triggerText) {
+        shouldTrigger = await checkMasterPromptTriggers(supabase, organizationId, contact.id, triggerText, conversation.id);
+      }
+
+      if (shouldTrigger && triggerText) {
+        const agentPromise = fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/agent-orchestrator`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
+          body: JSON.stringify({ conversationId: conversation.id, messageContent: triggerText }),
+        });
+        runBackground(agentPromise);
+      }
     }
   }
 
