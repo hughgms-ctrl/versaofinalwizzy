@@ -340,7 +340,9 @@ async function executeAIHandoff(
 ): Promise<NodeResult> {
   try {
     const agentId = String(data.agentId || '');
-    const contextMessage = String(data.contextMessage || '');
+    // The node stores the prompt as "additionalPrompt", not "contextMessage"
+    const additionalPrompt = String(data.additionalPrompt || data.contextMessage || '');
+    const expectedOutcomes = String(data.expectedOutcomes || '');
 
     // 1. Set the agent on the conversation so orchestrator knows which agent to use
     if (agentId) {
@@ -350,7 +352,6 @@ async function executeAIHandoff(
       }).eq('id', context.conversationId);
       console.log(`[FLOW EXECUTE] AI Handoff: set agent ${agentId} on conversation`);
     } else {
-      // Even without a specific agent, mark as IA mode
       await supabase.from('conversations').update({
         service_mode: 'ia',
       }).eq('id', context.conversationId);
@@ -358,18 +359,21 @@ async function executeAIHandoff(
 
     // 2. Store flow context in metadata so the webhook can pass it to the orchestrator
     const flowContext: Record<string, unknown> = {};
-    if (flow?.master_prompt && flow?.is_master_active) {
-      flowContext.masterPromptOverride = {
-        id: flow.id,
-        name: `Flow Master: ${flow.name}`,
-        content: contextMessage
-          ? `${flow.master_prompt}\n\n---\nINSTRUÇÕES ADICIONAIS DO NÓ:\n${contextMessage}`
-          : flow.master_prompt,
-        is_active: true,
-      };
+    
+    // Build the master prompt override from flow master_prompt + node additionalPrompt
+    const promptParts: string[] = [];
+    if (flow?.master_prompt && flow.master_prompt.trim()) {
+      promptParts.push(flow.master_prompt);
     }
-    if (contextMessage) {
-      flowContext.additionalContext = contextMessage;
+    if (additionalPrompt) {
+      promptParts.push(`---\nINSTRUÇÕES ESPECÍFICAS DO NÓ:\n${additionalPrompt}`);
+    }
+    if (expectedOutcomes) {
+      promptParts.push(`---\nRESULTADOS ESPERADOS: ${expectedOutcomes}`);
+    }
+    
+    if (promptParts.length > 0) {
+      flowContext.additionalContext = promptParts.join('\n\n');
     }
     if (agentId) {
       flowContext.agentId = agentId;
