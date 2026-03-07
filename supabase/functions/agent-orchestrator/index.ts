@@ -108,6 +108,35 @@ Deno.serve(async (req) => {
       };
     }
 
+    // Fallback: if no master prompt, try to build one from the agent's own prompt_base + additionalContext
+    if (!masterPrompt && conversation.ai_agent_id) {
+      const { data: agent } = await supabase.from('ai_agents').select('*').eq('id', conversation.ai_agent_id).single();
+      if (agent && (agent.prompt_base || additionalContext)) {
+        const parts: string[] = [];
+        if (agent.prompt_base) parts.push(agent.prompt_base);
+        if (agent.persona) parts.push(`PERSONA: ${agent.persona}`);
+        if (additionalContext) parts.push(`---\nINSTRUÇÕES ADICIONAIS DO NÓ DO FLUXO:\n${additionalContext}`);
+        masterPrompt = {
+          id: `agent-${agent.id}`,
+          name: `Agent: ${agent.name}`,
+          content: parts.join('\n\n'),
+          is_active: true,
+        };
+        console.log('Using agent prompt_base as master prompt fallback:', agent.name);
+      }
+    }
+
+    // Last resort: use additionalContext alone as prompt
+    if (!masterPrompt && additionalContext) {
+      masterPrompt = {
+        id: 'flow-context',
+        name: 'Flow Context Prompt',
+        content: additionalContext,
+        is_active: true,
+      };
+      console.log('Using additionalContext alone as master prompt');
+    }
+
     if (!masterPrompt) {
       console.log('No active master prompt found');
       return new Response(JSON.stringify({ success: false, reason: 'no_master_prompt' }), {
