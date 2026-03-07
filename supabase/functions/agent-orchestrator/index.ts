@@ -1607,10 +1607,28 @@ function buildLegacySystemPrompt(ctx: any): string {
   }
 
   prompt += `Contato: ${ctx.conversation.contact?.name || 'Não informado'} (${ctx.conversation.contact?.phone})\n\n`;
+
+  // Include active agent's prompt if we have one
+  const activeAgent = ctx.agents.find((a: any) => a.id === ctx.conversation.ai_agent_id);
+  if (activeAgent) {
+    prompt += `VOCÊ É O AGENTE "${activeAgent.name}" NESTE MOMENTO.\n`;
+    if (activeAgent.prompt_base) {
+      prompt += `PROMPT DO AGENTE:\n${activeAgent.prompt_base}\n\n`;
+    }
+  }
+
   prompt += `INSTRUÇÕES:\n`;
   prompt += `- Use send_reply para responder. Resposta em português brasileiro.\n`;
   prompt += `- Execute UMA etapa por vez. Após trigger_flow ou switch_agent, PARE.\n`;
   prompt += `- Leia TODA a conversa. NUNCA envie mensagens em inglês ou sem sentido.\n`;
+  prompt += `- NUNCA produza texto entre parênteses ou pensamentos internos. Apenas use send_reply.\n`;
+
+  if (ctx.flowExecutionId) {
+    prompt += `\n⚠️ VOCÊ ESTÁ DENTRO DE UM FLUXO AUTOMATIZADO.\n`;
+    prompt += `- Quando sua tarefa nesta etapa estiver COMPLETA, use finalizar_interacao(resultado) para devolver o controle ao fluxo.\n`;
+    prompt += `- NÃO finalize prematuramente. Conclua seu objetivo primeiro.\n`;
+    prompt += `- Exemplos de resultado: "qualificado", "desqualificado", "concluido", "precisa_de_humano".\n`;
+  }
 
   return prompt;
 }
