@@ -156,7 +156,7 @@ Deno.serve(async (req) => {
       messages, agents, allTags, contactTags, pipelines, pipelinePositions,
       flows, aiModel, masterPrompt, LOVABLE_API_KEY,
       aiEndpoint: aiConfig.endpoint, aiApiKey: aiConfig.apiKey,
-      integrationConfig,
+      integrationConfig, flowExecutionId,
     };
 
     // 4. Check for flow-based orchestration
