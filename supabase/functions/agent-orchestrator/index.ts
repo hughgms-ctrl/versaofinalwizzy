@@ -1326,7 +1326,7 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
     aiMessages.push({ role: 'user', content: messageContent });
   }
 
-  const tools = buildLegacyTools();
+  const tools = buildLegacyTools(ctx);
   let round = 0;
 
   while (round < MAX_TOOL_ROUNDS) {
@@ -1359,6 +1359,80 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
       const fnName = toolCall.function.name;
       let fnArgs: any;
       try { fnArgs = JSON.parse(toolCall.function.arguments); } catch { fnArgs = {}; }
+
+      if (fnName === 'finalizar_interacao') {
+        // AI agent is done with its task — advance the flow execution
+        const resultado = fnArgs.resultado || 'concluido';
+        console.log(`[ORCHESTRATOR] finalizar_interacao called with resultado: ${resultado}`);
+
+        if (ctx.flowExecutionId) {
+          // Get current flow execution to find the next node after ai-handoff
+          const { data: flowExec } = await supabase
+            .from('flow_executions')
+            .select('*, flow:flows(nodes, edges)')
+            .eq('id', ctx.flowExecutionId)
+            .single();
+
+          if (flowExec) {
+            const nodes = flowExec.flow?.nodes || [];
+            const edges = flowExec.flow?.edges || [];
+            const currentNodeId = flowExec.current_node_id;
+
+            // Find next node after the ai-handoff
+            const nextEdge = edges.find((e: any) => e.source === currentNodeId);
+            const nextNodeId = nextEdge?.target || null;
+
+            // Store the resultado in variables for condition nodes downstream
+            const variables = { ...(flowExec.variables || {}), ai_resultado: resultado };
+
+            if (nextNodeId) {
+              // Resume flow from the next node
+              console.log(`[ORCHESTRATOR] Advancing flow ${ctx.flowExecutionId} to node ${nextNodeId}`);
+              await supabase.from('flow_executions').update({
+                status: 'running',
+                current_node_id: nextNodeId,
+                variables,
+              }).eq('id', ctx.flowExecutionId);
+
+              // Clear the handoff context from conversation metadata
+              const { data: convData } = await supabase.from('conversations').select('metadata').eq('id', ctx.conversationId).single();
+              const metadata = { ...(convData?.metadata || {}) };
+              delete metadata.ai_handoff_context;
+              await supabase.from('conversations').update({ metadata }).eq('id', ctx.conversationId);
+
+              // Trigger flow-execute to continue from the next node
+              const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+              const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+              try {
+                await fetch(`${supabaseUrl}/functions/v1/flow-execute`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseKey}` },
+                  body: JSON.stringify({
+                    flowId: flowExec.flow_id,
+                    conversationId: ctx.conversationId,
+                    startNodeId: nextNodeId,
+                  }),
+                });
+              } catch (e) {
+                console.error('[ORCHESTRATOR] Error resuming flow:', e);
+              }
+            } else {
+              // No next node — complete the flow
+              console.log(`[ORCHESTRATOR] No next node after ai-handoff — completing flow`);
+              await supabase.from('flow_executions').update({
+                status: 'completed',
+                variables,
+                completed_at: new Date().toISOString(),
+              }).eq('id', ctx.flowExecutionId);
+            }
+          }
+        }
+
+        toolResults.push({ role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify({ success: true, resultado }) });
+        toolsExecuted.push({ name: fnName, arguments: fnArgs, result: { success: true } });
+        shouldBreak = true;
+        continue;
+      }
 
       const result = await executeToolDirect(supabase, fnName, fnArgs, ctx);
       toolsExecuted.push({ name: fnName, arguments: fnArgs, result });
