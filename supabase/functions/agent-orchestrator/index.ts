@@ -1615,8 +1615,8 @@ function buildLegacySystemPrompt(ctx: any): string {
   return prompt;
 }
 
-function buildLegacyTools() {
-  return [
+function buildLegacyTools(ctx?: any) {
+  const tools = [
     { type: 'function', function: { name: 'send_reply', description: 'Responder ao cliente', parameters: { type: 'object', properties: { message: { type: 'string' } }, required: ['message'] } } },
     { type: 'function', function: { name: 'move_pipeline', description: 'Mover pipeline', parameters: { type: 'object', properties: { pipeline_id: { type: 'string' }, column_id: { type: 'string' } }, required: ['pipeline_id', 'column_id'] } } },
     { type: 'function', function: { name: 'add_tag', description: 'Adicionar tag', parameters: { type: 'object', properties: { tag_id: { type: 'string' } }, required: ['tag_id'] } } },
@@ -1624,6 +1624,29 @@ function buildLegacyTools() {
     { type: 'function', function: { name: 'trigger_flow', description: 'Disparar fluxo', parameters: { type: 'object', properties: { flow_id: { type: 'string' } }, required: ['flow_id'] } } },
     { type: 'function', function: { name: 'switch_agent', description: 'Trocar agente', parameters: { type: 'object', properties: { agent_id: { type: 'string' } }, required: ['agent_id'] } } },
   ];
+
+  // Add finalizar_interacao tool when inside a flow execution (ai-handoff context)
+  if (ctx?.flowExecutionId) {
+    tools.push({
+      type: 'function',
+      function: {
+        name: 'finalizar_interacao',
+        description: 'Finalizar a interação do agente de IA e devolver o controle ao fluxo. Use quando seu objetivo nesta etapa estiver concluído. Exemplos de resultado: "qualificado", "desqualificado", "concluido", "precisa_de_humano".',
+        parameters: {
+          type: 'object',
+          properties: {
+            resultado: {
+              type: 'string',
+              description: 'Resultado da interação (ex: qualificado, desqualificado, concluido, precisa_de_humano)'
+            }
+          },
+          required: ['resultado'],
+        },
+      },
+    } as any);
+  }
+
+  return tools;
 }
 
 // ==================== SHARED HELPERS ====================
