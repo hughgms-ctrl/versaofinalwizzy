@@ -693,11 +693,10 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
       }
     }
 
-    // 2. Check for active flow execution — if a flow is running or waiting input,
-    //    do NOT independently trigger the agent-orchestrator; the flow handles it.
+    // 2. Check for active flow execution
     const { data: activeFlowExec } = await supabase
       .from('flow_executions')
-      .select('id, status')
+      .select('id, status, current_node_id, flow_id, flow:flows(nodes, master_prompt, is_master_active, name)')
       .eq('conversation_id', conversation.id)
       .in('status', ['running', 'waiting_input'])
       .order('started_at', { ascending: false })
@@ -705,9 +704,58 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
       .maybeSingle();
 
     if (activeFlowExec) {
-      console.log(`[WEBHOOK] Active flow execution ${activeFlowExec.id} (status=${activeFlowExec.status}) — skipping independent agent trigger`);
+      console.log(`[WEBHOOK] Active flow execution ${activeFlowExec.id} (status=${activeFlowExec.status}, node=${activeFlowExec.current_node_id})`);
+
+      // Check if the flow is paused at an ai-handoff node
+      const flowNodes = (activeFlowExec.flow?.nodes || []) as any[];
+      const currentNode = flowNodes.find((n: any) => n.id === activeFlowExec.current_node_id);
+      const isAtAIHandoff = currentNode?.type === 'ai-handoff';
+
+      if (isAtAIHandoff && activeFlowExec.status === 'waiting_input' && triggerText) {
+        console.log(`[WEBHOOK] Flow paused at ai-handoff node — routing message to agent-orchestrator`);
+
+        // Get the ai_handoff_context from conversation metadata
+        const convMetadata = conversation.metadata || {};
+        const handoffContext = convMetadata.ai_handoff_context || {};
+
+        const orchestratorBody: Record<string, unknown> = {
+          conversationId: conversation.id,
+          messageContent: triggerText,
+          flowExecutionId: activeFlowExec.id, // So orchestrator can advance the flow
+        };
+
+        // Pass master prompt override from flow context
+        if (handoffContext.masterPromptOverride) {
+          orchestratorBody.masterPromptOverride = handoffContext.masterPromptOverride;
+        }
+        if (handoffContext.additionalContext) {
+          orchestratorBody.additionalContext = handoffContext.additionalContext;
+        }
+
+        const agentPromise = fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/agent-orchestrator`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
+          body: JSON.stringify(orchestratorBody),
+        });
+        runBackground(agentPromise);
+      } else if (activeFlowExec.status === 'waiting_input') {
+        // Flow is waiting for input at a non-AI node (e.g., user-input) — resume flow
+        console.log(`[WEBHOOK] Flow waiting_input at node ${activeFlowExec.current_node_id} — resuming flow execution`);
+        const resumePromise = fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/flow-execute`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
+          body: JSON.stringify({
+            flowId: activeFlowExec.flow_id,
+            conversationId: conversation.id,
+            startNodeId: activeFlowExec.current_node_id,
+          }),
+        });
+        runBackground(resumePromise);
+      } else {
+        console.log(`[WEBHOOK] Flow is running — skipping independent agent trigger`);
+      }
     } else {
-      // 3. Check for Master Prompt / AI routing
+      // 3. No active flow — Check for Master Prompt / AI routing
       let shouldTrigger = conversation.service_mode === 'ia';
 
       if (!shouldTrigger && triggerText) {
