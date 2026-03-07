@@ -49,12 +49,14 @@ Deno.serve(async (req) => {
 
     if (!LOVABLE_API_KEY) throw new Error('LOVABLE_API_KEY is not configured');
 
-    const { conversationId, messageContent, masterPromptOverride, additionalContext } = await req.json();
+    const { conversationId, messageContent, masterPromptOverride, additionalContext, flowExecutionId } = await req.json();
     if (!conversationId || !messageContent) {
       return new Response(JSON.stringify({ error: 'conversationId and messageContent are required' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+
+    console.log('Has flowExecutionId:', !!flowExecutionId);
 
     console.log('=== AGENT ORCHESTRATOR START ===');
     console.log('ConversationId:', conversationId);
