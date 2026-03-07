@@ -349,70 +349,43 @@ async function executeAIHandoff(
         service_mode: 'ia',
       }).eq('id', context.conversationId);
       console.log(`[FLOW EXECUTE] AI Handoff: set agent ${agentId} on conversation`);
+    } else {
+      // Even without a specific agent, mark as IA mode
+      await supabase.from('conversations').update({
+        service_mode: 'ia',
+      }).eq('id', context.conversationId);
     }
 
-    // 2. Get last inbound message
-    const { data: lastMessage } = await supabase
-      .from('messages')
-      .select('content')
-      .eq('conversation_id', context.conversationId)
-      .eq('direction', 'inbound')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    const inputContent = lastMessage?.content || 'Olá';
-
-    // 3. Build a proper master prompt override object (NOT a string)
-    // Combine: flow's master_prompt + node's contextMessage
-    let masterPromptOverride = null;
-    const flowMasterPrompt = flow?.master_prompt;
-    const flowMasterActive = flow?.is_master_active;
-
-    if (flowMasterActive && flowMasterPrompt) {
-      // Use flow's master prompt as base, append node context
-      let combinedContent = flowMasterPrompt;
-      if (contextMessage) {
-        combinedContent += `\n\n---\nINSTRUÇÕES ADICIONAIS DO NÓ:\n${contextMessage}`;
-      }
-      masterPromptOverride = {
+    // 2. Store flow context in metadata so the webhook can pass it to the orchestrator
+    const flowContext: Record<string, unknown> = {};
+    if (flow?.master_prompt && flow?.is_master_active) {
+      flowContext.masterPromptOverride = {
         id: flow.id,
         name: `Flow Master: ${flow.name}`,
-        content: combinedContent,
+        content: contextMessage
+          ? `${flow.master_prompt}\n\n---\nINSTRUÇÕES ADICIONAIS DO NÓ:\n${contextMessage}`
+          : flow.master_prompt,
         is_active: true,
       };
-    } else if (contextMessage) {
-      // No flow master prompt, but node has context — pass as additional context
-      // Let orchestrator resolve the real master prompt, but pass context separately
-      masterPromptOverride = null; // Will be resolved by orchestrator
+    }
+    if (contextMessage) {
+      flowContext.additionalContext = contextMessage;
+    }
+    if (agentId) {
+      flowContext.agentId = agentId;
     }
 
-    // 4. Call agent-orchestrator
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    // Save flow context to conversation metadata for the webhook to use
+    const { data: convData } = await supabase
+      .from('conversations').select('metadata').eq('id', context.conversationId).single();
+    const metadata = { ...(convData?.metadata || {}), ai_handoff_context: flowContext };
+    await supabase.from('conversations').update({ metadata }).eq('id', context.conversationId);
 
-    const response = await fetch(`${supabaseUrl}/functions/v1/agent-orchestrator`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${supabaseKey}`,
-      },
-      body: JSON.stringify({
-        conversationId: context.conversationId,
-        messageContent: inputContent,
-        masterPromptOverride: masterPromptOverride,
-        additionalContext: contextMessage || null,
-      })
-    });
+    console.log(`[FLOW EXECUTE] AI Handoff: pausing flow, waiting for user message. Agent: ${agentId || 'default'}`);
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Agent Orchestrator call failed:', errorText);
-      return { success: false, error: `Orchestrator error: ${errorText}` };
-    }
-
-    const result = await response.json();
-    return { success: result.success !== false };
+    // 3. Return waitForInput — the flow PAUSES here.
+    // The webhook will detect this state and route subsequent messages to the orchestrator.
+    return { success: true, waitForInput: true };
   } catch (error) {
     console.error('Error in executeAIHandoff:', error);
     return { success: false, error: String(error) };

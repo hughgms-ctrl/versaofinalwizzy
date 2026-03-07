@@ -49,12 +49,14 @@ Deno.serve(async (req) => {
 
     if (!LOVABLE_API_KEY) throw new Error('LOVABLE_API_KEY is not configured');
 
-    const { conversationId, messageContent, masterPromptOverride, additionalContext } = await req.json();
+    const { conversationId, messageContent, masterPromptOverride, additionalContext, flowExecutionId } = await req.json();
     if (!conversationId || !messageContent) {
       return new Response(JSON.stringify({ error: 'conversationId and messageContent are required' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+
+    console.log('Has flowExecutionId:', !!flowExecutionId);
 
     console.log('=== AGENT ORCHESTRATOR START ===');
     console.log('ConversationId:', conversationId);
@@ -154,7 +156,7 @@ Deno.serve(async (req) => {
       messages, agents, allTags, contactTags, pipelines, pipelinePositions,
       flows, aiModel, masterPrompt, LOVABLE_API_KEY,
       aiEndpoint: aiConfig.endpoint, aiApiKey: aiConfig.apiKey,
-      integrationConfig,
+      integrationConfig, flowExecutionId,
     };
 
     // 4. Check for flow-based orchestration
@@ -1324,7 +1326,7 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
     aiMessages.push({ role: 'user', content: messageContent });
   }
 
-  const tools = buildLegacyTools();
+  const tools = buildLegacyTools(ctx);
   let round = 0;
 
   while (round < MAX_TOOL_ROUNDS) {
@@ -1357,6 +1359,80 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
       const fnName = toolCall.function.name;
       let fnArgs: any;
       try { fnArgs = JSON.parse(toolCall.function.arguments); } catch { fnArgs = {}; }
+
+      if (fnName === 'finalizar_interacao') {
+        // AI agent is done with its task — advance the flow execution
+        const resultado = fnArgs.resultado || 'concluido';
+        console.log(`[ORCHESTRATOR] finalizar_interacao called with resultado: ${resultado}`);
+
+        if (ctx.flowExecutionId) {
+          // Get current flow execution to find the next node after ai-handoff
+          const { data: flowExec } = await supabase
+            .from('flow_executions')
+            .select('*, flow:flows(nodes, edges)')
+            .eq('id', ctx.flowExecutionId)
+            .single();
+
+          if (flowExec) {
+            const nodes = flowExec.flow?.nodes || [];
+            const edges = flowExec.flow?.edges || [];
+            const currentNodeId = flowExec.current_node_id;
+
+            // Find next node after the ai-handoff
+            const nextEdge = edges.find((e: any) => e.source === currentNodeId);
+            const nextNodeId = nextEdge?.target || null;
+
+            // Store the resultado in variables for condition nodes downstream
+            const variables = { ...(flowExec.variables || {}), ai_resultado: resultado };
+
+            if (nextNodeId) {
+              // Resume flow from the next node
+              console.log(`[ORCHESTRATOR] Advancing flow ${ctx.flowExecutionId} to node ${nextNodeId}`);
+              await supabase.from('flow_executions').update({
+                status: 'running',
+                current_node_id: nextNodeId,
+                variables,
+              }).eq('id', ctx.flowExecutionId);
+
+              // Clear the handoff context from conversation metadata
+              const { data: convData } = await supabase.from('conversations').select('metadata').eq('id', ctx.conversationId).single();
+              const metadata = { ...(convData?.metadata || {}) };
+              delete metadata.ai_handoff_context;
+              await supabase.from('conversations').update({ metadata }).eq('id', ctx.conversationId);
+
+              // Trigger flow-execute to continue from the next node
+              const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+              const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+              try {
+                await fetch(`${supabaseUrl}/functions/v1/flow-execute`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseKey}` },
+                  body: JSON.stringify({
+                    flowId: flowExec.flow_id,
+                    conversationId: ctx.conversationId,
+                    startNodeId: nextNodeId,
+                  }),
+                });
+              } catch (e) {
+                console.error('[ORCHESTRATOR] Error resuming flow:', e);
+              }
+            } else {
+              // No next node — complete the flow
+              console.log(`[ORCHESTRATOR] No next node after ai-handoff — completing flow`);
+              await supabase.from('flow_executions').update({
+                status: 'completed',
+                variables,
+                completed_at: new Date().toISOString(),
+              }).eq('id', ctx.flowExecutionId);
+            }
+          }
+        }
+
+        toolResults.push({ role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify({ success: true, resultado }) });
+        toolsExecuted.push({ name: fnName, arguments: fnArgs, result: { success: true } });
+        shouldBreak = true;
+        continue;
+      }
 
       const result = await executeToolDirect(supabase, fnName, fnArgs, ctx);
       toolsExecuted.push({ name: fnName, arguments: fnArgs, result });
@@ -1531,16 +1607,34 @@ function buildLegacySystemPrompt(ctx: any): string {
   }
 
   prompt += `Contato: ${ctx.conversation.contact?.name || 'Não informado'} (${ctx.conversation.contact?.phone})\n\n`;
+
+  // Include active agent's prompt if we have one
+  const activeAgent = ctx.agents.find((a: any) => a.id === ctx.conversation.ai_agent_id);
+  if (activeAgent) {
+    prompt += `VOCÊ É O AGENTE "${activeAgent.name}" NESTE MOMENTO.\n`;
+    if (activeAgent.prompt_base) {
+      prompt += `PROMPT DO AGENTE:\n${activeAgent.prompt_base}\n\n`;
+    }
+  }
+
   prompt += `INSTRUÇÕES:\n`;
   prompt += `- Use send_reply para responder. Resposta em português brasileiro.\n`;
   prompt += `- Execute UMA etapa por vez. Após trigger_flow ou switch_agent, PARE.\n`;
   prompt += `- Leia TODA a conversa. NUNCA envie mensagens em inglês ou sem sentido.\n`;
+  prompt += `- NUNCA produza texto entre parênteses ou pensamentos internos. Apenas use send_reply.\n`;
+
+  if (ctx.flowExecutionId) {
+    prompt += `\n⚠️ VOCÊ ESTÁ DENTRO DE UM FLUXO AUTOMATIZADO.\n`;
+    prompt += `- Quando sua tarefa nesta etapa estiver COMPLETA, use finalizar_interacao(resultado) para devolver o controle ao fluxo.\n`;
+    prompt += `- NÃO finalize prematuramente. Conclua seu objetivo primeiro.\n`;
+    prompt += `- Exemplos de resultado: "qualificado", "desqualificado", "concluido", "precisa_de_humano".\n`;
+  }
 
   return prompt;
 }
 
-function buildLegacyTools() {
-  return [
+function buildLegacyTools(ctx?: any) {
+  const tools = [
     { type: 'function', function: { name: 'send_reply', description: 'Responder ao cliente', parameters: { type: 'object', properties: { message: { type: 'string' } }, required: ['message'] } } },
     { type: 'function', function: { name: 'move_pipeline', description: 'Mover pipeline', parameters: { type: 'object', properties: { pipeline_id: { type: 'string' }, column_id: { type: 'string' } }, required: ['pipeline_id', 'column_id'] } } },
     { type: 'function', function: { name: 'add_tag', description: 'Adicionar tag', parameters: { type: 'object', properties: { tag_id: { type: 'string' } }, required: ['tag_id'] } } },
@@ -1548,6 +1642,29 @@ function buildLegacyTools() {
     { type: 'function', function: { name: 'trigger_flow', description: 'Disparar fluxo', parameters: { type: 'object', properties: { flow_id: { type: 'string' } }, required: ['flow_id'] } } },
     { type: 'function', function: { name: 'switch_agent', description: 'Trocar agente', parameters: { type: 'object', properties: { agent_id: { type: 'string' } }, required: ['agent_id'] } } },
   ];
+
+  // Add finalizar_interacao tool when inside a flow execution (ai-handoff context)
+  if (ctx?.flowExecutionId) {
+    tools.push({
+      type: 'function',
+      function: {
+        name: 'finalizar_interacao',
+        description: 'Finalizar a interação do agente de IA e devolver o controle ao fluxo. Use quando seu objetivo nesta etapa estiver concluído. Exemplos de resultado: "qualificado", "desqualificado", "concluido", "precisa_de_humano".',
+        parameters: {
+          type: 'object',
+          properties: {
+            resultado: {
+              type: 'string',
+              description: 'Resultado da interação (ex: qualificado, desqualificado, concluido, precisa_de_humano)'
+            }
+          },
+          required: ['resultado'],
+        },
+      },
+    } as any);
+  }
+
+  return tools;
 }
 
 // ==================== SHARED HELPERS ====================
