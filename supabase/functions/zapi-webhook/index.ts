@@ -700,11 +700,12 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
       shouldTrigger = await checkMasterPromptTriggers(supabase, organizationId, contact.id, triggerText, conversation.id);
     }
 
-    if (shouldTrigger && triggerText) {
+    if (shouldTrigger) {
+      console.log(`[WEBHOOK] Triggering agent-orchestrator for conversation ${conversation.id}. Mode: ${conversation.service_mode}, Text: "${triggerText}"`);
       const agentPromise = fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/agent-orchestrator`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
-        body: JSON.stringify({ conversationId: conversation.id, messageContent: triggerText }),
+        body: JSON.stringify({ conversationId: conversation.id, messageContent: triggerText || '[mídia]' }),
       });
       runBackground(agentPromise);
     }

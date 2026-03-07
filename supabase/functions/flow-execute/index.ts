@@ -5,6 +5,13 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+function respond(data: any, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
+}
+
 interface FlowNode {
   id: string;
   type: string;
@@ -62,82 +69,82 @@ Deno.serve(async (req) => {
       );
     }
 
+    // 1. Get the flow
+    const { data: flow, error: flowError } = await supabase
+      .from('flows')
+      .select('*')
+      .eq('id', flowId)
+      .single();
+
+    if (flowError || !flow) {
+      console.error(`[FLOW EXECUTE] Flow ${flowId} not found:`, flowError);
+      return respond({ error: `Flow ${flowId} not found` }, 404);
+    }
+
+    // 2. Get conversation and contact
+    const { data: conversation, error: convError } = await supabase
+      .from('conversations')
+      .select('*, contacts(*)')
+      .eq('id', conversationId)
+      .single();
+
+    if (convError || !conversation) {
+      console.error(`[FLOW EXECUTE] Conversation ${conversationId} not found`);
+      return respond({ error: `Conversation ${conversationId} not found` }, 404);
+    }
+
+    // 3. Get WhatsApp instance
+    const { data: instance, error: instanceError } = await supabase
+      .from('whatsapp_instances')
+      .select('zapi_instance_id, zapi_token')
+      .eq('organization_id', flow.organization_id)
+      .eq('status', 'connected')
+      .single();
+
+    if (instanceError || !instance) {
+      console.error(`[FLOW EXECUTE] No connected instance for org ${flow.organization_id}`);
+      return respond({ error: `No connected WhatsApp instance found for organization ${flow.organization_id}` }, 404);
+    }
+
+    // Create a new flow execution record
+    const { data: execution, error: execError } = await supabase
+      .from('flow_executions')
+      .insert({
+        flow_id: flowId,
+        conversation_id: conversationId,
+        status: 'running',
+        current_node_id: startNodeId || null,
+        execution_log: [],
+        variables: conversation.variables || {},
+      })
+      .select()
+      .single();
+
+    if (execError || !execution) {
+      console.error('[FLOW EXECUTE] Failed to create execution:', execError);
+      return respond({ error: 'Failed to create execution' }, 500);
+    }
+
     // Start background execution
     const executionPromise = (async () => {
       try {
-        // 1. Get the flow
-        const { data: flow, error: flowError } = await supabase
-          .from('flows')
-          .select('*')
-          .eq('id', flowId)
-          .single();
-
-        if (flowError || !flow) {
-          console.error(`[FLOW EXECUTE] Flow ${flowId} not found:`, flowError);
-          return;
-        }
-
-        // 2. Get conversation and contact
-        const { data: conversation, error: convError } = await supabase
-          .from('conversations')
-          .select('*, contacts(*)')
-          .eq('id', conversationId)
-          .single();
-
-        if (convError || !conversation) {
-          console.error(`[FLOW EXECUTE] Conversation ${conversationId} not found`);
-          return;
-        }
-
-        // 3. Get WhatsApp instance
-        const { data: instance, error: instanceError } = await supabase
-          .from('whatsapp_instances')
-          .select('*')
-          .eq('organization_id', flow.organization_id)
-          .eq('status', 'connected')
-          .single();
-
-        if (instanceError || !instance) {
-          console.error(`[FLOW EXECUTE] No connected instance for org ${flow.organization_id}`);
-          return;
-        }
-
-        // 4. Create flow execution record
-        const { data: execution, error: execError } = await supabase
-          .from('flow_executions')
-          .insert({
-            flow_id: flowId,
-            conversation_id: conversationId,
-            organization_id: flow.organization_id,
-            status: 'running',
-            current_node_id: startNodeId || 'start-1',
-            variables: {},
-          })
-          .select()
-          .single();
-
-        if (execError) {
-          console.error('[FLOW EXECUTE] Error creating execution:', execError);
-          return;
-        }
-
-        const nodes = flow.nodes as FlowNode[];
-        const edges = flow.edges as FlowEdge[];
-
         const context: ExecutionContext = {
           conversationId,
-          contactPhone: conversation.contacts?.phone || '',
           contactId: conversation.contact_id,
-          variables: {},
+          contactPhone: conversation.contacts.phone,
+          variables: conversation.variables || {},
           organizationId: flow.organization_id,
-          zapiInstanceId: instance.zapi_instance_id!,
-          zapiToken: instance.zapi_token!,
-          isFromOrchestrator: !!isFromOrchestrator,
+          zapiInstanceId: instance.zapi_instance_id,
+          zapiToken: instance.zapi_token,
+          isFromOrchestrator: !!isFromOrchestrator
         };
 
-        await runFlowExecution(execution.id, flow, nodes, edges, context, supabase);
+        const nodes = Array.isArray(flow.nodes) ? flow.nodes : [];
+        const edges = Array.isArray(flow.edges) ? flow.edges : [];
+
+        await runFlowExecution(execution.id, flow, nodes, edges, context, supabase, !!startNodeId);
       } catch (err) {
-        console.error('[FLOW EXECUTE] Background processing error:', err);
+        console.error('[FLOW EXECUTE] Background execution failed:', err);
       }
     })();
 
@@ -172,7 +179,8 @@ async function runFlowExecution(
   nodes: FlowNode[],
   edges: FlowEdge[],
   context: ExecutionContext,
-  supabase: SupabaseClientType
+  supabase: SupabaseClientType,
+  runOnce: boolean = false
 ) {
   let currentNodeId: string | null = (await supabase.from('flow_executions').select('current_node_id').eq('id', executionId).single()).data?.current_node_id || nodes.find(n => n.type === 'start')?.id || null;
   const executionLog: Array<{ nodeId: string; type: string; result: string; timestamp: string; metadata?: any }> = [];
@@ -313,6 +321,18 @@ async function executeNode(
     case 'action-document':
       return await executeDocumentAction(data, context, supabase);
 
+    case 'action-webhook':
+      return await executeWebhook(data, context);
+
+    case 'condition':
+      return executeCondition(data, context);
+
+    case 'user-input':
+      return await executeUserInput(data, context, supabase);
+
+    case 'ai-handoff':
+      return await executeAIHandoff(data, context, supabase);
+
     case 'ai-return':
       return { success: true };
 
@@ -328,45 +348,29 @@ async function executeAIHandoff(
   supabase: SupabaseClientType
 ): Promise<NodeResult> {
   try {
-    // 1. Get last message from contact to use as input
-    const { data: lastMessage } = await supabase
-      .from('messages')
-      .select('content')
-      .eq('conversation_id', context.conversationId)
-      .eq('direction', 'inbound')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+    const agentId = String(data.agentId || '');
+    if (!agentId) return { success: false, error: 'Agent ID missing in handoff node' };
 
-    const inputContent = lastMessage?.content || 'Olá';
+    console.log(`[FLOW EXECUTE] Handing off to AI Agent: ${agentId}. Setting wait point.`);
 
-    // 2. Call agent-orchestrator with specialized instructions override
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-
-    const response = await fetch(`${supabaseUrl}/functions/v1/agent-orchestrator`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${supabaseKey}`,
-      },
-      body: JSON.stringify({
-        conversationId: context.conversationId,
-        messageContent: inputContent,
-        masterPromptOverride: data.contextMessage || null // This is the "Extra Prompt" from the node
+    // 1. Mark conversation as IA mode and set the agent
+    const { error } = await supabase
+      .from('conversations')
+      .update({
+        service_mode: 'ia',
+        ai_agent_id: agentId
       })
-    });
+      .eq('id', context.conversationId);
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Agent Orchestrator call failed:', errorText);
-      return { success: false, error: `Orchestrator error: ${errorText}` };
-    }
+    if (error) throw error;
 
-    const result = await response.json();
-    return { success: result.success };
+    // 2. Return waitForInput: true.
+    // This stops the current flow execution and waits for the user to send a NEW message.
+    // When the user sends a message, the zapi-webhook will see service_mode='ia'
+    // and call agent-orchestrator, which will handle the actual AI logic.
+    return { success: true, waitForInput: true, metadata: { agentId, mode: 'ia' } };
   } catch (error) {
-    console.error('Error in executeAIHandoff:', error);
+    console.error('[FLOW EXECUTE] AI Handoff error:', error);
     return { success: false, error: String(error) };
   }
 }
@@ -1004,7 +1008,15 @@ async function executeDocumentAction(
   }
 }
 
-function executeCondition(data: Record<string, unknown>, context: ExecutionContext): NodeResult {
+async function executeUserInput(data: Record<string, unknown>, context: ExecutionContext, supabase: SupabaseClientType): Promise<NodeResult> {
+  const text = String(data.text || data.content || '');
+  if (text) {
+    await sendTextMessage(text, context, supabase);
+  }
+  return { success: true, waitForInput: true };
+}
+
+async function executeCondition(data: Record<string, unknown>, context: ExecutionContext): Promise<NodeResult> {
   const variable = String(data.variable || '');
   const operator = String(data.operator || 'equals');
   const compareValue = String(data.value || '');

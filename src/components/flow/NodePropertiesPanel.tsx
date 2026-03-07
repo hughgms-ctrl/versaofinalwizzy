@@ -893,8 +893,22 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
                 id="additionalPrompt"
                 value={(localData.additionalPrompt as string) || ''}
                 onChange={(e) => handleChange('additionalPrompt', e.target.value)}
-                placeholder="Instruções extras para este agente neste contexto..."
-                className="min-h-[100px] text-sm bg-background/50 rounded-xl border-rose-500/20"
+                placeholder="Ex: Tente descobrir se ele já tem um processo em andamento..."
+                className="min-h-[80px] text-sm bg-background/50 rounded-xl border-rose-500/20"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="expectedOutcomes" className="text-xs font-semibold">Resultados Esperados</Label>
+              <p className="text-[10px] text-muted-foreground leading-tight">
+                Lista de resultados que o agente pode retornar ao finalizar (separados por vírgula).
+              </p>
+              <Input
+                id="expectedOutcomes"
+                value={(localData.expectedOutcomes as string) || ''}
+                onChange={(e) => handleChange('expectedOutcomes', e.target.value)}
+                placeholder="ex: qualificado, desqualificado, erro"
+                className="h-9 text-sm bg-background/50 rounded-xl border-rose-500/20"
               />
             </div>
 

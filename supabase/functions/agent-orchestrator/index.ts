@@ -13,6 +13,7 @@ interface OrchestrationState {
   active_agent_id?: string;
   flow_completed?: boolean;
   document_context?: DocumentCollectionContext;
+  variables: Record<string, any>;
 }
 
 interface DocumentCollectionContext {
@@ -131,7 +132,7 @@ Deno.serve(async (req) => {
 
     // Resolve AI config: masterPrompt > integration_configs > workspace_agent_configs > defaults
     const masterProvider = masterPrompt.provider || integrationConfig?.ai_provider || 'lovable';
-    const masterModel = masterPrompt.model || integrationConfig?.default_model || 'google/gemini-3-flash-preview';
+    const masterModel = masterPrompt.model || integrationConfig?.default_model || 'google/gemini-1.5-flash-latest';
 
     const aiConfig = resolveAIConfig(integrationConfig, 'agents', LOVABLE_API_KEY!, masterProvider, masterModel);
     const aiModel = aiConfig.model;
@@ -201,12 +202,25 @@ async function executeFlowOrchestration(
   // Load orchestration state from conversation metadata
   let state = loadOrchestrationState(ctx.conversation, ctx.masterPrompt.id);
 
+  // Synchronization: if the master prompt comes from a flow_execution, 
+  // ensure our state's current_node_id matches the execution's node ID.
+  if (ctx.masterPrompt.current_execution_node_id && !state.flow_completed) {
+    if (state.current_node_id !== ctx.masterPrompt.current_execution_node_id) {
+      console.log(`Syncing state node ID: ${state.current_node_id} -> ${ctx.masterPrompt.current_execution_node_id}`);
+      state.current_node_id = ctx.masterPrompt.current_execution_node_id;
+      state.waiting_for_response = true; // Flow-execute stops and waits
+    }
+  }
+
   console.log('Flow state:', JSON.stringify(state));
 
   if (state.flow_completed) {
     // Flow already completed - if we have an active agent, let it handle
     if (state.active_agent_id) {
-      const agentNode = flowNodes.find((n: any) => n.type === 'orch-agent' && n.data?.agentId === state.active_agent_id);
+      const agentNode = flowNodes.find((n: any) =>
+        (n.type === 'orch-agent' || n.type === 'ai-handoff') &&
+        n.data?.agentId === state.active_agent_id
+      );
       if (agentNode) {
         console.log('Flow complete but agent still active, invoking agent');
         const agentResult = await invokeAgentAI(supabase, ctx, agentNode, state, messageContent, false);
@@ -221,7 +235,7 @@ async function executeFlowOrchestration(
     const currentNode = flowNodes.find((n: any) => n.id === state.current_node_id);
     console.log('Resuming from node:', state.current_node_id, currentNode?.type);
 
-    if (currentNode?.type === 'orch-agent') {
+    if (currentNode?.type === 'orch-agent' || currentNode?.type === 'ai-handoff') {
       // Agent is handling - invoke AI
       const hasNextNodes = findNextNodeIds(flowEdges, state.current_node_id!).length > 0;
       const agentResult = await invokeAgentAI(supabase, ctx, currentNode, state, messageContent, hasNextNodes);
@@ -237,7 +251,7 @@ async function executeFlowOrchestration(
         if (walkResult.replyText) replyText = walkResult.replyText;
         toolsExecuted.push(...walkResult.toolsExecuted);
       }
-    } else if (currentNode?.type === 'orch-document') {
+    } else if (currentNode?.type === 'orch-document' || currentNode?.type === 'action-document') {
       // Document collection is active - invoke document agent
       const hasNextNodes = findNextNodeIds(flowEdges, state.current_node_id!).length > 0;
       const docResult = await invokeDocumentAgentAI(supabase, ctx, currentNode, state, messageContent, hasNextNodes);
@@ -254,8 +268,15 @@ async function executeFlowOrchestration(
         toolsExecuted.push(...walkResult.toolsExecuted);
       }
     } else {
-      // Was waiting after flow/delay - advance
-      console.log('Response received after flow/delay - walking forward');
+      // General wait point (user-input or generic wait)
+      if (currentNode?.type === 'user-input') {
+        const varName = currentNode.data?.variableName;
+        if (varName) {
+          console.log(`Capturing user input for variable: ${varName} = "${messageContent}"`);
+          state.variables[varName] = messageContent;
+        }
+      }
+
       state.waiting_for_response = false;
       const walkResult = await walkFlowForward(supabase, ctx, state, flowNodes, flowEdges, messageContent);
       replyText = walkResult.replyText;
@@ -304,7 +325,7 @@ async function walkFlowForward(
     if (!nextNode) { console.log('Node not found:', nextNodeId); break; }
 
     // Skip already completed non-agent nodes
-    if (state.completed_nodes.includes(nextNode.id) && nextNode.type !== 'orch-agent') {
+    if (state.completed_nodes.includes(nextNode.id) && nextNode.type !== 'orch-agent' && nextNode.type !== 'ai-handoff') {
       state.current_node_id = nextNode.id;
       continue;
     }
@@ -312,6 +333,54 @@ async function walkFlowForward(
     console.log('Executing node:', nextNode.id, nextNode.type, nextNode.data?.label);
 
     switch (nextNode.type) {
+      case 'content-block':
+      case 'orch-content': {
+        console.log('Executing content block via flow-execute');
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+        try {
+          const resp = await fetch(`${supabaseUrl}/functions/v1/flow-execute`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseKey}` },
+            body: JSON.stringify({
+              flowId: ctx.masterPrompt.flow_id,
+              conversationId: ctx.conversationId,
+              startNodeId: nextNode.id,
+              isFromOrchestrator: true
+            }),
+          });
+          const flowResult = await resp.json();
+          toolsExecuted.push({ name: 'send_content', arguments: { node_id: nextNode.id }, result: flowResult });
+        } catch (e) {
+          console.error('Content block execution error:', e);
+        }
+        state.completed_nodes.push(nextNode.id);
+        state.current_node_id = nextNode.id;
+        continue;
+      }
+
+      case 'user-input': {
+        console.log('Found user-input node - setting wait point');
+        // Execute the prompt part of the user-input via flow-execute first
+        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+        const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+        try {
+          await fetch(`${supabaseUrl}/functions/v1/flow-execute`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseKey}` },
+            body: JSON.stringify({
+              flowId: ctx.masterPrompt.flow_id,
+              conversationId: ctx.conversationId,
+              startNodeId: nextNode.id,
+              isFromOrchestrator: true
+            }),
+          });
+        } catch (e) { console.error('User input trigger error:', e); }
+
+        state.current_node_id = nextNode.id;
+        state.waiting_for_response = true;
+        return { replyText, toolsExecuted };
+      }
       case 'orch-tag':
       case 'action-tag': {
         const action = nextNode.data?.action || 'add';
@@ -540,7 +609,7 @@ async function walkFlowForward(
       case 'orch-condition':
       case 'condition': {
         // Evaluate condition using AI
-        const branch = await evaluateCondition(ctx, nextNode, messageContent);
+        const branch = await evaluateCondition(ctx, nextNode, messageContent, state);
         console.log('Condition evaluated:', nextNode.data?.conditionLabel, '→', branch);
         state.completed_nodes.push(nextNode.id);
         state.current_node_id = nextNode.id;
@@ -586,11 +655,12 @@ async function invokeAgentAI(
   const agentId = agentNode.data?.agentId;
   const agent = ctx.agents.find((a: any) => a.id === agentId);
   const additionalPrompt = agentNode.data?.additionalPrompt || '';
+  const expectedOutcomes = agentNode.data?.expectedOutcomes || '';
 
   // Build agent-specific system prompt
   let systemPrompt = '';
 
-  // Master prompt personality (NOT execution instructions)
+  // Master prompt personality
   if (ctx.masterPrompt.content) {
     systemPrompt += `PERSONALIDADE E REGRAS GERAIS:\n${ctx.masterPrompt.content}\n\n`;
   }
@@ -603,7 +673,11 @@ async function invokeAgentAI(
   }
 
   if (additionalPrompt) {
-    systemPrompt += `INSTRUÇÕES ESPECÍFICAS PARA ESTE MOMENTO:\n${additionalPrompt}\n\n`;
+    systemPrompt += `INSTRUÇÕES ESPECÍFICAS PARA ESTE MOMENTO NO FLUXO:\n${additionalPrompt}\n\n`;
+  }
+
+  if (expectedOutcomes) {
+    systemPrompt += `RESULTADOS ESPERADOS (para usar em finalizar_interacao):\nVocê pode finalizar esta etapa com um dos seguintes resultados: ${expectedOutcomes}\n\n`;
   }
 
   // Contact context
@@ -617,47 +691,16 @@ async function invokeAgentAI(
     systemPrompt += `TAGS DO CONTATO: ${currentTagNames.join(', ')}\n\n`;
   }
 
-  // Available tags for agent to use
-  if (ctx.allTags.length > 0) {
-    systemPrompt += `TAGS DISPONÍVEIS (para add_tag/remove_tag):\n`;
-    for (const tag of ctx.allTags) {
-      systemPrompt += `- "${tag.name}" → id: "${tag.id}"\n`;
-    }
-    systemPrompt += '\n';
-  }
-
-  // Available pipelines
-  if (ctx.pipelines.length > 0) {
-    systemPrompt += `PIPELINES DISPONÍVEIS (para move_pipeline):\n`;
-    for (const p of ctx.pipelines) {
-      systemPrompt += `- "${p.name}" (id: "${p.id}"): `;
-      const cols = (p.columns || []).sort((a: any, b: any) => a.order - b.order);
-      systemPrompt += cols.map((c: any) => `"${c.name}"(${c.id})`).join(', ');
-      systemPrompt += '\n';
-    }
-    systemPrompt += '\n';
-  }
-
-  systemPrompt += `INSTRUÇÕES IMPORTANTES:\n`;
-  systemPrompt += `- Use send_reply para responder ao cliente. A resposta DEVE ser em português brasileiro.\n`;
-  systemPrompt += `- Leia TODA a conversa anterior antes de responder. Considere o contexto completo.\n`;
-  systemPrompt += `- NUNCA envie mensagens em inglês, sem sentido, ou genéricas.\n`;
-  systemPrompt += `- Mantenha a persona definida no prompt master.\n`;
-  systemPrompt += `- NUNCA produza texto entre parênteses como "(aguardando resposta)" ou pensamentos internos. Apenas use send_reply.\n`;
-  systemPrompt += `- Se não precisa responder ao cliente, NÃO gere texto algum. Apenas execute as ferramentas necessárias.\n`;
+  systemPrompt += `INSTRUÇÕES DE EXECUÇÃO:\n`;
+  systemPrompt += `- Use a ferramenta send_reply para responder ao cliente. A resposta DEVE ser em português brasileiro.\n`;
+  systemPrompt += `- Leia TODO o histórico para entender o contexto.\n`;
+  systemPrompt += `- Mantenha a persona e o tom de voz definidos.\n`;
+  systemPrompt += `- Se sua tarefa nesta etapa do fluxo estiver CONCLUÍDA, use finalizar_interacao para prosseguir.\n`;
+  systemPrompt += `- Ao finalizar, você DEVE fornecer um 'resultado' (outcome). Use os resultados sugeridos nas instruções específicas ou defina um que descreva o que aconteceu (ex: 'qualificado', 'desqualificado', 'duvida_tecnica').\n`;
+  systemPrompt += `- NÃO use finalizar_interacao prematuramente. Só avance quando o objetivo deste nó for atingido.\n`;
 
   if (isFirstActivation) {
-    systemPrompt += `\n⚠️ ATENÇÃO: Você ACABOU de ser ativado nesta etapa do fluxo.\n`;
-    systemPrompt += `- Esta é sua PRIMEIRA interação. Você DEVE iniciar seu trabalho conforme suas instruções.\n`;
-    systemPrompt += `- NÃO pule sua etapa. Mesmo que o histórico contenha informações relevantes, execute sua tarefa.\n`;
-    systemPrompt += `- Envie sua primeira mensagem ao cliente e aguarde a resposta dele.\n`;
-    systemPrompt += `- Você NÃO pode avançar o fluxo agora. Faça seu trabalho primeiro.\n`;
-  } else if (hasNextNodes) {
-    systemPrompt += `- Quando sua tarefa nesta etapa estiver COMPLETA, use advance_flow para avançar o fluxo.\n`;
-    systemPrompt += `- NÃO use advance_flow prematuramente. Só avance quando sua tarefa aqui estiver realmente concluída.\n`;
-    systemPrompt += `- Você pode usar send_reply e advance_flow na mesma rodada SOMENTE se sua resposta é a última antes de avançar.\n`;
-  } else {
-    systemPrompt += `- Você é o último agente do fluxo. Continue atendendo até que a conversa se encerre naturalmente.\n`;
+    systemPrompt += `\n⚠️ ATENÇÃO: Você ACABOU de ser ativado. Esta é sua primeira mensagem. Inicie o atendimento conforme suas instruções e AGUARDE a resposta do usuário.\n`;
   }
 
   // Build messages
@@ -669,7 +712,7 @@ async function invokeAgentAI(
     })),
   ];
 
-  // Ensure last message is the current one
+  // Ensure last message is current
   if (aiMessages[aiMessages.length - 1]?.role !== 'user' ||
     aiMessages[aiMessages.length - 1]?.content !== messageContent) {
     aiMessages.push({ role: 'user', content: messageContent });
@@ -685,21 +728,38 @@ async function invokeAgentAI(
         parameters: {
           type: 'object',
           properties: { message: { type: 'string', description: 'Texto da mensagem' } },
-          required: ['message'],
-        },
-      },
+          required: ['message']
+        }
+      }
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'finalizar_interacao',
+        description: 'Finaliza a atuação deste agente neste nó e avança o fluxo.',
+        parameters: {
+          type: 'object',
+          properties: {
+            resultado: {
+              type: 'string',
+              description: 'O resultado da interação (ex: qualificado, desqualificado, etc)'
+            }
+          },
+          required: ['resultado']
+        }
+      }
     },
     {
       type: 'function',
       function: {
         name: 'add_tag',
-        description: 'Adicionar uma tag ao contato',
+        description: 'Adicionar uma tag ao contato.',
         parameters: {
           type: 'object',
-          properties: { tag_id: { type: 'string', description: 'ID da tag' } },
-          required: ['tag_id'],
-        },
-      },
+          properties: { tag_id: { type: 'string' } },
+          required: ['tag_id']
+        }
+      }
     },
     {
       type: 'function',
@@ -729,17 +789,6 @@ async function invokeAgentAI(
       },
     },
   ];
-
-  if (hasNextNodes) {
-    tools.push({
-      type: 'function',
-      function: {
-        name: 'advance_flow',
-        description: 'Avançar para a próxima etapa do fluxo de orquestração. Use quando sua tarefa nesta etapa estiver completa.',
-        parameters: { type: 'object', properties: {}, required: [] },
-      },
-    });
-  }
 
   // AI call loop
   let round = 0;
@@ -803,20 +852,14 @@ async function invokeAgentAI(
           toolResults.push({ role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify({ success: true }) });
           toolsExecuted.push({ name: 'send_reply', arguments: fnArgs, result: { success: true } });
         }
-      } else if (fnName === 'advance_flow') {
+      } else if (fnName === 'finalizar_interacao' || fnName === 'finish_interaction' || fnName === 'advance_flow') {
         shouldAdvance = true;
-        toolResults.push({ role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify({ success: true, message: 'Advancing to next step' }) });
-        toolsExecuted.push({ name: 'advance_flow', arguments: {}, result: { success: true } });
-      } else if (fnName === 'add_tag') {
-        const result = await executeToolDirect(supabase, 'add_tag', fnArgs, ctx);
-        toolResults.push({ role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify(result) });
-        toolsExecuted.push({ name: fnName, arguments: fnArgs, result });
-      } else if (fnName === 'remove_tag') {
-        const result = await executeToolDirect(supabase, 'remove_tag', fnArgs, ctx);
-        toolResults.push({ role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify(result) });
-        toolsExecuted.push({ name: fnName, arguments: fnArgs, result });
-      } else if (fnName === 'move_pipeline') {
-        const result = await executeToolDirect(supabase, 'move_pipeline', fnArgs, ctx);
+        const outcome = fnArgs.resultado || fnArgs.outcome || 'completed';
+        state.variables.ai_outcome = outcome;
+        toolResults.push({ role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify({ success: true, outcome }) });
+        toolsExecuted.push({ name: 'finalizar_interacao', arguments: { resultado: outcome }, result: { success: true } });
+      } else if (fnName === 'add_tag' || fnName === 'remove_tag' || fnName === 'move_pipeline') {
+        const result = await executeToolDirect(supabase, fnName, fnArgs, ctx);
         toolResults.push({ role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify(result) });
         toolsExecuted.push({ name: fnName, arguments: fnArgs, result });
       } else {
@@ -1258,11 +1301,21 @@ async function sendMediaViaZAPI(supabase: any, conversation: any, mediaUrl: stri
 
 // ==================== CONDITION EVALUATION ====================
 
-async function evaluateCondition(ctx: any, condNode: any, messageContent: string): Promise<string> {
+async function evaluateCondition(ctx: any, condNode: any, messageContent: string, state: OrchestrationState): Promise<string> {
   const condLabel = condNode.data?.conditionLabel || 'Condição';
+  const aiOutcome = state.variables.ai_outcome;
 
   try {
-    const systemPrompt = `Você é um avaliador de condições. Baseado no histórico da conversa, avalie se a condição "${condLabel}" é VERDADEIRA ou FALSA. Responda APENAS com "true" ou "false".`;
+    let systemPrompt = `Você é um avaliador de condições de fluxo. `;
+
+    if (aiOutcome) {
+      systemPrompt += `O agente anterior determinou o seguinte resultado (outcome): "${aiOutcome}". `;
+    }
+
+    systemPrompt += `Baseado no histórico da conversa e no resultado anterior (se houver), avalie qual caminho o fluxo deve seguir. 
+Condição a avaliar: "${condLabel}". 
+Responda APENAS com o nome da ramificação correta (ex: "true", "false", "qualificado", "desqualificado"). 
+Se for uma pergunta sim/não, use "true" para sim e "false" para não.`;
 
     const msgs = [
       { role: 'system', content: systemPrompt },
@@ -1270,7 +1323,7 @@ async function evaluateCondition(ctx: any, condNode: any, messageContent: string
         role: m.direction === 'inbound' ? 'user' : 'assistant',
         content: m.content || '[mídia]',
       })),
-      { role: 'user', content: `Última mensagem: "${messageContent}"\n\nA condição "${condLabel}" é verdadeira?` },
+      { role: 'user', content: `Última mensagem: "${messageContent}"\n\nAvalie a condição "${condLabel}" agora.` },
     ];
 
     const resp = await fetch(ctx.aiEndpoint, {
@@ -1281,13 +1334,18 @@ async function evaluateCondition(ctx: any, condNode: any, messageContent: string
 
     if (resp.ok) {
       const data = await resp.json();
-      const answer = (data.choices?.[0]?.message?.content || '').toLowerCase().trim();
-      return answer.includes('true') ? 'true' : 'false';
+      const answer = (data.choices?.[0]?.message?.content || '').trim().toLowerCase();
+
+      // Heuristic: if it's strictly true/false in the content but the user expects it
+      if (answer.includes('true')) return 'true';
+      if (answer.includes('false')) return 'false';
+
+      return answer;
     }
   } catch (e) {
     console.error('Condition evaluation error:', e);
   }
-  return 'true'; // Default to true branch
+  return 'true'; // Default
 }
 
 // ==================== LEGACY ORCHESTRATION (fallback) ====================
@@ -1446,20 +1504,30 @@ async function executeToolDirect(supabase: any, toolName: string, args: any, ctx
 // ==================== STATE MANAGEMENT ====================
 
 function loadOrchestrationState(conversation: any, masterPromptId: string): OrchestrationState {
-  const metadata = conversation.metadata || {};
-  const saved = metadata.orchestration_state;
+  const meta = conversation.metadata || {};
+  const orchState = meta.orchestration_state || {};
 
-  if (saved && saved.master_prompt_id === masterPromptId) {
-    return saved;
+  // If loading a different master prompt, reset state partially
+  if (orchState.master_prompt_id && orchState.master_prompt_id !== masterPromptId) {
+    console.log('Master prompt changed, resetting node state');
+    return {
+      master_prompt_id: masterPromptId,
+      current_node_id: null,
+      completed_nodes: [],
+      waiting_for_response: false,
+      variables: {}
+    };
   }
 
-  // Initialize new state
   return {
     master_prompt_id: masterPromptId,
-    current_node_id: null,
-    completed_nodes: [],
-    waiting_for_response: false,
-    flow_completed: false,
+    current_node_id: orchState.current_node_id || null,
+    completed_nodes: orchState.completed_nodes || [],
+    waiting_for_response: orchState.waiting_for_response || false,
+    active_agent_id: orchState.active_agent_id,
+    flow_completed: orchState.flow_completed || false,
+    document_context: orchState.document_context,
+    variables: orchState.variables || {}
   };
 }
 
@@ -1542,22 +1610,43 @@ function buildLegacyTools() {
 async function resolveActiveMasterPrompt(supabase: any, conversation: any) {
   const orgId = conversation.organization_id;
 
-  // 1. Check if conversation is in an active flow execution
+  // 1. Check if conversation is in an active flow execution (running or waiting)
   const { data: execution } = await supabase
     .from('flow_executions')
     .select('*, flow:flows(*)')
     .eq('conversation_id', conversation.id)
-    .eq('status', 'running')
+    .in('status', ['running', 'waiting_input', 'waiting_wait'])
+    .order('created_at', { ascending: false })
+    .limit(1)
     .maybeSingle();
 
-  if (execution?.flow?.is_master_active && execution.flow.master_prompt) {
-    console.log('Using Flow Master Prompt from flow:', execution.flow.id);
-    return {
-      id: execution.flow.id,
-      name: `Flow Master: ${execution.flow.name}`,
-      content: execution.flow.master_prompt,
-      is_active: true
+  if (execution?.flow) {
+    console.log('Using Flow context from execution:', execution.flow.id, `(status: ${execution.status})`);
+
+    // Check orchestration nodes in flow content OR agent_rules
+    const flowData = execution.flow.content || {};
+    const agentRules = {
+      ...(execution.flow.agent_rules || {}),
+      orchestration_nodes: flowData.nodes || (execution.flow.agent_rules?.orchestration_nodes || []),
+      orchestration_edges: flowData.edges || (execution.flow.agent_rules?.orchestration_edges || [])
     };
+
+    // If it's a master flow, OR has any AI-related nodes, use it as the master source
+    const hasAIEntry = agentRules.orchestration_nodes.some((n: any) => n.type === 'orch-agent' || n.type === 'ai-handoff');
+
+    if (execution.flow.is_master_active || hasAIEntry) {
+      return {
+        id: execution.flow.id,
+        flow_id: execution.flow.id,
+        name: `Flow Context: ${execution.flow.name}`,
+        content: execution.flow.master_prompt || '', // Use empty if personality not defined
+        is_active: true,
+        agent_rules: agentRules,
+        current_execution_node_id: execution.current_node_id,
+        provider: execution.flow.ai_provider || null,
+        model: execution.flow.ai_model || null
+      };
+    }
   }
 
   // 2. Fallback to existing logic (workspace config or default active prompt)
