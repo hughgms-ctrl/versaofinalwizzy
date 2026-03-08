@@ -70,20 +70,33 @@ Deno.serve(async (req) => {
     const state = url.searchParams.get('state');
     if (!state) throw new Error('Missing state');
 
-    const { organization_id } = JSON.parse(atob(state));
+    const { organization_id, user_id } = JSON.parse(atob(state));
 
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     );
 
+    // Get user display name from profiles
+    let displayName = userInfo.name || userInfo.email;
+    if (user_id) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('full_name')
+        .eq('user_id', user_id)
+        .single();
+      if (profile?.full_name) displayName = profile.full_name;
+    }
+
     await supabase.from('calendar_configs').upsert({
       organization_id,
+      user_id: user_id || null,
       google_refresh_token: tokens.refresh_token,
       google_access_token: tokens.access_token,
       google_email: userInfo.email,
+      display_name: displayName,
       is_connected: true,
-    }, { onConflict: 'organization_id' });
+    }, { onConflict: 'organization_id,user_id' });
 
     const appUrl = Deno.env.get('APP_URL') || 'https://wizzyai.lovable.app';
     return new Response(null, {
