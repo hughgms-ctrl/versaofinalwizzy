@@ -414,7 +414,10 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
                   </p>
                   <Select
                     value={nextPipelineId}
-                    onValueChange={setNextPipelineId}
+                    onValueChange={(val) => {
+                      setNextPipelineId(val);
+                      setNextPipelineColumnId('first');
+                    }}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Selecionar pipeline..." />
@@ -430,6 +433,33 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
                       ))}
                     </SelectContent>
                   </Select>
+
+                  {nextPipelineId !== 'none' && nextPipelineColumns.length > 0 && (
+                    <div className="space-y-2 mt-3">
+                      <Label>Coluna de destino:</Label>
+                      <Select
+                        value={nextPipelineColumnId}
+                        onValueChange={setNextPipelineColumnId}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecionar coluna..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="first">
+                            <span className="text-muted-foreground">Primeira coluna</span>
+                          </SelectItem>
+                          {nextPipelineColumns.map((col) => (
+                            <SelectItem key={col.id} value={col.id}>
+                              <div className="flex items-center gap-2">
+                                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: col.color }} />
+                                {col.name || 'Sem nome'}
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                 </div>
               </>
             )}
