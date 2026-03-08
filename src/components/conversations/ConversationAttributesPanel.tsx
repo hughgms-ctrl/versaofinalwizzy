@@ -47,7 +47,7 @@ export function ConversationAttributesPanel({
   compact = false 
 }: ConversationAttributesPanelProps) {
   const { profile, session } = useAuth();
-  const { data: departments = [], isLoading: loadingDepartments } = useDepartments();
+  const { data: leadSources = [], isLoading: loadingLeadSources } = useLeadSources();
   const { data: leadSources = [], isLoading: loadingLeadSources } = useLeadSources();
   const { data: profiles = [] } = useProfiles();
   const { data: pipelines = [] } = usePipelines();
