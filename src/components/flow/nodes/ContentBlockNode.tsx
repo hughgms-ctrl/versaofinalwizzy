@@ -9,6 +9,7 @@ interface ContentBlockNodeData extends Record<string, unknown> {
   waitForResponse?: boolean;
   saveVariable?: string;
   timeoutMinutes?: number;
+  remarketingSteps?: Array<{ id: string; delayMinutes: number; message: string }>;
 }
 
 type ContentBlockNode = Node<ContentBlockNodeData>;
