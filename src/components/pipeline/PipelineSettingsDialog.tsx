@@ -409,6 +409,33 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
                   </div>
                 </div>
 
+                {/* Responsável padrão do pipeline */}
+                <div className="space-y-2">
+                  <Label>Responsável padrão:</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Ao mover um lead para este pipeline, ele será atribuído automaticamente a este responsável.
+                  </p>
+                  <Select
+                    value={defaultAssignedTo}
+                    onValueChange={setDefaultAssignedTo}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecionar responsável..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">
+                        <span className="text-muted-foreground">Nenhum (manter atual)</span>
+                      </SelectItem>
+                      {profiles.map((p) => (
+                        <SelectItem key={p.user_id} value={p.user_id}>
+                          {p.full_name}
+                          {p.user_id === profile?.user_id ? ' (você)' : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 {/* Next Pipeline (Auto-transition) */}
                 <div className="space-y-2">
                   <Label>Ao concluir, enviar para:</Label>
