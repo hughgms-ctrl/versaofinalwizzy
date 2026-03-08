@@ -335,6 +335,34 @@ export function CampaignDialog({
                             </SelectContent>
                         </Select>
                     </div>
+
+                    {/* Workspace */}
+                    {workspaces.length > 0 && (
+                        <div className="grid gap-2">
+                            <Label htmlFor="workspace">Workspace (opcional)</Label>
+                            <Select value={workspaceId || "none"} onValueChange={(v) => setWorkspaceId(v === "none" ? "" : v)}>
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Selecione um workspace..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="none">
+                                        <span className="text-muted-foreground">Nenhum</span>
+                                    </SelectItem>
+                                    {workspaces.map((ws) => (
+                                        <SelectItem key={ws.id} value={ws.id}>
+                                            <div className="flex items-center gap-2">
+                                                <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: ws.color }} />
+                                                {ws.name}
+                                            </div>
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                            <p className="text-[10px] text-muted-foreground">
+                                Contatos que entrarem por esta campanha serão atribuídos a este workspace.
+                            </p>
+                        </div>
+                    )}
                 </div>
                 <DialogFooter className="mt-2">
                     <Button variant="outline" onClick={() => onOpenChange(false)}>
