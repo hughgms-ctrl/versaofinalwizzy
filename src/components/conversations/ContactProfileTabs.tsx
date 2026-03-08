@@ -49,10 +49,8 @@ export function ContactProfileTabs({ conversation, contactId }: ContactProfileTa
     enabled: activeTab === 'scheduled',
   });
 
-  // Fetch stage history
-  const { data: stageHistory = [] } = useStageHistory(
-    activeTab === 'history' ? conversation.id : null
-  );
+
+
 
   const handleTabClick = (tabId: TabId) => {
     if (activeTab === tabId) {
