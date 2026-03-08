@@ -12,15 +12,12 @@ import {
   Mail,
   Calendar,
   Plus,
-  MessageSquare,
   Bot,
-  UserCircle,
   Check,
   Loader2,
   Save,
   Pencil,
   Clock,
-  Settings2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
