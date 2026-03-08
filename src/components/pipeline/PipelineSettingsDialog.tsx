@@ -159,6 +159,8 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
   const { availableWorkspaces, isAdmin } = useWorkspaceContext();
 
   const otherPipelines = allPipelines.filter(p => p.id !== pipeline.id);
+  const selectedNextPipeline = otherPipelines.find(p => p.id === nextPipelineId);
+  const { data: nextPipelineColumns = [] } = usePipelineColumns(nextPipelineId !== 'none' ? nextPipelineId : undefined);
 
   useEffect(() => {
     setName(pipeline.name);
