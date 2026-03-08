@@ -165,6 +165,7 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
     setDescription(pipeline.description || '');
     setSelectedWorkspaceIds(pipeline.workspace_ids || []);
     setNextPipelineId(pipeline.next_pipeline_id || 'none');
+    setNextPipelineColumnId(pipeline.next_pipeline_column_id || 'first');
   }, [pipeline]);
 
   const [draggedColumnId, setDraggedColumnId] = useState<string | null>(null);
