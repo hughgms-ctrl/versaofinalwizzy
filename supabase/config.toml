@@ -112,3 +112,9 @@ verify_jwt = false
 
 [functions.google-calendar-auth]
 verify_jwt = false
+
+[functions.google-calendar-book]
+verify_jwt = false
+
+[functions.google-calendar-availability]
+verify_jwt = false

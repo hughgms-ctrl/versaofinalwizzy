@@ -233,6 +233,7 @@ export type Database = {
       }
       calendar_bookings: {
         Row: {
+          assigned_user_id: string | null
           client_email: string | null
           client_name: string | null
           client_phone: string | null
@@ -243,12 +244,14 @@ export type Database = {
           google_event_id: string | null
           id: string
           internal_summary: string | null
+          meet_link: string | null
           organization_id: string
           starts_at: string
           status: string
           updated_at: string
         }
         Insert: {
+          assigned_user_id?: string | null
           client_email?: string | null
           client_name?: string | null
           client_phone?: string | null
@@ -259,12 +262,14 @@ export type Database = {
           google_event_id?: string | null
           id?: string
           internal_summary?: string | null
+          meet_link?: string | null
           organization_id: string
           starts_at: string
           status?: string
           updated_at?: string
         }
         Update: {
+          assigned_user_id?: string | null
           client_email?: string | null
           client_name?: string | null
           client_phone?: string | null
@@ -275,6 +280,7 @@ export type Database = {
           google_event_id?: string | null
           id?: string
           internal_summary?: string | null
+          meet_link?: string | null
           organization_id?: string
           starts_at?: string
           status?: string
@@ -310,6 +316,7 @@ export type Database = {
           booking_slug: string | null
           calendar_id: string | null
           created_at: string
+          display_name: string | null
           google_access_token: string | null
           google_email: string | null
           google_refresh_token: string | null
@@ -318,12 +325,14 @@ export type Database = {
           meeting_duration_minutes: number
           organization_id: string
           updated_at: string
+          user_id: string | null
         }
         Insert: {
           availability_rules?: Json
           booking_slug?: string | null
           calendar_id?: string | null
           created_at?: string
+          display_name?: string | null
           google_access_token?: string | null
           google_email?: string | null
           google_refresh_token?: string | null
@@ -332,12 +341,14 @@ export type Database = {
           meeting_duration_minutes?: number
           organization_id: string
           updated_at?: string
+          user_id?: string | null
         }
         Update: {
           availability_rules?: Json
           booking_slug?: string | null
           calendar_id?: string | null
           created_at?: string
+          display_name?: string | null
           google_access_token?: string | null
           google_email?: string | null
           google_refresh_token?: string | null
@@ -346,12 +357,13 @@ export type Database = {
           meeting_duration_minutes?: number
           organization_id?: string
           updated_at?: string
+          user_id?: string | null
         }
         Relationships: [
           {
             foreignKeyName: "calendar_configs_organization_id_fkey"
             columns: ["organization_id"]
-            isOneToOne: true
+            isOneToOne: false
             referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
