@@ -566,10 +566,10 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
               </SelectContent>
             </Select>
             {rule.pipelineId && (
-              <Select value={rule.columnId || ''} onValueChange={(v) => updateRule({ ...rule, columnId: v || undefined })}>
+              <Select value={rule.columnId || '_any'} onValueChange={(v) => updateRule({ ...rule, columnId: v === '_any' ? undefined : v })}>
                 <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Qualquer etapa..." /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Qualquer etapa</SelectItem>
+                  <SelectItem value="_any">Qualquer etapa</SelectItem>
                   {pipelineColumns.map((c) => (
                     <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
                   ))}
