@@ -1175,60 +1175,7 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
           </div>
         );
 
-      case 'condition':
-        return (
-          <div className="space-y-4">
-            <div className="p-3 bg-yellow-50 rounded-lg flex items-center gap-3">
-              <GitBranch className="h-5 w-5 text-yellow-600" />
-              <div>
-                <p className="text-xs font-semibold">Condição de Desvio</p>
-                <p className="text-[10px] text-muted-foreground text-yellow-800/70">Avalia uma variável para decidir o próximo passo.</p>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label>Descrição da Condição</Label>
-              <Input
-                value={(localData.conditionLabel as string) || ''}
-                onChange={(e) => handleChange('conditionLabel', e.target.value)}
-                placeholder="Ex: Se cliente for VIP"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-2">
-                <Label>Variável</Label>
-                <Input
-                  value={(localData.variable as string) || ''}
-                  onChange={(e) => handleChange('variable', e.target.value)}
-                  placeholder="Ex: status"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Operador</Label>
-                <Select
-                  value={(localData.operator as string) || 'equals'}
-                  onValueChange={(val) => handleChange('operator', val)}
-                >
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="equals">Igual a</SelectItem>
-                    <SelectItem value="not_equals">Diferente de</SelectItem>
-                    <SelectItem value="contains">Contém</SelectItem>
-                    <SelectItem value="greater_than">Maior que</SelectItem>
-                    <SelectItem value="less_than">Menor que</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label>Valor</Label>
-              <Input
-                value={(localData.value as string) || ''}
-                onChange={(e) => handleChange('value', e.target.value)}
-                placeholder="Valor para comparar"
-              />
-            </div>
-          </div>
-        );
+      // Condition is handled above via renderAdvancedConditionEditor
 
       default:
         return (
