@@ -5,7 +5,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { Switch } from '@/components/ui/switch';
 import {
   Select,
   SelectContent,
@@ -19,9 +18,7 @@ import {
   useUpsertIntegrationConfig,
   PROVIDER_LABELS,
   MODELS_BY_PROVIDER,
-  FEATURE_LABELS,
   type AIProvider,
-  type AIFeature,
   type IntegrationConfig,
 } from '@/hooks/useIntegrationConfigs';
 import {
@@ -33,22 +30,9 @@ import {
   XCircle,
   Loader2,
   Save,
-  Bot,
-  MessageSquareText,
-  PenLine,
-  Workflow,
-  AudioLines,
   AlertTriangle,
-  Settings2,
 } from 'lucide-react';
 
-const FEATURE_ICONS: Record<AIFeature, React.ElementType> = {
-  agents: Bot,
-  conversation_summary: MessageSquareText,
-  prompt_generation: PenLine,
-  flow_generation: Workflow,
-  transcription: AudioLines,
-};
 
 const DEFAULT_CONFIG: Partial<IntegrationConfig> = {
   ai_provider: 'lovable',
@@ -75,35 +59,20 @@ export function AITab() {
   const [formData, setFormData] = useState<Partial<IntegrationConfig>>(DEFAULT_CONFIG);
   const [showOpenAIKey, setShowOpenAIKey] = useState(false);
   const [showGeminiKey, setShowGeminiKey] = useState(false);
-  const [featureOverrides, setFeatureOverrides] = useState<Record<AIFeature, boolean>>({
-    agents: false,
-    conversation_summary: false,
-    prompt_generation: false,
-    flow_generation: false,
-    transcription: false,
-  });
 
   useEffect(() => {
     if (config) {
       setFormData(config);
-      setFeatureOverrides({
-        agents: !!config.agents_provider,
-        conversation_summary: !!config.conversation_summary_provider,
-        prompt_generation: !!config.prompt_generation_provider,
-        flow_generation: !!config.flow_generation_provider,
-        transcription: !!config.transcription_provider,
-      });
     }
   }, [config]);
 
   const handleSave = () => {
     const payload = { ...formData };
-    const features: AIFeature[] = ['agents', 'conversation_summary', 'prompt_generation', 'flow_generation', 'transcription'];
+    // Clear per-feature overrides - use default for all
+    const features = ['agents', 'conversation_summary', 'prompt_generation', 'flow_generation', 'transcription'];
     features.forEach((f) => {
-      if (!featureOverrides[f]) {
-        (payload as any)[`${f}_provider`] = null;
-        (payload as any)[`${f}_model`] = null;
-      }
+      (payload as any)[`${f}_provider`] = null;
+      (payload as any)[`${f}_model`] = null;
     });
 
     if (payload.ai_provider === 'openai' && !payload.openai_api_key) {
@@ -341,114 +310,6 @@ export function AITab() {
         </CardContent>
       </Card>
 
-      {/* Per-Feature Configuration */}
-      <Card className="bg-card border-border">
-        <CardHeader>
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-purple-500/10">
-              <Settings2 className="h-5 w-5 text-purple-500" />
-            </div>
-            <div>
-              <CardTitle className="text-foreground">Configuração por Recurso</CardTitle>
-              <CardDescription>
-                Personalize qual provedor e modelo cada recurso utiliza. Desativado = usa o padrão.
-              </CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {(Object.keys(FEATURE_LABELS) as AIFeature[]).map((feature) => {
-            const Icon = FEATURE_ICONS[feature];
-            const { label, description } = FEATURE_LABELS[feature];
-            const isOverridden = featureOverrides[feature];
-
-            return (
-              <div key={feature} className="rounded-xl border border-border p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="p-1.5 rounded-lg bg-muted">
-                      <Icon className="h-4 w-4 text-foreground" />
-                    </div>
-                    <div>
-                      <p className="font-medium text-foreground text-sm">{label}</p>
-                      <p className="text-xs text-muted-foreground">{description}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    {!isOverridden && (
-                      <Badge variant="outline" className="text-xs">
-                        Usando padrão
-                      </Badge>
-                    )}
-                    <Switch
-                      checked={isOverridden}
-                      onCheckedChange={(checked) => {
-                        setFeatureOverrides((prev) => ({ ...prev, [feature]: checked }));
-                        if (checked) {
-                          updateField(`${feature}_provider`, formData.ai_provider);
-                          updateField(`${feature}_model`, formData.default_model);
-                        } else {
-                          updateField(`${feature}_provider`, null);
-                          updateField(`${feature}_model`, null);
-                        }
-                      }}
-                    />
-                  </div>
-                </div>
-
-                {isOverridden && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2">
-                    <div className="space-y-1.5">
-                      <Label className="text-xs text-muted-foreground">Provedor</Label>
-                      <Select
-                        value={(formData as any)[`${feature}_provider`] || formData.ai_provider || 'lovable'}
-                        onValueChange={(v) => {
-                          updateField(`${feature}_provider`, v);
-                          const models = MODELS_BY_PROVIDER[v as AIProvider];
-                          if (models.length > 0) {
-                            updateField(`${feature}_model`, models[0].value);
-                          }
-                        }}
-                      >
-                        <SelectTrigger className="h-9">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {(['lovable', 'openai', 'gemini'] as AIProvider[]).map((p) => (
-                            <SelectItem key={p} value={p}>
-                              {PROVIDER_LABELS[p]}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs text-muted-foreground">Modelo</Label>
-                      <Select
-                        value={(formData as any)[`${feature}_model`] || ''}
-                        onValueChange={(v) => updateField(`${feature}_model`, v)}
-                      >
-                        <SelectTrigger className="h-9">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {MODELS_BY_PROVIDER[
-                            ((formData as any)[`${feature}_provider`] || formData.ai_provider || 'lovable') as AIProvider
-                          ].map((m) => (
-                            <SelectItem key={m.value} value={m.value}>
-                              {m.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </CardContent>
-      </Card>
 
       {/* Save Button */}
       <div className="flex justify-end">
