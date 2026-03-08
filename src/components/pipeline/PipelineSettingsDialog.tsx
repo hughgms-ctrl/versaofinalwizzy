@@ -197,6 +197,7 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
         workspace_ids: selectedWorkspaceIds,
         next_pipeline_id: nextPipelineId === 'none' ? null : nextPipelineId,
         next_pipeline_column_id: nextPipelineId === 'none' || nextPipelineColumnId === 'first' ? null : nextPipelineColumnId,
+        default_assigned_to: defaultAssignedTo === 'none' ? null : defaultAssignedTo,
       });
     }
     onOpenChange(false);
