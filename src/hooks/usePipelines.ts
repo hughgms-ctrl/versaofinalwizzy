@@ -166,13 +166,14 @@ export function useUpdatePipeline() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ id, name, description, workspace_ids, next_pipeline_id, next_pipeline_column_id }: { 
+    mutationFn: async ({ id, name, description, workspace_ids, next_pipeline_id, next_pipeline_column_id, default_assigned_to }: { 
       id: string;
       name?: string; 
       description?: string;
       workspace_ids?: string[];
       next_pipeline_id?: string | null;
       next_pipeline_column_id?: string | null;
+      default_assigned_to?: string | null;
     }) => {
       const updates: Record<string, unknown> = {};
       if (name !== undefined) updates.name = name;
@@ -180,6 +181,7 @@ export function useUpdatePipeline() {
       if (workspace_ids !== undefined) updates.workspace_ids = workspace_ids;
       if (next_pipeline_id !== undefined) updates.next_pipeline_id = next_pipeline_id;
       if (next_pipeline_column_id !== undefined) updates.next_pipeline_column_id = next_pipeline_column_id;
+      if (default_assigned_to !== undefined) updates.default_assigned_to = default_assigned_to;
 
       const { error } = await (supabase as any)
         .from('pipelines')
