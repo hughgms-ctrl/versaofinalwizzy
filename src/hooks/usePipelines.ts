@@ -462,6 +462,20 @@ export function useMoveConversation() {
                   changed_by_type: 'auto',
                   organization_id: profile.organization_id,
                 });
+
+              // Auto-assign responsible from next pipeline
+              const { data: nextPipelineData } = await (supabase as any)
+                .from('pipelines')
+                .select('default_assigned_to')
+                .eq('id', currentPipeline.next_pipeline_id)
+                .single();
+
+              if (nextPipelineData?.default_assigned_to) {
+                await (supabase as any)
+                  .from('conversations')
+                  .update({ assigned_to: nextPipelineData.default_assigned_to })
+                  .eq('id', conversationId);
+              }
             }
           }
         }
