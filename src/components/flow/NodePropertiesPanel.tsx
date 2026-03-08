@@ -447,6 +447,7 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
   const { data: pipelines = [] } = usePipelines();
   const { data: pipelineColumns = [] } = usePipelineColumns(localData.pipelineId as string || localData._conditionPipelineId as string);
   const { data: teamMembers = [] } = useTeamMembers();
+  const { data: workspaces = [] } = useWorkspaces();
 
   useEffect(() => {
     if (node) {
