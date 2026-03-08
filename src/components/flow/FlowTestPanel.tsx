@@ -540,13 +540,13 @@ Responda sempre em português brasileiro de forma profissional e prestativa.`;
         if (!isMaster && currentNode?.data?.agentId) {
           try {
             const { data: agentData } = await supabase
-              .from('agents' as any)
-              .select('prompt')
+              .from('ai_agents')
+              .select('prompt_base')
               .eq('id', currentNode.data.agentId)
               .single();
 
-            if (agentData?.prompt) {
-              prompt = `${agentData.prompt}\n\n[INSTRUÇÕES ESPECÍFICAS DESTE NÓ]:\n${prompt}`;
+            if (agentData?.prompt_base) {
+              prompt = `${agentData.prompt_base}\n\n[INSTRUÇÕES ESPECÍFICAS DESTE NÓ]:\n${prompt}`;
             }
           } catch (err) {
             console.error('Error fetching agent prompt during chat:', err);

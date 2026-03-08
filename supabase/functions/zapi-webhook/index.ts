@@ -774,8 +774,9 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
     }
     return respond({ success: true, messageId: savedMessage.id });
   }
+}
 
-  async function handleReadReceipt(supabase: any, payload: any) {
+async function handleReadReceipt(supabase: any, payload: any) {
     const msg = payload.message || {};
     const msgId = msg.msgid || msg.id;
     if (!msgId) return respond({ success: true, ignored: true });
