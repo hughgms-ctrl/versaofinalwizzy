@@ -693,268 +693,329 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
       }
     }
 
-    // 2. Check for Master Prompt / AI routing
-    let shouldTrigger = conversation.service_mode === 'ia';
+    // 2. Check for active flow execution
+    const { data: activeFlowExec } = await supabase
+      .from('flow_executions')
+      .select('id, status, current_node_id, flow_id, flow:flows(nodes, master_prompt, is_master_active, name)')
+      .eq('conversation_id', conversation.id)
+      .in('status', ['running', 'waiting_input'])
+      .order('started_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-    if (!shouldTrigger && triggerText) {
-      shouldTrigger = await checkMasterPromptTriggers(supabase, organizationId, contact.id, triggerText, conversation.id);
-    }
+    if (activeFlowExec) {
+      console.log(`[WEBHOOK] Active flow execution ${activeFlowExec.id} (status=${activeFlowExec.status}, node=${activeFlowExec.current_node_id})`);
 
-    if (shouldTrigger) {
-      console.log(`[WEBHOOK] Triggering agent-orchestrator for conversation ${conversation.id}. Mode: ${conversation.service_mode}, Text: "${triggerText}"`);
-      const agentPromise = fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/agent-orchestrator`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
-        body: JSON.stringify({ conversationId: conversation.id, messageContent: triggerText || '[mídia]' }),
-      });
-      runBackground(agentPromise);
-    }
-  }
+      // Check if the flow is paused at an ai-handoff node
+      const flowNodes = (activeFlowExec.flow?.nodes || []) as any[];
+      const currentNode = flowNodes.find((n: any) => n.id === activeFlowExec.current_node_id);
+      const isAtAIHandoff = currentNode?.type === 'ai-handoff';
 
-  return respond({ success: true, messageId: savedMessage.id });
-}
+      if (isAtAIHandoff && activeFlowExec.status === 'waiting_input') {
+        console.log(`[WEBHOOK] Flow paused at ai-handoff node — routing message to agent-orchestrator`);
 
-async function handleReadReceipt(supabase: any, payload: any) {
-  const msg = payload.message || {};
-  const msgId = msg.msgid || msg.id;
-  if (!msgId) return respond({ success: true, ignored: true });
+        // Get the ai_handoff_context from conversation metadata
+        const convMetadata = conversation.metadata || {};
+        const handoffContext = convMetadata.ai_handoff_context || {};
 
-  const ack = msg.ack || payload.ack || 0; // Update status
-  const updateData: any = {};
-  if (ack >= 1) updateData.sent_at = updateData.sent_at || new Date().toISOString();
-  if (ack >= 2) updateData.delivered_at = updateData.delivered_at || new Date().toISOString();
-  if (ack >= 3) updateData.read_at = updateData.read_at || new Date().toISOString();
+        const orchestratorBody: Record<string, unknown> = {
+          conversationId: conversation.id,
+          messageContent: triggerText || '[mídia]',
+          flowExecutionId: activeFlowExec.id, // So orchestrator can advance the flow
+        };
 
-  if (ack >= 4) {
-    // Audio played status
-    updateData.metadata = {
-      ...(msg.metadata || {}),
-      played_at: msg.metadata?.played_at || new Date().toISOString()
-    };
-    // Ensure it's marked as read too
-    updateData.read_at = updateData.read_at || new Date().toISOString();
-  }
+        // Pass master prompt override from flow context
+        if (handoffContext.masterPromptOverride) {
+          orchestratorBody.masterPromptOverride = handoffContext.masterPromptOverride;
+        }
+        if (handoffContext.additionalContext) {
+          orchestratorBody.additionalContext = handoffContext.additionalContext;
+        }
 
-  if (Object.keys(updateData).length > 0) {
-    await supabase.from('messages').update(updateData).eq('zapi_message_id', msgId);
-  }
+        const agentPromise = fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/agent-orchestrator`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
+          body: JSON.stringify(orchestratorBody),
+        });
+        runBackground(agentPromise);
+      } else if (activeFlowExec.status === 'waiting_input') {
+        // Flow is waiting for input at a non-AI node (e.g., user-input) — resume flow
+        console.log(`[WEBHOOK] Flow waiting_input at node ${activeFlowExec.current_node_id} — resuming flow execution`);
+        const resumePromise = fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/flow-execute`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
+          body: JSON.stringify({
+            flowId: activeFlowExec.flow_id,
+            conversationId: conversation.id,
+            startNodeId: activeFlowExec.current_node_id,
+          }),
+        });
+        runBackground(resumePromise);
+      } else {
+        console.log(`[WEBHOOK] Flow is running — skipping independent agent trigger`);
+      }
+    } else {
+      // 3. No active flow — Check for Master Prompt / AI routing
+      let shouldTrigger = conversation.service_mode === 'ia';
 
-  return respond({ success: true });
-}
+      if (!shouldTrigger && triggerText) {
+        shouldTrigger = await checkMasterPromptTriggers(supabase, organizationId, contact.id, triggerText, conversation.id);
+      }
 
-async function handlePresence(supabase: any, payload: any, instanceName: string) {
-  const chat = payload.chat || {};
-  // Fallback to chatId, sender or number if phone is missing
-  const rawPhone = chat.phone || chat.wa_chatid || payload.chatId || payload.sender || payload.number || '';
-  const phone = cleanPhone(rawPhone);
-
-  if (!phone) {
-    console.log(`[Presence] No phone found in payload for instance ${instanceName}`);
-    return new Response(JSON.stringify({ error: 'Phone not found' }), { status: 400 });
-  }
-
-  let whatsappInstance = null;
-  if (instanceName) {
-    const { data } = await supabase.from('whatsapp_instances').select('*').eq('zapi_instance_id', instanceName).single();
-    whatsappInstance = data;
-  }
-  if (!whatsappInstance) {
-    const { data: instances } = await supabase.from('whatsapp_instances').select('*').eq('status', 'connected').limit(1);
-    whatsappInstance = instances?.[0];
-  }
-  if (!whatsappInstance) return respond({ success: true });
-
-  const { data: contact } = await supabase.from('contacts').select('id')
-    .eq('phone', phone).eq('organization_id', whatsappInstance.organization_id).maybeSingle();
-  if (!contact) return respond({ success: true });
-
-  const state = (payload.state || payload.presenceType || payload.presence || '').toLowerCase();
-  let presenceType: string;
-  switch (state) {
-    case 'composing': case 'typing': presenceType = 'typing'; break;
-    case 'recording': presenceType = 'recording'; break;
-    case 'online': case 'available': case 'active': presenceType = 'online'; break;
-    default: presenceType = 'offline';
-  }
-
-  await supabase.from('contact_presence').upsert({
-    contact_id: contact.id, organization_id: whatsappInstance.organization_id,
-    presence_type: presenceType, started_at: new Date().toISOString(),
-    expires_at: new Date(Date.now() + 30000).toISOString(),
-  }, { onConflict: 'contact_id' });
-
-  return respond({ success: true });
-}
-
-// ========== HELPERS ==========
-
-async function findOrCreateContact(supabase: any, phone: string, organizationId: string, name: string | null, avatarUrl: string | null) {
-  // Try exact phone match
-  const { data: existing } = await supabase
-    .from('contacts').select('*')
-    .eq('phone', phone).eq('organization_id', organizationId).maybeSingle();
-
-  if (existing) {
-    const updateData: any = {};
-    if (name && !existing.name) updateData.name = name;
-    if (avatarUrl && !existing.avatar_url) updateData.avatar_url = avatarUrl;
-    if (Object.keys(updateData).length > 0) {
-      await supabase.from('contacts').update(updateData).eq('id', existing.id);
-    }
-    return { ...existing, ...updateData };
-  }
-
-  // Try without country code (legacy)
-  const shortPhone = phone.replace(/^55/, '');
-  if (shortPhone !== phone) {
-    const { data: shortContact } = await supabase
-      .from('contacts').select('*')
-      .eq('phone', shortPhone).eq('organization_id', organizationId).maybeSingle();
-    if (shortContact) {
-      const updateData: any = { phone };
-      if (name && !shortContact.name) updateData.name = name;
-      if (avatarUrl && !shortContact.avatar_url) updateData.avatar_url = avatarUrl;
-      await supabase.from('contacts').update(updateData).eq('id', shortContact.id);
-      return { ...shortContact, ...updateData };
-    }
-  }
-
-  // Create new
-  const { data: newContact, error } = await supabase
-    .from('contacts')
-    .insert({ phone, name: name || null, avatar_url: avatarUrl || null, organization_id: organizationId })
-    .select().single();
-  if (error) throw error;
-  return newContact;
-}
-
-async function findOrCreateConversation(supabase: any, contactId: string, organizationId: string, whatsappInstanceId: string, sourcePhone?: string) {
-  // IMPORTANT: Find conversation by contact_id to avoid mixing messages
-  const { data: existing } = await supabase
-    .from('conversations').select('*')
-    .eq('contact_id', contactId).eq('organization_id', organizationId)
-    .order('created_at', { ascending: false }).limit(1).maybeSingle();
-
-  if (existing) {
-    if (existing.whatsapp_instance_id !== whatsappInstanceId) {
-      await supabase.from('conversations').update({ whatsapp_instance_id: whatsappInstanceId }).eq('id', existing.id);
-    }
-    return existing;
-  }
-
-  const { data: newConv, error } = await supabase
-    .from('conversations')
-    .insert({
-      contact_id: contactId, organization_id: organizationId,
-      whatsapp_instance_id: whatsappInstanceId, source_phone: sourcePhone || null,
-      status: 'open', unread_count: 0,
-    })
-    .select().single();
-
-  if (error) {
-    if (error.code === '23505') {
-      const { data: raceExisting } = await supabase
-        .from('conversations').select('*')
-        .eq('contact_id', contactId).eq('organization_id', organizationId).limit(1).maybeSingle();
-      if (raceExisting) return raceExisting;
-    }
-    throw error;
-  }
-  return newConv;
-}
-
-async function checkMasterPromptTriggers(supabase: any, organizationId: string, contactId: string, messageContent: string, conversationId: string): Promise<boolean> {
-  const { data: masterPrompts } = await supabase
-    .from('master_prompts')
-    .select('id, trigger_type, trigger_tags, trigger_keywords')
-    .eq('organization_id', organizationId).eq('is_active', true)
-    .neq('trigger_type', 'disabled');
-  if (!masterPrompts?.length) return false;
-
-  for (const mp of masterPrompts) {
-    if (mp.trigger_type === 'tag' && mp.trigger_tags?.length > 0) {
-      const { data: contactTags } = await supabase
-        .from('contact_tags').select('tag_id')
-        .eq('contact_id', contactId).in('tag_id', mp.trigger_tags);
-      if (contactTags?.length > 0) {
-        await supabase.from('conversations').update({ service_mode: 'ia' }).eq('id', conversationId);
-        return true;
+      if (shouldTrigger) {
+        console.log(`[WEBHOOK] Triggering agent-orchestrator for conversation ${conversation.id}. Mode: ${conversation.service_mode}, Text: "${triggerText}"`);
+        const agentPromise = fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/agent-orchestrator`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
+          body: JSON.stringify({ conversationId: conversation.id, messageContent: triggerText || '[mídia]' }),
+        });
+        runBackground(agentPromise);
       }
     }
-    if (mp.trigger_type === 'keyword' && mp.trigger_keywords?.length > 0) {
-      const msgLower = messageContent.toLowerCase().trim();
-      for (const kw of mp.trigger_keywords) {
-        if (!kw.value) continue;
-        let matched = false;
-        switch (kw.match_type) {
-          case 'exact': matched = msgLower === kw.value.toLowerCase().trim(); break;
-          case 'contains': {
-            const words = kw.value.split(',').map((w: string) => w.trim().toLowerCase()).filter(Boolean);
-            matched = words.some((w: string) => msgLower.includes(w));
-            break;
-          }
-          case 'starts_with': matched = msgLower.startsWith(kw.value.toLowerCase().trim()); break;
-        }
-        if (matched) {
+    return respond({ success: true, messageId: savedMessage.id });
+  }
+
+  async function handleReadReceipt(supabase: any, payload: any) {
+    const msg = payload.message || {};
+    const msgId = msg.msgid || msg.id;
+    if (!msgId) return respond({ success: true, ignored: true });
+
+    const ack = msg.ack || payload.ack || 0; // Update status
+    const updateData: any = {};
+    if (ack >= 1) updateData.sent_at = updateData.sent_at || new Date().toISOString();
+    if (ack >= 2) updateData.delivered_at = updateData.delivered_at || new Date().toISOString();
+    if (ack >= 3) updateData.read_at = updateData.read_at || new Date().toISOString();
+
+    if (ack >= 4) {
+      // Audio played status
+      updateData.metadata = {
+        ...(msg.metadata || {}),
+        played_at: msg.metadata?.played_at || new Date().toISOString()
+      };
+      // Ensure it's marked as read too
+      updateData.read_at = updateData.read_at || new Date().toISOString();
+    }
+
+    if (Object.keys(updateData).length > 0) {
+      await supabase.from('messages').update(updateData).eq('zapi_message_id', msgId);
+    }
+
+    return respond({ success: true });
+  }
+
+  async function handlePresence(supabase: any, payload: any, instanceName: string) {
+    const chat = payload.chat || {};
+    // Fallback to chatId, sender or number if phone is missing
+    const rawPhone = chat.phone || chat.wa_chatid || payload.chatId || payload.sender || payload.number || '';
+    const phone = cleanPhone(rawPhone);
+
+    if (!phone) {
+      console.log(`[Presence] No phone found in payload for instance ${instanceName}`);
+      return new Response(JSON.stringify({ error: 'Phone not found' }), { status: 400 });
+    }
+
+    let whatsappInstance = null;
+    if (instanceName) {
+      const { data } = await supabase.from('whatsapp_instances').select('*').eq('zapi_instance_id', instanceName).single();
+      whatsappInstance = data;
+    }
+    if (!whatsappInstance) {
+      const { data: instances } = await supabase.from('whatsapp_instances').select('*').eq('status', 'connected').limit(1);
+      whatsappInstance = instances?.[0];
+    }
+    if (!whatsappInstance) return respond({ success: true });
+
+    const { data: contact } = await supabase.from('contacts').select('id')
+      .eq('phone', phone).eq('organization_id', whatsappInstance.organization_id).maybeSingle();
+    if (!contact) return respond({ success: true });
+
+    const state = (payload.state || payload.presenceType || payload.presence || '').toLowerCase();
+    let presenceType: string;
+    switch (state) {
+      case 'composing': case 'typing': presenceType = 'typing'; break;
+      case 'recording': presenceType = 'recording'; break;
+      case 'online': case 'available': case 'active': presenceType = 'online'; break;
+      default: presenceType = 'offline';
+    }
+
+    await supabase.from('contact_presence').upsert({
+      contact_id: contact.id, organization_id: whatsappInstance.organization_id,
+      presence_type: presenceType, started_at: new Date().toISOString(),
+      expires_at: new Date(Date.now() + 30000).toISOString(),
+    }, { onConflict: 'contact_id' });
+
+    return respond({ success: true });
+  }
+
+  // ========== HELPERS ==========
+
+  async function findOrCreateContact(supabase: any, phone: string, organizationId: string, name: string | null, avatarUrl: string | null) {
+    // Try exact phone match
+    const { data: existing } = await supabase
+      .from('contacts').select('*')
+      .eq('phone', phone).eq('organization_id', organizationId).maybeSingle();
+
+    if (existing) {
+      const updateData: any = {};
+      if (name && !existing.name) updateData.name = name;
+      if (avatarUrl && !existing.avatar_url) updateData.avatar_url = avatarUrl;
+      if (Object.keys(updateData).length > 0) {
+        await supabase.from('contacts').update(updateData).eq('id', existing.id);
+      }
+      return { ...existing, ...updateData };
+    }
+
+    // Try without country code (legacy)
+    const shortPhone = phone.replace(/^55/, '');
+    if (shortPhone !== phone) {
+      const { data: shortContact } = await supabase
+        .from('contacts').select('*')
+        .eq('phone', shortPhone).eq('organization_id', organizationId).maybeSingle();
+      if (shortContact) {
+        const updateData: any = { phone };
+        if (name && !shortContact.name) updateData.name = name;
+        if (avatarUrl && !shortContact.avatar_url) updateData.avatar_url = avatarUrl;
+        await supabase.from('contacts').update(updateData).eq('id', shortContact.id);
+        return { ...shortContact, ...updateData };
+      }
+    }
+
+    // Create new
+    const { data: newContact, error } = await supabase
+      .from('contacts')
+      .insert({ phone, name: name || null, avatar_url: avatarUrl || null, organization_id: organizationId })
+      .select().single();
+    if (error) throw error;
+    return newContact;
+  }
+
+  async function findOrCreateConversation(supabase: any, contactId: string, organizationId: string, whatsappInstanceId: string, sourcePhone?: string) {
+    // IMPORTANT: Find conversation by contact_id to avoid mixing messages
+    const { data: existing } = await supabase
+      .from('conversations').select('*')
+      .eq('contact_id', contactId).eq('organization_id', organizationId)
+      .order('created_at', { ascending: false }).limit(1).maybeSingle();
+
+    if (existing) {
+      if (existing.whatsapp_instance_id !== whatsappInstanceId) {
+        await supabase.from('conversations').update({ whatsapp_instance_id: whatsappInstanceId }).eq('id', existing.id);
+      }
+      return existing;
+    }
+
+    const { data: newConv, error } = await supabase
+      .from('conversations')
+      .insert({
+        contact_id: contactId, organization_id: organizationId,
+        whatsapp_instance_id: whatsappInstanceId, source_phone: sourcePhone || null,
+        status: 'open', unread_count: 0,
+      })
+      .select().single();
+
+    if (error) {
+      if (error.code === '23505') {
+        const { data: raceExisting } = await supabase
+          .from('conversations').select('*')
+          .eq('contact_id', contactId).eq('organization_id', organizationId).limit(1).maybeSingle();
+        if (raceExisting) return raceExisting;
+      }
+      throw error;
+    }
+    return newConv;
+  }
+
+  async function checkMasterPromptTriggers(supabase: any, organizationId: string, contactId: string, messageContent: string, conversationId: string): Promise<boolean> {
+    const { data: masterPrompts } = await supabase
+      .from('master_prompts')
+      .select('id, trigger_type, trigger_tags, trigger_keywords')
+      .eq('organization_id', organizationId).eq('is_active', true)
+      .neq('trigger_type', 'disabled');
+    if (!masterPrompts?.length) return false;
+
+    for (const mp of masterPrompts) {
+      if (mp.trigger_type === 'tag' && mp.trigger_tags?.length > 0) {
+        const { data: contactTags } = await supabase
+          .from('contact_tags').select('tag_id')
+          .eq('contact_id', contactId).in('tag_id', mp.trigger_tags);
+        if (contactTags?.length > 0) {
           await supabase.from('conversations').update({ service_mode: 'ia' }).eq('id', conversationId);
           return true;
         }
       }
+      if (mp.trigger_type === 'keyword' && mp.trigger_keywords?.length > 0) {
+        const msgLower = messageContent.toLowerCase().trim();
+        for (const kw of mp.trigger_keywords) {
+          if (!kw.value) continue;
+          let matched = false;
+          switch (kw.match_type) {
+            case 'exact': matched = msgLower === kw.value.toLowerCase().trim(); break;
+            case 'contains': {
+              const words = kw.value.split(',').map((w: string) => w.trim().toLowerCase()).filter(Boolean);
+              matched = words.some((w: string) => msgLower.includes(w));
+              break;
+            }
+            case 'starts_with': matched = msgLower.startsWith(kw.value.toLowerCase().trim()); break;
+          }
+          if (matched) {
+            await supabase.from('conversations').update({ service_mode: 'ia' }).eq('id', conversationId);
+            return true;
+          }
+        }
+      }
     }
+    return false;
   }
-  return false;
-}
 
-// Check for exact, contains, or starts_with matches in active campaigns
-async function checkCampaignTriggers(supabase: any, organizationId: string, messageContent: string): Promise<{ flowId: string, campaignId: string } | null> {
-  const { data: campaigns, error: campaignsError } = await supabase
-    .from('campaigns')
-    .select('id, trigger_keyword, match_type, flow_id, is_active')
-    .eq('organization_id', organizationId)
-    .eq('is_active', true);
+  // Check for exact, contains, or starts_with matches in active campaigns
+  async function checkCampaignTriggers(supabase: any, organizationId: string, messageContent: string): Promise<{ flowId: string, campaignId: string } | null> {
+    const { data: campaigns, error: campaignsError } = await supabase
+      .from('campaigns')
+      .select('id, trigger_keyword, match_type, flow_id, is_active')
+      .eq('organization_id', organizationId)
+      .eq('is_active', true);
 
-  if (campaignsError) {
-    console.error('Error fetching campaigns:', campaignsError);
+    if (campaignsError) {
+      console.error('Error fetching campaigns:', campaignsError);
+      return null;
+    }
+
+    console.log(`Found ${campaigns?.length || 0} active campaigns for org ${organizationId}`);
+
+    if (!campaigns?.length) return null;
+
+    const msgLower = messageContent.toLowerCase().trim();
+    console.log(`Comparing message "${msgLower}" against campaigns...`);
+
+    for (const campaign of campaigns) {
+      if (!campaign.trigger_keyword) continue;
+
+      // words might be comma separated "sim, quero, gosto"
+      const keywords = campaign.trigger_keyword.split(',').map((k: string) => k.trim().toLowerCase()).filter(Boolean);
+      console.log(`Campaign ${campaign.id} keywords:`, keywords, `Match type: ${campaign.match_type}`);
+
+      for (const kw of keywords) {
+        let matched = false;
+        switch (campaign.match_type) {
+          case 'exact':
+            matched = msgLower === kw;
+            break;
+          case 'contains':
+            matched = msgLower.includes(kw);
+            break;
+          case 'starts_with':
+            matched = msgLower.startsWith(kw);
+            break;
+          default:
+            matched = msgLower === kw;
+        }
+
+        if (matched) {
+          console.log(`MATCH FOUND! Campaign: ${campaign.id}, Keyword: ${kw}`);
+          return { flowId: campaign.flow_id, campaignId: campaign.id };
+        }
+      }
+    }
+
+    console.log('[WEBHOOK] No campaign match found for message:', msgLower);
     return null;
   }
-
-  console.log(`Found ${campaigns?.length || 0} active campaigns for org ${organizationId}`);
-
-  if (!campaigns?.length) return null;
-
-  const msgLower = messageContent.toLowerCase().trim();
-  console.log(`Comparing message "${msgLower}" against campaigns...`);
-
-  for (const campaign of campaigns) {
-    if (!campaign.trigger_keyword) continue;
-
-    // words might be comma separated "sim, quero, gosto"
-    const keywords = campaign.trigger_keyword.split(',').map((k: string) => k.trim().toLowerCase()).filter(Boolean);
-    console.log(`Campaign ${campaign.id} keywords:`, keywords, `Match type: ${campaign.match_type}`);
-
-    for (const kw of keywords) {
-      let matched = false;
-      switch (campaign.match_type) {
-        case 'exact':
-          matched = msgLower === kw;
-          break;
-        case 'contains':
-          matched = msgLower.includes(kw);
-          break;
-        case 'starts_with':
-          matched = msgLower.startsWith(kw);
-          break;
-        default:
-          matched = msgLower === kw;
-      }
-
-      if (matched) {
-        console.log(`MATCH FOUND! Campaign: ${campaign.id}, Keyword: ${kw}`);
-        return { flowId: campaign.flow_id, campaignId: campaign.id };
-      }
-    }
-  }
-
-  console.log('[WEBHOOK] No campaign match found for message:', msgLower);
-  return null;
-}
