@@ -1,142 +1,49 @@
+# Pipeline = Departamento + Transição Automática
 
-# Plano de Implementacao - Fase 2: Modulo de Documentos e Templates
+## Conceito
 
-Seguindo a ordem solicitada: Fase 2 -> Fase 3 -> Fase 1 -> Fase 4. Vamos comecar pelo modulo de documentos.
+Cada pipeline funciona como um departamento. Ao atingir a última coluna, o lead é automaticamente transferido para a primeira coluna do próximo pipeline configurado.
 
----
+## 1. Migration SQL
 
-## O que sera construido nesta fase
+Adicionar coluna `next_pipeline_id` na tabela `pipelines`:
 
-Uma pagina `/documents` com 3 abas: **Templates**, **Documentos Gerados** e **Packs**. O usuario podera fazer upload de um contrato modelo, a IA vai analisar e extrair os campos variaveis (nome, endereco, CPF, etc.), criando um template reutilizavel com marcadores `{{campo}}`. Tambem sera possivel agrupar templates em packs para gerar multiplos documentos de uma vez.
-
----
-
-## Funcionalidades
-
-### 1. Aba Templates
-- Lista de templates salvos (nome, categoria, quantidade de campos, data)
-- Botao "Novo Template" com duas opcoes:
-  - **Upload de modelo**: envia PDF/DOCX, IA analisa e gera template com `{{campos}}`
-  - **Criar manualmente**: editor de texto com insercao de campos variaveis
-- Ao clicar em um template: abre editor para visualizar/editar o texto e os campos
-- Opcoes: editar, duplicar, excluir
-
-### 2. Aba Packs
-- Agrupar multiplos templates (ex: "Pack Auxilio Reclusao" = Procuracao + Contrato + Declaracao)
-- Criar pack: selecionar templates existentes, dar nome
-- Ao gerar documentos de um pack, os mesmos dados preenchem todos os templates
-
-### 3. Aba Documentos Gerados
-- Historico de documentos gerados a partir de templates/packs
-- Status: gerado, enviado, assinado
-- Link para download do PDF
-- Vinculo com contato (quando gerado via agente)
-
----
-
-## Detalhes Tecnicos
-
-### Novas tabelas (migracao SQL)
-
-```text
-document_templates
-  - id (uuid, PK)
-  - organization_id (uuid, FK)
-  - name (text)
-  - description (text, nullable)
-  - category (text, nullable) -- ex: "contrato", "procuracao", "declaracao"
-  - content (text) -- texto com marcadores {{campo}}
-  - fields (jsonb) -- lista de campos detectados: [{name, label, type, required}]
-  - original_file_url (text, nullable) -- URL do arquivo modelo original
-  - workspace_id (uuid, nullable)
-  - created_by (uuid, nullable)
-  - created_at, updated_at (timestamps)
-
-document_packs
-  - id (uuid, PK)
-  - organization_id (uuid, FK)
-  - name (text)
-  - description (text, nullable)
-  - template_ids (uuid[]) -- array de IDs de templates
-  - workspace_id (uuid, nullable)
-  - created_by (uuid, nullable)
-  - created_at, updated_at (timestamps)
-
-generated_documents
-  - id (uuid, PK)
-  - organization_id (uuid, FK)
-  - template_id (uuid, nullable)
-  - pack_id (uuid, nullable)
-  - contact_id (uuid, nullable)
-  - conversation_id (uuid, nullable)
-  - name (text)
-  - filled_data (jsonb) -- dados preenchidos nos campos
-  - pdf_url (text, nullable) -- URL do PDF gerado no storage
-  - status (text) -- 'draft', 'generated', 'sent', 'signed'
-  - signing_method (text, nullable) -- 'manual', 'govbr', 'zapsign' (para Fase 3)
-  - signing_status (text, nullable)
-  - created_by (uuid, nullable)
-  - created_at, updated_at (timestamps)
+```sql
+ALTER TABLE public.pipelines ADD COLUMN IF NOT EXISTS next_pipeline_id uuid;
 ```
 
-RLS: todas as tabelas com politicas baseadas em `organization_id = get_user_org_id(auth.uid())`.
+## 2. `src/hooks/usePipelines.ts`
 
-### Nova edge function
+- Atualizar interface `Pipeline` para incluir `next_pipeline_id: string | null`
+- Atualizar `useUpdatePipeline` para aceitar `next_pipeline_id`
+- Atualizar `useMoveConversation`: após mover para a última coluna de um pipeline, verificar se `next_pipeline_id` está configurado. Se sim, buscar as colunas do próximo pipeline e mover a conversa para a primeira coluna automaticamente. Registrar ambas as movimentações no histórico.
 
-**`process-document-template`**: recebe arquivo (via URL do storage), usa IA para:
-1. Ler e interpretar o conteudo do documento
-2. Identificar campos variaveis (nomes, enderecos, CPFs, datas, etc.)
-3. Retornar texto reestruturado com `{{campo}}` e lista de campos detectados
+## 3. `src/components/conversations/ConversationAttributesPanel.tsx`
 
-**`generate-document-pdf`**: recebe template + dados preenchidos, gera PDF e salva no storage bucket `contact-files`.
+- Mostrar **seletor de pipeline** (dropdown) em vez de usar apenas o primeiro pipeline
+- Buscar as posições da conversa em todos os pipelines para determinar em qual ela está
+- Permitir mudar manualmente de pipeline pelo dropdown (move para  coluna configurada do novo pipeline, ou seja, abrir possibilidade de escolher qual coluna do novo pipeline. )
 
-### Novos arquivos frontend
+## 4. `src/components/pipeline/PipelineSettingsDialog.tsx`
 
-```text
-src/pages/DocumentsPage.tsx -- pagina principal com abas
-src/components/documents/TemplatesList.tsx -- lista de templates
-src/components/documents/TemplateEditor.tsx -- editor de template
-src/components/documents/PacksList.tsx -- lista de packs
-src/components/documents/PackEditor.tsx -- criar/editar pack
-src/components/documents/GeneratedDocumentsList.tsx -- historico
-src/components/documents/UploadTemplateDialog.tsx -- dialog de upload + processamento IA
-src/hooks/useDocumentTemplates.ts -- CRUD templates
-src/hooks/useDocumentPacks.ts -- CRUD packs
-src/hooks/useGeneratedDocuments.ts -- consulta documentos gerados
-```
+- Adicionar na aba "Geral" um campo **"Ao concluir, enviar para:"** com dropdown dos outros pipelines
+- Opção "Nenhum" para não ter transição automática
 
-### Alteracoes em arquivos existentes
+## 5. Timeline (`ContactLogsSection.tsx`)
 
-- **App.tsx**: adicionar rotas `/documents`
-- **Sidebar.tsx**: adicionar item "Documentos" com icone FileText, abaixo de Widgets
-- **Sidebar.tsx**: adicionar permissao `module: 'flows'` (mesmo grupo de automacoes)
+- Já suporta `stage_changed` — a transição automática aparecerá naturalmente pois registramos no `conversation_stage_history` com `changed_by_type: 'auto'`
 
----
+## 6. `src/integrations/supabase/types.ts`
 
-## Fluxo de uso principal
+- Será atualizado automaticamente após a migration para incluir `next_pipeline_id`
 
-```text
-1. Usuario acessa /documents
-2. Clica em "Novo Template"
-3. Faz upload de um PDF de contrato
-4. Sistema envia para edge function que usa IA para analisar
-5. IA retorna texto com {{nome_responsavel}}, {{cpf}}, {{endereco}}, etc.
-6. Usuario revisa e salva o template
-7. Pode criar um Pack agrupando templates
-8. Documentos gerados ficam no historico (aba "Gerados")
-```
+## Resumo de Arquivos
 
-A geracao automatica via agente e assinatura serao implementados na Fase 3.
 
----
-
-## Ordem de implementacao
-
-1. Migracoes SQL (tabelas + RLS)
-2. Edge function `process-document-template`
-3. Hooks de dados (useDocumentTemplates, useDocumentPacks, useGeneratedDocuments)
-4. Pagina DocumentsPage com abas
-5. Componentes de templates (lista, editor, upload)
-6. Componentes de packs
-7. Sidebar + rotas
-8. Edge function `generate-document-pdf` (geracao de PDF basica)
+| Ação      | Arquivo                                                                            |
+| --------- | ---------------------------------------------------------------------------------- |
+| Migration | `next_pipeline_id` na tabela `pipelines`                                           |
+| Editar    | `src/hooks/usePipelines.ts` — interface + auto-transition logic                    |
+| Editar    | `src/components/conversations/ConversationAttributesPanel.tsx` — pipeline selector |
+| Editar    | `src/components/pipeline/PipelineSettingsDialog.tsx` — config "Ao concluir"        |
+| Editar    | `src/integrations/supabase/types.ts` — novo campo                                  |
