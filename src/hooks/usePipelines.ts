@@ -11,6 +11,7 @@ export interface Pipeline {
   is_default: boolean;
   workspace_ids: string[];
   next_pipeline_id: string | null;
+  next_pipeline_column_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -164,18 +165,20 @@ export function useUpdatePipeline() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ id, name, description, workspace_ids, next_pipeline_id }: { 
+    mutationFn: async ({ id, name, description, workspace_ids, next_pipeline_id, next_pipeline_column_id }: { 
       id: string;
       name?: string; 
       description?: string;
       workspace_ids?: string[];
       next_pipeline_id?: string | null;
+      next_pipeline_column_id?: string | null;
     }) => {
       const updates: Record<string, unknown> = {};
       if (name !== undefined) updates.name = name;
       if (description !== undefined) updates.description = description;
       if (workspace_ids !== undefined) updates.workspace_ids = workspace_ids;
       if (next_pipeline_id !== undefined) updates.next_pipeline_id = next_pipeline_id;
+      if (next_pipeline_column_id !== undefined) updates.next_pipeline_column_id = next_pipeline_column_id;
 
       const { error } = await (supabase as any)
         .from('pipelines')
@@ -399,21 +402,26 @@ export function useMoveConversation() {
           // Fetch pipeline to get next_pipeline_id
           const { data: currentPipeline } = await (supabase as any)
             .from('pipelines')
-            .select('next_pipeline_id')
+            .select('next_pipeline_id, next_pipeline_column_id')
             .eq('id', pipelineId)
             .single();
 
           if (currentPipeline?.next_pipeline_id) {
-            // Get first column of next pipeline
-            const { data: nextColumns } = await (supabase as any)
-              .from('pipeline_columns')
-              .select('id')
-              .eq('pipeline_id', currentPipeline.next_pipeline_id)
-              .order('order', { ascending: true })
-              .limit(1);
+            // Use configured column or fall back to first column of next pipeline
+            let targetColumnId = currentPipeline.next_pipeline_column_id;
+            
+            if (!targetColumnId) {
+              const { data: nextColumns } = await (supabase as any)
+                .from('pipeline_columns')
+                .select('id')
+                .eq('pipeline_id', currentPipeline.next_pipeline_id)
+                .order('order', { ascending: true })
+                .limit(1);
+              targetColumnId = nextColumns?.[0]?.id;
+            }
 
-            const firstNextColumn = nextColumns?.[0];
-            if (firstNextColumn) {
+            if (targetColumnId) {
+              const firstNextColumn = { id: targetColumnId };
               // Move to next pipeline's first column
               const { data: existingNext } = await supabase
                 .from('conversation_pipeline_positions')

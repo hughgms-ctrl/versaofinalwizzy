@@ -142,6 +142,7 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
   const [description, setDescription] = useState(pipeline.description || '');
   const [selectedWorkspaceIds, setSelectedWorkspaceIds] = useState<string[]>(pipeline.workspace_ids || []);
   const [nextPipelineId, setNextPipelineId] = useState<string>(pipeline.next_pipeline_id || 'none');
+  const [nextPipelineColumnId, setNextPipelineColumnId] = useState<string>(pipeline.next_pipeline_column_id || 'first');
   const [deleteColumnId, setDeleteColumnId] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<'general' | 'notifications'>('general');
 
@@ -158,12 +159,14 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
   const { availableWorkspaces, isAdmin } = useWorkspaceContext();
 
   const otherPipelines = allPipelines.filter(p => p.id !== pipeline.id);
+  const { data: nextPipelineColumns = [] } = usePipelineColumns(nextPipelineId !== 'none' ? nextPipelineId : null);
 
   useEffect(() => {
     setName(pipeline.name);
     setDescription(pipeline.description || '');
     setSelectedWorkspaceIds(pipeline.workspace_ids || []);
     setNextPipelineId(pipeline.next_pipeline_id || 'none');
+    setNextPipelineColumnId(pipeline.next_pipeline_column_id || 'first');
   }, [pipeline]);
 
   const [draggedColumnId, setDraggedColumnId] = useState<string | null>(null);
@@ -178,7 +181,8 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
   const hasChanges = () => {
     const wsChanged = JSON.stringify([...(selectedWorkspaceIds || [])].sort()) !== JSON.stringify([...(pipeline.workspace_ids || [])].sort());
     const nextPipelineChanged = (nextPipelineId === 'none' ? null : nextPipelineId) !== (pipeline.next_pipeline_id || null);
-    return name !== pipeline.name || description !== (pipeline.description || '') || wsChanged || nextPipelineChanged;
+    const nextColumnChanged = (nextPipelineColumnId === 'first' ? null : nextPipelineColumnId) !== (pipeline.next_pipeline_column_id || null);
+    return name !== pipeline.name || description !== (pipeline.description || '') || wsChanged || nextPipelineChanged || nextColumnChanged;
   };
 
   const handleSave = async () => {
@@ -189,6 +193,7 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
         description,
         workspace_ids: selectedWorkspaceIds,
         next_pipeline_id: nextPipelineId === 'none' ? null : nextPipelineId,
+        next_pipeline_column_id: nextPipelineId === 'none' || nextPipelineColumnId === 'first' ? null : nextPipelineColumnId,
       });
     }
     onOpenChange(false);
@@ -408,7 +413,10 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
                   </p>
                   <Select
                     value={nextPipelineId}
-                    onValueChange={setNextPipelineId}
+                    onValueChange={(val) => {
+                      setNextPipelineId(val);
+                      setNextPipelineColumnId('first');
+                    }}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Selecionar pipeline..." />
@@ -424,6 +432,33 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
                       ))}
                     </SelectContent>
                   </Select>
+
+                  {nextPipelineId !== 'none' && nextPipelineColumns.length > 0 && (
+                    <div className="space-y-2 mt-3">
+                      <Label>Coluna de destino:</Label>
+                      <Select
+                        value={nextPipelineColumnId}
+                        onValueChange={setNextPipelineColumnId}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecionar coluna..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="first">
+                            <span className="text-muted-foreground">Primeira coluna</span>
+                          </SelectItem>
+                          {nextPipelineColumns.map((col) => (
+                            <SelectItem key={col.id} value={col.id}>
+                              <div className="flex items-center gap-2">
+                                <div className="w-2 h-2 rounded-full" style={{ backgroundColor: col.color }} />
+                                {col.name || 'Sem nome'}
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                 </div>
               </>
             )}
