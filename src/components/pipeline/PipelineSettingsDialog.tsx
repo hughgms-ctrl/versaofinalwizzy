@@ -134,10 +134,12 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
   const [name, setName] = useState(pipeline.name);
   const [description, setDescription] = useState(pipeline.description || '');
   const [selectedWorkspaceIds, setSelectedWorkspaceIds] = useState<string[]>(pipeline.workspace_ids || []);
+  const [nextPipelineId, setNextPipelineId] = useState<string>(pipeline.next_pipeline_id || 'none');
   const [deleteColumnId, setDeleteColumnId] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<'general' | 'notifications'>('general');
 
   const { data: columns = [] } = usePipelineColumns(pipeline.id);
+  const { data: allPipelines = [] } = usePipelines();
   const { data: notifications = [] } = useStageNotifications(pipeline.id);
   const { data: profiles = [] } = useProfiles();
   const { profile } = useAuth();
@@ -148,10 +150,13 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
   const upsertNotification = useUpsertStageNotification();
   const { availableWorkspaces, isAdmin } = useWorkspaceContext();
 
+  const otherPipelines = allPipelines.filter(p => p.id !== pipeline.id);
+
   useEffect(() => {
     setName(pipeline.name);
     setDescription(pipeline.description || '');
     setSelectedWorkspaceIds(pipeline.workspace_ids || []);
+    setNextPipelineId(pipeline.next_pipeline_id || 'none');
   }, [pipeline]);
 
   const [draggedColumnId, setDraggedColumnId] = useState<string | null>(null);
