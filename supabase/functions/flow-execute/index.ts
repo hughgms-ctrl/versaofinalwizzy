@@ -205,14 +205,23 @@ async function runFlowExecution(
       }
 
       if (result.waitForInput) {
+        const updateData: Record<string, unknown> = {
+          status: 'waiting_input',
+          current_node_id: currentNode.id,
+          variables: context.variables,
+          execution_log: executionLog,
+        };
+
+        // Set timeout_at if the node has a timeout configured
+        const timeoutMinutes = Number(currentNode.data?.timeoutMinutes || 0);
+        if (timeoutMinutes > 0) {
+          updateData.timeout_at = new Date(Date.now() + timeoutMinutes * 60 * 1000).toISOString();
+          console.log(`[FLOW EXECUTE] Setting timeout_at: ${updateData.timeout_at} (${timeoutMinutes} min)`);
+        }
+
         await supabase
           .from('flow_executions')
-          .update({
-            status: 'waiting_input',
-            current_node_id: currentNode.id,
-            variables: context.variables,
-            execution_log: executionLog,
-          })
+          .update(updateData)
           .eq('id', executionId);
         return;
       }
