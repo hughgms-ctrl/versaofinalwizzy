@@ -205,14 +205,23 @@ async function runFlowExecution(
       }
 
       if (result.waitForInput) {
+        const updateData: Record<string, unknown> = {
+          status: 'waiting_input',
+          current_node_id: currentNode.id,
+          variables: context.variables,
+          execution_log: executionLog,
+        };
+
+        // Set timeout_at if the node has a timeout configured
+        const timeoutMinutes = Number(currentNode.data?.timeoutMinutes || 0);
+        if (timeoutMinutes > 0) {
+          updateData.timeout_at = new Date(Date.now() + timeoutMinutes * 60 * 1000).toISOString();
+          console.log(`[FLOW EXECUTE] Setting timeout_at: ${updateData.timeout_at} (${timeoutMinutes} min)`);
+        }
+
         await supabase
           .from('flow_executions')
-          .update({
-            status: 'waiting_input',
-            current_node_id: currentNode.id,
-            variables: context.variables,
-            execution_log: executionLog,
-          })
+          .update(updateData)
           .eq('id', executionId);
         return;
       }
@@ -288,7 +297,7 @@ async function executeNode(
       return { success: true };
 
     case 'content-block':
-      return await executeContentBlock(data, context, supabase);
+      return await executeContentBlock(data, context, supabase, node);
 
     case 'message-buttons':
       return await sendButtonsMessage(data, context);
@@ -344,6 +353,9 @@ async function executeAIHandoff(
     const additionalPrompt = String(data.additionalPrompt || data.contextMessage || '');
     const expectedOutcomes = String(data.expectedOutcomes || '');
 
+    // Parse outcomes for the prompt
+    const outcomes = expectedOutcomes ? expectedOutcomes.split(',').map(s => s.trim()).filter(Boolean) : [];
+
     // 1. Set the agent on the conversation so orchestrator knows which agent to use
     if (agentId) {
       await supabase.from('conversations').update({
@@ -370,6 +382,7 @@ async function executeAIHandoff(
     }
     if (expectedOutcomes) {
       promptParts.push(`---\nRESULTADOS ESPERADOS: ${expectedOutcomes}`);
+      promptParts.push(`Ao finalizar a interação, use finalizar_interacao(resultado) com um dos seguintes resultados: ${outcomes.join(', ')}. Se nenhum se aplicar, use "default".`);
     }
     
     if (promptParts.length > 0) {
@@ -463,7 +476,7 @@ async function executeTransfer(
 }
 
 // Execute Content Block - processes multiple items sequentially
-async function executeContentBlock(data: Record<string, unknown>, context: ExecutionContext, supabase: SupabaseClientType): Promise<NodeResult> {
+async function executeContentBlock(data: Record<string, unknown>, context: ExecutionContext, supabase: SupabaseClientType, node?: FlowNode): Promise<NodeResult> {
   const items = (data.items as ContentItem[]) || [];
 
   if (items.length === 0) {
@@ -549,6 +562,13 @@ async function executeContentBlock(data: Record<string, unknown>, context: Execu
       console.error(`[FLOW EXECUTE] Error executing content item ${item.id}:`, error);
       return { success: false, error: `Failed to execute content item: ${error}` };
     }
+  }
+
+  // Check if this content block should wait for user response
+  const waitForResponse = !!data.waitForResponse;
+  if (waitForResponse) {
+    console.log(`[FLOW EXECUTE] Content block configured to wait for response. Variable: ${data.saveVariable || 'none'}, Timeout: ${data.timeoutMinutes || 0}min`);
+    return { success: true, waitForInput: true };
   }
 
   return { success: true };

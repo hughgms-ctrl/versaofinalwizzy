@@ -696,7 +696,7 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
     // 2. Check for active flow execution
     const { data: activeFlowExec } = await supabase
       .from('flow_executions')
-      .select('id, status, current_node_id, flow_id, flow:flows(nodes, master_prompt, is_master_active, name)')
+      .select('id, status, current_node_id, flow_id, variables, flow:flows(nodes, edges, master_prompt, is_master_active, name)')
       .eq('conversation_id', conversation.id)
       .in('status', ['running', 'waiting_input'])
       .order('started_at', { ascending: false })
@@ -710,6 +710,7 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
       const flowNodes = (activeFlowExec.flow?.nodes || []) as any[];
       const currentNode = flowNodes.find((n: any) => n.id === activeFlowExec.current_node_id);
       const isAtAIHandoff = currentNode?.type === 'ai-handoff';
+      const isAtContentBlockWaiting = currentNode?.type === 'content-block' && currentNode.data?.waitForResponse;
 
       if (isAtAIHandoff && activeFlowExec.status === 'waiting_input') {
         console.log(`[WEBHOOK] Flow paused at ai-handoff node — routing message to agent-orchestrator`);
@@ -738,6 +739,48 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
           body: JSON.stringify(orchestratorBody),
         });
         runBackground(agentPromise);
+      } else if (isAtContentBlockWaiting && activeFlowExec.status === 'waiting_input') {
+        // Content block is waiting for user response — save variable and resume flow via 'responded' handle
+        console.log(`[WEBHOOK] Content block waiting_input — saving response and resuming flow`);
+        
+        // Save the response to flow variables
+        const existingVars = (activeFlowExec as any).variables || {};
+        const saveVariable = currentNode.data?.saveVariable;
+        if (saveVariable && triggerText) {
+          existingVars[saveVariable] = triggerText;
+        }
+
+        // Find the 'responded' edge from this content-block node
+        const flowEdges = (activeFlowExec.flow?.edges || []) as any[];
+        const respondedEdge = flowEdges.find((e: any) => e.source === activeFlowExec.current_node_id && e.sourceHandle === 'responded');
+        const nextEdge = respondedEdge || flowEdges.find((e: any) => e.source === activeFlowExec.current_node_id);
+        const nextNodeId = nextEdge?.target || null;
+
+        if (nextNodeId) {
+          await supabase.from('flow_executions').update({
+            status: 'running',
+            current_node_id: nextNodeId,
+            variables: existingVars,
+          }).eq('id', activeFlowExec.id);
+
+          const resumePromise = fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/flow-execute`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
+            body: JSON.stringify({
+              flowId: activeFlowExec.flow_id,
+              conversationId: conversation.id,
+              startNodeId: nextNodeId,
+            }),
+          });
+          runBackground(resumePromise);
+        } else {
+          // No next node — complete
+          await supabase.from('flow_executions').update({
+            status: 'completed',
+            variables: existingVars,
+            completed_at: new Date().toISOString(),
+          }).eq('id', activeFlowExec.id);
+        }
       } else if (activeFlowExec.status === 'waiting_input') {
         // Flow is waiting for input at a non-AI node (e.g., user-input) — resume flow
         console.log(`[WEBHOOK] Flow waiting_input at node ${activeFlowExec.current_node_id} — resuming flow execution`);

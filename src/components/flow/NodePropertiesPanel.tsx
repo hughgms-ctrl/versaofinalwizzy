@@ -1074,6 +1074,46 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
           </div>
         </div>
 
+        {/* Aguardar Resposta toggle */}
+        <div className="border border-border rounded-lg p-3 space-y-3 bg-muted/20">
+          <div className="flex items-center justify-between">
+            <div className="space-y-0.5">
+              <Label className="text-xs font-semibold">Aguardar resposta</Label>
+              <p className="text-[10px] text-muted-foreground">Pausa o fluxo até o usuário responder.</p>
+            </div>
+            <Switch
+              checked={!!(localData.waitForResponse as boolean)}
+              onCheckedChange={(val) => handleChange('waitForResponse', val)}
+            />
+          </div>
+
+          {!!(localData.waitForResponse) && (
+            <div className="space-y-3 pt-2 border-t border-border/50">
+              <div className="space-y-1">
+                <Label className="text-xs">Salvar resposta na variável</Label>
+                <Input
+                  value={(localData.saveVariable as string) || ''}
+                  onChange={(e) => handleChange('saveVariable', e.target.value)}
+                  placeholder="ex: nome_cliente"
+                  className="h-8 text-xs"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Timeout (minutos)</Label>
+                <p className="text-[10px] text-muted-foreground">Se o usuário não responder neste tempo, segue pela saída vermelha.</p>
+                <Input
+                  type="number"
+                  min={0}
+                  value={(localData.timeoutMinutes as number) || 0}
+                  onChange={(e) => handleChange('timeoutMinutes', parseInt(e.target.value) || 0)}
+                  placeholder="0 = sem timeout"
+                  className="h-8 text-xs w-32"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
         <p className="text-xs text-muted-foreground">
           Use {`{{variavel}}`} para inserir variáveis dinâmicas nos textos.
         </p>

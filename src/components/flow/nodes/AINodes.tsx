@@ -7,11 +7,24 @@ interface AINodeData extends Record<string, unknown> {
   agentName?: string;
   contextMessage?: string;
   returnToNode?: string;
+  expectedOutcomes?: string;
+  outcomes?: string[];
 }
 
 type AINode = Node<AINodeData>;
 
+// Parse outcomes from comma-separated string or array
+function getOutcomes(data: AINodeData): string[] {
+  if (Array.isArray(data.outcomes) && data.outcomes.length > 0) return data.outcomes;
+  const raw = data.expectedOutcomes;
+  if (!raw || typeof raw !== 'string') return [];
+  return raw.split(',').map(s => s.trim()).filter(Boolean);
+}
+
 export function AIHandoffNode({ data, selected }: NodeProps<AINode>) {
+  const outcomes = getOutcomes(data);
+  const hasOutcomes = outcomes.length > 0;
+
   return (
     <div
       className={cn(
@@ -30,7 +43,6 @@ export function AIHandoffNode({ data, selected }: NodeProps<AINode>) {
         <span className="font-medium text-sm text-white">Agente IA</span>
         <Sparkles className="h-3 w-3 text-white/70 ml-auto" />
       </div>
-      {/* Build trigger comment */}
 
       <div className="p-3 bg-card rounded-b-[10px] space-y-2">
         <p className="text-xs text-muted-foreground">
@@ -41,13 +53,83 @@ export function AIHandoffNode({ data, selected }: NodeProps<AINode>) {
           <Sparkles className="h-3 w-3" />
           <span>O Agente IA assumirá a conversa</span>
         </div>
+
+        {/* Show configured outcomes */}
+        {hasOutcomes && (
+          <div className="space-y-1 pt-1 border-t border-border/50">
+            <p className="text-[10px] text-muted-foreground font-medium">Resultados:</p>
+            {outcomes.map((outcome) => (
+              <div key={outcome} className="flex items-center gap-1.5">
+                <div className="h-1.5 w-1.5 rounded-full bg-violet-500" />
+                <span className="text-[10px] text-foreground">{outcome}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
-      <Handle
-        type="source"
-        position={Position.Right}
-        className="!w-3 !h-3 !bg-violet-500 !border-2 !border-background opacity-0 group-hover:opacity-100 transition-opacity !-right-1.5"
-      />
+      {/* Dynamic output handles based on outcomes */}
+      {!hasOutcomes ? (
+        // Single default output
+        <Handle
+          type="source"
+          position={Position.Right}
+          className="!w-3 !h-3 !bg-violet-500 !border-2 !border-background opacity-0 group-hover:opacity-100 transition-opacity !-right-1.5"
+        />
+      ) : (
+        // Multiple outcome handles + default
+        <>
+          {outcomes.map((outcome, index) => {
+            const total = outcomes.length + 1; // +1 for default
+            const offset = ((index + 1) / total) * 100;
+            return (
+              <Handle
+                key={outcome}
+                type="source"
+                position={Position.Right}
+                id={`outcome-${outcome}`}
+                className="!w-3 !h-3 !bg-violet-500 !border-2 !border-background !-right-1.5"
+                style={{ top: `${offset}%` }}
+                title={outcome}
+              />
+            );
+          })}
+          {/* Default/fallback handle */}
+          <Handle
+            type="source"
+            position={Position.Right}
+            id="outcome-default"
+            className="!w-3 !h-3 !bg-gray-400 !border-2 !border-background !-right-1.5"
+            style={{ top: `${(outcomes.length + 1) / (outcomes.length + 2) * 100}%` }}
+            title="Padrão"
+          />
+        </>
+      )}
+
+      {/* Outcome labels on the right side */}
+      {hasOutcomes && (
+        <div className="absolute -right-2 top-0 bottom-0 flex flex-col pointer-events-none" style={{ width: '0px' }}>
+          {outcomes.map((outcome, index) => {
+            const total = outcomes.length + 1;
+            const offset = ((index + 1) / total) * 100;
+            return (
+              <span
+                key={outcome}
+                className="absolute text-[9px] text-violet-600 dark:text-violet-400 font-medium whitespace-nowrap"
+                style={{ top: `${offset}%`, left: '10px', transform: 'translateY(-50%)' }}
+              >
+                {outcome}
+              </span>
+            );
+          })}
+          <span
+            className="absolute text-[9px] text-muted-foreground font-medium whitespace-nowrap"
+            style={{ top: `${(outcomes.length + 1) / (outcomes.length + 2) * 100}%`, left: '10px', transform: 'translateY(-50%)' }}
+          >
+            padrão
+          </span>
+        </div>
+      )}
     </div>
   );
 }
