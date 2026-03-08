@@ -55,6 +55,8 @@ const nodeIcons: Record<string, React.ComponentType<{ className?: string }>> = {
   'ai-return': IterationCw,
   'action-document': FileText,
   'action-delay': Clock,
+  'randomizer': Shuffle,
+  'smart-delay': Clock,
 };
 
 const nodeLabels: Record<FlowNodeType, string> = {
