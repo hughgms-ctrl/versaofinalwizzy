@@ -38,7 +38,7 @@ import {
   FlowActionNode,
   DocumentActionNode
 } from './nodes/ActionNodes';
-import { ConditionNode, UserInputNode } from './nodes/LogicNodes';
+import { ConditionNode, UserInputNode, RandomizerNode, SmartDelayNode } from './nodes/LogicNodes';
 import { AIHandoffNode, AIMasterNode, AIReturnNode } from './nodes/AINodes';
 import { FlowNodeType } from '@/types/flow';
 import { useFlow, useSaveFlow, useCreateFlow } from '@/hooks/useFlows';
