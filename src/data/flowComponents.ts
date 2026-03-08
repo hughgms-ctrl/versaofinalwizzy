@@ -125,13 +125,6 @@ export const flowComponentCategories: FlowComponentCategory[] = [
         icon: 'Type',
         color: 'bg-teal-500',
       },
-      {
-        type: 'action-delay',
-        label: 'Intervalo',
-        description: 'Aguarda um tempo antes de seguir para o próximo bloco',
-        icon: 'Clock',
-        color: 'bg-slate-500',
-      },
     ],
   },
 ];
