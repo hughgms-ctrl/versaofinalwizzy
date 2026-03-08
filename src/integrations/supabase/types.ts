@@ -1279,6 +1279,7 @@ export type Database = {
           organization_id: string
           started_at: string
           status: string
+          timeout_at: string | null
           variables: Json | null
         }
         Insert: {
@@ -1292,6 +1293,7 @@ export type Database = {
           organization_id: string
           started_at?: string
           status?: string
+          timeout_at?: string | null
           variables?: Json | null
         }
         Update: {
@@ -1305,6 +1307,7 @@ export type Database = {
           organization_id?: string
           started_at?: string
           status?: string
+          timeout_at?: string | null
           variables?: Json | null
         }
         Relationships: [
