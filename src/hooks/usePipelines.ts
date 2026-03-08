@@ -12,6 +12,7 @@ export interface Pipeline {
   workspace_ids: string[];
   next_pipeline_id: string | null;
   next_pipeline_column_id: string | null;
+  default_assigned_to: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -165,13 +166,14 @@ export function useUpdatePipeline() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ id, name, description, workspace_ids, next_pipeline_id, next_pipeline_column_id }: { 
+    mutationFn: async ({ id, name, description, workspace_ids, next_pipeline_id, next_pipeline_column_id, default_assigned_to }: { 
       id: string;
       name?: string; 
       description?: string;
       workspace_ids?: string[];
       next_pipeline_id?: string | null;
       next_pipeline_column_id?: string | null;
+      default_assigned_to?: string | null;
     }) => {
       const updates: Record<string, unknown> = {};
       if (name !== undefined) updates.name = name;
@@ -179,6 +181,7 @@ export function useUpdatePipeline() {
       if (workspace_ids !== undefined) updates.workspace_ids = workspace_ids;
       if (next_pipeline_id !== undefined) updates.next_pipeline_id = next_pipeline_id;
       if (next_pipeline_column_id !== undefined) updates.next_pipeline_column_id = next_pipeline_column_id;
+      if (default_assigned_to !== undefined) updates.default_assigned_to = default_assigned_to;
 
       const { error } = await (supabase as any)
         .from('pipelines')
@@ -402,7 +405,7 @@ export function useMoveConversation() {
           // Fetch pipeline to get next_pipeline_id
           const { data: currentPipeline } = await (supabase as any)
             .from('pipelines')
-            .select('next_pipeline_id, next_pipeline_column_id')
+            .select('next_pipeline_id, next_pipeline_column_id, default_assigned_to')
             .eq('id', pipelineId)
             .single();
 
@@ -459,6 +462,20 @@ export function useMoveConversation() {
                   changed_by_type: 'auto',
                   organization_id: profile.organization_id,
                 });
+
+              // Auto-assign responsible from next pipeline
+              const { data: nextPipelineData } = await (supabase as any)
+                .from('pipelines')
+                .select('default_assigned_to')
+                .eq('id', currentPipeline.next_pipeline_id)
+                .single();
+
+              if (nextPipelineData?.default_assigned_to) {
+                await (supabase as any)
+                  .from('conversations')
+                  .update({ assigned_to: nextPipelineData.default_assigned_to })
+                  .eq('id', conversationId);
+              }
             }
           }
         }

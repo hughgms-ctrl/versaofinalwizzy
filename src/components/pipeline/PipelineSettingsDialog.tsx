@@ -143,6 +143,7 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
   const [selectedWorkspaceIds, setSelectedWorkspaceIds] = useState<string[]>(pipeline.workspace_ids || []);
   const [nextPipelineId, setNextPipelineId] = useState<string>(pipeline.next_pipeline_id || 'none');
   const [nextPipelineColumnId, setNextPipelineColumnId] = useState<string>(pipeline.next_pipeline_column_id || 'first');
+  const [defaultAssignedTo, setDefaultAssignedTo] = useState<string>(pipeline.default_assigned_to || 'none');
   const [deleteColumnId, setDeleteColumnId] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<'general' | 'notifications'>('general');
 
@@ -167,6 +168,7 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
     setSelectedWorkspaceIds(pipeline.workspace_ids || []);
     setNextPipelineId(pipeline.next_pipeline_id || 'none');
     setNextPipelineColumnId(pipeline.next_pipeline_column_id || 'first');
+    setDefaultAssignedTo(pipeline.default_assigned_to || 'none');
   }, [pipeline]);
 
   const [draggedColumnId, setDraggedColumnId] = useState<string | null>(null);
@@ -182,7 +184,8 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
     const wsChanged = JSON.stringify([...(selectedWorkspaceIds || [])].sort()) !== JSON.stringify([...(pipeline.workspace_ids || [])].sort());
     const nextPipelineChanged = (nextPipelineId === 'none' ? null : nextPipelineId) !== (pipeline.next_pipeline_id || null);
     const nextColumnChanged = (nextPipelineColumnId === 'first' ? null : nextPipelineColumnId) !== (pipeline.next_pipeline_column_id || null);
-    return name !== pipeline.name || description !== (pipeline.description || '') || wsChanged || nextPipelineChanged || nextColumnChanged;
+    const assignedChanged = (defaultAssignedTo === 'none' ? null : defaultAssignedTo) !== (pipeline.default_assigned_to || null);
+    return name !== pipeline.name || description !== (pipeline.description || '') || wsChanged || nextPipelineChanged || nextColumnChanged || assignedChanged;
   };
 
   const handleSave = async () => {
@@ -194,6 +197,7 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
         workspace_ids: selectedWorkspaceIds,
         next_pipeline_id: nextPipelineId === 'none' ? null : nextPipelineId,
         next_pipeline_column_id: nextPipelineId === 'none' || nextPipelineColumnId === 'first' ? null : nextPipelineColumnId,
+        default_assigned_to: defaultAssignedTo === 'none' ? null : defaultAssignedTo,
       });
     }
     onOpenChange(false);
@@ -403,6 +407,33 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
                       />
                     ))}
                   </div>
+                </div>
+
+                {/* Responsável padrão do pipeline */}
+                <div className="space-y-2">
+                  <Label>Responsável padrão:</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Ao mover um lead para este pipeline, ele será atribuído automaticamente a este responsável.
+                  </p>
+                  <Select
+                    value={defaultAssignedTo}
+                    onValueChange={setDefaultAssignedTo}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecionar responsável..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">
+                        <span className="text-muted-foreground">Nenhum (manter atual)</span>
+                      </SelectItem>
+                      {profiles.map((p) => (
+                        <SelectItem key={p.user_id} value={p.user_id}>
+                          {p.full_name}
+                          {p.user_id === profile?.user_id ? ' (você)' : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 {/* Next Pipeline (Auto-transition) */}
