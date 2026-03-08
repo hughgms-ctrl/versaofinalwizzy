@@ -100,3 +100,15 @@ verify_jwt = false
 
 [functions.generate-remarketing-messages]
 verify_jwt = false
+
+[functions.google-drive-auth]
+verify_jwt = false
+
+[functions.google-drive-backup]
+verify_jwt = false
+
+[functions.google-drive-restore]
+verify_jwt = false
+
+[functions.google-calendar-auth]
+verify_jwt = false
