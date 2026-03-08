@@ -33,13 +33,6 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 
-const FEATURE_ICONS: Record<AIFeature, React.ElementType> = {
-  agents: Bot,
-  conversation_summary: MessageSquareText,
-  prompt_generation: PenLine,
-  flow_generation: Workflow,
-  transcription: AudioLines,
-};
 
 const DEFAULT_CONFIG: Partial<IntegrationConfig> = {
   ai_provider: 'lovable',
