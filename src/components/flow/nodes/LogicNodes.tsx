@@ -25,24 +25,18 @@ interface LogicNodeData extends Record<string, unknown> {
 type LogicNode = Node<LogicNodeData>;
 
 const ruleTypeLabels: Record<string, string> = {
-  has_tag: 'Tem tag',
-  not_has_tag: 'Não tem tag',
-  in_pipeline: 'No pipeline',
-  not_in_pipeline: 'Fora do pipeline',
-  assigned_to: 'Responsável é',
-  not_assigned: 'Sem responsável',
+  tag: 'Tag',
+  pipeline: 'Pipeline',
+  assigned: 'Responsável',
   variable: 'Variável',
   contact_field: 'Campo do contato',
-  service_mode: 'Modo de atendimento',
+  service_mode: 'Modo atendimento',
 };
 
 const ruleTypeIcons: Record<string, React.ComponentType<{ className?: string }>> = {
-  has_tag: Tag,
-  not_has_tag: Tag,
-  in_pipeline: Kanban,
-  not_in_pipeline: Kanban,
-  assigned_to: User,
-  not_assigned: User,
+  tag: Tag,
+  pipeline: Kanban,
+  assigned: User,
   variable: FileText,
   contact_field: User,
   service_mode: MessageSquare,
@@ -86,10 +80,14 @@ export function ConditionNode({ data, selected }: NodeProps<LogicNode>) {
             <div className="space-y-1">
               {rules.slice(0, 3).map((rule) => {
                 const Icon = ruleTypeIcons[rule.type] || GitBranch;
+                const negateLabel = rule.negate ? 'NÃO' : '';
                 return (
                   <div key={rule.id} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
                     <Icon className="h-3 w-3 shrink-0 text-yellow-600" />
-                    <span className="truncate">{ruleTypeLabels[rule.type] || rule.type}</span>
+                    <span className="truncate">
+                      {negateLabel ? <span className="text-red-500 font-semibold mr-0.5">{negateLabel}</span> : null}
+                      {ruleTypeLabels[rule.type] || rule.type}
+                    </span>
                   </div>
                 );
               })}

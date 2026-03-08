@@ -45,12 +45,9 @@ export interface FlowNodeData {
 // === CONDITION RULE TYPES ===
 
 export type ConditionRuleType =
-  | 'has_tag'
-  | 'not_has_tag'
-  | 'in_pipeline'
-  | 'not_in_pipeline'
-  | 'assigned_to'
-  | 'not_assigned'
+  | 'tag'
+  | 'pipeline'
+  | 'assigned'
   | 'variable'
   | 'contact_field'
   | 'service_mode';
@@ -68,12 +65,13 @@ export type ConditionOperator =
 export interface ConditionRule {
   id: string;
   type: ConditionRuleType;
-  // For has_tag / not_has_tag
+  negate?: boolean;
+  // For tag
   tagId?: string;
-  // For in_pipeline / not_in_pipeline
+  // For pipeline
   pipelineId?: string;
   columnId?: string;
-  // For assigned_to
+  // For assigned
   userId?: string;
   // For variable
   variable?: string;
