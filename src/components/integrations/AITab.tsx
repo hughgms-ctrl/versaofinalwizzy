@@ -313,6 +313,7 @@ export function AITab() {
             </div>
           )}
         </CardContent>
+        )}
       </Card>
 
 
