@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrig
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import { FlowNodeType, ContentItem, ContentItemType, ConditionRule, ConditionRuleType, RandomizerVariant } from '@/types/flow';
+import { RemarketingStepsEditor } from './RemarketingStepsEditor';
 import { useTeamMembers } from '@/hooks/useTeamMembers';
 import { useTags } from '@/hooks/useTags';
 import { useAIAgents } from '@/hooks/useAIAgents';
