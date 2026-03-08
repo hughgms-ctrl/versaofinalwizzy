@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
-import { Plus, Trash2, GripVertical } from 'lucide-react';
+import { Plus, Trash2, GripVertical, Bell, BellOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
+import { Separator } from '@/components/ui/separator';
 import {
   Dialog,
   DialogContent,
@@ -32,6 +34,9 @@ import {
   useUpdateColumn,
   useDeleteColumn 
 } from '@/hooks/usePipelines';
+import { useStageNotifications, useUpsertStageNotification } from '@/hooks/useStageHistory';
+import { useProfiles } from '@/hooks/useConversations';
+import { useAuth } from '@/hooks/useAuth';
 
 interface PipelineSettingsDialogProps {
   open: boolean;
@@ -43,7 +48,6 @@ const DEFAULT_COLORS = [
   '#3b82f6', '#f59e0b', '#22c55e', '#8b5cf6', '#ef4444', '#64748b',
 ];
 
-// Componente para input de coluna com estado local
 function ColumnInput({ 
   column, 
   onUpdate, 
@@ -130,12 +134,17 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
   const [description, setDescription] = useState(pipeline.description || '');
   const [selectedWorkspaceIds, setSelectedWorkspaceIds] = useState<string[]>(pipeline.workspace_ids || []);
   const [deleteColumnId, setDeleteColumnId] = useState<string | null>(null);
+  const [activeSection, setActiveSection] = useState<'general' | 'notifications'>('general');
 
   const { data: columns = [] } = usePipelineColumns(pipeline.id);
+  const { data: notifications = [] } = useStageNotifications(pipeline.id);
+  const { data: profiles = [] } = useProfiles();
+  const { profile } = useAuth();
   const updatePipeline = useUpdatePipeline();
   const createColumn = useCreateColumn();
   const updateColumn = useUpdateColumn();
   const deleteColumn = useDeleteColumn();
+  const upsertNotification = useUpsertStageNotification();
   const { availableWorkspaces, isAdmin } = useWorkspaceContext();
 
   useEffect(() => {
@@ -200,7 +209,6 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
     const draggedCol = columns.find(c => c.id === draggedColumnId);
     if (!draggedCol) return;
 
-    // Swap orders
     await updateColumn.mutateAsync({
       id: draggedCol.id,
       pipelineId: pipeline.id,
@@ -215,111 +223,242 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
     setDragOverColumnId(null);
   };
 
+  const getNotificationForColumn = (columnId: string) => {
+    return notifications.find((n: any) => n.column_id === columnId);
+  };
+
+  const handleToggleNotification = async (columnId: string, currentlyActive: boolean) => {
+    if (!profile?.organization_id) return;
+    const existing = getNotificationForColumn(columnId);
+    await upsertNotification.mutateAsync({
+      pipelineId: pipeline.id,
+      columnId,
+      notifyUserIds: existing?.notify_user_ids || [],
+      messageTemplate: existing?.message_template || undefined,
+      isActive: !currentlyActive,
+      organizationId: profile.organization_id,
+    });
+  };
+
+  const handleToggleUserNotification = async (columnId: string, userId: string) => {
+    if (!profile?.organization_id) return;
+    const existing = getNotificationForColumn(columnId);
+    const currentUsers: string[] = existing?.notify_user_ids || [];
+    const newUsers = currentUsers.includes(userId)
+      ? currentUsers.filter(id => id !== userId)
+      : [...currentUsers, userId];
+
+    await upsertNotification.mutateAsync({
+      pipelineId: pipeline.id,
+      columnId,
+      notifyUserIds: newUsers,
+      messageTemplate: existing?.message_template || undefined,
+      isActive: existing?.is_active ?? true,
+      organizationId: profile.organization_id,
+    });
+  };
+
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg max-h-[85vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>Configurar Pipeline</DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="edit-name">Nome do Pipeline</Label>
-              <Input
-                id="edit-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
-            </div>
+          {/* Section tabs */}
+          <div className="flex gap-2 border-b border-border pb-2">
+            <Button
+              variant={activeSection === 'general' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setActiveSection('general')}
+            >
+              Geral
+            </Button>
+            <Button
+              variant={activeSection === 'notifications' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setActiveSection('notifications')}
+            >
+              <Bell className="h-4 w-4 mr-1" />
+              Notificações
+            </Button>
+          </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="edit-description">Descrição</Label>
-              <Textarea
-                id="edit-description"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                rows={2}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Workspaces</Label>
-              <p className="text-xs text-muted-foreground">
-                Selecione os workspaces onde este pipeline será visível. Sem seleção = visível em todos.
-              </p>
-              {isAdmin ? (
-                <div className="space-y-2 p-3 border rounded-lg bg-muted/30 max-h-[150px] overflow-y-auto">
-                  {availableWorkspaces.length === 0 ? (
-                    <span className="text-sm text-muted-foreground">Nenhum workspace disponível</span>
-                  ) : (
-                    availableWorkspaces.map(ws => (
-                      <div key={ws.id} className="flex items-center gap-2">
-                        <Checkbox
-                          id={`ws-edit-${ws.id}`}
-                          checked={selectedWorkspaceIds.includes(ws.id)}
-                          onCheckedChange={() => toggleWorkspace(ws.id)}
-                        />
-                        <Label htmlFor={`ws-edit-${ws.id}`} className="cursor-pointer flex items-center gap-2">
-                          <div className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: ws.color }} />
-                          {ws.name}
-                        </Label>
-                      </div>
-                    ))
-                  )}
-                </div>
-              ) : (
-                <div className="flex flex-wrap gap-2 px-3 py-2 rounded-md border border-input bg-muted/50 text-sm">
-                  {selectedWorkspaceIds.length === 0 ? (
-                    <span className="text-muted-foreground">Todos os Workspaces</span>
-                  ) : (
-                    selectedWorkspaceIds.map(wsId => {
-                      const ws = availableWorkspaces.find(w => w.id === wsId);
-                      if (!ws) return null;
-                      return (
-                        <span key={ws.id} className="flex items-center gap-1.5">
-                          <div className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: ws.color }} />
-                          {ws.name}
-                        </span>
-                      );
-                    })
-                  )}
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label>Colunas</Label>
-                <Button 
-                  type="button" 
-                  variant="ghost" 
-                  size="sm" 
-                  onClick={handleAddColumn}
-                  disabled={createColumn.isPending}
-                >
-                  <Plus className="h-4 w-4 mr-1" />
-                  Adicionar
-                </Button>
-              </div>
-
-              <div className="space-y-2 max-h-[200px] overflow-y-auto">
-                {columns.map((column) => (
-                  <ColumnInput
-                    key={column.id}
-                    column={column}
-                    onUpdate={(field, value) => handleUpdateColumn(column, field, value)}
-                    onDelete={() => setDeleteColumnId(column.id)}
-                    canDelete={columns.length > 1}
-                    onDragStart={() => setDraggedColumnId(column.id)}
-                    onDragOver={(e) => { e.preventDefault(); setDragOverColumnId(column.id); }}
-                    onDragEnd={() => { setDraggedColumnId(null); setDragOverColumnId(null); }}
-                    onDrop={(e) => { e.preventDefault(); handleColumnDrop(column); }}
-                    isDragging={draggedColumnId === column.id}
+          <div className="flex-1 overflow-y-auto space-y-4">
+            {activeSection === 'general' && (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-name">Nome do Pipeline</Label>
+                  <Input
+                    id="edit-name"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
                   />
-                ))}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="edit-description">Descrição</Label>
+                  <Textarea
+                    id="edit-description"
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    rows={2}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Workspaces</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Selecione os workspaces onde este pipeline será visível. Sem seleção = visível em todos.
+                  </p>
+                  {isAdmin ? (
+                    <div className="space-y-2 p-3 border rounded-lg bg-muted/30 max-h-[150px] overflow-y-auto">
+                      {availableWorkspaces.length === 0 ? (
+                        <span className="text-sm text-muted-foreground">Nenhum workspace disponível</span>
+                      ) : (
+                        availableWorkspaces.map(ws => (
+                          <div key={ws.id} className="flex items-center gap-2">
+                            <Checkbox
+                              id={`ws-edit-${ws.id}`}
+                              checked={selectedWorkspaceIds.includes(ws.id)}
+                              onCheckedChange={() => toggleWorkspace(ws.id)}
+                            />
+                            <Label htmlFor={`ws-edit-${ws.id}`} className="cursor-pointer flex items-center gap-2">
+                              <div className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: ws.color }} />
+                              {ws.name}
+                            </Label>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap gap-2 px-3 py-2 rounded-md border border-input bg-muted/50 text-sm">
+                      {selectedWorkspaceIds.length === 0 ? (
+                        <span className="text-muted-foreground">Todos os Workspaces</span>
+                      ) : (
+                        selectedWorkspaceIds.map(wsId => {
+                          const ws = availableWorkspaces.find(w => w.id === wsId);
+                          if (!ws) return null;
+                          return (
+                            <span key={ws.id} className="flex items-center gap-1.5">
+                              <div className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: ws.color }} />
+                              {ws.name}
+                            </span>
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label>Colunas (Estágios)</Label>
+                    <Button 
+                      type="button" 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={handleAddColumn}
+                      disabled={createColumn.isPending}
+                    >
+                      <Plus className="h-4 w-4 mr-1" />
+                      Adicionar
+                    </Button>
+                  </div>
+
+                  <div className="space-y-2 max-h-[200px] overflow-y-auto">
+                    {columns.map((column) => (
+                      <ColumnInput
+                        key={column.id}
+                        column={column}
+                        onUpdate={(field, value) => handleUpdateColumn(column, field, value)}
+                        onDelete={() => setDeleteColumnId(column.id)}
+                        canDelete={columns.length > 1}
+                        onDragStart={() => setDraggedColumnId(column.id)}
+                        onDragOver={(e) => { e.preventDefault(); setDragOverColumnId(column.id); }}
+                        onDragEnd={() => { setDraggedColumnId(null); setDragOverColumnId(null); }}
+                        onDrop={(e) => { e.preventDefault(); handleColumnDrop(column); }}
+                        isDragging={draggedColumnId === column.id}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {activeSection === 'notifications' && (
+              <div className="space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  Configure notificações WhatsApp quando um lead entrar em um estágio específico.
+                </p>
+
+                {columns.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    Nenhuma coluna configurada.
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {columns.map((col) => {
+                      const notif = getNotificationForColumn(col.id);
+                      const isActive = notif?.is_active ?? false;
+                      const notifyUserIds: string[] = notif?.notify_user_ids || [];
+
+                      return (
+                        <div key={col.id} className="border rounded-lg p-3 space-y-2">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <div 
+                                className="w-3 h-3 rounded-full" 
+                                style={{ backgroundColor: col.color }} 
+                              />
+                              <span className="text-sm font-medium">{col.name}</span>
+                            </div>
+                            <Switch
+                              checked={isActive}
+                              onCheckedChange={() => handleToggleNotification(col.id, isActive)}
+                            />
+                          </div>
+
+                          {isActive && (
+                            <div className="pl-5 space-y-2">
+                              <Label className="text-xs text-muted-foreground">Notificar membros:</Label>
+                              <div className="space-y-1">
+                                {profiles.map((p) => (
+                                  <div key={p.user_id} className="flex items-center gap-2">
+                                    <Checkbox
+                                      id={`notif-${col.id}-${p.user_id}`}
+                                      checked={notifyUserIds.includes(p.user_id)}
+                                      onCheckedChange={() => handleToggleUserNotification(col.id, p.user_id)}
+                                    />
+                                    <Label 
+                                      htmlFor={`notif-${col.id}-${p.user_id}`}
+                                      className="text-sm cursor-pointer"
+                                    >
+                                      {p.full_name}
+                                      {p.phone && (
+                                        <span className="text-xs text-muted-foreground ml-1">
+                                          ({p.phone})
+                                        </span>
+                                      )}
+                                    </Label>
+                                  </div>
+                                ))}
+                              </div>
+                              {profiles.filter(p => !p.phone).length > 0 && (
+                                <p className="text-[10px] text-yellow-600">
+                                  ⚠ Membros sem telefone cadastrado não receberão notificações
+                                </p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-            </div>
+            )}
           </div>
 
           <DialogFooter>

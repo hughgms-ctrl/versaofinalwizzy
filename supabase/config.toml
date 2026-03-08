@@ -91,3 +91,6 @@ verify_jwt = false
 
 [functions.widget-submit]
 verify_jwt = false
+
+[functions.stage-notification]
+verify_jwt = false
