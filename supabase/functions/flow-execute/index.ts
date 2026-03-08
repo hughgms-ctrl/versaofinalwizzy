@@ -373,6 +373,7 @@ async function executeAIHandoff(
     }
     if (expectedOutcomes) {
       promptParts.push(`---\nRESULTADOS ESPERADOS: ${expectedOutcomes}`);
+      promptParts.push(`Ao finalizar a interação, use finalizar_interacao(resultado) com um dos seguintes resultados: ${outcomes.join(', ')}. Se nenhum se aplicar, use "default".`);
     }
     
     if (promptParts.length > 0) {
