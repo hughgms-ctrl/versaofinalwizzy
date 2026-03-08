@@ -12,7 +12,6 @@ import { Badge } from '@/components/ui/badge';
 import { Loader2, Share2, User, Bot, Hand, Check, GitBranch } from 'lucide-react';
 import { DbConversation } from '@/hooks/useConversations';
 import {
-  useDepartments,
   useLeadSources,
   useUpdateConversationAttributes,
   useInterveneConversation,
