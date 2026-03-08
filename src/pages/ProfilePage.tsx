@@ -36,7 +36,10 @@ export default function ProfilePage() {
     if (profile?.full_name && !fullName) {
       setFullName(profile.full_name);
     }
-  }, [profile?.full_name]);
+    if (profile?.phone && !phone) {
+      setPhone(profile.phone);
+    }
+  }, [profile?.full_name, profile?.phone]);
 
   const getInitials = (name: string) => {
     return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
