@@ -1720,6 +1720,32 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
 
       // Condition is handled above via renderAdvancedConditionEditor
 
+      case 'message-list':
+        return (
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="listText">Texto da Mensagem</Label>
+              <Textarea
+                id="listText"
+                value={(localData.content as string) || ''}
+                onChange={(e) => handleChange('content', e.target.value)}
+                placeholder="Selecione uma das opções abaixo:"
+                className="min-h-[60px]"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="buttonText">Texto do Botão</Label>
+              <Input
+                id="buttonText"
+                value={(localData.buttonText as string) || ''}
+                onChange={(e) => handleChange('buttonText', e.target.value)}
+                placeholder="Ver opções"
+              />
+            </div>
+            <RemarketingStepsEditor localData={localData} handleChange={handleChange} />
+          </div>
+        );
+
       default:
         return (
           <div className="text-sm text-muted-foreground text-center py-8">
