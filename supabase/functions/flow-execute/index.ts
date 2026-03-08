@@ -335,9 +335,36 @@ async function executeNode(
     case 'action-transfer':
       return await executeTransfer(data, context, supabase);
 
+    case 'action-workspace':
+      return await executeWorkspaceAssignment(data, context, supabase);
+
     default:
       console.log(`Unknown node type: ${type}`);
       return { success: true };
+  }
+}
+
+async function executeWorkspaceAssignment(
+  data: Record<string, unknown>,
+  context: ExecutionContext,
+  supabase: SupabaseClientType
+): Promise<NodeResult> {
+  const workspaceId = String(data.workspaceId || '');
+  if (!workspaceId) {
+    console.log('[FLOW EXECUTE] action-workspace: no workspaceId configured');
+    return { success: true, metadata: { skipped: 'no_workspace_id' } };
+  }
+
+  try {
+    // Update contact workspace
+    await supabase.from('contacts').update({ workspace_id: workspaceId }).eq('id', context.contactId);
+    // Update conversation workspace
+    await supabase.from('conversations').update({ workspace_id: workspaceId }).eq('id', context.conversationId);
+    console.log(`[FLOW EXECUTE] Assigned workspace ${workspaceId} to contact ${context.contactId} and conversation ${context.conversationId}`);
+    return { success: true, metadata: { workspaceId } };
+  } catch (error) {
+    console.error('[FLOW EXECUTE] Workspace assignment error:', error);
+    return { success: false, error: String(error) };
   }
 }
 
