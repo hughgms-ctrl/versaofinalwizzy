@@ -436,20 +436,10 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
                                       className="text-sm cursor-pointer"
                                     >
                                       {p.full_name}
-                                      {p.phone && (
-                                        <span className="text-xs text-muted-foreground ml-1">
-                                          ({p.phone})
-                                        </span>
-                                      )}
                                     </Label>
                                   </div>
                                 ))}
                               </div>
-                              {profiles.filter(p => !p.phone).length > 0 && (
-                                <p className="text-[10px] text-yellow-600">
-                                  ⚠ Membros sem telefone cadastrado não receberão notificações
-                                </p>
-                              )}
                             </div>
                           )}
                         </div>
