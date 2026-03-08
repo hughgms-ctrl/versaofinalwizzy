@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { User, Star, Calendar, FileText, StickyNote, ChevronUp, ScrollText, History } from 'lucide-react';
+import { User, Star, Calendar, FileText, StickyNote, ChevronUp, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { DbConversation } from '@/hooks/useConversations';
 import { ContactNotesSection } from './ContactNotesSection';
@@ -12,9 +12,8 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { useStageHistory } from '@/hooks/useStageHistory';
 
-type TabId = 'profile' | 'favorites' | 'scheduled' | 'files' | 'notes' | 'logs' | 'history';
+type TabId = 'profile' | 'favorites' | 'scheduled' | 'files' | 'notes' | 'timeline';
 
 interface ContactProfileTabsProps {
   conversation: DbConversation;
@@ -23,12 +22,11 @@ interface ContactProfileTabsProps {
 
 const tabs: { id: TabId; icon: typeof User; label: string }[] = [
   { id: 'profile', icon: User, label: 'Perfil' },
-  { id: 'history', icon: History, label: 'Histórico' },
+  { id: 'timeline', icon: Clock, label: 'Timeline' },
   { id: 'favorites', icon: Star, label: 'Favoritos' },
   { id: 'scheduled', icon: Calendar, label: 'Agendamentos' },
   { id: 'files', icon: FileText, label: 'Arquivos' },
   { id: 'notes', icon: StickyNote, label: 'Notas' },
-  { id: 'logs', icon: ScrollText, label: 'Logs' },
 ];
 
 export function ContactProfileTabs({ conversation, contactId }: ContactProfileTabsProps) {
