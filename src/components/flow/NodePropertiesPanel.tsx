@@ -684,24 +684,31 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
 
     const generateRuleId = () => Math.random().toString(36).substring(2, 10);
 
+    // Migrate legacy rules on load
+    const migratedRules = rules.map(migrateRule);
+    const needsMigration = rules.some((r, i) => r.type !== migratedRules[i].type);
+    if (needsMigration) {
+      handleChange('rules', migratedRules);
+    }
+
     const addRule = () => {
       const newRule: ConditionRule = { id: generateRuleId(), type: 'tag', negate: false };
-      handleChange('rules', [...rules, newRule]);
+      handleChange('rules', [...migratedRules, newRule]);
     };
 
     const updateRule = (index: number, updated: ConditionRule) => {
       const migrated = migrateRule(updated);
-      const newRules = [...rules];
+      const newRules = [...migratedRules];
       newRules[index] = migrated;
       handleChange('rules', newRules);
     };
 
     const removeRule = (index: number) => {
-      handleChange('rules', rules.filter((_, i) => i !== index));
+      handleChange('rules', migratedRules.filter((_, i) => i !== index));
     };
 
     // Migrate legacy single-condition format
-    if (rules.length === 0 && localData.variable) {
+    if (migratedRules.length === 0 && localData.variable) {
       const legacyRule: ConditionRule = {
         id: generateRuleId(),
         type: 'variable',
