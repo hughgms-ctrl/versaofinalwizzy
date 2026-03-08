@@ -65,12 +65,13 @@ export type ConditionOperator =
 export interface ConditionRule {
   id: string;
   type: ConditionRuleType;
-  // For has_tag / not_has_tag
+  negate?: boolean;
+  // For tag
   tagId?: string;
-  // For in_pipeline / not_in_pipeline
+  // For pipeline
   pipelineId?: string;
   columnId?: string;
-  // For assigned_to
+  // For assigned
   userId?: string;
   // For variable
   variable?: string;
