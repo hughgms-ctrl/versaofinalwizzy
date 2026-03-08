@@ -391,14 +391,14 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
         if (!isMaster && nodeData.agentId) {
           try {
             const { data: agentData } = await supabase
-              .from('agents' as any)
-              .select('prompt, name')
+              .from('ai_agents')
+              .select('prompt_base, name')
               .eq('id', nodeData.agentId)
               .single();
 
-            if (agentData?.prompt) {
+            if (agentData?.prompt_base) {
               // Combine base prompt with node-specific instructions
-              agentPrompt = `${agentData.prompt}\n\n[INSTRUÇÕES ESPECÍFICAS DESTE NÓ]:\n${agentPrompt}`;
+              agentPrompt = `${agentData.prompt_base}\n\n[INSTRUÇÕES ESPECÍFICAS DESTE NÓ]:\n${agentPrompt}`;
             }
           } catch (err) {
             console.error('Error fetching agent prompt:', err);
@@ -540,13 +540,13 @@ Responda sempre em português brasileiro de forma profissional e prestativa.`;
         if (!isMaster && currentNode?.data?.agentId) {
           try {
             const { data: agentData } = await supabase
-              .from('agents' as any)
-              .select('prompt')
-              .eq('id', currentNode.data.agentId)
+              .from('ai_agents')
+              .select('prompt_base')
+              .eq('id', currentNode.data.agentId as string)
               .single();
 
-            if (agentData?.prompt) {
-              prompt = `${agentData.prompt}\n\n[INSTRUÇÕES ESPECÍFICAS DESTE NÓ]:\n${prompt}`;
+            if (agentData?.prompt_base) {
+              prompt = `${agentData.prompt_base}\n\n[INSTRUÇÕES ESPECÍFICAS DESTE NÓ]:\n${prompt}`;
             }
           } catch (err) {
             console.error('Error fetching agent prompt during chat:', err);
