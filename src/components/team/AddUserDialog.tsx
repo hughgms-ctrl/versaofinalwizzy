@@ -48,6 +48,7 @@ export function AddUserDialog({ open, onOpenChange }: AddUserDialogProps) {
         body: {
           email: formData.email,
           fullName: formData.fullName,
+          phone: formData.phone,
           role: formData.role,
           password: formData.password,
           organizationId: profile.organization_id,
