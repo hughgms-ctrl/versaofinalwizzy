@@ -160,7 +160,7 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
 
   const otherPipelines = allPipelines.filter(p => p.id !== pipeline.id);
   const selectedNextPipeline = otherPipelines.find(p => p.id === nextPipelineId);
-  const { data: nextPipelineColumns = [] } = usePipelineColumns(nextPipelineId !== 'none' ? nextPipelineId : undefined);
+  const { data: nextPipelineColumns = [] } = usePipelineColumns(nextPipelineId !== 'none' ? nextPipelineId : null);
 
   useEffect(() => {
     setName(pipeline.name);
