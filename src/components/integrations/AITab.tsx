@@ -18,9 +18,7 @@ import {
   useUpsertIntegrationConfig,
   PROVIDER_LABELS,
   MODELS_BY_PROVIDER,
-  FEATURE_LABELS,
   type AIProvider,
-  type AIFeature,
   type IntegrationConfig,
 } from '@/hooks/useIntegrationConfigs';
 import {
