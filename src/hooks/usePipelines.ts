@@ -405,7 +405,7 @@ export function useMoveConversation() {
           // Fetch pipeline to get next_pipeline_id
           const { data: currentPipeline } = await (supabase as any)
             .from('pipelines')
-            .select('next_pipeline_id, next_pipeline_column_id')
+            .select('next_pipeline_id, next_pipeline_column_id, default_assigned_to')
             .eq('id', pipelineId)
             .single();
 
