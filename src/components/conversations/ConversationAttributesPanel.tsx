@@ -96,11 +96,10 @@ export function ConversationAttributesPanel({
 
   useEffect(() => {
     setLocalValues({
-      departmentId: conversation.department_id || '',
       leadSourceId: conversation.lead_source_id || '',
       assignedTo: conversation.assigned_to || '',
     });
-  }, [conversation.id, conversation.department_id, conversation.lead_source_id, conversation.assigned_to]);
+  }, [conversation.id, conversation.lead_source_id, conversation.assigned_to]);
 
   const handleUpdate = (field: string, value: string | null) => {
     const fieldMap: Record<string, string> = {
