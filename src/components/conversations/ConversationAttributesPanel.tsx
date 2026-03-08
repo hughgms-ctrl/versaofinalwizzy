@@ -130,7 +130,7 @@ export function ConversationAttributesPanel({
   const currentServiceMode = (conversation as any).service_mode || 'pendente';
   const modeInfo = serviceModeLabels[currentServiceMode];
 
-  const isLoading = loadingDepartments || loadingLeadSources;
+  const isLoading = loadingLeadSources;
 
   if (isLoading) {
     return (
