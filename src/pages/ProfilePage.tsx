@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
-import { Camera, Loader2, Save, User, Lock, Mail, CreditCard } from 'lucide-react';
+import { Camera, Loader2, Save, User, Lock, Mail, CreditCard, Phone } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { useQueryClient } from '@tanstack/react-query';
 
