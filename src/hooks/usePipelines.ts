@@ -11,6 +11,7 @@ export interface Pipeline {
   is_default: boolean;
   workspace_ids: string[];
   next_pipeline_id: string | null;
+  next_pipeline_column_id: string | null;
   created_at: string;
   updated_at: string;
 }
