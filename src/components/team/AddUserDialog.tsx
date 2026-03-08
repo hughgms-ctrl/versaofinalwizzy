@@ -24,6 +24,7 @@ export function AddUserDialog({ open, onOpenChange }: AddUserDialogProps) {
   const [formData, setFormData] = useState({
     fullName: '',
     email: '',
+    phone: '',
     role: 'agent' as 'admin' | 'supervisor' | 'agent',
     password: '',
   });
@@ -47,6 +48,7 @@ export function AddUserDialog({ open, onOpenChange }: AddUserDialogProps) {
         body: {
           email: formData.email,
           fullName: formData.fullName,
+          phone: formData.phone,
           role: formData.role,
           password: formData.password,
           organizationId: profile.organization_id,
@@ -63,7 +65,7 @@ export function AddUserDialog({ open, onOpenChange }: AddUserDialogProps) {
 
       queryClient.invalidateQueries({ queryKey: ['team-members'] });
       onOpenChange(false);
-      setFormData({ fullName: '', email: '', role: 'agent', password: '' });
+      setFormData({ fullName: '', email: '', phone: '', role: 'agent', password: '' });
     } catch (error: any) {
       console.error('Error creating user:', error);
       toast({
@@ -105,6 +107,21 @@ export function AddUserDialog({ open, onOpenChange }: AddUserDialogProps) {
               placeholder="joao@empresa.com"
               required
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="phone">WhatsApp</Label>
+            <Input
+              id="phone"
+              type="tel"
+              value={formData.phone}
+              onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
+              placeholder="5511999999999"
+              required
+            />
+            <p className="text-xs text-muted-foreground">
+              Número com código do país, sem espaços ou traços. Usado para notificações.
+            </p>
           </div>
 
           <div className="space-y-2">

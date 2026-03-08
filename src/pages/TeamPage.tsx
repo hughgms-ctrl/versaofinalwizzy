@@ -42,6 +42,7 @@ import {
 import { useTeamMembers, TeamMember } from '@/hooks/useTeamMembers';
 import { EditPermissionsDialog } from '@/components/team/EditPermissionsDialog';
 import { AddUserDialog } from '@/components/team/AddUserDialog';
+import { EditMemberDialog } from '@/components/team/EditMemberDialog';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { useQueryClient } from '@tanstack/react-query';
@@ -60,6 +61,8 @@ export default function TeamPage() {
   const [selectedMember, setSelectedMember] = useState<TeamMember | null>(null);
   const [permissionsOpen, setPermissionsOpen] = useState(false);
   const [addUserOpen, setAddUserOpen] = useState(false);
+  const [editMemberOpen, setEditMemberOpen] = useState(false);
+  const [memberToEdit, setMemberToEdit] = useState<TeamMember | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [memberToDelete, setMemberToDelete] = useState<TeamMember | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -216,7 +219,7 @@ export default function TeamPage() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => { setMemberToEdit(member); setEditMemberOpen(true); }}>
                             <Edit className="h-4 w-4 mr-2" />
                             Editar Perfil
                           </DropdownMenuItem>
@@ -286,7 +289,7 @@ export default function TeamPage() {
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
-                                <DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => { setMemberToEdit(member); setEditMemberOpen(true); }}>
                                   <Edit className="h-4 w-4 mr-2" />
                                   Editar Perfil
                                 </DropdownMenuItem>
@@ -327,6 +330,12 @@ export default function TeamPage() {
         open={permissionsOpen}
         onOpenChange={setPermissionsOpen}
         member={selectedMember}
+      />
+
+      <EditMemberDialog
+        open={editMemberOpen}
+        onOpenChange={setEditMemberOpen}
+        member={memberToEdit}
       />
 
       <AddUserDialog

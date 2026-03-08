@@ -421,24 +421,49 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
                           </div>
 
                           {isActive && (
-                            <div className="pl-5 space-y-2">
-                              <Label className="text-xs text-muted-foreground">Notificar membros:</Label>
-                              <div className="space-y-1">
-                                {profiles.map((p) => (
-                                  <div key={p.user_id} className="flex items-center gap-2">
-                                    <Checkbox
-                                      id={`notif-${col.id}-${p.user_id}`}
-                                      checked={notifyUserIds.includes(p.user_id)}
-                                      onCheckedChange={() => handleToggleUserNotification(col.id, p.user_id)}
-                                    />
-                                    <Label 
-                                      htmlFor={`notif-${col.id}-${p.user_id}`}
-                                      className="text-sm cursor-pointer"
-                                    >
-                                      {p.full_name}
-                                    </Label>
-                                  </div>
-                                ))}
+                            <div className="pl-5 space-y-3">
+                              <div className="space-y-1.5">
+                                <Label className="text-xs text-muted-foreground">Texto da notificação:</Label>
+                                <Textarea
+                                  value={notif?.message_template || '🔔 Lead *{nome}* entrou no estágio *{estagio}*'}
+                                  onChange={(e) => {
+                                    if (!profile?.organization_id) return;
+                                    upsertNotification.mutate({
+                                      pipelineId: pipeline.id,
+                                      columnId: col.id,
+                                      notifyUserIds: notifyUserIds,
+                                      messageTemplate: e.target.value,
+                                      isActive: true,
+                                      organizationId: profile.organization_id,
+                                    });
+                                  }}
+                                  rows={2}
+                                  placeholder="🔔 Lead *{nome}* entrou no estágio *{estagio}*"
+                                  className="text-sm"
+                                />
+                                <p className="text-[10px] text-muted-foreground">
+                                  Use <code>{'{nome}'}</code> e <code>{'{estagio}'}</code> como variáveis.
+                                </p>
+                              </div>
+                              <div className="space-y-1.5">
+                                <Label className="text-xs text-muted-foreground">Notificar membros:</Label>
+                                <div className="space-y-1">
+                                  {profiles.map((p) => (
+                                    <div key={p.user_id} className="flex items-center gap-2">
+                                      <Checkbox
+                                        id={`notif-${col.id}-${p.user_id}`}
+                                        checked={notifyUserIds.includes(p.user_id)}
+                                        onCheckedChange={() => handleToggleUserNotification(col.id, p.user_id)}
+                                      />
+                                      <Label 
+                                        htmlFor={`notif-${col.id}-${p.user_id}`}
+                                        className="text-sm cursor-pointer"
+                                      >
+                                        {p.full_name}
+                                      </Label>
+                                    </div>
+                                  ))}
+                                </div>
                               </div>
                             </div>
                           )}

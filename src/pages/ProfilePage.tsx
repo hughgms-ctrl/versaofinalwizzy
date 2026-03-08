@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
-import { Camera, Loader2, Save, User, Lock, Mail, CreditCard } from 'lucide-react';
+import { Camera, Loader2, Save, User, Lock, Mail, CreditCard, Phone } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -19,6 +19,7 @@ export default function ProfilePage() {
   const queryClient = useQueryClient();
   
   const [fullName, setFullName] = useState(profile?.full_name || '');
+  const [phone, setPhone] = useState(profile?.phone || '');
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
   const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
@@ -35,7 +36,10 @@ export default function ProfilePage() {
     if (profile?.full_name && !fullName) {
       setFullName(profile.full_name);
     }
-  }, [profile?.full_name]);
+    if (profile?.phone && !phone) {
+      setPhone(profile.phone);
+    }
+  }, [profile?.full_name, profile?.phone]);
 
   const getInitials = (name: string) => {
     return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
@@ -48,7 +52,7 @@ export default function ProfilePage() {
     try {
       const { error } = await supabase
         .from('profiles')
-        .update({ full_name: fullName.trim() })
+        .update({ full_name: fullName.trim(), phone: phone.trim() || null })
         .eq('id', profile.id);
 
       if (error) throw error;
@@ -271,9 +275,22 @@ export default function ProfilePage() {
                 placeholder="Seu nome completo"
               />
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="phone">WhatsApp</Label>
+              <Input 
+                id="phone"
+                type="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="5511999999999"
+              />
+              <p className="text-xs text-muted-foreground">
+                Número com código do país. Usado para receber notificações via WhatsApp.
+              </p>
+            </div>
             <Button 
               onClick={handleUpdateProfile}
-              disabled={isUpdatingProfile || fullName.trim() === profile?.full_name}
+              disabled={isUpdatingProfile || (fullName.trim() === profile?.full_name && (phone.trim() || null) === (profile?.phone || null))}
             >
               {isUpdatingProfile ? (
                 <>

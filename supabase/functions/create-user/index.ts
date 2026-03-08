@@ -21,7 +21,7 @@ Deno.serve(async (req) => {
       },
     });
 
-    const { email, fullName, role, password, organizationId } = await req.json();
+    const { email, fullName, phone, role, password, organizationId } = await req.json();
 
     if (!email || !fullName || !role || !password || !organizationId) {
       console.error('Missing fields:', { email, fullName, role, hasPassword: !!password, organizationId });
@@ -100,6 +100,7 @@ Deno.serve(async (req) => {
         .update({
           organization_id: organizationId,
           full_name: fullName,
+          phone: phone || null,
         })
         .eq('user_id', userId);
 
