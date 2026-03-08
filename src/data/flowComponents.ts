@@ -125,5 +125,6 @@ export const flowComponentCategories: FlowComponentCategory[] = [
         icon: 'Type',
         color: 'bg-teal-500',
       },
+    ],
   },
 ];
