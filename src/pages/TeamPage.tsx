@@ -42,6 +42,7 @@ import {
 import { useTeamMembers, TeamMember } from '@/hooks/useTeamMembers';
 import { EditPermissionsDialog } from '@/components/team/EditPermissionsDialog';
 import { AddUserDialog } from '@/components/team/AddUserDialog';
+import { EditMemberDialog } from '@/components/team/EditMemberDialog';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { useQueryClient } from '@tanstack/react-query';
