@@ -1,6 +1,7 @@
 import { Handle, Position, NodeProps, Node } from '@xyflow/react';
-import { GitBranch, FormInput } from 'lucide-react';
+import { GitBranch, FormInput, Shuffle, Clock, Tag, Kanban, User, MessageSquare, FileText } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { ConditionRule, RandomizerVariant } from '@/types/flow';
 
 interface LogicNodeData extends Record<string, unknown> {
   label?: string;
@@ -9,15 +10,53 @@ interface LogicNodeData extends Record<string, unknown> {
   value?: string;
   variableName?: string;
   inputType?: string;
+  // Advanced condition
+  matchType?: 'all' | 'any';
+  rules?: ConditionRule[];
+  conditionLabel?: string;
+  // Randomizer
+  variants?: RandomizerVariant[];
+  // Smart delay
+  delayType?: string;
+  fixedMinutes?: number;
+  time?: string;
 }
 
 type LogicNode = Node<LogicNodeData>;
 
+const ruleTypeLabels: Record<string, string> = {
+  has_tag: 'Tem tag',
+  not_has_tag: 'Não tem tag',
+  in_pipeline: 'No pipeline',
+  not_in_pipeline: 'Fora do pipeline',
+  assigned_to: 'Responsável é',
+  not_assigned: 'Sem responsável',
+  variable: 'Variável',
+  contact_field: 'Campo do contato',
+  service_mode: 'Modo de atendimento',
+};
+
+const ruleTypeIcons: Record<string, React.ComponentType<{ className?: string }>> = {
+  has_tag: Tag,
+  not_has_tag: Tag,
+  in_pipeline: Kanban,
+  not_in_pipeline: Kanban,
+  assigned_to: User,
+  not_assigned: User,
+  variable: FileText,
+  contact_field: User,
+  service_mode: MessageSquare,
+};
+
 export function ConditionNode({ data, selected }: NodeProps<LogicNode>) {
+  const rules = (data.rules as ConditionRule[]) || [];
+  const matchType = (data.matchType as string) || 'all';
+  const hasAdvancedRules = rules.length > 0;
+
   return (
     <div
       className={cn(
-        "group relative min-w-[200px] rounded-xl bg-card shadow-lg border-2 transition-all overflow-visible",
+        "group relative min-w-[220px] max-w-[280px] rounded-xl bg-card shadow-lg border-2 transition-all overflow-visible",
         selected ? 'border-primary ring-2 ring-primary/30' : 'border-border'
       )}
     >
@@ -32,21 +71,47 @@ export function ConditionNode({ data, selected }: NodeProps<LogicNode>) {
         <span className="font-medium text-sm text-white">Condição</span>
       </div>
 
-      <div className="p-3 bg-card">
+      <div className="p-3 bg-card space-y-1.5">
         {data.conditionLabel && (
-          <p className="text-sm font-semibold text-yellow-700 dark:text-yellow-400 mb-1 line-clamp-1">
+          <p className="text-sm font-semibold text-yellow-700 dark:text-yellow-400 line-clamp-1">
             {data.conditionLabel as string}
           </p>
         )}
-        <p className="text-xs text-muted-foreground">
-          Se <span className="font-mono bg-muted px-1 rounded">{data.variable as string || 'variável'}</span>
-        </p>
-        <p className="text-xs text-muted-foreground mt-1 text-yellow-800/60">
-          {data.operator as string || '='} <span className="font-mono bg-muted px-1 rounded">{data.value as string || 'valor'}</span>
-        </p>
+
+        {hasAdvancedRules ? (
+          <>
+            <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide">
+              {rules.length} {rules.length === 1 ? 'regra' : 'regras'} • {matchType === 'all' ? 'TODAS' : 'QUALQUER'}
+            </p>
+            <div className="space-y-1">
+              {rules.slice(0, 3).map((rule) => {
+                const Icon = ruleTypeIcons[rule.type] || GitBranch;
+                return (
+                  <div key={rule.id} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                    <Icon className="h-3 w-3 shrink-0 text-yellow-600" />
+                    <span className="truncate">{ruleTypeLabels[rule.type] || rule.type}</span>
+                  </div>
+                );
+              })}
+              {rules.length > 3 && (
+                <p className="text-[10px] text-muted-foreground/70 italic">
+                  +{rules.length - 3} mais...
+                </p>
+              )}
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="text-xs text-muted-foreground">
+              Se <span className="font-mono bg-muted px-1 rounded">{data.variable as string || 'variável'}</span>
+            </p>
+            <p className="text-xs text-muted-foreground text-yellow-800/60">
+              {data.operator as string || '='} <span className="font-mono bg-muted px-1 rounded">{data.value as string || 'valor'}</span>
+            </p>
+          </>
+        )}
       </div>
 
-      {/* Two output handles for true/false on right side */}
       <div className="absolute -right-1.5 top-1/2 -translate-y-1/2 flex flex-col gap-6">
         <div className="relative flex items-center">
           <Handle
@@ -96,6 +161,124 @@ export function UserInputNode({ data, selected }: NodeProps<LogicNode>) {
         </p>
         <p className="text-xs text-muted-foreground">
           Tipo: <span className="font-medium text-foreground">{data.inputType || 'texto'}</span>
+        </p>
+      </div>
+
+      <Handle
+        type="source"
+        position={Position.Right}
+        className="!w-3 !h-3 !bg-primary !border-2 !border-background opacity-0 group-hover:opacity-100 transition-opacity !-right-1.5"
+      />
+    </div>
+  );
+}
+
+export function RandomizerNode({ data, selected }: NodeProps<LogicNode>) {
+  const variants = (data.variants as RandomizerVariant[]) || [
+    { id: 'A', label: 'Variante A', weight: 50 },
+    { id: 'B', label: 'Variante B', weight: 50 },
+  ];
+
+  return (
+    <div
+      className={cn(
+        "group relative min-w-[200px] max-w-[260px] rounded-xl bg-card shadow-lg border-2 transition-all overflow-visible",
+        selected ? 'border-primary ring-2 ring-primary/30' : 'border-border'
+      )}
+    >
+      <Handle
+        type="target"
+        position={Position.Left}
+        className="!w-3 !h-3 !bg-primary !border-2 !border-background opacity-0 group-hover:opacity-100 transition-opacity !-left-1.5"
+      />
+
+      <div className="flex items-center gap-2 px-3 py-2 bg-purple-500 rounded-t-[10px]">
+        <Shuffle className="h-4 w-4 text-white" />
+        <span className="font-medium text-sm text-white">Randomizador</span>
+      </div>
+
+      <div className="p-3 bg-card space-y-1.5">
+        {variants.map((v) => (
+          <div key={v.id} className="flex items-center justify-between text-xs">
+            <span className="text-muted-foreground truncate">{v.label}</span>
+            <span className="font-mono font-semibold text-purple-600 dark:text-purple-400 ml-2">{v.weight}%</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Dynamic handles on right - one per variant */}
+      <div className="absolute -right-1.5 flex flex-col" style={{
+        top: '50%',
+        transform: 'translateY(-50%)',
+        gap: `${Math.max(20, 48 / variants.length)}px`,
+      }}>
+        {variants.map((v, i) => (
+          <div key={v.id} className="relative flex items-center">
+            <Handle
+              type="source"
+              position={Position.Right}
+              id={v.id}
+              className="!relative !transform-none !w-3 !h-3 !bg-purple-500 !border-2 !border-background opacity-0 group-hover:opacity-100 transition-opacity"
+            />
+            <span className="absolute left-5 text-[10px] text-purple-600 dark:text-purple-400 font-medium whitespace-nowrap">
+              {v.label}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function SmartDelayNode({ data, selected }: NodeProps<LogicNode>) {
+  const delayType = (data.delayType as string) || 'fixed';
+
+  const delayLabels: Record<string, string> = {
+    fixed: 'Tempo fixo',
+    until_time: 'Até horário',
+    until_business_hours: 'Horário comercial',
+    until_date: 'Até data',
+  };
+
+  const getDelayDescription = () => {
+    switch (delayType) {
+      case 'fixed':
+        return `${data.fixedMinutes || 30} minutos`;
+      case 'until_time':
+        return `Até ${data.time || '09:00'}`;
+      case 'until_business_hours':
+        return 'Próximo horário comercial';
+      case 'until_date':
+        return `Até ${data.date || 'data definida'}`;
+      default:
+        return 'Configurar...';
+    }
+  };
+
+  return (
+    <div
+      className={cn(
+        "group relative min-w-[200px] rounded-xl bg-card shadow-lg border-2 transition-all overflow-visible",
+        selected ? 'border-primary ring-2 ring-primary/30' : 'border-border'
+      )}
+    >
+      <Handle
+        type="target"
+        position={Position.Left}
+        className="!w-3 !h-3 !bg-primary !border-2 !border-background opacity-0 group-hover:opacity-100 transition-opacity !-left-1.5"
+      />
+
+      <div className="flex items-center gap-2 px-3 py-2 bg-orange-500 rounded-t-[10px]">
+        <Clock className="h-4 w-4 text-white" />
+        <span className="font-medium text-sm text-white">Atraso Inteligente</span>
+      </div>
+
+      <div className="p-3 bg-card space-y-1">
+        <p className="text-xs font-medium text-orange-600 dark:text-orange-400">
+          {delayLabels[delayType] || delayType}
+        </p>
+        <p className="text-[11px] text-muted-foreground">
+          {getDelayDescription()}
         </p>
       </div>
 

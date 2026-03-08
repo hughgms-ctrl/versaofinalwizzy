@@ -16,7 +16,9 @@ export type FlowNodeType =
   | 'condition'
   | 'user-input'
   | 'ai-handoff'
-  | 'ai-return';
+  | 'ai-return'
+  | 'randomizer'
+  | 'smart-delay';
 
 // Content Block Item Types
 export type ContentItemType = 'text' | 'image' | 'video' | 'audio' | 'document' | 'delay';
@@ -24,12 +26,9 @@ export type ContentItemType = 'text' | 'image' | 'video' | 'audio' | 'document' 
 export interface ContentItem {
   id: string;
   type: ContentItemType;
-  // For text
   content?: string;
-  // For media (image, video, audio, document)
   mediaUrl?: string;
   caption?: string;
-  // For delay
   delaySeconds?: number;
 }
 
@@ -41,6 +40,80 @@ export interface FlowNodeData {
   label: string;
   type: FlowNodeType;
   config?: Record<string, unknown>;
+}
+
+// === CONDITION RULE TYPES ===
+
+export type ConditionRuleType =
+  | 'has_tag'
+  | 'not_has_tag'
+  | 'in_pipeline'
+  | 'not_in_pipeline'
+  | 'assigned_to'
+  | 'not_assigned'
+  | 'variable'
+  | 'contact_field'
+  | 'service_mode';
+
+export type ConditionOperator =
+  | 'equals'
+  | 'not_equals'
+  | 'contains'
+  | 'not_contains'
+  | 'greater_than'
+  | 'less_than'
+  | 'exists'
+  | 'not_exists';
+
+export interface ConditionRule {
+  id: string;
+  type: ConditionRuleType;
+  // For has_tag / not_has_tag
+  tagId?: string;
+  // For in_pipeline / not_in_pipeline
+  pipelineId?: string;
+  columnId?: string;
+  // For assigned_to
+  userId?: string;
+  // For variable
+  variable?: string;
+  operator?: ConditionOperator;
+  value?: string;
+  // For contact_field
+  contactField?: 'name' | 'email' | 'phone';
+  // For service_mode
+  serviceMode?: 'pending' | 'bot' | 'human';
+}
+
+export interface AdvancedConditionConfig {
+  matchType: 'all' | 'any';
+  rules: ConditionRule[];
+}
+
+// === RANDOMIZER TYPES ===
+
+export interface RandomizerVariant {
+  id: string;
+  label: string;
+  weight: number;
+}
+
+export interface RandomizerConfig {
+  variants: RandomizerVariant[];
+}
+
+// === SMART DELAY TYPES ===
+
+export type SmartDelayType = 'fixed' | 'until_time' | 'until_business_hours' | 'until_date';
+
+export interface SmartDelayConfig {
+  delayType: SmartDelayType;
+  fixedMinutes?: number;
+  time?: string;
+  businessHoursStart?: string;
+  businessHoursEnd?: string;
+  weekdaysOnly?: boolean;
+  date?: string;
 }
 
 // Message Node Configs
@@ -107,7 +180,7 @@ export interface WebhookActionConfig {
   body?: string;
 }
 
-// Logic Node Configs
+// Legacy - kept for backward compat
 export interface ConditionConfig {
   variable: string;
   operator: 'equals' | 'not_equals' | 'contains' | 'greater_than' | 'less_than';

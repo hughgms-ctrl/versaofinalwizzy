@@ -4,7 +4,7 @@ import {
   X, Layers, MousePointerClick, List, Tag, Kanban, UserPlus, Webhook,
   GitBranch, FormInput, Bot, IterationCw, Plus, Trash2, GripVertical,
   Type, Image, Video, Music, FileText, Clock, Upload, Loader2, Save, Sparkles,
-  Link, ChevronRight, ChevronDown, Folder
+  Link, ChevronRight, ChevronDown, Folder, Shuffle, User, MessageSquare
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,7 +13,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
-import { FlowNodeType, ContentItem, ContentItemType } from '@/types/flow';
+import { FlowNodeType, ContentItem, ContentItemType, ConditionRule, ConditionRuleType, RandomizerVariant } from '@/types/flow';
+import { useTeamMembers } from '@/hooks/useTeamMembers';
 import { useTags } from '@/hooks/useTags';
 import { useAIAgents } from '@/hooks/useAIAgents';
 import { useFlows } from '@/hooks/useFlows';
@@ -54,6 +55,8 @@ const nodeIcons: Record<string, React.ComponentType<{ className?: string }>> = {
   'ai-return': IterationCw,
   'action-document': FileText,
   'action-delay': Clock,
+  'randomizer': Shuffle,
+  'smart-delay': Clock,
 };
 
 const nodeLabels: Record<FlowNodeType, string> = {
@@ -73,6 +76,8 @@ const nodeLabels: Record<FlowNodeType, string> = {
   'action-pipeline': 'Mover Pipeline',
   'condition': 'Condição',
   'user-input': 'Pergunta',
+  'randomizer': 'Randomizador',
+  'smart-delay': 'Atraso Inteligente',
 };
 
 const contentItemTypes: { type: ContentItemType; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
@@ -436,7 +441,8 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
   const { data: departments = [] } = useDepartments();
   const { data: templates = [] } = useDocumentTemplates();
   const { data: pipelines = [] } = usePipelines();
-  const { data: pipelineColumns = [] } = usePipelineColumns(localData.pipelineId as string);
+  const { data: pipelineColumns = [] } = usePipelineColumns(localData.pipelineId as string || localData._conditionPipelineId as string);
+  const { data: teamMembers = [] } = useTeamMembers();
 
   useEffect(() => {
     if (node) {
@@ -491,6 +497,455 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
     } finally {
       setIsGenerating(false);
     }
+  };
+
+  // ====== CONDITION RULE TYPE OPTIONS ======
+  const conditionRuleTypes: { value: ConditionRuleType; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+    { value: 'has_tag', label: 'Tem tag', icon: Tag },
+    { value: 'not_has_tag', label: 'Não tem tag', icon: Tag },
+    { value: 'in_pipeline', label: 'Está no pipeline', icon: Kanban },
+    { value: 'not_in_pipeline', label: 'Não está no pipeline', icon: Kanban },
+    { value: 'assigned_to', label: 'Responsável é', icon: User },
+    { value: 'not_assigned', label: 'Sem responsável', icon: User },
+    { value: 'variable', label: 'Variável', icon: GitBranch },
+    { value: 'contact_field', label: 'Campo do contato', icon: User },
+    { value: 'service_mode', label: 'Modo de atendimento', icon: MessageSquare },
+  ];
+
+  const renderConditionRuleFields = (rule: ConditionRule, updateRule: (updated: ConditionRule) => void) => {
+    switch (rule.type) {
+      case 'has_tag':
+      case 'not_has_tag':
+        return (
+          <Select value={rule.tagId || ''} onValueChange={(v) => updateRule({ ...rule, tagId: v })}>
+            <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Selecione tag..." /></SelectTrigger>
+            <SelectContent>
+              {tags.map((tag) => (
+                <SelectItem key={tag.id} value={tag.id}>
+                  <div className="flex items-center gap-2">
+                    <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: tag.color }} />
+                    {tag.name}
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        );
+
+      case 'in_pipeline':
+      case 'not_in_pipeline':
+        return (
+          <div className="space-y-2">
+            <Select value={rule.pipelineId || ''} onValueChange={(v) => updateRule({ ...rule, pipelineId: v, columnId: undefined })}>
+              <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Pipeline..." /></SelectTrigger>
+              <SelectContent>
+                {pipelines.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {rule.pipelineId && (
+              <Select value={rule.columnId || ''} onValueChange={(v) => updateRule({ ...rule, columnId: v || undefined })}>
+                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Qualquer etapa..." /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Qualquer etapa</SelectItem>
+                  {pipelineColumns.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+        );
+
+      case 'assigned_to':
+        return (
+          <Select value={rule.userId || ''} onValueChange={(v) => updateRule({ ...rule, userId: v })}>
+            <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Selecione usuário..." /></SelectTrigger>
+            <SelectContent>
+              {teamMembers.map((m) => (
+                <SelectItem key={m.user_id} value={m.user_id}>{m.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        );
+
+      case 'not_assigned':
+        return (
+          <p className="text-[11px] text-muted-foreground italic">Verifica se a conversa não tem responsável atribuído.</p>
+        );
+
+      case 'variable':
+        return (
+          <div className="space-y-2">
+            <Input
+              value={rule.variable || ''}
+              onChange={(e) => updateRule({ ...rule, variable: e.target.value })}
+              placeholder="Nome da variável"
+              className="h-8 text-xs"
+            />
+            <Select value={rule.operator || 'equals'} onValueChange={(v) => updateRule({ ...rule, operator: v as any })}>
+              <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="equals">Igual a</SelectItem>
+                <SelectItem value="not_equals">Diferente de</SelectItem>
+                <SelectItem value="contains">Contém</SelectItem>
+                <SelectItem value="not_contains">Não contém</SelectItem>
+                <SelectItem value="greater_than">Maior que</SelectItem>
+                <SelectItem value="less_than">Menor que</SelectItem>
+                <SelectItem value="exists">Existe</SelectItem>
+                <SelectItem value="not_exists">Não existe</SelectItem>
+              </SelectContent>
+            </Select>
+            {rule.operator !== 'exists' && rule.operator !== 'not_exists' && (
+              <Input
+                value={rule.value || ''}
+                onChange={(e) => updateRule({ ...rule, value: e.target.value })}
+                placeholder="Valor"
+                className="h-8 text-xs"
+              />
+            )}
+          </div>
+        );
+
+      case 'contact_field':
+        return (
+          <div className="space-y-2">
+            <Select value={rule.contactField || 'name'} onValueChange={(v) => updateRule({ ...rule, contactField: v as any })}>
+              <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="name">Nome</SelectItem>
+                <SelectItem value="email">Email</SelectItem>
+                <SelectItem value="phone">Telefone</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={rule.operator || 'equals'} onValueChange={(v) => updateRule({ ...rule, operator: v as any })}>
+              <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="equals">Igual a</SelectItem>
+                <SelectItem value="not_equals">Diferente de</SelectItem>
+                <SelectItem value="contains">Contém</SelectItem>
+                <SelectItem value="exists">Existe</SelectItem>
+                <SelectItem value="not_exists">Não existe</SelectItem>
+              </SelectContent>
+            </Select>
+            {rule.operator !== 'exists' && rule.operator !== 'not_exists' && (
+              <Input
+                value={rule.value || ''}
+                onChange={(e) => updateRule({ ...rule, value: e.target.value })}
+                placeholder="Valor"
+                className="h-8 text-xs"
+              />
+            )}
+          </div>
+        );
+
+      case 'service_mode':
+        return (
+          <Select value={rule.serviceMode || 'pending'} onValueChange={(v) => updateRule({ ...rule, serviceMode: v as any })}>
+            <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="pending">Pendente</SelectItem>
+              <SelectItem value="bot">Bot / IA</SelectItem>
+              <SelectItem value="human">Humano</SelectItem>
+            </SelectContent>
+          </Select>
+        );
+
+      default:
+        return null;
+    }
+  };
+
+  const renderAdvancedConditionEditor = () => {
+    const rules = (localData.rules as ConditionRule[]) || [];
+    const matchType = (localData.matchType as string) || 'all';
+
+    const generateRuleId = () => Math.random().toString(36).substring(2, 10);
+
+    const addRule = () => {
+      const newRule: ConditionRule = { id: generateRuleId(), type: 'has_tag' };
+      handleChange('rules', [...rules, newRule]);
+    };
+
+    const updateRule = (index: number, updated: ConditionRule) => {
+      const newRules = [...rules];
+      newRules[index] = updated;
+      handleChange('rules', newRules);
+    };
+
+    const removeRule = (index: number) => {
+      handleChange('rules', rules.filter((_, i) => i !== index));
+    };
+
+    // Migrate legacy single-condition format
+    if (rules.length === 0 && localData.variable) {
+      const legacyRule: ConditionRule = {
+        id: generateRuleId(),
+        type: 'variable',
+        variable: localData.variable as string,
+        operator: (localData.operator as any) || 'equals',
+        value: localData.value as string,
+      };
+      handleChange('rules', [legacyRule]);
+      handleChange('matchType', 'all');
+    }
+
+    return (
+      <div className="space-y-4">
+        <div className="p-3 bg-yellow-50 dark:bg-yellow-950/30 rounded-lg flex items-center gap-3">
+          <GitBranch className="h-5 w-5 text-yellow-600" />
+          <div>
+            <p className="text-xs font-semibold">Condição Avançada</p>
+            <p className="text-[10px] text-muted-foreground">Avalia regras para decidir o próximo passo.</p>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label>Descrição</Label>
+          <Input
+            value={(localData.conditionLabel as string) || ''}
+            onChange={(e) => handleChange('conditionLabel', e.target.value)}
+            placeholder="Ex: Verificar se tem tag VIP"
+            className="text-sm"
+          />
+        </div>
+
+        <div className="space-y-2">
+          <Label>Corresponder a</Label>
+          <Select value={matchType} onValueChange={(v) => handleChange('matchType', v)}>
+            <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todas as regras (E)</SelectItem>
+              <SelectItem value="any">Qualquer regra (OU)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-3">
+          <Label className="text-xs font-semibold">Regras ({rules.length})</Label>
+          {rules.map((rule, index) => {
+            const RuleIcon = conditionRuleTypes.find(t => t.value === rule.type)?.icon || GitBranch;
+            return (
+              <div key={rule.id} className="border border-border rounded-lg p-3 space-y-2 bg-muted/30">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <RuleIcon className="h-3.5 w-3.5 text-yellow-600" />
+                    <Select
+                      value={rule.type}
+                      onValueChange={(v) => updateRule(index, { id: rule.id, type: v as ConditionRuleType })}
+                    >
+                      <SelectTrigger className="h-7 w-[180px] text-xs border-yellow-500/30">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {conditionRuleTypes.map((t) => (
+                          <SelectItem key={t.value} value={t.value}>
+                            <div className="flex items-center gap-2">
+                              <t.icon className="h-3.5 w-3.5" />
+                              {t.label}
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => removeRule(index)}>
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                </div>
+                {renderConditionRuleFields(rule, (updated) => updateRule(index, updated))}
+              </div>
+            );
+          })}
+
+          <Button variant="outline" size="sm" className="w-full gap-2 border-dashed" onClick={addRule}>
+            <Plus className="h-3.5 w-3.5" />
+            Adicionar regra
+          </Button>
+        </div>
+      </div>
+    );
+  };
+
+  const renderRandomizerEditor = () => {
+    const variants = (localData.variants as RandomizerVariant[]) || [
+      { id: 'A', label: 'Variante A', weight: 50 },
+      { id: 'B', label: 'Variante B', weight: 50 },
+    ];
+
+    // Init if empty
+    if (!(localData.variants as any)?.length) {
+      handleChange('variants', variants);
+    }
+
+    const totalWeight = variants.reduce((sum, v) => sum + v.weight, 0);
+
+    const updateVariant = (index: number, updated: RandomizerVariant) => {
+      const newVariants = [...variants];
+      newVariants[index] = updated;
+      handleChange('variants', newVariants);
+    };
+
+    const addVariant = () => {
+      if (variants.length >= 5) return;
+      const letter = String.fromCharCode(65 + variants.length);
+      handleChange('variants', [...variants, { id: letter, label: `Variante ${letter}`, weight: 0 }]);
+    };
+
+    const removeVariant = (index: number) => {
+      if (variants.length <= 2) return;
+      handleChange('variants', variants.filter((_, i) => i !== index));
+    };
+
+    return (
+      <div className="space-y-4">
+        <div className="p-3 bg-purple-50 dark:bg-purple-950/30 rounded-lg flex items-center gap-3">
+          <Shuffle className="h-5 w-5 text-purple-600" />
+          <div>
+            <p className="text-xs font-semibold">Randomizador</p>
+            <p className="text-[10px] text-muted-foreground">Divide o tráfego aleatoriamente.</p>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          {variants.map((v, index) => (
+            <div key={v.id} className="border border-border rounded-lg p-3 space-y-2 bg-muted/30">
+              <div className="flex items-center justify-between">
+                <Input
+                  value={v.label}
+                  onChange={(e) => updateVariant(index, { ...v, label: e.target.value })}
+                  className="h-7 text-xs flex-1 mr-2"
+                />
+                {variants.length > 2 && (
+                  <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive" onClick={() => removeVariant(index)}>
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={v.weight}
+                  onChange={(e) => updateVariant(index, { ...v, weight: parseInt(e.target.value) || 0 })}
+                  className="h-7 w-20 text-xs"
+                />
+                <span className="text-xs text-muted-foreground">%</span>
+              </div>
+            </div>
+          ))}
+
+          {variants.length < 5 && (
+            <Button variant="outline" size="sm" className="w-full gap-2 border-dashed" onClick={addVariant}>
+              <Plus className="h-3.5 w-3.5" />
+              Adicionar variante
+            </Button>
+          )}
+
+          <div className={cn(
+            "text-xs font-medium text-center p-2 rounded-lg",
+            totalWeight === 100 ? "bg-green-50 text-green-700 dark:bg-green-950/30 dark:text-green-400" : "bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-400"
+          )}>
+            Total: {totalWeight}% {totalWeight !== 100 && '(deve ser 100%)'}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderSmartDelayEditor = () => {
+    const delayType = (localData.delayType as string) || 'fixed';
+
+    return (
+      <div className="space-y-4">
+        <div className="p-3 bg-orange-50 dark:bg-orange-950/30 rounded-lg flex items-center gap-3">
+          <Clock className="h-5 w-5 text-orange-600" />
+          <div>
+            <p className="text-xs font-semibold">Atraso Inteligente</p>
+            <p className="text-[10px] text-muted-foreground">Aguarda condição temporal antes de prosseguir.</p>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label>Tipo de espera</Label>
+          <Select value={delayType} onValueChange={(v) => handleChange('delayType', v)}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="fixed">Tempo fixo</SelectItem>
+              <SelectItem value="until_time">Até horário específico</SelectItem>
+              <SelectItem value="until_business_hours">Próximo horário comercial</SelectItem>
+              <SelectItem value="until_date">Até data específica</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {delayType === 'fixed' && (
+          <div className="space-y-2">
+            <Label>Minutos de espera</Label>
+            <Input
+              type="number"
+              min={1}
+              value={(localData.fixedMinutes as number) || 30}
+              onChange={(e) => handleChange('fixedMinutes', parseInt(e.target.value) || 30)}
+            />
+          </div>
+        )}
+
+        {delayType === 'until_time' && (
+          <div className="space-y-2">
+            <Label>Horário</Label>
+            <Input
+              type="time"
+              value={(localData.time as string) || '09:00'}
+              onChange={(e) => handleChange('time', e.target.value)}
+            />
+          </div>
+        )}
+
+        {delayType === 'until_business_hours' && (
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label className="text-xs">Início</Label>
+                <Input
+                  type="time"
+                  value={(localData.businessHoursStart as string) || '08:00'}
+                  onChange={(e) => handleChange('businessHoursStart', e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs">Fim</Label>
+                <Input
+                  type="time"
+                  value={(localData.businessHoursEnd as string) || '18:00'}
+                  onChange={(e) => handleChange('businessHoursEnd', e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="flex items-center justify-between">
+              <Label className="text-xs">Apenas dias úteis</Label>
+              <Switch
+                checked={(localData.weekdaysOnly as boolean) !== false}
+                onCheckedChange={(v) => handleChange('weekdaysOnly', v)}
+              />
+            </div>
+          </div>
+        )}
+
+        {delayType === 'until_date' && (
+          <div className="space-y-2">
+            <Label>Data e hora</Label>
+            <Input
+              type="datetime-local"
+              value={(localData.date as string) || ''}
+              onChange={(e) => handleChange('date', e.target.value)}
+            />
+          </div>
+        )}
+      </div>
+    );
   };
 
   const renderContentBlockEditor = () => {
@@ -769,46 +1224,13 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
         );
 
       case 'condition':
-        return (
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="variable">Variável</Label>
-              <Input
-                id="variable"
-                value={(localData.variable as string) || ''}
-                onChange={(e) => handleChange('variable', e.target.value)}
-                placeholder="ex: ultima_mensagem"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="operator">Operador</Label>
-              <Select
-                value={(localData.operator as string) || 'equals'}
-                onValueChange={(value) => handleChange('operator', value)}
-              >
-                <SelectTrigger id="operator">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="equals">É igual a</SelectItem>
-                  <SelectItem value="not_equals">É diferente de</SelectItem>
-                  <SelectItem value="contains">Contém</SelectItem>
-                  <SelectItem value="greater_than">Maior que</SelectItem>
-                  <SelectItem value="less_than">Menor que</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="value">Valor</Label>
-              <Input
-                id="value"
-                value={(localData.value as string) || ''}
-                onChange={(e) => handleChange('value', e.target.value)}
-                placeholder="Valor para comparação"
-              />
-            </div>
-          </div>
-        );
+        return renderAdvancedConditionEditor();
+
+      case 'randomizer':
+        return renderRandomizerEditor();
+
+      case 'smart-delay':
+        return renderSmartDelayEditor();
 
       case 'user-input':
         return (
@@ -1202,60 +1624,7 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
           </div>
         );
 
-      case 'condition':
-        return (
-          <div className="space-y-4">
-            <div className="p-3 bg-yellow-50 rounded-lg flex items-center gap-3">
-              <GitBranch className="h-5 w-5 text-yellow-600" />
-              <div>
-                <p className="text-xs font-semibold">Condição de Desvio</p>
-                <p className="text-[10px] text-muted-foreground text-yellow-800/70">Avalia uma variável para decidir o próximo passo.</p>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label>Descrição da Condição</Label>
-              <Input
-                value={(localData.conditionLabel as string) || ''}
-                onChange={(e) => handleChange('conditionLabel', e.target.value)}
-                placeholder="Ex: Se cliente for VIP"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-2">
-                <Label>Variável</Label>
-                <Input
-                  value={(localData.variable as string) || ''}
-                  onChange={(e) => handleChange('variable', e.target.value)}
-                  placeholder="Ex: status"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Operador</Label>
-                <Select
-                  value={(localData.operator as string) || 'equals'}
-                  onValueChange={(val) => handleChange('operator', val)}
-                >
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="equals">Igual a</SelectItem>
-                    <SelectItem value="not_equals">Diferente de</SelectItem>
-                    <SelectItem value="contains">Contém</SelectItem>
-                    <SelectItem value="greater_than">Maior que</SelectItem>
-                    <SelectItem value="less_than">Menor que</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label>Valor</Label>
-              <Input
-                value={(localData.value as string) || ''}
-                onChange={(e) => handleChange('value', e.target.value)}
-                placeholder="Valor para comparar"
-              />
-            </div>
-          </div>
-        );
+      // Condition is handled above via renderAdvancedConditionEditor
 
       default:
         return (

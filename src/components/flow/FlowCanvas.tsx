@@ -38,7 +38,7 @@ import {
   FlowActionNode,
   DocumentActionNode
 } from './nodes/ActionNodes';
-import { ConditionNode, UserInputNode } from './nodes/LogicNodes';
+import { ConditionNode, UserInputNode, RandomizerNode, SmartDelayNode } from './nodes/LogicNodes';
 import { AIHandoffNode, AIMasterNode, AIReturnNode } from './nodes/AINodes';
 import { FlowNodeType } from '@/types/flow';
 import { useFlow, useSaveFlow, useCreateFlow } from '@/hooks/useFlows';
@@ -60,6 +60,8 @@ const nodeTypes = {
   'action-document': DocumentActionNode,
   'condition': ConditionNode,
   'user-input': UserInputNode,
+  'randomizer': RandomizerNode,
+  'smart-delay': SmartDelayNode,
   'ai-handoff': AIHandoffNode,
   'ai-return': AIReturnNode,
 };
@@ -457,6 +459,8 @@ function FlowCanvasInner() {
                   case 'user-input': return '#14b8a6';
                   case 'ai-handoff': return '#8b5cf6';
                   case 'ai-return': return '#d946ef';
+                  case 'randomizer': return '#a855f7';
+                  case 'smart-delay': return '#f97316';
                   default: return '#6b7280';
                 }
               }}
