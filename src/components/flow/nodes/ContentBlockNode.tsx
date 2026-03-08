@@ -99,11 +99,15 @@ export function ContentBlockNode({ data, selected }: NodeProps<ContentBlockNode>
               Aguarda resposta
               {data.saveVariable ? ` → {{${data.saveVariable}}}` : ''}
             </span>
-            {data.timeoutMinutes && (
+            {(data.remarketingSteps as any[])?.length ? (
+              <span className="text-[10px] text-blue-500 ml-auto">
+                📩 {(data.remarketingSteps as any[]).length} follow-ups
+              </span>
+            ) : data.timeoutMinutes ? (
               <span className="text-[10px] text-red-500 ml-auto">
                 ⏱ {data.timeoutMinutes}min
               </span>
-            )}
+            ) : null}
           </div>
         )}
       </div>
