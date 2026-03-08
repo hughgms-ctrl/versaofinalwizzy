@@ -710,6 +710,7 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
       const flowNodes = (activeFlowExec.flow?.nodes || []) as any[];
       const currentNode = flowNodes.find((n: any) => n.id === activeFlowExec.current_node_id);
       const isAtAIHandoff = currentNode?.type === 'ai-handoff';
+      const isAtContentBlockWaiting = currentNode?.type === 'content-block' && currentNode.data?.waitForResponse;
 
       if (isAtAIHandoff && activeFlowExec.status === 'waiting_input') {
         console.log(`[WEBHOOK] Flow paused at ai-handoff node — routing message to agent-orchestrator`);
