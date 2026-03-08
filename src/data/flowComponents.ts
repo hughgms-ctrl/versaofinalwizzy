@@ -100,9 +100,23 @@ export const flowComponentCategories: FlowComponentCategory[] = [
       {
         type: 'condition',
         label: 'Condição',
-        description: 'Cria ramificações baseadas em variáveis ou regras',
+        description: 'Ramifica com base em tags, pipeline, variáveis e mais',
         icon: 'GitBranch',
         color: 'bg-yellow-500',
+      },
+      {
+        type: 'randomizer',
+        label: 'Randomizador',
+        description: 'Divide o tráfego aleatoriamente entre variantes',
+        icon: 'Shuffle',
+        color: 'bg-purple-500',
+      },
+      {
+        type: 'smart-delay',
+        label: 'Atraso Inteligente',
+        description: 'Aguarda horário comercial, data ou tempo específico',
+        icon: 'Clock',
+        color: 'bg-orange-500',
       },
       {
         type: 'user-input',
