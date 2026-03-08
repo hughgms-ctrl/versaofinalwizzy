@@ -197,19 +197,23 @@ export function AITab() {
 
       {/* API Keys */}
       <Card className="bg-card border-border">
-        <CardHeader>
+        <CardHeader className="cursor-pointer" onClick={() => setShowApiKeys(!showApiKeys)}>
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-lg bg-amber-500/10">
               <Key className="h-5 w-5 text-amber-500" />
             </div>
-            <div>
+            <div className="flex-1">
               <CardTitle className="text-foreground">Chaves de API</CardTitle>
               <CardDescription>
                 Configure suas chaves para usar provedores externos
               </CardDescription>
             </div>
+            <Button variant="ghost" size="sm" className="text-muted-foreground">
+              {showApiKeys ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </Button>
           </div>
         </CardHeader>
+        {showApiKeys && (
         <CardContent className="space-y-6">
           <div className="space-y-3">
             <div className="flex items-center justify-between">
