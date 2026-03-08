@@ -501,21 +501,43 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
 
   // ====== CONDITION RULE TYPE OPTIONS ======
   const conditionRuleTypes: { value: ConditionRuleType; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-    { value: 'has_tag', label: 'Tem tag', icon: Tag },
-    { value: 'not_has_tag', label: 'Não tem tag', icon: Tag },
-    { value: 'in_pipeline', label: 'Está no pipeline', icon: Kanban },
-    { value: 'not_in_pipeline', label: 'Não está no pipeline', icon: Kanban },
-    { value: 'assigned_to', label: 'Responsável é', icon: User },
-    { value: 'not_assigned', label: 'Sem responsável', icon: User },
+    { value: 'tag', label: 'Tag', icon: Tag },
+    { value: 'pipeline', label: 'Pipeline', icon: Kanban },
+    { value: 'assigned', label: 'Responsável', icon: User },
     { value: 'variable', label: 'Variável', icon: GitBranch },
     { value: 'contact_field', label: 'Campo do contato', icon: User },
     { value: 'service_mode', label: 'Modo de atendimento', icon: MessageSquare },
   ];
 
+  // Migrate legacy rule types to new simplified format
+  const migrateRule = (rule: ConditionRule): ConditionRule => {
+    const legacyType = rule.type as string;
+    if (legacyType === 'has_tag') return { ...rule, type: 'tag', negate: false };
+    if (legacyType === 'not_has_tag') return { ...rule, type: 'tag', negate: true };
+    if (legacyType === 'in_pipeline') return { ...rule, type: 'pipeline', negate: false };
+    if (legacyType === 'not_in_pipeline') return { ...rule, type: 'pipeline', negate: true };
+    if (legacyType === 'assigned_to') return { ...rule, type: 'assigned', negate: false };
+    if (legacyType === 'not_assigned') return { ...rule, type: 'assigned', negate: true };
+    return rule;
+  };
+
+  const needsNegateToggle = (type: ConditionRuleType) => {
+    return ['tag', 'pipeline', 'assigned', 'service_mode'].includes(type);
+  };
+
+  const getNegateLabels = (type: ConditionRuleType): [string, string] => {
+    switch (type) {
+      case 'tag': return ['Tem', 'Não tem'];
+      case 'pipeline': return ['Está no', 'Não está no'];
+      case 'assigned': return ['É', 'Não é / Sem'];
+      case 'service_mode': return ['É', 'Não é'];
+      default: return ['É', 'Não é'];
+    }
+  };
+
   const renderConditionRuleFields = (rule: ConditionRule, updateRule: (updated: ConditionRule) => void) => {
     switch (rule.type) {
-      case 'has_tag':
-      case 'not_has_tag':
+      case 'tag':
         return (
           <Select value={rule.tagId || ''} onValueChange={(v) => updateRule({ ...rule, tagId: v })}>
             <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Selecione tag..." /></SelectTrigger>
@@ -532,8 +554,7 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
           </Select>
         );
 
-      case 'in_pipeline':
-      case 'not_in_pipeline':
+      case 'pipeline':
         return (
           <div className="space-y-2">
             <Select value={rule.pipelineId || ''} onValueChange={(v) => updateRule({ ...rule, pipelineId: v, columnId: undefined })}>
@@ -558,7 +579,12 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
           </div>
         );
 
-      case 'assigned_to':
+      case 'assigned':
+        if (rule.negate) {
+          return (
+            <p className="text-[11px] text-muted-foreground italic">Verifica se a conversa não tem responsável atribuído.</p>
+          );
+        }
         return (
           <Select value={rule.userId || ''} onValueChange={(v) => updateRule({ ...rule, userId: v })}>
             <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Selecione usuário..." /></SelectTrigger>
@@ -568,11 +594,6 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
               ))}
             </SelectContent>
           </Select>
-        );
-
-      case 'not_assigned':
-        return (
-          <p className="text-[11px] text-muted-foreground italic">Verifica se a conversa não tem responsável atribuído.</p>
         );
 
       case 'variable':

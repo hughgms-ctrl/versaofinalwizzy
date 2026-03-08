@@ -25,24 +25,18 @@ interface LogicNodeData extends Record<string, unknown> {
 type LogicNode = Node<LogicNodeData>;
 
 const ruleTypeLabels: Record<string, string> = {
-  has_tag: 'Tem tag',
-  not_has_tag: 'Não tem tag',
-  in_pipeline: 'No pipeline',
-  not_in_pipeline: 'Fora do pipeline',
-  assigned_to: 'Responsável é',
-  not_assigned: 'Sem responsável',
+  tag: 'Tag',
+  pipeline: 'Pipeline',
+  assigned: 'Responsável',
   variable: 'Variável',
   contact_field: 'Campo do contato',
-  service_mode: 'Modo de atendimento',
+  service_mode: 'Modo atendimento',
 };
 
 const ruleTypeIcons: Record<string, React.ComponentType<{ className?: string }>> = {
-  has_tag: Tag,
-  not_has_tag: Tag,
-  in_pipeline: Kanban,
-  not_in_pipeline: Kanban,
-  assigned_to: User,
-  not_assigned: User,
+  tag: Tag,
+  pipeline: Kanban,
+  assigned: User,
   variable: FileText,
   contact_field: User,
   service_mode: MessageSquare,
