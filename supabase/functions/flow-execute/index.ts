@@ -551,6 +551,13 @@ async function executeContentBlock(data: Record<string, unknown>, context: Execu
     }
   }
 
+  // Check if this content block should wait for user response
+  const waitForResponse = !!data.waitForResponse;
+  if (waitForResponse) {
+    console.log(`[FLOW EXECUTE] Content block configured to wait for response. Variable: ${data.saveVariable || 'none'}, Timeout: ${data.timeoutMinutes || 0}min`);
+    return { success: true, waitForInput: true };
+  }
+
   return { success: true };
 }
 
