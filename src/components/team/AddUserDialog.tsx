@@ -24,6 +24,7 @@ export function AddUserDialog({ open, onOpenChange }: AddUserDialogProps) {
   const [formData, setFormData] = useState({
     fullName: '',
     email: '',
+    phone: '',
     role: 'agent' as 'admin' | 'supervisor' | 'agent',
     password: '',
   });
