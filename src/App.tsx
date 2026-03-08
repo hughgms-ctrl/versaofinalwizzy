@@ -31,6 +31,7 @@ import DocumentsPage from "./pages/DocumentsPage";
 import IntegrationsPage from "./pages/IntegrationsPage";
 import PublicFormPage from "./pages/PublicFormPage";
 import SignaturePage from "./pages/SignaturePage";
+import PublicBookingPage from "./pages/PublicBookingPage";
 import NotFound from "./pages/NotFound";
 import CampaignsPage from "./pages/CampaignsPage";
 
