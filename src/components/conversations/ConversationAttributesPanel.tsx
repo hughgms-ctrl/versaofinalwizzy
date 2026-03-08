@@ -51,6 +51,7 @@ export function ConversationAttributesPanel({
   const { data: leadSources = [], isLoading: loadingLeadSources } = useLeadSources();
   const { data: profiles = [] } = useProfiles();
   const { data: pipelines = [] } = usePipelines();
+  const { data: workspaces = [] } = useWorkspaces();
   
   const updateAttributes = useUpdateConversationAttributes();
   const intervene = useInterveneConversation();
