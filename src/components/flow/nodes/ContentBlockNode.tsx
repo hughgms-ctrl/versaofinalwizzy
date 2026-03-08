@@ -1,5 +1,5 @@
 import { Handle, Position, NodeProps, Node } from '@xyflow/react';
-import { Layers, Type, Image, Video, Music, FileText, Clock, GripVertical, MessageSquareMore, TimerOff } from 'lucide-react';
+import { Layers, Type, Image, Video, Music, FileText, Clock, GripVertical, MessageSquareMore } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ContentItem } from '@/types/flow';
 
