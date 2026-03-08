@@ -225,3 +225,13 @@ export function WebhookActionNode({ data, selected }: NodeProps<ActionNode>) {
     </BaseActionNode>
   );
 }
+
+export function WorkspaceActionNode({ data, selected }: NodeProps<ActionNode>) {
+  return (
+    <BaseActionNode selected={!!selected} icon={Building2} color="bg-sky-500" title="Atribuir Workspace">
+      <p className="text-xs text-muted-foreground">
+        Workspace: <span className="font-medium text-foreground">{data.workspaceName || 'Selecionar...'}</span>
+      </p>
+    </BaseActionNode>
+  );
+}

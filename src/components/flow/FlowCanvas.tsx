@@ -59,6 +59,7 @@ const nodeTypes = {
   'action-flow': FlowActionNode,
   'action-department': DepartmentActionNode,
   'action-document': DocumentActionNode,
+  'action-workspace': WorkspaceActionNode,
   'condition': ConditionNode,
   'user-input': UserInputNode,
   'randomizer': RandomizerNode,
