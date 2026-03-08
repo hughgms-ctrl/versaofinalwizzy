@@ -301,155 +301,12 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
 
           <Separator />
 
-          {/* Conversation Attributes Section */}
-          <Collapsible defaultOpen>
-            <CollapsibleTrigger className="flex items-center justify-between w-full py-2">
-              <Label className="text-xs text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-                <Settings2 className="h-3.5 w-3.5" />
-                Atributos
-              </Label>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <ConversationAttributesPanel conversation={conversation} compact />
-            </CollapsibleContent>
-          </Collapsible>
+          {/* Conversation Attributes */}
+          <ConversationAttributesPanel conversation={conversation} compact />
 
           <Separator />
 
-          {/* Contact Info */}
-          <div className="space-y-3">
-            <Label className="text-xs text-muted-foreground uppercase tracking-wider">
-              Informações
-            </Label>
-
-            <div className="space-y-2">
-              <div className="flex items-center gap-3 p-2 rounded-lg bg-muted/50">
-                <Phone className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm text-foreground">
-                  {contact?.phone ? formatPhone(contact.phone) : 'Sem telefone'}
-                </span>
-              </div>
-
-              {contact?.email && (
-                <div className="flex items-center gap-3 p-2 rounded-lg bg-muted/50">
-                  <Mail className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm text-foreground">{contact.email}</span>
-                </div>
-              )}
-
-              <div className="flex items-center gap-3 p-2 rounded-lg bg-muted/50">
-                <Calendar className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm text-foreground">
-                  Desde {format(new Date(contact?.created_at || conversation.created_at), "dd 'de' MMM 'de' yyyy", { locale: ptBR })}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <Separator />
-
-          {/* Quick Note */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <Label className="text-xs text-muted-foreground uppercase tracking-wider">
-                Nota Rápida
-              </Label>
-              {!isEditingNote && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 px-2"
-                  onClick={() => {
-                    setEditedNote((contact?.metadata as { note?: string } | null)?.note || '');
-                    setIsEditingNote(true);
-                  }}
-                >
-                  <Pencil className="h-3 w-3 mr-1" />
-                  {(contact?.metadata as { note?: string } | null)?.note ? 'Editar' : 'Adicionar'}
-                </Button>
-              )}
-            </div>
-
-            {isEditingNote ? (
-              <div className="space-y-2">
-                <Input
-                  value={editedNote}
-                  onChange={(e) => setEditedNote(e.target.value)}
-                  placeholder="Ex: Cliente VIP, Aguardando retorno..."
-                  maxLength={50}
-                  autoFocus
-                />
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] text-muted-foreground">{editedNote.length}/50</span>
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => setIsEditingNote(false)}
-                      disabled={isSavingNote}
-                    >
-                      Cancelar
-                    </Button>
-                    <Button
-                      size="sm"
-                      onClick={async () => {
-                        if (!contact?.id) return;
-                        setIsSavingNote(true);
-                        try {
-                          const currentMetadata = (contact?.metadata as Record<string, any>) || {};
-                          const newMetadata = { ...currentMetadata, note: editedNote.trim() || null };
-
-                          // Remove note key if empty
-                          if (!editedNote.trim()) {
-                            delete newMetadata.note;
-                          }
-
-                          const { error } = await supabase
-                            .from('contacts')
-                            .update({ metadata: Object.keys(newMetadata).length > 0 ? newMetadata : null })
-                            .eq('id', contact.id);
-
-                          if (error) throw error;
-
-                          queryClient.invalidateQueries({ queryKey: ['conversations'] });
-                          toast({
-                            title: 'Nota salva',
-                            description: editedNote.trim() ? 'A nota foi atualizada.' : 'A nota foi removida.',
-                          });
-                          setIsEditingNote(false);
-                        } catch (error: any) {
-                          toast({
-                            title: 'Erro ao salvar',
-                            description: error.message || 'Não foi possível salvar a nota.',
-                            variant: 'destructive',
-                          });
-                        } finally {
-                          setIsSavingNote(false);
-                        }
-                      }}
-                      disabled={isSavingNote}
-                    >
-                      {isSavingNote ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Salvar'}
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/20 min-h-[36px]">
-                {(contact?.metadata as { note?: string } | null)?.note ? (
-                  <p className="text-sm text-amber-600 dark:text-amber-400">
-                    {(contact?.metadata as { note?: string } | null)?.note}
-                  </p>
-                ) : (
-                  <p className="text-xs text-muted-foreground italic">
-                    Nenhuma nota adicionada
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
-
-          <Separator />
+          {/* Tags - moved up for visibility */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <Label className="text-xs text-muted-foreground uppercase tracking-wider">
@@ -495,28 +352,11 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
                           ))}
                         </div>
                         <div className="flex gap-2">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="flex-1"
-                            onClick={() => {
-                              setIsCreatingTag(false);
-                              setNewTagName('');
-                            }}
-                          >
+                          <Button size="sm" variant="ghost" className="flex-1" onClick={() => { setIsCreatingTag(false); setNewTagName(''); }}>
                             Cancelar
                           </Button>
-                          <Button
-                            size="sm"
-                            className="flex-1"
-                            onClick={handleCreateTag}
-                            disabled={!newTagName.trim() || createTag.isPending}
-                          >
-                            {createTag.isPending ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              'Criar'
-                            )}
+                          <Button size="sm" className="flex-1" onClick={handleCreateTag} disabled={!newTagName.trim() || createTag.isPending}>
+                            {createTag.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Criar'}
                           </Button>
                         </div>
                       </>
@@ -525,32 +365,16 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
                         <p className="text-xs text-muted-foreground">Selecione uma tag</p>
                         {availableTags.length === 0 && !tags?.length ? (
                           <div className="text-center py-2">
-                            <p className="text-xs text-muted-foreground mb-2">
-                              Nenhuma tag criada
-                            </p>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="w-full"
-                              onClick={() => setIsCreatingTag(true)}
-                            >
-                              <Plus className="h-3 w-3 mr-1" />
-                              Criar primeira tag
+                            <p className="text-xs text-muted-foreground mb-2">Nenhuma tag criada</p>
+                            <Button size="sm" variant="outline" className="w-full" onClick={() => setIsCreatingTag(true)}>
+                              <Plus className="h-3 w-3 mr-1" /> Criar primeira tag
                             </Button>
                           </div>
                         ) : availableTags.length === 0 ? (
                           <div className="text-center py-2">
-                            <p className="text-xs text-muted-foreground mb-2">
-                              Todas as tags já foram atribuídas
-                            </p>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="w-full"
-                              onClick={() => setIsCreatingTag(true)}
-                            >
-                              <Plus className="h-3 w-3 mr-1" />
-                              Criar nova tag
+                            <p className="text-xs text-muted-foreground mb-2">Todas as tags já foram atribuídas</p>
+                            <Button size="sm" variant="outline" className="w-full" onClick={() => setIsCreatingTag(true)}>
+                              <Plus className="h-3 w-3 mr-1" /> Criar nova tag
                             </Button>
                           </div>
                         ) : (
@@ -563,23 +387,14 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
                                   onClick={() => handleAddTag(tag)}
                                   disabled={addTagToContact.isPending}
                                 >
-                                  <div
-                                    className="h-3 w-3 rounded-full flex-shrink-0"
-                                    style={{ backgroundColor: tag.color }}
-                                  />
+                                  <div className="h-3 w-3 rounded-full flex-shrink-0" style={{ backgroundColor: tag.color }} />
                                   <span className="text-sm truncate">{tag.name}</span>
                                 </button>
                               ))}
                             </div>
                             <Separator />
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="w-full"
-                              onClick={() => setIsCreatingTag(true)}
-                            >
-                              <Plus className="h-3 w-3 mr-1" />
-                              Criar nova tag
+                            <Button size="sm" variant="ghost" className="w-full" onClick={() => setIsCreatingTag(true)}>
+                              <Plus className="h-3 w-3 mr-1" /> Criar nova tag
                             </Button>
                           </>
                         )}
@@ -620,6 +435,47 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
               <p className="text-xs text-muted-foreground">Nenhuma tag atribuída</p>
             )}
           </div>
+
+          <Separator />
+
+          {/* Contact Info - Compact */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-3 p-2 rounded-lg bg-muted/50">
+              <Phone className="h-4 w-4 text-muted-foreground shrink-0" />
+              <span className="text-sm text-foreground truncate">
+                {contact?.phone ? formatPhone(contact.phone) : 'Sem telefone'}
+              </span>
+            </div>
+            {contact?.email && (
+              <div className="flex items-center gap-3 p-2 rounded-lg bg-muted/50">
+                <Mail className="h-4 w-4 text-muted-foreground shrink-0" />
+                <span className="text-sm text-foreground truncate">{contact.email}</span>
+              </div>
+            )}
+            <div className="flex items-center gap-3 p-2 rounded-lg bg-muted/50">
+              <Calendar className="h-4 w-4 text-muted-foreground shrink-0" />
+              <span className="text-sm text-foreground">
+                Desde {format(new Date(contact?.created_at || conversation.created_at), "dd/MM/yyyy", { locale: ptBR })}
+              </span>
+            </div>
+          </div>
+
+          {/* Stats */}
+          {conversationStats && (
+            <>
+              <Separator />
+              <div className="grid grid-cols-2 gap-2">
+                <div className="p-2 bg-muted/50 rounded-lg text-center">
+                  <p className="text-lg font-semibold text-foreground">{conversationStats.totalMessages}</p>
+                  <p className="text-[10px] text-muted-foreground">Mensagens</p>
+                </div>
+                <div className="p-2 bg-muted/50 rounded-lg text-center">
+                  <p className="text-lg font-semibold text-foreground">{conversationStats.aiMessages}</p>
+                  <p className="text-[10px] text-muted-foreground">IA</p>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </ScrollArea>
 
