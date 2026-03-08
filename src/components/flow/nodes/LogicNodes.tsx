@@ -135,6 +135,8 @@ export function ConditionNode({ data, selected }: NodeProps<LogicNode>) {
 }
 
 export function UserInputNode({ data, selected }: NodeProps<LogicNode>) {
+  const steps = (data.remarketingSteps as any[]) || [];
+
   return (
     <div
       className={cn(
@@ -160,13 +162,44 @@ export function UserInputNode({ data, selected }: NodeProps<LogicNode>) {
         <p className="text-xs text-muted-foreground">
           Tipo: <span className="font-medium text-foreground">{data.inputType || 'texto'}</span>
         </p>
+        {steps.length > 0 && (
+          <div className="flex items-center gap-1 pt-1 border-t border-border/50">
+            <span className="text-[10px] text-blue-500">
+              📩 {steps.length} follow-ups
+            </span>
+          </div>
+        )}
       </div>
 
+      {/* Dual handles - user-input always waits for response */}
       <Handle
         type="source"
         position={Position.Right}
-        className="!w-3 !h-3 !bg-primary !border-2 !border-background opacity-0 group-hover:opacity-100 transition-opacity !-right-1.5"
+        id="responded"
+        className="!w-3 !h-3 !bg-green-500 !border-2 !border-background !-right-1.5"
+        style={{ top: '40%' }}
+        title="Respondeu"
       />
+      <Handle
+        type="source"
+        position={Position.Right}
+        id="timeout"
+        className="!w-3 !h-3 !bg-red-500 !border-2 !border-background !-right-1.5"
+        style={{ top: '70%' }}
+        title="Não respondeu (timeout)"
+      />
+      <span
+        className="absolute text-[9px] text-green-600 dark:text-green-400 font-medium whitespace-nowrap pointer-events-none"
+        style={{ right: '-8px', top: '40%', transform: 'translate(100%, -50%)', paddingLeft: '4px' }}
+      >
+        ✓ Respondeu
+      </span>
+      <span
+        className="absolute text-[9px] text-red-500 font-medium whitespace-nowrap pointer-events-none"
+        style={{ right: '-8px', top: '70%', transform: 'translate(100%, -50%)', paddingLeft: '4px' }}
+      >
+        ✗ Timeout
+      </span>
     </div>
   );
 }
