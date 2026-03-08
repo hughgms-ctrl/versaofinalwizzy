@@ -685,13 +685,14 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
     const generateRuleId = () => Math.random().toString(36).substring(2, 10);
 
     const addRule = () => {
-      const newRule: ConditionRule = { id: generateRuleId(), type: 'has_tag' };
+      const newRule: ConditionRule = { id: generateRuleId(), type: 'tag', negate: false };
       handleChange('rules', [...rules, newRule]);
     };
 
     const updateRule = (index: number, updated: ConditionRule) => {
+      const migrated = migrateRule(updated);
       const newRules = [...rules];
-      newRules[index] = updated;
+      newRules[index] = migrated;
       handleChange('rules', newRules);
     };
 
