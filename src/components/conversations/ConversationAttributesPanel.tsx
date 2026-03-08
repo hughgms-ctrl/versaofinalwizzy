@@ -9,10 +9,9 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Building2, Share2, User, Bot, Hand, Check, GitBranch } from 'lucide-react';
+import { Loader2, Share2, User, Bot, Hand, Check, GitBranch } from 'lucide-react';
 import { DbConversation } from '@/hooks/useConversations';
 import {
-  useDepartments,
   useLeadSources,
   useUpdateConversationAttributes,
   useInterveneConversation,
@@ -48,7 +47,6 @@ export function ConversationAttributesPanel({
   compact = false 
 }: ConversationAttributesPanelProps) {
   const { profile, session } = useAuth();
-  const { data: departments = [], isLoading: loadingDepartments } = useDepartments();
   const { data: leadSources = [], isLoading: loadingLeadSources } = useLeadSources();
   const { data: profiles = [] } = useProfiles();
   const { data: pipelines = [] } = usePipelines();
@@ -91,22 +89,19 @@ export function ConversationAttributesPanel({
   const currentColumnId = currentPosition?.column_id || null;
 
   const [localValues, setLocalValues] = useState({
-    departmentId: conversation.department_id || '',
     leadSourceId: conversation.lead_source_id || '',
     assignedTo: conversation.assigned_to || '',
   });
 
   useEffect(() => {
     setLocalValues({
-      departmentId: conversation.department_id || '',
       leadSourceId: conversation.lead_source_id || '',
       assignedTo: conversation.assigned_to || '',
     });
-  }, [conversation.id, conversation.department_id, conversation.lead_source_id, conversation.assigned_to]);
+  }, [conversation.id, conversation.lead_source_id, conversation.assigned_to]);
 
   const handleUpdate = (field: string, value: string | null) => {
     const fieldMap: Record<string, string> = {
-      departmentId: 'department_id',
       leadSourceId: 'lead_source_id',
       assignedTo: 'assigned_to',
     };
@@ -134,7 +129,7 @@ export function ConversationAttributesPanel({
   const currentServiceMode = (conversation as any).service_mode || 'pendente';
   const modeInfo = serviceModeLabels[currentServiceMode];
 
-  const isLoading = loadingDepartments || loadingLeadSources;
+  const isLoading = loadingLeadSources;
 
   if (isLoading) {
     return (
@@ -275,35 +270,6 @@ export function ConversationAttributesPanel({
           </Select>
         </div>
 
-        {/* Departamento */}
-        <div className="flex items-center gap-2">
-          <Building2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-          <Select
-            value={localValues.departmentId || 'none'}
-            onValueChange={(value) => {
-              const newValue = value === 'none' ? '' : value;
-              setLocalValues(prev => ({ ...prev, departmentId: newValue }));
-              handleUpdate('departmentId', newValue || null);
-            }}
-          >
-            <SelectTrigger className="h-7 text-xs flex-1 border-none bg-muted/50 hover:bg-muted">
-              <SelectValue placeholder="Departamento..." />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none">
-                <span className="text-muted-foreground">Nenhum</span>
-              </SelectItem>
-              {departments.map((dept) => (
-                <SelectItem key={dept.id} value={dept.id}>
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: dept.color }} />
-                    {dept.name}
-                  </div>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
 
         {/* Origem */}
         <div className="flex items-center gap-2">
