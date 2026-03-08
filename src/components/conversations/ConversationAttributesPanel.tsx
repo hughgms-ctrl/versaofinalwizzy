@@ -90,7 +90,6 @@ export function ConversationAttributesPanel({
   const currentColumnId = currentPosition?.column_id || null;
 
   const [localValues, setLocalValues] = useState({
-    departmentId: conversation.department_id || '',
     leadSourceId: conversation.lead_source_id || '',
     assignedTo: conversation.assigned_to || '',
   });
