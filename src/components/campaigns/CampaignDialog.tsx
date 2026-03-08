@@ -82,6 +82,7 @@ export function CampaignDialog({
             setFlowId("");
             setTriggerType("keyword");
             setWorkspaceId("");
+        }
     }, [campaignToEdit, open, flows]);
 
     const handleSubmit = () => {
