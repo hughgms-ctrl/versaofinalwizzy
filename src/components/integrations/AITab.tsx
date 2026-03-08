@@ -63,13 +63,6 @@ export function AITab() {
   useEffect(() => {
     if (config) {
       setFormData(config);
-      setFeatureOverrides({
-        agents: !!config.agents_provider,
-        conversation_summary: !!config.conversation_summary_provider,
-        prompt_generation: !!config.prompt_generation_provider,
-        flow_generation: !!config.flow_generation_provider,
-        transcription: !!config.transcription_provider,
-      });
     }
   }, [config]);
 
