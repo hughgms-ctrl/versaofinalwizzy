@@ -721,6 +721,78 @@ export type Database = {
           },
         ]
       }
+      conversation_stage_history: {
+        Row: {
+          changed_by: string | null
+          changed_by_type: string
+          conversation_id: string
+          created_at: string
+          from_column_id: string | null
+          id: string
+          organization_id: string
+          pipeline_id: string
+          to_column_id: string
+        }
+        Insert: {
+          changed_by?: string | null
+          changed_by_type?: string
+          conversation_id: string
+          created_at?: string
+          from_column_id?: string | null
+          id?: string
+          organization_id: string
+          pipeline_id: string
+          to_column_id: string
+        }
+        Update: {
+          changed_by?: string | null
+          changed_by_type?: string
+          conversation_id?: string
+          created_at?: string
+          from_column_id?: string | null
+          id?: string
+          organization_id?: string
+          pipeline_id?: string
+          to_column_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversation_stage_history_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversation_stage_history_from_column_id_fkey"
+            columns: ["from_column_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_columns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversation_stage_history_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversation_stage_history_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "pipelines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversation_stage_history_to_column_id_fkey"
+            columns: ["to_column_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_columns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       conversation_statuses: {
         Row: {
           color: string
@@ -2067,6 +2139,64 @@ export type Database = {
             columns: ["workspace_id"]
             isOneToOne: false
             referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      stage_notifications: {
+        Row: {
+          column_id: string
+          created_at: string
+          id: string
+          is_active: boolean
+          message_template: string | null
+          notify_user_ids: string[]
+          organization_id: string
+          pipeline_id: string
+          updated_at: string
+        }
+        Insert: {
+          column_id: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          message_template?: string | null
+          notify_user_ids?: string[]
+          organization_id: string
+          pipeline_id: string
+          updated_at?: string
+        }
+        Update: {
+          column_id?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          message_template?: string | null
+          notify_user_ids?: string[]
+          organization_id?: string
+          pipeline_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stage_notifications_column_id_fkey"
+            columns: ["column_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_columns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stage_notifications_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stage_notifications_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "pipelines"
             referencedColumns: ["id"]
           },
         ]

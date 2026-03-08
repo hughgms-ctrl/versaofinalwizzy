@@ -1,123 +1,142 @@
 
+# Plano de Implementacao - Fase 2: Modulo de Documentos e Templates
 
-# Plano: Sistema Profissional de Estágios + Histórico + Notificações
+Seguindo a ordem solicitada: Fase 2 -> Fase 3 -> Fase 1 -> Fase 4. Vamos comecar pelo modulo de documentos.
 
-## Conceito
+---
 
-As **colunas do Pipeline** passam a ser os **estágios oficiais** do lead (como HubSpot/Pipedrive). Toda movimentação é registrada com histórico, e colunas específicas podem disparar notificações por WhatsApp para membros da equipe.
+## O que sera construido nesta fase
 
-## 1. Banco de Dados (2 novas tabelas)
+Uma pagina `/documents` com 3 abas: **Templates**, **Documentos Gerados** e **Packs**. O usuario podera fazer upload de um contrato modelo, a IA vai analisar e extrair os campos variaveis (nome, endereco, CPF, etc.), criando um template reutilizavel com marcadores `{{campo}}`. Tambem sera possivel agrupar templates em packs para gerar multiplos documentos de uma vez.
 
-### `conversation_stage_history`
-Registra cada movimentação de estágio para auditoria e timeline.
+---
 
-```sql
-CREATE TABLE conversation_stage_history (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  conversation_id uuid NOT NULL,
-  pipeline_id uuid NOT NULL,
-  from_column_id uuid,
-  to_column_id uuid NOT NULL,
-  changed_by_type text NOT NULL DEFAULT 'manual',  -- 'manual', 'flow', 'ai'
-  changed_by uuid,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  organization_id uuid NOT NULL
-);
-ALTER TABLE conversation_stage_history ENABLE ROW LEVEL SECURITY;
--- Policies...
-```
+## Funcionalidades
 
-### `stage_notifications`
-Configura quais colunas disparam alerta WhatsApp e para quem.
+### 1. Aba Templates
+- Lista de templates salvos (nome, categoria, quantidade de campos, data)
+- Botao "Novo Template" com duas opcoes:
+  - **Upload de modelo**: envia PDF/DOCX, IA analisa e gera template com `{{campos}}`
+  - **Criar manualmente**: editor de texto com insercao de campos variaveis
+- Ao clicar em um template: abre editor para visualizar/editar o texto e os campos
+- Opcoes: editar, duplicar, excluir
 
-```sql
-CREATE TABLE stage_notifications (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  pipeline_id uuid NOT NULL,
-  column_id uuid NOT NULL,
-  notify_user_ids uuid[] NOT NULL DEFAULT '{}',
-  message_template text,
-  is_active boolean NOT NULL DEFAULT true,
-  organization_id uuid NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT now()
-);
-ALTER TABLE stage_notifications ENABLE ROW LEVEL SECURITY;
--- Policies...
-```
+### 2. Aba Packs
+- Agrupar multiplos templates (ex: "Pack Auxilio Reclusao" = Procuracao + Contrato + Declaracao)
+- Criar pack: selecionar templates existentes, dar nome
+- Ao gerar documentos de um pack, os mesmos dados preenchem todos os templates
 
-## 2. Frontend: Redesenho do Perfil do Contato
+### 3. Aba Documentos Gerados
+- Historico de documentos gerados a partir de templates/packs
+- Status: gerado, enviado, assinado
+- Link para download do PDF
+- Vinculo com contato (quando gerado via agente)
 
-### `ConversationAttributesPanel.tsx` — Redesenho completo
+---
 
-Substituir a lista plana de dropdowns por um layout mais profissional:
+## Detalhes Tecnicos
+
+### Novas tabelas (migracao SQL)
 
 ```text
-┌─ ESTÁGIO NO PIPELINE ─────────────────────┐
-│  Pipeline: [Vendas v]                      │
-│  ● Novo → ● Qualificado → ○ Proposta → ○  │
-│  (stepper visual, clicável)                │
-└────────────────────────────────────────────┘
+document_templates
+  - id (uuid, PK)
+  - organization_id (uuid, FK)
+  - name (text)
+  - description (text, nullable)
+  - category (text, nullable) -- ex: "contrato", "procuracao", "declaracao"
+  - content (text) -- texto com marcadores {{campo}}
+  - fields (jsonb) -- lista de campos detectados: [{name, label, type, required}]
+  - original_file_url (text, nullable) -- URL do arquivo modelo original
+  - workspace_id (uuid, nullable)
+  - created_by (uuid, nullable)
+  - created_at, updated_at (timestamps)
 
-┌─ ATRIBUTOS ────────────────────────────────┐
-│  👤 Responsável   [João Silva v]           │
-│  🏢 Departamento  [Comercial v]            │
-│  📍 Origem        [WhatsApp v]             │
-│  🤖 Modo          IA  [Intervir]           │
-└────────────────────────────────────────────┘
+document_packs
+  - id (uuid, PK)
+  - organization_id (uuid, FK)
+  - name (text)
+  - description (text, nullable)
+  - template_ids (uuid[]) -- array de IDs de templates
+  - workspace_id (uuid, nullable)
+  - created_by (uuid, nullable)
+  - created_at, updated_at (timestamps)
+
+generated_documents
+  - id (uuid, PK)
+  - organization_id (uuid, FK)
+  - template_id (uuid, nullable)
+  - pack_id (uuid, nullable)
+  - contact_id (uuid, nullable)
+  - conversation_id (uuid, nullable)
+  - name (text)
+  - filled_data (jsonb) -- dados preenchidos nos campos
+  - pdf_url (text, nullable) -- URL do PDF gerado no storage
+  - status (text) -- 'draft', 'generated', 'sent', 'signed'
+  - signing_method (text, nullable) -- 'manual', 'govbr', 'zapsign' (para Fase 3)
+  - signing_status (text, nullable)
+  - created_by (uuid, nullable)
+  - created_at, updated_at (timestamps)
 ```
 
-- **Pipeline Stage Stepper**: Mostra todas as colunas do pipeline como bolinhas conectadas. A atual fica destacada. Clicar em outra move a conversa.
-- **Atributos em grid compacto** com ícones, sem separadores pesados.
-- O dropdown "Status" separado é removido (o estágio do pipeline É o status).
+RLS: todas as tabelas com politicas baseadas em `organization_id = get_user_org_id(auth.uid())`.
 
-### `ContactProfileTabs.tsx` — Nova aba "Histórico"
+### Nova edge function
 
-Adicionar aba com ícone de `History` mostrando timeline de movimentações:
+**`process-document-template`**: recebe arquivo (via URL do storage), usa IA para:
+1. Ler e interpretar o conteudo do documento
+2. Identificar campos variaveis (nomes, enderecos, CPFs, datas, etc.)
+3. Retornar texto reestruturado com `{{campo}}` e lista de campos detectados
+
+**`generate-document-pdf`**: recebe template + dados preenchidos, gera PDF e salva no storage bucket `contact-files`.
+
+### Novos arquivos frontend
 
 ```text
-12/03 14:00 — Movido para "Qualificado" (por João)
-12/03 10:30 — Tag "Lead Quente" adicionada
-11/03 09:00 — Conversa iniciada
+src/pages/DocumentsPage.tsx -- pagina principal com abas
+src/components/documents/TemplatesList.tsx -- lista de templates
+src/components/documents/TemplateEditor.tsx -- editor de template
+src/components/documents/PacksList.tsx -- lista de packs
+src/components/documents/PackEditor.tsx -- criar/editar pack
+src/components/documents/GeneratedDocumentsList.tsx -- historico
+src/components/documents/UploadTemplateDialog.tsx -- dialog de upload + processamento IA
+src/hooks/useDocumentTemplates.ts -- CRUD templates
+src/hooks/useDocumentPacks.ts -- CRUD packs
+src/hooks/useGeneratedDocuments.ts -- consulta documentos gerados
 ```
 
-### `ContactProfilePanel.tsx` — Reorganizar layout
+### Alteracoes em arquivos existentes
 
-- Subir a seção de **Tags** para logo após os atributos (mais visível).
-- Compactar "Informações" (telefone, email) em uma linha.
-- Mover "Nota Rápida" para dentro da aba "Notas".
+- **App.tsx**: adicionar rotas `/documents`
+- **Sidebar.tsx**: adicionar item "Documentos" com icone FileText, abaixo de Widgets
+- **Sidebar.tsx**: adicionar permissao `module: 'flows'` (mesmo grupo de automacoes)
 
-## 3. Hook: `useStageHistory.ts`
+---
 
-- `useStageHistory(conversationId)` — busca histórico da conversa.
-- Exportar `useLogStageChange()` — mutation para registrar movimentações.
+## Fluxo de uso principal
 
-## 4. Atualizar `useMoveConversation` em `usePipelines.ts`
+```text
+1. Usuario acessa /documents
+2. Clica em "Novo Template"
+3. Faz upload de um PDF de contrato
+4. Sistema envia para edge function que usa IA para analisar
+5. IA retorna texto com {{nome_responsavel}}, {{cpf}}, {{endereco}}, etc.
+6. Usuario revisa e salva o template
+7. Pode criar um Pack agrupando templates
+8. Documentos gerados ficam no historico (aba "Gerados")
+```
 
-Após mover a conversa no pipeline:
-1. Registrar em `conversation_stage_history` (from → to, quem moveu).
-2. Verificar `stage_notifications` — se a coluna destino tem notificação configurada, invocar edge function.
+A geracao automatica via agente e assinatura serao implementados na Fase 3.
 
-## 5. Edge Function: `stage-notification`
+---
 
-Recebe `{ conversationId, columnId, organizationId }`, busca configs de notificação, e envia mensagem WhatsApp via `zapi-send-message` para cada usuário configurado. Template padrão: "🔔 Lead *{nome}* entrou no estágio *{coluna}*".
+## Ordem de implementacao
 
-## 6. `PipelineSettingsDialog.tsx` — Aba "Notificações"
-
-Adicionar seção dentro do dialog de configuração do pipeline:
-- Para cada coluna, toggle "Notificar quando lead entrar".
-- Selecionar quais membros da equipe recebem a notificação.
-- Campo de template customizável da mensagem.
-
-## Resumo de Arquivos
-
-| Ação | Arquivo |
-|------|---------|
-| Migration | `conversation_stage_history` + `stage_notifications` |
-| Criar | `src/hooks/useStageHistory.ts` |
-| Redesenhar | `src/components/conversations/ConversationAttributesPanel.tsx` |
-| Editar | `src/components/conversations/ContactProfilePanel.tsx` |
-| Editar | `src/components/conversations/ContactProfileTabs.tsx` |
-| Editar | `src/hooks/usePipelines.ts` (log + notificação no move) |
-| Editar | `src/components/pipeline/PipelineSettingsDialog.tsx` |
-| Criar | `supabase/functions/stage-notification/index.ts` |
-
+1. Migracoes SQL (tabelas + RLS)
+2. Edge function `process-document-template`
+3. Hooks de dados (useDocumentTemplates, useDocumentPacks, useGeneratedDocuments)
+4. Pagina DocumentsPage com abas
+5. Componentes de templates (lista, editor, upload)
+6. Componentes de packs
+7. Sidebar + rotas
+8. Edge function `generate-document-pdf` (geracao de PDF basica)

@@ -303,6 +303,7 @@ export function useDeleteColumn() {
 
 export function useMoveConversation() {
   const queryClient = useQueryClient();
+  const { profile } = useAuth();
 
   return useMutation({
     mutationFn: async ({ 
@@ -319,13 +320,14 @@ export function useMoveConversation() {
       // Check if position already exists
       const { data: existing } = await supabase
         .from('conversation_pipeline_positions')
-        .select('id')
+        .select('id, column_id')
         .eq('conversation_id', conversationId)
         .eq('pipeline_id', pipelineId)
         .maybeSingle();
 
+      const fromColumnId = existing?.column_id || null;
+
       if (existing) {
-        // Update existing position
         const { error } = await supabase
           .from('conversation_pipeline_positions')
           .update({
@@ -337,7 +339,6 @@ export function useMoveConversation() {
 
         if (error) throw error;
       } else {
-        // Insert new position
         const { error } = await supabase
           .from('conversation_pipeline_positions')
           .insert({
@@ -349,10 +350,39 @@ export function useMoveConversation() {
 
         if (error) throw error;
       }
+
+      // Log stage change
+      if (profile?.organization_id) {
+        await (supabase as any)
+          .from('conversation_stage_history')
+          .insert({
+            conversation_id: conversationId,
+            pipeline_id: pipelineId,
+            from_column_id: fromColumnId,
+            to_column_id: columnId,
+            changed_by_type: 'manual',
+            changed_by: profile.user_id || null,
+            organization_id: profile.organization_id,
+          });
+      }
+
+      // Trigger notification (fire and forget)
+      if (profile?.organization_id) {
+        supabase.functions.invoke('stage-notification', {
+          body: {
+            conversationId,
+            columnId,
+            organizationId: profile.organization_id,
+          },
+        }).catch(() => {});
+      }
+
+      return { fromColumnId, toColumnId: columnId };
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['conversation-positions', variables.pipelineId] });
       queryClient.invalidateQueries({ queryKey: ['conversation-positions'] });
+      queryClient.invalidateQueries({ queryKey: ['stage-history', variables.conversationId] });
       toast({ title: 'Conversa movida!' });
     },
     onError: (error) => {
