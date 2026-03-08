@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { User, Star, Calendar, FileText, StickyNote, ChevronUp, ScrollText } from 'lucide-react';
+import { User, Star, Calendar, FileText, StickyNote, ChevronUp, ScrollText, History } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { DbConversation } from '@/hooks/useConversations';
 import { ContactNotesSection } from './ContactNotesSection';
@@ -12,8 +12,9 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { useStageHistory } from '@/hooks/useStageHistory';
 
-type TabId = 'profile' | 'favorites' | 'scheduled' | 'files' | 'notes' | 'logs';
+type TabId = 'profile' | 'favorites' | 'scheduled' | 'files' | 'notes' | 'logs' | 'history';
 
 interface ContactProfileTabsProps {
   conversation: DbConversation;
@@ -22,6 +23,7 @@ interface ContactProfileTabsProps {
 
 const tabs: { id: TabId; icon: typeof User; label: string }[] = [
   { id: 'profile', icon: User, label: 'Perfil' },
+  { id: 'history', icon: History, label: 'Histórico' },
   { id: 'favorites', icon: Star, label: 'Favoritos' },
   { id: 'scheduled', icon: Calendar, label: 'Agendamentos' },
   { id: 'files', icon: FileText, label: 'Arquivos' },
@@ -49,9 +51,14 @@ export function ContactProfileTabs({ conversation, contactId }: ContactProfileTa
     enabled: activeTab === 'scheduled',
   });
 
+  // Fetch stage history
+  const { data: stageHistory = [] } = useStageHistory(
+    activeTab === 'history' ? conversation.id : null
+  );
+
   const handleTabClick = (tabId: TabId) => {
     if (activeTab === tabId) {
-      setActiveTab(null); // Close if clicking same tab
+      setActiveTab(null);
     } else {
       setActiveTab(tabId);
     }
@@ -61,7 +68,7 @@ export function ContactProfileTabs({ conversation, contactId }: ContactProfileTa
 
   return (
     <div className="relative">
-      {/* Tab Bar - Always visible */}
+      {/* Tab Bar */}
       <div className="flex items-center justify-center border-b border-border bg-card">
         {tabs.map((tab) => {
           const Icon = tab.icon;
@@ -85,11 +92,10 @@ export function ContactProfileTabs({ conversation, contactId }: ContactProfileTa
         })}
       </div>
 
-      {/* Overlay Content Panel - Opens on top */}
+      {/* Overlay Content Panel */}
       {isOpen && (
         <div className="absolute left-0 right-0 top-full z-20 bg-card border-b border-border shadow-lg max-h-[300px] overflow-y-auto">
           <div className="p-3">
-            {/* Close button */}
             <div className="flex items-center justify-between mb-3">
               <span className="text-xs text-muted-foreground uppercase tracking-wider font-medium">
                 {tabs.find(t => t.id === activeTab)?.label}
@@ -103,6 +109,56 @@ export function ContactProfileTabs({ conversation, contactId }: ContactProfileTa
                 <ChevronUp className="h-4 w-4" />
               </Button>
             </div>
+
+            {activeTab === 'history' && (
+              <div className="space-y-2">
+                {stageHistory.length > 0 ? (
+                  stageHistory.map((entry) => (
+                    <div 
+                      key={entry.id}
+                      className="flex items-start gap-2 text-xs"
+                    >
+                      <div className="w-1.5 h-1.5 rounded-full bg-primary mt-1.5 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-muted-foreground">
+                            {format(new Date(entry.created_at), "dd/MM HH:mm", { locale: ptBR })}
+                          </span>
+                          <span className="text-foreground">→</span>
+                          <Badge 
+                            variant="secondary" 
+                            className="text-[10px] h-5"
+                            style={entry.to_column ? { 
+                              backgroundColor: `${entry.to_column.color}20`,
+                              color: entry.to_column.color,
+                              borderColor: `${entry.to_column.color}40`,
+                            } : undefined}
+                          >
+                            {entry.to_column?.name || 'Estágio'}
+                          </Badge>
+                        </div>
+                        {entry.from_column && (
+                          <p className="text-muted-foreground mt-0.5">
+                            de "{entry.from_column.name}"
+                          </p>
+                        )}
+                        <p className="text-muted-foreground">
+                          {entry.changed_by_profile?.full_name || 
+                           (entry.changed_by_type === 'ai' ? 'IA' : 
+                            entry.changed_by_type === 'flow' ? 'Fluxo' : 'Manual')}
+                        </p>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center text-sm text-muted-foreground py-6">
+                    <History className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                    <p>Nenhuma movimentação registrada</p>
+                    <p className="text-xs mt-1">Mova o lead entre estágios do pipeline</p>
+                  </div>
+                )}
+              </div>
+            )}
 
             {activeTab === 'favorites' && (
               <div className="text-center text-sm text-muted-foreground py-6">

@@ -9,20 +9,19 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
-import { Loader2, CheckSquare, Building2, Share2, User, Bot, Hand } from 'lucide-react';
+import { Loader2, Building2, Share2, User, Bot, Hand, Check } from 'lucide-react';
 import { DbConversation } from '@/hooks/useConversations';
 import {
-  useConversationStatuses,
   useDepartments,
   useLeadSources,
-  useAIAgents,
   useUpdateConversationAttributes,
   useInterveneConversation,
 } from '@/hooks/useCrmEntities';
 import { useProfiles } from '@/hooks/useConversations';
 import { useAuth } from '@/hooks/useAuth';
+import { usePipelines, usePipelineColumns, useConversationPositions, useMoveConversation } from '@/hooks/usePipelines';
 import { cn } from '@/lib/utils';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface ConversationAttributesPanelProps {
   conversation: DbConversation & {
@@ -35,11 +34,11 @@ interface ConversationAttributesPanelProps {
   compact?: boolean;
 }
 
-const serviceModeLabels: Record<string, { label: string; color: string }> = {
-  ia: { label: 'IA', color: 'bg-purple-500/10 text-purple-500' },
-  ativo: { label: 'Ativo', color: 'bg-green-500/10 text-green-500' },
-  pendente: { label: 'Pendente', color: 'bg-yellow-500/10 text-yellow-500' },
-  arquivado: { label: 'Arquivado', color: 'bg-muted text-muted-foreground' },
+const serviceModeLabels: Record<string, { label: string; color: string; icon: typeof Bot }> = {
+  ia: { label: 'IA', color: 'bg-purple-500/10 text-purple-500 border-purple-500/20', icon: Bot },
+  ativo: { label: 'Humano', color: 'bg-green-500/10 text-green-500 border-green-500/20', icon: User },
+  pendente: { label: 'Pendente', color: 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20', icon: User },
+  arquivado: { label: 'Arquivado', color: 'bg-muted text-muted-foreground border-border', icon: User },
 };
 
 export function ConversationAttributesPanel({ 
@@ -47,35 +46,39 @@ export function ConversationAttributesPanel({
   compact = false 
 }: ConversationAttributesPanelProps) {
   const { profile } = useAuth();
-  const { data: statuses = [], isLoading: loadingStatuses } = useConversationStatuses();
   const { data: departments = [], isLoading: loadingDepartments } = useDepartments();
   const { data: leadSources = [], isLoading: loadingLeadSources } = useLeadSources();
-  const { data: aiAgents = [], isLoading: loadingAgents } = useAIAgents();
   const { data: profiles = [] } = useProfiles();
+  const { data: pipelines = [] } = usePipelines();
   
   const updateAttributes = useUpdateConversationAttributes();
   const intervene = useInterveneConversation();
+  const moveConversation = useMoveConversation();
+
+  // Use first pipeline by default
+  const activePipeline = pipelines[0] || null;
+  const { data: columns = [] } = usePipelineColumns(activePipeline?.id || null);
+  const { data: positions = [] } = useConversationPositions(activePipeline?.id || null);
+
+  const currentPosition = positions.find(p => p.conversation_id === conversation.id);
+  const currentColumnId = currentPosition?.column_id || null;
 
   const [localValues, setLocalValues] = useState({
-    statusId: conversation.conversation_status_id || '',
     departmentId: conversation.department_id || '',
     leadSourceId: conversation.lead_source_id || '',
     assignedTo: conversation.assigned_to || '',
   });
 
-  // Sync local state when conversation changes
   useEffect(() => {
     setLocalValues({
-      statusId: conversation.conversation_status_id || '',
       departmentId: conversation.department_id || '',
       leadSourceId: conversation.lead_source_id || '',
       assignedTo: conversation.assigned_to || '',
     });
-  }, [conversation.id, conversation.conversation_status_id, conversation.department_id, conversation.lead_source_id, conversation.assigned_to]);
+  }, [conversation.id, conversation.department_id, conversation.lead_source_id, conversation.assigned_to]);
 
   const handleUpdate = (field: string, value: string | null) => {
     const fieldMap: Record<string, string> = {
-      statusId: 'conversation_status_id',
       departmentId: 'department_id',
       leadSourceId: 'lead_source_id',
       assignedTo: 'assigned_to',
@@ -87,14 +90,23 @@ export function ConversationAttributesPanel({
     });
   };
 
+  const handleStageClick = (columnId: string) => {
+    if (!activePipeline || columnId === currentColumnId) return;
+    moveConversation.mutate({
+      conversationId: conversation.id,
+      pipelineId: activePipeline.id,
+      columnId,
+    });
+  };
+
   const currentServiceMode = (conversation as any).service_mode || 'pendente';
   const modeInfo = serviceModeLabels[currentServiceMode];
 
-  const isLoading = loadingStatuses || loadingDepartments || loadingLeadSources || loadingAgents;
+  const isLoading = loadingDepartments || loadingLeadSources;
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-8">
+      <div className="flex items-center justify-center py-6">
         <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
       </div>
     );
@@ -102,182 +114,180 @@ export function ConversationAttributesPanel({
 
   return (
     <div className={cn("space-y-4", compact && "space-y-3")}>
-      {/* Service Mode Badge */}
-      <div className="flex items-center justify-between">
-        <Label className="text-xs text-muted-foreground">Modo de Atendimento</Label>
-        <Badge className={cn("text-xs", modeInfo?.color)}>
-          {currentServiceMode === 'ia' && <Bot className="h-3 w-3 mr-1" />}
-          {currentServiceMode === 'ativo' && <User className="h-3 w-3 mr-1" />}
-          {modeInfo?.label || currentServiceMode}
-        </Badge>
+      {/* Service Mode + Intervene */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Badge className={cn("text-xs border", modeInfo?.color)}>
+            {currentServiceMode === 'ia' && <Bot className="h-3 w-3 mr-1" />}
+            {currentServiceMode !== 'ia' && <User className="h-3 w-3 mr-1" />}
+            {modeInfo?.label || currentServiceMode}
+          </Badge>
+        </div>
+        {currentServiceMode === 'ia' && (
+          <Button
+            onClick={() => intervene.mutate(conversation.id)}
+            disabled={intervene.isPending}
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs"
+          >
+            {intervene.isPending ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <>
+                <Hand className="h-3 w-3 mr-1" />
+                Intervir
+              </>
+            )}
+          </Button>
+        )}
       </div>
 
-      {/* Intervene Button */}
-      {currentServiceMode === 'ia' && (
-        <Button
-          onClick={() => intervene.mutate(conversation.id)}
-          disabled={intervene.isPending}
-          className="w-full"
-          variant="outline"
-        >
-          {intervene.isPending ? (
-            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-          ) : (
-            <Hand className="h-4 w-4 mr-2" />
-          )}
-          Intervir na Conversa
-        </Button>
+      {/* Pipeline Stage Stepper */}
+      {activePipeline && columns.length > 0 && (
+        <div className="space-y-2">
+          <Label className="text-[10px] text-muted-foreground uppercase tracking-wider">
+            {activePipeline.name}
+          </Label>
+          <TooltipProvider delayDuration={200}>
+            <div className="flex items-center gap-0.5">
+              {columns.map((col, idx) => {
+                const isActive = col.id === currentColumnId;
+                const isPast = currentColumnId 
+                  ? columns.findIndex(c => c.id === currentColumnId) > idx
+                  : false;
+
+                return (
+                  <Tooltip key={col.id}>
+                    <TooltipTrigger asChild>
+                      <button
+                        onClick={() => handleStageClick(col.id)}
+                        disabled={moveConversation.isPending}
+                        className={cn(
+                          "flex-1 h-7 relative flex items-center justify-center text-[10px] font-medium transition-all rounded-sm",
+                          isActive 
+                            ? "text-white shadow-sm" 
+                            : isPast 
+                              ? "text-white/80" 
+                              : "bg-muted text-muted-foreground hover:bg-muted/80"
+                        )}
+                        style={isActive || isPast ? { backgroundColor: col.color } : undefined}
+                      >
+                        {isPast && !isActive && (
+                          <Check className="h-3 w-3" />
+                        )}
+                        {isActive && (
+                          <span className="truncate px-1">{col.name}</span>
+                        )}
+                        {!isActive && !isPast && (
+                          <span className="truncate px-1 opacity-70">{col.name}</span>
+                        )}
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="text-xs">
+                      {col.name}
+                    </TooltipContent>
+                  </Tooltip>
+                );
+              })}
+            </div>
+          </TooltipProvider>
+        </div>
       )}
 
-      <Separator />
-
-      {/* Status */}
-      <div className="space-y-2">
-        <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
-          <CheckSquare className="h-3.5 w-3.5" />
-          Status
-        </Label>
-        <Select
-          value={localValues.statusId || 'none'}
-          onValueChange={(value) => {
-            const newValue = value === 'none' ? '' : value;
-            setLocalValues(prev => ({ ...prev, statusId: newValue }));
-            handleUpdate('statusId', newValue || null);
-          }}
-        >
-          <SelectTrigger className="h-9">
-            <SelectValue placeholder="Selecionar status..." />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="none">
-              <span className="text-muted-foreground">Nenhum</span>
-            </SelectItem>
-            {statuses.map((status) => (
-              <SelectItem key={status.id} value={status.id}>
-                <div className="flex items-center gap-2">
-                  <div 
-                    className="w-3 h-3 rounded-full" 
-                    style={{ backgroundColor: status.color }} 
-                  />
-                  {status.name}
-                </div>
+      {/* Compact Attributes Grid */}
+      <div className="space-y-2.5">
+        {/* Responsável */}
+        <div className="flex items-center gap-2">
+          <User className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+          <Select
+            value={localValues.assignedTo || 'none'}
+            onValueChange={(value) => {
+              const newValue = value === 'none' ? '' : value;
+              setLocalValues(prev => ({ ...prev, assignedTo: newValue }));
+              handleUpdate('assignedTo', newValue || null);
+            }}
+          >
+            <SelectTrigger className="h-7 text-xs flex-1 border-none bg-muted/50 hover:bg-muted">
+              <SelectValue placeholder="Responsável..." />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">
+                <span className="text-muted-foreground">Não atribuído</span>
               </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* Department */}
-      <div className="space-y-2">
-        <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
-          <Building2 className="h-3.5 w-3.5" />
-          Departamento
-        </Label>
-        <Select
-          value={localValues.departmentId || 'none'}
-          onValueChange={(value) => {
-            const newValue = value === 'none' ? '' : value;
-            setLocalValues(prev => ({ ...prev, departmentId: newValue }));
-            handleUpdate('departmentId', newValue || null);
-          }}
-        >
-          <SelectTrigger className="h-9">
-            <SelectValue placeholder="Selecionar departamento..." />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="none">
-              <span className="text-muted-foreground">Nenhum</span>
-            </SelectItem>
-            {departments.map((dept) => (
-              <SelectItem key={dept.id} value={dept.id}>
-                <div className="flex items-center gap-2">
-                  <div 
-                    className="w-3 h-3 rounded-full" 
-                    style={{ backgroundColor: dept.color }} 
-                  />
-                  {dept.name}
-                </div>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* Lead Source */}
-      <div className="space-y-2">
-        <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
-          <Share2 className="h-3.5 w-3.5" />
-          Origem
-        </Label>
-        <Select
-          value={localValues.leadSourceId || 'none'}
-          onValueChange={(value) => {
-            const newValue = value === 'none' ? '' : value;
-            setLocalValues(prev => ({ ...prev, leadSourceId: newValue }));
-            handleUpdate('leadSourceId', newValue || null);
-          }}
-        >
-          <SelectTrigger className="h-9">
-            <SelectValue placeholder="Selecionar origem..." />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="none">
-              <span className="text-muted-foreground">Nenhum</span>
-            </SelectItem>
-            {leadSources.map((source) => (
-              <SelectItem key={source.id} value={source.id}>
-                <div className="flex items-center gap-2">
-                  <div 
-                    className="w-3 h-3 rounded-full" 
-                    style={{ backgroundColor: source.color }} 
-                  />
-                  {source.name}
-                </div>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* Assigned To */}
-      <div className="space-y-2">
-        <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
-          <User className="h-3.5 w-3.5" />
-          Responsável
-        </Label>
-        <Select
-          value={localValues.assignedTo || 'none'}
-          onValueChange={(value) => {
-            const newValue = value === 'none' ? '' : value;
-            setLocalValues(prev => ({ ...prev, assignedTo: newValue }));
-            handleUpdate('assignedTo', newValue || null);
-          }}
-        >
-          <SelectTrigger className="h-9">
-            <SelectValue placeholder="Selecionar responsável..." />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="none">
-              <span className="text-muted-foreground">Não atribuído</span>
-            </SelectItem>
-            {/* Human agents */}
-            {profiles.map((p) => (
-              <SelectItem key={p.user_id} value={p.user_id}>
-                <div className="flex items-center gap-2">
-                  <User className="h-3.5 w-3.5 text-muted-foreground" />
+              {profiles.map((p) => (
+                <SelectItem key={p.user_id} value={p.user_id}>
                   {p.full_name}
-                  {p.user_id === profile?.user_id && (
-                    <span className="text-xs text-muted-foreground">(você)</span>
-                  )}
-                </div>
+                  {p.user_id === profile?.user_id ? ' (você)' : ''}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Departamento */}
+        <div className="flex items-center gap-2">
+          <Building2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+          <Select
+            value={localValues.departmentId || 'none'}
+            onValueChange={(value) => {
+              const newValue = value === 'none' ? '' : value;
+              setLocalValues(prev => ({ ...prev, departmentId: newValue }));
+              handleUpdate('departmentId', newValue || null);
+            }}
+          >
+            <SelectTrigger className="h-7 text-xs flex-1 border-none bg-muted/50 hover:bg-muted">
+              <SelectValue placeholder="Departamento..." />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">
+                <span className="text-muted-foreground">Nenhum</span>
               </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+              {departments.map((dept) => (
+                <SelectItem key={dept.id} value={dept.id}>
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: dept.color }} />
+                    {dept.name}
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Origem */}
+        <div className="flex items-center gap-2">
+          <Share2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+          <Select
+            value={localValues.leadSourceId || 'none'}
+            onValueChange={(value) => {
+              const newValue = value === 'none' ? '' : value;
+              setLocalValues(prev => ({ ...prev, leadSourceId: newValue }));
+              handleUpdate('leadSourceId', newValue || null);
+            }}
+          >
+            <SelectTrigger className="h-7 text-xs flex-1 border-none bg-muted/50 hover:bg-muted">
+              <SelectValue placeholder="Origem..." />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">
+                <span className="text-muted-foreground">Nenhum</span>
+              </SelectItem>
+              {leadSources.map((source) => (
+                <SelectItem key={source.id} value={source.id}>
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: source.color }} />
+                    {source.name}
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {updateAttributes.isPending && (
-        <div className="flex items-center justify-center py-2 text-xs text-muted-foreground">
+        <div className="flex items-center justify-center py-1 text-[10px] text-muted-foreground">
           <Loader2 className="h-3 w-3 mr-1 animate-spin" />
           Salvando...
         </div>
