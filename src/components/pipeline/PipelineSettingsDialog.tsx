@@ -180,7 +180,8 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
   const hasChanges = () => {
     const wsChanged = JSON.stringify([...(selectedWorkspaceIds || [])].sort()) !== JSON.stringify([...(pipeline.workspace_ids || [])].sort());
     const nextPipelineChanged = (nextPipelineId === 'none' ? null : nextPipelineId) !== (pipeline.next_pipeline_id || null);
-    return name !== pipeline.name || description !== (pipeline.description || '') || wsChanged || nextPipelineChanged;
+    const nextColumnChanged = (nextPipelineColumnId === 'first' ? null : nextPipelineColumnId) !== (pipeline.next_pipeline_column_id || null);
+    return name !== pipeline.name || description !== (pipeline.description || '') || wsChanged || nextPipelineChanged || nextColumnChanged;
   };
 
   const handleSave = async () => {
