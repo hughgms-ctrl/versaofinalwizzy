@@ -219,7 +219,7 @@ export default function TeamPage() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => { setMemberToEdit(member); setEditMemberOpen(true); }}>
                             <Edit className="h-4 w-4 mr-2" />
                             Editar Perfil
                           </DropdownMenuItem>
