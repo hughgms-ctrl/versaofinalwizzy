@@ -56,6 +56,7 @@ const nodeIcons: Record<string, React.ComponentType<{ className?: string }>> = {
   'ai-return': IterationCw,
   'action-document': FileText,
   'action-delay': Clock,
+  'action-workspace': Building2,
   'randomizer': Shuffle,
   'smart-delay': Clock,
 };
