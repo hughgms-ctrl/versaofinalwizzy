@@ -1,0 +1,1 @@
+ALTER TABLE public.pipelines ADD COLUMN IF NOT EXISTS next_pipeline_id uuid REFERENCES public.pipelines(id) ON DELETE SET NULL;
