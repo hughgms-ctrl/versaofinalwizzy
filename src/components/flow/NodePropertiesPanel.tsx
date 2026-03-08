@@ -73,6 +73,8 @@ const nodeLabels: Record<FlowNodeType, string> = {
   'action-pipeline': 'Mover Pipeline',
   'condition': 'Condição',
   'user-input': 'Pergunta',
+  'randomizer': 'Randomizador',
+  'smart-delay': 'Atraso Inteligente',
 };
 
 const contentItemTypes: { type: ContentItemType; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
