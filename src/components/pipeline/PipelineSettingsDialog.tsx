@@ -8,6 +8,13 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
 import { Separator } from '@/components/ui/separator';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -28,6 +35,7 @@ import {
 import { 
   Pipeline, 
   PipelineColumn,
+  usePipelines,
   usePipelineColumns, 
   useUpdatePipeline, 
   useCreateColumn, 
@@ -133,10 +141,12 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
   const [name, setName] = useState(pipeline.name);
   const [description, setDescription] = useState(pipeline.description || '');
   const [selectedWorkspaceIds, setSelectedWorkspaceIds] = useState<string[]>(pipeline.workspace_ids || []);
+  const [nextPipelineId, setNextPipelineId] = useState<string>(pipeline.next_pipeline_id || 'none');
   const [deleteColumnId, setDeleteColumnId] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<'general' | 'notifications'>('general');
 
   const { data: columns = [] } = usePipelineColumns(pipeline.id);
+  const { data: allPipelines = [] } = usePipelines();
   const { data: notifications = [] } = useStageNotifications(pipeline.id);
   const { data: profiles = [] } = useProfiles();
   const { profile } = useAuth();
@@ -147,10 +157,13 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
   const upsertNotification = useUpsertStageNotification();
   const { availableWorkspaces, isAdmin } = useWorkspaceContext();
 
+  const otherPipelines = allPipelines.filter(p => p.id !== pipeline.id);
+
   useEffect(() => {
     setName(pipeline.name);
     setDescription(pipeline.description || '');
     setSelectedWorkspaceIds(pipeline.workspace_ids || []);
+    setNextPipelineId(pipeline.next_pipeline_id || 'none');
   }, [pipeline]);
 
   const [draggedColumnId, setDraggedColumnId] = useState<string | null>(null);
@@ -164,7 +177,8 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
 
   const hasChanges = () => {
     const wsChanged = JSON.stringify([...(selectedWorkspaceIds || [])].sort()) !== JSON.stringify([...(pipeline.workspace_ids || [])].sort());
-    return name !== pipeline.name || description !== (pipeline.description || '') || wsChanged;
+    const nextPipelineChanged = (nextPipelineId === 'none' ? null : nextPipelineId) !== (pipeline.next_pipeline_id || null);
+    return name !== pipeline.name || description !== (pipeline.description || '') || wsChanged || nextPipelineChanged;
   };
 
   const handleSave = async () => {
@@ -174,6 +188,7 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
         name, 
         description,
         workspace_ids: selectedWorkspaceIds,
+        next_pipeline_id: nextPipelineId === 'none' ? null : nextPipelineId,
       });
     }
     onOpenChange(false);
@@ -383,6 +398,32 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
                       />
                     ))}
                   </div>
+                </div>
+
+                {/* Next Pipeline (Auto-transition) */}
+                <div className="space-y-2">
+                  <Label>Ao concluir, enviar para:</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Quando um lead chegar na última coluna, será transferido automaticamente para o pipeline selecionado.
+                  </p>
+                  <Select
+                    value={nextPipelineId}
+                    onValueChange={setNextPipelineId}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecionar pipeline..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">
+                        <span className="text-muted-foreground">Nenhum (sem transição)</span>
+                      </SelectItem>
+                      {otherPipelines.map((p) => (
+                        <SelectItem key={p.id} value={p.id}>
+                          {p.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </>
             )}
