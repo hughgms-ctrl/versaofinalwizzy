@@ -65,7 +65,7 @@ export function AddUserDialog({ open, onOpenChange }: AddUserDialogProps) {
 
       queryClient.invalidateQueries({ queryKey: ['team-members'] });
       onOpenChange(false);
-      setFormData({ fullName: '', email: '', role: 'agent', password: '' });
+      setFormData({ fullName: '', email: '', phone: '', role: 'agent', password: '' });
     } catch (error: any) {
       console.error('Error creating user:', error);
       toast({
