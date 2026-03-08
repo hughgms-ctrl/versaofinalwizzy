@@ -1364,6 +1364,7 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
                 placeholder="Por favor, digite um valor válido."
               />
             </div>
+            <RemarketingStepsEditor localData={localData} handleChange={handleChange} />
           </div>
         );
 
