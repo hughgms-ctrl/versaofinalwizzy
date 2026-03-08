@@ -30,11 +30,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible';
 import { useToast } from '@/hooks/use-toast';
 import { ContactNotesSection } from './ContactNotesSection';
 import { ContactFilesSection } from './ContactFilesSection';
