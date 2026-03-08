@@ -52,7 +52,7 @@ export function ContentBlockNode({ data, selected }: NodeProps<ContentBlockNode>
         <Layers className="h-4 w-4 text-white" />
         <span className="font-medium text-sm text-white">Bloco de Conteúdo</span>
         {waitForResponse && (
-          <MessageSquareMore className="h-3 w-3 text-white/70 ml-auto" title="Aguardando resposta" />
+          <MessageSquareMore className="h-3 w-3 text-white/70 ml-auto" />
         )}
       </div>
       
