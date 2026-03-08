@@ -696,7 +696,7 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
     // 2. Check for active flow execution
     const { data: activeFlowExec } = await supabase
       .from('flow_executions')
-      .select('id, status, current_node_id, flow_id, flow:flows(nodes, master_prompt, is_master_active, name)')
+      .select('id, status, current_node_id, flow_id, variables, flow:flows(nodes, edges, master_prompt, is_master_active, name)')
       .eq('conversation_id', conversation.id)
       .in('status', ['running', 'waiting_input'])
       .order('started_at', { ascending: false })
