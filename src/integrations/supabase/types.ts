@@ -231,6 +231,132 @@ export type Database = {
           },
         ]
       }
+      calendar_bookings: {
+        Row: {
+          client_email: string | null
+          client_name: string | null
+          client_phone: string | null
+          contact_id: string | null
+          conversation_id: string | null
+          created_at: string
+          ends_at: string
+          google_event_id: string | null
+          id: string
+          internal_summary: string | null
+          organization_id: string
+          starts_at: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          client_email?: string | null
+          client_name?: string | null
+          client_phone?: string | null
+          contact_id?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          ends_at: string
+          google_event_id?: string | null
+          id?: string
+          internal_summary?: string | null
+          organization_id: string
+          starts_at: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          client_email?: string | null
+          client_name?: string | null
+          client_phone?: string | null
+          contact_id?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          ends_at?: string
+          google_event_id?: string | null
+          id?: string
+          internal_summary?: string | null
+          organization_id?: string
+          starts_at?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "calendar_bookings_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calendar_bookings_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calendar_bookings_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      calendar_configs: {
+        Row: {
+          availability_rules: Json
+          booking_slug: string | null
+          calendar_id: string | null
+          created_at: string
+          google_access_token: string | null
+          google_email: string | null
+          google_refresh_token: string | null
+          id: string
+          is_connected: boolean
+          meeting_duration_minutes: number
+          organization_id: string
+          updated_at: string
+        }
+        Insert: {
+          availability_rules?: Json
+          booking_slug?: string | null
+          calendar_id?: string | null
+          created_at?: string
+          google_access_token?: string | null
+          google_email?: string | null
+          google_refresh_token?: string | null
+          id?: string
+          is_connected?: boolean
+          meeting_duration_minutes?: number
+          organization_id: string
+          updated_at?: string
+        }
+        Update: {
+          availability_rules?: Json
+          booking_slug?: string | null
+          calendar_id?: string | null
+          created_at?: string
+          google_access_token?: string | null
+          google_email?: string | null
+          google_refresh_token?: string | null
+          id?: string
+          is_connected?: boolean
+          meeting_duration_minutes?: number
+          organization_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "calendar_configs_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       campaign_queue: {
         Row: {
           campaign_id: string | null
@@ -1263,6 +1389,103 @@ export type Database = {
             columns: ["workspace_id"]
             isOneToOne: false
             referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      drive_backup_logs: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          data_size_bytes: number | null
+          error_message: string | null
+          file_count: number | null
+          id: string
+          organization_id: string
+          started_at: string
+          status: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          data_size_bytes?: number | null
+          error_message?: string | null
+          file_count?: number | null
+          id?: string
+          organization_id: string
+          started_at?: string
+          status?: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          data_size_bytes?: number | null
+          error_message?: string | null
+          file_count?: number | null
+          id?: string
+          organization_id?: string
+          started_at?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "drive_backup_logs_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      drive_configs: {
+        Row: {
+          backup_frequency: string
+          backup_includes: Json
+          created_at: string
+          folder_id: string | null
+          google_access_token: string | null
+          google_email: string | null
+          google_refresh_token: string | null
+          id: string
+          is_connected: boolean
+          last_backup_at: string | null
+          organization_id: string
+          updated_at: string
+        }
+        Insert: {
+          backup_frequency?: string
+          backup_includes?: Json
+          created_at?: string
+          folder_id?: string | null
+          google_access_token?: string | null
+          google_email?: string | null
+          google_refresh_token?: string | null
+          id?: string
+          is_connected?: boolean
+          last_backup_at?: string | null
+          organization_id: string
+          updated_at?: string
+        }
+        Update: {
+          backup_frequency?: string
+          backup_includes?: Json
+          created_at?: string
+          folder_id?: string | null
+          google_access_token?: string | null
+          google_email?: string | null
+          google_refresh_token?: string | null
+          id?: string
+          is_connected?: boolean
+          last_backup_at?: string | null
+          organization_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "drive_configs_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
         ]
