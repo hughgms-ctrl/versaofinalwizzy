@@ -25,6 +25,7 @@ import { useDocumentTemplates } from '@/hooks/useDocumentTemplates';
 import { usePipelines, usePipelineColumns } from '@/hooks/usePipelines';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { useWorkspaces } from '@/hooks/useWorkspaces';
 
 // Generate simple unique ID
 const generateId = () => Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
