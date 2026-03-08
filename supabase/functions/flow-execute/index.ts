@@ -288,7 +288,7 @@ async function executeNode(
       return { success: true };
 
     case 'content-block':
-      return await executeContentBlock(data, context, supabase);
+      return await executeContentBlock(data, context, supabase, node);
 
     case 'message-buttons':
       return await sendButtonsMessage(data, context);
