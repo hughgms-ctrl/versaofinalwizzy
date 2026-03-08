@@ -275,35 +275,6 @@ export function ConversationAttributesPanel({
           </Select>
         </div>
 
-        {/* Departamento */}
-        <div className="flex items-center gap-2">
-          <Building2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-          <Select
-            value={localValues.departmentId || 'none'}
-            onValueChange={(value) => {
-              const newValue = value === 'none' ? '' : value;
-              setLocalValues(prev => ({ ...prev, departmentId: newValue }));
-              handleUpdate('departmentId', newValue || null);
-            }}
-          >
-            <SelectTrigger className="h-7 text-xs flex-1 border-none bg-muted/50 hover:bg-muted">
-              <SelectValue placeholder="Departamento..." />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none">
-                <span className="text-muted-foreground">Nenhum</span>
-              </SelectItem>
-              {departments.map((dept) => (
-                <SelectItem key={dept.id} value={dept.id}>
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: dept.color }} />
-                    {dept.name}
-                  </div>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
 
         {/* Origem */}
         <div className="flex items-center gap-2">
