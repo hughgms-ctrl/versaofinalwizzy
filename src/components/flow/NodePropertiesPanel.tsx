@@ -1545,6 +1545,9 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
                 onCheckedChange={(val) => handleChange('waitForResponse', val)}
               />
             </div>
+            {!!(localData.waitForResponse) && (
+              <RemarketingStepsEditor localData={localData} handleChange={handleChange} />
+            )}
           </div>
         );
 
