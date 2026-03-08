@@ -2,63 +2,126 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Bot, User, Tag, Columns, GitBranch, ArrowRightLeft, Loader2 } from 'lucide-react';
+import { Bot, User, Tag, Columns, GitBranch, ArrowRightLeft, Loader2, MessageSquare, ArrowRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Badge } from '@/components/ui/badge';
 
 interface ContactLogsSectionProps {
   conversationId: string;
 }
 
-interface LogEntry {
+interface TimelineEntry {
   id: string;
   timestamp: string;
-  type: 'agent_activated' | 'tag_added' | 'tag_removed' | 'pipeline_moved' | 'flow_triggered' | 'agent_switched' | 'human_intervened' | 'status_changed' | 'ai_response';
+  type: 'agent_activated' | 'tag_added' | 'tag_removed' | 'pipeline_moved' | 'flow_triggered' | 'agent_switched' | 'human_intervened' | 'status_changed' | 'ai_response' | 'stage_changed' | 'conversation_started';
   description: string;
   actor: string;
-  actorType: 'ai' | 'human';
+  actorType: 'ai' | 'human' | 'system';
+  meta?: {
+    columnName?: string;
+    columnColor?: string;
+    fromColumnName?: string;
+  };
 }
 
 export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) {
-  const { data: logs = [], isLoading } = useQuery({
-    queryKey: ['contact-logs', conversationId],
+  const { data: entries = [], isLoading } = useQuery({
+    queryKey: ['contact-timeline', conversationId],
     queryFn: async () => {
-      // Fetch execution logs and lookup data in parallel
-      const [execResult, tagsResult, flowsResult, agentsResult, columnsResult] = await Promise.all([
+      // Fetch all data sources in parallel
+      const [execResult, stageResult, tagsResult, flowsResult, agentsResult, columnsResult, convResult] = await Promise.all([
         supabase
           .from('agent_execution_logs')
           .select(`
-            id,
-            created_at,
-            input_message,
-            ai_response,
-            tools_executed,
+            id, created_at, input_message, ai_response, tools_executed,
             agent:ai_agents(name),
             master_prompt:master_prompts(name)
           `)
           .eq('conversation_id', conversationId)
           .order('created_at', { ascending: true }),
+        (supabase as any)
+          .from('conversation_stage_history')
+          .select(`
+            *,
+            from_column:pipeline_columns!conversation_stage_history_from_column_id_fkey(name, color),
+            to_column:pipeline_columns!conversation_stage_history_to_column_id_fkey(name, color),
+            changed_by_profile:profiles!conversation_stage_history_changed_by_fkey(full_name)
+          `)
+          .eq('conversation_id', conversationId)
+          .order('created_at', { ascending: true })
+          .then((res: any) => {
+            if (res.error) {
+              // Fallback without joins
+              return (supabase as any)
+                .from('conversation_stage_history')
+                .select('*')
+                .eq('conversation_id', conversationId)
+                .order('created_at', { ascending: true });
+            }
+            return res;
+          }),
         supabase.from('tags').select('id, name'),
         supabase.from('flows').select('id, name'),
         supabase.from('ai_agents').select('id, name'),
-        supabase.from('pipeline_columns').select('id, name'),
+        supabase.from('pipeline_columns').select('id, name, color'),
+        supabase
+          .from('conversations')
+          .select('created_at, intervened_by, intervened_at')
+          .eq('id', conversationId)
+          .single(),
       ]);
 
-      if (execResult.error) throw execResult.error;
-
       // Build lookup maps
-      const tagMap = new Map((tagsResult.data || []).map(t => [t.id, t.name]));
-      const flowMap = new Map((flowsResult.data || []).map(f => [f.id, f.name]));
-      const agentMap = new Map((agentsResult.data || []).map(a => [a.id, a.name]));
-      const columnMap = new Map((columnsResult.data || []).map(c => [c.id, c.name]));
+      const tagMap = new Map((tagsResult.data || []).map((t: any) => [t.id, t.name]));
+      const flowMap = new Map((flowsResult.data || []).map((f: any) => [f.id, f.name]));
+      const agentMap = new Map((agentsResult.data || []).map((a: any) => [a.id, a.name]));
+      const columnMap = new Map((columnsResult.data || []).map((c: any) => [c.id, { name: c.name, color: c.color }]));
 
-      const entries: LogEntry[] = [];
+      const timeline: TimelineEntry[] = [];
 
+      // 1. Conversation started
+      if (convResult.data?.created_at) {
+        timeline.push({
+          id: 'conv-start',
+          timestamp: convResult.data.created_at,
+          type: 'conversation_started',
+          description: 'Conversa iniciada',
+          actor: 'Sistema',
+          actorType: 'system',
+        });
+      }
+
+      // 2. Stage history entries
+      for (const entry of stageResult.data || []) {
+        const toCol = entry.to_column || columnMap.get(entry.to_column_id);
+        const fromCol = entry.from_column || (entry.from_column_id ? columnMap.get(entry.from_column_id) : null);
+        const actorName = entry.changed_by_profile?.full_name || 
+          (entry.changed_by_type === 'ai' ? 'IA' : 
+           entry.changed_by_type === 'flow' ? 'Fluxo' : 'Manual');
+
+        timeline.push({
+          id: `stage-${entry.id}`,
+          timestamp: entry.created_at,
+          type: 'stage_changed',
+          description: fromCol 
+            ? `Movido de "${fromCol.name || fromCol}" para "${toCol?.name || 'Estágio'}"`
+            : `Entrou no estágio "${toCol?.name || 'Estágio'}"`,
+          actor: actorName,
+          actorType: entry.changed_by_type === 'ai' ? 'ai' : entry.changed_by_type === 'flow' ? 'ai' : 'human',
+          meta: {
+            columnName: toCol?.name,
+            columnColor: toCol?.color,
+            fromColumnName: fromCol?.name,
+          },
+        });
+      }
+
+      // 3. Agent execution logs
       for (const log of execResult.data || []) {
         const time = log.created_at;
         const agentName = (log.agent as any)?.name || (log.master_prompt as any)?.name || 'Agente Master';
 
-        // Log the agent activation
-        entries.push({
+        timeline.push({
           id: `${log.id}-activation`,
           timestamp: time,
           type: 'agent_activated',
@@ -67,7 +130,6 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
           actorType: 'ai',
         });
 
-        // Parse tools executed
         const tools = (log.tools_executed as any[]) || [];
         for (const tool of tools) {
           const toolName = tool.name || tool.function_name;
@@ -75,7 +137,7 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
 
           if (toolName === 'add_tag') {
             const name = tagMap.get(toolArgs.tag_id) || toolArgs.tag_name || 'desconhecida';
-            entries.push({
+            timeline.push({
               id: `${log.id}-tag-add-${toolArgs.tag_id || ''}`,
               timestamp: time,
               type: 'tag_added',
@@ -86,7 +148,7 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
           }
           if (toolName === 'remove_tag') {
             const name = tagMap.get(toolArgs.tag_id) || toolArgs.tag_name || 'desconhecida';
-            entries.push({
+            timeline.push({
               id: `${log.id}-tag-rm-${toolArgs.tag_id || ''}`,
               timestamp: time,
               type: 'tag_removed',
@@ -96,8 +158,9 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
             });
           }
           if (toolName === 'move_pipeline') {
-            const colName = columnMap.get(toolArgs.column_id) || toolArgs.column_name || 'desconhecida';
-            entries.push({
+            const col = columnMap.get(toolArgs.column_id);
+            const colName = col?.name || toolArgs.column_name || 'desconhecida';
+            timeline.push({
               id: `${log.id}-pipeline`,
               timestamp: time,
               type: 'pipeline_moved',
@@ -108,7 +171,7 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
           }
           if (toolName === 'trigger_flow') {
             const name = flowMap.get(toolArgs.flow_id) || toolArgs.flow_name || 'desconhecido';
-            entries.push({
+            timeline.push({
               id: `${log.id}-flow`,
               timestamp: time,
               type: 'flow_triggered',
@@ -119,7 +182,7 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
           }
           if (toolName === 'switch_agent') {
             const name = agentMap.get(toolArgs.agent_id) || toolArgs.agent_name || 'desconhecido';
-            entries.push({
+            timeline.push({
               id: `${log.id}-switch`,
               timestamp: time,
               type: 'agent_switched',
@@ -129,11 +192,11 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
             });
           }
           if (toolName === 'send_reply') {
-            entries.push({
+            timeline.push({
               id: `${log.id}-reply`,
               timestamp: time,
               type: 'ai_response',
-              description: `Resposta enviada`,
+              description: 'Resposta enviada',
               actor: agentName,
               actorType: 'ai',
             });
@@ -141,32 +204,26 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
         }
       }
 
-      // Fetch human interventions
-      const { data: convData } = await supabase
-        .from('conversations')
-        .select('intervened_by, intervened_at')
-        .eq('id', conversationId)
-        .single();
-
-      if (convData?.intervened_at && convData?.intervened_by) {
+      // 4. Human intervention
+      if (convResult.data?.intervened_at && convResult.data?.intervened_by) {
         const { data: profile } = await supabase
           .from('profiles')
           .select('full_name')
-          .eq('id', convData.intervened_by)
+          .eq('id', convResult.data.intervened_by)
           .single();
 
-        entries.push({
-          id: `intervention-${convData.intervened_at}`,
-          timestamp: convData.intervened_at,
+        timeline.push({
+          id: `intervention-${convResult.data.intervened_at}`,
+          timestamp: convResult.data.intervened_at,
           type: 'human_intervened',
-          description: `Atendente ${profile?.full_name || 'humano'} assumiu`,
+          description: `${profile?.full_name || 'Atendente'} assumiu a conversa`,
           actor: profile?.full_name || 'Atendente',
           actorType: 'human',
         });
       }
 
-      entries.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-      return entries;
+      timeline.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      return timeline;
     },
   });
 
@@ -178,17 +235,17 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
     );
   }
 
-  if (logs.length === 0) {
+  if (entries.length === 0) {
     return (
       <div className="text-center text-sm text-muted-foreground py-6">
         <Bot className="h-8 w-8 mx-auto mb-2 opacity-30" />
-        <p>Nenhum log registrado</p>
-        <p className="text-xs mt-1">Ações de agentes e atendentes aparecerão aqui</p>
+        <p>Nenhum evento registrado</p>
+        <p className="text-xs mt-1">Ações de agentes, fluxos e movimentações aparecerão aqui</p>
       </div>
     );
   }
 
-  const getIcon = (type: LogEntry['type']) => {
+  const getIcon = (type: TimelineEntry['type']) => {
     switch (type) {
       case 'agent_activated':
       case 'agent_switched':
@@ -198,18 +255,21 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
       case 'tag_removed':
         return Tag;
       case 'pipeline_moved':
+      case 'stage_changed':
         return Columns;
       case 'flow_triggered':
         return GitBranch;
       case 'human_intervened':
       case 'status_changed':
         return User;
+      case 'conversation_started':
+        return MessageSquare;
       default:
         return ArrowRightLeft;
     }
   };
 
-  const getColor = (type: LogEntry['type']) => {
+  const getColor = (type: TimelineEntry['type']) => {
     switch (type) {
       case 'agent_activated':
         return 'text-primary';
@@ -218,6 +278,7 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
       case 'tag_removed':
         return 'text-red-400';
       case 'pipeline_moved':
+      case 'stage_changed':
         return 'text-blue-500';
       case 'flow_triggered':
         return 'text-purple-500';
@@ -225,6 +286,8 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
         return 'text-amber-500';
       case 'human_intervened':
         return 'text-orange-500';
+      case 'conversation_started':
+        return 'text-muted-foreground';
       case 'ai_response':
         return 'text-muted-foreground';
       default:
@@ -232,23 +295,50 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
     }
   };
 
+  // Group by date
+  let lastDate = '';
+
   return (
-    <div className="space-y-1">
-      {logs.map((log) => {
-        const Icon = getIcon(log.type);
-        const color = getColor(log.type);
+    <div className="space-y-0.5">
+      {entries.map((entry) => {
+        const Icon = getIcon(entry.type);
+        const color = getColor(entry.type);
+        const dateStr = format(new Date(entry.timestamp), 'dd/MM/yyyy', { locale: ptBR });
+        const showDate = dateStr !== lastDate;
+        lastDate = dateStr;
 
         return (
-          <div key={log.id} className="flex items-start gap-2 py-1.5">
-            <div className={cn("mt-0.5 shrink-0", color)}>
-              <Icon className="h-3.5 w-3.5" />
+          <div key={entry.id}>
+            {showDate && (
+              <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium pt-2 pb-1">
+                {dateStr}
+              </div>
+            )}
+            <div className="flex items-start gap-2 py-1.5">
+              <div className={cn("mt-0.5 shrink-0", color)}>
+                <Icon className="h-3.5 w-3.5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-foreground leading-tight">{entry.description}</p>
+                {entry.type === 'stage_changed' && entry.meta?.columnName && (
+                  <Badge 
+                    variant="secondary" 
+                    className="text-[10px] h-4 mt-0.5"
+                    style={entry.meta.columnColor ? { 
+                      backgroundColor: `${entry.meta.columnColor}20`,
+                      color: entry.meta.columnColor,
+                      borderColor: `${entry.meta.columnColor}40`,
+                    } : undefined}
+                  >
+                    {entry.meta.columnName}
+                  </Badge>
+                )}
+                <p className="text-[10px] text-muted-foreground">{entry.actor}</p>
+              </div>
+              <span className="text-[10px] text-muted-foreground shrink-0">
+                {format(new Date(entry.timestamp), 'HH:mm', { locale: ptBR })}
+              </span>
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs text-foreground leading-tight">{log.description}</p>
-            </div>
-            <span className="text-[10px] text-muted-foreground shrink-0">
-              {format(new Date(log.timestamp), 'HH:mm', { locale: ptBR })}
-            </span>
           </div>
         );
       })}

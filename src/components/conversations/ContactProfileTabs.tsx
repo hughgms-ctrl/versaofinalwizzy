@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { User, Star, Calendar, FileText, StickyNote, ChevronUp, ScrollText, History } from 'lucide-react';
+import { User, Star, Calendar, FileText, StickyNote, ChevronUp, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { DbConversation } from '@/hooks/useConversations';
 import { ContactNotesSection } from './ContactNotesSection';
@@ -12,9 +12,8 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { useStageHistory } from '@/hooks/useStageHistory';
 
-type TabId = 'profile' | 'favorites' | 'scheduled' | 'files' | 'notes' | 'logs' | 'history';
+type TabId = 'profile' | 'favorites' | 'scheduled' | 'files' | 'notes' | 'timeline';
 
 interface ContactProfileTabsProps {
   conversation: DbConversation;
@@ -23,12 +22,11 @@ interface ContactProfileTabsProps {
 
 const tabs: { id: TabId; icon: typeof User; label: string }[] = [
   { id: 'profile', icon: User, label: 'Perfil' },
-  { id: 'history', icon: History, label: 'Histórico' },
+  { id: 'timeline', icon: Clock, label: 'Timeline' },
   { id: 'favorites', icon: Star, label: 'Favoritos' },
   { id: 'scheduled', icon: Calendar, label: 'Agendamentos' },
   { id: 'files', icon: FileText, label: 'Arquivos' },
   { id: 'notes', icon: StickyNote, label: 'Notas' },
-  { id: 'logs', icon: ScrollText, label: 'Logs' },
 ];
 
 export function ContactProfileTabs({ conversation, contactId }: ContactProfileTabsProps) {
@@ -51,10 +49,8 @@ export function ContactProfileTabs({ conversation, contactId }: ContactProfileTa
     enabled: activeTab === 'scheduled',
   });
 
-  // Fetch stage history
-  const { data: stageHistory = [] } = useStageHistory(
-    activeTab === 'history' ? conversation.id : null
-  );
+
+
 
   const handleTabClick = (tabId: TabId) => {
     if (activeTab === tabId) {
@@ -110,54 +106,8 @@ export function ContactProfileTabs({ conversation, contactId }: ContactProfileTa
               </Button>
             </div>
 
-            {activeTab === 'history' && (
-              <div className="space-y-2">
-                {stageHistory.length > 0 ? (
-                  stageHistory.map((entry) => (
-                    <div 
-                      key={entry.id}
-                      className="flex items-start gap-2 text-xs"
-                    >
-                      <div className="w-1.5 h-1.5 rounded-full bg-primary mt-1.5 shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-muted-foreground">
-                            {format(new Date(entry.created_at), "dd/MM HH:mm", { locale: ptBR })}
-                          </span>
-                          <span className="text-foreground">→</span>
-                          <Badge 
-                            variant="secondary" 
-                            className="text-[10px] h-5"
-                            style={entry.to_column ? { 
-                              backgroundColor: `${entry.to_column.color}20`,
-                              color: entry.to_column.color,
-                              borderColor: `${entry.to_column.color}40`,
-                            } : undefined}
-                          >
-                            {entry.to_column?.name || 'Estágio'}
-                          </Badge>
-                        </div>
-                        {entry.from_column && (
-                          <p className="text-muted-foreground mt-0.5">
-                            de "{entry.from_column.name}"
-                          </p>
-                        )}
-                        <p className="text-muted-foreground">
-                          {entry.changed_by_profile?.full_name || 
-                           (entry.changed_by_type === 'ai' ? 'IA' : 
-                            entry.changed_by_type === 'flow' ? 'Fluxo' : 'Manual')}
-                        </p>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-center text-sm text-muted-foreground py-6">
-                    <History className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                    <p>Nenhuma movimentação registrada</p>
-                    <p className="text-xs mt-1">Mova o lead entre estágios do pipeline</p>
-                  </div>
-                )}
-              </div>
+            {activeTab === 'timeline' && (
+              <ContactLogsSection conversationId={conversation.id} />
             )}
 
             {activeTab === 'favorites' && (
@@ -219,10 +169,6 @@ export function ContactProfileTabs({ conversation, contactId }: ContactProfileTa
 
             {activeTab === 'notes' && (
               <ContactNotesSection contactId={contactId} />
-            )}
-
-            {activeTab === 'logs' && (
-              <ContactLogsSection conversationId={conversation.id} />
             )}
           </div>
         </div>
