@@ -1149,6 +1149,7 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
                 );
               })}
             </div>
+            <RemarketingStepsEditor localData={localData} handleChange={handleChange} />
           </div>
         );
 
