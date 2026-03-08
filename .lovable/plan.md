@@ -1,142 +1,105 @@
 
-# Plano de Implementacao - Fase 2: Modulo de Documentos e Templates
 
-Seguindo a ordem solicitada: Fase 2 -> Fase 3 -> Fase 1 -> Fase 4. Vamos comecar pelo modulo de documentos.
+# Bloco de Condição Avançado + Novos Blocos (estilo BotConversa)
 
----
+## Problema Atual
+O bloco de condição atual é primitivo: aceita apenas uma variável, um operador e um valor. Não permite verificar tags, pipeline, campos do contato, nem combinar múltiplas condições. Faltam também blocos como Randomizador e Atraso Inteligente.
 
-## O que sera construido nesta fase
+## 1. Bloco de Condição Reformulado
 
-Uma pagina `/documents` com 3 abas: **Templates**, **Documentos Gerados** e **Packs**. O usuario podera fazer upload de um contrato modelo, a IA vai analisar e extrair os campos variaveis (nome, endereco, CPF, etc.), criando um template reutilizavel com marcadores `{{campo}}`. Tambem sera possivel agrupar templates em packs para gerar multiplos documentos de uma vez.
-
----
-
-## Funcionalidades
-
-### 1. Aba Templates
-- Lista de templates salvos (nome, categoria, quantidade de campos, data)
-- Botao "Novo Template" com duas opcoes:
-  - **Upload de modelo**: envia PDF/DOCX, IA analisa e gera template com `{{campos}}`
-  - **Criar manualmente**: editor de texto com insercao de campos variaveis
-- Ao clicar em um template: abre editor para visualizar/editar o texto e os campos
-- Opcoes: editar, duplicar, excluir
-
-### 2. Aba Packs
-- Agrupar multiplos templates (ex: "Pack Auxilio Reclusao" = Procuracao + Contrato + Declaracao)
-- Criar pack: selecionar templates existentes, dar nome
-- Ao gerar documentos de um pack, os mesmos dados preenchem todos os templates
-
-### 3. Aba Documentos Gerados
-- Historico de documentos gerados a partir de templates/packs
-- Status: gerado, enviado, assinado
-- Link para download do PDF
-- Vinculo com contato (quando gerado via agente)
-
----
-
-## Detalhes Tecnicos
-
-### Novas tabelas (migracao SQL)
+### Modelo de dados (condições múltiplas com AND/OR)
+Substituir a config simples `{variable, operator, value}` por:
 
 ```text
-document_templates
-  - id (uuid, PK)
-  - organization_id (uuid, FK)
-  - name (text)
-  - description (text, nullable)
-  - category (text, nullable) -- ex: "contrato", "procuracao", "declaracao"
-  - content (text) -- texto com marcadores {{campo}}
-  - fields (jsonb) -- lista de campos detectados: [{name, label, type, required}]
-  - original_file_url (text, nullable) -- URL do arquivo modelo original
-  - workspace_id (uuid, nullable)
-  - created_by (uuid, nullable)
-  - created_at, updated_at (timestamps)
-
-document_packs
-  - id (uuid, PK)
-  - organization_id (uuid, FK)
-  - name (text)
-  - description (text, nullable)
-  - template_ids (uuid[]) -- array de IDs de templates
-  - workspace_id (uuid, nullable)
-  - created_by (uuid, nullable)
-  - created_at, updated_at (timestamps)
-
-generated_documents
-  - id (uuid, PK)
-  - organization_id (uuid, FK)
-  - template_id (uuid, nullable)
-  - pack_id (uuid, nullable)
-  - contact_id (uuid, nullable)
-  - conversation_id (uuid, nullable)
-  - name (text)
-  - filled_data (jsonb) -- dados preenchidos nos campos
-  - pdf_url (text, nullable) -- URL do PDF gerado no storage
-  - status (text) -- 'draft', 'generated', 'sent', 'signed'
-  - signing_method (text, nullable) -- 'manual', 'govbr', 'zapsign' (para Fase 3)
-  - signing_status (text, nullable)
-  - created_by (uuid, nullable)
-  - created_at, updated_at (timestamps)
+conditions: [
+  { type: 'has_tag', tagId: 'xxx' },
+  { type: 'in_pipeline', pipelineId: 'xxx', columnId?: 'xxx' },
+  { type: 'variable', variable: 'nome', operator: 'equals', value: 'João' },
+  { type: 'assigned_to', userId: 'xxx' },
+  ...
+]
+matchType: 'all' | 'any'   // AND ou OR
 ```
 
-RLS: todas as tabelas com politicas baseadas em `organization_id = get_user_org_id(auth.uid())`.
+### Tipos de condição disponíveis (como BotConversa):
+| Tipo | Descrição |
+|------|-----------|
+| `has_tag` | Contato possui a tag X |
+| `not_has_tag` | Contato NÃO possui a tag X |
+| `in_pipeline` | Conversa está no pipeline X (opcionalmente na coluna Y) |
+| `not_in_pipeline` | Conversa NÃO está no pipeline X |
+| `assigned_to` | Responsável é o usuário X |
+| `not_assigned` | Sem responsável atribuído |
+| `variable` | Variável do fluxo (operadores: igual, diferente, contém, maior, menor, existe, não existe) |
+| `contact_field` | Campo do contato (nome, email, phone) com operadores |
+| `service_mode` | Modo de atendimento (pendente, bot, humano) |
 
-### Nova edge function
+### UI do Properties Panel
+- Dropdown "Corresponder a" → Todas / Qualquer uma
+- Lista de condições com botão "+ Adicionar condição"
+- Cada condição: Select de tipo → campos dinâmicos (tag picker, pipeline picker, input de variável, etc.)
+- Botão de remover por condição
 
-**`process-document-template`**: recebe arquivo (via URL do storage), usa IA para:
-1. Ler e interpretar o conteudo do documento
-2. Identificar campos variaveis (nomes, enderecos, CPFs, datas, etc.)
-3. Retornar texto reestruturado com `{{campo}}` e lista de campos detectados
+### Nó visual (LogicNodes.tsx)
+- Mostra resumo das condições (ex: "2 condições (TODAS)")
+- Mantém saídas Sim/Não
 
-**`generate-document-pdf`**: recebe template + dados preenchidos, gera PDF e salva no storage bucket `contact-files`.
+## 2. Bloco Randomizador (novo)
 
-### Novos arquivos frontend
+### Conceito
+Divide o tráfego aleatoriamente entre N saídas com pesos configuráveis (%, somando 100%).
 
+### Modelo de dados:
 ```text
-src/pages/DocumentsPage.tsx -- pagina principal com abas
-src/components/documents/TemplatesList.tsx -- lista de templates
-src/components/documents/TemplateEditor.tsx -- editor de template
-src/components/documents/PacksList.tsx -- lista de packs
-src/components/documents/PackEditor.tsx -- criar/editar pack
-src/components/documents/GeneratedDocumentsList.tsx -- historico
-src/components/documents/UploadTemplateDialog.tsx -- dialog de upload + processamento IA
-src/hooks/useDocumentTemplates.ts -- CRUD templates
-src/hooks/useDocumentPacks.ts -- CRUD packs
-src/hooks/useGeneratedDocuments.ts -- consulta documentos gerados
+type: 'randomizer'
+variants: [
+  { id: 'A', label: 'Variante A', weight: 50 },
+  { id: 'B', label: 'Variante B', weight: 50 },
+]
 ```
 
-### Alteracoes em arquivos existentes
+### Nó visual
+- Header roxo com ícone Shuffle/Dice
+- Mostra as variantes e seus pesos
+- Múltiplos handles de saída (um por variante), cada um com label
 
-- **App.tsx**: adicionar rotas `/documents`
-- **Sidebar.tsx**: adicionar item "Documentos" com icone FileText, abaixo de Widgets
-- **Sidebar.tsx**: adicionar permissao `module: 'flows'` (mesmo grupo de automacoes)
+### Properties Panel
+- Lista de variantes editáveis (label + peso %)
+- Botão "+ Variante" (máx 5)
+- Indicador visual do total (deve ser 100%)
 
----
+## 3. Bloco Atraso Inteligente (novo)
 
-## Fluxo de uso principal
+### Conceito
+Pausa o fluxo até uma condição temporal: horário comercial, dia específico, data/hora exata.
 
+### Modelo de dados:
 ```text
-1. Usuario acessa /documents
-2. Clica em "Novo Template"
-3. Faz upload de um PDF de contrato
-4. Sistema envia para edge function que usa IA para analisar
-5. IA retorna texto com {{nome_responsavel}}, {{cpf}}, {{endereco}}, etc.
-6. Usuario revisa e salva o template
-7. Pode criar um Pack agrupando templates
-8. Documentos gerados ficam no historico (aba "Gerados")
+type: 'smart-delay'
+delayType: 'until_time' | 'until_business_hours' | 'until_date' | 'fixed'
+config: {
+  time?: '09:00',
+  businessHoursStart?: '08:00',
+  businessHoursEnd?: '18:00',
+  weekdaysOnly?: true,
+  date?: '2026-03-15',
+  fixedMinutes?: 30
+}
 ```
 
-A geracao automatica via agente e assinatura serao implementados na Fase 3.
+## Arquivos a Modificar/Criar
 
----
+| Ação | Arquivo |
+|------|---------|
+| Reescrever | `src/types/flow.ts` — novos tipos de nó + interface ConditionRule |
+| Reescrever | `src/components/flow/nodes/LogicNodes.tsx` — ConditionNode, RandomizerNode, SmartDelayNode |
+| Editar (grande) | `src/components/flow/NodePropertiesPanel.tsx` — novo editor de condições com múltiplas regras + editores dos novos blocos |
+| Editar | `src/data/flowComponents.ts` — adicionar Randomizador e Atraso Inteligente na sidebar |
+| Editar | `src/components/flow/FlowCanvas.tsx` — registrar novos nodeTypes |
 
-## Ordem de implementacao
+## Detalhes Técnicos
 
-1. Migracoes SQL (tabelas + RLS)
-2. Edge function `process-document-template`
-3. Hooks de dados (useDocumentTemplates, useDocumentPacks, useGeneratedDocuments)
-4. Pagina DocumentsPage com abas
-5. Componentes de templates (lista, editor, upload)
-6. Componentes de packs
-7. Sidebar + rotas
-8. Edge function `generate-document-pdf` (geracao de PDF basica)
+- O editor de condições usará os hooks existentes (`useTags`, `usePipelines`, `usePipelineColumns`, `useTeamMembers`) para popular os selects dinâmicos
+- Compatibilidade: condições antigas (formato simples) serão migradas automaticamente para o novo formato no `useEffect` do panel
+- Os novos nós (randomizer, smart-delay) terão handles dinâmicos gerados via array
+
