@@ -302,6 +302,48 @@ export function ConversationAttributesPanel({
             </SelectContent>
           </Select>
         </div>
+
+        {/* Workspace */}
+        {workspaces.length > 0 && (
+          <div className="flex items-center gap-2">
+            <Building2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+            <Select
+              value={(conversation as any).workspace_id || 'none'}
+              onValueChange={(value) => {
+                const newValue = value === 'none' ? null : value;
+                updateAttributes.mutate({
+                  conversationId: conversation.id,
+                  data: { workspace_id: newValue } as any,
+                });
+                // Also update the contact's workspace
+                if (conversation.contact_id) {
+                  supabase
+                    .from('contacts')
+                    .update({ workspace_id: newValue } as any)
+                    .eq('id', conversation.contact_id)
+                    .then(() => {});
+                }
+              }}
+            >
+              <SelectTrigger className="h-7 text-xs flex-1 border-none bg-muted/50 hover:bg-muted">
+                <SelectValue placeholder="Workspace..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">
+                  <span className="text-muted-foreground">Nenhum</span>
+                </SelectItem>
+                {workspaces.map((ws) => (
+                  <SelectItem key={ws.id} value={ws.id}>
+                    <div className="flex items-center gap-2">
+                      <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: ws.color }} />
+                      {ws.name}
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </div>
 
       {updateAttributes.isPending && (
