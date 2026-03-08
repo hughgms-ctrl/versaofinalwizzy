@@ -23,9 +23,10 @@ interface OrchestratorNodePropertiesProps {
   onClose: () => void;
   onUpdate: (nodeId: string, data: Record<string, unknown>) => void;
   onDelete: () => void;
+  organizationId?: string;
 }
 
-export function OrchestratorNodeProperties({ node, onClose, onUpdate, onDelete }: OrchestratorNodePropertiesProps) {
+export function OrchestratorNodeProperties({ node, onClose, onUpdate, onDelete, organizationId }: OrchestratorNodePropertiesProps) {
   const { data: agents = [] } = useAIAgents();
   const { data: tags = [] } = useTags();
   const { data: flows = [] } = useFlows();
@@ -189,7 +190,7 @@ export function OrchestratorNodeProperties({ node, onClose, onUpdate, onDelete }
           setIsAgentAiGenerating(true);
           try {
             const { data: result, error } = await supabase.functions.invoke('generate-agent-prompt', {
-              body: { userDescription: agentAiInput, agentName, agentRole: 'Especialista no fluxo do orquestrador' },
+              body: { userDescription: agentAiInput, agentName, agentRole: 'Especialista no fluxo do orquestrador', organizationId },
             });
             if (error) throw error;
             if (result?.prompt) {

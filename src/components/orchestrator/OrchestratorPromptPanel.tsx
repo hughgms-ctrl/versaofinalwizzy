@@ -18,6 +18,7 @@ interface OrchestratorPromptPanelProps {
   onSyncEnabledChange: (enabled: boolean) => void;
   onApplyToFlow?: (prompt: string) => void;
   isApplyingToFlow?: boolean;
+  organizationId?: string;
 }
 
 export function OrchestratorPromptPanel({
@@ -30,6 +31,7 @@ export function OrchestratorPromptPanel({
   onSyncEnabledChange,
   onApplyToFlow,
   isApplyingToFlow,
+  organizationId,
 }: OrchestratorPromptPanelProps) {
   const [aiInput, setAiInput] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
@@ -39,7 +41,7 @@ export function OrchestratorPromptPanel({
     setIsGenerating(true);
     try {
       const { data, error } = await supabase.functions.invoke('generate-agent-prompt', {
-        body: { userDescription: aiInput, agentName, agentRole: 'Orquestrador Master' },
+        body: { userDescription: aiInput, agentName, agentRole: 'Orquestrador Master', organizationId },
       });
       if (error) throw error;
       if (data?.prompt) {

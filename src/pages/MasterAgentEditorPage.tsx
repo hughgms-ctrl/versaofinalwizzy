@@ -268,6 +268,7 @@ const MasterAgentEditorPage = () => {
                 canvasRef={canvasRef}
                 syncEnabled={syncEnabled}
                 onSyncEnabledChange={setSyncEnabled}
+                organizationId={prompt?.organization_id}
               />
             </ReactFlowProvider>
           </div>

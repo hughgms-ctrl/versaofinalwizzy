@@ -476,6 +476,7 @@ function FlowCanvasInner() {
           onSave={handleSave}
           isSaving={saveFlow.isPending || createFlow.isPending}
           hasUnsavedChanges={hasUnsavedChanges}
+          organizationId={flow?.organization_id}
         />
       )}
 

@@ -73,6 +73,7 @@ interface OrchestratorCanvasProps {
   canvasRef?: React.MutableRefObject<OrchestratorCanvasHandle | null>;
   syncEnabled: boolean;
   onSyncEnabledChange: (enabled: boolean) => void;
+  organizationId?: string;
 }
 
 function OrchestratorCanvasInner({
@@ -82,6 +83,7 @@ function OrchestratorCanvasInner({
   onSave, isSaving, initialTriggerData,
   onUnsavedChangesChange, canvasRef,
   syncEnabled, onSyncEnabledChange,
+  organizationId,
 }: OrchestratorCanvasProps) {
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const defaultNodes: Node[] = [{
@@ -404,6 +406,7 @@ function OrchestratorCanvasInner({
             onClose={() => setSelectedNode(null)}
             onUpdate={handleNodeUpdate}
             onDelete={() => handleDeleteNode(selectedNode.id)}
+            organizationId={organizationId}
           />
         )}
       </div>
@@ -418,6 +421,7 @@ function OrchestratorCanvasInner({
         onSyncEnabledChange={onSyncEnabledChange}
         onApplyToFlow={handleApplyToFlow}
         isApplyingToFlow={isApplyingToFlow}
+        organizationId={organizationId}
       />
     </div>
   );

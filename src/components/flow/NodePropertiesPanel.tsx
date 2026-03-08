@@ -35,6 +35,7 @@ interface NodePropertiesPanelProps {
   onSave?: () => void;
   isSaving?: boolean;
   hasUnsavedChanges?: boolean;
+  organizationId?: string;
 }
 
 const nodeIcons: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -424,7 +425,7 @@ function ContentItemEditor({
   );
 }
 
-export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave, isSaving, hasUnsavedChanges }: NodePropertiesPanelProps) {
+export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave, isSaving, hasUnsavedChanges, organizationId }: NodePropertiesPanelProps) {
   const [localData, setLocalData] = useState<Record<string, unknown>>({});
   const [isGenerating, setIsGenerating] = useState(false);
   const [expandedFlowFolders, setExpandedFlowFolders] = useState<Set<string>>(new Set());
@@ -473,7 +474,8 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
         body: {
           userDescription: promptDescription,
           agentName: 'Agente Especialista',
-          agentRole: 'Atendimento e Execução no Fluxo'
+          agentRole: 'Atendimento e Execução no Fluxo',
+          organizationId
         }
       });
 
