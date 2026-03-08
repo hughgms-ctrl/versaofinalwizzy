@@ -80,10 +80,14 @@ export function ConditionNode({ data, selected }: NodeProps<LogicNode>) {
             <div className="space-y-1">
               {rules.slice(0, 3).map((rule) => {
                 const Icon = ruleTypeIcons[rule.type] || GitBranch;
+                const negateLabel = rule.negate ? 'NÃO' : '';
                 return (
                   <div key={rule.id} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
                     <Icon className="h-3 w-3 shrink-0 text-yellow-600" />
-                    <span className="truncate">{ruleTypeLabels[rule.type] || rule.type}</span>
+                    <span className="truncate">
+                      {negateLabel ? <span className="text-red-500 font-semibold mr-0.5">{negateLabel}</span> : null}
+                      {ruleTypeLabels[rule.type] || rule.type}
+                    </span>
                   </div>
                 );
               })}
