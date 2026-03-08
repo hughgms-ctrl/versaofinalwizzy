@@ -1407,8 +1407,30 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
             const edges = flowExec.flow?.edges || [];
             const currentNodeId = flowExec.current_node_id;
 
-            // Find next node after the ai-handoff
-            const nextEdge = edges.find((e: any) => e.source === currentNodeId);
+            // Find next node after the ai-handoff, using outcome-based routing
+            const currentNodeObj = nodes.find((n: any) => n.id === currentNodeId);
+            const configuredOutcomes = currentNodeObj?.data?.expectedOutcomes 
+              ? String(currentNodeObj.data.expectedOutcomes).split(',').map((s: string) => s.trim()).filter(Boolean)
+              : [];
+
+            let nextEdge: any = null;
+            if (configuredOutcomes.length > 0) {
+              // Try to match resultado to a configured outcome handle
+              const outcomeHandle = `outcome-${resultado}`;
+              nextEdge = edges.find((e: any) => e.source === currentNodeId && e.sourceHandle === outcomeHandle);
+              if (!nextEdge) {
+                // Fallback to default handle
+                nextEdge = edges.find((e: any) => e.source === currentNodeId && e.sourceHandle === 'outcome-default');
+              }
+              if (!nextEdge) {
+                // Last fallback: any edge from this node
+                nextEdge = edges.find((e: any) => e.source === currentNodeId);
+              }
+              console.log(`[ORCHESTRATOR] Outcome routing: resultado="${resultado}", matched handle="${nextEdge?.sourceHandle || 'none'}"`);
+            } else {
+              // No outcomes configured — use simple next edge (backward compatible)
+              nextEdge = edges.find((e: any) => e.source === currentNodeId);
+            }
             const nextNodeId = nextEdge?.target || null;
 
             // Store the resultado in variables for condition nodes downstream
