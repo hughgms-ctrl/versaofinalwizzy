@@ -29,6 +29,7 @@ import {
 } from "@/hooks/useCampaigns";
 import { useFlows } from "@/hooks/useFlows";
 import { useFlowFolders } from "@/hooks/useFlowFolders";
+import { useWorkspaces } from "@/hooks/useWorkspaces";
 
 interface CampaignDialogProps {
     open: boolean;
