@@ -9,7 +9,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Building2, Share2, User, Bot, Hand, Check } from 'lucide-react';
+import { Loader2, Building2, Share2, User, Bot, Hand, Check, GitBranch } from 'lucide-react';
 import { DbConversation } from '@/hooks/useConversations';
 import {
   useDepartments,
@@ -22,6 +22,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { usePipelines, usePipelineColumns, useConversationPositions, useMoveConversation } from '@/hooks/usePipelines';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
 
 interface ConversationAttributesPanelProps {
   conversation: DbConversation & {
@@ -45,7 +47,7 @@ export function ConversationAttributesPanel({
   conversation, 
   compact = false 
 }: ConversationAttributesPanelProps) {
-  const { profile } = useAuth();
+  const { profile, session } = useAuth();
   const { data: departments = [], isLoading: loadingDepartments } = useDepartments();
   const { data: leadSources = [], isLoading: loadingLeadSources } = useLeadSources();
   const { data: profiles = [] } = useProfiles();
@@ -55,8 +57,33 @@ export function ConversationAttributesPanel({
   const intervene = useInterveneConversation();
   const moveConversation = useMoveConversation();
 
-  // Use first pipeline by default
-  const activePipeline = pipelines[0] || null;
+  // Find which pipeline this conversation is currently in
+  const { data: allPositions = [] } = useQuery({
+    queryKey: ['all-conversation-positions', conversation.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('conversation_pipeline_positions')
+        .select('*')
+        .eq('conversation_id', conversation.id);
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!session && !!conversation.id,
+  });
+
+  // Determine active pipeline: the one where the conversation has a position, or first pipeline
+  const positionPipelineId = allPositions.length > 0 ? allPositions[0].pipeline_id : null;
+  const [selectedPipelineId, setSelectedPipelineId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (positionPipelineId) {
+      setSelectedPipelineId(positionPipelineId);
+    } else if (pipelines.length > 0) {
+      setSelectedPipelineId(pipelines[0].id);
+    }
+  }, [positionPipelineId, pipelines]);
+
+  const activePipeline = pipelines.find(p => p.id === selectedPipelineId) || null;
   const { data: columns = [] } = usePipelineColumns(activePipeline?.id || null);
   const { data: positions = [] } = useConversationPositions(activePipeline?.id || null);
 
@@ -97,6 +124,11 @@ export function ConversationAttributesPanel({
       pipelineId: activePipeline.id,
       columnId,
     });
+  };
+
+  const handlePipelineChange = (newPipelineId: string) => {
+    if (newPipelineId === selectedPipelineId) return;
+    setSelectedPipelineId(newPipelineId);
   };
 
   const currentServiceMode = (conversation as any).service_mode || 'pendente';
@@ -143,55 +175,73 @@ export function ConversationAttributesPanel({
         )}
       </div>
 
-      {/* Pipeline Stage Stepper */}
-      {activePipeline && columns.length > 0 && (
+      {/* Pipeline Selector + Stage Stepper */}
+      {pipelines.length > 0 && (
         <div className="space-y-2">
-          <Label className="text-[10px] text-muted-foreground uppercase tracking-wider">
-            {activePipeline.name}
-          </Label>
-          <TooltipProvider delayDuration={200}>
-            <div className="flex items-center gap-0.5">
-              {columns.map((col, idx) => {
-                const isActive = col.id === currentColumnId;
-                const isPast = currentColumnId 
-                  ? columns.findIndex(c => c.id === currentColumnId) > idx
-                  : false;
+          <div className="flex items-center gap-2">
+            <GitBranch className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+            <Select
+              value={selectedPipelineId || ''}
+              onValueChange={handlePipelineChange}
+            >
+              <SelectTrigger className="h-7 text-xs flex-1 border-none bg-muted/50 hover:bg-muted">
+                <SelectValue placeholder="Pipeline..." />
+              </SelectTrigger>
+              <SelectContent>
+                {pipelines.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
-                return (
-                  <Tooltip key={col.id}>
-                    <TooltipTrigger asChild>
-                      <button
-                        onClick={() => handleStageClick(col.id)}
-                        disabled={moveConversation.isPending}
-                        className={cn(
-                          "flex-1 h-7 relative flex items-center justify-center text-[10px] font-medium transition-all rounded-sm",
-                          isActive 
-                            ? "text-white shadow-sm" 
-                            : isPast 
-                              ? "text-white/80" 
-                              : "bg-muted text-muted-foreground hover:bg-muted/80"
-                        )}
-                        style={isActive || isPast ? { backgroundColor: col.color } : undefined}
-                      >
-                        {isPast && !isActive && (
-                          <Check className="h-3 w-3" />
-                        )}
-                        {isActive && (
-                          <span className="truncate px-1">{col.name}</span>
-                        )}
-                        {!isActive && !isPast && (
-                          <span className="truncate px-1 opacity-70">{col.name}</span>
-                        )}
-                      </button>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="text-xs">
-                      {col.name}
-                    </TooltipContent>
-                  </Tooltip>
-                );
-              })}
-            </div>
-          </TooltipProvider>
+          {activePipeline && columns.length > 0 && (
+            <TooltipProvider delayDuration={200}>
+              <div className="flex items-center gap-0.5">
+                {columns.map((col, idx) => {
+                  const isActive = col.id === currentColumnId;
+                  const isPast = currentColumnId 
+                    ? columns.findIndex(c => c.id === currentColumnId) > idx
+                    : false;
+
+                  return (
+                    <Tooltip key={col.id}>
+                      <TooltipTrigger asChild>
+                        <button
+                          onClick={() => handleStageClick(col.id)}
+                          disabled={moveConversation.isPending}
+                          className={cn(
+                            "flex-1 h-7 relative flex items-center justify-center text-[10px] font-medium transition-all rounded-sm",
+                            isActive 
+                              ? "text-white shadow-sm" 
+                              : isPast 
+                                ? "text-white/80" 
+                                : "bg-muted text-muted-foreground hover:bg-muted/80"
+                          )}
+                          style={isActive || isPast ? { backgroundColor: col.color } : undefined}
+                        >
+                          {isPast && !isActive && (
+                            <Check className="h-3 w-3" />
+                          )}
+                          {isActive && (
+                            <span className="truncate px-1">{col.name}</span>
+                          )}
+                          {!isActive && !isPast && (
+                            <span className="truncate px-1 opacity-70">{col.name}</span>
+                          )}
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="text-xs">
+                        {col.name}
+                      </TooltipContent>
+                    </Tooltip>
+                  );
+                })}
+              </div>
+            </TooltipProvider>
+          )}
         </div>
       )}
 
