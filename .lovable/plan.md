@@ -1,142 +1,77 @@
 
-# Plano de Implementacao - Fase 2: Modulo de Documentos e Templates
 
-Seguindo a ordem solicitada: Fase 2 -> Fase 3 -> Fase 1 -> Fase 4. Vamos comecar pelo modulo de documentos.
+# Agenda Multi-Usuário com Painel de Calendário
 
----
+## Resumo
 
-## O que sera construido nesta fase
+Evoluir o sistema de agenda de "1 conta por organização" para "múltiplas contas Google por membro da equipe", com painel visual de calendário, seleção de agenda por funcionário, e geração automática de link do Google Meet.
 
-Uma pagina `/documents` com 3 abas: **Templates**, **Documentos Gerados** e **Packs**. O usuario podera fazer upload de um contrato modelo, a IA vai analisar e extrair os campos variaveis (nome, endereco, CPF, etc.), criando um template reutilizavel com marcadores `{{campo}}`. Tambem sera possivel agrupar templates em packs para gerar multiplos documentos de uma vez.
+## Mudanças no Banco de Dados
 
----
+**Alterar `calendar_configs`**: Adicionar coluna `user_id` (uuid, referencia profiles.user_id) e `display_name` (text). Remover constraint unique de `organization_id` e criar unique em `(organization_id, user_id)`. Isso permite múltiplas contas por org.
 
-## Funcionalidades
+**Alterar `calendar_bookings`**: Adicionar coluna `assigned_user_id` (uuid) para saber de qual membro é a agenda, e `meet_link` (text) para o link do Google Meet.
 
-### 1. Aba Templates
-- Lista de templates salvos (nome, categoria, quantidade de campos, data)
-- Botao "Novo Template" com duas opcoes:
-  - **Upload de modelo**: envia PDF/DOCX, IA analisa e gera template com `{{campos}}`
-  - **Criar manualmente**: editor de texto com insercao de campos variaveis
-- Ao clicar em um template: abre editor para visualizar/editar o texto e os campos
-- Opcoes: editar, duplicar, excluir
-
-### 2. Aba Packs
-- Agrupar multiplos templates (ex: "Pack Auxilio Reclusao" = Procuracao + Contrato + Declaracao)
-- Criar pack: selecionar templates existentes, dar nome
-- Ao gerar documentos de um pack, os mesmos dados preenchem todos os templates
-
-### 3. Aba Documentos Gerados
-- Historico de documentos gerados a partir de templates/packs
-- Status: gerado, enviado, assinado
-- Link para download do PDF
-- Vinculo com contato (quando gerado via agente)
-
----
-
-## Detalhes Tecnicos
-
-### Novas tabelas (migracao SQL)
+## Arquitetura Multi-Usuário
 
 ```text
-document_templates
-  - id (uuid, PK)
-  - organization_id (uuid, FK)
-  - name (text)
-  - description (text, nullable)
-  - category (text, nullable) -- ex: "contrato", "procuracao", "declaracao"
-  - content (text) -- texto com marcadores {{campo}}
-  - fields (jsonb) -- lista de campos detectados: [{name, label, type, required}]
-  - original_file_url (text, nullable) -- URL do arquivo modelo original
-  - workspace_id (uuid, nullable)
-  - created_by (uuid, nullable)
-  - created_at, updated_at (timestamps)
+Org "Empresa X"
+├── João (owner)    → Google: joao@gmail.com   → calendar_configs row
+├── Maria (admin)   → Google: maria@gmail.com  → calendar_configs row
+└── Pedro (agent)   → Google: pedro@gmail.com  → calendar_configs row
 
-document_packs
-  - id (uuid, PK)
-  - organization_id (uuid, FK)
-  - name (text)
-  - description (text, nullable)
-  - template_ids (uuid[]) -- array de IDs de templates
-  - workspace_id (uuid, nullable)
-  - created_by (uuid, nullable)
-  - created_at, updated_at (timestamps)
-
-generated_documents
-  - id (uuid, PK)
-  - organization_id (uuid, FK)
-  - template_id (uuid, nullable)
-  - pack_id (uuid, nullable)
-  - contact_id (uuid, nullable)
-  - conversation_id (uuid, nullable)
-  - name (text)
-  - filled_data (jsonb) -- dados preenchidos nos campos
-  - pdf_url (text, nullable) -- URL do PDF gerado no storage
-  - status (text) -- 'draft', 'generated', 'sent', 'signed'
-  - signing_method (text, nullable) -- 'manual', 'govbr', 'zapsign' (para Fase 3)
-  - signing_status (text, nullable)
-  - created_by (uuid, nullable)
-  - created_at, updated_at (timestamps)
+Agendamento via IA:
+  1. Agente verifica qual(is) agenda(s) usar (config do fluxo)
+  2. Consulta disponibilidade de cada uma
+  3. Agenda no horário mais próximo disponível
+  4. Cria evento no Google Calendar com Meet link
 ```
 
-RLS: todas as tabelas com politicas baseadas em `organization_id = get_user_org_id(auth.uid())`.
+## Componentes da CalendarTab
 
-### Nova edge function
+A aba Agenda será dividida em sub-abas internas:
 
-**`process-document-template`**: recebe arquivo (via URL do storage), usa IA para:
-1. Ler e interpretar o conteudo do documento
-2. Identificar campos variaveis (nomes, enderecos, CPFs, datas, etc.)
-3. Retornar texto reestruturado com `{{campo}}` e lista de campos detectados
+1. **Contas Conectadas** — Lista de membros com agenda conectada. Cada membro conecta sua própria conta clicando "Entrar com Google". Owner/admin vê todas as contas.
+2. **Calendário** — Visualização mensal/semanal/diária dos agendamentos. Filtro por membro. Mostra resumo interno ao clicar.
+3. **Disponibilidade** — Regras de dias/horários por membro. Duração padrão da reunião.
+4. **Link Público** — Gerar slug único por org. Ao acessar, cliente escolhe tipo de reunião e horário disponível.
 
-**`generate-document-pdf`**: recebe template + dados preenchidos, gera PDF e salva no storage bucket `contact-files`.
+## Edge Function `google-calendar-auth`
 
-### Novos arquivos frontend
+Atualizar para salvar `user_id` junto com `organization_id` no state do OAuth. Assim cada membro conecta sua própria conta.
 
-```text
-src/pages/DocumentsPage.tsx -- pagina principal com abas
-src/components/documents/TemplatesList.tsx -- lista de templates
-src/components/documents/TemplateEditor.tsx -- editor de template
-src/components/documents/PacksList.tsx -- lista de packs
-src/components/documents/PackEditor.tsx -- criar/editar pack
-src/components/documents/GeneratedDocumentsList.tsx -- historico
-src/components/documents/UploadTemplateDialog.tsx -- dialog de upload + processamento IA
-src/hooks/useDocumentTemplates.ts -- CRUD templates
-src/hooks/useDocumentPacks.ts -- CRUD packs
-src/hooks/useGeneratedDocuments.ts -- consulta documentos gerados
-```
+## Edge Function `google-calendar-book` (nova)
 
-### Alteracoes em arquivos existentes
+- Recebe: `organization_id`, `assigned_user_id` (ou "random"), `starts_at`, `client_name`, `client_phone`, `internal_summary`
+- Busca tokens do membro escolhido
+- Cria evento no Google Calendar com `conferenceData` (Meet link automático)
+- Salva booking no Supabase com `meet_link`
 
-- **App.tsx**: adicionar rotas `/documents`
-- **Sidebar.tsx**: adicionar item "Documentos" com icone FileText, abaixo de Widgets
-- **Sidebar.tsx**: adicionar permissao `module: 'flows'` (mesmo grupo de automacoes)
+## Edge Function `google-calendar-availability` (nova)
 
----
+- Recebe: `organization_id`, `user_id` (ou array de user_ids), `date`
+- Busca eventos do dia via Google Calendar API
+- Cruza com `availability_rules` do membro
+- Retorna slots livres
 
-## Fluxo de uso principal
+## Página Pública `/agendar/:slug`
 
-```text
-1. Usuario acessa /documents
-2. Clica em "Novo Template"
-3. Faz upload de um PDF de contrato
-4. Sistema envia para edge function que usa IA para analisar
-5. IA retorna texto com {{nome_responsavel}}, {{cpf}}, {{endereco}}, etc.
-6. Usuario revisa e salva o template
-7. Pode criar um Pack agrupando templates
-8. Documentos gerados ficam no historico (aba "Gerados")
-```
+- Nova página `PublicBookingPage.tsx`
+- Mostra calendário com dias disponíveis (consulta availability de todos os membros configurados)
+- Cliente preenche nome, telefone, email
+- Ao confirmar: chama `google-calendar-book` com atribuição automática (random ou próximo disponível)
 
-A geracao automatica via agente e assinatura serao implementados na Fase 3.
+## Arquivos
 
----
+| Arquivo | Ação |
+|---------|------|
+| Migration SQL | Alterar `calendar_configs` (add `user_id`, `display_name`, unique constraint) e `calendar_bookings` (add `assigned_user_id`, `meet_link`) |
+| `src/components/integrations/CalendarTab.tsx` | Reescrever com sub-abas: Contas, Calendário, Disponibilidade, Link |
+| `src/hooks/useCalendarConfig.ts` | Adaptar para multi-user (listar todas configs da org) |
+| `supabase/functions/google-calendar-auth/index.ts` | Incluir `user_id` no state e salvar por user |
+| **NOVO** `supabase/functions/google-calendar-book/index.ts` | Criar evento + Meet link |
+| **NOVO** `supabase/functions/google-calendar-availability/index.ts` | Consultar slots livres |
+| **NOVO** `src/pages/PublicBookingPage.tsx` | Página pública de agendamento |
+| `src/App.tsx` | Rota `/agendar/:slug` |
+| `supabase/config.toml` | Registrar novas functions |
 
-## Ordem de implementacao
-
-1. Migracoes SQL (tabelas + RLS)
-2. Edge function `process-document-template`
-3. Hooks de dados (useDocumentTemplates, useDocumentPacks, useGeneratedDocuments)
-4. Pagina DocumentsPage com abas
-5. Componentes de templates (lista, editor, upload)
-6. Componentes de packs
-7. Sidebar + rotas
-8. Edge function `generate-document-pdf` (geracao de PDF basica)
