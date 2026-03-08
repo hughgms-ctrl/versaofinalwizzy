@@ -19,6 +19,7 @@ export default function ProfilePage() {
   const queryClient = useQueryClient();
   
   const [fullName, setFullName] = useState(profile?.full_name || '');
+  const [phone, setPhone] = useState(profile?.phone || '');
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
   const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
