@@ -1277,6 +1277,7 @@ export type Database = {
           flow_id: string
           id: string
           organization_id: string
+          remarketing_step: number
           started_at: string
           status: string
           timeout_at: string | null
@@ -1291,6 +1292,7 @@ export type Database = {
           flow_id: string
           id?: string
           organization_id: string
+          remarketing_step?: number
           started_at?: string
           status?: string
           timeout_at?: string | null
@@ -1305,6 +1307,7 @@ export type Database = {
           flow_id?: string
           id?: string
           organization_id?: string
+          remarketing_step?: number
           started_at?: string
           status?: string
           timeout_at?: string | null
