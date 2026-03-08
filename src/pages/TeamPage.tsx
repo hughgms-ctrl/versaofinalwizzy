@@ -61,6 +61,8 @@ export default function TeamPage() {
   const [selectedMember, setSelectedMember] = useState<TeamMember | null>(null);
   const [permissionsOpen, setPermissionsOpen] = useState(false);
   const [addUserOpen, setAddUserOpen] = useState(false);
+  const [editMemberOpen, setEditMemberOpen] = useState(false);
+  const [memberToEdit, setMemberToEdit] = useState<TeamMember | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [memberToDelete, setMemberToDelete] = useState<TeamMember | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
