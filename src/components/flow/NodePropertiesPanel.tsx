@@ -775,46 +775,13 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
         );
 
       case 'condition':
-        return (
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="variable">Variável</Label>
-              <Input
-                id="variable"
-                value={(localData.variable as string) || ''}
-                onChange={(e) => handleChange('variable', e.target.value)}
-                placeholder="ex: ultima_mensagem"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="operator">Operador</Label>
-              <Select
-                value={(localData.operator as string) || 'equals'}
-                onValueChange={(value) => handleChange('operator', value)}
-              >
-                <SelectTrigger id="operator">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="equals">É igual a</SelectItem>
-                  <SelectItem value="not_equals">É diferente de</SelectItem>
-                  <SelectItem value="contains">Contém</SelectItem>
-                  <SelectItem value="greater_than">Maior que</SelectItem>
-                  <SelectItem value="less_than">Menor que</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="value">Valor</Label>
-              <Input
-                id="value"
-                value={(localData.value as string) || ''}
-                onChange={(e) => handleChange('value', e.target.value)}
-                placeholder="Valor para comparação"
-              />
-            </div>
-          </div>
-        );
+        return renderAdvancedConditionEditor();
+
+      case 'randomizer':
+        return renderRandomizerEditor();
+
+      case 'smart-delay':
+        return renderSmartDelayEditor();
 
       case 'user-input':
         return (
