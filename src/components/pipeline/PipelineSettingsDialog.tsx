@@ -392,6 +392,32 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
                     ))}
                   </div>
                 </div>
+
+                {/* Next Pipeline (Auto-transition) */}
+                <div className="space-y-2">
+                  <Label>Ao concluir, enviar para:</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Quando um lead chegar na última coluna, será transferido automaticamente para o pipeline selecionado.
+                  </p>
+                  <Select
+                    value={nextPipelineId}
+                    onValueChange={setNextPipelineId}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecionar pipeline..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">
+                        <span className="text-muted-foreground">Nenhum (sem transição)</span>
+                      </SelectItem>
+                      {otherPipelines.map((p) => (
+                        <SelectItem key={p.id} value={p.id}>
+                          {p.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </>
             )}
 
