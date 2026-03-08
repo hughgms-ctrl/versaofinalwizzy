@@ -1917,6 +1917,7 @@ export type Database = {
           id: string
           is_default: boolean
           name: string
+          next_pipeline_column_id: string | null
           next_pipeline_id: string | null
           organization_id: string
           updated_at: string
@@ -1928,6 +1929,7 @@ export type Database = {
           id?: string
           is_default?: boolean
           name: string
+          next_pipeline_column_id?: string | null
           next_pipeline_id?: string | null
           organization_id: string
           updated_at?: string
@@ -1939,12 +1941,20 @@ export type Database = {
           id?: string
           is_default?: boolean
           name?: string
+          next_pipeline_column_id?: string | null
           next_pipeline_id?: string | null
           organization_id?: string
           updated_at?: string
           workspace_ids?: string[] | null
         }
         Relationships: [
+          {
+            foreignKeyName: "pipelines_next_pipeline_column_id_fkey"
+            columns: ["next_pipeline_column_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_columns"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "pipelines_next_pipeline_id_fkey"
             columns: ["next_pipeline_id"]
