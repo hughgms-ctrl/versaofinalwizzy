@@ -30,13 +30,7 @@ import {
   XCircle,
   Loader2,
   Save,
-  Bot,
-  MessageSquareText,
-  PenLine,
-  Workflow,
-  AudioLines,
   AlertTriangle,
-  Settings2,
 } from 'lucide-react';
 
 const FEATURE_ICONS: Record<AIFeature, React.ElementType> = {
