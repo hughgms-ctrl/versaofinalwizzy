@@ -165,18 +165,20 @@ export function useUpdatePipeline() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ id, name, description, workspace_ids, next_pipeline_id }: { 
+    mutationFn: async ({ id, name, description, workspace_ids, next_pipeline_id, next_pipeline_column_id }: { 
       id: string;
       name?: string; 
       description?: string;
       workspace_ids?: string[];
       next_pipeline_id?: string | null;
+      next_pipeline_column_id?: string | null;
     }) => {
       const updates: Record<string, unknown> = {};
       if (name !== undefined) updates.name = name;
       if (description !== undefined) updates.description = description;
       if (workspace_ids !== undefined) updates.workspace_ids = workspace_ids;
       if (next_pipeline_id !== undefined) updates.next_pipeline_id = next_pipeline_id;
+      if (next_pipeline_column_id !== undefined) updates.next_pipeline_column_id = next_pipeline_column_id;
 
       const { error } = await (supabase as any)
         .from('pipelines')
