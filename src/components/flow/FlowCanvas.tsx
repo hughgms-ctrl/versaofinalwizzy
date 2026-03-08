@@ -459,6 +459,8 @@ function FlowCanvasInner() {
                   case 'user-input': return '#14b8a6';
                   case 'ai-handoff': return '#8b5cf6';
                   case 'ai-return': return '#d946ef';
+                  case 'randomizer': return '#a855f7';
+                  case 'smart-delay': return '#f97316';
                   default: return '#6b7280';
                 }
               }}
