@@ -948,7 +948,7 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
     );
   };
 
-
+  const renderContentBlockEditor = () => {
     const items = (localData.items as ContentItem[]) || [];
 
     const addItem = (type: ContentItemType) => {
