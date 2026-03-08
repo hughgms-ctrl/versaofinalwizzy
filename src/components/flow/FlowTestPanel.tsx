@@ -542,7 +542,7 @@ Responda sempre em português brasileiro de forma profissional e prestativa.`;
             const { data: agentData } = await supabase
               .from('ai_agents')
               .select('prompt_base')
-              .eq('id', currentNode.data.agentId)
+              .eq('id', currentNode.data.agentId as string)
               .single();
 
             if (agentData?.prompt_base) {
