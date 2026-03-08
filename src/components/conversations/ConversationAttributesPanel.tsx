@@ -210,7 +210,7 @@ export function ConversationAttributesPanel({
                           onClick={() => handleStageClick(col.id)}
                           disabled={moveConversation.isPending}
                           className={cn(
-                            "flex-1 h-7 relative flex items-center justify-center text-[10px] font-medium transition-all rounded-sm",
+                            "min-w-[2rem] flex-shrink-0 h-7 relative flex items-center justify-center text-[10px] font-medium transition-all rounded-sm",
                             isActive 
                               ? "text-white shadow-sm" 
                               : isPast 
