@@ -103,7 +103,6 @@ export function ConversationAttributesPanel({
 
   const handleUpdate = (field: string, value: string | null) => {
     const fieldMap: Record<string, string> = {
-      departmentId: 'department_id',
       leadSourceId: 'lead_source_id',
       assignedTo: 'assigned_to',
     };
