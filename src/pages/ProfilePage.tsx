@@ -52,7 +52,7 @@ export default function ProfilePage() {
     try {
       const { error } = await supabase
         .from('profiles')
-        .update({ full_name: fullName.trim() })
+        .update({ full_name: fullName.trim(), phone: phone.trim() || null })
         .eq('id', profile.id);
 
       if (error) throw error;
