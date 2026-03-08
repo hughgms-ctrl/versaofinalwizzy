@@ -1,5 +1,5 @@
 import { Handle, Position, NodeProps, Node } from '@xyflow/react';
-import { Tag, Kanban, UserPlus, Clock, Webhook, IterationCw, FileText, GitBranch } from 'lucide-react';
+import { Tag, Kanban, UserPlus, Clock, Webhook, IterationCw, FileText, GitBranch, Building2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface ActionNodeData extends Record<string, unknown> {
