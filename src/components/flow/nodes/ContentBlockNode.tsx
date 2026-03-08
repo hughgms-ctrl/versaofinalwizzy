@@ -99,9 +99,8 @@ export function ContentBlockNode({ data, selected }: NodeProps<ContentBlockNode>
               {data.saveVariable ? ` → {{${data.saveVariable}}}` : ''}
             </span>
             {data.timeoutMinutes && (
-              <span className="text-[10px] text-red-500 ml-auto flex items-center gap-0.5">
-                <TimerOff className="h-2.5 w-2.5" />
-                {data.timeoutMinutes}min
+              <span className="text-[10px] text-red-500 ml-auto">
+                ⏱ {data.timeoutMinutes}min
               </span>
             )}
           </div>
