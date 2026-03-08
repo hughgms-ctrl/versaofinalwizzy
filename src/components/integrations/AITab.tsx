@@ -59,13 +59,6 @@ export function AITab() {
   const [formData, setFormData] = useState<Partial<IntegrationConfig>>(DEFAULT_CONFIG);
   const [showOpenAIKey, setShowOpenAIKey] = useState(false);
   const [showGeminiKey, setShowGeminiKey] = useState(false);
-  const [featureOverrides, setFeatureOverrides] = useState<Record<AIFeature, boolean>>({
-    agents: false,
-    conversation_summary: false,
-    prompt_generation: false,
-    flow_generation: false,
-    transcription: false,
-  });
 
   useEffect(() => {
     if (config) {
