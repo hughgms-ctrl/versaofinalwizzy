@@ -391,14 +391,14 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
         if (!isMaster && nodeData.agentId) {
           try {
             const { data: agentData } = await supabase
-              .from('agents' as any)
-              .select('prompt, name')
+              .from('ai_agents')
+              .select('prompt_base, name')
               .eq('id', nodeData.agentId)
               .single();
 
-            if (agentData?.prompt) {
+            if (agentData?.prompt_base) {
               // Combine base prompt with node-specific instructions
-              agentPrompt = `${agentData.prompt}\n\n[INSTRUÇÕES ESPECÍFICAS DESTE NÓ]:\n${agentPrompt}`;
+              agentPrompt = `${agentData.prompt_base}\n\n[INSTRUÇÕES ESPECÍFICAS DESTE NÓ]:\n${agentPrompt}`;
             }
           } catch (err) {
             console.error('Error fetching agent prompt:', err);
