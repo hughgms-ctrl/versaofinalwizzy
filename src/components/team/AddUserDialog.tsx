@@ -110,6 +110,21 @@ export function AddUserDialog({ open, onOpenChange }: AddUserDialogProps) {
           </div>
 
           <div className="space-y-2">
+            <Label htmlFor="phone">WhatsApp</Label>
+            <Input
+              id="phone"
+              type="tel"
+              value={formData.phone}
+              onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
+              placeholder="5511999999999"
+              required
+            />
+            <p className="text-xs text-muted-foreground">
+              Número com código do país, sem espaços ou traços. Usado para notificações.
+            </p>
+          </div>
+
+          <div className="space-y-2">
             <Label htmlFor="role">Cargo</Label>
             <Select
               value={formData.role}
