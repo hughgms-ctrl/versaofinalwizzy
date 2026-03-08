@@ -363,7 +363,7 @@ export function useMoveConversation() {
             pipeline_id: pipelineId,
             from_column_id: fromColumnId,
             to_column_id: columnId,
-            changed_by_type: 'manual',
+            changed_by_type: changedByType || 'manual',
             changed_by: profile.user_id || null,
             organization_id: profile.organization_id,
           });
@@ -380,10 +380,81 @@ export function useMoveConversation() {
         }).catch(() => {});
       }
 
+      // Auto-transition: check if this is the last column and pipeline has next_pipeline_id
+      if (!skipAutoTransition && profile?.organization_id) {
+        // Fetch all columns of current pipeline to check if we're at the last one
+        const { data: allColumns } = await (supabase as any)
+          .from('pipeline_columns')
+          .select('id, order')
+          .eq('pipeline_id', pipelineId)
+          .order('order', { ascending: false })
+          .limit(1);
+
+        const lastColumn = allColumns?.[0];
+        if (lastColumn && lastColumn.id === columnId) {
+          // Fetch pipeline to get next_pipeline_id
+          const { data: currentPipeline } = await (supabase as any)
+            .from('pipelines')
+            .select('next_pipeline_id')
+            .eq('id', pipelineId)
+            .single();
+
+          if (currentPipeline?.next_pipeline_id) {
+            // Get first column of next pipeline
+            const { data: nextColumns } = await (supabase as any)
+              .from('pipeline_columns')
+              .select('id')
+              .eq('pipeline_id', currentPipeline.next_pipeline_id)
+              .order('order', { ascending: true })
+              .limit(1);
+
+            const firstNextColumn = nextColumns?.[0];
+            if (firstNextColumn) {
+              // Move to next pipeline's first column
+              const { data: existingNext } = await supabase
+                .from('conversation_pipeline_positions')
+                .select('id, column_id')
+                .eq('conversation_id', conversationId)
+                .eq('pipeline_id', currentPipeline.next_pipeline_id)
+                .maybeSingle();
+
+              const fromNextColumnId = existingNext?.column_id || null;
+
+              if (existingNext) {
+                await supabase
+                  .from('conversation_pipeline_positions')
+                  .update({ column_id: firstNextColumn.id, order: 0, updated_at: new Date().toISOString() })
+                  .eq('id', existingNext.id);
+              } else {
+                await supabase
+                  .from('conversation_pipeline_positions')
+                  .insert({
+                    conversation_id: conversationId,
+                    pipeline_id: currentPipeline.next_pipeline_id,
+                    column_id: firstNextColumn.id,
+                    order: 0,
+                  });
+              }
+
+              // Log auto-transition
+              await (supabase as any)
+                .from('conversation_stage_history')
+                .insert({
+                  conversation_id: conversationId,
+                  pipeline_id: currentPipeline.next_pipeline_id,
+                  from_column_id: fromNextColumnId,
+                  to_column_id: firstNextColumn.id,
+                  changed_by_type: 'auto',
+                  organization_id: profile.organization_id,
+                });
+            }
+          }
+        }
+      }
+
       return { fromColumnId, toColumnId: columnId };
     },
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['conversation-positions', variables.pipelineId] });
       queryClient.invalidateQueries({ queryKey: ['conversation-positions'] });
       queryClient.invalidateQueries({ queryKey: ['stage-history', variables.conversationId] });
       toast({ title: 'Conversa movida!' });
