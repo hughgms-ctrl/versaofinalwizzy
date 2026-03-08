@@ -50,6 +50,7 @@ export function CampaignDialog({
     const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
     const [startHour, setStartHour] = useState(0);
     const [endHour, setEndHour] = useState(23);
+    const [workspaceId, setWorkspaceId] = useState<string>("");
 
     const createCampaign = useCreateCampaign();
     const updateCampaign = useUpdateCampaign();
