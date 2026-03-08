@@ -13,6 +13,7 @@ export type FlowNodeType =
   | 'action-department'
   | 'action-document'
   | 'action-delay'
+  | 'action-workspace'
   | 'condition'
   | 'user-input'
   | 'ai-handoff'

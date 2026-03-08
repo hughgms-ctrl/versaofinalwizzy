@@ -90,6 +90,13 @@ export const flowComponentCategories: FlowComponentCategory[] = [
         icon: 'FileText',
         color: 'bg-rose-600',
       },
+      {
+        type: 'action-workspace',
+        label: 'Atribuir Workspace',
+        description: 'Atribui o contato e conversa a um workspace',
+        icon: 'Building2',
+        color: 'bg-sky-500',
+      },
     ],
   },
   {

@@ -29,6 +29,7 @@ import {
 } from "@/hooks/useCampaigns";
 import { useFlows } from "@/hooks/useFlows";
 import { useFlowFolders } from "@/hooks/useFlowFolders";
+import { useWorkspaces } from "@/hooks/useWorkspaces";
 
 interface CampaignDialogProps {
     open: boolean;
@@ -49,11 +50,13 @@ export function CampaignDialog({
     const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
     const [startHour, setStartHour] = useState(0);
     const [endHour, setEndHour] = useState(23);
+    const [workspaceId, setWorkspaceId] = useState<string>("");
 
     const createCampaign = useCreateCampaign();
     const updateCampaign = useUpdateCampaign();
     const { data: flows } = useFlows();
     const { data: flowFolders = [] } = useFlowFolders();
+    const { data: workspaces = [] } = useWorkspaces();
 
     useEffect(() => {
         if (campaignToEdit && open) {
@@ -71,12 +74,14 @@ export function CampaignDialog({
             }
             setStartHour(campaignToEdit.start_hour ?? 0);
             setEndHour(campaignToEdit.end_hour ?? 23);
+            setWorkspaceId((campaignToEdit as any).workspace_id || "");
         } else if (open) {
             setName("");
             setTriggerKeyword("");
             setMatchType("exact");
             setFlowId("");
             setTriggerType("keyword");
+            setWorkspaceId("");
         }
     }, [campaignToEdit, open, flows]);
 
@@ -86,13 +91,14 @@ export function CampaignDialog({
         // Validate keyword if it's keyword type
         if (triggerType === 'keyword' && !triggerKeyword.trim()) return;
 
-        const payload = {
+        const payload: any = {
             name: name.trim(),
             trigger_keyword: triggerType === 'keyword' ? triggerKeyword.trim() : "*",
             match_type: triggerType === 'keyword' ? matchType : triggerType,
             flow_id: flowId,
             start_hour: startHour,
             end_hour: endHour,
+            workspace_id: workspaceId || null,
         };
 
         if (campaignToEdit) {
@@ -329,6 +335,34 @@ export function CampaignDialog({
                             </SelectContent>
                         </Select>
                     </div>
+
+                    {/* Workspace */}
+                    {workspaces.length > 0 && (
+                        <div className="grid gap-2">
+                            <Label htmlFor="workspace">Workspace (opcional)</Label>
+                            <Select value={workspaceId || "none"} onValueChange={(v) => setWorkspaceId(v === "none" ? "" : v)}>
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Selecione um workspace..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="none">
+                                        <span className="text-muted-foreground">Nenhum</span>
+                                    </SelectItem>
+                                    {workspaces.map((ws) => (
+                                        <SelectItem key={ws.id} value={ws.id}>
+                                            <div className="flex items-center gap-2">
+                                                <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: ws.color }} />
+                                                {ws.name}
+                                            </div>
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                            <p className="text-[10px] text-muted-foreground">
+                                Contatos que entrarem por esta campanha serão atribuídos a este workspace.
+                            </p>
+                        </div>
+                    )}
                 </div>
                 <DialogFooter className="mt-2">
                     <Button variant="outline" onClick={() => onOpenChange(false)}>

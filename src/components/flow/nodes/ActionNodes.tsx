@@ -1,5 +1,5 @@
 import { Handle, Position, NodeProps, Node } from '@xyflow/react';
-import { Tag, Kanban, UserPlus, Clock, Webhook, IterationCw, FileText, GitBranch } from 'lucide-react';
+import { Tag, Kanban, UserPlus, Clock, Webhook, IterationCw, FileText, GitBranch, Building2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface ActionNodeData extends Record<string, unknown> {
@@ -221,6 +221,16 @@ export function WebhookActionNode({ data, selected }: NodeProps<ActionNode>) {
     <BaseActionNode selected={!!selected} icon={Webhook} color="bg-orange-500" title="Entrada de Dados">
       <p className="text-xs text-muted-foreground truncate">
         Webhook: {data.webhookUrl || 'Configurar...'}
+      </p>
+    </BaseActionNode>
+  );
+}
+
+export function WorkspaceActionNode({ data, selected }: NodeProps<ActionNode>) {
+  return (
+    <BaseActionNode selected={!!selected} icon={Building2} color="bg-sky-500" title="Atribuir Workspace">
+      <p className="text-xs text-muted-foreground">
+        Workspace: <span className="font-medium text-foreground">{String(data.workspaceName || 'Selecionar...')}</span>
       </p>
     </BaseActionNode>
   );

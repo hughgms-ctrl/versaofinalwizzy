@@ -1,5 +1,6 @@
 import { DbConversation, useProfiles } from '@/hooks/useConversations';
 import { useContactTags, useTags } from '@/hooks/useTags';
+import { useWorkspaces } from '@/hooks/useWorkspaces';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Bot, MessageCircle, Check, CheckCheck } from 'lucide-react';
@@ -15,7 +16,7 @@ interface ConversationListProps {
 
 export function ConversationList({ conversations, selectedId, onSelect, onSpyView }: ConversationListProps) {
   const { data: profiles } = useProfiles();
-
+  const { data: workspaces = [] } = useWorkspaces();
   const getInitials = (name: string | null, phone: string) => {
     if (name) {
       return name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
@@ -76,6 +77,9 @@ export function ConversationList({ conversations, selectedId, onSelect, onSpyVie
           const isTyping = isActive && presence?.presence_type === 'typing';
           const isRecording = isActive && presence?.presence_type === 'recording';
 
+          const contactWorkspaceId = (conversation as any).workspace_id || (conversation.contact as any)?.workspace_id;
+          const workspace = contactWorkspaceId ? workspaces.find(w => w.id === contactWorkspaceId) : null;
+
           return (
             <div
               key={conversation.id}
@@ -86,6 +90,14 @@ export function ConversationList({ conversations, selectedId, onSelect, onSpyVie
                 hasUnread && "bg-primary/5"
               )}
             >
+              {/* Workspace Color Bar */}
+              {workspace && (
+                <div
+                  className="absolute left-0 top-0 bottom-0 w-[3px] rounded-r-full"
+                  style={{ backgroundColor: workspace.color }}
+                  title={workspace.name}
+                />
+              )}
               {/* Selection Indicator Bar */}
               {isSelected && (
                 <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary rounded-r-full" />

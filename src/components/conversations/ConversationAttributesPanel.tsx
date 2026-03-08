@@ -9,7 +9,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Share2, User, Bot, Hand, Check, GitBranch } from 'lucide-react';
+import { Loader2, Share2, User, Bot, Hand, Check, GitBranch, Building2 } from 'lucide-react';
 import { DbConversation } from '@/hooks/useConversations';
 import {
   useLeadSources,
@@ -19,6 +19,7 @@ import {
 import { useProfiles } from '@/hooks/useConversations';
 import { useAuth } from '@/hooks/useAuth';
 import { usePipelines, usePipelineColumns, useConversationPositions, useMoveConversation } from '@/hooks/usePipelines';
+import { useWorkspaces } from '@/hooks/useWorkspaces';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useQuery } from '@tanstack/react-query';
@@ -50,6 +51,7 @@ export function ConversationAttributesPanel({
   const { data: leadSources = [], isLoading: loadingLeadSources } = useLeadSources();
   const { data: profiles = [] } = useProfiles();
   const { data: pipelines = [] } = usePipelines();
+  const { data: workspaces = [] } = useWorkspaces();
   
   const updateAttributes = useUpdateConversationAttributes();
   const intervene = useInterveneConversation();
@@ -300,6 +302,48 @@ export function ConversationAttributesPanel({
             </SelectContent>
           </Select>
         </div>
+
+        {/* Workspace */}
+        {workspaces.length > 0 && (
+          <div className="flex items-center gap-2">
+            <Building2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+            <Select
+              value={(conversation as any).workspace_id || 'none'}
+              onValueChange={(value) => {
+                const newValue = value === 'none' ? null : value;
+                updateAttributes.mutate({
+                  conversationId: conversation.id,
+                  data: { workspace_id: newValue } as any,
+                });
+                // Also update the contact's workspace
+                if (conversation.contact_id) {
+                  supabase
+                    .from('contacts')
+                    .update({ workspace_id: newValue } as any)
+                    .eq('id', conversation.contact_id)
+                    .then(() => {});
+                }
+              }}
+            >
+              <SelectTrigger className="h-7 text-xs flex-1 border-none bg-muted/50 hover:bg-muted">
+                <SelectValue placeholder="Workspace..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">
+                  <span className="text-muted-foreground">Nenhum</span>
+                </SelectItem>
+                {workspaces.map((ws) => (
+                  <SelectItem key={ws.id} value={ws.id}>
+                    <div className="flex items-center gap-2">
+                      <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: ws.color }} />
+                      {ws.name}
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
       </div>
 
       {updateAttributes.isPending && (

@@ -4,7 +4,7 @@ import {
   X, Layers, MousePointerClick, List, Tag, Kanban, UserPlus, Webhook,
   GitBranch, FormInput, Bot, IterationCw, Plus, Trash2, GripVertical,
   Type, Image, Video, Music, FileText, Clock, Upload, Loader2, Save, Sparkles,
-  Link, ChevronRight, ChevronDown, Folder, Shuffle, User, MessageSquare
+  Link, ChevronRight, ChevronDown, Folder, Shuffle, User, MessageSquare, Building2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -25,6 +25,7 @@ import { useDocumentTemplates } from '@/hooks/useDocumentTemplates';
 import { usePipelines, usePipelineColumns } from '@/hooks/usePipelines';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { useWorkspaces } from '@/hooks/useWorkspaces';
 
 // Generate simple unique ID
 const generateId = () => Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
@@ -56,6 +57,7 @@ const nodeIcons: Record<string, React.ComponentType<{ className?: string }>> = {
   'ai-return': IterationCw,
   'action-document': FileText,
   'action-delay': Clock,
+  'action-workspace': Building2,
   'randomizer': Shuffle,
   'smart-delay': Clock,
 };
@@ -77,6 +79,7 @@ const nodeLabels: Record<FlowNodeType, string> = {
   'action-pipeline': 'Mover Pipeline',
   'condition': 'Condição',
   'user-input': 'Pergunta',
+  'action-workspace': 'Atribuir Workspace',
   'randomizer': 'Randomizador',
   'smart-delay': 'Atraso Inteligente',
 };
@@ -444,6 +447,7 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
   const { data: pipelines = [] } = usePipelines();
   const { data: pipelineColumns = [] } = usePipelineColumns(localData.pipelineId as string || localData._conditionPipelineId as string);
   const { data: teamMembers = [] } = useTeamMembers();
+  const { data: workspaces = [] } = useWorkspaces();
 
   useEffect(() => {
     if (node) {
@@ -1580,6 +1584,47 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
                 <SelectContent>
                   {departments.map((d) => (
                     <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        );
+
+      case 'action-workspace':
+        return (
+          <div className="space-y-4">
+            <div className="p-3 bg-sky-50 dark:bg-sky-950/30 rounded-lg flex items-center gap-3">
+              <Building2 className="h-5 w-5 text-sky-500" />
+              <div>
+                <p className="text-xs font-semibold">Atribuir Workspace</p>
+                <p className="text-[10px] text-muted-foreground">Atribui o contato e conversa a um workspace.</p>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Workspace</Label>
+              <Select
+                value={(localData.workspaceId as string) || ''}
+                onValueChange={(val) => {
+                  const ws = workspaces.find(w => w.id === val);
+                  const newData = {
+                    ...localData,
+                    workspaceId: val,
+                    workspaceName: ws?.name || 'Workspace'
+                  };
+                  setLocalData(newData);
+                  onUpdate(node.id, newData);
+                }}
+              >
+                <SelectTrigger><SelectValue placeholder="Selecione um workspace..." /></SelectTrigger>
+                <SelectContent>
+                  {workspaces.map((ws) => (
+                    <SelectItem key={ws.id} value={ws.id}>
+                      <div className="flex items-center gap-2">
+                        <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: ws.color }} />
+                        {ws.name}
+                      </div>
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>

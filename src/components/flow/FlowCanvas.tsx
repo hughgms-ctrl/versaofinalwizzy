@@ -36,7 +36,8 @@ import {
   WebhookActionNode,
   DepartmentActionNode,
   FlowActionNode,
-  DocumentActionNode
+  DocumentActionNode,
+  WorkspaceActionNode,
 } from './nodes/ActionNodes';
 import { ConditionNode, UserInputNode, RandomizerNode, SmartDelayNode } from './nodes/LogicNodes';
 import { AIHandoffNode, AIMasterNode, AIReturnNode } from './nodes/AINodes';
@@ -58,6 +59,7 @@ const nodeTypes = {
   'action-flow': FlowActionNode,
   'action-department': DepartmentActionNode,
   'action-document': DocumentActionNode,
+  'action-workspace': WorkspaceActionNode,
   'condition': ConditionNode,
   'user-input': UserInputNode,
   'randomizer': RandomizerNode,

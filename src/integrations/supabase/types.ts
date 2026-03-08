@@ -451,6 +451,7 @@ export type Database = {
           trigger_count: number
           trigger_keyword: string
           updated_at: string
+          workspace_id: string | null
         }
         Insert: {
           created_at?: string
@@ -465,6 +466,7 @@ export type Database = {
           trigger_count?: number
           trigger_keyword: string
           updated_at?: string
+          workspace_id?: string | null
         }
         Update: {
           created_at?: string
@@ -479,6 +481,7 @@ export type Database = {
           trigger_count?: number
           trigger_keyword?: string
           updated_at?: string
+          workspace_id?: string | null
         }
         Relationships: [
           {
@@ -493,6 +496,13 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaigns_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
             referencedColumns: ["id"]
           },
         ]
@@ -774,6 +784,7 @@ export type Database = {
           organization_id: string
           phone: string
           updated_at: string
+          workspace_id: string | null
         }
         Insert: {
           avatar_url?: string | null
@@ -785,6 +796,7 @@ export type Database = {
           organization_id: string
           phone: string
           updated_at?: string
+          workspace_id?: string | null
         }
         Update: {
           avatar_url?: string | null
@@ -796,6 +808,7 @@ export type Database = {
           organization_id?: string
           phone?: string
           updated_at?: string
+          workspace_id?: string | null
         }
         Relationships: [
           {
@@ -803,6 +816,13 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contacts_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
             referencedColumns: ["id"]
           },
         ]
@@ -995,6 +1015,7 @@ export type Database = {
           unread_count: number
           updated_at: string
           whatsapp_instance_id: string | null
+          workspace_id: string | null
         }
         Insert: {
           ai_agent_id?: string | null
@@ -1018,6 +1039,7 @@ export type Database = {
           unread_count?: number
           updated_at?: string
           whatsapp_instance_id?: string | null
+          workspace_id?: string | null
         }
         Update: {
           ai_agent_id?: string | null
@@ -1041,6 +1063,7 @@ export type Database = {
           unread_count?: number
           updated_at?: string
           whatsapp_instance_id?: string | null
+          workspace_id?: string | null
         }
         Relationships: [
           {
@@ -1097,6 +1120,13 @@ export type Database = {
             columns: ["whatsapp_instance_id"]
             isOneToOne: false
             referencedRelation: "whatsapp_instances"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversations_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
             referencedColumns: ["id"]
           },
         ]
