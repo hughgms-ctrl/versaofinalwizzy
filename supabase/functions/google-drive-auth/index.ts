@@ -12,26 +12,40 @@ Deno.serve(async (req) => {
 
   try {
     const url = new URL(req.url);
+    const action = url.searchParams.get('action');
     const code = url.searchParams.get('code');
-    
-    if (!code) {
-      return new Response(JSON.stringify({ error: 'Authorization code required' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
 
     const clientId = Deno.env.get('GOOGLE_CLIENT_ID');
     const clientSecret = Deno.env.get('GOOGLE_CLIENT_SECRET');
-    
+
     if (!clientId || !clientSecret) {
-      return new Response(JSON.stringify({ error: 'Google OAuth not configured' }), {
+      return new Response(JSON.stringify({ error: 'Google OAuth not configured. Add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET secrets.' }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
     const redirectUri = `${Deno.env.get('SUPABASE_URL')}/functions/v1/google-drive-auth`;
+
+    // Step 1: Redirect to Google OAuth
+    if (action === 'login') {
+      const state = url.searchParams.get('state') || '';
+      const scope = 'https://www.googleapis.com/auth/drive.file openid email profile';
+      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scope)}&access_type=offline&prompt=consent&state=${state}`;
+
+      return new Response(null, {
+        status: 302,
+        headers: { ...corsHeaders, Location: authUrl },
+      });
+    }
+
+    // Step 2: Handle OAuth callback
+    if (!code) {
+      return new Response(JSON.stringify({ error: 'No authorization code' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     // Exchange code for tokens
     const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
@@ -51,19 +65,16 @@ Deno.serve(async (req) => {
       throw new Error(tokens.error_description || tokens.error);
     }
 
-    // Get user email
+    // Get user info
     const userInfoRes = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
       headers: { Authorization: `Bearer ${tokens.access_token}` },
     });
     const userInfo = await userInfoRes.json();
 
-    // Get org_id from state parameter or auth header
+    // Parse state
     const state = url.searchParams.get('state');
     if (!state) {
-      return new Response(JSON.stringify({ error: 'Missing state parameter' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      throw new Error('Missing state parameter');
     }
 
     const { organization_id } = JSON.parse(atob(state));
@@ -73,7 +84,7 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     );
 
-    // Create Wizzy Backup folder in Drive
+    // Create Wizzy Backup folder
     const folderRes = await fetch('https://www.googleapis.com/drive/v3/files', {
       method: 'POST',
       headers: {
@@ -97,17 +108,18 @@ Deno.serve(async (req) => {
       is_connected: true,
     }, { onConflict: 'organization_id' });
 
-    // Redirect back to app
+    // Redirect back
     const appUrl = Deno.env.get('APP_URL') || 'https://wizzyai.lovable.app';
     return new Response(null, {
       status: 302,
-      headers: { ...corsHeaders, Location: `${appUrl}/integrations?tab=drive&connected=true` },
+      headers: { Location: `${appUrl}/integrations?tab=drive&connected=true` },
     });
   } catch (error) {
     console.error('Drive auth error:', error);
-    return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    const appUrl = Deno.env.get('APP_URL') || 'https://wizzyai.lovable.app';
+    return new Response(null, {
+      status: 302,
+      headers: { Location: `${appUrl}/integrations?tab=drive&error=${encodeURIComponent(error.message)}` },
     });
   }
 });
