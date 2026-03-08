@@ -753,8 +753,10 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
 
         <div className="space-y-3">
           <Label className="text-xs font-semibold">Regras ({rules.length})</Label>
-          {rules.map((rule, index) => {
+          {migratedRules.map((rule, index) => {
             const RuleIcon = conditionRuleTypes.find(t => t.value === rule.type)?.icon || GitBranch;
+            const showNegate = needsNegateToggle(rule.type);
+            const [posLabel, negLabel] = getNegateLabels(rule.type);
             return (
               <div key={rule.id} className="border border-border rounded-lg p-3 space-y-2 bg-muted/30">
                 <div className="flex items-center justify-between">
@@ -762,9 +764,9 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
                     <RuleIcon className="h-3.5 w-3.5 text-yellow-600" />
                     <Select
                       value={rule.type}
-                      onValueChange={(v) => updateRule(index, { id: rule.id, type: v as ConditionRuleType })}
+                      onValueChange={(v) => updateRule(index, { id: rule.id, type: v as ConditionRuleType, negate: false })}
                     >
-                      <SelectTrigger className="h-7 w-[180px] text-xs border-yellow-500/30">
+                      <SelectTrigger className="h-7 w-[150px] text-xs border-yellow-500/30">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -783,6 +785,33 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
                     <Trash2 className="h-3 w-3" />
                   </Button>
                 </div>
+
+                {/* É / Não é toggle */}
+                {showNegate && (
+                  <div className="flex items-center gap-1 bg-muted rounded-md p-0.5">
+                    <button
+                      type="button"
+                      className={cn(
+                        "flex-1 text-[11px] font-medium py-1 px-2 rounded transition-colors",
+                        !rule.negate ? "bg-green-500 text-white shadow-sm" : "text-muted-foreground hover:text-foreground"
+                      )}
+                      onClick={() => updateRule(index, { ...rule, negate: false })}
+                    >
+                      {posLabel}
+                    </button>
+                    <button
+                      type="button"
+                      className={cn(
+                        "flex-1 text-[11px] font-medium py-1 px-2 rounded transition-colors",
+                        rule.negate ? "bg-red-500 text-white shadow-sm" : "text-muted-foreground hover:text-foreground"
+                      )}
+                      onClick={() => updateRule(index, { ...rule, negate: true })}
+                    >
+                      {negLabel}
+                    </button>
+                  </div>
+                )}
+
                 {renderConditionRuleFields(rule, (updated) => updateRule(index, updated))}
               </div>
             );
