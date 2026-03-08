@@ -68,12 +68,11 @@ export function AITab() {
 
   const handleSave = () => {
     const payload = { ...formData };
-    const features: AIFeature[] = ['agents', 'conversation_summary', 'prompt_generation', 'flow_generation', 'transcription'];
+    // Clear per-feature overrides - use default for all
+    const features = ['agents', 'conversation_summary', 'prompt_generation', 'flow_generation', 'transcription'];
     features.forEach((f) => {
-      if (!featureOverrides[f]) {
-        (payload as any)[`${f}_provider`] = null;
-        (payload as any)[`${f}_model`] = null;
-      }
+      (payload as any)[`${f}_provider`] = null;
+      (payload as any)[`${f}_model`] = null;
     });
 
     if (payload.ai_provider === 'openai' && !payload.openai_api_key) {
