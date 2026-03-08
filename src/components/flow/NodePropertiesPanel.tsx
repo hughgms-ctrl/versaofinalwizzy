@@ -4,7 +4,7 @@ import {
   X, Layers, MousePointerClick, List, Tag, Kanban, UserPlus, Webhook,
   GitBranch, FormInput, Bot, IterationCw, Plus, Trash2, GripVertical,
   Type, Image, Video, Music, FileText, Clock, Upload, Loader2, Save, Sparkles,
-  Link, ChevronRight, ChevronDown, Folder
+  Link, ChevronRight, ChevronDown, Folder, Shuffle, User, MessageSquare
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
