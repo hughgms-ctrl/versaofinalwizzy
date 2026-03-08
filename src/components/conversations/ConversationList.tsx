@@ -1,5 +1,6 @@
 import { DbConversation, useProfiles } from '@/hooks/useConversations';
 import { useContactTags, useTags } from '@/hooks/useTags';
+import { useWorkspaces } from '@/hooks/useWorkspaces';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Bot, MessageCircle, Check, CheckCheck } from 'lucide-react';
