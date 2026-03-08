@@ -91,13 +91,14 @@ export function CampaignDialog({
         // Validate keyword if it's keyword type
         if (triggerType === 'keyword' && !triggerKeyword.trim()) return;
 
-        const payload = {
+        const payload: any = {
             name: name.trim(),
             trigger_keyword: triggerType === 'keyword' ? triggerKeyword.trim() : "*",
             match_type: triggerType === 'keyword' ? matchType : triggerType,
             flow_id: flowId,
             start_hour: startHour,
             end_hour: endHour,
+            workspace_id: workspaceId || null,
         };
 
         if (campaignToEdit) {
