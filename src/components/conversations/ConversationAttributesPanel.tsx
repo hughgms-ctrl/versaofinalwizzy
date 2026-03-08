@@ -196,7 +196,7 @@ export function ConversationAttributesPanel({
 
           {activePipeline && columns.length > 0 && (
             <TooltipProvider delayDuration={200}>
-              <div className="flex items-center gap-0.5">
+              <div className="flex items-center gap-0.5 overflow-x-auto scrollbar-thin pb-1" style={{ WebkitOverflowScrolling: 'touch' }}>
                 {columns.map((col, idx) => {
                   const isActive = col.id === currentColumnId;
                   const isPast = currentColumnId 
