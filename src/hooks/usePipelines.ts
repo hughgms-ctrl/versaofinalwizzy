@@ -313,12 +313,16 @@ export function useMoveConversation() {
       conversationId, 
       pipelineId, 
       columnId,
-      order = 0 
+      order = 0,
+      changedByType = 'manual',
+      skipAutoTransition = false,
     }: { 
       conversationId: string;
       pipelineId: string;
       columnId: string;
       order?: number;
+      changedByType?: string;
+      skipAutoTransition?: boolean;
     }) => {
       // Check if position already exists
       const { data: existing } = await supabase
