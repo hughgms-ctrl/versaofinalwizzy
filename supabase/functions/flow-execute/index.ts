@@ -463,7 +463,7 @@ async function executeTransfer(
 }
 
 // Execute Content Block - processes multiple items sequentially
-async function executeContentBlock(data: Record<string, unknown>, context: ExecutionContext, supabase: SupabaseClientType): Promise<NodeResult> {
+async function executeContentBlock(data: Record<string, unknown>, context: ExecutionContext, supabase: SupabaseClientType, node?: FlowNode): Promise<NodeResult> {
   const items = (data.items as ContentItem[]) || [];
 
   if (items.length === 0) {
