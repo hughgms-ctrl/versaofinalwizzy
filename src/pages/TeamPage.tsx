@@ -332,6 +332,12 @@ export default function TeamPage() {
         member={selectedMember}
       />
 
+      <EditMemberDialog
+        open={editMemberOpen}
+        onOpenChange={setEditMemberOpen}
+        member={memberToEdit}
+      />
+
       <AddUserDialog
         open={addUserOpen}
         onOpenChange={setAddUserOpen}
