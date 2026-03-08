@@ -344,6 +344,9 @@ async function executeAIHandoff(
     const additionalPrompt = String(data.additionalPrompt || data.contextMessage || '');
     const expectedOutcomes = String(data.expectedOutcomes || '');
 
+    // Parse outcomes for the prompt
+    const outcomes = expectedOutcomes ? expectedOutcomes.split(',').map(s => s.trim()).filter(Boolean) : [];
+
     // 1. Set the agent on the conversation so orchestrator knows which agent to use
     if (agentId) {
       await supabase.from('conversations').update({
