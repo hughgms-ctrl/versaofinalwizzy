@@ -59,6 +59,7 @@ export function AITab() {
   const [formData, setFormData] = useState<Partial<IntegrationConfig>>(DEFAULT_CONFIG);
   const [showOpenAIKey, setShowOpenAIKey] = useState(false);
   const [showGeminiKey, setShowGeminiKey] = useState(false);
+  const [showApiKeys, setShowApiKeys] = useState(false);
 
   useEffect(() => {
     if (config) {
