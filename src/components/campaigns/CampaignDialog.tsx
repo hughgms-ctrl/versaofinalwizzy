@@ -74,6 +74,7 @@ export function CampaignDialog({
             }
             setStartHour(campaignToEdit.start_hour ?? 0);
             setEndHour(campaignToEdit.end_hour ?? 23);
+            setWorkspaceId((campaignToEdit as any).workspace_id || "");
         } else if (open) {
             setName("");
             setTriggerKeyword("");
