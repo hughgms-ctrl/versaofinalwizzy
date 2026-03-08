@@ -1591,6 +1591,47 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
           </div>
         );
 
+      case 'action-workspace':
+        return (
+          <div className="space-y-4">
+            <div className="p-3 bg-sky-50 dark:bg-sky-950/30 rounded-lg flex items-center gap-3">
+              <Building2 className="h-5 w-5 text-sky-500" />
+              <div>
+                <p className="text-xs font-semibold">Atribuir Workspace</p>
+                <p className="text-[10px] text-muted-foreground">Atribui o contato e conversa a um workspace.</p>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Workspace</Label>
+              <Select
+                value={(localData.workspaceId as string) || ''}
+                onValueChange={(val) => {
+                  const ws = workspaces.find(w => w.id === val);
+                  const newData = {
+                    ...localData,
+                    workspaceId: val,
+                    workspaceName: ws?.name || 'Workspace'
+                  };
+                  setLocalData(newData);
+                  onUpdate(node.id, newData);
+                }}
+              >
+                <SelectTrigger><SelectValue placeholder="Selecione um workspace..." /></SelectTrigger>
+                <SelectContent>
+                  {workspaces.map((ws) => (
+                    <SelectItem key={ws.id} value={ws.id}>
+                      <div className="flex items-center gap-2">
+                        <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: ws.color }} />
+                        {ws.name}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        );
+
       case 'action-delay':
         return (
           <div className="space-y-4">
