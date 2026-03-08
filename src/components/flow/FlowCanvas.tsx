@@ -60,6 +60,8 @@ const nodeTypes = {
   'action-document': DocumentActionNode,
   'condition': ConditionNode,
   'user-input': UserInputNode,
+  'randomizer': RandomizerNode,
+  'smart-delay': SmartDelayNode,
   'ai-handoff': AIHandoffNode,
   'ai-return': AIReturnNode,
 };
