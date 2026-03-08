@@ -100,6 +100,7 @@ Deno.serve(async (req) => {
         .update({
           organization_id: organizationId,
           full_name: fullName,
+          phone: phone || null,
         })
         .eq('user_id', userId);
 

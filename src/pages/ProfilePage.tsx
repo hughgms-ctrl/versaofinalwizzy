@@ -275,9 +275,22 @@ export default function ProfilePage() {
                 placeholder="Seu nome completo"
               />
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="phone">WhatsApp</Label>
+              <Input 
+                id="phone"
+                type="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="5511999999999"
+              />
+              <p className="text-xs text-muted-foreground">
+                Número com código do país. Usado para receber notificações via WhatsApp.
+              </p>
+            </div>
             <Button 
               onClick={handleUpdateProfile}
-              disabled={isUpdatingProfile || fullName.trim() === profile?.full_name}
+              disabled={isUpdatingProfile || (fullName.trim() === profile?.full_name && (phone.trim() || null) === (profile?.phone || null))}
             >
               {isUpdatingProfile ? (
                 <>
