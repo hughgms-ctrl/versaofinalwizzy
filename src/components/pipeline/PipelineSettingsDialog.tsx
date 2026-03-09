@@ -440,11 +440,40 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
                   </Select>
                 </div>
 
+                {/* Completion Column */}
+                <div className="space-y-2">
+                  <Label>Coluna de conclusão:</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Qual coluna indica que o lead concluiu este pipeline? Ao chegar nela, a transição automática será acionada.
+                  </p>
+                  <Select
+                    value={completionColumnId}
+                    onValueChange={setCompletionColumnId}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecionar coluna..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="last">
+                        <span className="text-muted-foreground">Última coluna (padrão)</span>
+                      </SelectItem>
+                      {columns.map((col) => (
+                        <SelectItem key={col.id} value={col.id}>
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: col.color }} />
+                            {col.name || 'Sem nome'}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 {/* Next Pipeline (Auto-transition) */}
                 <div className="space-y-2">
                   <Label>Ao concluir, enviar para:</Label>
                   <p className="text-xs text-muted-foreground">
-                    Quando um lead chegar na última coluna, será transferido automaticamente para o pipeline selecionado.
+                    Quando um lead chegar na coluna de conclusão, será transferido automaticamente para o pipeline selecionado.
                   </p>
                   <Select
                     value={nextPipelineId}
