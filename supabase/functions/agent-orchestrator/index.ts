@@ -385,11 +385,40 @@ async function walkFlowForward(
         const pipelineId = nextNode.data?.pipelineId;
         const columnId = nextNode.data?.columnId;
         if (pipelineId && columnId) {
+          // Get old column for history
+          const { data: oldPos } = await supabase.from('conversation_pipeline_positions')
+            .select('column_id').eq('conversation_id', ctx.conversationId)
+            .eq('pipeline_id', pipelineId).maybeSingle();
+          const fromColumnId = oldPos?.column_id || null;
+
           await supabase.from('conversation_pipeline_positions').upsert({
             conversation_id: ctx.conversationId, pipeline_id: pipelineId,
             column_id: columnId, updated_at: new Date().toISOString(),
           }, { onConflict: 'conversation_id,pipeline_id' });
           console.log('Pipeline moved:', pipelineId, columnId);
+
+          // Log stage history
+          await supabase.from('conversation_stage_history').insert({
+            conversation_id: ctx.conversationId,
+            pipeline_id: pipelineId,
+            from_column_id: fromColumnId,
+            to_column_id: columnId,
+            changed_by_type: 'orchestrator',
+            changed_by: null,
+            organization_id: ctx.organizationId,
+          });
+
+          // Trigger stage notification
+          try {
+            const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+            const srvKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+            await fetch(`${supabaseUrl}/functions/v1/stage-notification`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${srvKey}` },
+              body: JSON.stringify({ conversationId: ctx.conversationId, columnId, organizationId: ctx.organizationId }),
+            });
+          } catch (e) { console.error('Stage notification error:', e); }
+
           toolsExecuted.push({ name: 'move_pipeline', arguments: { pipeline_id: pipelineId, column_id: columnId }, result: { success: true } });
         }
         state.completed_nodes.push(nextNode.id);
