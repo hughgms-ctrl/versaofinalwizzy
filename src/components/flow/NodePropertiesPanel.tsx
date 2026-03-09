@@ -434,6 +434,30 @@ function ContentItemEditor({
   );
 }
 
+function OutcomeColumnSelect({ pipelineId, value, onChange }: { pipelineId: string; value: string; onChange: (v: string) => void }) {
+  const { data: cols = [] } = usePipelineColumns(pipelineId);
+  return (
+    <Select value={value || 'first'} onValueChange={onChange}>
+      <SelectTrigger className="h-7 text-xs">
+        <SelectValue placeholder="Coluna..." />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="first">
+          <span className="text-muted-foreground">Primeira coluna</span>
+        </SelectItem>
+        {cols.map((col) => (
+          <SelectItem key={col.id} value={col.id}>
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: col.color }} />
+              {col.name || 'Sem nome'}
+            </div>
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
 export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave, isSaving, hasUnsavedChanges, organizationId }: NodePropertiesPanelProps) {
   const [localData, setLocalData] = useState<Record<string, unknown>>({});
   const [isGenerating, setIsGenerating] = useState(false);
@@ -1430,6 +1454,68 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
                 className="h-9 text-sm bg-background/50 rounded-xl border-rose-500/20"
               />
             </div>
+
+            {/* Per-outcome pipeline mapping */}
+            {(() => {
+              const outcomesStr = (localData.expectedOutcomes as string) || '';
+              const outcomesList = outcomesStr.split(',').map(s => s.trim()).filter(Boolean);
+              if (outcomesList.length === 0) return null;
+
+              const outcomePipelines = (localData.outcomePipelines as Record<string, { pipelineId: string; columnId: string }>) || {};
+
+              const updateOutcomePipeline = (outcome: string, field: 'pipelineId' | 'columnId', value: string) => {
+                const current = outcomePipelines[outcome] || { pipelineId: '', columnId: '' };
+                const updated = {
+                  ...outcomePipelines,
+                  [outcome]: {
+                    ...current,
+                    [field]: value === 'none' ? '' : value,
+                    ...(field === 'pipelineId' ? { columnId: '' } : {}),
+                  }
+                };
+                handleChange('outcomePipelines', updated);
+              };
+
+              return (
+                <div className="space-y-3 pt-2 border-t border-border/50">
+                  <Label className="text-xs font-semibold">Mover para Pipeline por Resultado</Label>
+                  <p className="text-[10px] text-muted-foreground leading-tight">
+                    Para cada resultado, escolha para qual pipeline/coluna o lead será movido automaticamente.
+                  </p>
+                  {outcomesList.map((outcome) => {
+                    const config = outcomePipelines[outcome] || { pipelineId: '', columnId: '' };
+                    return (
+                      <div key={outcome} className="space-y-1.5 p-2 rounded-lg border border-border/50 bg-muted/30">
+                        <span className="text-[10px] font-semibold text-violet-500">● {outcome}</span>
+                        <Select
+                          value={config.pipelineId || 'none'}
+                          onValueChange={(v) => updateOutcomePipeline(outcome, 'pipelineId', v)}
+                        >
+                          <SelectTrigger className="h-7 text-xs">
+                            <SelectValue placeholder="Pipeline..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">
+                              <span className="text-muted-foreground">Não mover</span>
+                            </SelectItem>
+                            {pipelines.map((p) => (
+                              <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {config.pipelineId && (
+                          <OutcomeColumnSelect
+                            pipelineId={config.pipelineId}
+                            value={config.columnId}
+                            onChange={(v) => updateOutcomePipeline(outcome, 'columnId', v)}
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
 
             <div className="p-3 rounded-2xl border border-dashed border-rose-500/40 bg-rose-500/5 space-y-3 mt-2">
               <div className="flex items-center gap-2 text-rose-500">
