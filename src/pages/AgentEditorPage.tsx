@@ -45,8 +45,6 @@ const AgentEditorPage = () => {
       setFunctionRole(agent.function_role || 'recepcao');
       setPromptBase(agent.prompt_base || '');
       setIsActive(agent.is_active);
-      setProvider(agent.provider || 'lovable');
-      setModel(agent.model || 'default');
     }
   }, [agent]);
 
