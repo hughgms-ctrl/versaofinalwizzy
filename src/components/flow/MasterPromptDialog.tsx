@@ -141,6 +141,11 @@ export function MasterPromptDialog({
                             placeholder="Ex: Você é um assistente jurídico especializado em direito previdenciário. Mantenha um tom profissional e acolhedor..."
                             className="flex-1 resize-none font-mono text-sm leading-relaxed focus-visible:ring-indigo-500/30"
                         />
+                        <TrainingRulesList
+                            targetType="master_prompt"
+                            flowId={flowId}
+                            organizationId={organizationId}
+                        />
                     </div>
 
                     {/* Lado Direito: Assistente de IA */}

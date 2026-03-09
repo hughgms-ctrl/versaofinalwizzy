@@ -512,6 +512,7 @@ function FlowCanvasInner() {
           setHasUnsavedChanges(true);
         }}
         organizationId={flow?.organization_id}
+        flowId={flowId || undefined}
       />
     </div>
   );
