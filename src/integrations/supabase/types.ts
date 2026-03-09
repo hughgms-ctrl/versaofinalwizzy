@@ -149,6 +149,99 @@ export type Database = {
           },
         ]
       }
+      agent_training_rules: {
+        Row: {
+          agent_id: string | null
+          created_at: string
+          created_by: string | null
+          flow_id: string | null
+          id: string
+          is_active: boolean
+          master_prompt_id: string | null
+          message_id: string | null
+          node_id: string | null
+          organization_id: string
+          original_feedback: string | null
+          original_message: string | null
+          rule: string
+          situation: string
+          target_type: string
+          updated_at: string
+        }
+        Insert: {
+          agent_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          flow_id?: string | null
+          id?: string
+          is_active?: boolean
+          master_prompt_id?: string | null
+          message_id?: string | null
+          node_id?: string | null
+          organization_id: string
+          original_feedback?: string | null
+          original_message?: string | null
+          rule: string
+          situation: string
+          target_type: string
+          updated_at?: string
+        }
+        Update: {
+          agent_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          flow_id?: string | null
+          id?: string
+          is_active?: boolean
+          master_prompt_id?: string | null
+          message_id?: string | null
+          node_id?: string | null
+          organization_id?: string
+          original_feedback?: string | null
+          original_message?: string | null
+          rule?: string
+          situation?: string
+          target_type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_training_rules_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "ai_agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_training_rules_flow_id_fkey"
+            columns: ["flow_id"]
+            isOneToOne: false
+            referencedRelation: "flows"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_training_rules_master_prompt_id_fkey"
+            columns: ["master_prompt_id"]
+            isOneToOne: false
+            referencedRelation: "master_prompts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_training_rules_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_training_rules_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ai_agents: {
         Row: {
           avatar_url: string | null
