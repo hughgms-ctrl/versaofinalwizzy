@@ -2186,6 +2186,7 @@ export type Database = {
       }
       pipelines: {
         Row: {
+          completion_column_id: string | null
           created_at: string
           default_assigned_to: string | null
           description: string | null
@@ -2199,6 +2200,7 @@ export type Database = {
           workspace_ids: string[] | null
         }
         Insert: {
+          completion_column_id?: string | null
           created_at?: string
           default_assigned_to?: string | null
           description?: string | null
@@ -2212,6 +2214,7 @@ export type Database = {
           workspace_ids?: string[] | null
         }
         Update: {
+          completion_column_id?: string | null
           created_at?: string
           default_assigned_to?: string | null
           description?: string | null
@@ -2225,6 +2228,13 @@ export type Database = {
           workspace_ids?: string[] | null
         }
         Relationships: [
+          {
+            foreignKeyName: "pipelines_completion_column_id_fkey"
+            columns: ["completion_column_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_columns"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "pipelines_next_pipeline_column_id_fkey"
             columns: ["next_pipeline_column_id"]
