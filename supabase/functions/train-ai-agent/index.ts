@@ -27,7 +27,6 @@ Deno.serve(async (req) => {
       // Fetch conversation context around the message for better training
       let conversationContext = '';
       if (messageId) {
-        // Get the message and its conversation
         const { data: msg } = await supabase
           .from('messages')
           .select('conversation_id, created_at')
@@ -35,7 +34,6 @@ Deno.serve(async (req) => {
           .single();
 
         if (msg) {
-          // Fetch surrounding messages for context (last 10 before + the message)
           const { data: contextMessages } = await supabase
             .from('messages')
             .select('content, direction, type, created_at')
@@ -71,9 +69,13 @@ ${conversationContext ? `CONTEXTO DA CONVERSA:\n${conversationContext}\n` : ''}
 MENSAGEM DA IA QUE GEROU O FEEDBACK: "${originalMessage || 'Não fornecida'}"
 FEEDBACK DO USUÁRIO: "${feedback}"
 
-Responda APENAS com a regra contextual refinada no formato:
-**Situação:** [descrição do cenário]
-**Regra:** [o que o agente deve fazer]`;
+Responda em JSON com exatamente dois campos:
+{
+  "situation": "descrição do cenário em que a regra se aplica",
+  "rule": "o que o agente deve fazer diferente"
+}
+
+Responda APENAS com o JSON, sem markdown ou comentários.`;
 
       const resp = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
         method: 'POST',
@@ -95,74 +97,72 @@ Responda APENAS com a regra contextual refinada no formato:
       }
 
       const aiData = await resp.json();
-      const refinedFeedback = aiData.choices?.[0]?.message?.content?.trim() || feedback;
+      const rawContent = aiData.choices?.[0]?.message?.content?.trim() || '';
 
-      return new Response(JSON.stringify({ success: true, refinedFeedback }), {
+      // Parse JSON response
+      let situation = '';
+      let rule = '';
+      try {
+        const cleaned = rawContent.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+        const parsed = JSON.parse(cleaned);
+        situation = parsed.situation || '';
+        rule = parsed.rule || '';
+      } catch {
+        // Fallback: use raw content as rule
+        situation = 'Situação geral';
+        rule = rawContent;
+      }
+
+      return new Response(JSON.stringify({ success: true, situation, rule }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // Default to 'apply' mode
+    // ========== APPLY MODE ==========
     if (!feedback || !target) {
       return new Response(JSON.stringify({ error: 'feedback and target are required' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    console.log(`[TRAIN-AI] Applying feedback for message ${messageId || 'new'}. Target: ${target}`);
+    const { situation, rule: ruleText } = payload;
 
-    let updateError = null;
+    console.log(`[TRAIN-AI] Saving structured rule. Target: ${target}, messageId: ${messageId}`);
 
-    if (target === 'base_agent') {
-      const agentId = context?.agentId;
-      if (!agentId) throw new Error('agentId is required for base_agent target');
+    // Build the training rule record
+    const ruleRecord: any = {
+      organization_id: organizationId,
+      target_type: target,
+      situation: situation || 'Regra geral',
+      rule: ruleText || feedback,
+      original_message: originalMessage || null,
+      original_feedback: feedback,
+      message_id: messageId || null,
+      is_active: true,
+    };
 
-      const { data: agent } = await supabase.from('ai_agents').select('prompt_base').eq('id', agentId).single();
-      const currentPrompt = agent?.prompt_base || '';
-      const newPrompt = currentPrompt + `\n\n### REGRA DE TREINAMENTO (${new Date().toLocaleDateString()}):\n${feedback}`;
-      
-      const { error } = await supabase.from('ai_agents').update({ prompt_base: newPrompt }).eq('id', agentId);
-      updateError = error;
-
-    } else if (target === 'master_prompt') {
-      const promptId = context?.masterPromptId;
-      if (!promptId) throw new Error('masterPromptId is required for master_prompt target');
-
-      const { data: prompt } = await supabase.from('master_prompts').select('content').eq('id', promptId).single();
-      const currentContent = prompt?.content || '';
-      const newContent = currentContent + `\n\n### REGRA DE TREINAMENTO (${new Date().toLocaleDateString()}):\n${feedback}`;
-
-      const { error } = await supabase.from('master_prompts').update({ content: newContent }).eq('id', promptId);
-      updateError = error;
-
-    } else if (target === 'flow_node') {
-      const flowId = context?.flowId;
-      const nodeId = context?.nodeId;
-      if (!flowId || !nodeId) throw new Error('flowId and nodeId are required for flow_node target');
-
-      const { data: flow } = await supabase.from('flows').select('nodes').eq('id', flowId).single();
-      const nodes = (flow?.nodes || []) as any[];
-      const nodeIndex = nodes.findIndex((n: any) => n.id === nodeId);
-
-      if (nodeIndex !== -1) {
-        const node = nodes[nodeIndex];
-        node.data = node.data || {};
-        const oldPrompt = node.data.additionalPrompt || '';
-        node.data.additionalPrompt = oldPrompt + `\n\n### REGRA DE TREINAMENTO (${new Date().toLocaleDateString()}):\n${feedback}`;
-        
-        const { error } = await supabase.from('flows').update({ nodes }).eq('id', flowId);
-        updateError = error;
-      } else {
-        throw new Error('Node not found in flow');
-      }
+    // Set the correct target reference
+    if (target === 'agent' && context?.agentId) {
+      ruleRecord.agent_id = context.agentId;
+    } else if (target === 'master_prompt' && context?.masterPromptId) {
+      ruleRecord.master_prompt_id = context.masterPromptId;
+    } else if (target === 'flow_node' && context?.flowId) {
+      ruleRecord.flow_id = context.flowId;
+      ruleRecord.node_id = context.nodeId || null;
     }
 
-    if (updateError) {
-      console.error('[TRAIN-AI] Update error:', updateError);
-      return new Response(JSON.stringify({ error: updateError.message }), {
+    const { error: insertError } = await supabase
+      .from('agent_training_rules')
+      .insert(ruleRecord);
+
+    if (insertError) {
+      console.error('[TRAIN-AI] Insert error:', insertError);
+      return new Response(JSON.stringify({ error: insertError.message }), {
         status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+
+    console.log(`[TRAIN-AI] Rule saved successfully for target ${target}`);
 
     return new Response(JSON.stringify({ success: true }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
