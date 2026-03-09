@@ -33,7 +33,6 @@ interface ConversationFiltersProps {
 
 const statusLabels: Record<string, string> = {
   open: 'Aberto',
-  pending: 'Pendente',
   resolved: 'Resolvido',
   archived: 'Arquivado',
 };
