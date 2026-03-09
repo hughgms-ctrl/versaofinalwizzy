@@ -13,7 +13,7 @@ interface ContactLogsSectionProps {
 interface TimelineEntry {
   id: string;
   timestamp: string;
-  type: 'agent_activated' | 'tag_added' | 'tag_removed' | 'pipeline_moved' | 'flow_triggered' | 'agent_switched' | 'human_intervened' | 'status_changed' | 'ai_response' | 'stage_changed' | 'conversation_started';
+  type: 'agent_activated' | 'tag_added' | 'tag_removed' | 'pipeline_moved' | 'flow_triggered' | 'agent_switched' | 'human_intervened' | 'status_changed' | 'ai_response' | 'stage_changed' | 'conversation_started' | 'followup_sent';
   description: string;
   actor: string;
   actorType: 'ai' | 'human' | 'system';
