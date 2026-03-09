@@ -34,6 +34,7 @@ import SignaturePage from "./pages/SignaturePage";
 import PublicBookingPage from "./pages/PublicBookingPage";
 import NotFound from "./pages/NotFound";
 import CampaignsPage from "./pages/CampaignsPage";
+import CalendarPage from "./pages/CalendarPage";
 
 const queryClient = new QueryClient();
 
