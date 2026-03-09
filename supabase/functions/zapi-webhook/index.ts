@@ -1036,6 +1036,22 @@ async function handleReadReceipt(supabase: any, payload: any) {
   }
 
   async function checkMasterPromptTriggers(supabase: any, organizationId: string, contactId: string, messageContent: string, conversationId: string): Promise<boolean> {
+    // Check if a flow just ended recently (within last 30 seconds) — if so, don't re-trigger
+    const { data: convCheck } = await supabase
+      .from('conversations')
+      .select('metadata')
+      .eq('id', conversationId)
+      .single();
+    
+    const flowEndedAt = convCheck?.metadata?.flow_ended_at;
+    if (flowEndedAt) {
+      const elapsedMs = Date.now() - new Date(flowEndedAt).getTime();
+      if (elapsedMs < 60000) { // 60 seconds grace period
+        console.log(`[WEBHOOK] Skipping master prompt triggers — flow ended ${Math.round(elapsedMs/1000)}s ago`);
+        return false;
+      }
+    }
+
     const { data: masterPrompts } = await supabase
       .from('master_prompts')
       .select('id, trigger_type, trigger_tags, trigger_keywords')

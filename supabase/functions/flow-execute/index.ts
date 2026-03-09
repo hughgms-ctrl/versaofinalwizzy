@@ -285,11 +285,44 @@ async function runFlowExecution(
     })
     .eq('id', executionId);
 
-  // Reset service_mode to 'humano' so AI stops responding after flow ends
-  await supabase
-    .from('conversations')
-    .update({ service_mode: 'humano' })
-    .eq('id', conversationId);
+  // Check if there's a PARENT flow execution still active for this conversation
+  // (sub-flow should NOT reset service_mode if parent is still running)
+  const { data: otherActiveFlows } = await supabase
+    .from('flow_executions')
+    .select('id')
+    .eq('conversation_id', conversationId)
+    .neq('id', executionId)
+    .in('status', ['running', 'waiting_input'])
+    .limit(1);
+
+  const hasParentFlow = otherActiveFlows && otherActiveFlows.length > 0;
+
+  if (!hasParentFlow) {
+    // Only reset if no parent flow is active
+    // Clear service_mode, ai_agent_id, and set flow_ended_at flag in metadata
+    const { data: convData } = await supabase
+      .from('conversations')
+      .select('metadata')
+      .eq('id', conversationId)
+      .single();
+    
+    const cleanMetadata = { ...(convData?.metadata || {}) };
+    delete cleanMetadata.ai_handoff_context; // Clean up handoff context
+    cleanMetadata.flow_ended_at = new Date().toISOString(); // Flag to prevent re-trigger
+
+    await supabase
+      .from('conversations')
+      .update({
+        service_mode: 'humano',
+        ai_agent_id: null,
+        metadata: cleanMetadata,
+      })
+      .eq('id', conversationId);
+    
+    console.log(`[FLOW EXECUTE] Flow completed — reset service_mode to humano, cleared ai_agent_id`);
+  } else {
+    console.log(`[FLOW EXECUTE] Sub-flow completed — parent flow still active, NOT resetting service_mode`);
+  }
 
   await supabase
     .from('flows')
