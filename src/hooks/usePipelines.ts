@@ -494,3 +494,91 @@ export function useMoveConversation() {
     },
   });
 }
+
+export function useTransferConversation() {
+  const queryClient = useQueryClient();
+  const { profile } = useAuth();
+
+  return useMutation({
+    mutationFn: async ({
+      conversationId,
+      targetPipelineId,
+    }: {
+      conversationId: string;
+      targetPipelineId: string;
+    }) => {
+      if (!profile?.organization_id) throw new Error('No org');
+
+      // Get first column of target pipeline
+      const { data: targetColumns } = await (supabase as any)
+        .from('pipeline_columns')
+        .select('id')
+        .eq('pipeline_id', targetPipelineId)
+        .order('order', { ascending: true })
+        .limit(1);
+
+      const targetColumnId = targetColumns?.[0]?.id;
+      if (!targetColumnId) throw new Error('Pipeline sem colunas');
+
+      // Get current position for history
+      const { data: currentPos } = await supabase
+        .from('conversation_pipeline_positions')
+        .select('pipeline_id, column_id')
+        .eq('conversation_id', conversationId)
+        .maybeSingle();
+
+      // Delete old position (unique constraint means only one exists)
+      await supabase
+        .from('conversation_pipeline_positions')
+        .delete()
+        .eq('conversation_id', conversationId);
+
+      // Insert new position
+      const { error } = await supabase
+        .from('conversation_pipeline_positions')
+        .insert({
+          conversation_id: conversationId,
+          pipeline_id: targetPipelineId,
+          column_id: targetColumnId,
+          order: 0,
+        });
+
+      if (error) throw error;
+
+      // Log transfer in history
+      await (supabase as any)
+        .from('conversation_stage_history')
+        .insert({
+          conversation_id: conversationId,
+          pipeline_id: targetPipelineId,
+          from_column_id: currentPos?.column_id || null,
+          to_column_id: targetColumnId,
+          changed_by_type: 'transfer',
+          changed_by: profile.user_id || null,
+          organization_id: profile.organization_id,
+        });
+
+      // Auto-assign from target pipeline
+      const { data: targetPipeline } = await (supabase as any)
+        .from('pipelines')
+        .select('default_assigned_to')
+        .eq('id', targetPipelineId)
+        .single();
+
+      if (targetPipeline?.default_assigned_to) {
+        await (supabase as any)
+          .from('conversations')
+          .update({ assigned_to: targetPipeline.default_assigned_to })
+          .eq('id', conversationId);
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['conversation-positions'] });
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    },
+    onError: (error) => {
+      console.error('Error transferring conversation:', error);
+      toast({ title: 'Erro ao transferir conversa', variant: 'destructive' });
+    },
+  });
+}

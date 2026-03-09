@@ -26,7 +26,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { useQueryClient } from '@tanstack/react-query';
 import { DbConversation } from '@/hooks/useConversations';
-import { usePipelines, usePipelineColumns, useMoveConversation } from '@/hooks/usePipelines';
+import { usePipelines, usePipelineColumns, useMoveConversation, useTransferConversation } from '@/hooks/usePipelines';
 import { useNavigate } from 'react-router-dom';
 
 interface ConversationCardActionsProps {
