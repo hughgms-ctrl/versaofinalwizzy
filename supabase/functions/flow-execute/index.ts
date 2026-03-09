@@ -210,13 +210,29 @@ async function runFlowExecution(
           current_node_id: currentNode.id,
           variables: context.variables,
           execution_log: executionLog,
+          remarketing_step: 0,
         };
 
-        // Set timeout_at if the node has a timeout configured
-        const timeoutMinutes = Number(currentNode.data?.timeoutMinutes || 0);
-        if (timeoutMinutes > 0) {
-          updateData.timeout_at = new Date(Date.now() + timeoutMinutes * 60 * 1000).toISOString();
-          console.log(`[FLOW EXECUTE] Setting timeout_at: ${updateData.timeout_at} (${timeoutMinutes} min)`);
+        // For action-flow nodes with remarketingSteps: schedule first step timeout
+        if (currentNode.type === 'action-flow') {
+          const remarketingSteps = (currentNode.data?.remarketingSteps || []) as Array<{ delayMinutes: number; message: string }>;
+          if (remarketingSteps.length > 0) {
+            const firstStep = remarketingSteps[0];
+            const delayMs = (firstStep.delayMinutes || 1) * 60 * 1000;
+            updateData.timeout_at = new Date(Date.now() + delayMs).toISOString();
+            console.log(`[FLOW EXECUTE] action-flow: scheduling first remarketing in ${firstStep.delayMinutes}min, timeout_at=${updateData.timeout_at}`);
+          } else {
+            // waitForResponse but no steps — timeout after 24h
+            updateData.timeout_at = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+            console.log(`[FLOW EXECUTE] action-flow: waitForResponse with no steps, timeout in 24h`);
+          }
+        } else {
+          // Set timeout_at if the node has a timeout configured (other node types)
+          const timeoutMinutes = Number(currentNode.data?.timeoutMinutes || 0);
+          if (timeoutMinutes > 0) {
+            updateData.timeout_at = new Date(Date.now() + timeoutMinutes * 60 * 1000).toISOString();
+            console.log(`[FLOW EXECUTE] Setting timeout_at: ${updateData.timeout_at} (${timeoutMinutes} min)`);
+          }
         }
 
         await supabase
@@ -444,18 +460,21 @@ async function executeSubFlow(
 ): Promise<NodeResult> {
   const flowId = String(data.flowId || '');
   const flowName = String(data.flowName || data.label || 'Sub-fluxo');
+  const waitForResponse = Boolean(data.waitForResponse);
+  const remarketingSteps = (data.remarketingSteps || []) as Array<{ delayMinutes: number; message: string }>;
 
   if (!flowId) {
     console.log('[FLOW EXECUTE] action-flow: no flowId configured');
     return { success: true, metadata: { skipped: 'no_flow_id' } };
   }
 
-  console.log(`[FLOW EXECUTE] Triggering sub-flow: ${flowId} (${flowName})`);
+  console.log(`[FLOW EXECUTE] Triggering sub-flow: ${flowId} (${flowName}), waitForResponse=${waitForResponse}, remarketingSteps=${remarketingSteps.length}`);
 
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
+    // Trigger the sub-flow
     const response = await fetch(`${supabaseUrl}/functions/v1/flow-execute`, {
       method: 'POST',
       headers: {
@@ -470,10 +489,20 @@ async function executeSubFlow(
     });
 
     const result = await response.json();
-    console.log(`[FLOW EXECUTE] Sub-flow ${flowId} result:`, result.success ? 'success' : 'failed');
+    console.log(`[FLOW EXECUTE] Sub-flow ${flowId} triggered:`, result.success ? 'success' : 'failed');
 
-    // Wait a bit for sub-flow to process before continuing
+    // Wait for sub-flow to start processing
     await new Promise(resolve => setTimeout(resolve, 2000));
+
+    // If waitForResponse is enabled OR there are remarketing steps, pause and wait
+    if (waitForResponse || remarketingSteps.length > 0) {
+      console.log(`[FLOW EXECUTE] action-flow with waitForResponse/remarketing — pausing parent flow`);
+      return { 
+        success: true, 
+        waitForInput: true,
+        metadata: { flowId, flowName, triggered: true, waitingForResponse: true, remarketingSteps: remarketingSteps.length } 
+      };
+    }
 
     return { success: true, metadata: { flowId, flowName, triggered: true } };
   } catch (error) {
