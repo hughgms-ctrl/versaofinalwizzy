@@ -162,25 +162,21 @@ export function CampaignDialog({
 
                     <div className="grid grid-cols-2 gap-4">
                         <div className="grid gap-2">
-                            <Label htmlFor="start_hour">Início (Hora: 0-23)</Label>
+                            <Label htmlFor="start_time">Início (HH:MM)</Label>
                             <Input
-                                id="start_hour"
-                                type="number"
-                                min={0}
-                                max={23}
-                                value={startHour}
-                                onChange={(e) => setStartHour(parseInt(e.target.value) || 0)}
+                                id="start_time"
+                                type="time"
+                                value={startTime}
+                                onChange={(e) => setStartTime(e.target.value)}
                             />
                         </div>
                         <div className="grid gap-2">
-                            <Label htmlFor="end_hour">Fim (Hora: 0-23)</Label>
+                            <Label htmlFor="end_time">Fim (HH:MM)</Label>
                             <Input
-                                id="end_hour"
-                                type="number"
-                                min={0}
-                                max={23}
-                                value={endHour}
-                                onChange={(e) => setEndHour(parseInt(e.target.value) || 23)}
+                                id="end_time"
+                                type="time"
+                                value={endTime}
+                                onChange={(e) => setEndTime(e.target.value)}
                             />
                         </div>
                     </div>
