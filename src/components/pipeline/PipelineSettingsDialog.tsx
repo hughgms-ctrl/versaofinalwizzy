@@ -187,7 +187,8 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
     const nextPipelineChanged = (nextPipelineId === 'none' ? null : nextPipelineId) !== (pipeline.next_pipeline_id || null);
     const nextColumnChanged = (nextPipelineColumnId === 'first' ? null : nextPipelineColumnId) !== (pipeline.next_pipeline_column_id || null);
     const assignedChanged = (defaultAssignedTo === 'none' ? null : defaultAssignedTo) !== (pipeline.default_assigned_to || null);
-    return name !== pipeline.name || description !== (pipeline.description || '') || wsChanged || nextPipelineChanged || nextColumnChanged || assignedChanged;
+    const completionChanged = (completionColumnId === 'last' ? null : completionColumnId) !== (pipeline.completion_column_id || null);
+    return name !== pipeline.name || description !== (pipeline.description || '') || wsChanged || nextPipelineChanged || nextColumnChanged || assignedChanged || completionChanged;
   };
 
   const handleSave = async () => {
