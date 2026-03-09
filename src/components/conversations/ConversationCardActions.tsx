@@ -9,7 +9,8 @@ import {
   ExternalLink,
   Loader2,
   MailWarning,
-  EyeOff
+  EyeOff,
+  ArrowRightLeft
 } from 'lucide-react';
 import {
   DropdownMenu,
