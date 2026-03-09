@@ -94,6 +94,49 @@ export function RemarketingStepsEditor({ localData, handleChange }: RemarketingS
         Adicionar tentativa
       </Button>
 
+      {/* Quiet Hours */}
+      {steps.length > 0 && (
+        <div className="p-3 rounded-lg border border-border bg-muted/30 space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Moon className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-[10px] font-semibold">Horário silencioso</span>
+            </div>
+            <Switch
+              checked={quietHoursEnabled}
+              onCheckedChange={(v) => handleChange('remarketingQuietHours', v)}
+            />
+          </div>
+          {quietHoursEnabled && (
+            <div className="space-y-1.5">
+              <p className="text-[10px] text-muted-foreground">
+                Follow-ups não serão enviados neste período. Serão reagendados para o próximo horário permitido.
+              </p>
+              <div className="flex items-center gap-2">
+                <div className="flex-1">
+                  <Label className="text-[10px] text-muted-foreground">Pausa às</Label>
+                  <Input
+                    type="time"
+                    value={quietStart}
+                    onChange={(e) => handleChange('remarketingQuietStart', e.target.value)}
+                    className="h-7 text-xs"
+                  />
+                </div>
+                <div className="flex-1">
+                  <Label className="text-[10px] text-muted-foreground">Retoma às</Label>
+                  <Input
+                    type="time"
+                    value={quietEnd}
+                    onChange={(e) => handleChange('remarketingQuietEnd', e.target.value)}
+                    className="h-7 text-xs"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* AI Generation */}
       {steps.length > 0 && (
         <div className="p-3 rounded-lg border border-dashed border-blue-500/40 bg-blue-500/5 space-y-2">
