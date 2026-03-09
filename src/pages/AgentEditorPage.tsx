@@ -57,8 +57,6 @@ const AgentEditorPage = () => {
       function_role: functionRole,
       prompt_base: promptBase,
       is_active: isActive,
-      provider: provider,
-      model: model === 'default' ? null : model,
     });
   };
 
