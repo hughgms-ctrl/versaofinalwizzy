@@ -1,0 +1,1 @@
+UPDATE flow_executions SET remarketing_step = 0, timeout_at = now() WHERE status = 'waiting_input' AND remarketing_step >= 1 AND flow_id = '9eecfd1a-5318-4b5e-8834-ca06fec2b4c8' AND timeout_at < now()
