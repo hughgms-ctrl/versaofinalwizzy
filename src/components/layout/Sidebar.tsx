@@ -41,6 +41,7 @@ const navigation: NavItem[] = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Conversas', href: '/conversations', icon: MessageSquare, module: 'conversations' },
   { name: 'Contatos', href: '/contacts', icon: BookUser, module: 'conversations' },
+  { name: 'Agenda', href: '/calendar', icon: Calendar, module: 'pipeline' },
   { name: 'Pipeline', href: '/pipeline', icon: Kanban, module: 'pipeline' },
   { name: 'Fluxos', href: '/flows', icon: Workflow, module: 'flows' },
   { name: 'Campanhas', href: '/campaigns', icon: Megaphone, module: 'flows' },
