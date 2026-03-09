@@ -201,7 +201,10 @@ Deno.serve(async (req) => {
       result = await executeLegacyOrchestration(supabase, context, messageContent);
     }
 
-    // 5. Send reply
+    // 5. Send reply (strip any leaked internal annotations)
+    if (result.replyText) {
+      result.replyText = stripInternalAnnotations(result.replyText);
+    }
     if (result.replyText) {
       await sendReplyViaZAPI(supabase, conversation, result.replyText);
     }
@@ -338,8 +341,10 @@ async function walkFlowForward(
   while (safetyCounter++ < 20) {
     const nextNodeIds = findNextNodeIds(edges, state.current_node_id!);
     if (nextNodeIds.length === 0) {
-      console.log('End of flow reached');
+      console.log('End of flow reached — resetting service_mode to humano');
       state.flow_completed = true;
+      // Reset service_mode so AI stops responding after flow ends
+      await supabase.from('conversations').update({ service_mode: 'humano' }).eq('id', ctx.conversationId);
       break;
     }
 
@@ -1497,13 +1502,15 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
                 console.error('[ORCHESTRATOR] Error resuming flow:', e);
               }
             } else {
-              // No next node — complete the flow
-              console.log(`[ORCHESTRATOR] No next node after ai-handoff — completing flow`);
+              // No next node — complete the flow and reset service_mode
+              console.log(`[ORCHESTRATOR] No next node after ai-handoff — completing flow, resetting service_mode`);
               await supabase.from('flow_executions').update({
                 status: 'completed',
                 variables,
                 completed_at: new Date().toISOString(),
               }).eq('id', ctx.flowExecutionId);
+              // Reset service_mode so AI stops responding
+              await supabase.from('conversations').update({ service_mode: 'humano' }).eq('id', ctx.conversationId);
             }
           }
         }
@@ -1877,6 +1884,11 @@ function isInternalThought(text: string): boolean {
   // Wrapped in brackets - internal notes
   if (trimmed.startsWith('[') && trimmed.endsWith(']')) return true;
 
+  // Tool call annotations leaked as plain text
+  if (/finalizar_interacao\s*\(/i.test(trimmed)) return true;
+  if (/advance_flow\s*\(/i.test(trimmed)) return true;
+  if (/send_reply\s*\(/i.test(trimmed)) return true;
+
   // Common AI internal patterns (Portuguese)
   const internalPatterns = [
     /^(\(.*aguardando.*\))$/is,
@@ -1892,6 +1904,18 @@ function isInternalThought(text: string): boolean {
   ];
 
   return internalPatterns.some(p => p.test(trimmed));
+}
+
+// Strip tool call annotations from reply text that might be mixed with real content
+function stripInternalAnnotations(text: string): string {
+  if (!text) return text;
+  // Remove lines containing tool call syntax
+  let cleaned = text
+    .replace(/finalizar_interacao\s*\([^)]*\)\s*/gi, '')
+    .replace(/advance_flow\s*\([^)]*\)\s*/gi, '')
+    .trim();
+  // If everything was stripped, return empty
+  return cleaned.length < 3 ? '' : cleaned;
 }
 
 function resolveAgentConfig(ctx: any, agent: any, integrationConfig: any): AIConfigResult {

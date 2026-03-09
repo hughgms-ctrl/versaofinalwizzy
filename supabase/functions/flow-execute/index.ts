@@ -285,6 +285,12 @@ async function runFlowExecution(
     })
     .eq('id', executionId);
 
+  // Reset service_mode to 'humano' so AI stops responding after flow ends
+  await supabase
+    .from('conversations')
+    .update({ service_mode: 'humano' })
+    .eq('id', conversationId);
+
   await supabase
     .from('flows')
     .update({ triggers_count: flow.triggers_count + 1 })
