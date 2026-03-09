@@ -438,21 +438,25 @@ export function useMoveConversation() {
 
             if (targetColumnId) {
               const firstNextColumn = { id: targetColumnId };
-              // Move to next pipeline's first column
-              const { data: existingNext } = await supabase
+              // With unique constraint, just update the existing position to new pipeline
+              const { data: existingPos } = await supabase
                 .from('conversation_pipeline_positions')
                 .select('id, column_id')
                 .eq('conversation_id', conversationId)
-                .eq('pipeline_id', currentPipeline.next_pipeline_id)
                 .maybeSingle();
 
-              const fromNextColumnId = existingNext?.column_id || null;
+              const fromNextColumnId = existingPos?.column_id || null;
 
-              if (existingNext) {
+              if (existingPos) {
                 await supabase
                   .from('conversation_pipeline_positions')
-                  .update({ column_id: firstNextColumn.id, order: 0, updated_at: new Date().toISOString() })
-                  .eq('id', existingNext.id);
+                  .update({ 
+                    pipeline_id: currentPipeline.next_pipeline_id,
+                    column_id: firstNextColumn.id, 
+                    order: 0, 
+                    updated_at: new Date().toISOString() 
+                  })
+                  .eq('id', existingPos.id);
               } else {
                 await supabase
                   .from('conversation_pipeline_positions')
