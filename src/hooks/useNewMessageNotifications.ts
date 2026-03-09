@@ -22,7 +22,7 @@ export function useNewMessageNotifications() {
   // Initialize audio element once
   useEffect(() => {
     const audio = new Audio(NOTIFICATION_SOUND_URL);
-    audio.volume = 0.5;
+    audio.volume = 1.0;
     audioRef.current = audio;
     return () => {
       audio.pause();
