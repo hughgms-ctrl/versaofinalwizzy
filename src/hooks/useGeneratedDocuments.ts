@@ -37,3 +37,27 @@ export function useGeneratedDocuments() {
     enabled: !!orgId,
   });
 }
+
+export function useDeleteGeneratedDocument() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      // First delete related signatures
+      await (supabase as any)
+        .from('document_signatures')
+        .delete()
+        .eq('generated_document_id', id);
+      
+      // Then delete the document
+      const { error } = await (supabase as any)
+        .from('generated_documents')
+        .delete()
+        .eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['generated-documents'] });
+    },
+  });
+}
