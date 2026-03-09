@@ -1502,13 +1502,15 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
                 console.error('[ORCHESTRATOR] Error resuming flow:', e);
               }
             } else {
-              // No next node — complete the flow
-              console.log(`[ORCHESTRATOR] No next node after ai-handoff — completing flow`);
+              // No next node — complete the flow and reset service_mode
+              console.log(`[ORCHESTRATOR] No next node after ai-handoff — completing flow, resetting service_mode`);
               await supabase.from('flow_executions').update({
                 status: 'completed',
                 variables,
                 completed_at: new Date().toISOString(),
               }).eq('id', ctx.flowExecutionId);
+              // Reset service_mode so AI stops responding
+              await supabase.from('conversations').update({ service_mode: 'humano' }).eq('id', ctx.conversationId);
             }
           }
         }
