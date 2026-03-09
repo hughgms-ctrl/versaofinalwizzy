@@ -33,14 +33,23 @@ export function useNewMessageNotifications() {
 
   const playNotificationSound = useCallback(() => {
     const now = Date.now();
+    const timeSinceLastPlay = now - lastSoundPlayedAt.current;
+    console.log('[NOTIFICATION] playNotificationSound called', { 
+      soundEnabled: settings.soundEnabled, 
+      hasAudio: !!audioRef.current,
+      timeSinceLastPlay,
+      debounceMs: SOUND_DEBOUNCE_MS 
+    });
     if (
       settings.soundEnabled &&
       audioRef.current &&
-      now - lastSoundPlayedAt.current > SOUND_DEBOUNCE_MS
+      timeSinceLastPlay > SOUND_DEBOUNCE_MS
     ) {
       lastSoundPlayedAt.current = now;
       audioRef.current.currentTime = 0;
-      audioRef.current.play().catch(console.error);
+      audioRef.current.play()
+        .then(() => console.log('[NOTIFICATION] Sound played successfully'))
+        .catch((err) => console.error('[NOTIFICATION] Sound play failed:', err));
     }
   }, [settings.soundEnabled]);
 
