@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { TrainingRulesList } from '@/components/agents/TrainingRulesList';
 
 interface MasterPromptDialogProps {
     open: boolean;
@@ -28,6 +29,7 @@ interface MasterPromptDialogProps {
     prompt: string;
     onSave: (newPrompt: string) => void;
     organizationId?: string;
+    flowId?: string;
 }
 
 interface Message {
@@ -41,6 +43,7 @@ export function MasterPromptDialog({
     prompt: initialPrompt,
     onSave,
     organizationId,
+    flowId,
 }: MasterPromptDialogProps) {
     const [localPrompt, setLocalPrompt] = useState(initialPrompt);
     const [chatMessages, setChatMessages] = useState<Message[]>([]);
@@ -137,6 +140,11 @@ export function MasterPromptDialog({
                             onChange={(e) => setLocalPrompt(e.target.value)}
                             placeholder="Ex: Você é um assistente jurídico especializado em direito previdenciário. Mantenha um tom profissional e acolhedor..."
                             className="flex-1 resize-none font-mono text-sm leading-relaxed focus-visible:ring-indigo-500/30"
+                        />
+                        <TrainingRulesList
+                            targetType="master_prompt"
+                            flowId={flowId}
+                            organizationId={organizationId}
                         />
                     </div>
 

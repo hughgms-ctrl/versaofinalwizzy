@@ -11,6 +11,7 @@ import { Switch } from '@/components/ui/switch';
 import { ArrowLeft, Save, Sparkles, Loader2, ChevronDown, ChevronRight } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
+import { TrainingRulesList } from '@/components/agents/TrainingRulesList';
 
 
 const AgentEditorPage = () => {
@@ -196,6 +197,12 @@ const AgentEditorPage = () => {
             onChange={e => setPromptBase(e.target.value)}
             placeholder="Defina a personalidade e o papel deste agente..."
             className="min-h-[400px] font-mono text-sm"
+          />
+
+          <TrainingRulesList
+            targetType="agent"
+            agentId={agentId}
+            organizationId={agent.organization_id}
           />
         </div>
       </div>

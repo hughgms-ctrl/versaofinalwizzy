@@ -483,6 +483,7 @@ function FlowCanvasInner() {
           isSaving={saveFlow.isPending || createFlow.isPending}
           hasUnsavedChanges={hasUnsavedChanges}
           organizationId={flow?.organization_id}
+          flowId={flowId || undefined}
         />
       )}
 
@@ -511,6 +512,7 @@ function FlowCanvasInner() {
           setHasUnsavedChanges(true);
         }}
         organizationId={flow?.organization_id}
+        flowId={flowId || undefined}
       />
     </div>
   );

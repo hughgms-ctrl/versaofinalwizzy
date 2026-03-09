@@ -26,6 +26,7 @@ import { usePipelines, usePipelineColumns } from '@/hooks/usePipelines';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
+import { TrainingRulesList } from '@/components/agents/TrainingRulesList';
 
 // Generate simple unique ID
 const generateId = () => Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
@@ -39,6 +40,7 @@ interface NodePropertiesPanelProps {
   isSaving?: boolean;
   hasUnsavedChanges?: boolean;
   organizationId?: string;
+  flowId?: string;
 }
 
 const nodeIcons: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -458,7 +460,7 @@ function OutcomeColumnSelect({ pipelineId, value, onChange }: { pipelineId: stri
   );
 }
 
-export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave, isSaving, hasUnsavedChanges, organizationId }: NodePropertiesPanelProps) {
+export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave, isSaving, hasUnsavedChanges, organizationId, flowId }: NodePropertiesPanelProps) {
   const [localData, setLocalData] = useState<Record<string, unknown>>({});
   const [isGenerating, setIsGenerating] = useState(false);
   const [expandedFlowFolders, setExpandedFlowFolders] = useState<Set<string>>(new Set());
@@ -1516,6 +1518,13 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
                 </div>
               );
             })()}
+
+            <TrainingRulesList
+              targetType="flow_node"
+              flowId={flowId}
+              nodeId={node.id}
+              organizationId={organizationId}
+            />
 
             <div className="p-3 rounded-2xl border border-dashed border-rose-500/40 bg-rose-500/5 space-y-3 mt-2">
               <div className="flex items-center gap-2 text-rose-500">
