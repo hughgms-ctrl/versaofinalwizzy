@@ -274,7 +274,6 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
 
             <Badge variant="secondary" className="mt-2">
               {conversation.status === 'open' && 'Aberto'}
-              {conversation.status === 'pending' && 'Pendente'}
               {conversation.status === 'resolved' && 'Resolvido'}
               {conversation.status === 'archived' && 'Arquivado'}
             </Badge>
