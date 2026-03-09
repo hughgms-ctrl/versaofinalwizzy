@@ -1,142 +1,170 @@
 
-# Plano de Implementacao - Fase 2: Modulo de Documentos e Templates
 
-Seguindo a ordem solicitada: Fase 2 -> Fase 3 -> Fase 1 -> Fase 4. Vamos comecar pelo modulo de documentos.
+## Plano: Módulo de Documentos Completo
 
----
-
-## O que sera construido nesta fase
-
-Uma pagina `/documents` com 3 abas: **Templates**, **Documentos Gerados** e **Packs**. O usuario podera fazer upload de um contrato modelo, a IA vai analisar e extrair os campos variaveis (nome, endereco, CPF, etc.), criando um template reutilizavel com marcadores `{{campo}}`. Tambem sera possivel agrupar templates em packs para gerar multiplos documentos de uma vez.
-
----
-
-## Funcionalidades
-
-### 1. Aba Templates
-- Lista de templates salvos (nome, categoria, quantidade de campos, data)
-- Botao "Novo Template" com duas opcoes:
-  - **Upload de modelo**: envia PDF/DOCX, IA analisa e gera template com `{{campos}}`
-  - **Criar manualmente**: editor de texto com insercao de campos variaveis
-- Ao clicar em um template: abre editor para visualizar/editar o texto e os campos
-- Opcoes: editar, duplicar, excluir
-
-### 2. Aba Packs
-- Agrupar multiplos templates (ex: "Pack Auxilio Reclusao" = Procuracao + Contrato + Declaracao)
-- Criar pack: selecionar templates existentes, dar nome
-- Ao gerar documentos de um pack, os mesmos dados preenchem todos os templates
-
-### 3. Aba Documentos Gerados
-- Historico de documentos gerados a partir de templates/packs
-- Status: gerado, enviado, assinado
-- Link para download do PDF
-- Vinculo com contato (quando gerado via agente)
+### Situação Atual
+- Templates com campos variáveis `{{campo}}`
+- Packs agrupam templates mas NÃO identificam campos duplicados automaticamente
+- Assinaturas: manual, Gov.br, ZapSign (apenas labels, sem integração real)
+- Bloco `action-document` no flow builder existe mas é básico
+- Não há exclusão de documentos gerados
 
 ---
 
-## Detalhes Tecnicos
+## 1. Packs com Identificação Automática de Campos (Estilo Lotes ZapSign)
 
-### Novas tabelas (migracao SQL)
+**Conceito:** Ao selecionar 2+ templates em um pack, sistema detecta campos com mesmo nome e consolida o preenchimento.
 
-```text
-document_templates
-  - id (uuid, PK)
-  - organization_id (uuid, FK)
-  - name (text)
-  - description (text, nullable)
-  - category (text, nullable) -- ex: "contrato", "procuracao", "declaracao"
-  - content (text) -- texto com marcadores {{campo}}
-  - fields (jsonb) -- lista de campos detectados: [{name, label, type, required}]
-  - original_file_url (text, nullable) -- URL do arquivo modelo original
-  - workspace_id (uuid, nullable)
-  - created_by (uuid, nullable)
-  - created_at, updated_at (timestamps)
-
-document_packs
-  - id (uuid, PK)
-  - organization_id (uuid, FK)
-  - name (text)
-  - description (text, nullable)
-  - template_ids (uuid[]) -- array de IDs de templates
-  - workspace_id (uuid, nullable)
-  - created_by (uuid, nullable)
-  - created_at, updated_at (timestamps)
-
-generated_documents
-  - id (uuid, PK)
-  - organization_id (uuid, FK)
-  - template_id (uuid, nullable)
-  - pack_id (uuid, nullable)
-  - contact_id (uuid, nullable)
-  - conversation_id (uuid, nullable)
-  - name (text)
-  - filled_data (jsonb) -- dados preenchidos nos campos
-  - pdf_url (text, nullable) -- URL do PDF gerado no storage
-  - status (text) -- 'draft', 'generated', 'sent', 'signed'
-  - signing_method (text, nullable) -- 'manual', 'govbr', 'zapsign' (para Fase 3)
-  - signing_status (text, nullable)
-  - created_by (uuid, nullable)
-  - created_at, updated_at (timestamps)
+**Implementação:**
+```
+┌───────────────────────────────────────────────┐
+│ Pack: Auxílio Reclusão                        │
+├───────────────────────────────────────────────┤
+│ Templates selecionados:                       │
+│  ☑ Procuração                                 │
+│  ☑ Declaração de Dependência                  │
+│  ☑ Requerimento INSS                          │
+├───────────────────────────────────────────────┤
+│ Campos detectados automaticamente:            │
+│                                               │
+│  🟢 nome_cliente (3 docs)                     │
+│  🟢 cpf_cliente (3 docs)                      │
+│  🟡 endereco (2 docs)                         │
+│  🔵 numero_processo (1 doc)                   │
+└───────────────────────────────────────────────┘
 ```
 
-RLS: todas as tabelas com politicas baseadas em `organization_id = get_user_org_id(auth.uid())`.
+**Técnico:**
+- No `PackEditor.tsx`, ao mudar `selectedIds`, calcular a interseção de campos
+- Mostrar painel lateral com "Campos comuns" vs "Campos únicos por template"
+- Salvar no pack um campo `merged_fields` com mapeamento
 
-### Nova edge function
-
-**`process-document-template`**: recebe arquivo (via URL do storage), usa IA para:
-1. Ler e interpretar o conteudo do documento
-2. Identificar campos variaveis (nomes, enderecos, CPFs, datas, etc.)
-3. Retornar texto reestruturado com `{{campo}}` e lista de campos detectados
-
-**`generate-document-pdf`**: recebe template + dados preenchidos, gera PDF e salva no storage bucket `contact-files`.
-
-### Novos arquivos frontend
-
-```text
-src/pages/DocumentsPage.tsx -- pagina principal com abas
-src/components/documents/TemplatesList.tsx -- lista de templates
-src/components/documents/TemplateEditor.tsx -- editor de template
-src/components/documents/PacksList.tsx -- lista de packs
-src/components/documents/PackEditor.tsx -- criar/editar pack
-src/components/documents/GeneratedDocumentsList.tsx -- historico
-src/components/documents/UploadTemplateDialog.tsx -- dialog de upload + processamento IA
-src/hooks/useDocumentTemplates.ts -- CRUD templates
-src/hooks/useDocumentPacks.ts -- CRUD packs
-src/hooks/useGeneratedDocuments.ts -- consulta documentos gerados
-```
-
-### Alteracoes em arquivos existentes
-
-- **App.tsx**: adicionar rotas `/documents`
-- **Sidebar.tsx**: adicionar item "Documentos" com icone FileText, abaixo de Widgets
-- **Sidebar.tsx**: adicionar permissao `module: 'flows'` (mesmo grupo de automacoes)
+**Formulário de preenchimento unificado:**
+- `PackFillForm.tsx` (novo): formulário único que gera N documentos
+- Campos compartilhados aparecem 1 vez, campos únicos agrupados por template
 
 ---
 
-## Fluxo de uso principal
+## 2. Coleta de Assinatura — Fluxo Completo
 
-```text
-1. Usuario acessa /documents
-2. Clica em "Novo Template"
-3. Faz upload de um PDF de contrato
-4. Sistema envia para edge function que usa IA para analisar
-5. IA retorna texto com {{nome_responsavel}}, {{cpf}}, {{endereco}}, etc.
-6. Usuario revisa e salva o template
-7. Pode criar um Pack agrupando templates
-8. Documentos gerados ficam no historico (aba "Gerados")
+**Métodos suportados:**
+
+| Método | Descrição | Implementação |
+|--------|-----------|---------------|
+| **Manual** | PDF enviado, usuário devolve assinado ou clica "Já assinou" | Já existe |
+| **Desenho** | Tela para desenhar assinatura com dedo/mouse | Nova tela pública |
+| **Gov.br** | Integração futura (API do governo) | Placeholder |
+| **ZapSign** | Webhook para criar documento no ZapSign | Futura |
+
+**Fluxo "Desenho" (prioritário):**
+
+```
+1. Sistema gera PDF → salva em `generated_documents`
+2. Cria registro em `document_signatures` com `status: pending`
+3. Gera link único: `/sign/{token}`
+4. Envia link pelo WhatsApp
+
+Página pública /sign/{token}:
+┌──────────────────────────────────────┐
+│ Documento: Procuração João Silva     │
+│ ──────────────────────────────────── │
+│ [Preview do PDF]                     │
+│                                      │
+│ Assine abaixo:                       │
+│ ┌────────────────────────────────┐   │
+│ │                                │   │
+│ │   (área de desenho com canvas) │   │
+│ │                                │   │
+│ └────────────────────────────────┘   │
+│ [Limpar]  [Confirmar Assinatura]     │
+└──────────────────────────────────────┘
 ```
 
-A geracao automatica via agente e assinatura serao implementados na Fase 3.
+**Técnico:**
+- Nova página: `src/pages/PublicSignaturePage.tsx`
+- Canvas para desenho (usar `canvas` nativo ou lib `signature_pad`)
+- Edge function `capture-signature`: recebe imagem base64, aplica no PDF, salva versão assinada
+- Atualiza `document_signatures.signed_at`, `signed_pdf_url`, `status: signed`
 
 ---
 
-## Ordem de implementacao
+## 3. Bloco de Documentos no Flow Builder
 
-1. Migracoes SQL (tabelas + RLS)
-2. Edge function `process-document-template`
-3. Hooks de dados (useDocumentTemplates, useDocumentPacks, useGeneratedDocuments)
-4. Pagina DocumentsPage com abas
-5. Componentes de templates (lista, editor, upload)
-6. Componentes de packs
-7. Sidebar + rotas
-8. Edge function `generate-document-pdf` (geracao de PDF basica)
+**Comportamento atual:** Seleciona 1 template, define método de assinatura.
+
+**Melhorias propostas:**
+
+```
+┌─────────────────────────────────────────────┐
+│ 📄 Gerar Documento                          │
+├─────────────────────────────────────────────┤
+│ Tipo:                                       │
+│  ○ Template único                           │
+│  ● Pack (múltiplos documentos)              │
+│                                             │
+│ Pack/Template: [Auxílio Reclusão     ▼]     │
+│                                             │
+│ Mapeamento de campos:                       │
+│  nome_cliente ← {{contact.name}}            │
+│  cpf_cliente  ← {{cpf}} (variável fluxo)    │
+│  endereco     ← [coletar via pergunta]      │
+│                                             │
+│ Assinatura:                                 │
+│  ● Enviar link de assinatura (desenho)      │
+│  ○ Apenas enviar PDF                        │
+│  ○ Gov.br / ZapSign                         │
+│                                             │
+│ ☑ Aguardar assinatura para continuar        │
+│ ☐ Enviar cópia para email do contato        │
+└─────────────────────────────────────────────┘
+```
+
+**Fluxo de execução:**
+1. Motor coleta dados faltantes via perguntas (se `coletar via pergunta`)
+2. Gera os PDFs (template ou pack)
+3. Salva em `generated_documents`
+4. Se assinatura necessária: cria entrada em `document_signatures`, envia link
+5. Se "Aguardar assinatura": fluxo pausa com `status: waiting_signature`
+6. Webhook de assinatura completa → retoma fluxo
+
+**Técnico:**
+- Adicionar suporte a Pack no `NodePropertiesPanel.tsx` case `action-document`
+- Novo status de execução: `waiting_signature`
+- Edge function `flow-execute` deve tratar este status
+
+---
+
+## 4. Exclusão de Documentos Gerados
+
+**Implementação simples:**
+- Adicionar botão "Excluir" no `GeneratedDocumentsList.tsx`
+- Hook `useDeleteGeneratedDocument` em `useGeneratedDocuments.ts`
+- Também deletar assinaturas relacionadas (`CASCADE` ou manual)
+- Opcionalmente remover arquivo do Storage
+
+---
+
+## Arquivos Afetados
+
+| Arquivo | Mudança |
+|---------|---------|
+| `src/components/documents/PackEditor.tsx` | Adicionar análise de campos duplicados |
+| `src/components/documents/PackFillForm.tsx` | Novo — formulário unificado para packs |
+| `src/components/documents/GeneratedDocumentsList.tsx` | Botão excluir |
+| `src/hooks/useGeneratedDocuments.ts` | Mutation `useDeleteGeneratedDocument` |
+| `src/pages/PublicSignaturePage.tsx` | Novo — página pública de assinatura |
+| `supabase/functions/capture-signature/index.ts` | Novo — aplica assinatura desenhada no PDF |
+| `src/components/flow/NodePropertiesPanel.tsx` | Suporte a Packs, mapeamento de campos, aguardar assinatura |
+| `supabase/functions/flow-execute/index.ts` | Novo status `waiting_signature` |
+| `src/components/documents/PacksList.tsx` | Botão "Preencher Pack" |
+| Migração SQL | Campo `signature_token` em `document_signatures` |
+
+---
+
+## Ordem de Implementação Sugerida
+
+1. **Exclusão de documentos gerados** (rápido, já pedido)
+2. **Campos duplicados em Packs** + `PackFillForm`
+3. **Página pública de assinatura com desenho**
+4. **Atualizar bloco `action-document`** para suportar packs e aguardar assinatura
+
