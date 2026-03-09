@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
-import { Hand, MessageSquareText, UserPlus, Webhook, Copy, Check, ChevronRight, ChevronDown, Folder } from "lucide-react";
+import { Hand, MessageSquareText, UserPlus, Webhook, Copy, Check, ChevronRight, ChevronDown, Folder, Tag } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
     useCreateCampaign,
@@ -30,6 +30,7 @@ import {
 import { useFlows } from "@/hooks/useFlows";
 import { useFlowFolders } from "@/hooks/useFlowFolders";
 import { useWorkspaces } from "@/hooks/useWorkspaces";
+import { useTags } from "@/hooks/useTags";
 
 interface CampaignDialogProps {
     open: boolean;
