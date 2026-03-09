@@ -314,10 +314,9 @@ export function useResolutionData() {
       if (statusCounts.open > 0) {
         result.push({ name: 'Em Aberto', value: Math.round((statusCounts.open / total!) * 100), color: 'hsl(234 89% 54%)' });
       }
-      if (statusCounts.pending > 0) {
-        result.push({ name: 'Pendente', value: Math.round((statusCounts.pending / total!) * 100), color: 'hsl(38 92% 50%)' });
-      }
-
+      // Removed pending from rendering since it's no longer considered a valid status
+      // If there are legacy pending statuses, they just won't show in the chart
+      
       return result.length > 0 ? result : [{ name: 'Sem dados', value: 100, color: 'hsl(220 9% 46%)' }];
     },
     enabled: !!profile?.organization_id,
