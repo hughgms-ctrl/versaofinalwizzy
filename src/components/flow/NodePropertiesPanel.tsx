@@ -459,7 +459,7 @@ function OutcomeColumnSelect({ pipelineId, value, onChange }: { pipelineId: stri
   );
 }
 
-export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave, isSaving, hasUnsavedChanges, organizationId }: NodePropertiesPanelProps) {
+export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave, isSaving, hasUnsavedChanges, organizationId, flowId }: NodePropertiesPanelProps) {
   const [localData, setLocalData] = useState<Record<string, unknown>>({});
   const [isGenerating, setIsGenerating] = useState(false);
   const [expandedFlowFolders, setExpandedFlowFolders] = useState<Set<string>>(new Set());
