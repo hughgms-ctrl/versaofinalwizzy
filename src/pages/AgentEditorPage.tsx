@@ -156,60 +156,6 @@ const AgentEditorPage = () => {
           )}
         </div>
 
-        {/* AI Config - collapsible */}
-        <div className="rounded-lg border bg-card overflow-hidden">
-          <button
-            onClick={() => setShowAIConfig(!showAIConfig)}
-            className="w-full flex items-center justify-between p-4 hover:bg-muted/50 transition-colors"
-          >
-            <div className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-primary" />
-              <h3 className="font-semibold text-foreground">Configuração de IA</h3>
-            </div>
-            {showAIConfig ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
-          </button>
-          {showAIConfig && (
-            <div className="px-6 pb-6 space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-sm font-medium mb-1 block">Provedor</label>
-                  <Select value={provider} onValueChange={setProvider}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="lovable">Wizzy IA (Padrão)</SelectItem>
-                      <SelectItem value="gemini">Google Gemini (API Própria)</SelectItem>
-                      <SelectItem value="openai">OpenAI (API Própria)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <label className="text-sm font-medium mb-1 block">Modelo Específico</label>
-                  <Select value={model} onValueChange={setModel}>
-                    <SelectTrigger><SelectValue placeholder="Usar padrão global" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="default">Usar padrão global</SelectItem>
-                      {Array.isArray(MODELS_BY_PROVIDER[provider as AIProvider]) && MODELS_BY_PROVIDER[provider as AIProvider].map(m => (
-                        <SelectItem key={m.value} value={m.value}>
-                          <div className="flex flex-col text-left">
-                            <span>{m.label}</span>
-                            <span className="text-[10px] text-muted-foreground">
-                              {m.value.includes('pro') ? 'Ideal para raciocínio complexo' :
-                                m.value.includes('flash') ? 'Ideal para velocidade e triagem' :
-                                  'Equilíbrio entre inteligência e custo'}
-                            </span>
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <p className="text-[10px] text-muted-foreground">
-                Se nenhum modelo for selecionado, o agente usará o modelo padrão configurado na página de Integrações.
-              </p>
-            </div>
-          )}
-        </div>
 
         {/* Prompt Editor */}
         <div className="rounded-lg border bg-card p-6 space-y-4">
