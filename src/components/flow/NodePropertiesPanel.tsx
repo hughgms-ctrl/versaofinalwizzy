@@ -27,6 +27,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
 import { TrainingRulesList } from '@/components/agents/TrainingRulesList';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 
 // Generate simple unique ID
 const generateId = () => Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
