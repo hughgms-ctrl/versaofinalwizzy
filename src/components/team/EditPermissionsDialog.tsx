@@ -285,7 +285,7 @@ export function EditPermissionsDialog({ open, onOpenChange, member }: EditPermis
                   />
                   <ModuleSwitch
                     icon={Calendar}
-                    label="Agendamentos"
+                    label="Envios em Massa"
                     checked={permissions.can_access_scheduled || false}
                     onCheckedChange={(v) => toggleModule('can_access_scheduled', v)}
                   />

@@ -39,7 +39,7 @@ const navigation: NavItem[] = [
   { name: 'Pipeline', href: '/pipeline', icon: Kanban, module: 'pipeline' },
   { name: 'Fluxos', href: '/flows', icon: Workflow, module: 'flows' },
   { name: 'Campanhas', href: '/campaigns', icon: Megaphone, module: 'flows' },
-  { name: 'Agendamentos', href: '/scheduled', icon: CalendarClock, module: 'flows' },
+  { name: 'Envios em Massa', href: '/scheduled', icon: CalendarClock, module: 'flows' },
   { name: 'Agentes IA', href: '/agents', icon: Bot, module: 'agents' },
   { name: 'Equipe', href: '/team', icon: Users, module: 'team' },
   { name: 'Relatórios', href: '/reports', icon: BarChart3, module: 'reports' },
