@@ -799,12 +799,22 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
           });
           runBackground(resumePromise);
         } else {
-          // No responded edge — just complete
+          // No responded edge — flow STOPS here. Complete and cleanup.
+          console.log(`[WEBHOOK] action-flow has NO responded edge — flow STOPS`);
           await supabase.from('flow_executions').update({
             status: 'completed',
             timeout_at: null,
             completed_at: new Date().toISOString(),
           }).eq('id', activeFlowExec.id);
+
+          // Cleanup: reset service_mode and ai_agent_id
+          const { data: convMeta } = await supabase.from('conversations').select('metadata').eq('id', conversation.id).single();
+          const cleanMeta = { ...(convMeta?.metadata || {}) };
+          delete cleanMeta.ai_handoff_context;
+          cleanMeta.flow_ended_at = new Date().toISOString();
+          await supabase.from('conversations').update({
+            service_mode: 'humano', ai_agent_id: null, metadata: cleanMeta,
+          }).eq('id', conversation.id);
         }
       } else if (isAtContentBlockWaiting && activeFlowExec.status === 'waiting_input') {
         // Content block is waiting for user response — save variable and resume flow via 'responded' handle
