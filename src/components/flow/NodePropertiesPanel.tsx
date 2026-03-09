@@ -517,7 +517,7 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
       if (error) throw error;
 
       if (data?.prompt) {
-        handleChange('contextMessage', data.prompt);
+        handleChange('additionalPrompt', data.prompt);
         toast.success("Prompt gerado com sucesso!");
       }
     } catch (error) {
