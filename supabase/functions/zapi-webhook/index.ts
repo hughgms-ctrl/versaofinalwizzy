@@ -674,6 +674,14 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
         const startT = campaignFull?.start_time || "00:00";
         const endT = campaignFull?.end_time || "23:59";
 
+        let isOutsideHours = false;
+        if (startT <= endT) {
+            isOutsideHours = bzTimeStr < startT || bzTimeStr > endT;
+        } else {
+            // Crosses midnight
+            isOutsideHours = bzTimeStr < startT && bzTimeStr > endT;
+        }
+
         if (isOutsideHours) {
           console.log(`[CAMPAIGN QUEUED] Outside hours (${bzTimeStr} vs ${startT}-${endT}). Adding to queue.`);
           
