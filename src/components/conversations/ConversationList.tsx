@@ -1,9 +1,10 @@
 import { DbConversation, useProfiles } from '@/hooks/useConversations';
 import { useContactTags, useTags } from '@/hooks/useTags';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
+import { useFollowUpStatus } from '@/hooks/useFollowUpStatus';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Bot, MessageCircle, Check, CheckCheck } from 'lucide-react';
+import { Bot, MessageCircle, Check, CheckCheck, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ConversationCardActions } from './ConversationCardActions';
 
