@@ -55,6 +55,8 @@ export function ConversationList({ conversations, selectedId, onSelect, onSpyVie
           const hasUnread = conversation.unread_count > 0 && !isSelected;
           const lastMessage = conversation.last_message?.[0];
           const isAIActive = lastMessage?.is_from_bot;
+          const isInFollowUp = !!followUpMap[conversation.id];
+          const followUpStep = followUpMap[conversation.id];
           const messagePreview = (() => {
             if (!lastMessage) return null;
             if (lastMessage.type !== 'text') {
