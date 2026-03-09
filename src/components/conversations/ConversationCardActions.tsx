@@ -48,6 +48,7 @@ export function ConversationCardActions({
   const navigate = useNavigate();
   const { data: pipelines } = usePipelines();
   const moveConversation = useMoveConversation();
+  const transferConversation = useTransferConversation();
 
   const handleStatusChange = async (status: 'open' | 'pending' | 'resolved' | 'archived', e?: React.MouseEvent) => {
     e?.stopPropagation();
