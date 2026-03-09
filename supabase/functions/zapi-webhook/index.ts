@@ -866,7 +866,27 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
       }
     } else {
       // 3. No active flow — Check for Master Prompt / AI routing
-      let shouldTrigger = conversation.service_mode === 'ia';
+      // Also check if service_mode is 'ia' but flow just ended — if so, the service_mode
+      // might be stale from a previous flow that didn't clean up properly
+      let shouldTrigger = false;
+      
+      if (conversation.service_mode === 'ia') {
+        // Double-check: if there's a flow_ended_at flag, the 'ia' mode might be stale
+        const flowEndedAt = conversation.metadata?.flow_ended_at;
+        if (flowEndedAt) {
+          const elapsedMs = Date.now() - new Date(flowEndedAt).getTime();
+          if (elapsedMs < 60000) {
+            console.log(`[WEBHOOK] service_mode=ia but flow ended ${Math.round(elapsedMs/1000)}s ago — NOT triggering agent`);
+            // Force reset to humano since it's stale
+            await supabase.from('conversations').update({ service_mode: 'humano', ai_agent_id: null }).eq('id', conversation.id);
+            shouldTrigger = false;
+          } else {
+            shouldTrigger = true;
+          }
+        } else {
+          shouldTrigger = true;
+        }
+      }
 
       if (!shouldTrigger && triggerText) {
         shouldTrigger = await checkMasterPromptTriggers(supabase, organizationId, contact.id, triggerText, conversation.id);
