@@ -1743,7 +1743,46 @@ function buildLegacySystemPrompt(ctx: any): string {
     prompt += `- Exemplos de resultado: "qualificado", "desqualificado", "concluido", "precisa_de_humano".\n`;
   }
 
+  // Inject training rules
+  const rulesSection = buildTrainingRulesSection(ctx.trainingRules, {
+    agentId: ctx.conversation?.ai_agent_id, masterPromptId: ctx.masterPrompt?.id,
+  });
+  if (rulesSection) prompt += rulesSection;
+
   return prompt;
+}
+
+// ==================== TRAINING RULES HELPER ====================
+
+function buildTrainingRulesSection(
+  allRules: any[],
+  filters: { agentId?: string; masterPromptId?: string; flowId?: string; nodeId?: string }
+): string {
+  if (!allRules || allRules.length === 0) return '';
+
+  // Filter relevant rules for this context
+  const relevant = allRules.filter((r: any) => {
+    if (!r.is_active) return false;
+    if (r.target_type === 'agent' && r.agent_id === filters.agentId) return true;
+    if (r.target_type === 'master_prompt' && r.master_prompt_id === filters.masterPromptId) return true;
+    if (r.target_type === 'flow_node' && r.flow_id === filters.flowId) {
+      if (r.node_id && filters.nodeId) return r.node_id === filters.nodeId;
+      return true; // flow-level rule without specific node
+    }
+    return false;
+  });
+
+  if (relevant.length === 0) return '';
+
+  let section = `\n## REGRAS APRENDIDAS (${relevant.length}):\n`;
+  section += `Estas regras foram definidas pela equipe. Siga-as rigorosamente.\n\n`;
+
+  for (const rule of relevant) {
+    section += `- **Situação:** ${rule.situation}\n`;
+    section += `  **Regra:** ${rule.rule}\n\n`;
+  }
+
+  return section;
 }
 
 function buildLegacyTools(ctx?: any) {
