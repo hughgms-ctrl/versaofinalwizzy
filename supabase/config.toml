@@ -118,3 +118,6 @@ verify_jwt = false
 
 [functions.google-calendar-availability]
 verify_jwt = false
+
+[functions.trigger-campaign-on-tag]
+verify_jwt = false

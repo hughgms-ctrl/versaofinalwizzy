@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
-import { Hand, MessageSquareText, UserPlus, Webhook, Copy, Check, ChevronRight, ChevronDown, Folder } from "lucide-react";
+import { Hand, MessageSquareText, UserPlus, Webhook, Copy, Check, ChevronRight, ChevronDown, Folder, Tag } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
     useCreateCampaign,
@@ -30,6 +30,7 @@ import {
 import { useFlows } from "@/hooks/useFlows";
 import { useFlowFolders } from "@/hooks/useFlowFolders";
 import { useWorkspaces } from "@/hooks/useWorkspaces";
+import { useTags } from "@/hooks/useTags";
 
 interface CampaignDialogProps {
     open: boolean;
@@ -57,6 +58,7 @@ export function CampaignDialog({
     const { data: flows } = useFlows();
     const { data: flowFolders = [] } = useFlowFolders();
     const { data: workspaces = [] } = useWorkspaces();
+    const { data: tags = [] } = useTags();
 
     useEffect(() => {
         if (campaignToEdit && open) {
@@ -93,7 +95,7 @@ export function CampaignDialog({
 
         const payload: any = {
             name: name.trim(),
-            trigger_keyword: triggerType === 'keyword' ? triggerKeyword.trim() : "*",
+            trigger_keyword: (triggerType === 'keyword' || triggerType === 'tag_added') ? triggerKeyword.trim() : "*",
             match_type: triggerType === 'keyword' ? matchType : triggerType,
             flow_id: flowId,
             start_time: startTime,
@@ -112,7 +114,7 @@ export function CampaignDialog({
     };
 
     const isSaving = createCampaign.isPending || updateCampaign.isPending;
-    const isFormValid = name.trim() && flowId && (triggerType !== 'keyword' || triggerKeyword.trim());
+    const isFormValid = name.trim() && flowId && ((triggerType !== 'keyword' && triggerType !== 'tag_added') || triggerKeyword.trim());
 
     const triggerOptions = [
         {
@@ -122,16 +124,10 @@ export function CampaignDialog({
             icon: MessageSquareText,
         },
         {
-            id: 'new_conversation',
-            label: 'Nova Conversa',
-            description: 'Quando um novo contato inicia uma conversa',
-            icon: UserPlus,
-        },
-        {
-            id: 'webhook',
-            label: 'Webhook',
-            description: 'Disparado por uma chamada HTTP externa',
-            icon: Webhook,
+            id: 'tag_added',
+            label: 'Tag Adicionada',
+            description: 'Quando uma tag específica é adicionada ao contato',
+            icon: Tag,
         },
         {
             id: 'manual',
@@ -249,10 +245,30 @@ export function CampaignDialog({
                                             </div>
                                         )}
 
-                                        {/* Mensagem para Webhook */}
-                                        {isSelected && option.id === 'webhook' && (
-                                            <div className="mt-4 ml-14 p-4 rounded-lg border bg-primary/5 text-sm text-muted-foreground">
-                                                <p>A URL do webhook será gerada e associada ao ID do Fluxo selecionado abaixo. Use a documentação para disparar este fluxo via API.</p>
+                                        {/* Mostrar opções se for Tag Adicionada */}
+                                        {isSelected && option.id === 'tag_added' && (
+                                            <div className="mt-4 ml-14 space-y-4 p-4 rounded-lg border bg-muted/10">
+                                                <div className="grid gap-2">
+                                                    <Label className="text-xs">Tag</Label>
+                                                    <Select value={triggerKeyword} onValueChange={setTriggerKeyword}>
+                                                        <SelectTrigger className="h-9">
+                                                            <SelectValue placeholder="Selecione a tag" />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            {tags.map((tag) => (
+                                                                <SelectItem key={tag.id} value={tag.id}>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <div 
+                                                                            className="w-3 h-3 rounded-full" 
+                                                                            style={{ backgroundColor: tag.color || '#6366f1' }}
+                                                                        />
+                                                                        {tag.name}
+                                                                    </div>
+                                                                </SelectItem>
+                                                            ))}
+                                                        </SelectContent>
+                                                    </Select>
+                                                </div>
                                             </div>
                                         )}
                                     </div>
