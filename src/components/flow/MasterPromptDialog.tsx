@@ -43,6 +43,7 @@ export function MasterPromptDialog({
     prompt: initialPrompt,
     onSave,
     organizationId,
+    flowId,
 }: MasterPromptDialogProps) {
     const [localPrompt, setLocalPrompt] = useState(initialPrompt);
     const [chatMessages, setChatMessages] = useState<Message[]>([]);
