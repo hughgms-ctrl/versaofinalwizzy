@@ -64,7 +64,6 @@ export function ConversationCardActions({
       
       const statusLabels: Record<string, string> = {
         open: 'aberta',
-        pending: 'pendente',
         resolved: 'resolvida',
         archived: 'arquivada',
       };

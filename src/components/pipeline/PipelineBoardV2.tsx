@@ -505,13 +505,11 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
                   className={cn(
                     "px-2 py-0.5 rounded-full text-[10px] font-medium",
                     conversation.status === 'open' && "bg-green-500/10 text-green-500",
-                    conversation.status === 'pending' && "bg-yellow-500/10 text-yellow-500",
                     conversation.status === 'resolved' && "bg-blue-500/10 text-blue-500",
                     conversation.status === 'archived' && "bg-muted text-muted-foreground"
                   )}
                 >
                   {conversation.status === 'open' && 'Aberto'}
-                  {conversation.status === 'pending' && 'Pendente'}
                   {conversation.status === 'resolved' && 'Resolvido'}
                   {conversation.status === 'archived' && 'Arquivado'}
                 </span>
