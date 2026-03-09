@@ -1041,7 +1041,70 @@ async function executePipelineAction(
   }
 }
 
-function executeCondition(data: Record<string, unknown>, context: ExecutionContext): NodeResult {
+async function executeCondition(data: Record<string, unknown>, context: ExecutionContext, supabase: SupabaseClientType): Promise<NodeResult> {
+  // Support rules-based conditions (tag checks, pipeline checks, etc.)
+  const rules = data.rules as Array<{ id: string; type: string; tagId?: string; negate?: boolean; pipelineColumnId?: string; variable?: string; operator?: string; value?: string }> | undefined;
+  const matchType = String(data.matchType || 'all'); // 'all' or 'any'
+
+  if (rules && rules.length > 0) {
+    console.log(`[FLOW EXECUTE] Condition with ${rules.length} rules, matchType=${matchType}`);
+    const results: boolean[] = [];
+
+    for (const rule of rules) {
+      let ruleResult = false;
+
+      if (rule.type === 'tag' && rule.tagId) {
+        // Check if contact has the tag
+        const { data: existingTag } = await supabase
+          .from('contact_tags')
+          .select('id')
+          .eq('contact_id', context.contactId)
+          .eq('tag_id', rule.tagId)
+          .maybeSingle();
+
+        ruleResult = !!existingTag;
+        console.log(`[FLOW EXECUTE] Tag rule: tagId=${rule.tagId}, exists=${ruleResult}, negate=${rule.negate}`);
+      } else if (rule.type === 'pipeline' && rule.pipelineColumnId) {
+        // Check if conversation is in a specific pipeline column
+        const { data: position } = await supabase
+          .from('conversation_pipeline_positions')
+          .select('id')
+          .eq('conversation_id', context.conversationId)
+          .eq('column_id', rule.pipelineColumnId)
+          .maybeSingle();
+
+        ruleResult = !!position;
+        console.log(`[FLOW EXECUTE] Pipeline rule: columnId=${rule.pipelineColumnId}, match=${ruleResult}`);
+      } else if (rule.type === 'variable') {
+        // Variable comparison
+        const actualValue = String(context.variables[rule.variable || ''] || '');
+        const compareValue = String(rule.value || '');
+        const operator = rule.operator || 'equals';
+
+        switch (operator) {
+          case 'equals': ruleResult = actualValue === compareValue; break;
+          case 'not_equals': ruleResult = actualValue !== compareValue; break;
+          case 'contains': ruleResult = actualValue.includes(compareValue); break;
+          case 'greater_than': ruleResult = Number(actualValue) > Number(compareValue); break;
+          case 'less_than': ruleResult = Number(actualValue) < Number(compareValue); break;
+        }
+        console.log(`[FLOW EXECUTE] Variable rule: ${rule.variable} ${operator} ${compareValue} => ${ruleResult}`);
+      }
+
+      // Apply negate
+      if (rule.negate) ruleResult = !ruleResult;
+      results.push(ruleResult);
+    }
+
+    const finalResult = matchType === 'any'
+      ? results.some(r => r)
+      : results.every(r => r);
+
+    console.log(`[FLOW EXECUTE] Condition final result: ${finalResult} (rules: ${results.join(', ')})`);
+    return { success: true, outputHandle: finalResult ? 'true' : 'false' };
+  }
+
+  // Fallback: legacy variable-based condition
   const variable = String(data.variable || '');
   const operator = String(data.operator || 'equals');
   const compareValue = String(data.value || '');
@@ -1067,6 +1130,7 @@ function executeCondition(data: Record<string, unknown>, context: ExecutionConte
       break;
   }
 
+  console.log(`[FLOW EXECUTE] Legacy condition: ${variable} ${operator} ${compareValue} => ${result}`);
   return { success: true, outputHandle: result ? 'true' : 'false' };
 }
 
