@@ -434,7 +434,31 @@ function ContentItemEditor({
   );
 }
 
-export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave, isSaving, hasUnsavedChanges, organizationId }: NodePropertiesPanelProps) {
+function OutcomeColumnSelect({ pipelineId, value, onChange }: { pipelineId: string; value: string; onChange: (v: string) => void }) {
+  const { data: cols = [] } = usePipelineColumns(pipelineId);
+  return (
+    <Select value={value || 'first'} onValueChange={onChange}>
+      <SelectTrigger className="h-7 text-xs">
+        <SelectValue placeholder="Coluna..." />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="first">
+          <span className="text-muted-foreground">Primeira coluna</span>
+        </SelectItem>
+        {cols.map((col) => (
+          <SelectItem key={col.id} value={col.id}>
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full" style={{ backgroundColor: col.color }} />
+              {col.name || 'Sem nome'}
+            </div>
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+
   const [localData, setLocalData] = useState<Record<string, unknown>>({});
   const [isGenerating, setIsGenerating] = useState(false);
   const [expandedFlowFolders, setExpandedFlowFolders] = useState<Set<string>>(new Set());
