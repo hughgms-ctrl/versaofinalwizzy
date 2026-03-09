@@ -11,6 +11,7 @@ import { Switch } from '@/components/ui/switch';
 import { ArrowLeft, Save, Sparkles, Loader2, ChevronDown, ChevronRight } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
+import { TrainingRulesList } from '@/components/agents/TrainingRulesList';
 
 
 const AgentEditorPage = () => {
