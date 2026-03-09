@@ -1,12 +1,24 @@
-import { FileText, Download, Search, ExternalLink } from 'lucide-react';
+import { FileText, Download, Search, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
-import { useGeneratedDocuments } from '@/hooks/useGeneratedDocuments';
+import { useGeneratedDocuments, useDeleteGeneratedDocument } from '@/hooks/useGeneratedDocuments';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import { toast } from 'sonner';
 
 const STATUS_MAP: Record<string, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> = {
   draft: { label: 'Rascunho', variant: 'secondary' },
@@ -17,11 +29,19 @@ const STATUS_MAP: Record<string, { label: string; variant: 'default' | 'secondar
 
 export function GeneratedDocumentsList() {
   const { data: documents, isLoading } = useGeneratedDocuments();
+  const deleteDocument = useDeleteGeneratedDocument();
   const [search, setSearch] = useState('');
 
   const filtered = documents?.filter(d =>
     d.name.toLowerCase().includes(search.toLowerCase())
   ) || [];
+
+  const handleDelete = (id: string) => {
+    deleteDocument.mutate(id, {
+      onSuccess: () => toast.success('Documento excluído'),
+      onError: () => toast.error('Erro ao excluir documento'),
+    });
+  };
 
   return (
     <div className="space-y-4">
@@ -78,6 +98,27 @@ export function GeneratedDocumentsList() {
                         </a>
                       </Button>
                     )}
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive">
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Excluir documento?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Esta ação não pode ser desfeita. O documento e suas assinaturas serão permanentemente excluídos.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                          <AlertDialogAction onClick={() => handleDelete(doc.id)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                            Excluir
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   </div>
                 </div>
               </Card>
