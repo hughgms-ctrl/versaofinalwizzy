@@ -409,7 +409,6 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
                   "status-badge text-[9px] md:text-[10px] hidden xs:inline-flex",
                   (isTyping || isRecording) ? "bg-green-500/10 text-green-500 animate-pulse" : (
                     conversation.status === 'open' && "status-open",
-                    conversation.status === 'pending' && "status-pending",
                     conversation.status === 'resolved' && "bg-blue-500/10 text-blue-500",
                     conversation.status === 'archived' && "bg-muted text-muted-foreground"
                   )

@@ -79,18 +79,15 @@ export function RecentConversations() {
                 <div className={cn(
                   "status-badge",
                   conversation.status === 'open' && "status-open",
-                  conversation.status === 'pending' && "status-pending",
-                  (conversation.status === 'resolved' || conversation.status === 'closed') && "status-closed"
+                  (conversation.status === 'resolved' || conversation.status === 'closed' || conversation.status === 'archived') && "status-closed"
                 )}>
                   <span className={cn(
                     "h-1.5 w-1.5 rounded-full",
                     conversation.status === 'open' && "bg-green-600",
-                    conversation.status === 'pending' && "bg-amber-600",
-                    (conversation.status === 'resolved' || conversation.status === 'closed') && "bg-slate-500"
+                    (conversation.status === 'resolved' || conversation.status === 'closed' || conversation.status === 'archived') && "bg-slate-500"
                   )} />
                   {conversation.status === 'open' && 'Aberto'}
-                  {conversation.status === 'pending' && 'Pendente'}
-                  {(conversation.status === 'resolved' || conversation.status === 'closed') && 'Resolvido'}
+                  {(conversation.status === 'resolved' || conversation.status === 'closed' || conversation.status === 'archived') && 'Resolvido'}
                 </div>
               </div>
             ))}
