@@ -698,6 +698,13 @@ async function invokeAgentAI(
     systemPrompt += `INSTRUÇÕES ESPECÍFICAS PARA ESTE MOMENTO:\n${additionalPrompt}\n\n`;
   }
 
+  // Inject training rules
+  const rulesSection = buildTrainingRulesSection(ctx.trainingRules, {
+    agentId: agent?.id, masterPromptId: ctx.masterPrompt?.id,
+    flowId: (ctx.masterPrompt as any)?.flow_id, nodeId: agentNode?.id,
+  });
+  if (rulesSection) systemPrompt += rulesSection;
+
   // Contact context
   systemPrompt += `DADOS DO CONTATO:\n`;
   systemPrompt += `- Nome: ${ctx.conversation.contact?.name || 'Não informado'}\n`;
