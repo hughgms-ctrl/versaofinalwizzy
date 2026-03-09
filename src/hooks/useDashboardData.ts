@@ -668,7 +668,7 @@ export function useReportsStatusDistribution(period: string) {
       const result: ResolutionData[] = [];
       if (statusCounts.resolved > 0) result.push({ name: 'Resolvido', value: Math.round((statusCounts.resolved / total!) * 100), color: 'hsl(142 71% 45%)' });
       if (statusCounts.open > 0) result.push({ name: 'Em Aberto', value: Math.round((statusCounts.open / total!) * 100), color: 'hsl(234 89% 54%)' });
-      if (statusCounts.pending > 0) result.push({ name: 'Pendente', value: Math.round((statusCounts.pending / total!) * 100), color: 'hsl(38 92% 50%)' });
+      // Removed pending status
 
       return result.length > 0 ? result : [{ name: 'Sem dados', value: 100, color: 'hsl(220 9% 46%)' }];
     },
