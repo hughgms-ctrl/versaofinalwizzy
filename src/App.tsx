@@ -73,6 +73,7 @@ const App = () => (
                     <Route path="/signature/:documentId" element={<SignaturePage />} />
                     <Route path="/agendar/:slug" element={<PublicBookingPage />} />
                     <Route path="/campaigns" element={<ProtectedRoute><CampaignsPage /></ProtectedRoute>} />
+                    <Route path="/calendar" element={<ProtectedRoute><CalendarPage /></ProtectedRoute>} />
                     {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                     <Route path="*" element={<NotFound />} />
                   </Routes>
