@@ -129,12 +129,6 @@ export function CampaignDialog({
             description: 'Quando uma tag específica é adicionada ao contato',
             icon: Tag,
         },
-        {
-            id: 'manual',
-            label: 'Manual',
-            description: 'Disparado manualmente pelo operador',
-            icon: Hand,
-        },
     ];
 
     return (
