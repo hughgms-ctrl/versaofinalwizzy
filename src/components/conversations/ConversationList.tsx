@@ -1,9 +1,10 @@
 import { DbConversation, useProfiles } from '@/hooks/useConversations';
 import { useContactTags, useTags } from '@/hooks/useTags';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
+import { useFollowUpStatus } from '@/hooks/useFollowUpStatus';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Bot, MessageCircle, Check, CheckCheck } from 'lucide-react';
+import { Bot, MessageCircle, Check, CheckCheck, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ConversationCardActions } from './ConversationCardActions';
 
@@ -17,6 +18,7 @@ interface ConversationListProps {
 export function ConversationList({ conversations, selectedId, onSelect, onSpyView }: ConversationListProps) {
   const { data: profiles } = useProfiles();
   const { data: workspaces = [] } = useWorkspaces();
+  const { data: followUpMap = {} } = useFollowUpStatus();
   const getInitials = (name: string | null, phone: string) => {
     if (name) {
       return name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
@@ -53,6 +55,8 @@ export function ConversationList({ conversations, selectedId, onSelect, onSpyVie
           const hasUnread = conversation.unread_count > 0 && !isSelected;
           const lastMessage = conversation.last_message?.[0];
           const isAIActive = lastMessage?.is_from_bot;
+          const isInFollowUp = !!followUpMap[conversation.id];
+          const followUpStep = followUpMap[conversation.id];
           const messagePreview = (() => {
             if (!lastMessage) return null;
             if (lastMessage.type !== 'text') {
@@ -249,6 +253,16 @@ export function ConversationList({ conversations, selectedId, onSelect, onSpyVie
                       </span>
                     )}
                   </div>
+
+                  {/* Follow-up Badge */}
+                  {isInFollowUp && (
+                    <div className="flex items-center gap-1 mt-1">
+                      <span className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full bg-orange-500/15 text-orange-600 dark:text-orange-400 font-medium animate-pulse">
+                        <RefreshCw className="h-2.5 w-2.5" />
+                        Follow-up #{followUpStep}
+                      </span>
+                    </div>
+                  )}
 
                   {/* Row 4: Contact Tags */}
                   {conversation.contact?.id && (
