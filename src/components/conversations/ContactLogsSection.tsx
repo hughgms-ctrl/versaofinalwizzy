@@ -364,6 +364,8 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
         return User;
       case 'conversation_started':
         return MessageSquare;
+      case 'followup_sent':
+        return RefreshCw;
       default:
         return ArrowRightLeft;
     }
@@ -390,6 +392,8 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
         return 'text-muted-foreground';
       case 'ai_response':
         return 'text-muted-foreground';
+      case 'followup_sent':
+        return 'text-orange-500';
       default:
         return 'text-muted-foreground';
     }
