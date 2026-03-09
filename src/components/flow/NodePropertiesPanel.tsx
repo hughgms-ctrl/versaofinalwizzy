@@ -1431,6 +1431,68 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
               />
             </div>
 
+            {/* Per-outcome pipeline mapping */}
+            {(() => {
+              const outcomesStr = (localData.expectedOutcomes as string) || '';
+              const outcomesList = outcomesStr.split(',').map(s => s.trim()).filter(Boolean);
+              if (outcomesList.length === 0) return null;
+
+              const outcomePipelines = (localData.outcomePipelines as Record<string, { pipelineId: string; columnId: string }>) || {};
+
+              const updateOutcomePipeline = (outcome: string, field: 'pipelineId' | 'columnId', value: string) => {
+                const current = outcomePipelines[outcome] || { pipelineId: '', columnId: '' };
+                const updated = {
+                  ...outcomePipelines,
+                  [outcome]: {
+                    ...current,
+                    [field]: value === 'none' ? '' : value,
+                    ...(field === 'pipelineId' ? { columnId: '' } : {}),
+                  }
+                };
+                handleChange('outcomePipelines', updated);
+              };
+
+              return (
+                <div className="space-y-3 pt-2 border-t border-border/50">
+                  <Label className="text-xs font-semibold">Mover para Pipeline por Resultado</Label>
+                  <p className="text-[10px] text-muted-foreground leading-tight">
+                    Para cada resultado, escolha para qual pipeline/coluna o lead será movido automaticamente.
+                  </p>
+                  {outcomesList.map((outcome) => {
+                    const config = outcomePipelines[outcome] || { pipelineId: '', columnId: '' };
+                    return (
+                      <div key={outcome} className="space-y-1.5 p-2 rounded-lg border border-border/50 bg-muted/30">
+                        <span className="text-[10px] font-semibold text-violet-500">● {outcome}</span>
+                        <Select
+                          value={config.pipelineId || 'none'}
+                          onValueChange={(v) => updateOutcomePipeline(outcome, 'pipelineId', v)}
+                        >
+                          <SelectTrigger className="h-7 text-xs">
+                            <SelectValue placeholder="Pipeline..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">
+                              <span className="text-muted-foreground">Não mover</span>
+                            </SelectItem>
+                            {pipelines.map((p) => (
+                              <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {config.pipelineId && (
+                          <OutcomeColumnSelect
+                            pipelineId={config.pipelineId}
+                            value={config.columnId}
+                            onChange={(v) => updateOutcomePipeline(outcome, 'columnId', v)}
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+
             <div className="p-3 rounded-2xl border border-dashed border-rose-500/40 bg-rose-500/5 space-y-3 mt-2">
               <div className="flex items-center gap-2 text-rose-500">
                 <Sparkles className="h-4 w-4" />
