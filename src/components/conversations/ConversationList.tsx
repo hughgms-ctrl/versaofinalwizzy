@@ -18,6 +18,7 @@ interface ConversationListProps {
 export function ConversationList({ conversations, selectedId, onSelect, onSpyView }: ConversationListProps) {
   const { data: profiles } = useProfiles();
   const { data: workspaces = [] } = useWorkspaces();
+  const { data: followUpMap = {} } = useFollowUpStatus();
   const getInitials = (name: string | null, phone: string) => {
     if (name) {
       return name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
