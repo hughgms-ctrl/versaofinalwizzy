@@ -330,20 +330,33 @@ export function useMoveConversation() {
       changedByType?: string;
       skipAutoTransition?: boolean;
     }) => {
-      // Check if position already exists
+      // Check if position already exists (unique per conversation_id globally)
       const { data: existing } = await supabase
         .from('conversation_pipeline_positions')
-        .select('id, column_id')
+        .select('id, column_id, pipeline_id')
         .eq('conversation_id', conversationId)
-        .eq('pipeline_id', pipelineId)
         .maybeSingle();
 
       const fromColumnId = existing?.column_id || null;
 
-      if (existing) {
+      if (existing && existing.pipeline_id === pipelineId) {
+        // Same pipeline, just update column
         const { error } = await supabase
           .from('conversation_pipeline_positions')
           .update({
+            column_id: columnId,
+            order,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', existing.id);
+
+        if (error) throw error;
+      } else if (existing) {
+        // Different pipeline — update pipeline + column
+        const { error } = await supabase
+          .from('conversation_pipeline_positions')
+          .update({
+            pipeline_id: pipelineId,
             column_id: columnId,
             order,
             updated_at: new Date().toISOString(),
