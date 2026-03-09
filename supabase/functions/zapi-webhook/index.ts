@@ -126,7 +126,12 @@ Deno.serve(async (req) => {
     // Handle message and media events - catch ALL possible UAZAPI event types for messages/media
     const messageEventTypes = ['messages', 'message', 'media', 'document', 'audio', 'video', 'image', 'sticker', 'location', 'contact', 'ptt', 'messages-upsert', 'messages.upsert'];
     if (messageEventTypes.includes(eventType)) {
-      return await handleMessage(supabase, payload, instanceId, instanceName, eventType);
+      try {
+        return await handleMessage(supabase, payload, instanceId, instanceName, eventType);
+      } catch (msgError) {
+        console.error('[WEBHOOK] handleMessage crashed but returning 200 to prevent retry loop:', msgError);
+        return respond({ success: false, error: 'message_handler_error', detail: String(msgError) });
+      }
     }
 
     // Handle read receipts
