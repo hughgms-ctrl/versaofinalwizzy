@@ -408,6 +408,29 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
                     {entry.meta.columnName}
                   </Badge>
                 )}
+                {(entry.type === 'tag_added' || entry.type === 'tag_removed') && entry.meta?.tagName && (
+                  <Badge 
+                    variant="secondary" 
+                    className="text-[10px] h-4 mt-0.5"
+                    style={entry.meta.tagColor ? { 
+                      backgroundColor: `${entry.meta.tagColor}20`,
+                      color: entry.meta.tagColor,
+                      borderColor: `${entry.meta.tagColor}40`,
+                    } : undefined}
+                  >
+                    {entry.meta.tagName}
+                  </Badge>
+                )}
+                {entry.type === 'flow_triggered' && entry.meta?.flowStatus && (
+                  <Badge 
+                    variant="secondary" 
+                    className="text-[10px] h-4 mt-0.5"
+                  >
+                    {entry.meta.flowStatus === 'completed' ? 'Concluído' : 
+                     entry.meta.flowStatus === 'failed' ? 'Falhou' : 
+                     entry.meta.flowStatus === 'waiting_input' ? 'Aguardando' : 'Executando'}
+                  </Badge>
+                )}
                 <p className="text-[10px] text-muted-foreground">{entry.actor}</p>
               </div>
               <span className="text-[10px] text-muted-foreground shrink-0">
