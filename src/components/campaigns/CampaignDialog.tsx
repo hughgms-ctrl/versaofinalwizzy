@@ -95,7 +95,7 @@ export function CampaignDialog({
 
         const payload: any = {
             name: name.trim(),
-            trigger_keyword: triggerType === 'keyword' ? triggerKeyword.trim() : "*",
+            trigger_keyword: (triggerType === 'keyword' || triggerType === 'tag_added') ? triggerKeyword.trim() : "*",
             match_type: triggerType === 'keyword' ? matchType : triggerType,
             flow_id: flowId,
             start_time: startTime,
