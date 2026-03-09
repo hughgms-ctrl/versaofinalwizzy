@@ -148,7 +148,7 @@ Deno.serve(async (req) => {
     if (eventType === 'chats' || eventType === 'chat') {
       // Chat update events sometimes contain messages
       if (payload.message?.msgid || payload.event?.Info?.ID) {
-        return await handleMessage(supabase, payload, instanceId, instanceName);
+        return await handleMessage(supabase, payload, instanceId, instanceName, eventType);
       }
       return respond({ success: true, ignored: true, reason: 'chat_update' });
     }
