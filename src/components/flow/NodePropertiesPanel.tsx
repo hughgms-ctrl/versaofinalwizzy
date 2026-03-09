@@ -27,6 +27,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
 import { TrainingRulesList } from '@/components/agents/TrainingRulesList';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 
 // Generate simple unique ID
 const generateId = () => Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
@@ -1896,64 +1897,60 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
   };
 
   return (
-    <div className="w-80 bg-card border-l border-border h-full flex flex-col">
-      {/* Build trigger force comment */}
-      {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-border">
-        <div className="flex items-center gap-2">
-          <div className="h-8 w-8 rounded-md bg-primary/10 flex items-center justify-center">
-            <Icon className="h-4 w-4 text-primary" />
-          </div>
-          <div>
-            <h3 className="text-sm font-semibold">{nodeLabel}</h3>
-            <p className="text-xs text-muted-foreground">ID: {node.id}</p>
+    <Dialog open={!!node} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="max-w-2xl max-h-[85vh] p-0 gap-0 flex flex-col overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
+              <Icon className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <DialogTitle className="text-base font-semibold">{nodeLabel}</DialogTitle>
+              <p className="text-xs text-muted-foreground">ID: {node.id}</p>
+            </div>
           </div>
         </div>
-        <Button variant="ghost" size="icon" onClick={onClose}>
-          <X className="h-4 w-4" />
-        </Button>
-      </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto p-4">
-        {renderFields()}
-      </div>
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto px-6 py-5">
+          {renderFields()}
+        </div>
 
-      {/* Footer with Save and Delete Buttons */}
-      <div className="p-4 border-t border-border space-y-2">
-        {/* Save Button */}
-        {onSave && (
-          <Button
-            size="sm"
-            className={cn(
-              "w-full gap-2 transition-colors",
-              hasUnsavedChanges && !isSaving && "bg-amber-600 hover:bg-amber-700 text-white"
-            )}
-            onClick={onSave}
-            disabled={isSaving || !hasUnsavedChanges}
-          >
-            {isSaving ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Save className="h-4 w-4" />
-            )}
-            {hasUnsavedChanges ? 'Salvar Alterações*' : 'Tudo Salvo'}
-          </Button>
-        )}
-
-        {/* Delete Button */}
-        {onDelete && (
-          <Button
-            variant="destructive"
-            size="sm"
-            className="w-full gap-2"
-            onClick={onDelete}
-          >
-            <Trash2 className="h-4 w-4" />
-            Excluir Bloco
-          </Button>
-        )}
-      </div>
-    </div>
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-border flex items-center gap-3 shrink-0">
+          {onDelete && (
+            <Button
+              variant="destructive"
+              size="sm"
+              className="gap-2"
+              onClick={onDelete}
+            >
+              <Trash2 className="h-4 w-4" />
+              Excluir Bloco
+            </Button>
+          )}
+          <div className="flex-1" />
+          {onSave && (
+            <Button
+              size="sm"
+              className={cn(
+                "gap-2 min-w-[140px] transition-colors",
+                hasUnsavedChanges && !isSaving && "bg-amber-600 hover:bg-amber-700 text-white"
+              )}
+              onClick={onSave}
+              disabled={isSaving || !hasUnsavedChanges}
+            >
+              {isSaving ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4" />
+              )}
+              {hasUnsavedChanges ? 'Salvar Alterações*' : 'Tudo Salvo'}
+            </Button>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
