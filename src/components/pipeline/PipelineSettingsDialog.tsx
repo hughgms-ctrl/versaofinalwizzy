@@ -143,6 +143,7 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
   const [selectedWorkspaceIds, setSelectedWorkspaceIds] = useState<string[]>(pipeline.workspace_ids || []);
   const [nextPipelineId, setNextPipelineId] = useState<string>(pipeline.next_pipeline_id || 'none');
   const [nextPipelineColumnId, setNextPipelineColumnId] = useState<string>(pipeline.next_pipeline_column_id || 'first');
+  const [completionColumnId, setCompletionColumnId] = useState<string>(pipeline.completion_column_id || 'last');
   const [defaultAssignedTo, setDefaultAssignedTo] = useState<string>(pipeline.default_assigned_to || 'none');
   const [deleteColumnId, setDeleteColumnId] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<'general' | 'notifications'>('general');
