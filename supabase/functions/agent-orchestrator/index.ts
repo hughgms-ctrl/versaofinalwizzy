@@ -201,7 +201,10 @@ Deno.serve(async (req) => {
       result = await executeLegacyOrchestration(supabase, context, messageContent);
     }
 
-    // 5. Send reply
+    // 5. Send reply (strip any leaked internal annotations)
+    if (result.replyText) {
+      result.replyText = stripInternalAnnotations(result.replyText);
+    }
     if (result.replyText) {
       await sendReplyViaZAPI(supabase, conversation, result.replyText);
     }
