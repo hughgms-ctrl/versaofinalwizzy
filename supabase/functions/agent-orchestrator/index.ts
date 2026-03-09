@@ -175,6 +175,7 @@ Deno.serve(async (req) => {
     const pipelines = pipelinesResult.data || [];
     const pipelinePositions = pipelinePositionsResult.data || [];
     const flows = flowsResult.data || [];
+    const trainingRules = trainingRulesResult.data || [];
 
     // Resolve AI config: masterPrompt > integration_configs > workspace_agent_configs > defaults
     const masterProvider = masterPrompt.provider || integrationConfig?.ai_provider || 'lovable';
@@ -188,7 +189,7 @@ Deno.serve(async (req) => {
       messages, agents, allTags, contactTags, pipelines, pipelinePositions,
       flows, aiModel, masterPrompt, LOVABLE_API_KEY,
       aiEndpoint: aiConfig.endpoint, aiApiKey: aiConfig.apiKey,
-      integrationConfig, flowExecutionId,
+      integrationConfig, flowExecutionId, trainingRules,
     };
 
     // 4. Check for flow-based orchestration
