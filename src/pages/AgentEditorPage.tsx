@@ -34,7 +34,7 @@ const AgentEditorPage = () => {
 
   // Collapsible sections
   const [showBasicInfo, setShowBasicInfo] = useState(true);
-  const [showAIConfig, setShowAIConfig] = useState(true);
+  
   const [showAIAssist, setShowAIAssist] = useState(true);
 
   const [provider, setProvider] = useState('lovable');
