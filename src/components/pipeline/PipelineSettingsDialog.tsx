@@ -169,6 +169,7 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
     setSelectedWorkspaceIds(pipeline.workspace_ids || []);
     setNextPipelineId(pipeline.next_pipeline_id || 'none');
     setNextPipelineColumnId(pipeline.next_pipeline_column_id || 'first');
+    setCompletionColumnId(pipeline.completion_column_id || 'last');
     setDefaultAssignedTo(pipeline.default_assigned_to || 'none');
   }, [pipeline]);
 
