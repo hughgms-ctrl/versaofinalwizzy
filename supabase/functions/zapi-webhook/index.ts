@@ -153,7 +153,12 @@ Deno.serve(async (req) => {
     if (eventType === 'chats' || eventType === 'chat') {
       // Chat update events sometimes contain messages
       if (payload.message?.msgid || payload.event?.Info?.ID) {
-        return await handleMessage(supabase, payload, instanceId, instanceName, eventType);
+        try {
+          return await handleMessage(supabase, payload, instanceId, instanceName, eventType);
+        } catch (msgError) {
+          console.error('[WEBHOOK] handleMessage (chat) crashed:', msgError);
+          return respond({ success: false, error: 'message_handler_error', detail: String(msgError) });
+        }
       }
       return respond({ success: true, ignored: true, reason: 'chat_update' });
     }
