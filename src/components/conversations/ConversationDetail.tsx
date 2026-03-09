@@ -1022,18 +1022,40 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
     }
 
     if (type === 'document' && media_url) {
+      const fileName = content || media_url.split('/').pop() || 'Documento';
       return (
         <a
           href={media_url}
           target="_blank"
           rel="noopener noreferrer"
+          download={fileName}
           className="flex items-center gap-3 p-3 rounded-lg bg-background/50 hover:bg-background/80 transition-colors"
+          onClick={(e) => {
+            // Fallback: if blocked by ad blocker, try fetch + blob download
+            e.preventDefault();
+            fetch(media_url)
+              .then(res => res.blob())
+              .then(blob => {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = fileName;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+              })
+              .catch(() => {
+                // If fetch also fails, try direct open
+                window.open(media_url, '_blank');
+              });
+          }}
         >
           <div className="flex items-center justify-center h-10 w-10 rounded-lg bg-primary/20">
             <FileText className="h-5 w-5 text-primary" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium truncate">{content || 'Documento'}</p>
+            <p className="text-sm font-medium truncate">{fileName}</p>
             <p className="text-xs opacity-60">Clique para baixar</p>
           </div>
         </a>
