@@ -6,6 +6,11 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
+function uazapiUrl(baseUrl: string, path: string): string {
+  const base = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+  return `${base}${path}`;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -23,6 +28,7 @@ Deno.serve(async (req) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const uazapiBaseUrl = Deno.env.get("UAZAPI_BASE_URL")!;
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
     // Get notification config for this column
@@ -35,6 +41,7 @@ Deno.serve(async (req) => {
       .maybeSingle();
 
     if (!notification || notification.notify_user_ids.length === 0) {
+      console.log("No notification configured for column", columnId);
       return new Response(
         JSON.stringify({ message: "No notification configured" }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -72,6 +79,8 @@ Deno.serve(async (req) => {
       .replace("{nome}", contactName)
       .replace("{estagio}", columnName);
 
+    console.log("Notification message:", message);
+
     // Get phone numbers of users to notify
     const { data: profilesToNotify } = await supabase
       .from("profiles")
@@ -79,6 +88,7 @@ Deno.serve(async (req) => {
       .in("user_id", notification.notify_user_ids);
 
     if (!profilesToNotify || profilesToNotify.length === 0) {
+      console.log("No users with profiles to notify");
       return new Response(
         JSON.stringify({ message: "No users with phone numbers to notify" }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -94,30 +104,49 @@ Deno.serve(async (req) => {
       .maybeSingle();
 
     if (!instance) {
+      console.log("No active WhatsApp instance for org", organizationId);
       return new Response(
         JSON.stringify({ message: "No active WhatsApp instance" }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Send notifications to each user
+    const instanceToken = instance.zapi_token;
+    console.log("Using instance:", instance.name, "to send notifications to", profilesToNotify.length, "users");
+
+    // Send notifications directly via UAZAPI (bypassing zapi-send-message which requires user auth)
     const results = [];
     for (const profile of profilesToNotify) {
-      if (!profile.phone) continue;
+      if (!profile.phone) {
+        console.log("User", profile.full_name, "has no phone number, skipping");
+        results.push({
+          userId: profile.user_id,
+          name: profile.full_name,
+          success: false,
+          error: "No phone number",
+        });
+        continue;
+      }
+
+      const normalizedPhone = profile.phone.replace(/\D/g, '');
+      console.log("Sending notification to", profile.full_name, "at", normalizedPhone);
 
       try {
-        const response = await fetch(`${supabaseUrl}/functions/v1/zapi-send-message`, {
+        const endpoint = uazapiUrl(uazapiBaseUrl, '/send/text');
+        const response = await fetch(endpoint, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${serviceRoleKey}`,
+            "token": instanceToken,
           },
           body: JSON.stringify({
-            organizationId,
-            phone: profile.phone,
-            message,
+            number: normalizedPhone,
+            text: message,
           }),
         });
+
+        const responseText = await response.text();
+        console.log("UAZAPI response for", profile.full_name, ":", response.status, responseText);
 
         results.push({
           userId: profile.user_id,
@@ -125,6 +154,7 @@ Deno.serve(async (req) => {
           success: response.ok,
         });
       } catch (err) {
+        console.error("Error sending to", profile.full_name, ":", err);
         results.push({
           userId: profile.user_id,
           name: profile.full_name,
