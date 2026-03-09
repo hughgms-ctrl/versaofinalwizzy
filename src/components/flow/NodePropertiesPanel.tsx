@@ -1518,6 +1518,13 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
               );
             })()}
 
+            <TrainingRulesList
+              targetType="flow_node"
+              flowId={flowId}
+              nodeId={node.id}
+              organizationId={organizationId}
+            />
+
             <div className="p-3 rounded-2xl border border-dashed border-rose-500/40 bg-rose-500/5 space-y-3 mt-2">
               <div className="flex items-center gap-2 text-rose-500">
                 <Sparkles className="h-4 w-4" />

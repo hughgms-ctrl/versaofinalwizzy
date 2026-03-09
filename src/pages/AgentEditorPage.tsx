@@ -198,6 +198,12 @@ const AgentEditorPage = () => {
             placeholder="Defina a personalidade e o papel deste agente..."
             className="min-h-[400px] font-mono text-sm"
           />
+
+          <TrainingRulesList
+            targetType="agent"
+            agentId={agentId}
+            organizationId={agent.organization_id}
+          />
         </div>
       </div>
     </MainLayout>
