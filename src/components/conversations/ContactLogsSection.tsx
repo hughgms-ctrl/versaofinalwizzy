@@ -28,8 +28,17 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
   const { data: entries = [], isLoading } = useQuery({
     queryKey: ['contact-timeline', conversationId],
     queryFn: async () => {
+      // First get conversation to know contact_id
+      const { data: conv } = await supabase
+        .from('conversations')
+        .select('created_at, intervened_by, intervened_at, contact_id')
+        .eq('id', conversationId)
+        .single();
+
+      if (!conv) return [];
+
       // Fetch all data sources in parallel
-      const [execResult, stageResult, tagsResult, flowsResult, agentsResult, columnsResult, convResult] = await Promise.all([
+      const [execResult, stageResult, tagsResult, flowsResult, agentsResult, columnsResult, flowExecResult, contactTagsResult] = await Promise.all([
         supabase
           .from('agent_execution_logs')
           .select(`
@@ -51,7 +60,6 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
           .order('created_at', { ascending: true })
           .then((res: any) => {
             if (res.error) {
-              // Fallback without joins
               return (supabase as any)
                 .from('conversation_stage_history')
                 .select('*')
@@ -60,19 +68,26 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
             }
             return res;
           }),
-        supabase.from('tags').select('id, name'),
+        supabase.from('tags').select('id, name, color'),
         supabase.from('flows').select('id, name'),
         supabase.from('ai_agents').select('id, name'),
         supabase.from('pipeline_columns').select('id, name, color'),
+        // Flow executions for this conversation
         supabase
-          .from('conversations')
-          .select('created_at, intervened_by, intervened_at')
-          .eq('id', conversationId)
-          .single(),
+          .from('flow_executions')
+          .select('id, flow_id, started_at, completed_at, status')
+          .eq('conversation_id', conversationId)
+          .order('started_at', { ascending: true }),
+        // Contact tags (added by flow, ai, or manual)
+        supabase
+          .from('contact_tags')
+          .select('id, tag_id, created_at, added_by_type')
+          .eq('contact_id', conv.contact_id)
+          .order('created_at', { ascending: true }),
       ]);
 
       // Build lookup maps
-      const tagMap = new Map((tagsResult.data || []).map((t: any) => [t.id, t.name]));
+      const tagMap = new Map((tagsResult.data || []).map((t: any) => [t.id, { name: t.name, color: t.color }]));
       const flowMap = new Map((flowsResult.data || []).map((f: any) => [f.id, f.name]));
       const agentMap = new Map((agentsResult.data || []).map((a: any) => [a.id, a.name]));
       const columnMap = new Map((columnsResult.data || []).map((c: any) => [c.id, { name: c.name, color: c.color }]));
@@ -80,10 +95,10 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
       const timeline: TimelineEntry[] = [];
 
       // 1. Conversation started
-      if (convResult.data?.created_at) {
+      if (conv.created_at) {
         timeline.push({
           id: 'conv-start',
-          timestamp: convResult.data.created_at,
+          timestamp: conv.created_at,
           type: 'conversation_started',
           description: 'Conversa iniciada',
           actor: 'Sistema',
@@ -97,7 +112,8 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
         const fromCol = entry.from_column || (entry.from_column_id ? columnMap.get(entry.from_column_id) : null);
         const actorName = entry.changed_by_profile?.full_name || 
           (entry.changed_by_type === 'ai' ? 'IA' : 
-           entry.changed_by_type === 'flow' ? 'Fluxo' : 'Manual');
+           entry.changed_by_type === 'flow' ? 'Fluxo' :
+           entry.changed_by_type === 'orchestrator' ? 'Orquestrador' : 'Manual');
 
         timeline.push({
           id: `stage-${entry.id}`,
@@ -107,7 +123,7 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
             ? `Movido de "${fromCol.name || fromCol}" para "${toCol?.name || 'Estágio'}"`
             : `Entrou no estágio "${toCol?.name || 'Estágio'}"`,
           actor: actorName,
-          actorType: entry.changed_by_type === 'ai' ? 'ai' : entry.changed_by_type === 'flow' ? 'ai' : 'human',
+          actorType: entry.changed_by_type === 'ai' || entry.changed_by_type === 'orchestrator' ? 'ai' : entry.changed_by_type === 'flow' ? 'ai' : 'human',
           meta: {
             columnName: toCol?.name,
             columnColor: toCol?.color,
@@ -116,7 +132,59 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
         });
       }
 
-      // 3. Agent execution logs
+      // 3. Flow executions
+      for (const flowExec of flowExecResult.data || []) {
+        const flowName = flowMap.get(flowExec.flow_id) || 'Fluxo desconhecido';
+        timeline.push({
+          id: `flowexec-${flowExec.id}`,
+          timestamp: flowExec.started_at,
+          type: 'flow_triggered',
+          description: `Fluxo "${flowName}" executado`,
+          actor: 'Fluxo',
+          actorType: 'system',
+          meta: {
+            flowStatus: flowExec.status,
+          },
+        });
+      }
+
+      // 4. Contact tags added (by flow, manual, etc.)
+      // Deduplicate: don't show tags already shown via agent_execution_logs tools
+      const aiTagIds = new Set<string>();
+      for (const log of execResult.data || []) {
+        const tools = (log.tools_executed as any[]) || [];
+        for (const tool of tools) {
+          if (tool.name === 'add_tag' && tool.arguments?.tag_id) {
+            aiTagIds.add(tool.arguments.tag_id);
+          }
+        }
+      }
+
+      for (const ct of contactTagsResult.data || []) {
+        // Skip tags already tracked via AI execution logs
+        if (ct.added_by_type === 'ai' && aiTagIds.has(ct.tag_id)) continue;
+
+        const tagInfo = tagMap.get(ct.tag_id);
+        const tagName = tagInfo?.name || 'desconhecida';
+        const actorLabel = ct.added_by_type === 'flow' ? 'Fluxo' : 
+                          ct.added_by_type === 'ai' ? 'IA' : 
+                          ct.added_by_type === 'campaign' ? 'Campanha' : 'Manual';
+
+        timeline.push({
+          id: `ctag-${ct.id}`,
+          timestamp: ct.created_at,
+          type: 'tag_added',
+          description: `Tag "${tagName}" adicionada`,
+          actor: actorLabel,
+          actorType: ct.added_by_type === 'manual' ? 'human' : 'ai',
+          meta: {
+            tagColor: tagInfo?.color,
+            tagName: tagInfo?.name,
+          },
+        });
+      }
+
+      // 5. Agent execution logs
       for (const log of execResult.data || []) {
         const time = log.created_at;
         const agentName = (log.agent as any)?.name || (log.master_prompt as any)?.name || 'Agente Master';
@@ -136,25 +204,29 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
           const toolArgs = tool.arguments || tool.args || {};
 
           if (toolName === 'add_tag') {
-            const name = tagMap.get(toolArgs.tag_id) || toolArgs.tag_name || 'desconhecida';
+            const tagInfo = tagMap.get(toolArgs.tag_id);
+            const name = tagInfo?.name || toolArgs.tag_name || 'desconhecida';
             timeline.push({
               id: `${log.id}-tag-add-${toolArgs.tag_id || ''}`,
               timestamp: time,
               type: 'tag_added',
-              description: `Tag #${name} inserida`,
+              description: `Tag "${name}" adicionada`,
               actor: agentName,
               actorType: 'ai',
+              meta: { tagColor: tagInfo?.color, tagName: tagInfo?.name },
             });
           }
           if (toolName === 'remove_tag') {
-            const name = tagMap.get(toolArgs.tag_id) || toolArgs.tag_name || 'desconhecida';
+            const tagInfo = tagMap.get(toolArgs.tag_id);
+            const name = tagInfo?.name || toolArgs.tag_name || 'desconhecida';
             timeline.push({
               id: `${log.id}-tag-rm-${toolArgs.tag_id || ''}`,
               timestamp: time,
               type: 'tag_removed',
-              description: `Tag #${name} removida`,
+              description: `Tag "${name}" removida`,
               actor: agentName,
               actorType: 'ai',
+              meta: { tagColor: tagInfo?.color, tagName: tagInfo?.name },
             });
           }
           if (toolName === 'move_pipeline') {
@@ -204,17 +276,17 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
         }
       }
 
-      // 4. Human intervention
-      if (convResult.data?.intervened_at && convResult.data?.intervened_by) {
+      // 6. Human intervention
+      if (conv.intervened_at && conv.intervened_by) {
         const { data: profile } = await supabase
           .from('profiles')
           .select('full_name')
-          .eq('id', convResult.data.intervened_by)
+          .eq('id', conv.intervened_by)
           .single();
 
         timeline.push({
-          id: `intervention-${convResult.data.intervened_at}`,
-          timestamp: convResult.data.intervened_at,
+          id: `intervention-${conv.intervened_at}`,
+          timestamp: conv.intervened_at,
           type: 'human_intervened',
           description: `${profile?.full_name || 'Atendente'} assumiu a conversa`,
           actor: profile?.full_name || 'Atendente',
