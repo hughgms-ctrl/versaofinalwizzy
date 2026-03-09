@@ -1,9 +1,11 @@
-import { Search, Plus, Moon, Sun } from 'lucide-react';
+import { Search, Plus, Moon, Sun, Volume2, VolumeOff } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { NotificationDropdown } from './NotificationDropdown';
 import { MobileNav } from './MobileNav';
+import { useNotificationSettings } from '@/hooks/useNotificationSettings';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface HeaderProps {
   title: string;
