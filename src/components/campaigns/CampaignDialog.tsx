@@ -245,10 +245,30 @@ export function CampaignDialog({
                                             </div>
                                         )}
 
-                                        {/* Mensagem para Webhook */}
-                                        {isSelected && option.id === 'webhook' && (
-                                            <div className="mt-4 ml-14 p-4 rounded-lg border bg-primary/5 text-sm text-muted-foreground">
-                                                <p>A URL do webhook será gerada e associada ao ID do Fluxo selecionado abaixo. Use a documentação para disparar este fluxo via API.</p>
+                                        {/* Mostrar opções se for Tag Adicionada */}
+                                        {isSelected && option.id === 'tag_added' && (
+                                            <div className="mt-4 ml-14 space-y-4 p-4 rounded-lg border bg-muted/10">
+                                                <div className="grid gap-2">
+                                                    <Label className="text-xs">Tag</Label>
+                                                    <Select value={triggerKeyword} onValueChange={setTriggerKeyword}>
+                                                        <SelectTrigger className="h-9">
+                                                            <SelectValue placeholder="Selecione a tag" />
+                                                        </SelectTrigger>
+                                                        <SelectContent>
+                                                            {tags.map((tag) => (
+                                                                <SelectItem key={tag.id} value={tag.id}>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <div 
+                                                                            className="w-3 h-3 rounded-full" 
+                                                                            style={{ backgroundColor: tag.color || '#6366f1' }}
+                                                                        />
+                                                                        {tag.name}
+                                                                    </div>
+                                                                </SelectItem>
+                                                            ))}
+                                                        </SelectContent>
+                                                    </Select>
+                                                </div>
                                             </div>
                                         )}
                                     </div>
