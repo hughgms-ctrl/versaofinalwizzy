@@ -440,14 +440,14 @@ export type Database = {
       campaigns: {
         Row: {
           created_at: string
-          end_hour: number | null
+          end_time: string | null
           flow_id: string
           id: string
           is_active: boolean | null
           match_type: string
           name: string
           organization_id: string
-          start_hour: number | null
+          start_time: string | null
           trigger_count: number
           trigger_keyword: string
           updated_at: string
@@ -455,14 +455,14 @@ export type Database = {
         }
         Insert: {
           created_at?: string
-          end_hour?: number | null
+          end_time?: string | null
           flow_id: string
           id?: string
           is_active?: boolean | null
           match_type?: string
           name: string
           organization_id: string
-          start_hour?: number | null
+          start_time?: string | null
           trigger_count?: number
           trigger_keyword: string
           updated_at?: string
@@ -470,14 +470,14 @@ export type Database = {
         }
         Update: {
           created_at?: string
-          end_hour?: number | null
+          end_time?: string | null
           flow_id?: string
           id?: string
           is_active?: boolean | null
           match_type?: string
           name?: string
           organization_id?: string
-          start_hour?: number | null
+          start_time?: string | null
           trigger_count?: number
           trigger_keyword?: string
           updated_at?: string

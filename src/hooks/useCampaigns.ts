@@ -12,8 +12,8 @@ export interface Campaign {
     flow_id: string;
     is_active: boolean;
     trigger_count: number;
-    start_hour: number;
-    end_hour: number;
+    start_time?: string;
+    end_time?: string;
     pending_count?: number; // Virtual field calculated in query or elsewhere
     created_at: string;
     updated_at: string;

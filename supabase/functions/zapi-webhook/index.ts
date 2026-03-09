@@ -658,23 +658,44 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
 
         // Check if within business hours
         const now = new Date();
-        const hour = now.getHours(); // Local hour of the server/edge function (usually UTC, might need offset or user config)
-        // For simplicity, we assume the server time matches user's expectation or we should allow timezone config
-        // The user suggested "08:00" and "22:00". We'll use start_hour and end_hour from campaign.
+        const bzTimeStr = new Intl.DateTimeFormat('pt-BR', {
+            timeZone: 'America/Sao_Paulo',
+            hour: '2-digit', minute: '2-digit', hour12: false
+        }).format(now);
 
-        const { data: campaignData } = await supabase.from('campaigns').select('start_hour, end_hour').eq('id', campaignId).single();
-        const startH = campaignData?.start_hour ?? 0;
-        const endH = campaignData?.end_hour ?? 23;
+        const { data: campaignData } = await supabase.from('campaigns').select('start_time, end_time').eq('id', campaignId).single();
+        const startT = campaignData?.start_time || "00:00";
+        const endT = campaignData?.end_time || "23:59";
 
-        if (hour < startH || hour >= endH) {
-          console.log(`[CAMPAIGN QUEUED] Outside hours (${hour} vs ${startH}-${endH}). Adding to queue.`);
+        let isOutsideHours = false;
+        if (startT <= endT) {
+            isOutsideHours = bzTimeStr < startT || bzTimeStr > endT;
+        } else {
+            // Crosses midnight
+            isOutsideHours = bzTimeStr < startT && bzTimeStr > endT;
+        }
+
+        if (isOutsideHours) {
+          console.log(`[CAMPAIGN QUEUED] Outside hours (${bzTimeStr} vs ${startT}-${endT}). Adding to queue.`);
+          
+          // Calculate when the queue should run (next start time)
+          const [sHour, sMin] = startT.split(':').map(Number);
+          const [cHour] = bzTimeStr.split(':').map(Number);
+          
+          let scheduledDate = new Date(now.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+          if (cHour >= sHour) {
+              // It's after start hour but outside hours (means it's after end time), schedule for tomorrow
+              scheduledDate.setDate(scheduledDate.getDate() + 1);
+          }
+          scheduledDate.setHours(sHour, sMin, 0, 0);
+
           await supabase.from('campaign_queue').insert({
             organization_id: organizationId,
             campaign_id: campaignId,
             conversation_id: conversation.id,
             contact_id: contact.id,
             message_content: triggerText,
-            scheduled_for: new Date(now.getFullYear(), now.getMonth(), now.getDate() + (hour >= endH ? 1 : 0), startH, 0, 0).toISOString(),
+            scheduled_for: scheduledDate.toISOString(),
             status: 'pending'
           });
           return respond({ success: true, messageId: savedMessage.id, queued: true });

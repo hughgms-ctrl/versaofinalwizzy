@@ -48,8 +48,8 @@ export function CampaignDialog({
     const [flowId, setFlowId] = useState("");
     const [triggerType, setTriggerType] = useState("keyword");
     const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
-    const [startHour, setStartHour] = useState(0);
-    const [endHour, setEndHour] = useState(23);
+    const [startTime, setStartTime] = useState("00:00");
+    const [endTime, setEndTime] = useState("23:59");
     const [workspaceId, setWorkspaceId] = useState<string>("");
 
     const createCampaign = useCreateCampaign();
@@ -72,8 +72,8 @@ export function CampaignDialog({
                 setTriggerType(campaignToEdit.match_type);
                 setTriggerKeyword(campaignToEdit.trigger_keyword || "");
             }
-            setStartHour(campaignToEdit.start_hour ?? 0);
-            setEndHour(campaignToEdit.end_hour ?? 23);
+            setStartTime(campaignToEdit.start_time ?? "00:00");
+            setEndTime(campaignToEdit.end_time ?? "23:59");
             setWorkspaceId((campaignToEdit as any).workspace_id || "");
         } else if (open) {
             setName("");
@@ -96,8 +96,8 @@ export function CampaignDialog({
             trigger_keyword: triggerType === 'keyword' ? triggerKeyword.trim() : "*",
             match_type: triggerType === 'keyword' ? matchType : triggerType,
             flow_id: flowId,
-            start_hour: startHour,
-            end_hour: endHour,
+            start_time: startTime,
+            end_time: endTime,
             workspace_id: workspaceId || null,
         };
 
@@ -162,25 +162,21 @@ export function CampaignDialog({
 
                     <div className="grid grid-cols-2 gap-4">
                         <div className="grid gap-2">
-                            <Label htmlFor="start_hour">Início (Hora: 0-23)</Label>
+                            <Label htmlFor="start_time">Início (HH:MM)</Label>
                             <Input
-                                id="start_hour"
-                                type="number"
-                                min={0}
-                                max={23}
-                                value={startHour}
-                                onChange={(e) => setStartHour(parseInt(e.target.value) || 0)}
+                                id="start_time"
+                                type="time"
+                                value={startTime}
+                                onChange={(e) => setStartTime(e.target.value)}
                             />
                         </div>
                         <div className="grid gap-2">
-                            <Label htmlFor="end_hour">Fim (Hora: 0-23)</Label>
+                            <Label htmlFor="end_time">Fim (HH:MM)</Label>
                             <Input
-                                id="end_hour"
-                                type="number"
-                                min={0}
-                                max={23}
-                                value={endHour}
-                                onChange={(e) => setEndHour(parseInt(e.target.value) || 23)}
+                                id="end_time"
+                                type="time"
+                                value={endTime}
+                                onChange={(e) => setEndTime(e.target.value)}
                             />
                         </div>
                     </div>
