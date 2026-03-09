@@ -258,7 +258,32 @@ export function ConversationCardActions({
         
         <DropdownMenuSeparator />
 
-        {/* Pipeline Actions */}
+        {/* Transfer between pipelines */}
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            <ArrowRightLeft className="h-4 w-4 mr-2" />
+            Transferir para...
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="w-48">
+            {!pipelines || pipelines.length <= 1 ? (
+              <DropdownMenuItem disabled>Nenhum outro pipeline</DropdownMenuItem>
+            ) : (
+              pipelines.map(pipeline => (
+                <DropdownMenuItem
+                  key={pipeline.id}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleTransfer(pipeline.id);
+                  }}
+                >
+                  {pipeline.name}
+                </DropdownMenuItem>
+              ))
+            )}
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+
+        <DropdownMenuSeparator />
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>
             <Kanban className="h-4 w-4 mr-2" />
