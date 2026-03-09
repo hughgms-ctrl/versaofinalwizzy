@@ -5,14 +5,26 @@ import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import listPlugin from '@fullcalendar/list';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { EventContentArg } from '@fullcalendar/core';
+import { Calendar } from '@/components/ui/calendar';
+import { ptBR } from 'date-fns/locale';
 
 export default function CalendarPage() {
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
+  const calendarRef = useRef<FullCalendar>(null);
+  
   const { data: bookings = [], isLoading } = useCalendarBookings(selectedUserId);
   const { data: configs = [] } = useAllCalendarConfigs();
+
+  useEffect(() => {
+    if (selectedDate && calendarRef.current) {
+      const api = calendarRef.current.getApi();
+      api.gotoDate(selectedDate);
+    }
+  }, [selectedDate]);
 
   const events = useMemo(() => {
     return bookings.map(booking => ({
@@ -49,27 +61,56 @@ export default function CalendarPage() {
 
   return (
     <MainLayout title="Agenda" subtitle="Visualize e gerencie todos os agendamentos">
-      <div className="flex flex-col h-[calc(100vh-12rem)]">
-        <div className="mb-4 flex justify-between items-center">
+      <div className="flex h-[calc(100vh-12rem)] gap-6">
+        {/* Sidebar */}
+        <div className="w-[300px] flex-shrink-0 flex flex-col gap-6">
           <div>
-            <h2 className="text-xl font-semibold text-foreground">Agendamentos</h2>
-            <p className="text-sm text-muted-foreground">Visualize reuniões marcadas</p>
+            <h2 className="text-xl font-semibold text-foreground mb-1">Agendamentos</h2>
+            <p className="text-sm text-muted-foreground mb-6">Visualize reuniões marcadas</p>
+            
+            <div className="mb-6">
+              <Select value={selectedUserId || 'all'} onValueChange={(val) => setSelectedUserId(val === 'all' ? null : val)}>
+                <SelectTrigger className="w-full bg-background border-border">
+                  <SelectValue placeholder="Todos os membros" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os membros</SelectItem>
+                  {configs.map(config => (
+                    <SelectItem key={config.id} value={config.user_id || config.id}>
+                      {config.display_name || config.google_email || 'Sem nome'}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="bg-background border border-border rounded-lg p-2">
+              <Calendar
+                mode="single"
+                selected={selectedDate}
+                onSelect={(date) => {
+                  if (date) setSelectedDate(date);
+                }}
+                locale={ptBR}
+                className="w-full"
+                classNames={{
+                  months: "w-full",
+                  month: "w-full space-y-4",
+                  table: "w-full border-collapse space-y-1",
+                  head_row: "flex w-full justify-between",
+                  row: "flex w-full mt-2 justify-between",
+                  cell: "h-9 w-9 text-center text-sm p-0 relative [&:has([aria-selected].day-range-end)]:rounded-r-md [&:has([aria-selected].day-outside)]:bg-accent/50 [&:has([aria-selected])]:bg-accent first:[&:has([aria-selected])]:rounded-l-md last:[&:has([aria-selected])]:rounded-r-md focus-within:relative focus-within:z-20",
+                  day: "h-9 w-9 p-0 font-normal aria-selected:opacity-100 flex items-center justify-center hover:bg-accent hover:text-accent-foreground rounded-md transition-colors",
+                  day_selected: "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground focus:bg-primary focus:text-primary-foreground",
+                  day_today: "bg-accent text-accent-foreground font-bold",
+                  day_outside: "day-outside text-muted-foreground opacity-50 aria-selected:bg-accent/50 aria-selected:text-muted-foreground aria-selected:opacity-30",
+                }}
+              />
+            </div>
           </div>
-          <Select value={selectedUserId || 'all'} onValueChange={(val) => setSelectedUserId(val === 'all' ? null : val)}>
-            <SelectTrigger className="w-[200px]">
-              <SelectValue placeholder="Todos os membros" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos os membros</SelectItem>
-              {configs.map(config => (
-                <SelectItem key={config.id} value={config.user_id || config.id}>
-                  {config.display_name || config.google_email || 'Sem nome'}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
         </div>
 
+        {/* Main Calendar Area */}
         <div className="flex-1 bg-background border rounded-lg overflow-hidden calendar-container">
           {isLoading ? (
             <div className="flex items-center justify-center h-full">
@@ -77,6 +118,7 @@ export default function CalendarPage() {
             </div>
           ) : (
             <FullCalendar
+              ref={calendarRef}
               plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin, listPlugin]}
               initialView="timeGridWeek"
               headerToolbar={{
@@ -104,6 +146,21 @@ export default function CalendarPage() {
               selectMirror={true}
               dayMaxEvents={true}
               weekends={true}
+              datesSet={(arg) => {
+                // If the view is changed (e.g. prev/next), update the minicalendar
+                // We only do this if it's explicitly navigating, not when we programmatically set it
+                const currentMidDate = new Date((arg.start.getTime() + arg.end.getTime()) / 2);
+                if (
+                  selectedDate && 
+                  (currentMidDate.getMonth() !== selectedDate.getMonth() || 
+                   currentMidDate.getFullYear() !== selectedDate.getFullYear())
+                ) {
+                  // This is a rough approximation. We could refine it to sync better.
+                  if (arg.view.type === 'timeGridDay' || arg.view.type === 'dayGridMonth') {
+                    setSelectedDate(arg.start);
+                  }
+                }
+              }}
               eventClick={(info) => {
                 const props = info.event.extendedProps;
                 alert(`
