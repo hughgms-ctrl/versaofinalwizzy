@@ -1,11 +1,12 @@
-import { useState, useMemo, useRef, useCallback } from 'react';
+import { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import { useConversations, DbConversation } from '@/hooks/useConversations';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { formatDistanceToNow, isWithinInterval, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { GripVertical, Loader2, Inbox, MessageCircle, Bot, Check, CheckCheck } from 'lucide-react';
+import { GripVertical, Loader2, Inbox, MessageCircle, Bot, Check, CheckCheck, EyeOff, Eye } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { ConversationCardActions } from '@/components/conversations/ConversationCardActions';
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -570,7 +571,42 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
   // Check if user should see unassigned column for this pipeline
   const isAdminOrOwner = userRole === 'owner' || userRole === 'admin';
   const hideUnassignedIds = (userPermissions as any)?.hide_unassigned_pipeline_ids || [];
-  const shouldHideUnassigned = !isAdminOrOwner && pipeline?.id && hideUnassignedIds.includes(pipeline.id);
+  
+  // Admin preference stored in localStorage
+  const [adminHideUnassigned, setAdminHideUnassigned] = useState(() => {
+    if (!pipeline?.id) return false;
+    try {
+      const stored = JSON.parse(localStorage.getItem('admin_hide_unassigned_pipelines') || '[]');
+      return Array.isArray(stored) && stored.includes(pipeline.id);
+    } catch { return false; }
+  });
+
+  // Sync when pipeline changes
+  useEffect(() => {
+    if (!pipeline?.id) return;
+    try {
+      const stored = JSON.parse(localStorage.getItem('admin_hide_unassigned_pipelines') || '[]');
+      setAdminHideUnassigned(Array.isArray(stored) && stored.includes(pipeline.id));
+    } catch { setAdminHideUnassigned(false); }
+  }, [pipeline?.id]);
+
+  const toggleAdminHideUnassigned = useCallback(() => {
+    if (!pipeline?.id) return;
+    setAdminHideUnassigned(prev => {
+      const newVal = !prev;
+      try {
+        const stored = JSON.parse(localStorage.getItem('admin_hide_unassigned_pipelines') || '[]');
+        const arr = Array.isArray(stored) ? stored : [];
+        const updated = newVal ? [...arr, pipeline.id] : arr.filter((id: string) => id !== pipeline.id);
+        localStorage.setItem('admin_hide_unassigned_pipelines', JSON.stringify(updated));
+      } catch {}
+      return newVal;
+    });
+  }, [pipeline?.id]);
+
+  const shouldHideUnassigned = isAdminOrOwner 
+    ? adminHideUnassigned 
+    : (pipeline?.id && hideUnassignedIds.includes(pipeline.id));
 
   // Check if dragging over unassigned column
   const isDragOverUnassigned = dragOverColumn === 'unassigned';
@@ -607,6 +643,29 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
         }
       }}
     >
+      {/* Admin toggle to show hidden unassigned column */}
+      {isAdminOrOwner && shouldHideUnassigned && unassignedConversations.length > 0 && (
+        <div className="flex flex-col items-center justify-start pt-4 min-w-[48px]">
+          <TooltipProvider delayDuration={200}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8 rounded-full"
+                  onClick={toggleAdminHideUnassigned}
+                >
+                  <Eye className="h-4 w-4 text-muted-foreground" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right">
+                Mostrar não classificados ({unassignedConversations.length})
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
+      )}
+
       {/* Unassigned column - show when allowed and there are items OR when dragging */}
       {!shouldHideUnassigned && (unassignedConversations.length > 0 || draggedCard) && (
         <div
@@ -626,6 +685,23 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
                 {unassignedConversations.length}
               </span>
             </div>
+            {isAdminOrOwner && (
+              <TooltipProvider delayDuration={200}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6"
+                      onClick={toggleAdminHideUnassigned}
+                    >
+                      <EyeOff className="h-3.5 w-3.5 text-muted-foreground" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Ocultar não classificados</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
           </div>
           <div className="space-y-2 min-h-[200px] overflow-y-auto flex-1" style={{ WebkitOverflowScrolling: 'touch' }}>
             {unassignedConversations.map(renderConversationCard)}
