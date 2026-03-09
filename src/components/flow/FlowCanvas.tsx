@@ -472,20 +472,18 @@ function FlowCanvasInner() {
         </ReactFlow>
       </div>
 
-      {/* Node Properties Panel */}
-      {selectedNode && (
-        <NodePropertiesPanel
-          node={selectedNode}
-          onClose={() => setSelectedNode(null)}
-          onUpdate={handleNodeUpdate}
-          onDelete={() => handleDeleteNode(selectedNode.id)}
-          onSave={handleSave}
-          isSaving={saveFlow.isPending || createFlow.isPending}
-          hasUnsavedChanges={hasUnsavedChanges}
-          organizationId={flow?.organization_id}
-          flowId={flowId || undefined}
-        />
-      )}
+      {/* Node Properties Dialog */}
+      <NodePropertiesPanel
+        node={selectedNode}
+        onClose={() => setSelectedNode(null)}
+        onUpdate={handleNodeUpdate}
+        onDelete={selectedNode ? () => handleDeleteNode(selectedNode.id) : undefined}
+        onSave={handleSave}
+        isSaving={saveFlow.isPending || createFlow.isPending}
+        hasUnsavedChanges={hasUnsavedChanges}
+        organizationId={flow?.organization_id}
+        flowId={flowId || undefined}
+      />
 
       {/* Test Panel */}
       {flowId && (
