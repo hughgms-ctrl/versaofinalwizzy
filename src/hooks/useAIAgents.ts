@@ -97,9 +97,11 @@ export function useUpdateAIAgent() {
 
   return useMutation({
     mutationFn: async ({ id, ...updates }: Partial<AIAgent> & { id: string }) => {
+      // Remove fields that don't exist in the DB table
+      const { provider, model, ...dbUpdates } = updates as any;
       const { data, error } = await supabase
         .from('ai_agents')
-        .update(updates as any)
+        .update(dbUpdates as any)
         .eq('id', id)
         .select()
         .single();
