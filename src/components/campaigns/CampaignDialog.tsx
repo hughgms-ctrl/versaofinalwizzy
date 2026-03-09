@@ -48,8 +48,8 @@ export function CampaignDialog({
     const [flowId, setFlowId] = useState("");
     const [triggerType, setTriggerType] = useState("keyword");
     const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
-    const [startHour, setStartHour] = useState(0);
-    const [endHour, setEndHour] = useState(23);
+    const [startTime, setStartTime] = useState("00:00");
+    const [endTime, setEndTime] = useState("23:59");
     const [workspaceId, setWorkspaceId] = useState<string>("");
 
     const createCampaign = useCreateCampaign();
