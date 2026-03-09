@@ -1,9 +1,11 @@
 import { useState } from 'react';
-import { Plus, Trash2, Sparkles, Loader2 } from 'lucide-react';
+import { Plus, Trash2, Sparkles, Loader2, Clock, Moon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
@@ -18,11 +20,15 @@ export function RemarketingStepsEditor({ localData, handleChange }: RemarketingS
   const [isGenerating, setIsGenerating] = useState(false);
   const steps = (localData.remarketingSteps as any[]) || [];
 
+  const quietHoursEnabled = (localData.remarketingQuietHours as boolean) || false;
+  const quietStart = (localData.remarketingQuietStart as string) || '22:00';
+  const quietEnd = (localData.remarketingQuietEnd as string) || '08:00';
+
   return (
     <div className="space-y-2 pt-2 border-t border-border/50">
       <Label className="text-xs font-semibold">Sequência de Follow-up</Label>
       <p className="text-[10px] text-muted-foreground">
-        Se o usuário não responder, envia mensagens de acompanhamento antes de seguir pela saída vermelha.
+        Cada tentativa aguarda o tempo configurado após a anterior. Se o usuário não responder, segue pela saída vermelha.
       </p>
 
       {steps.map((step: any, idx: number) => (
@@ -87,6 +93,49 @@ export function RemarketingStepsEditor({ localData, handleChange }: RemarketingS
         <Plus className="h-3.5 w-3.5" />
         Adicionar tentativa
       </Button>
+
+      {/* Quiet Hours */}
+      {steps.length > 0 && (
+        <div className="p-3 rounded-lg border border-border bg-muted/30 space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Moon className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-[10px] font-semibold">Horário silencioso</span>
+            </div>
+            <Switch
+              checked={quietHoursEnabled}
+              onCheckedChange={(v) => handleChange('remarketingQuietHours', v)}
+            />
+          </div>
+          {quietHoursEnabled && (
+            <div className="space-y-1.5">
+              <p className="text-[10px] text-muted-foreground">
+                Follow-ups não serão enviados neste período. Serão reagendados para o próximo horário permitido.
+              </p>
+              <div className="flex items-center gap-2">
+                <div className="flex-1">
+                  <Label className="text-[10px] text-muted-foreground">Pausa às</Label>
+                  <Input
+                    type="time"
+                    value={quietStart}
+                    onChange={(e) => handleChange('remarketingQuietStart', e.target.value)}
+                    className="h-7 text-xs"
+                  />
+                </div>
+                <div className="flex-1">
+                  <Label className="text-[10px] text-muted-foreground">Retoma às</Label>
+                  <Input
+                    type="time"
+                    value={quietEnd}
+                    onChange={(e) => handleChange('remarketingQuietEnd', e.target.value)}
+                    className="h-7 text-xs"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* AI Generation */}
       {steps.length > 0 && (
