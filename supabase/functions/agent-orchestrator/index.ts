@@ -146,10 +146,11 @@ Deno.serve(async (req) => {
 
     console.log('Using master prompt:', masterPrompt.id, masterPrompt.name);
 
-    // 3. Load context in parallel
+    // 3. Load context in parallel (including training rules)
     const [
       messagesResult, agentsResult, tagsResult, contactTagsResult,
       pipelinesResult, pipelinePositionsResult, flowsResult, workspaceConfig, integrationConfig,
+      trainingRulesResult,
     ] = await Promise.all([
       supabase.from('messages').select('*').eq('conversation_id', conversationId)
         .order('created_at', { ascending: false }).limit(30),
@@ -163,6 +164,8 @@ Deno.serve(async (req) => {
       supabase.from('flows').select('id, name, description').eq('organization_id', organizationId).eq('is_active', true),
       resolveWorkspaceConfig(supabase, conversation),
       resolveIntegrationConfig(supabase, organizationId),
+      supabase.from('agent_training_rules').select('*')
+        .eq('organization_id', organizationId).eq('is_active', true),
     ]);
 
     const messages = (messagesResult.data || []).reverse();
