@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Bot, User, Tag, Columns, GitBranch, ArrowRightLeft, Loader2, MessageSquare, ArrowRight } from 'lucide-react';
+import { Bot, User, Tag, Columns, GitBranch, ArrowRightLeft, Loader2, MessageSquare, ArrowRight, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 
@@ -13,7 +13,7 @@ interface ContactLogsSectionProps {
 interface TimelineEntry {
   id: string;
   timestamp: string;
-  type: 'agent_activated' | 'tag_added' | 'tag_removed' | 'pipeline_moved' | 'flow_triggered' | 'agent_switched' | 'human_intervened' | 'status_changed' | 'ai_response' | 'stage_changed' | 'conversation_started';
+  type: 'agent_activated' | 'tag_added' | 'tag_removed' | 'pipeline_moved' | 'flow_triggered' | 'agent_switched' | 'human_intervened' | 'status_changed' | 'ai_response' | 'stage_changed' | 'conversation_started' | 'followup_sent';
   description: string;
   actor: string;
   actorType: 'ai' | 'human' | 'system';
@@ -149,6 +149,31 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
             flowStatus: flowExec.status,
           },
         });
+      }
+
+      // 3b. Follow-up messages (from messages metadata)
+      const { data: followUpMessages } = await supabase
+        .from('messages')
+        .select('id, created_at, content, metadata')
+        .eq('conversation_id', conversationId)
+        .eq('direction', 'outbound')
+        .eq('is_from_bot', true)
+        .order('created_at', { ascending: true });
+
+      for (const msg of followUpMessages || []) {
+        const meta = msg.metadata as any;
+        if (meta?.source === 'remarketing_followup') {
+          const stepNum = meta.remarketing_step || '?';
+          const flowName = meta.flow_name || '';
+          timeline.push({
+            id: `followup-${msg.id}`,
+            timestamp: msg.created_at,
+            type: 'followup_sent',
+            description: `Follow-up #${stepNum} enviado${flowName ? ` (${flowName})` : ''}`,
+            actor: 'Follow-up',
+            actorType: 'system',
+          });
+        }
       }
 
       // 4. Contact tags added (by flow, manual, etc.)
@@ -339,6 +364,8 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
         return User;
       case 'conversation_started':
         return MessageSquare;
+      case 'followup_sent':
+        return RefreshCw;
       default:
         return ArrowRightLeft;
     }
@@ -365,6 +392,8 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
         return 'text-muted-foreground';
       case 'ai_response':
         return 'text-muted-foreground';
+      case 'followup_sent':
+        return 'text-orange-500';
       default:
         return 'text-muted-foreground';
     }

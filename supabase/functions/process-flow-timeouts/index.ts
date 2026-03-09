@@ -13,6 +13,7 @@ Deno.serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const uazapiBaseUrl = Deno.env.get('UAZAPI_BASE_URL')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     console.log('[FLOW TIMEOUTS] Checking for timed-out flow executions...');
@@ -20,7 +21,7 @@ Deno.serve(async (req) => {
     // Find all flow executions that are waiting_input and have passed their timeout
     const { data: timedOut, error } = await supabase
       .from('flow_executions')
-      .select('id, flow_id, conversation_id, current_node_id, variables, remarketing_step, flow:flows(nodes, edges)')
+      .select('id, flow_id, conversation_id, current_node_id, variables, remarketing_step, organization_id, flow:flows(nodes, edges, name)')
       .eq('status', 'waiting_input')
       .not('timeout_at', 'is', null)
       .lt('timeout_at', new Date().toISOString())
@@ -55,14 +56,51 @@ Deno.serve(async (req) => {
         const currentNode = nodes.find((n: any) => n.id === currentNodeId);
         const remarketingSteps = currentNode?.data?.remarketingSteps as any[] || [];
 
+        // Check quiet hours
+        const quietHoursEnabled = currentNode?.data?.remarketingQuietHours === true;
+        if (quietHoursEnabled && remarketingSteps.length > 0 && currentStep < remarketingSteps.length) {
+          const quietStart = currentNode?.data?.remarketingQuietStart || '22:00';
+          const quietEnd = currentNode?.data?.remarketingQuietEnd || '08:00';
+          
+          const nowBR = new Intl.DateTimeFormat('pt-BR', {
+            timeZone: 'America/Sao_Paulo',
+            hour: '2-digit', minute: '2-digit', hour12: false
+          }).format(new Date());
+
+          let isQuiet = false;
+          if (quietStart <= quietEnd) {
+            isQuiet = nowBR >= quietStart && nowBR < quietEnd;
+          } else {
+            // Crosses midnight (e.g., 22:00 - 08:00)
+            isQuiet = nowBR >= quietStart || nowBR < quietEnd;
+          }
+
+          if (isQuiet) {
+            // Reschedule for quiet end time
+            const [endH, endM] = quietEnd.split(':').map(Number);
+            const reschedule = new Date();
+            // Convert to São Paulo time for scheduling
+            const spNow = new Date(reschedule.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+            spNow.setHours(endH, endM, 0, 0);
+            if (spNow.getTime() <= Date.now()) {
+              spNow.setDate(spNow.getDate() + 1);
+            }
+            
+            console.log(`[FLOW TIMEOUTS] Exec ${exec.id}: quiet hours active (${nowBR} in ${quietStart}-${quietEnd}). Rescheduling to ${spNow.toISOString()}`);
+            await supabase.from('flow_executions').update({
+              timeout_at: spNow.toISOString(),
+            }).eq('id', exec.id);
+            continue;
+          }
+        }
+
         if (remarketingSteps.length > 0 && currentStep < remarketingSteps.length) {
           // There are still remarketing steps to send
           const step = remarketingSteps[currentStep];
           console.log(`[FLOW TIMEOUTS] Exec ${exec.id}: sending remarketing step ${currentStep + 1}/${remarketingSteps.length}`);
 
-          // Send the remarketing message
+          // Send the remarketing message directly via UAZAPI
           if (step.message) {
-            // Get conversation details for sending
             const { data: conv } = await supabase
               .from('conversations')
               .select('contact_id, organization_id, whatsapp_instance_id')
@@ -76,7 +114,16 @@ Deno.serve(async (req) => {
                 .eq('id', conv.contact_id)
                 .single();
 
-              if (contact?.phone) {
+              // Get WhatsApp instance for UAZAPI token
+              const { data: instance } = await supabase
+                .from('whatsapp_instances')
+                .select('zapi_instance_id, zapi_token')
+                .eq('organization_id', conv.organization_id)
+                .eq('status', 'connected')
+                .limit(1)
+                .single();
+
+              if (contact?.phone && instance?.zapi_token) {
                 // Replace variables in message
                 const variables = exec.variables || {};
                 let messageText = step.message;
@@ -84,26 +131,62 @@ Deno.serve(async (req) => {
                   messageText = messageText.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), String(val));
                 }
 
-                // Send via zapi-send-message
+                const normalizedPhone = contact.phone.replace(/\D/g, '');
+
+                // Send directly via UAZAPI API
                 try {
-                  await fetch(`${supabaseUrl}/functions/v1/zapi-send-message`, {
+                  console.log(`[FLOW TIMEOUTS] Sending via UAZAPI: phone=${normalizedPhone}, message=${messageText.substring(0, 50)}...`);
+                  
+                  const uazapiResp = await fetch(`${uazapiBaseUrl}/send/text`, {
                     method: 'POST',
                     headers: {
                       'Content-Type': 'application/json',
-                      'Authorization': `Bearer ${supabaseKey}`,
+                      'token': instance.zapi_token,
                     },
                     body: JSON.stringify({
-                      organizationId: conv.organization_id,
-                      conversationId: exec.conversation_id,
-                      phone: contact.phone,
-                      message: messageText,
-                      isFromBot: true,
+                      number: normalizedPhone,
+                      text: messageText,
                     }),
                   });
-                  console.log(`[FLOW TIMEOUTS] Sent remarketing message for exec ${exec.id}`);
+
+                  if (!uazapiResp.ok) {
+                    const errText = await uazapiResp.text();
+                    console.error(`[FLOW TIMEOUTS] UAZAPI send failed: ${uazapiResp.status} ${errText}`);
+                  } else {
+                    // Parse message ID from response
+                    let zapiMessageId: string | null = null;
+                    try {
+                      const result = await uazapiResp.json();
+                      zapiMessageId = result?.messageId || result?.id || result?.ID || result?.key?.id || null;
+                    } catch { /* ignore */ }
+
+                    // Save message to DB so it appears in the conversation UI
+                    await supabase.from('messages').insert({
+                      conversation_id: exec.conversation_id,
+                      content: messageText,
+                      type: 'text',
+                      direction: 'outbound',
+                      is_from_bot: true,
+                      zapi_message_id: zapiMessageId,
+                      metadata: { 
+                        source: 'remarketing_followup',
+                        remarketing_step: currentStep + 1,
+                        flow_name: exec.flow?.name || null,
+                      },
+                    });
+
+                    // Update conversation last_message_at
+                    await supabase.from('conversations').update({ 
+                      last_message_at: new Date().toISOString() 
+                    }).eq('id', exec.conversation_id);
+
+                    console.log(`[FLOW TIMEOUTS] Remarketing message sent and saved for exec ${exec.id} (step ${currentStep + 1})`);
+                  }
                 } catch (sendErr) {
-                  console.error(`[FLOW TIMEOUTS] Error sending message:`, sendErr);
+                  console.error(`[FLOW TIMEOUTS] Error sending message via UAZAPI:`, sendErr);
                 }
+              } else {
+                console.error(`[FLOW TIMEOUTS] Missing phone or instance for exec ${exec.id}`);
               }
             }
           }
@@ -165,6 +248,24 @@ Deno.serve(async (req) => {
               remarketing_step: 0,
               completed_at: new Date().toISOString(),
             }).eq('id', exec.id);
+
+            // Cleanup conversation state
+            const { data: convData } = await supabase
+              .from('conversations')
+              .select('metadata')
+              .eq('id', exec.conversation_id)
+              .single();
+
+            const cleanMeta = { ...(convData?.metadata || {}) };
+            delete cleanMeta.ai_handoff_context;
+            cleanMeta.flow_ended_at = new Date().toISOString();
+
+            await supabase.from('conversations').update({
+              service_mode: 'humano',
+              ai_agent_id: null,
+              metadata: cleanMeta,
+            }).eq('id', exec.conversation_id);
+
             processed++;
           }
         }
