@@ -181,7 +181,7 @@ function respond(data: any, status = 200) {
   });
 }
 
-async function handleMessage(supabase: any, payload: any, instanceId: string, instanceName: string, eventType?: string) {
+async function handleMessage(supabase: any, payload: any, instanceId: string, instanceName: string, eventType: string) {
   // Log payload keys for diagnostics (helps identify media field names)
   console.log(`[WEBHOOK handleMessage] Payload keys: ${Object.keys(payload).join(', ')}`);
   if (payload.event) {
