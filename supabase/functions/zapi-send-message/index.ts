@@ -177,32 +177,35 @@ Deno.serve(async (req) => {
       body: JSON.stringify(body),
     });
 
+    let uazapiResult: any = null;
+    let zapiMsgId: string | null = null;
+    let sendFailed = false;
+    let sendErrorText = '';
+
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error('UAZAPI send error:', errorText);
-      return new Response(JSON.stringify({ error: 'Failed to send message', details: errorText }), {
-        status: response.status,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+      sendErrorText = await response.text();
+      console.error('UAZAPI send error (will save to DB anyway):', sendErrorText);
+      sendFailed = true;
+    } else {
+      uazapiResult = await response.json();
+      zapiMsgId = uazapiResult.messageId || uazapiResult.id || uazapiResult.ID || uazapiResult.key?.id || null;
 
-    const uazapiResult = await response.json();
-    const zapiMsgId = uazapiResult.messageId || uazapiResult.id || uazapiResult.ID || uazapiResult.key?.id || null;
-
-    // Manual check since we don't have UNIQUE constraint yet
-    if (zapiMsgId) {
-      const { data: existing } = await supabase
-        .from('messages')
-        .select('id')
-        .eq('zapi_message_id', zapiMsgId)
-        .maybeSingle();
-      if (existing) {
-        return new Response(JSON.stringify({ success: true, messageId: existing.id, zapiMessageId: zapiMsgId }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+      // Manual check since we don't have UNIQUE constraint yet
+      if (zapiMsgId) {
+        const { data: existing } = await supabase
+          .from('messages')
+          .select('id')
+          .eq('zapi_message_id', zapiMsgId)
+          .maybeSingle();
+        if (existing) {
+          return new Response(JSON.stringify({ success: true, messageId: existing.id, zapiMessageId: zapiMsgId }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
       }
     }
 
+    // ALWAYS save message to DB — even on UAZAPI failure — so nothing is lost
     const { data: message, error: msgError } = await supabase
       .from('messages')
       .insert({
@@ -214,14 +217,16 @@ Deno.serve(async (req) => {
         sent_by: user.id,
         media_url: mediaUrl || null,
         zapi_message_id: zapiMsgId,
-        metadata: { uazapi_response: uazapiResult },
+        metadata: sendFailed
+          ? { send_error: sendErrorText, failed_at: new Date().toISOString() }
+          : { uazapi_response: uazapiResult },
+        ...(sendFailed ? { failed_at: new Date().toISOString(), error_message: sendErrorText } : {}),
       })
       .select()
       .maybeSingle();
 
     if (msgError) {
       console.error('Error saving message to DB:', msgError);
-      // We don't return 500 here because the message WAS sent to WhatsApp successfully
     }
 
     await supabase
@@ -229,10 +234,22 @@ Deno.serve(async (req) => {
       .update({ last_message_at: new Date().toISOString(), status: 'open' })
       .eq('id', conversationId);
 
+    if (sendFailed) {
+      return new Response(JSON.stringify({
+        success: false,
+        error: 'Failed to send message via WhatsApp, but message was saved',
+        messageId: message?.id || `failed-${Date.now()}`,
+        details: sendErrorText,
+      }), {
+        status: 503,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     return new Response(JSON.stringify({
       success: true,
       messageId: message?.id || `sent-${Date.now()}`,
-      zapiMessageId: zapiMsgId || uazapiResult.messageId || uazapiResult.key?.id,
+      zapiMessageId: zapiMsgId || uazapiResult?.messageId || uazapiResult?.key?.id,
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
