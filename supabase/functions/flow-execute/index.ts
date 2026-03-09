@@ -166,6 +166,54 @@ Deno.serve(async (req) => {
   }
 });
 
+async function cleanupFlowEnd(
+  supabase: SupabaseClientType,
+  conversationId: string,
+  executionId: string,
+  flow: any
+) {
+  // Check if there's a PARENT flow execution still active for this conversation
+  const { data: otherActiveFlows } = await supabase
+    .from('flow_executions')
+    .select('id')
+    .eq('conversation_id', conversationId)
+    .neq('id', executionId)
+    .in('status', ['running', 'waiting_input'])
+    .limit(1);
+
+  const hasParentFlow = otherActiveFlows && otherActiveFlows.length > 0;
+
+  if (!hasParentFlow) {
+    const { data: convData } = await supabase
+      .from('conversations')
+      .select('metadata')
+      .eq('id', conversationId)
+      .single();
+
+    const cleanMetadata = { ...(convData?.metadata || {}) };
+    delete cleanMetadata.ai_handoff_context;
+    cleanMetadata.flow_ended_at = new Date().toISOString();
+
+    await supabase
+      .from('conversations')
+      .update({
+        service_mode: 'humano',
+        ai_agent_id: null,
+        metadata: cleanMetadata,
+      })
+      .eq('id', conversationId);
+
+    console.log(`[FLOW EXECUTE] Flow ended — reset service_mode to humano, cleared ai_agent_id`);
+  } else {
+    console.log(`[FLOW EXECUTE] Sub-flow ended — parent flow still active, NOT resetting service_mode`);
+  }
+
+  await supabase
+    .from('flows')
+    .update({ triggers_count: (flow.triggers_count || 0) + 1 })
+    .eq('id', flow.id);
+}
+
 async function runFlowExecution(
   executionId: string,
   flow: any,
@@ -174,12 +222,16 @@ async function runFlowExecution(
   context: ExecutionContext,
   supabase: SupabaseClientType
 ) {
+  const conversationId = context.conversationId;
   let currentNodeId: string | null = (await supabase.from('flow_executions').select('current_node_id').eq('id', executionId).single()).data?.current_node_id || nodes.find(n => n.type === 'start')?.id || null;
   const executionLog: Array<{ nodeId: string; type: string; result: string; timestamp: string; metadata?: any }> = [];
 
   while (currentNodeId) {
     const currentNode = nodes.find(n => n.id === currentNodeId);
-    if (!currentNode) break;
+    if (!currentNode) {
+      console.log(`[FLOW EXECUTE] Node ${currentNodeId} not found — STOPPING flow`);
+      break;
+    }
 
     try {
       const result = await executeNode(currentNode, context, supabase, flow);
@@ -187,11 +239,12 @@ async function runFlowExecution(
         nodeId: currentNode.id,
         type: currentNode.type,
         result: result.success ? 'success' : 'failed',
-        metadata: result.metadata, // Include metadata for debugging
+        metadata: result.metadata,
         timestamp: new Date().toISOString(),
       });
 
       if (!result.success) {
+        console.log(`[FLOW EXECUTE] Node ${currentNode.id} FAILED — stopping flow and cleaning up`);
         await supabase
           .from('flow_executions')
           .update({
@@ -201,6 +254,9 @@ async function runFlowExecution(
             completed_at: new Date().toISOString(),
           })
           .eq('id', executionId);
+
+        // CRITICAL: Also cleanup on failure
+        await cleanupFlowEnd(supabase, conversationId, executionId, flow);
         return;
       }
 
@@ -213,6 +269,23 @@ async function runFlowExecution(
           remarketing_step: 0,
         };
 
+        // Check if this node has ANY outgoing edge — if NOT, the flow ends here
+        const hasAnyOutgoingEdge = edges.some(e => e.source === currentNode.id);
+        if (!hasAnyOutgoingEdge) {
+          console.log(`[FLOW EXECUTE] Node ${currentNode.id} (${currentNode.type}) has NO outgoing edge — flow STOPS here`);
+          await supabase
+            .from('flow_executions')
+            .update({
+              status: 'completed',
+              execution_log: executionLog,
+              variables: context.variables,
+              completed_at: new Date().toISOString(),
+            })
+            .eq('id', executionId);
+          await cleanupFlowEnd(supabase, conversationId, executionId, flow);
+          return;
+        }
+
         // For action-flow nodes with remarketingSteps: schedule first step timeout
         if (currentNode.type === 'action-flow') {
           const remarketingSteps = (currentNode.data?.remarketingSteps || []) as Array<{ delayMinutes: number; message: string }>;
@@ -220,18 +293,14 @@ async function runFlowExecution(
             const firstStep = remarketingSteps[0];
             const delayMs = (firstStep.delayMinutes || 1) * 60 * 1000;
             updateData.timeout_at = new Date(Date.now() + delayMs).toISOString();
-            console.log(`[FLOW EXECUTE] action-flow: scheduling first remarketing in ${firstStep.delayMinutes}min, timeout_at=${updateData.timeout_at}`);
+            console.log(`[FLOW EXECUTE] action-flow: scheduling first remarketing in ${firstStep.delayMinutes}min`);
           } else {
-            // waitForResponse but no steps — timeout after 24h
             updateData.timeout_at = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-            console.log(`[FLOW EXECUTE] action-flow: waitForResponse with no steps, timeout in 24h`);
           }
         } else {
-          // Set timeout_at if the node has a timeout configured (other node types)
           const timeoutMinutes = Number(currentNode.data?.timeoutMinutes || 0);
           if (timeoutMinutes > 0) {
             updateData.timeout_at = new Date(Date.now() + timeoutMinutes * 60 * 1000).toISOString();
-            console.log(`[FLOW EXECUTE] Setting timeout_at: ${updateData.timeout_at} (${timeoutMinutes} min)`);
           }
         }
 
@@ -246,10 +315,17 @@ async function runFlowExecution(
         Object.assign(context.variables, result.variables);
       }
 
+      // CORE FLOW LOGIC: Find next node via EDGE connection
       const nextNodeId = findNextNode(currentNode, edges, result.outputHandle);
+      
+      if (!nextNodeId) {
+        console.log(`[FLOW EXECUTE] Node ${currentNode.id} (${currentNode.type}) has NO connected next node — flow STOPS`);
+        currentNodeId = null;
+        break;
+      }
+
       currentNodeId = nextNodeId;
 
-      // Update execution log in building state for real-time UI feel
       await supabase
         .from('flow_executions')
         .update({
@@ -260,11 +336,10 @@ async function runFlowExecution(
         .eq('id', executionId);
 
       if (currentNodeId && (currentNode.type.startsWith('message-') || currentNode.type === 'content-block' || currentNode.type === 'action-delay')) {
-        // Small delay to prevent race conditions and allow DB to propagate
         await new Promise(resolve => setTimeout(resolve, 500));
       }
     } catch (error) {
-      console.error(`Error executing node ${currentNode.id}:`, error);
+      console.error(`[FLOW EXECUTE] Error executing node ${currentNode.id}:`, error);
       executionLog.push({
         nodeId: currentNode.id,
         type: currentNode.type,
@@ -275,6 +350,7 @@ async function runFlowExecution(
     }
   }
 
+  // Flow ended (either no more nodes, error, or no edge)
   await supabase
     .from('flow_executions')
     .update({
@@ -285,49 +361,7 @@ async function runFlowExecution(
     })
     .eq('id', executionId);
 
-  // Check if there's a PARENT flow execution still active for this conversation
-  // (sub-flow should NOT reset service_mode if parent is still running)
-  const { data: otherActiveFlows } = await supabase
-    .from('flow_executions')
-    .select('id')
-    .eq('conversation_id', conversationId)
-    .neq('id', executionId)
-    .in('status', ['running', 'waiting_input'])
-    .limit(1);
-
-  const hasParentFlow = otherActiveFlows && otherActiveFlows.length > 0;
-
-  if (!hasParentFlow) {
-    // Only reset if no parent flow is active
-    // Clear service_mode, ai_agent_id, and set flow_ended_at flag in metadata
-    const { data: convData } = await supabase
-      .from('conversations')
-      .select('metadata')
-      .eq('id', conversationId)
-      .single();
-    
-    const cleanMetadata = { ...(convData?.metadata || {}) };
-    delete cleanMetadata.ai_handoff_context; // Clean up handoff context
-    cleanMetadata.flow_ended_at = new Date().toISOString(); // Flag to prevent re-trigger
-
-    await supabase
-      .from('conversations')
-      .update({
-        service_mode: 'humano',
-        ai_agent_id: null,
-        metadata: cleanMetadata,
-      })
-      .eq('id', conversationId);
-    
-    console.log(`[FLOW EXECUTE] Flow completed — reset service_mode to humano, cleared ai_agent_id`);
-  } else {
-    console.log(`[FLOW EXECUTE] Sub-flow completed — parent flow still active, NOT resetting service_mode`);
-  }
-
-  await supabase
-    .from('flows')
-    .update({ triggers_count: flow.triggers_count + 1 })
-    .eq('id', flow.id);
+  await cleanupFlowEnd(supabase, conversationId, executionId, flow);
 }
 
 interface NodeResult {
