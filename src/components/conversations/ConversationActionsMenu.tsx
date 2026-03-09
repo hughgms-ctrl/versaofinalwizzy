@@ -379,54 +379,80 @@ export function ConversationActionsMenu({ conversation, onShowMediaGallery }: Co
           const currentMode = (conversation as any).service_mode || 'pendente';
           const isIA = currentMode === 'ia';
           return (
-            <DropdownMenuItem onClick={async () => {
-              setIsUpdating(true);
-              try {
-                const newMode = isIA ? 'ativo' : 'ia';
-                const { error } = await supabase
-                  .from('conversations')
-                  .update({ service_mode: newMode } as any)
-                  .eq('id', conversation.id);
-                if (error) throw error;
-                queryClient.invalidateQueries({ queryKey: ['conversations'] });
-                toast({
-                  title: isIA ? 'IA desativada' : 'IA ativada',
-                  description: isIA
-                    ? 'O agente não responderá mais nesta conversa.'
-                    : 'O agente master foi ativado para esta conversa.',
-                });
-              } catch {
-                toast({ title: 'Erro ao alterar modo', variant: 'destructive' });
-              } finally {
-                setIsUpdating(false);
-              }
-            }}>
-              {isIA ? (
-                <>
+            <>
+              {currentMode === 'pendente' && (
+                <DropdownMenuItem onClick={async () => {
+                  setIsUpdating(true);
+                  try {
+                    const { error } = await supabase.from('conversations').update({ service_mode: 'ativo' } as any).eq('id', conversation.id);
+                    if (error) throw error;
+                    queryClient.invalidateQueries({ queryKey: ['conversations'] });
+                    toast({ title: 'Atendimento assumido', description: 'Você agora está responsável por esta conversa.' });
+                  } catch { toast({ title: 'Erro ao assumir', variant: 'destructive' }); } finally { setIsUpdating(false); }
+                }}>
                   <UserCheck className="h-4 w-4 mr-2 text-green-500" />
-                  Desativar IA (modo manual)
-                </>
-              ) : (
-                <>
+                  Assumir Atendimento
+                </DropdownMenuItem>
+              )}
+              {currentMode === 'ativo' && (
+                <DropdownMenuItem onClick={async () => {
+                  setIsUpdating(true);
+                  try {
+                    const { error } = await supabase.from('conversations').update({ service_mode: 'pendente' } as any).eq('id', conversation.id);
+                    if (error) throw error;
+                    queryClient.invalidateQueries({ queryKey: ['conversations'] });
+                    toast({ title: 'Devolvido para fila', description: 'A conversa está aguardando atendimento.' });
+                  } catch { toast({ title: 'Erro ao devolver', variant: 'destructive' }); } finally { setIsUpdating(false); }
+                }}>
+                  <RotateCcw className="h-4 w-4 mr-2 text-yellow-500" />
+                  Devolver para Fila
+                </DropdownMenuItem>
+              )}
+              {currentMode !== 'ia' ? (
+                <DropdownMenuItem onClick={async () => {
+                  setIsUpdating(true);
+                  try {
+                    const { error } = await supabase.from('conversations').update({ service_mode: 'ia' } as any).eq('id', conversation.id);
+                    if (error) throw error;
+                    queryClient.invalidateQueries({ queryKey: ['conversations'] });
+                    toast({ title: 'IA ativada', description: 'O agente master foi ativado para esta conversa.' });
+                  } catch { toast({ title: 'Erro ao ativar IA', variant: 'destructive' }); } finally { setIsUpdating(false); }
+                }}>
                   <Bot className="h-4 w-4 mr-2 text-purple-500" />
                   Ativar IA (agente master)
-                </>
+                </DropdownMenuItem>
+              ) : (
+                <DropdownMenuItem onClick={async () => {
+                  setIsUpdating(true);
+                  try {
+                    const { error } = await supabase.from('conversations').update({ service_mode: 'ativo' } as any).eq('id', conversation.id);
+                    if (error) throw error;
+                    queryClient.invalidateQueries({ queryKey: ['conversations'] });
+                    toast({ title: 'IA desativada', description: 'Você assumiu o atendimento desta conversa.' });
+                  } catch { toast({ title: 'Erro ao desativar', variant: 'destructive' }); } finally { setIsUpdating(false); }
+                }}>
+                  <UserCheck className="h-4 w-4 mr-2 text-green-500" />
+                  Assumir Atendimento (Desativar IA)
+                </DropdownMenuItem>
               )}
-            </DropdownMenuItem>
+            </>
           );
         })()}
 
         <DropdownMenuSeparator />
 
         {/* Status Actions */}
-        <DropdownMenuItem onClick={() => handleStatusChange('resolved')}>
-          <CheckCircle className="h-4 w-4 mr-2 text-green-500" />
-          Marcar como resolvida
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => handleStatusChange('archived')}>
-          <Archive className="h-4 w-4 mr-2" />
-          Arquivar conversa
-        </DropdownMenuItem>
+        {(conversation.status === 'archived' || conversation.status === 'resolved') ? (
+          <DropdownMenuItem onClick={() => handleStatusChange('open')}>
+            <RefreshCw className="h-4 w-4 mr-2 text-blue-500" />
+            Reabrir conversa
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuItem onClick={() => handleStatusChange('resolved')}>
+            <CheckCircle className="h-4 w-4 mr-2 text-green-500" />
+            Resolver/Finalizar
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem onClick={handleTogglePriority}>
           <Star className="h-4 w-4 mr-2" />
           Marcar como prioritária

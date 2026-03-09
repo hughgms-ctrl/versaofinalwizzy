@@ -33,7 +33,6 @@ interface ConversationFiltersProps {
 
 const statusLabels: Record<string, string> = {
   open: 'Aberto',
-  pending: 'Pendente',
   resolved: 'Resolvido',
   archived: 'Arquivado',
 };
@@ -162,7 +161,6 @@ export function ConversationFilters({
             {[
               { value: 'all', label: 'Todos' },
               { value: 'open', label: 'Abertos' },
-              { value: 'pending', label: 'Pendentes' },
               { value: 'resolved', label: 'Resolvidos' },
               { value: 'archived', label: 'Arquivados' },
             ].map((status) => (
