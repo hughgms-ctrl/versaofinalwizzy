@@ -11,7 +11,7 @@ import { Switch } from '@/components/ui/switch';
 import { ArrowLeft, Save, Sparkles, Loader2, ChevronDown, ChevronRight } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
-import { MODELS_BY_PROVIDER, AIProvider } from '@/hooks/useIntegrationConfigs';
+
 
 const AgentEditorPage = () => {
   const { agentId } = useParams();
