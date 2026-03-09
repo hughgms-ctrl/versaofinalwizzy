@@ -1877,6 +1877,11 @@ function isInternalThought(text: string): boolean {
   // Wrapped in brackets - internal notes
   if (trimmed.startsWith('[') && trimmed.endsWith(']')) return true;
 
+  // Tool call annotations leaked as plain text
+  if (/finalizar_interacao\s*\(/i.test(trimmed)) return true;
+  if (/advance_flow\s*\(/i.test(trimmed)) return true;
+  if (/send_reply\s*\(/i.test(trimmed)) return true;
+
   // Common AI internal patterns (Portuguese)
   const internalPatterns = [
     /^(\(.*aguardando.*\))$/is,
@@ -1892,6 +1897,18 @@ function isInternalThought(text: string): boolean {
   ];
 
   return internalPatterns.some(p => p.test(trimmed));
+}
+
+// Strip tool call annotations from reply text that might be mixed with real content
+function stripInternalAnnotations(text: string): string {
+  if (!text) return text;
+  // Remove lines containing tool call syntax
+  let cleaned = text
+    .replace(/finalizar_interacao\s*\([^)]*\)\s*/gi, '')
+    .replace(/advance_flow\s*\([^)]*\)\s*/gi, '')
+    .trim();
+  // If everything was stripped, return empty
+  return cleaned.length < 3 ? '' : cleaned;
 }
 
 function resolveAgentConfig(ctx: any, agent: any, integrationConfig: any): AIConfigResult {
