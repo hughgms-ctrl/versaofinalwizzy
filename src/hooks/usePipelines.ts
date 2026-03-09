@@ -13,6 +13,7 @@ export interface Pipeline {
   next_pipeline_id: string | null;
   next_pipeline_column_id: string | null;
   default_assigned_to: string | null;
+  completion_column_id: string | null;
   created_at: string;
   updated_at: string;
 }
