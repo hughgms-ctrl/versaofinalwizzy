@@ -143,6 +143,7 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
   const [selectedWorkspaceIds, setSelectedWorkspaceIds] = useState<string[]>(pipeline.workspace_ids || []);
   const [nextPipelineId, setNextPipelineId] = useState<string>(pipeline.next_pipeline_id || 'none');
   const [nextPipelineColumnId, setNextPipelineColumnId] = useState<string>(pipeline.next_pipeline_column_id || 'first');
+  const [completionColumnId, setCompletionColumnId] = useState<string>(pipeline.completion_column_id || 'last');
   const [defaultAssignedTo, setDefaultAssignedTo] = useState<string>(pipeline.default_assigned_to || 'none');
   const [deleteColumnId, setDeleteColumnId] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<'general' | 'notifications'>('general');
@@ -168,6 +169,7 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
     setSelectedWorkspaceIds(pipeline.workspace_ids || []);
     setNextPipelineId(pipeline.next_pipeline_id || 'none');
     setNextPipelineColumnId(pipeline.next_pipeline_column_id || 'first');
+    setCompletionColumnId(pipeline.completion_column_id || 'last');
     setDefaultAssignedTo(pipeline.default_assigned_to || 'none');
   }, [pipeline]);
 
@@ -185,7 +187,8 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
     const nextPipelineChanged = (nextPipelineId === 'none' ? null : nextPipelineId) !== (pipeline.next_pipeline_id || null);
     const nextColumnChanged = (nextPipelineColumnId === 'first' ? null : nextPipelineColumnId) !== (pipeline.next_pipeline_column_id || null);
     const assignedChanged = (defaultAssignedTo === 'none' ? null : defaultAssignedTo) !== (pipeline.default_assigned_to || null);
-    return name !== pipeline.name || description !== (pipeline.description || '') || wsChanged || nextPipelineChanged || nextColumnChanged || assignedChanged;
+    const completionChanged = (completionColumnId === 'last' ? null : completionColumnId) !== (pipeline.completion_column_id || null);
+    return name !== pipeline.name || description !== (pipeline.description || '') || wsChanged || nextPipelineChanged || nextColumnChanged || assignedChanged || completionChanged;
   };
 
   const handleSave = async () => {
@@ -198,6 +201,7 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
         next_pipeline_id: nextPipelineId === 'none' ? null : nextPipelineId,
         next_pipeline_column_id: nextPipelineId === 'none' || nextPipelineColumnId === 'first' ? null : nextPipelineColumnId,
         default_assigned_to: defaultAssignedTo === 'none' ? null : defaultAssignedTo,
+        completion_column_id: completionColumnId === 'last' ? null : completionColumnId,
       });
     }
     onOpenChange(false);
@@ -436,11 +440,40 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
                   </Select>
                 </div>
 
+                {/* Completion Column */}
+                <div className="space-y-2">
+                  <Label>Coluna de conclusão:</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Qual coluna indica que o lead concluiu este pipeline? Ao chegar nela, a transição automática será acionada.
+                  </p>
+                  <Select
+                    value={completionColumnId}
+                    onValueChange={setCompletionColumnId}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecionar coluna..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="last">
+                        <span className="text-muted-foreground">Última coluna (padrão)</span>
+                      </SelectItem>
+                      {columns.map((col) => (
+                        <SelectItem key={col.id} value={col.id}>
+                          <div className="flex items-center gap-2">
+                            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: col.color }} />
+                            {col.name || 'Sem nome'}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 {/* Next Pipeline (Auto-transition) */}
                 <div className="space-y-2">
                   <Label>Ao concluir, enviar para:</Label>
                   <p className="text-xs text-muted-foreground">
-                    Quando um lead chegar na última coluna, será transferido automaticamente para o pipeline selecionado.
+                    Quando um lead chegar na coluna de conclusão, será transferido automaticamente para o pipeline selecionado.
                   </p>
                   <Select
                     value={nextPipelineId}
