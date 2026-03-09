@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Bot, User, Tag, Columns, GitBranch, ArrowRightLeft, Loader2, MessageSquare, ArrowRight } from 'lucide-react';
+import { Bot, User, Tag, Columns, GitBranch, ArrowRightLeft, Loader2, MessageSquare, ArrowRight, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 
