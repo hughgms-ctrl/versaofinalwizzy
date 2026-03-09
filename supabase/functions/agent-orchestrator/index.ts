@@ -341,8 +341,10 @@ async function walkFlowForward(
   while (safetyCounter++ < 20) {
     const nextNodeIds = findNextNodeIds(edges, state.current_node_id!);
     if (nextNodeIds.length === 0) {
-      console.log('End of flow reached');
+      console.log('End of flow reached — resetting service_mode to humano');
       state.flow_completed = true;
+      // Reset service_mode so AI stops responding after flow ends
+      await supabase.from('conversations').update({ service_mode: 'humano' }).eq('id', ctx.conversationId);
       break;
     }
 
