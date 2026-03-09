@@ -87,9 +87,10 @@ Deno.serve(async (req) => {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('UAZAPI presence error:', errorText);
-      return new Response(JSON.stringify({ error: 'Failed to send presence', details: errorText }), {
-        status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      console.error('UAZAPI presence error (non-critical):', errorText);
+      // Presence is non-critical — return 200 so the UI doesn't break
+      return new Response(JSON.stringify({ success: false, warning: 'Presence update failed', details: errorText }), {
+        status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
