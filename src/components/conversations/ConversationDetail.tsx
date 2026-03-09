@@ -53,7 +53,6 @@ const getInitialsFromName = (name: string | null, phone?: string) => {
 
 const statusLabels: Record<string, string> = {
   open: 'Aberto',
-  pending: 'Pendente',
   resolved: 'Resolvido',
   archived: 'Arquivado',
 };
