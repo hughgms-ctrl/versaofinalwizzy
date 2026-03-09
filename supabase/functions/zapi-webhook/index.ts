@@ -947,6 +947,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
         runBackground(agentPromise);
       }
     }
+  }
   return respond({ success: true, messageId: savedMessage.id });
 }
 
