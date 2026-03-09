@@ -192,8 +192,8 @@ export default function PublicSignaturePage() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background p-4">
         <Card className="p-8 max-w-md text-center">
-          <div className="h-16 w-16 mx-auto bg-green-100 rounded-full flex items-center justify-center mb-4">
-            <Check className="h-8 w-8 text-green-600" />
+          <div className="h-16 w-16 mx-auto bg-green-500/10 rounded-full flex items-center justify-center mb-4">
+            <Check className="h-8 w-8 text-green-600 dark:text-green-400" />
           </div>
           <h1 className="text-xl font-semibold mb-2">Assinatura recebida!</h1>
           <p className="text-muted-foreground">

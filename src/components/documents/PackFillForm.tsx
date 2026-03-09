@@ -154,7 +154,7 @@ export function PackFillForm({ pack, onBack, onSuccess }: PackFillFormProps) {
         {sharedFields.length > 0 && (
           <Card className="p-4">
             <h3 className="font-medium mb-4 flex items-center gap-2">
-              <Badge variant="default" className="bg-green-500">{sharedFields.length}</Badge>
+              <Badge variant="default">{sharedFields.length}</Badge>
               Campos compartilhados
             </h3>
             <p className="text-xs text-muted-foreground mb-4">
