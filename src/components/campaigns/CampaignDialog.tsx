@@ -139,13 +139,14 @@ export function CampaignDialog({
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-[550px] max-h-[90vh] overflow-y-auto">
+            <DialogContent className="sm:max-w-[550px] max-h-[90vh] flex flex-col">
                 <DialogHeader>
                     <DialogTitle>
                         {campaignToEdit ? "Editar Campanha" : "Nova Campanha"}
                     </DialogTitle>
                 </DialogHeader>
-                <div className="grid gap-6 py-4">
+                <div className="flex-1 overflow-y-auto pr-2">
+                    <div className="grid gap-6 py-4">
                     <div className="grid gap-2">
                         <Label htmlFor="name">Nome da Campanha</Label>
                         <Input
