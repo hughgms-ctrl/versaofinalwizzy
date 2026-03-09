@@ -653,6 +653,14 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
         // Mark as IA mode
         await supabase.from('conversations').update({ service_mode: 'ia' }).eq('id', conversation.id);
 
+        // Apply campaign workspace if configured
+        const { data: campaignFull } = await supabase.from('campaigns').select('workspace_id, start_time, end_time').eq('id', campaignId).single();
+        if (campaignFull?.workspace_id) {
+          console.log(`[CAMPAIGN] Assigning workspace ${campaignFull.workspace_id} from campaign`);
+          await supabase.from('contacts').update({ workspace_id: campaignFull.workspace_id }).eq('id', contact.id);
+          await supabase.from('conversations').update({ workspace_id: campaignFull.workspace_id }).eq('id', conversation.id);
+        }
+
         // Increment campaign counter
         await supabase.rpc('increment_campaign_count', { campaign_id: campaignId });
 
