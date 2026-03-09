@@ -315,7 +315,7 @@ async function executeNode(
       return await executePipelineAction(data, context, supabase);
 
     case 'condition':
-      return executeCondition(data, context);
+      return await executeCondition(data, context, supabase);
 
     case 'user-input':
       return { success: true, waitForInput: true };
