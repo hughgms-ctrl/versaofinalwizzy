@@ -21,6 +21,9 @@ interface TimelineEntry {
     columnName?: string;
     columnColor?: string;
     fromColumnName?: string;
+    tagName?: string;
+    tagColor?: string;
+    flowStatus?: string;
   };
 }
 
