@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { TrainingRulesList } from '@/components/agents/TrainingRulesList';
 
 interface MasterPromptDialogProps {
     open: boolean;
@@ -28,6 +29,7 @@ interface MasterPromptDialogProps {
     prompt: string;
     onSave: (newPrompt: string) => void;
     organizationId?: string;
+    flowId?: string;
 }
 
 interface Message {
