@@ -96,8 +96,8 @@ export function CampaignDialog({
             trigger_keyword: triggerType === 'keyword' ? triggerKeyword.trim() : "*",
             match_type: triggerType === 'keyword' ? matchType : triggerType,
             flow_id: flowId,
-            start_hour: startHour,
-            end_hour: endHour,
+            start_time: startTime,
+            end_time: endTime,
             workspace_id: workspaceId || null,
         };
 
