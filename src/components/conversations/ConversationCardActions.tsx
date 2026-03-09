@@ -190,6 +190,24 @@ export function ConversationCardActions({
     }
   };
 
+  const handleTransfer = async (targetPipelineId: string) => {
+    setIsUpdating(true);
+    try {
+      await transferConversation.mutateAsync({
+        conversationId: conversation.id,
+        targetPipelineId,
+      });
+      toast({
+        title: 'Conversa transferida',
+        description: 'A conversa foi transferida para o novo departamento',
+      });
+    } catch (error) {
+      // toast already handled by hook
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
