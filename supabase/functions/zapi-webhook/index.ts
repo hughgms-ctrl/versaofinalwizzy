@@ -653,6 +653,14 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
         // Mark as IA mode
         await supabase.from('conversations').update({ service_mode: 'ia' }).eq('id', conversation.id);
 
+        // Apply campaign workspace if configured
+        const { data: campaignFull } = await supabase.from('campaigns').select('workspace_id, start_time, end_time').eq('id', campaignId).single();
+        if (campaignFull?.workspace_id) {
+          console.log(`[CAMPAIGN] Assigning workspace ${campaignFull.workspace_id} from campaign`);
+          await supabase.from('contacts').update({ workspace_id: campaignFull.workspace_id }).eq('id', contact.id);
+          await supabase.from('conversations').update({ workspace_id: campaignFull.workspace_id }).eq('id', conversation.id);
+        }
+
         // Increment campaign counter
         await supabase.rpc('increment_campaign_count', { campaign_id: campaignId });
 
@@ -663,9 +671,8 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
             hour: '2-digit', minute: '2-digit', hour12: false
         }).format(now);
 
-        const { data: campaignData } = await supabase.from('campaigns').select('start_time, end_time').eq('id', campaignId).single();
-        const startT = campaignData?.start_time || "00:00";
-        const endT = campaignData?.end_time || "23:59";
+        const startT = campaignFull?.start_time || "00:00";
+        const endT = campaignFull?.end_time || "23:59";
 
         let isOutsideHours = false;
         if (startT <= endT) {
