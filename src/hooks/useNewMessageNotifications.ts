@@ -8,21 +8,37 @@ import { useQueryClient } from '@tanstack/react-query';
 // Notification sound
 const NOTIFICATION_SOUND_URL = '/sounds/new-message.mp3';
 
+// Debounce window to prevent duplicate sounds (ms)
+const SOUND_DEBOUNCE_MS = 2000;
+
 export function useNewMessageNotifications() {
   const { session } = useAuth();
   const { settings } = useNotificationSettings();
   const queryClient = useQueryClient();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const lastNotifiedMessageId = useRef<string | null>(null);
+  const lastSoundPlayedAt = useRef<number>(0);
 
-  // Initialize audio element
+  // Initialize audio element once
   useEffect(() => {
-    audioRef.current = new Audio(NOTIFICATION_SOUND_URL);
-    audioRef.current.volume = 0.5;
+    const audio = new Audio(NOTIFICATION_SOUND_URL);
+    audio.volume = 0.5;
+    audioRef.current = audio;
+    return () => {
+      audio.pause();
+      audio.src = '';
+      audioRef.current = null;
+    };
   }, []);
 
   const playNotificationSound = useCallback(() => {
-    if (settings.soundEnabled && audioRef.current) {
+    const now = Date.now();
+    if (
+      settings.soundEnabled &&
+      audioRef.current &&
+      now - lastSoundPlayedAt.current > SOUND_DEBOUNCE_MS
+    ) {
+      lastSoundPlayedAt.current = now;
       audioRef.current.currentTime = 0;
       audioRef.current.play().catch(console.error);
     }
