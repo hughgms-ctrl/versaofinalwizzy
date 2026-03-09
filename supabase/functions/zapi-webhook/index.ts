@@ -799,12 +799,22 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
           });
           runBackground(resumePromise);
         } else {
-          // No responded edge — just complete
+          // No responded edge — flow STOPS here. Complete and cleanup.
+          console.log(`[WEBHOOK] action-flow has NO responded edge — flow STOPS`);
           await supabase.from('flow_executions').update({
             status: 'completed',
             timeout_at: null,
             completed_at: new Date().toISOString(),
           }).eq('id', activeFlowExec.id);
+
+          // Cleanup: reset service_mode and ai_agent_id
+          const { data: convMeta } = await supabase.from('conversations').select('metadata').eq('id', conversation.id).single();
+          const cleanMeta = { ...(convMeta?.metadata || {}) };
+          delete cleanMeta.ai_handoff_context;
+          cleanMeta.flow_ended_at = new Date().toISOString();
+          await supabase.from('conversations').update({
+            service_mode: 'humano', ai_agent_id: null, metadata: cleanMeta,
+          }).eq('id', conversation.id);
         }
       } else if (isAtContentBlockWaiting && activeFlowExec.status === 'waiting_input') {
         // Content block is waiting for user response — save variable and resume flow via 'responded' handle
@@ -841,26 +851,56 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
           });
           runBackground(resumePromise);
         } else {
-          // No next node — complete
+          // No next node — flow STOPS here. Complete and cleanup.
+          console.log(`[WEBHOOK] Content block has NO outgoing edge — flow STOPS`);
           await supabase.from('flow_executions').update({
             status: 'completed',
             variables: existingVars,
             completed_at: new Date().toISOString(),
           }).eq('id', activeFlowExec.id);
+
+          // Cleanup: reset service_mode and ai_agent_id
+          const { data: convMeta2 } = await supabase.from('conversations').select('metadata').eq('id', conversation.id).single();
+          const cleanMeta2 = { ...(convMeta2?.metadata || {}) };
+          delete cleanMeta2.ai_handoff_context;
+          cleanMeta2.flow_ended_at = new Date().toISOString();
+          await supabase.from('conversations').update({
+            service_mode: 'humano', ai_agent_id: null, metadata: cleanMeta2,
+          }).eq('id', conversation.id);
         }
       } else if (activeFlowExec.status === 'waiting_input') {
-        // Flow is waiting for input at a non-AI node (e.g., user-input) — resume flow
-        console.log(`[WEBHOOK] Flow waiting_input at node ${activeFlowExec.current_node_id} — resuming flow execution`);
-        const resumePromise = fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/flow-execute`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
-          body: JSON.stringify({
-            flowId: activeFlowExec.flow_id,
-            conversationId: conversation.id,
-            startNodeId: activeFlowExec.current_node_id,
-          }),
-        });
-        runBackground(resumePromise);
+        // Flow is waiting for input at a non-AI node (e.g., user-input)
+        // First check if this node has any outgoing edge — if not, flow stops
+        const flowEdgesGeneric = (activeFlowExec.flow?.edges || []) as any[];
+        const hasOutgoingEdge = flowEdgesGeneric.some((e: any) => e.source === activeFlowExec.current_node_id);
+
+        if (!hasOutgoingEdge) {
+          console.log(`[WEBHOOK] Node ${activeFlowExec.current_node_id} has NO outgoing edge — flow STOPS`);
+          await supabase.from('flow_executions').update({
+            status: 'completed',
+            completed_at: new Date().toISOString(),
+          }).eq('id', activeFlowExec.id);
+
+          const { data: convMeta3 } = await supabase.from('conversations').select('metadata').eq('id', conversation.id).single();
+          const cleanMeta3 = { ...(convMeta3?.metadata || {}) };
+          delete cleanMeta3.ai_handoff_context;
+          cleanMeta3.flow_ended_at = new Date().toISOString();
+          await supabase.from('conversations').update({
+            service_mode: 'humano', ai_agent_id: null, metadata: cleanMeta3,
+          }).eq('id', conversation.id);
+        } else {
+          console.log(`[WEBHOOK] Flow waiting_input at node ${activeFlowExec.current_node_id} — resuming flow execution`);
+          const resumePromise = fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/flow-execute`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
+            body: JSON.stringify({
+              flowId: activeFlowExec.flow_id,
+              conversationId: conversation.id,
+              startNodeId: activeFlowExec.current_node_id,
+            }),
+          });
+          runBackground(resumePromise);
+        }
       } else {
         console.log(`[WEBHOOK] Flow is running — skipping independent agent trigger`);
       }
