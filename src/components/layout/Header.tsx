@@ -1,9 +1,11 @@
-import { Search, Plus, Moon, Sun } from 'lucide-react';
+import { Search, Plus, Moon, Sun, Volume2, VolumeOff } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { NotificationDropdown } from './NotificationDropdown';
 import { MobileNav } from './MobileNav';
+import { useNotificationSettings } from '@/hooks/useNotificationSettings';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface HeaderProps {
   title: string;
@@ -23,6 +25,7 @@ export function Header({
   newButtonLabel = "Novo"
 }: HeaderProps) {
   const { theme, setTheme } = useTheme();
+  const { settings, updateSettings } = useNotificationSettings();
   
   return (
     <header className="sticky top-0 z-30 flex h-14 md:h-16 items-center justify-between border-b border-border bg-background/80 backdrop-blur-xl px-3 md:px-6">
@@ -62,6 +65,22 @@ export function Header({
         >
           {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
         </Button>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-muted-foreground hover:text-foreground"
+              onClick={() => updateSettings({ soundEnabled: !settings.soundEnabled })}
+            >
+              {settings.soundEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeOff className="h-4 w-4" />}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            {settings.soundEnabled ? 'Silenciar notificações' : 'Ativar som de notificações'}
+          </TooltipContent>
+        </Tooltip>
 
         <NotificationDropdown />
       </div>
