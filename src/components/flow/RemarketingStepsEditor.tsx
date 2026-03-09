@@ -20,11 +20,15 @@ export function RemarketingStepsEditor({ localData, handleChange }: RemarketingS
   const [isGenerating, setIsGenerating] = useState(false);
   const steps = (localData.remarketingSteps as any[]) || [];
 
+  const quietHoursEnabled = (localData.remarketingQuietHours as boolean) || false;
+  const quietStart = (localData.remarketingQuietStart as string) || '22:00';
+  const quietEnd = (localData.remarketingQuietEnd as string) || '08:00';
+
   return (
     <div className="space-y-2 pt-2 border-t border-border/50">
       <Label className="text-xs font-semibold">Sequência de Follow-up</Label>
       <p className="text-[10px] text-muted-foreground">
-        Se o usuário não responder, envia mensagens de acompanhamento antes de seguir pela saída vermelha.
+        Cada tentativa aguarda o tempo configurado após a anterior. Se o usuário não responder, segue pela saída vermelha.
       </p>
 
       {steps.map((step: any, idx: number) => (
