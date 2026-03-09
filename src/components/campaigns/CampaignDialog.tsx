@@ -129,6 +129,12 @@ export function CampaignDialog({
             description: 'Quando uma tag específica é adicionada ao contato',
             icon: Tag,
         },
+        {
+            id: 'webhook',
+            label: 'Webhook',
+            description: 'Disparado por uma chamada HTTP externa',
+            icon: Webhook,
+        },
     ];
 
     return (
