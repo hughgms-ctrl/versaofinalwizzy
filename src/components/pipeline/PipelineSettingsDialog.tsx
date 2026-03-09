@@ -201,6 +201,7 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
         next_pipeline_id: nextPipelineId === 'none' ? null : nextPipelineId,
         next_pipeline_column_id: nextPipelineId === 'none' || nextPipelineColumnId === 'first' ? null : nextPipelineColumnId,
         default_assigned_to: defaultAssignedTo === 'none' ? null : defaultAssignedTo,
+        completion_column_id: completionColumnId === 'last' ? null : completionColumnId,
       });
     }
     onOpenChange(false);
