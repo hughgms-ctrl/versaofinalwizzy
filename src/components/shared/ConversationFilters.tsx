@@ -94,7 +94,7 @@ export function ConversationFilters({
   };
 
   return (
-    <div className="flex items-center gap-2 flex-wrap">
+    <div className="flex items-center gap-2 flex-nowrap whitespace-nowrap overflow-x-auto scrollbar-hide">
       {/* Assignee Filter - Dropdown */}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
