@@ -26,7 +26,7 @@ export function ServiceModeTabs({ value, onChange, counts, className }: ServiceM
   const totalCount = counts ? counts.ia + counts.ativo + counts.pendente : undefined;
 
   return (
-    <div className={cn("inline-flex items-center gap-1 bg-muted/30 p-1 rounded-xl border border-border/40", className)}>
+    <div className={cn("flex items-center gap-1 bg-muted/30 p-1 rounded-xl border border-border/40 overflow-x-auto scrollbar-hide w-full", className)}>
       {tabs.map((tab) => {
         const count = tab.value === 'all'
           ? totalCount
@@ -39,7 +39,7 @@ export function ServiceModeTabs({ value, onChange, counts, className }: ServiceM
             key={tab.value}
             onClick={() => onChange(tab.value)}
             className={cn(
-              "relative flex flex-col items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg transition-all text-xs font-medium min-w-[64px]",
+              "relative flex flex-col items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg transition-all text-xs font-medium min-w-[64px] flex-shrink-0",
               isActive
                 ? "bg-card shadow-sm text-foreground ring-1 ring-border/50"
                 : "text-muted-foreground hover:text-foreground hover:bg-card/50"
