@@ -1034,22 +1034,24 @@ async function executePipelineAction(
       .update({ status: 'open' }) // Ensure it's open if moved in pipeline
       .eq('id', context.conversationId);
 
-    // 2. Update/Upsert the position in conversation_pipeline_positions (The Kanban state)
-    const { data: existing } = await supabase
+    // 2. Get old column for history
+    let fromColumnId: string | null = null;
+    const { data: existingPos } = await supabase
       .from('conversation_pipeline_positions')
-      .select('id')
+      .select('id, column_id')
       .eq('conversation_id', context.conversationId)
       .eq('pipeline_id', pipelineId)
       .maybeSingle();
 
-    if (existing) {
+    if (existingPos) {
+      fromColumnId = existingPos.column_id;
       const { error } = await supabase
         .from('conversation_pipeline_positions')
         .update({
           column_id: columnId,
           updated_at: new Date().toISOString(),
         })
-        .eq('id', existing.id);
+        .eq('id', existingPos.id);
       if (error) throw error;
     } else {
       const { error } = await supabase
@@ -1061,6 +1063,40 @@ async function executePipelineAction(
           order: 0,
         });
       if (error) throw error;
+    }
+
+    // 3. Log stage history
+    await supabase
+      .from('conversation_stage_history')
+      .insert({
+        conversation_id: context.conversationId,
+        pipeline_id: pipelineId,
+        from_column_id: fromColumnId,
+        to_column_id: columnId,
+        changed_by_type: 'flow',
+        changed_by: null,
+        organization_id: context.organizationId,
+      });
+
+    // 4. Trigger stage notification
+    try {
+      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+      const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+      await fetch(`${supabaseUrl}/functions/v1/stage-notification`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${serviceRoleKey}`,
+        },
+        body: JSON.stringify({
+          conversationId: context.conversationId,
+          columnId,
+          organizationId: context.organizationId,
+        }),
+      });
+      console.log('[FLOW EXECUTE] Stage notification triggered for column', columnId);
+    } catch (notifErr) {
+      console.error('[FLOW EXECUTE] Stage notification error:', notifErr);
     }
 
     return { success: true, metadata: { pipelineId, columnId, columnName } };
