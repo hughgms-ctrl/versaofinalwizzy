@@ -58,6 +58,7 @@ export function CampaignDialog({
     const { data: flows } = useFlows();
     const { data: flowFolders = [] } = useFlowFolders();
     const { data: workspaces = [] } = useWorkspaces();
+    const { data: tags = [] } = useTags();
 
     useEffect(() => {
         if (campaignToEdit && open) {
