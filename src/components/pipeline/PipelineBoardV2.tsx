@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useCallback } from 'react';
+import { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import { useConversations, DbConversation } from '@/hooks/useConversations';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
