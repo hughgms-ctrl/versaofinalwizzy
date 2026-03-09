@@ -210,13 +210,29 @@ async function runFlowExecution(
           current_node_id: currentNode.id,
           variables: context.variables,
           execution_log: executionLog,
+          remarketing_step: 0,
         };
 
-        // Set timeout_at if the node has a timeout configured
-        const timeoutMinutes = Number(currentNode.data?.timeoutMinutes || 0);
-        if (timeoutMinutes > 0) {
-          updateData.timeout_at = new Date(Date.now() + timeoutMinutes * 60 * 1000).toISOString();
-          console.log(`[FLOW EXECUTE] Setting timeout_at: ${updateData.timeout_at} (${timeoutMinutes} min)`);
+        // For action-flow nodes with remarketingSteps: schedule first step timeout
+        if (currentNode.type === 'action-flow') {
+          const remarketingSteps = (currentNode.data?.remarketingSteps || []) as Array<{ delayMinutes: number; message: string }>;
+          if (remarketingSteps.length > 0) {
+            const firstStep = remarketingSteps[0];
+            const delayMs = (firstStep.delayMinutes || 1) * 60 * 1000;
+            updateData.timeout_at = new Date(Date.now() + delayMs).toISOString();
+            console.log(`[FLOW EXECUTE] action-flow: scheduling first remarketing in ${firstStep.delayMinutes}min, timeout_at=${updateData.timeout_at}`);
+          } else {
+            // waitForResponse but no steps — timeout after 24h
+            updateData.timeout_at = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+            console.log(`[FLOW EXECUTE] action-flow: waitForResponse with no steps, timeout in 24h`);
+          }
+        } else {
+          // Set timeout_at if the node has a timeout configured (other node types)
+          const timeoutMinutes = Number(currentNode.data?.timeoutMinutes || 0);
+          if (timeoutMinutes > 0) {
+            updateData.timeout_at = new Date(Date.now() + timeoutMinutes * 60 * 1000).toISOString();
+            console.log(`[FLOW EXECUTE] Setting timeout_at: ${updateData.timeout_at} (${timeoutMinutes} min)`);
+          }
         }
 
         await supabase
