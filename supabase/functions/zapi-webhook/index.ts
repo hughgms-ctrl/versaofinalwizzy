@@ -79,10 +79,12 @@ Deno.serve(async (req) => {
     console.log('UAZAPI Full Payload:', JSON.stringify(payload, null, 2));
 
     const eventType = (payload.EventType || payload.eventType || payload.type || payload.event || '').toLowerCase();
+    const instanceId = payload.instanceId || '';
     const instanceName = payload.instanceName || payload.userID || payload.instance || '';
+    const lookupIdentifier = instanceId || instanceName;
 
     console.log('=== UAZAPI WEBHOOK ===');
-    console.log('EventType:', eventType, '| Instance:', instanceName);
+    console.log('EventType:', eventType, '| InstanceId:', instanceId, '| InstanceName:', instanceName);
 
     // System events to ignore
     if (['connectfailure', 'qr', 'qrtimeout', 'historysync',
@@ -95,11 +97,11 @@ Deno.serve(async (req) => {
       console.log(`[BOOTSTRAP] Instance ${instanceName} connected. Triggering sync...`);
 
       // Update instance status in background
-      if (instanceName) {
+      if (instanceId || instanceName) {
         supabase.from('whatsapp_instances')
           .update({ status: 'connected', is_active: true, connected_at: new Date().toISOString() })
-          .eq('zapi_instance_id', instanceName)
-          .then(({ error }) => {
+          .or(`zapi_instance_id.eq.${instanceId},zapi_instance_id.eq.${instanceName}`)
+          .then(({ error }: { error: any }) => {
             if (error) console.error('Error updating instance on connect:', error);
           });
       }
@@ -111,7 +113,10 @@ Deno.serve(async (req) => {
       const syncPromise = fetch(`${baseUrl}/functions/v1/zapi-sync-chats`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
-        body: JSON.stringify({ instanceId: instanceName }),
+        body: JSON.stringify({ 
+          instanceId: instanceId || instanceName,
+          instanceName: instanceName
+        }),
       });
       runBackground(syncPromise);
 
@@ -121,7 +126,7 @@ Deno.serve(async (req) => {
     // Handle message and media events - catch ALL possible UAZAPI event types for messages/media
     const messageEventTypes = ['messages', 'message', 'media', 'document', 'audio', 'video', 'image', 'sticker', 'location', 'contact', 'ptt', 'messages-upsert', 'messages.upsert'];
     if (messageEventTypes.includes(eventType)) {
-      return await handleMessage(supabase, payload, instanceName);
+      return await handleMessage(supabase, payload, instanceId, instanceName);
     }
 
     // Handle read receipts
@@ -131,7 +136,7 @@ Deno.serve(async (req) => {
 
     // Handle presence
     if (eventType === 'presence' || eventType === 'chatpresence') {
-      return await handlePresence(supabase, payload, instanceName);
+      return await handlePresence(supabase, payload, instanceId, instanceName);
     }
 
     // Handle call events
@@ -143,10 +148,11 @@ Deno.serve(async (req) => {
     if (eventType === 'chats' || eventType === 'chat') {
       // Chat update events sometimes contain messages
       if (payload.message?.msgid || payload.event?.Info?.ID) {
-        return await handleMessage(supabase, payload, instanceName);
+        return await handleMessage(supabase, payload, instanceId, instanceName);
       }
       return respond({ success: true, ignored: true, reason: 'chat_update' });
     }
+
 
     console.log('Ignoring unknown event type:', eventType);
     return respond({ success: true, ignored: true, type: eventType });
@@ -165,7 +171,7 @@ function respond(data: any, status = 200) {
   });
 }
 
-async function handleMessage(supabase: any, payload: any, instanceName: string) {
+async function handleMessage(supabase: any, payload: any, instanceId: string, instanceName: string) {
   // Log payload keys for diagnostics (helps identify media field names)
   console.log(`[WEBHOOK handleMessage] Payload keys: ${Object.keys(payload).join(', ')}`);
   if (payload.event) {
@@ -362,18 +368,17 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
   let directMediaUrl = payload.mediaUrl || payload.MediaUrl || msg.mediaUrl || msg.media?.url || null;
 
   // Fetch WhatsApp Instance early for API calls
-  let whatsappInstance = null;
-  if (instanceName) {
-    const { data: instance } = await supabase.from('whatsapp_instances').select('*').eq('zapi_instance_id', instanceName).single();
-    whatsappInstance = instance;
-  }
-  if (!whatsappInstance) {
-    const { data: instances } = await supabase.from('whatsapp_instances').select('*').eq('status', 'connected').limit(1);
-    whatsappInstance = instances?.[0];
-  }
-  if (!whatsappInstance) {
-    console.error('No connected instance found for:', instanceName);
-    return respond({ error: 'No connected instance' }, 404);
+  // Robust lookup: check both instanceId and instanceName against zapi_instance_id
+  const { data: whatsappInstance, error: instanceError } = await supabase
+    .from('whatsapp_instances')
+    .select('*')
+    .or(`zapi_instance_id.eq.${instanceId},zapi_instance_id.eq.${instanceName}`)
+    .maybeSingle();
+
+  if (instanceError || !whatsappInstance) {
+    console.error(`[WEBHOOK] Instance not found for ID: ${instanceId} or Name: ${instanceName}. EventType: ${eventType}`);
+    console.log(`[WEBHOOK] Full payload for debug:`, JSON.stringify(payload));
+    return respond({ success: false, error: 'instance_not_found', instanceId, instanceName });
   }
 
   // Fetch missing Base64 directly from UAZAPI if not in payload
@@ -942,8 +947,7 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
         runBackground(agentPromise);
       }
     }
-    return respond({ success: true, messageId: savedMessage.id });
-  }
+  return respond({ success: true, messageId: savedMessage.id });
 }
 
 async function handleReadReceipt(supabase: any, payload: any) {
@@ -974,27 +978,28 @@ async function handleReadReceipt(supabase: any, payload: any) {
     return respond({ success: true });
   }
 
-  async function handlePresence(supabase: any, payload: any, instanceName: string) {
-    const chat = payload.chat || {};
-    // Fallback to chatId, sender or number if phone is missing
-    const rawPhone = chat.phone || chat.wa_chatid || payload.chatId || payload.sender || payload.number || '';
-    const phone = cleanPhone(rawPhone);
+async function handlePresence(supabase: any, payload: any, instanceId: string, instanceName: string) {
+  const chat = payload.chat || {};
+  // Fallback to chatId, sender or number if phone is missing
+  const rawPhone = chat.phone || chat.wa_chatid || payload.chatId || payload.sender || payload.number || '';
+  const phone = cleanPhone(rawPhone);
 
-    if (!phone) {
-      console.log(`[Presence] No phone found in payload for instance ${instanceName}`);
-      return new Response(JSON.stringify({ error: 'Phone not found' }), { status: 400 });
-    }
+  if (!phone) {
+    console.log(`[Presence] No phone found in payload for instanceId=${instanceId}, instanceName=${instanceName}`);
+    return new Response(JSON.stringify({ error: 'Phone not found' }), { status: 400 });
+  }
 
-    let whatsappInstance = null;
-    if (instanceName) {
-      const { data } = await supabase.from('whatsapp_instances').select('*').eq('zapi_instance_id', instanceName).single();
-      whatsappInstance = data;
-    }
-    if (!whatsappInstance) {
-      const { data: instances } = await supabase.from('whatsapp_instances').select('*').eq('status', 'connected').limit(1);
-      whatsappInstance = instances?.[0];
-    }
-    if (!whatsappInstance) return respond({ success: true });
+  // Identify instance for presence
+  const { data: whatsappInstance, error: presenceInstanceError } = await supabase
+    .from('whatsapp_instances')
+    .select('*')
+    .or(`zapi_instance_id.eq.${instanceId},zapi_instance_id.eq.${instanceName}`)
+    .maybeSingle();
+
+  if (presenceInstanceError || !whatsappInstance) {
+    console.warn(`[WEBHOOK presence] No instance found: ID=${instanceId}, Name=${instanceName}`);
+    return respond({ success: true, ignored: true, reason: 'instance_not_found' });
+  }
 
     const { data: contact } = await supabase.from('contacts').select('id')
       .eq('phone', phone).eq('organization_id', whatsappInstance.organization_id).maybeSingle();

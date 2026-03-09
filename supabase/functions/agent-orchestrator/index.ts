@@ -206,7 +206,12 @@ Deno.serve(async (req) => {
       result.replyText = stripInternalAnnotations(result.replyText);
     }
     if (result.replyText) {
-      await sendReplyViaZAPI(supabase, conversation, result.replyText);
+      await sendReplyViaZAPI(supabase, conversation, result.replyText, {
+        agent_id: result.active_agent_id || conversation.ai_agent_id,
+        master_prompt_id: masterPrompt.id,
+        node_id: result.current_node_id,
+        flow_id: (masterPrompt as any).flow_id
+      });
     }
 
     // 6. Log execution
@@ -327,7 +332,12 @@ async function executeFlowOrchestration(
   // Save state
   await saveOrchestrationState(supabase, ctx.conversationId, state);
 
-  return { replyText, toolsExecuted };
+  return { 
+    replyText, 
+    toolsExecuted,
+    current_node_id: state.current_node_id,
+    active_agent_id: state.active_agent_id
+  };
 }
 
 async function walkFlowForward(
@@ -1545,7 +1555,12 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
     if (choice.finish_reason === 'stop') break;
   }
 
-  return { replyText, toolsExecuted };
+  return { 
+    replyText, 
+    toolsExecuted,
+    current_node_id: null,
+    active_agent_id: ctx.conversation.ai_agent_id
+  };
 }
 
 // ==================== TOOL EXECUTION ====================
@@ -1808,7 +1823,7 @@ async function resolveWorkspaceConfig(supabase: any, conversation: any) {
   return data;
 }
 
-async function sendReplyViaZAPI(supabase: any, conversation: any, message: string) {
+async function sendReplyViaZAPI(supabase: any, conversation: any, message: string, aiMetadata?: any) {
   const contactPhone = conversation.contact?.phone;
   if (!contactPhone) return;
 
@@ -1864,7 +1879,11 @@ async function sendReplyViaZAPI(supabase: any, conversation: any, message: strin
     direction: 'outbound',
     is_from_bot: true, // Orchestrator IS an AI agent
     zapi_message_id: zapiMessageId,
-    metadata: { zapi_response: zapiResult, ai_generated: true },
+    metadata: { 
+      zapi_response: zapiResult, 
+      ai_generated: true,
+      ai_metadata: aiMetadata || {}
+    },
   });
 
   await supabase.from('conversations').update({ last_message_at: new Date().toISOString() }).eq('id', conversation.id);

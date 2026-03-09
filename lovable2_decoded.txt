@@ -1,0 +1,137 @@
+﻿commit 9dbd93fc04a754384e1cb896a3a88f8325cdb5a4
+Author: Hugo Gomes <hugo-gms@hotmail.com>
+Date:   Thu Mar 5 12:05:41 2026 -0300
+
+    fix: robust media handling for audio/pdf/documents in webhook
+
+diff --git a/supabase/functions/zapi-webhook/index.ts b/supabase/functions/zapi-webhook/index.ts
+index a52e222..88495e2 100644
+--- a/supabase/functions/zapi-webhook/index.ts
++++ b/supabase/functions/zapi-webhook/index.ts
+@@ -165,6 +165,15 @@ function respond(data: any, status = 200) {
+ }
+ 
+ async function handleMessage(supabase: any, payload: any, instanceName: string) {
++  // Log payload keys for diagnostics (helps identify media field names)
++  console.log(`[WEBHOOK handleMessage] Payload keys: ${Object.keys(payload).join(', ')}`);
++  if (payload.event) {
++    console.log(`[WEBHOOK handleMessage] event keys: ${Object.keys(payload.event).join(', ')}`);
++    if (payload.event.Message) {
++      console.log(`[WEBHOOK handleMessage] event.Message keys: ${Object.keys(payload.event.Message).join(', ')}`);
++    }
++  }
++
+   // ==================================================================
+   // UAZAPI sends messages in TWO possible formats:
+   //   Format A (wuzapi/UAZAPI native):
+@@ -319,47 +328,92 @@ async function handleMessage(supabase: any, payload: any, instanceName: string)
+   }
+ 
+   // Skip empty text messages (but allow media-only messages)
+-  if (!textContent && !mediaUrl && messageType === 'text' && !payload.base64) {
++  // Media messages have messageType != 'text' OR have base64 data
++  const hasBase64 = !!(payload.base64 || payload.Base64);
++  const isMediaType = ['image', 'audio', 'video', 'document', 'sticker'].includes(messageType);
++  if (!textContent && !mediaUrl && !isMediaType && !hasBase64) {
++    console.log(`[WEBHOOK] Skipping empty message: type=${messageType}, hasBase64=${hasBase64}, isMediaType=${isMediaType}`);
+     return respond({ success: true, ignored: true, reason: 'empty_message' });
+   }
+ 
+-  console.log(`[WEBHOOK] Message: type=${messageType}, fromMe=${fromMe}, phone=${phone}, hasBase64=${!!payload.base64}`);
++  console.log(`[WEBHOOK] Processing message: type=${messageType}, fromMe=${fromMe}, phone=${phone}, hasBase64=${hasBase64}, isMediaType=${isMediaType}, mimeType=${payload.mimeType || payload.MimeType || 'none'}`);
++
++  // Handle media upload (UAZAPI sends media as base64 in the payload)
++  // Try multiple field name variations for base64 and mimeType
++  const base64Data = payload.base64 || payload.Base64 || null;
++  const mimeType = payload.mimeType || payload.MimeType || payload.mimetype || null;
++  const directMediaUrl = payload.mediaUrl || payload.MediaUrl || msg.mediaUrl || msg.media?.url || null;
+ 
+-  // Handle base64 media (UAZAPI sends media as base64 in the payload)
+-  if (payload.base64 && payload.mimeType) {
++  console.log(`[WEBHOOK] Media check: hasBase64=${!!base64Data} (${base64Data ? base64Data.length + ' chars' : '0'}), mimeType=${mimeType}, directUrl=${!!directMediaUrl}`);
++
++  if (base64Data && mimeType) {
+     try {
+       const extMap: Record<string, string> = {
+         'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif',
+-        'audio/ogg; codecs=opus': 'ogg', 'audio/ogg': 'ogg', 'audio/mpeg': 'mp3', 'audio/mp4': 'm4a', 'audio/wav': 'wav',
++        'audio/ogg; codecs=opus': 'ogg', 'audio/ogg': 'ogg', 'audio/mpeg': 'mp3', 'audio/mp4': 'm4a', 'audio/wav': 'wav', 'audio/aac': 'aac',
+         'video/mp4': 'mp4', 'video/3gpp': '3gp',
+-        'application/pdf': 'pdf', 'application/msword': 'doc', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+-        'application/vnd.ms-excel': 'xls', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
++        'application/pdf': 'pdf', 'application/msword': 'doc',
++        'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
++        'application/vnd.ms-excel': 'xls',
++        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
++        'application/vnd.ms-powerpoint': 'ppt',
++        'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+         'text/plain': 'txt',
+       };
+ 
+-      const ext = extMap[payload.mimeType] || payload.fileName?.split('.').pop() || payload.event.Message?.documentMessage?.fileName?.split('.').pop() || 'bin';
+-      const fileName = `${msgId || Date.now()}.${ext}`;
++      // Try to get file extension from multiple sources
++      const docFileName = documentMsg?.fileName || documentMsg?.FileName || payload.fileName || '';
++      const extFromMap = extMap[mimeType];
++      const extFromFileName = docFileName ? docFileName.split('.').pop() : null;
++      const ext = extFromMap || extFromFileName || 'bin';
++
++      const safeId = (msgId || String(Date.now())).replace(/[^a-zA-Z0-9_-]/g, '_');
++      const fileName = `${safeId}.${ext}`;
+       const storagePath = `webhook-media/${fileName}`;
+-      const binaryData = Uint8Array.from(atob(payload.base64), c => c.charCodeAt(0));
+ 
+-      const { error: uploadError } = await supabase.storage
++      console.log(`[WEBHOOK] Uploading media: path=${storagePath}, mimeType=${mimeType}, base64Length=${base64Data.length}`);
++
++      const binaryData = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
++
++      // Try upload, create bucket if it doesn't exist
++      let uploadResult = await supabase.storage
+         .from('chat-media')
+-        .upload(storagePath, binaryData, { contentType: payload.mimeType, upsert: true });
++        .upload(storagePath, binaryData, { contentType: mimeType, upsert: true });
++
++      if (uploadResult.error) {
++        console.error('[WEBHOOK] First upload attempt failed:', uploadResult.error.message);
+ 
+-      if (!uploadError) {
++        // If bucket doesn't exist, try to create it
++        if (uploadResult.error.message?.includes('not found') || uploadResult.error.message?.includes('Bucket')) {
++          console.log('[WEBHOOK] Attempting to create chat-media bucket...');
++          await supabase.storage.createBucket('chat-media', { public: true });
++
++          // Retry upload
++          uploadResult = await supabase.storage
++            .from('chat-media')
++            .upload(storagePath, binaryData, { contentType: mimeType, upsert: true });
++        }
++      }
++
++      if (!uploadResult.error) {
+         const { data: publicUrl } = supabase.storage.from('chat-media').getPublicUrl(storagePath);
+         mediaUrl = publicUrl?.publicUrl || null;
+         console.log(`[WEBHOOK] Media uploaded successfully: ${mediaUrl}`);
+       } else {
+-        console.error('[WEBHOOK] Media upload error:', uploadError);
++        console.error('[WEBHOOK] Final upload error:', uploadResult.error);
+       }
+     } catch (e) {
+-      console.error('Media upload error:', e);
++      console.error('[WEBHOOK] Media upload exception:', e);
+     }
+-  } else if (msg.mediaUrl || msg.media?.url || payload.mediaUrl) {
+-    // Fallback if UAZAPI sends a direct URL instead of base64
+-    mediaUrl = msg.mediaUrl || msg.media?.url || payload.mediaUrl;
++  } else if (directMediaUrl) {
++    mediaUrl = directMediaUrl;
+     console.log(`[WEBHOOK] Using direct media URL: ${mediaUrl}`);
++  } else if (isMediaType && !mediaUrl) {
++    console.warn(`[WEBHOOK] WARNING: Media message type=${messageType} but no base64 or URL found! Payload keys: ${Object.keys(payload).join(', ')}`);
++    // Still save the message so user sees it (even without actual media file)
++    if (!textContent) {
++      textContent = messageType === 'audio' ? '­ƒÄÁ ├üudio' : messageType === 'document' ? '­ƒôä Documento' : `­ƒôÄ ${messageType}`;
++    }
+   }
+ 
+   // Find WhatsApp instance by instanceName

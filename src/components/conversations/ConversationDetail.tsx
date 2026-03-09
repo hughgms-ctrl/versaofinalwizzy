@@ -37,6 +37,8 @@ import { FlowTriggerDropdown } from './FlowTriggerDropdown';
 import { AIContextBar } from './AIContextBar';
 import { supabase } from '@/integrations/supabase/client';
 import { useQueryClient } from '@tanstack/react-query';
+import { AIFeedbackDialog } from './AIFeedbackDialog';
+import { Sparkles } from 'lucide-react';
 
 interface ConversationDetailProps {
   conversation: DbConversation;
@@ -68,6 +70,8 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
   const [isSendingMedia, setIsSendingMedia] = useState(false);
   const [showProfilePanel, setShowProfilePanel] = useState(false);
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
+  const [feedbackDialogOpen, setFeedbackDialogOpen] = useState(false);
+  const [feedbackMessage, setFeedbackMessage] = useState<{ id: string; content: string; metadata: any } | null>(null);
 
   const queryClient = useQueryClient();
   const { profile } = useAuth();
@@ -606,9 +610,17 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
                       contactName={conversation.contact?.name}
                       contactPhone={conversation.contact?.phone}
                       contactId={conversation.contact?.id}
-                      senderAvatar={profile?.avatar_url}
-                      senderName={profile?.full_name}
-                    />
+                       senderAvatar={profile?.avatar_url}
+                       senderName={profile?.full_name}
+                       onAdjustPrompt={(msg) => {
+                         setFeedbackMessage({
+                           id: msg.id,
+                           content: msg.content || '',
+                           metadata: (msg.metadata as any)?.ai_metadata || {}
+                         });
+                         setFeedbackDialogOpen(true);
+                       }}
+                     />
                   );
                 })()}
                 <div ref={messagesEndRef} />
@@ -818,6 +830,18 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
           onClose={() => setShowProfilePanel(false)}
         />
       )}
+
+      {/* AI Feedback Dialog */}
+      {feedbackMessage && (
+        <AIFeedbackDialog
+          open={feedbackDialogOpen}
+          onOpenChange={setFeedbackDialogOpen}
+          messageId={feedbackMessage.id}
+          originalMessage={feedbackMessage.content}
+          metadata={feedbackMessage.metadata}
+          organizationId={conversation.organization_id}
+        />
+      )}
     </div>
   );
 }
@@ -829,11 +853,12 @@ interface MessageBubbleListProps {
   contactName?: string | null;
   contactPhone?: string;
   contactId?: string | null;
-  senderAvatar?: string | null;
-  senderName?: string | null;
-}
+   senderAvatar?: string | null;
+   senderName?: string | null;
+   onAdjustPrompt?: (message: DbMessage) => void;
+ }
 
-function MessageBubbleList({ messages, mediaMessageIds, contactAvatar, contactName, contactPhone, contactId, senderAvatar, senderName }: MessageBubbleListProps) {
+ function MessageBubbleList({ messages, mediaMessageIds, contactAvatar, contactName, contactPhone, contactId, senderAvatar, senderName, onAdjustPrompt }: MessageBubbleListProps) {
   const { transcriptions, isLoading: transcriptionsLoading } = useMediaTranscriptions(mediaMessageIds);
   const [localTranscriptions, setLocalTranscriptions] = useState<Record<string, string>>({});
 
@@ -891,10 +916,11 @@ function MessageBubbleList({ messages, mediaMessageIds, contactAvatar, contactNa
               contactId={contactId}
               transcription={mergedTranscriptions[message.id]}
               isTranscriptionLoading={transcriptionsLoading && !mergedTranscriptions[message.id]}
-              senderAvatar={senderAvatar}
-              senderName={senderName}
-              onTranscriptionUpdate={handleTranscriptionUpdate}
-            />
+               senderAvatar={senderAvatar}
+               senderName={senderName}
+               onTranscriptionUpdate={handleTranscriptionUpdate}
+               onAdjustPrompt={onAdjustPrompt}
+             />
           </div>
         );
       })}
@@ -910,12 +936,13 @@ interface MessageBubbleProps {
   contactId?: string | null;
   transcription?: string;
   isTranscriptionLoading?: boolean;
-  senderAvatar?: string | null;
-  senderName?: string | null;
-  onTranscriptionUpdate?: (messageId: string, transcription: string) => void;
-}
+   senderAvatar?: string | null;
+   senderName?: string | null;
+   onTranscriptionUpdate?: (messageId: string, transcription: string) => void;
+   onAdjustPrompt?: (message: DbMessage) => void;
+ }
 
-function MessageBubble({ message, contactAvatar, contactName, contactPhone, contactId, transcription, isTranscriptionLoading, senderAvatar, senderName, onTranscriptionUpdate }: MessageBubbleProps) {
+ function MessageBubble({ message, contactAvatar, contactName, contactPhone, contactId, transcription, isTranscriptionLoading, senderAvatar, senderName, onTranscriptionUpdate, onAdjustPrompt }: MessageBubbleProps) {
   const isInbound = message.direction === 'inbound';
   const isBot = message.is_from_bot;
 
@@ -1108,24 +1135,32 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
         </div>
       )}
 
-      <div className={cn(
-        "max-w-[70%] rounded-2xl px-4 py-3",
-        isInbound
-          ? "bg-card border border-border rounded-tl-sm"
-          : isBot
-            ? "bg-gradient-to-br from-primary to-purple-500 text-white rounded-tr-sm"
-            : "bg-green-500 text-white rounded-tr-sm"
-      )}>
+      <div 
+        className={cn(
+          "max-w-[70%] rounded-2xl px-4 py-3 relative transition-all",
+          isInbound
+            ? "bg-card border border-border rounded-tl-sm"
+            : isBot
+              ? "bg-gradient-to-br from-primary to-purple-500 text-white rounded-tr-sm cursor-pointer hover:shadow-lg hover:scale-[1.01] active:scale-[0.99]"
+              : "bg-green-500 text-white rounded-tr-sm"
+        )}
+        onClick={() => {
+          if (!isInbound && isBot && onAdjustPrompt) {
+            onAdjustPrompt(message);
+          }
+        }}
+      >
         {/* Show contact name for inbound messages */}
         {isInbound && contactName && (
           <p className="text-xs font-semibold italic text-primary mb-1">
             {contactName}
           </p>
         )}
-        {!isInbound && isBot && (
-          <div className="flex items-center gap-1.5 mb-1">
+         {!isInbound && isBot && (
+          <div className="flex items-center gap-1.5 mb-1 opacity-80">
             <Bot className="h-3 w-3" />
-            <span className="text-xs font-medium opacity-80">IA</span>
+            <span className="text-xs font-medium">IA • Clique para treinar</span>
+            <Sparkles className="h-3 w-3 ml-auto animate-pulse" />
           </div>
         )}
         {renderMediaContent()}
@@ -1142,7 +1177,7 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
               const isPlayed = metadata?.played_at;
               const isRead = !!message.read_at;
               const isDelivered = !!message.delivered_at;
-
+ 
               if (isPlayed || isRead) {
                 return <CheckCheck className={cn("h-3 w-3 stroke-[3]", isPlayed ? "text-blue-500" : "text-blue-400")} />;
               }
