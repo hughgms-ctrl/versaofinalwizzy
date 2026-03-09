@@ -9,7 +9,8 @@ import {
   ExternalLink,
   Loader2,
   MailWarning,
-  EyeOff
+  EyeOff,
+  ArrowRightLeft
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -26,7 +27,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { useQueryClient } from '@tanstack/react-query';
 import { DbConversation } from '@/hooks/useConversations';
-import { usePipelines, usePipelineColumns, useMoveConversation } from '@/hooks/usePipelines';
+import { usePipelines, usePipelineColumns, useMoveConversation, useTransferConversation } from '@/hooks/usePipelines';
 import { useNavigate } from 'react-router-dom';
 
 interface ConversationCardActionsProps {
@@ -47,6 +48,7 @@ export function ConversationCardActions({
   const navigate = useNavigate();
   const { data: pipelines } = usePipelines();
   const moveConversation = useMoveConversation();
+  const transferConversation = useTransferConversation();
 
   const handleStatusChange = async (status: 'open' | 'pending' | 'resolved' | 'archived', e?: React.MouseEvent) => {
     e?.stopPropagation();
@@ -188,6 +190,24 @@ export function ConversationCardActions({
     }
   };
 
+  const handleTransfer = async (targetPipelineId: string) => {
+    setIsUpdating(true);
+    try {
+      await transferConversation.mutateAsync({
+        conversationId: conversation.id,
+        targetPipelineId,
+      });
+      toast({
+        title: 'Conversa transferida',
+        description: 'A conversa foi transferida para o novo departamento',
+      });
+    } catch (error) {
+      // toast already handled by hook
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
@@ -238,7 +258,32 @@ export function ConversationCardActions({
         
         <DropdownMenuSeparator />
 
-        {/* Pipeline Actions */}
+        {/* Transfer between pipelines */}
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            <ArrowRightLeft className="h-4 w-4 mr-2" />
+            Transferir para...
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="w-48">
+            {!pipelines || pipelines.length <= 1 ? (
+              <DropdownMenuItem disabled>Nenhum outro pipeline</DropdownMenuItem>
+            ) : (
+              pipelines.map(pipeline => (
+                <DropdownMenuItem
+                  key={pipeline.id}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleTransfer(pipeline.id);
+                  }}
+                >
+                  {pipeline.name}
+                </DropdownMenuItem>
+              ))
+            )}
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+
+        <DropdownMenuSeparator />
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>
             <Kanban className="h-4 w-4 mr-2" />
