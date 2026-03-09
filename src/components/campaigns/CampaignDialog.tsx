@@ -114,7 +114,7 @@ export function CampaignDialog({
     };
 
     const isSaving = createCampaign.isPending || updateCampaign.isPending;
-    const isFormValid = name.trim() && flowId && (triggerType !== 'keyword' || triggerKeyword.trim());
+    const isFormValid = name.trim() && flowId && ((triggerType !== 'keyword' && triggerType !== 'tag_added') || triggerKeyword.trim());
 
     const triggerOptions = [
         {
@@ -124,16 +124,10 @@ export function CampaignDialog({
             icon: MessageSquareText,
         },
         {
-            id: 'new_conversation',
-            label: 'Nova Conversa',
-            description: 'Quando um novo contato inicia uma conversa',
-            icon: UserPlus,
-        },
-        {
-            id: 'webhook',
-            label: 'Webhook',
-            description: 'Disparado por uma chamada HTTP externa',
-            icon: Webhook,
+            id: 'tag_added',
+            label: 'Tag Adicionada',
+            description: 'Quando uma tag específica é adicionada ao contato',
+            icon: Tag,
         },
         {
             id: 'manual',
