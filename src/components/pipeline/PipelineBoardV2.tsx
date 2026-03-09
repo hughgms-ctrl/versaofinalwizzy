@@ -643,6 +643,29 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
         }
       }}
     >
+      {/* Admin toggle to show hidden unassigned column */}
+      {isAdminOrOwner && shouldHideUnassigned && unassignedConversations.length > 0 && (
+        <div className="flex flex-col items-center justify-start pt-4 min-w-[48px]">
+          <TooltipProvider delayDuration={200}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8 rounded-full"
+                  onClick={toggleAdminHideUnassigned}
+                >
+                  <Eye className="h-4 w-4 text-muted-foreground" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right">
+                Mostrar não classificados ({unassignedConversations.length})
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </div>
+      )}
+
       {/* Unassigned column - show when allowed and there are items OR when dragging */}
       {!shouldHideUnassigned && (unassignedConversations.length > 0 || draggedCard) && (
         <div
@@ -662,6 +685,23 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
                 {unassignedConversations.length}
               </span>
             </div>
+            {isAdminOrOwner && (
+              <TooltipProvider delayDuration={200}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6"
+                      onClick={toggleAdminHideUnassigned}
+                    >
+                      <EyeOff className="h-3.5 w-3.5 text-muted-foreground" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Ocultar não classificados</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            )}
           </div>
           <div className="space-y-2 min-h-[200px] overflow-y-auto flex-1" style={{ WebkitOverflowScrolling: 'touch' }}>
             {unassignedConversations.map(renderConversationCard)}
