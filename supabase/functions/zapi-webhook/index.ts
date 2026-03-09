@@ -126,7 +126,12 @@ Deno.serve(async (req) => {
     // Handle message and media events - catch ALL possible UAZAPI event types for messages/media
     const messageEventTypes = ['messages', 'message', 'media', 'document', 'audio', 'video', 'image', 'sticker', 'location', 'contact', 'ptt', 'messages-upsert', 'messages.upsert'];
     if (messageEventTypes.includes(eventType)) {
-      return await handleMessage(supabase, payload, instanceId, instanceName, eventType);
+      try {
+        return await handleMessage(supabase, payload, instanceId, instanceName, eventType);
+      } catch (msgError) {
+        console.error('[WEBHOOK] handleMessage crashed but returning 200 to prevent retry loop:', msgError);
+        return respond({ success: false, error: 'message_handler_error', detail: String(msgError) });
+      }
     }
 
     // Handle read receipts
@@ -148,7 +153,12 @@ Deno.serve(async (req) => {
     if (eventType === 'chats' || eventType === 'chat') {
       // Chat update events sometimes contain messages
       if (payload.message?.msgid || payload.event?.Info?.ID) {
-        return await handleMessage(supabase, payload, instanceId, instanceName, eventType);
+        try {
+          return await handleMessage(supabase, payload, instanceId, instanceName, eventType);
+        } catch (msgError) {
+          console.error('[WEBHOOK] handleMessage (chat) crashed:', msgError);
+          return respond({ success: false, error: 'message_handler_error', detail: String(msgError) });
+        }
       }
       return respond({ success: true, ignored: true, reason: 'chat_update' });
     }
@@ -171,7 +181,7 @@ function respond(data: any, status = 200) {
   });
 }
 
-async function handleMessage(supabase: any, payload: any, instanceId: string, instanceName: string, eventType?: string) {
+async function handleMessage(supabase: any, payload: any, instanceId: string, instanceName: string, eventType: string) {
   // Log payload keys for diagnostics (helps identify media field names)
   console.log(`[WEBHOOK handleMessage] Payload keys: ${Object.keys(payload).join(', ')}`);
   if (payload.event) {
