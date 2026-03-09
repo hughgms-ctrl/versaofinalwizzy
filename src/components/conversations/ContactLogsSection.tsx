@@ -151,6 +151,31 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
         });
       }
 
+      // 3b. Follow-up messages (from messages metadata)
+      const { data: followUpMessages } = await supabase
+        .from('messages')
+        .select('id, created_at, content, metadata')
+        .eq('conversation_id', conversationId)
+        .eq('direction', 'outbound')
+        .eq('is_from_bot', true)
+        .order('created_at', { ascending: true });
+
+      for (const msg of followUpMessages || []) {
+        const meta = msg.metadata as any;
+        if (meta?.source === 'remarketing_followup') {
+          const stepNum = meta.remarketing_step || '?';
+          const flowName = meta.flow_name || '';
+          timeline.push({
+            id: `followup-${msg.id}`,
+            timestamp: msg.created_at,
+            type: 'followup_sent',
+            description: `Follow-up #${stepNum} enviado${flowName ? ` (${flowName})` : ''}`,
+            actor: 'Follow-up',
+            actorType: 'system',
+          });
+        }
+      }
+
       // 4. Contact tags added (by flow, manual, etc.)
       // Deduplicate: don't show tags already shown via agent_execution_logs tools
       const aiTagIds = new Set<string>();
