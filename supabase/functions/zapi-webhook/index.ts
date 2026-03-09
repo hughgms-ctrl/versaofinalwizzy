@@ -97,10 +97,17 @@ Deno.serve(async (req) => {
       console.log(`[BOOTSTRAP] Instance ${instanceName} connected. Triggering sync...`);
 
       // Update instance status in background
-      if (instanceId || instanceName) {
-        supabase.from('whatsapp_instances')
-          .update({ status: 'connected', is_active: true, connected_at: new Date().toISOString() })
-          .or(`zapi_instance_id.eq.${instanceId},zapi_instance_id.eq.${instanceName}`)
+      const payloadTokenConn = payload.token || '';
+      if (instanceId || instanceName || payloadTokenConn) {
+        const updateQuery = supabase.from('whatsapp_instances')
+          .update({ status: 'connected', is_active: true, connected_at: new Date().toISOString() });
+        
+        const orFilters = [];
+        if (instanceId) orFilters.push(`zapi_instance_id.eq.${instanceId}`);
+        if (instanceName) orFilters.push(`zapi_instance_id.eq.${instanceName}`);
+        if (payloadTokenConn) orFilters.push(`zapi_token.eq.${payloadTokenConn}`);
+        
+        updateQuery.or(orFilters.join(','))
           .then(({ error }: { error: any }) => {
             if (error) console.error('Error updating instance on connect:', error);
           });
