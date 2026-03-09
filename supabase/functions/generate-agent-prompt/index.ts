@@ -9,28 +9,33 @@ const corsHeaders = {
 function resolveAIConfig(integrationConfig: any, feature: string) {
   const OPENAI_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
   const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
+  const LOVABLE_ENDPOINT = 'https://ai.gateway.lovable.dev/v1/chat/completions';
 
-  if (!integrationConfig) return null;
+  const featureProvider = integrationConfig?.[`${feature}_provider`];
+  const featureModel = integrationConfig?.[`${feature}_model`];
+  let provider = featureProvider || integrationConfig?.ai_provider || 'lovable';
+  let model = featureModel || integrationConfig?.default_model || 'google/gemini-3-flash-preview';
 
-  const featureProvider = integrationConfig[`${feature}_provider`];
-  const featureModel = integrationConfig[`${feature}_model`];
-  let provider = featureProvider || integrationConfig.ai_provider;
-  let model = featureModel || integrationConfig.default_model;
-
-  if (!provider || provider === 'lovable') {
-    if (integrationConfig.openai_api_key) { provider = 'openai'; model = model || 'gpt-4o-mini'; }
-    else if (integrationConfig.gemini_api_key) { provider = 'gemini'; model = model || 'gemini-2.0-flash'; }
+  if (provider === 'lovable') {
+    const lovableKey = Deno.env.get('LOVABLE_API_KEY');
+    if (lovableKey) {
+      return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableKey, model: model || 'google/gemini-3-flash-preview' };
+    }
+    // Fallback to own keys
+    if (integrationConfig?.openai_api_key) { provider = 'openai'; model = model || 'gpt-4o-mini'; }
+    else if (integrationConfig?.gemini_api_key) { provider = 'gemini'; model = model || 'gemini-2.0-flash'; }
     else return null;
   }
+
   if (provider === 'gemini') model = (model || 'gemini-2.0-flash').replace('google/', '');
   else if (provider === 'openai') model = (model || 'gpt-4o-mini').replace('openai/', '');
 
   switch (provider) {
     case 'openai':
-      if (!integrationConfig.openai_api_key) return null;
+      if (!integrationConfig?.openai_api_key) return null;
       return { endpoint: OPENAI_ENDPOINT, apiKey: integrationConfig.openai_api_key, model };
     case 'gemini':
-      if (!integrationConfig.gemini_api_key) return null;
+      if (!integrationConfig?.gemini_api_key) return null;
       return { endpoint: GEMINI_ENDPOINT, apiKey: integrationConfig.gemini_api_key, model };
     default:
       return null;
