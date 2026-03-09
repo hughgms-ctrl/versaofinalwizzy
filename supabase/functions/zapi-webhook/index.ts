@@ -378,15 +378,39 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
   let directMediaUrl = payload.mediaUrl || payload.MediaUrl || msg.mediaUrl || msg.media?.url || null;
 
   // Fetch WhatsApp Instance early for API calls
-  // Robust lookup: check both instanceId and instanceName against zapi_instance_id
-  const { data: whatsappInstance, error: instanceError } = await supabase
-    .from('whatsapp_instances')
-    .select('*')
-    .or(`zapi_instance_id.eq.${instanceId},zapi_instance_id.eq.${instanceName}`)
-    .maybeSingle();
+  // Robust lookup: try zapi_instance_id first, then fallback to zapi_token
+  const payloadToken = payload.token || '';
+  let whatsappInstance: any = null;
+  let instanceError: any = null;
+
+  // Strategy 1: lookup by zapi_instance_id (instanceId or instanceName)
+  if (instanceId || instanceName) {
+    const orFilters = [];
+    if (instanceId) orFilters.push(`zapi_instance_id.eq.${instanceId}`);
+    if (instanceName) orFilters.push(`zapi_instance_id.eq.${instanceName}`);
+    const { data, error } = await supabase
+      .from('whatsapp_instances')
+      .select('*')
+      .or(orFilters.join(','))
+      .maybeSingle();
+    whatsappInstance = data;
+    instanceError = error;
+  }
+
+  // Strategy 2: fallback lookup by zapi_token from payload
+  if (!whatsappInstance && payloadToken) {
+    console.log(`[WEBHOOK] Fallback: looking up instance by token`);
+    const { data, error } = await supabase
+      .from('whatsapp_instances')
+      .select('*')
+      .eq('zapi_token', payloadToken)
+      .maybeSingle();
+    whatsappInstance = data;
+    instanceError = error;
+  }
 
   if (instanceError || !whatsappInstance) {
-    console.error(`[WEBHOOK] Instance not found for ID: ${instanceId} or Name: ${instanceName}. EventType: ${eventType}`);
+    console.error(`[WEBHOOK] Instance not found for ID: ${instanceId}, Name: ${instanceName}, Token: ${payloadToken ? 'present' : 'absent'}. EventType: ${eventType}`);
     console.log(`[WEBHOOK] Full payload for debug:`, JSON.stringify(payload));
     return respond({ success: false, error: 'instance_not_found', instanceId, instanceName });
   }
