@@ -271,6 +271,30 @@ export function CampaignDialog({
                                                 </div>
                                             </div>
                                         )}
+
+                                        {/* Mensagem para Webhook */}
+                                        {isSelected && option.id === 'webhook' && (
+                                            <div className="mt-4 ml-14 p-4 rounded-lg border bg-primary/5 space-y-3">
+                                                <p className="text-sm text-foreground font-medium">Como utilizar este webhook?</p>
+                                                <p className="text-xs text-muted-foreground">
+                                                    Ao salvar esta campanha com o gatilho <strong>Webhook</strong>, você poderá disparar o fluxo selecionado abaixo fazendo uma requisição HTTP POST para a nossa API.
+                                                </p>
+                                                {campaignToEdit?.id ? (
+                                                    <div className="bg-background border rounded p-3 relative mt-2 group">
+                                                        <code className="text-[10px] sm:text-xs text-muted-foreground break-all whitespace-pre-wrap font-mono">
+                                                            {`curl -X POST https://zaobtetbjpuzibjymhzw.supabase.co/functions/v1/flow-execute \\
+  -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer SEU_TOKEN_AQUI" \\
+  -d '{"flowId": "${flowId || campaignToEdit.flow_id}", "conversationId": "ID_DA_CONVERSA"}'`}
+                                                        </code>
+                                                    </div>
+                                                ) : (
+                                                    <p className="text-xs text-muted-foreground italic mt-2">
+                                                        Salve a campanha primeiro para ver o exemplo de código de integração.
+                                                    </p>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
                                 );
                             })}
