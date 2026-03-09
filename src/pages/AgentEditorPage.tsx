@@ -37,8 +37,6 @@ const AgentEditorPage = () => {
   
   const [showAIAssist, setShowAIAssist] = useState(true);
 
-  const [provider, setProvider] = useState('lovable');
-  const [model, setModel] = useState('default');
 
   useEffect(() => {
     if (agent) {
