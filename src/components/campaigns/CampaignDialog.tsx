@@ -400,8 +400,9 @@ export function CampaignDialog({
                             </p>
                         </div>
                     )}
+                    </div>
                 </div>
-                <DialogFooter className="mt-2">
+                <DialogFooter className="mt-2 pt-2 border-t">
                     <Button variant="outline" onClick={() => onOpenChange(false)}>
                         Cancelar
                     </Button>
