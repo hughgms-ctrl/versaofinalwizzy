@@ -444,18 +444,21 @@ async function executeSubFlow(
 ): Promise<NodeResult> {
   const flowId = String(data.flowId || '');
   const flowName = String(data.flowName || data.label || 'Sub-fluxo');
+  const waitForResponse = Boolean(data.waitForResponse);
+  const remarketingSteps = (data.remarketingSteps || []) as Array<{ delayMinutes: number; message: string }>;
 
   if (!flowId) {
     console.log('[FLOW EXECUTE] action-flow: no flowId configured');
     return { success: true, metadata: { skipped: 'no_flow_id' } };
   }
 
-  console.log(`[FLOW EXECUTE] Triggering sub-flow: ${flowId} (${flowName})`);
+  console.log(`[FLOW EXECUTE] Triggering sub-flow: ${flowId} (${flowName}), waitForResponse=${waitForResponse}, remarketingSteps=${remarketingSteps.length}`);
 
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
+    // Trigger the sub-flow
     const response = await fetch(`${supabaseUrl}/functions/v1/flow-execute`, {
       method: 'POST',
       headers: {
@@ -470,10 +473,20 @@ async function executeSubFlow(
     });
 
     const result = await response.json();
-    console.log(`[FLOW EXECUTE] Sub-flow ${flowId} result:`, result.success ? 'success' : 'failed');
+    console.log(`[FLOW EXECUTE] Sub-flow ${flowId} triggered:`, result.success ? 'success' : 'failed');
 
-    // Wait a bit for sub-flow to process before continuing
+    // Wait for sub-flow to start processing
     await new Promise(resolve => setTimeout(resolve, 2000));
+
+    // If waitForResponse is enabled OR there are remarketing steps, pause and wait
+    if (waitForResponse || remarketingSteps.length > 0) {
+      console.log(`[FLOW EXECUTE] action-flow with waitForResponse/remarketing — pausing parent flow`);
+      return { 
+        success: true, 
+        waitForInput: true,
+        metadata: { flowId, flowName, triggered: true, waitingForResponse: true, remarketingSteps: remarketingSteps.length } 
+      };
+    }
 
     return { success: true, metadata: { flowId, flowName, triggered: true } };
   } catch (error) {
