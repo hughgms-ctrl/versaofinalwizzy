@@ -851,12 +851,22 @@ async function handleMessage(supabase: any, payload: any, instanceName: string) 
           });
           runBackground(resumePromise);
         } else {
-          // No next node — complete
+          // No next node — flow STOPS here. Complete and cleanup.
+          console.log(`[WEBHOOK] Content block has NO outgoing edge — flow STOPS`);
           await supabase.from('flow_executions').update({
             status: 'completed',
             variables: existingVars,
             completed_at: new Date().toISOString(),
           }).eq('id', activeFlowExec.id);
+
+          // Cleanup: reset service_mode and ai_agent_id
+          const { data: convMeta2 } = await supabase.from('conversations').select('metadata').eq('id', conversation.id).single();
+          const cleanMeta2 = { ...(convMeta2?.metadata || {}) };
+          delete cleanMeta2.ai_handoff_context;
+          cleanMeta2.flow_ended_at = new Date().toISOString();
+          await supabase.from('conversations').update({
+            service_mode: 'humano', ai_agent_id: null, metadata: cleanMeta2,
+          }).eq('id', conversation.id);
         }
       } else if (activeFlowExec.status === 'waiting_input') {
         // Flow is waiting for input at a non-AI node (e.g., user-input) — resume flow
