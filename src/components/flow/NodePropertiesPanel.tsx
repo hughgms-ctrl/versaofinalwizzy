@@ -39,6 +39,7 @@ interface NodePropertiesPanelProps {
   isSaving?: boolean;
   hasUnsavedChanges?: boolean;
   organizationId?: string;
+  flowId?: string;
 }
 
 const nodeIcons: Record<string, React.ComponentType<{ className?: string }>> = {
