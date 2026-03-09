@@ -571,38 +571,6 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
   // Check if user should see unassigned column for this pipeline
   const isAdminOrOwner = userRole === 'owner' || userRole === 'admin';
   const hideUnassignedIds = (userPermissions as any)?.hide_unassigned_pipeline_ids || [];
-  
-  // Admin preference stored in localStorage
-  const [adminHideUnassigned, setAdminHideUnassigned] = useState(() => {
-    if (!pipeline?.id) return false;
-    try {
-      const stored = JSON.parse(localStorage.getItem('admin_hide_unassigned_pipelines') || '[]');
-      return Array.isArray(stored) && stored.includes(pipeline.id);
-    } catch { return false; }
-  });
-
-  // Sync when pipeline changes
-  useEffect(() => {
-    if (!pipeline?.id) return;
-    try {
-      const stored = JSON.parse(localStorage.getItem('admin_hide_unassigned_pipelines') || '[]');
-      setAdminHideUnassigned(Array.isArray(stored) && stored.includes(pipeline.id));
-    } catch { setAdminHideUnassigned(false); }
-  }, [pipeline?.id]);
-
-  const toggleAdminHideUnassigned = useCallback(() => {
-    if (!pipeline?.id) return;
-    setAdminHideUnassigned(prev => {
-      const newVal = !prev;
-      try {
-        const stored = JSON.parse(localStorage.getItem('admin_hide_unassigned_pipelines') || '[]');
-        const arr = Array.isArray(stored) ? stored : [];
-        const updated = newVal ? [...arr, pipeline.id] : arr.filter((id: string) => id !== pipeline.id);
-        localStorage.setItem('admin_hide_unassigned_pipelines', JSON.stringify(updated));
-      } catch {}
-      return newVal;
-    });
-  }, [pipeline?.id]);
 
   const shouldHideUnassigned = isAdminOrOwner 
     ? adminHideUnassigned 
