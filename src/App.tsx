@@ -31,6 +31,7 @@ import DocumentsPage from "./pages/DocumentsPage";
 import IntegrationsPage from "./pages/IntegrationsPage";
 import PublicFormPage from "./pages/PublicFormPage";
 import SignaturePage from "./pages/SignaturePage";
+import PublicSignaturePage from "./pages/PublicSignaturePage";
 import PublicBookingPage from "./pages/PublicBookingPage";
 import NotFound from "./pages/NotFound";
 import CampaignsPage from "./pages/CampaignsPage";
@@ -71,6 +72,7 @@ const App = () => (
                     <Route path="/integrations" element={<ProtectedRoute><IntegrationsPage /></ProtectedRoute>} />
                     <Route path="/form" element={<PublicFormPage />} />
                     <Route path="/signature/:documentId" element={<SignaturePage />} />
+                    <Route path="/sign/:token" element={<PublicSignaturePage />} />
                     <Route path="/agendar/:slug" element={<PublicBookingPage />} />
                     <Route path="/campaigns" element={<ProtectedRoute><CampaignsPage /></ProtectedRoute>} />
                     <Route path="/calendar" element={<ProtectedRoute><CalendarPage /></ProtectedRoute>} />

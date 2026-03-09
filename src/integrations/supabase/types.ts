@@ -1284,6 +1284,7 @@ export type Database = {
           metadata: Json | null
           organization_id: string
           sent_at: string | null
+          signature_token: string | null
           signature_url: string | null
           signed_at: string | null
           signed_pdf_url: string | null
@@ -1307,6 +1308,7 @@ export type Database = {
           metadata?: Json | null
           organization_id: string
           sent_at?: string | null
+          signature_token?: string | null
           signature_url?: string | null
           signed_at?: string | null
           signed_pdf_url?: string | null
@@ -1330,6 +1332,7 @@ export type Database = {
           metadata?: Json | null
           organization_id?: string
           sent_at?: string | null
+          signature_token?: string | null
           signature_url?: string | null
           signed_at?: string | null
           signed_pdf_url?: string | null

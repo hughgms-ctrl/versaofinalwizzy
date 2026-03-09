@@ -1,6 +1,7 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { toast } from 'sonner';
 
 export interface GeneratedDocument {
   id: string;
@@ -35,5 +36,29 @@ export function useGeneratedDocuments() {
       return data as GeneratedDocument[];
     },
     enabled: !!orgId,
+  });
+}
+
+export function useDeleteGeneratedDocument() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (id: string) => {
+      // First delete related signatures
+      await (supabase as any)
+        .from('document_signatures')
+        .delete()
+        .eq('generated_document_id', id);
+      
+      // Then delete the document
+      const { error } = await (supabase as any)
+        .from('generated_documents')
+        .delete()
+        .eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['generated-documents'] });
+    },
   });
 }

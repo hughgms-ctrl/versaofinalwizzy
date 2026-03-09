@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Package, Plus, Edit, Trash2, MoreHorizontal, Search, FileText } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { Package, Plus, Edit, Trash2, MoreHorizontal, Search, FileText, ClipboardList } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -13,6 +13,7 @@ import {
 import { useDocumentPacks, useDeleteDocumentPack, DocumentPack } from '@/hooks/useDocumentPacks';
 import { useDocumentTemplates } from '@/hooks/useDocumentTemplates';
 import { PackEditor } from './PackEditor';
+import { PackFillForm } from './PackFillForm';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -22,6 +23,7 @@ export function PacksList() {
   const deletePack = useDeleteDocumentPack();
   const [search, setSearch] = useState('');
   const [editingPack, setEditingPack] = useState<DocumentPack | null>(null);
+  const [fillingPack, setFillingPack] = useState<DocumentPack | null>(null);
   const [showNew, setShowNew] = useState(false);
 
   const filtered = packs?.filter(p =>
@@ -31,6 +33,15 @@ export function PacksList() {
   const getTemplateNames = (ids: string[]) => {
     return ids.map(id => templates?.find(t => t.id === id)?.name || 'Template removido');
   };
+
+  if (fillingPack) {
+    return (
+      <PackFillForm
+        pack={fillingPack}
+        onBack={() => setFillingPack(null)}
+      />
+    );
+  }
 
   if (editingPack || showNew) {
     return (
@@ -76,11 +87,7 @@ export function PacksList() {
       ) : (
         <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
           {filtered.map(pack => (
-            <Card
-              key={pack.id}
-              className="p-4 cursor-pointer hover:shadow-md transition-shadow group"
-              onClick={() => setEditingPack(pack)}
-            >
+            <Card key={pack.id} className="p-4 hover:shadow-md transition-shadow group">
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-3">
                   <div className="h-10 w-10 rounded-lg bg-accent flex items-center justify-center">
@@ -98,10 +105,13 @@ export function PacksList() {
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={e => { e.stopPropagation(); setEditingPack(pack); }}>
+                    <DropdownMenuItem onClick={() => setFillingPack(pack)}>
+                      <ClipboardList className="h-4 w-4 mr-2" /> Preencher
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setEditingPack(pack)}>
                       <Edit className="h-4 w-4 mr-2" /> Editar
                     </DropdownMenuItem>
-                    <DropdownMenuItem className="text-destructive" onClick={e => { e.stopPropagation(); deletePack.mutate(pack.id); }}>
+                    <DropdownMenuItem className="text-destructive" onClick={() => deletePack.mutate(pack.id)}>
                       <Trash2 className="h-4 w-4 mr-2" /> Excluir
                     </DropdownMenuItem>
                   </DropdownMenuContent>
@@ -114,9 +124,15 @@ export function PacksList() {
                   </Badge>
                 ))}
               </div>
-              <p className="mt-2 text-xs text-muted-foreground">
-                {format(new Date(pack.created_at), "dd MMM yyyy", { locale: ptBR })}
-              </p>
+              <div className="mt-3 flex items-center justify-between">
+                <p className="text-xs text-muted-foreground">
+                  {format(new Date(pack.created_at), "dd MMM yyyy", { locale: ptBR })}
+                </p>
+                <Button size="sm" variant="outline" onClick={() => setFillingPack(pack)}>
+                  <ClipboardList className="h-3.5 w-3.5 mr-1.5" />
+                  Preencher
+                </Button>
+              </div>
             </Card>
           ))}
         </div>
