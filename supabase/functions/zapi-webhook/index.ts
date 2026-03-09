@@ -947,6 +947,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
         runBackground(agentPromise);
       }
     }
+  }
   return respond({ success: true, messageId: savedMessage.id });
 }
 
@@ -1021,9 +1022,9 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
     }, { onConflict: 'contact_id' });
 
     return respond({ success: true });
-  }
+}
 
-  // ========== HELPERS ==========
+// ========== HELPERS ==========
 
   async function findOrCreateContact(supabase: any, phone: string, organizationId: string, name: string | null, avatarUrl: string | null) {
     // Try exact phone match
