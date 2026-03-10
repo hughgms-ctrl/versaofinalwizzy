@@ -312,6 +312,293 @@ Deno.serve(async (req) => {
   }
 });
 
+// ==================== SIMULATION MODE ====================
+
+async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: string) {
+  const {
+    organizationId,
+    agentId,
+    agentName,
+    masterPrompt: masterPromptContent,
+    additionalPrompt,
+    conversationHistory, // Array of { role: 'user'|'assistant', content: string }
+    flowId,
+    nodeId,
+    isFirstActivation,
+    hasNextNodes,
+    contactName,
+  } = payload;
+
+  if (!organizationId) return { error: 'organizationId is required for simulation' };
+
+  // Load context from DB (same as production)
+  const [agentsResult, tagsResult, pipelinesResult, trainingRulesResult, integrationConfigResult] = await Promise.all([
+    supabase.from('ai_agents').select('*').eq('organization_id', organizationId).eq('is_active', true),
+    supabase.from('tags').select('*').eq('organization_id', organizationId),
+    supabase.from('pipelines').select('*, columns:pipeline_columns(*)').eq('organization_id', organizationId),
+    supabase.from('agent_training_rules').select('*').eq('organization_id', organizationId).eq('is_active', true),
+    resolveIntegrationConfig(supabase, organizationId),
+  ]);
+
+  const agents = agentsResult.data || [];
+  const allTags = tagsResult.data || [];
+  const pipelines = pipelinesResult.data || [];
+  const trainingRules = trainingRulesResult.data || [];
+  const integrationConfig = integrationConfigResult;
+
+  const agent = agentId ? agents.find((a: any) => a.id === agentId) : null;
+
+  // Resolve AI config (same logic as production)
+  const aiConfig = resolveAIConfig(integrationConfig, 'agents', LOVABLE_API_KEY);
+
+  // Build system prompt — EXACT SAME as invokeAgentAI
+  let systemPrompt = '';
+
+  if (masterPromptContent) {
+    systemPrompt += `PERSONALIDADE E REGRAS GERAIS:\n${masterPromptContent}\n\n`;
+  }
+
+  systemPrompt += `---\n\n`;
+  systemPrompt += `Você é o agente "${agent?.name || agentName || 'Assistente'}" neste momento da conversa.\n\n`;
+
+  if (agent?.prompt_base) {
+    systemPrompt += `PROMPT DO AGENTE:\n${agent.prompt_base}\n\n`;
+  }
+
+  if (agent?.persona) {
+    systemPrompt += `PERSONA: ${agent.persona}\n\n`;
+  }
+
+  if (additionalPrompt) {
+    systemPrompt += `INSTRUÇÕES ESPECÍFICAS PARA ESTE MOMENTO:\n${additionalPrompt}\n\n`;
+  }
+
+  // Training rules (same function as production)
+  const rulesSection = buildTrainingRulesSection(trainingRules, {
+    agentId: agent?.id,
+    masterPromptId: undefined,
+    flowId: flowId || undefined,
+    nodeId: nodeId || undefined,
+  });
+  if (rulesSection) systemPrompt += rulesSection;
+
+  // Contact context
+  systemPrompt += `DADOS DO CONTATO:\n`;
+  systemPrompt += `- Nome: ${contactName || 'Cliente Simulado'}\n`;
+  systemPrompt += `- Telefone: (simulação)\n\n`;
+
+  // Available tags
+  if (allTags.length > 0) {
+    systemPrompt += `TAGS DISPONÍVEIS (para add_tag/remove_tag):\n`;
+    for (const tag of allTags) {
+      systemPrompt += `- "${tag.name}" → id: "${tag.id}"\n`;
+    }
+    systemPrompt += '\n';
+  }
+
+  // Available pipelines
+  if (pipelines.length > 0) {
+    systemPrompt += `PIPELINES DISPONÍVEIS (para move_pipeline):\n`;
+    for (const p of pipelines) {
+      systemPrompt += `- "${p.name}" (id: "${p.id}"): `;
+      const cols = (p.columns || []).sort((a: any, b: any) => a.order - b.order);
+      systemPrompt += cols.map((c: any) => `"${c.name}"(${c.id})`).join(', ');
+      systemPrompt += '\n';
+    }
+    systemPrompt += '\n';
+  }
+
+  systemPrompt += `INSTRUÇÕES IMPORTANTES:\n`;
+  systemPrompt += `- Use send_reply para responder ao cliente. A resposta DEVE ser em português brasileiro.\n`;
+  systemPrompt += `- Leia TODA a conversa anterior antes de responder. Considere o contexto completo.\n`;
+  systemPrompt += `- NUNCA envie mensagens em inglês, sem sentido, ou genéricas.\n`;
+  systemPrompt += `- Mantenha a persona definida no prompt master.\n`;
+  systemPrompt += `- NUNCA produza texto entre parênteses como "(aguardando resposta)" ou pensamentos internos. Apenas use send_reply.\n`;
+  systemPrompt += `- Se não precisa responder ao cliente, NÃO gere texto algum. Apenas execute as ferramentas necessárias.\n`;
+
+  if (isFirstActivation) {
+    systemPrompt += `\n⚠️ ATENÇÃO: Você ACABOU de ser ativado nesta etapa do fluxo.\n`;
+    systemPrompt += `- Esta é sua PRIMEIRA interação. Você DEVE iniciar seu trabalho conforme suas instruções.\n`;
+    systemPrompt += `- NÃO pule sua etapa. Mesmo que o histórico contenha informações relevantes, execute sua tarefa.\n`;
+    systemPrompt += `- Envie sua primeira mensagem ao cliente e aguarde a resposta dele.\n`;
+    systemPrompt += `- Você NÃO pode avançar o fluxo agora. Faça seu trabalho primeiro.\n`;
+  } else if (hasNextNodes) {
+    systemPrompt += `- Quando sua tarefa nesta etapa estiver COMPLETA, use advance_flow para avançar o fluxo.\n`;
+    systemPrompt += `- NÃO use advance_flow prematuramente. Só avance quando sua tarefa aqui estiver realmente concluída.\n`;
+  } else {
+    systemPrompt += `- Você é o último agente do fluxo. Continue atendendo até que a conversa se encerre naturalmente.\n`;
+  }
+
+  // Build messages (from provided history)
+  const aiMessages: any[] = [
+    { role: 'system', content: systemPrompt },
+    ...(conversationHistory || []),
+  ];
+
+  // Tools (same as production but only send_reply for simulation — tools don't execute)
+  const tools: any[] = [
+    {
+      type: 'function',
+      function: {
+        name: 'send_reply',
+        description: 'Enviar mensagem de resposta ao cliente.',
+        parameters: {
+          type: 'object',
+          properties: { message: { type: 'string', description: 'Texto da mensagem' } },
+          required: ['message'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'add_tag',
+        description: 'Adicionar uma tag ao contato',
+        parameters: {
+          type: 'object',
+          properties: { tag_id: { type: 'string', description: 'ID da tag' } },
+          required: ['tag_id'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'remove_tag',
+        description: 'Remover uma tag do contato',
+        parameters: {
+          type: 'object',
+          properties: { tag_id: { type: 'string', description: 'ID da tag' } },
+          required: ['tag_id'],
+        },
+      },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'move_pipeline',
+        description: 'Mover a conversa para uma coluna de pipeline',
+        parameters: {
+          type: 'object',
+          properties: {
+            pipeline_id: { type: 'string' },
+            column_id: { type: 'string' },
+          },
+          required: ['pipeline_id', 'column_id'],
+        },
+      },
+    },
+  ];
+
+  if (hasNextNodes && !isFirstActivation) {
+    tools.push({
+      type: 'function',
+      function: {
+        name: 'advance_flow',
+        description: 'Avançar para a próxima etapa do fluxo de orquestração.',
+        parameters: { type: 'object', properties: {}, required: [] },
+      },
+    });
+  }
+
+  // AI Call (same as production)
+  let replyText: string | null = null;
+  let toolsExecuted: any[] = [];
+  let shouldAdvance = false;
+  let round = 0;
+  let replySentViaTool = false;
+
+  while (round < 3) {
+    round++;
+    console.log(`[SIMULATION] Agent AI Round ${round}`);
+
+    const aiResponse = await fetch(aiConfig.endpoint, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${aiConfig.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ model: aiConfig.model, messages: aiMessages, tools, tool_choice: 'auto' }),
+    });
+
+    if (!aiResponse.ok) {
+      const errorText = await aiResponse.text();
+      console.error('[SIMULATION] AI error:', aiResponse.status, errorText);
+      if (aiResponse.status === 429) return { error: 'Rate limit excedido. Tente novamente em alguns segundos.' };
+      if (aiResponse.status === 402) return { error: 'Créditos insuficientes.' };
+      return { error: `AI gateway error: ${aiResponse.status}` };
+    }
+
+    const aiResult = await aiResponse.json();
+    const choice = aiResult.choices?.[0];
+    if (!choice) break;
+
+    aiMessages.push(choice.message);
+
+    if (!choice.message?.tool_calls || choice.message.tool_calls.length === 0) {
+      if (!replySentViaTool && !replyText && choice.message?.content) {
+        const candidateReply = choice.message.content.trim();
+        if (!isInternalThought(candidateReply)) {
+          replyText = candidateReply;
+        }
+      }
+      break;
+    }
+
+    const toolResults: any[] = [];
+    for (const toolCall of choice.message.tool_calls) {
+      const fnName = toolCall.function.name;
+      let fnArgs: any;
+      try { fnArgs = JSON.parse(toolCall.function.arguments); } catch { fnArgs = {}; }
+
+      console.log('[SIMULATION] Tool:', fnName, fnArgs);
+
+      if (fnName === 'send_reply' && fnArgs.message) {
+        if (!isInternalThought(fnArgs.message)) {
+          replyText = fnArgs.message;
+          replySentViaTool = true;
+        }
+        toolResults.push({ role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify({ success: true }) });
+        toolsExecuted.push({ name: 'send_reply', arguments: fnArgs });
+      } else if (fnName === 'advance_flow') {
+        shouldAdvance = true;
+        toolResults.push({ role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify({ success: true }) });
+        toolsExecuted.push({ name: 'advance_flow', arguments: {} });
+      } else if (fnName === 'add_tag') {
+        const tagName = allTags.find((t: any) => t.id === fnArgs.tag_id)?.name || fnArgs.tag_id;
+        toolResults.push({ role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify({ success: true, tag_name: tagName }) });
+        toolsExecuted.push({ name: 'add_tag', arguments: fnArgs, tag_name: tagName });
+      } else if (fnName === 'remove_tag') {
+        const tagName = allTags.find((t: any) => t.id === fnArgs.tag_id)?.name || fnArgs.tag_id;
+        toolResults.push({ role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify({ success: true, tag_name: tagName }) });
+        toolsExecuted.push({ name: 'remove_tag', arguments: fnArgs, tag_name: tagName });
+      } else if (fnName === 'move_pipeline') {
+        const pip = pipelines.find((p: any) => p.id === fnArgs.pipeline_id);
+        const col = pip?.columns?.find((c: any) => c.id === fnArgs.column_id);
+        toolResults.push({ role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify({ success: true, pipeline: pip?.name, column: col?.name }) });
+        toolsExecuted.push({ name: 'move_pipeline', arguments: fnArgs, pipeline_name: pip?.name, column_name: col?.name });
+      } else {
+        toolResults.push({ role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify({ success: false, error: 'Unknown tool' }) });
+      }
+    }
+
+    aiMessages.push(...toolResults);
+    if (shouldAdvance) break;
+    if (choice.finish_reason === 'stop') break;
+  }
+
+  // Strip internal annotations
+  if (replyText) replyText = stripInternalAnnotations(replyText);
+
+  return {
+    success: true,
+    content: replyText || '',
+    toolsExecuted,
+    shouldAdvance,
+    model: aiConfig.model,
+  };
+}
+
 // ==================== FLOW ENGINE (STATE MACHINE) ====================
 
 async function executeFlowOrchestration(
