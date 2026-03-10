@@ -15,13 +15,12 @@ Deno.serve(async (req) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
   );
 
-  // Find all waiting_input executions with NULL timeout that have remarketing steps
-  const { data: stuck, error } = await supabase
+  // Find all waiting_input executions with remarketing_step > 0 where contact already responded
+  const { data: active, error } = await supabase
     .from('flow_executions')
-    .select('id, current_node_id, flow_id, flow:flows(nodes)')
+    .select('id, conversation_id, remarketing_step, started_at')
     .eq('status', 'waiting_input')
-    .is('timeout_at', null)
-    .eq('remarketing_step', 0);
+    .gt('remarketing_step', 0);
 
   if (error) {
     return new Response(JSON.stringify({ error: error.message }), {
@@ -29,28 +28,32 @@ Deno.serve(async (req) => {
     });
   }
 
-  let fixed = 0;
-  for (const exec of (stuck || [])) {
-    const nodes = (exec.flow?.nodes || []) as any[];
-    const node = nodes.find((n: any) => n.id === exec.current_node_id);
-    const steps = node?.data?.remarketingSteps as any[] || [];
+  let canceled = 0;
+  for (const exec of (active || [])) {
+    // Check if contact responded after follow-ups started
+    const { data: recentMsg } = await supabase
+      .from('messages')
+      .select('id')
+      .eq('conversation_id', exec.conversation_id)
+      .eq('is_from_bot', false)
+      .gt('created_at', exec.started_at)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-    if (steps.length > 0) {
-      const firstStep = steps[0];
-      const delayMs = (firstStep.delayMinutes || 1) * 60 * 1000;
-      const timeoutAt = new Date(Date.now() + delayMs).toISOString();
-
-      console.log(`[FIX-REMARKETING] Fixing exec ${exec.id}: setting timeout in ${firstStep.delayMinutes}min`);
-
+    if (recentMsg) {
+      console.log(`[FIX-REMARKETING] Canceling exec ${exec.id}: contact responded`);
       await supabase.from('flow_executions').update({
-        timeout_at: timeoutAt,
+        status: 'completed',
+        timeout_at: null,
+        remarketing_step: 0,
+        completed_at: new Date().toISOString(),
       }).eq('id', exec.id);
-
-      fixed++;
+      canceled++;
     }
   }
 
-  return new Response(JSON.stringify({ success: true, fixed, checked: stuck?.length || 0 }), {
+  return new Response(JSON.stringify({ success: true, canceled, checked: active?.length || 0 }), {
     headers: { ...corsHeaders, 'Content-Type': 'application/json' }
   });
 });

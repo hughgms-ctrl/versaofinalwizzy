@@ -76,6 +76,30 @@ Deno.serve(async (req) => {
 
     for (const exec of timedOut) {
       try {
+        // Check if contact already responded — cancel follow-ups if so
+        if ((exec.remarketing_step || 0) > 0) {
+          const { data: recentMsg } = await supabase
+            .from('messages')
+            .select('id')
+            .eq('conversation_id', exec.conversation_id)
+            .eq('is_from_bot', false)
+            .gt('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (recentMsg) {
+            console.log(`[FLOW TIMEOUTS] Exec ${exec.id}: contact already responded — canceling follow-ups`);
+            await supabase.from('flow_executions').update({
+              status: 'completed',
+              timeout_at: null,
+              remarketing_step: 0,
+              completed_at: new Date().toISOString(),
+            }).eq('id', exec.id);
+            processed++;
+            continue;
+          }
+        }
         const nodes = (exec.flow?.nodes || []) as any[];
         const edges = (exec.flow?.edges || []) as any[];
         const currentNodeId = exec.current_node_id;

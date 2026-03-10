@@ -884,6 +884,8 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
             status: 'running',
             current_node_id: nextNodeId,
             variables: existingVars,
+            timeout_at: null,
+            remarketing_step: 0,
           }).eq('id', activeFlowExec.id);
 
           const resumePromise = fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/flow-execute`, {
@@ -903,6 +905,8 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
             status: 'completed',
             variables: existingVars,
             completed_at: new Date().toISOString(),
+            timeout_at: null,
+            remarketing_step: 0,
           }).eq('id', activeFlowExec.id);
 
           // Cleanup: reset service_mode and ai_agent_id
@@ -925,6 +929,8 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
           await supabase.from('flow_executions').update({
             status: 'completed',
             completed_at: new Date().toISOString(),
+            timeout_at: null,
+            remarketing_step: 0,
           }).eq('id', activeFlowExec.id);
 
           const { data: convMeta3 } = await supabase.from('conversations').select('metadata').eq('id', conversation.id).single();
