@@ -179,8 +179,9 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
       (async () => {
         for (let i = 0; i < remarketingSteps.length; i++) {
           const step = remarketingSteps[i];
-          // Accelerate delays for simulation: cap at 5 seconds per step
-          const simDelay = Math.min((step.delayMinutes || 1) * 60 * 1000, 5000);
+          // Simulate delays proportionally: 1min real = 3s simulated, min 5s, max 15s
+          const realMinutes = step.delayMinutes || 1;
+          const simDelay = Math.max(5000, Math.min(realMinutes * 3000, 15000));
           addMsg({ type: 'action', content: `⏱️ Aguardando ${step.delayMinutes}min (simulado: ${Math.round(simDelay / 1000)}s)`, actionIcon: '⏳' });
           
           // Wait, but check if user responded
@@ -633,14 +634,9 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
         addMsg({ type: 'action', content: `Transferindo para agente: ${agentName}`, actionIcon: '🤖' });
         await wait(600);
 
-        // If there's already user messages, call AI immediately
-        const hasUserMsg = messages.some(m => m.type === 'user');
-        if (hasUserMsg) {
-          await callAI(d, node.id);
-        } else {
-          // Wait for first user message
-          setSimState(prev => ({ ...prev, waitingForInput: true, inputVariable: 'ai_query' }));
-        }
+        // Always call AI immediately — agent should greet/respond based on conversation context
+        // The agent has the full conversation history and should act proactively
+        await callAI(d, node.id);
         break;
       }
 
