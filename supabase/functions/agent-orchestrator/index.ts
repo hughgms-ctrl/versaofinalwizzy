@@ -168,8 +168,38 @@ Deno.serve(async (req) => {
         .eq('organization_id', organizationId).eq('is_active', true),
     ]);
 
-    const messages = (messagesResult.data || []).reverse();
+    const rawMessages = (messagesResult.data || []).reverse();
     const agents = agentsResult.data || [];
+
+    // Fetch media transcriptions for messages that are audio/image/video
+    const mediaMessageIds = rawMessages
+      .filter((m: any) => ['audio', 'image', 'video'].includes(m.type) && m.id)
+      .map((m: any) => m.id);
+
+    let transcriptionsMap: Record<string, string> = {};
+    if (mediaMessageIds.length > 0) {
+      const { data: transcriptions } = await supabase
+        .from('media_transcriptions')
+        .select('message_id, transcription')
+        .in('message_id', mediaMessageIds);
+      if (transcriptions) {
+        for (const t of transcriptions) {
+          transcriptionsMap[t.message_id] = t.transcription;
+        }
+      }
+    }
+
+    // Enrich messages with transcription content
+    const messages = rawMessages.map((m: any) => {
+      if (transcriptionsMap[m.id]) {
+        const typeLabel = m.type === 'audio' ? '🎤 Áudio transcrito' : m.type === 'image' ? '🖼️ Descrição da imagem' : '🎥 Descrição do vídeo';
+        const enrichedContent = m.content
+          ? `${m.content}\n\n[${typeLabel}: ${transcriptionsMap[m.id]}]`
+          : `[${typeLabel}: ${transcriptionsMap[m.id]}]`;
+        return { ...m, content: enrichedContent };
+      }
+      return m;
+    });
     const allTags = tagsResult.data || [];
     const contactTags = contactTagsResult.data || [];
     const pipelines = pipelinesResult.data || [];
