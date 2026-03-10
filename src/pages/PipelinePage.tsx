@@ -37,6 +37,25 @@ const PipelinePage = () => {
   const { user } = useAuth();
   const { data: myShares = [] } = useConversationShares();
 
+  // Fetch pipeline positions for shared conversations to know which pipelines to show
+  const isRestricted = userRole && userRole !== 'owner' && userRole !== 'admin';
+  const hasPipelineRestriction = isRestricted && userPermissions?.pipeline_access_type === 'specific' && (userPermissions?.allowed_pipeline_ids?.length ?? 0) > 0;
+
+  const { data: sharedPipelinePositions = [] } = useQuery({
+    queryKey: ['shared-pipeline-positions', myShares.map(s => s.conversation_id)],
+    queryFn: async () => {
+      const sharedConvIds = myShares.map(s => s.conversation_id);
+      if (sharedConvIds.length === 0) return [];
+      const { data, error } = await supabase
+        .from('conversation_pipeline_positions')
+        .select('conversation_id, pipeline_id')
+        .in('conversation_id', sharedConvIds);
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!hasPipelineRestriction && myShares.length > 0,
+  });
+
   // Filter pipelines by selected workspace AND user permissions
   const pipelines = useMemo(() => {
     let filtered = allPipelines;
