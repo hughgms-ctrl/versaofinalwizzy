@@ -77,6 +77,7 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
   const [orgContext, setOrgContext] = useState<OrgContext | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const messagesRef = useRef<SimMessage[]>([]);
   const [feedbackDialogOpen, setFeedbackDialogOpen] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState<{ id: string; content: string; metadata: any } | null>(null);
 
