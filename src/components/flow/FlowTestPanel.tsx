@@ -696,6 +696,7 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
 
   const resetSimulation = () => {
     followUpResolveRef.current = null;
+    agentFirstCallRef.current = new Set();
     setMessages([]);
     messagesRef.current = [];
     setSimState({ currentNodeId: null, waitingForInput: false, variables: {}, activeFlowId: flowId, activeFlowData: initialFlow, parentFlowStack: [] });
