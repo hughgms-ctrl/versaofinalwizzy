@@ -218,6 +218,7 @@ const ContactsPage = () => {
                   unread_count: 0,
                   last_message_at: null,
                   assigned_to: null,
+                  ai_agent_id: null,
                   created_at: selectedContact.created_at,
                   updated_at: selectedContact.updated_at,
                   contact: {
