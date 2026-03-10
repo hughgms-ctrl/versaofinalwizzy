@@ -660,6 +660,15 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
     setUserInput('');
     addMsg({ type: 'user', content: val });
 
+    // If there's an active follow-up sequence, resolve it (user responded!)
+    if (followUpResolveRef.current) {
+      const resolve = followUpResolveRef.current;
+      followUpResolveRef.current = null;
+      setSimState(prev => ({ ...prev, followUpResolve: null, waitingForInput: false, variables: { ...prev.variables, [simState.inputVariable || 'resposta']: val } }));
+      resolve(true); // user responded
+      return;
+    }
+
     // Handle button selection
     if (simState.pendingButtons) {
       const matched = simState.pendingButtons.find(b => b.label.toLowerCase() === val.toLowerCase());
