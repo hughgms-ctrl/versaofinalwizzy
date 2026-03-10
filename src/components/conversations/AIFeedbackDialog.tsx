@@ -12,8 +12,52 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Sparkles, Loader2, Save, CheckCircle2 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+
+const FUNCTION_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/train-ai-agent`;
+const ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+
+// Robust fetch with automatic retry — never throws to the user
+async function callTrainAgent(body: Record<string, unknown>, maxRetries = 2): Promise<{ success: boolean; [key: string]: unknown }> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const resp = await fetch(FUNCTION_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${ANON_KEY}`,
+          'apikey': ANON_KEY,
+        },
+        body: JSON.stringify(body),
+      });
+
+      // Try to parse JSON regardless of status
+      let data: any;
+      try {
+        data = await resp.json();
+      } catch {
+        // If JSON parsing fails, create a fallback
+        data = { success: false, error: `Resposta inesperada do servidor (status ${resp.status})` };
+      }
+
+      // If we got a valid response (even with error), return it
+      if (data && typeof data === 'object') {
+        return data;
+      }
+
+      return { success: false, error: 'Resposta vazia do servidor' };
+    } catch (fetchError) {
+      console.warn(`[AIFeedback] Attempt ${attempt + 1} failed:`, fetchError);
+      if (attempt < maxRetries) {
+        // Wait before retry (500ms, 1000ms)
+        await new Promise(r => setTimeout(r, (attempt + 1) * 500));
+        continue;
+      }
+      return { success: false, error: 'Não foi possível conectar ao servidor. Verifique sua conexão.' };
+    }
+  }
+  return { success: false, error: 'Falha após múltiplas tentativas' };
+}
 
 interface AIFeedbackDialogProps {
   open: boolean;
@@ -60,37 +104,23 @@ export function AIFeedbackDialog({
     if (!feedback.trim()) return;
     setIsDrafting(true);
     try {
-      const { data, error } = await supabase.functions.invoke("train-ai-agent", {
-        body: {
-          mode: "draft",
-          feedback: feedback.trim(),
-          originalMessage,
-          organizationId,
-          messageId,
-        },
+      const data = await callTrainAgent({
+        mode: "draft",
+        feedback: feedback.trim(),
+        originalMessage: originalMessage || "",
+        organizationId,
+        messageId,
       });
 
-      // supabase.functions.invoke may return error for non-2xx (shouldn't happen now)
-      if (error) {
-        console.error("AI Draft invoke error:", error);
-        toast.error("Erro ao conectar com o servidor. Tente novamente.");
-        return;
-      }
-      
-      // Check for application-level error in the response body
-      if (data?.error) {
-        console.error("AI Draft app error:", data.error);
-        toast.error(data.error);
+      if (data.error) {
+        toast.error(String(data.error));
         return;
       }
 
-      setSituation(data?.situation || '');
-      setRuleText(data?.rule || '');
+      setSituation(String(data.situation || ''));
+      setRuleText(String(data.rule || ''));
       setHasDrafted(true);
       toast.success("Regra gerada com sucesso!");
-    } catch (error: any) {
-      console.error("AI Draft unexpected error:", error);
-      toast.error("Erro inesperado ao gerar regra. Tente novamente.");
     } finally {
       setIsDrafting(false);
     }
@@ -103,13 +133,13 @@ export function AIFeedbackDialog({
     }
 
     if (!organizationId) {
-      toast.error("Organização não identificada. Recarregue a página.");
+      toast.error("Sessão expirada. Recarregue a página.");
       return;
     }
 
     setIsApplying(true);
     try {
-      const body = {
+      const data = await callTrainAgent({
         mode: "apply",
         feedback: feedback.trim() || null,
         situation: situation.trim(),
@@ -123,34 +153,16 @@ export function AIFeedbackDialog({
         },
         organizationId,
         messageId,
-        originalMessage,
-      };
-
-      console.log("[AIFeedback] Saving rule:", JSON.stringify(body, null, 2));
-
-      const { data, error } = await supabase.functions.invoke("train-ai-agent", {
-        body,
+        originalMessage: originalMessage || "",
       });
 
-      // supabase.functions.invoke may return error for non-2xx (shouldn't happen now)
-      if (error) {
-        console.error("[AIFeedback] Invoke error:", error);
-        toast.error("Erro ao conectar com o servidor. Tente novamente.");
-        return;
-      }
-
-      // Check for application-level error in the response body
-      if (data?.error) {
-        console.error("[AIFeedback] App error:", data.error);
-        toast.error(data.error);
+      if (data.error) {
+        toast.error(String(data.error));
         return;
       }
 
       toast.success("Regra salva com sucesso!");
       onOpenChange(false);
-    } catch (error: any) {
-      console.error("Apply training unexpected error:", error);
-      toast.error("Erro inesperado ao salvar regra. Tente novamente.");
     } finally {
       setIsApplying(false);
     }
