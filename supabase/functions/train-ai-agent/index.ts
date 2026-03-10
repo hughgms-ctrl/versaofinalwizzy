@@ -119,13 +119,18 @@ Responda APENAS com o JSON, sem markdown ou comentários.`;
     }
 
     // ========== APPLY MODE ==========
-    if (!feedback || !target) {
-      return new Response(JSON.stringify({ error: 'feedback and target are required' }), {
+    if (!target) {
+      return new Response(JSON.stringify({ error: 'target is required' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
     const { situation, rule: ruleText } = payload;
+    if (!situation && !ruleText && !feedback) {
+      return new Response(JSON.stringify({ error: 'situation and rule are required' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     console.log(`[TRAIN-AI] Saving structured rule. Target: ${target}, messageId: ${messageId}`);
 
@@ -134,9 +139,9 @@ Responda APENAS com o JSON, sem markdown ou comentários.`;
       organization_id: organizationId,
       target_type: target,
       situation: situation || 'Regra geral',
-      rule: ruleText || feedback,
+      rule: ruleText || feedback || 'Regra não especificada',
       original_message: originalMessage || null,
-      original_feedback: feedback,
+      original_feedback: feedback || null,
       message_id: messageId || null,
       is_active: true,
     };
