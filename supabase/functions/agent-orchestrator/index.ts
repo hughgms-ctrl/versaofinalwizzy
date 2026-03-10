@@ -2399,14 +2399,14 @@ function resolveAIConfig(
   const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
 
   if (!integrationConfig) {
-    return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model: 'google/gemini-1.5-flash-latest' };
+    return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model: 'google/gemini-2.5-flash' };
   }
 
   // Check feature-specific override first
   const featureProvider = integrationConfig[`${feature}_provider`];
   const featureModel = integrationConfig[`${feature}_model`];
   let provider = overrideProvider || featureProvider || integrationConfig.ai_provider || 'lovable';
-  let model = overrideModel || featureModel || integrationConfig.default_model || 'google/gemini-1.5-flash-latest';
+  let model = overrideModel || featureModel || integrationConfig.default_model || 'google/gemini-2.5-flash';
 
   // Ensure format is correct depending on provider
   if (provider === 'gemini') {
@@ -2421,13 +2421,13 @@ function resolveAIConfig(
     case 'openai':
       if (!integrationConfig.openai_api_key) {
         console.warn('OpenAI selected but no API key, falling back to Lovable');
-        return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model: 'google/gemini-1.5-flash-latest' };
+        return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model: 'google/gemini-2.5-flash' };
       }
       return { endpoint: OPENAI_ENDPOINT, apiKey: integrationConfig.openai_api_key, model };
     case 'gemini':
       if (!integrationConfig.gemini_api_key) {
         console.warn('Gemini selected but no API key, falling back to Lovable');
-        return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model: 'google/gemini-1.5-flash-latest' };
+        return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model: 'google/gemini-2.5-flash' };
       }
       return { endpoint: GEMINI_ENDPOINT, apiKey: integrationConfig.gemini_api_key, model };
     default:
