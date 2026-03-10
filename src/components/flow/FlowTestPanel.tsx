@@ -5,8 +5,10 @@ import { Sheet, SheetContent } from '@/components/ui/sheet';
 import {
   Play, Send, Bot, Loader2, RotateCcw, X, CheckCheck,
   Video, FileText, Tag, GitBranch, ArrowRightLeft,
-  Zap, MessageSquare, Users, Sparkles, Smartphone
+  Zap, MessageSquare, Users, Sparkles, Smartphone,
+  ThumbsUp, ThumbsDown
 } from 'lucide-react';
+import { AIFeedbackDialog } from '@/components/conversations/AIFeedbackDialog';
 import { useFlow } from '@/hooks/useFlows';
 import { Node, Edge } from '@xyflow/react';
 import { ContentItem } from '@/types/flow';
@@ -30,6 +32,12 @@ interface SimMessage {
   status: 'sending' | 'sent' | 'delivered' | 'read';
   agentName?: string;
   actionIcon?: string;
+  aiMetadata?: {
+    agent_id?: string;
+    flow_id?: string;
+    node_id?: string;
+    master_prompt_id?: string;
+  };
 }
 
 interface SimState {
@@ -68,6 +76,8 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
   const [orgContext, setOrgContext] = useState<OrgContext | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [feedbackDialogOpen, setFeedbackDialogOpen] = useState(false);
+  const [feedbackMessage, setFeedbackMessage] = useState<{ id: string; content: string; metadata: any } | null>(null);
 
   const [simState, setSimState] = useState<SimState>({
     currentNodeId: null,
@@ -234,7 +244,7 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
         reply = reply.replace(/\[RESULTADO:\s*[^\]]+\]/gi, '').trim();
       }
 
-      addMsg({ type: 'bot', content: reply, agentName: agent?.name || simState.activeAgentName });
+      addMsg({ type: 'bot', content: reply, agentName: agent?.name || simState.activeAgentName, aiMetadata: { agent_id: agent?.id || simState.activeAgentId, flow_id: simState.activeFlowId, node_id: nodeId, master_prompt_id: undefined } });
 
       // If outcome detected and we have outgoing edges, try to route
       if (detectedOutcome && simState.currentNodeId) {
@@ -790,9 +800,30 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
                       )}
                       {renderMediaPreview(msg)}
                       <p className="text-[13px] leading-relaxed whitespace-pre-wrap text-white/85">{msg.content}</p>
-                      <div className="flex items-center justify-end gap-1 mt-1 opacity-40">
-                        <span className="text-[9px] text-white/60">{msg.timestamp.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
-                        {msg.type === 'user' && <CheckCheck className={cn("h-3 w-3", msg.status === 'read' ? 'text-blue-400' : 'text-white/40')} />}
+                      <div className="flex items-center justify-between mt-1">
+                        {msg.type === 'bot' && msg.aiMetadata && (
+                          <div className="flex items-center gap-0.5">
+                            <button
+                              onClick={() => { setFeedbackMessage({ id: msg.id, content: msg.content, metadata: msg.aiMetadata }); setFeedbackDialogOpen(true); }}
+                              className="p-1 rounded hover:bg-white/10 transition-colors group"
+                              title="Treinar IA com esta mensagem"
+                            >
+                              <ThumbsDown className="h-3 w-3 text-white/20 group-hover:text-red-400 transition-colors" />
+                            </button>
+                            <button
+                              onClick={() => { setFeedbackMessage({ id: msg.id, content: msg.content, metadata: msg.aiMetadata }); setFeedbackDialogOpen(true); }}
+                              className="p-1 rounded hover:bg-white/10 transition-colors group"
+                              title="Criar regra positiva"
+                            >
+                              <ThumbsUp className="h-3 w-3 text-white/20 group-hover:text-emerald-400 transition-colors" />
+                            </button>
+                          </div>
+                        )}
+                        {!msg.aiMetadata && <div />}
+                        <div className="flex items-center gap-1 opacity-40">
+                          <span className="text-[9px] text-white/60">{msg.timestamp.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+                          {msg.type === 'user' && <CheckCheck className={cn("h-3 w-3", msg.status === 'read' ? 'text-blue-400' : 'text-white/40')} />}
+                        </div>
                       </div>
                     </div>
                   )}
@@ -880,6 +911,18 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
           </div>
         )}
       </SheetContent>
+
+      {/* AI Feedback Dialog - same as conversations */}
+      {feedbackMessage && (
+        <AIFeedbackDialog
+          open={feedbackDialogOpen}
+          onOpenChange={setFeedbackDialogOpen}
+          messageId={feedbackMessage.id}
+          originalMessage={feedbackMessage.content}
+          metadata={feedbackMessage.metadata || {}}
+          organizationId={orgContext?.organizationId || ''}
+        />
+      )}
     </Sheet>
   );
 }
