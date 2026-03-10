@@ -77,6 +77,7 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
   const [orgContext, setOrgContext] = useState<OrgContext | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const messagesRef = useRef<SimMessage[]>([]);
   const [feedbackDialogOpen, setFeedbackDialogOpen] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState<{ id: string; content: string; metadata: any } | null>(null);
 
@@ -138,10 +139,14 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
   const addMsg = useCallback((msg: Omit<SimMessage, 'id' | 'timestamp' | 'status'>) => {
     const newId = `m-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const newMsg: SimMessage = { ...msg, id: newId, timestamp: new Date(), status: msg.type === 'bot' ? 'sending' : 'sent' };
-    setMessages(prev => [...prev, newMsg]);
+    setMessages(prev => {
+      const updated = [...prev, newMsg];
+      messagesRef.current = updated;
+      return updated;
+    });
     if (msg.type === 'bot') {
-      setTimeout(() => setMessages(prev => prev.map(m => m.id === newId ? { ...m, status: 'delivered' } : m)), 600);
-      setTimeout(() => setMessages(prev => prev.map(m => m.id === newId ? { ...m, status: 'read' } : m)), 1200);
+      setTimeout(() => setMessages(prev => { const u = prev.map(m => m.id === newId ? { ...m, status: 'delivered' as const } : m); messagesRef.current = u; return u; }), 600);
+      setTimeout(() => setMessages(prev => { const u = prev.map(m => m.id === newId ? { ...m, status: 'read' as const } : m); messagesRef.current = u; return u; }), 1200);
     }
     return newId;
   }, []);
@@ -271,14 +276,16 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
 
       sysPrompt += `INSTRUÇÕES IMPORTANTES:\n`;
       sysPrompt += `- Responda SEMPRE em português brasileiro.\n`;
-      sysPrompt += `- Leia TODA a conversa anterior antes de responder.\n`;
+      sysPrompt += `- Leia TODA a conversa anterior antes de responder. NUNCA repita perguntas já respondidas pelo cliente.\n`;
+      sysPrompt += `- Se o cliente já forneceu informações na conversa, use-as diretamente e avance para o próximo passo.\n`;
+      sysPrompt += `- Continue a conversa de forma natural e fluida, como se fosse uma única interação contínua.\n`;
       sysPrompt += `- NUNCA envie mensagens em inglês, sem sentido, ou genéricas.\n`;
       sysPrompt += `- Mantenha a persona definida.\n`;
       sysPrompt += `- NÃO produza texto entre parênteses ou pensamentos internos.\n`;
-      sysPrompt += `- Esta é uma SIMULAÇÃO DE TESTE. Responda como faria em um atendimento real.\n`;
+      sysPrompt += `- NÃO mencione transições de agentes, transferências ou mudanças internas do sistema.\n`;
 
-      // Conversation history
-      const history = messages
+      // Conversation history — use ref for fresh data (avoids stale closure)
+      const history = messagesRef.current
         .filter(m => m.type === 'user' || m.type === 'bot')
         .map(m => ({ role: m.type === 'user' ? 'user' : 'assistant', content: m.content }));
 
@@ -355,7 +362,7 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
 
     // For custom/AI-evaluated conditions, use AI
     try {
-      const history = messages.filter(m => m.type === 'user' || m.type === 'bot').map(m => `${m.type === 'user' ? 'CLIENTE' : 'IA'}: ${m.content}`).join('\n');
+      const history = messagesRef.current.filter(m => m.type === 'user' || m.type === 'bot').map(m => `${m.type === 'user' ? 'CLIENTE' : 'IA'}: ${m.content}`).join('\n');
       const outEdges = edges.filter(e => e.source === nodeId);
       const branches = outEdges.map(e => e.sourceHandle || 'default').filter(Boolean);
 
@@ -695,6 +702,7 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
   const resetSimulation = () => {
     followUpResolveRef.current = null;
     setMessages([]);
+    messagesRef.current = [];
     setSimState({ currentNodeId: null, waitingForInput: false, variables: {}, activeFlowId: flowId, activeFlowData: initialFlow, parentFlowStack: [] });
     setIsStarted(false);
     setUserInput('');
