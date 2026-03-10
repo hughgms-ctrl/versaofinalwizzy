@@ -222,7 +222,18 @@ Deno.serve(async (req) => {
       integrationConfig, flowExecutionId, trainingRules,
     };
 
-    // 4. Check for flow-based orchestration
+    // 4. Resolve flow_id from available sources
+    let resolvedFlowId = (masterPrompt as any).flow_id || null;
+    if (!resolvedFlowId && flowExecutionId) {
+      const { data: flowExec } = await supabase
+        .from('flow_executions')
+        .select('flow_id')
+        .eq('id', flowExecutionId)
+        .single();
+      if (flowExec) resolvedFlowId = flowExec.flow_id;
+    }
+
+    // 5. Check for flow-based orchestration
     const flowNodes = masterPrompt.agent_rules?.orchestration_nodes;
     const flowEdges = masterPrompt.agent_rules?.orchestration_edges;
 
@@ -235,7 +246,7 @@ Deno.serve(async (req) => {
       result = await executeLegacyOrchestration(supabase, context, enrichedMessageContent);
     }
 
-    // 5. Send reply (strip any leaked internal annotations)
+    // 6. Send reply (strip any leaked internal annotations)
     if (result.replyText) {
       result.replyText = stripInternalAnnotations(result.replyText);
     }
@@ -244,7 +255,7 @@ Deno.serve(async (req) => {
         agent_id: result.active_agent_id || conversation.ai_agent_id,
         master_prompt_id: masterPrompt.id,
         node_id: result.current_node_id,
-        flow_id: (masterPrompt as any).flow_id
+        flow_id: resolvedFlowId,
       });
     }
 
