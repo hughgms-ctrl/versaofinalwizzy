@@ -17,6 +17,8 @@ import { useQuery } from '@tanstack/react-query';
 import { useTags } from '@/hooks/useTags';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { NewConversationDialog } from '@/components/conversations/NewConversationDialog';
+import { useUserPermissions, useCurrentUserRole } from '@/hooks/useUserPermissions';
+import { useAuth } from '@/hooks/useAuth';
 
 const ConversationsPage = () => {
   const [selectedConversation, setSelectedConversation] = useState<DbConversation | null>(null);
