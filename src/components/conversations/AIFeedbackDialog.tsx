@@ -45,24 +45,16 @@ export function AIFeedbackDialog({
   const [hasDrafted, setHasDrafted] = useState(false);
   const [target, setTarget] = useState<"agent" | "flow_node" | "master_prompt">("agent");
 
-  // Determine available targets based on metadata
-  const canUpdateFlow = !!metadata.flow_id && !!metadata.node_id;
-  const canUpdateMaster = !!metadata.master_prompt_id;
-  const canUpdateBase = !!metadata.agent_id;
-
-  // Set default target based on availability
+  // Reset state when dialog opens
   useEffect(() => {
     if (open) {
-      if (canUpdateFlow) setTarget("flow_node");
-      else if (canUpdateBase) setTarget("agent");
-      else if (canUpdateMaster) setTarget("master_prompt");
-      
+      setTarget("agent");
       setFeedback("");
       setSituation("");
       setRuleText("");
       setHasDrafted(false);
     }
-  }, [open, canUpdateFlow, canUpdateBase, canUpdateMaster]);
+  }, [open]);
 
   const handleDraftAI = async () => {
     if (!feedback.trim()) return;
