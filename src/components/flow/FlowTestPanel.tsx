@@ -145,8 +145,8 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
       return updated;
     });
     if (msg.type === 'bot') {
-      setTimeout(() => setMessages(prev => { const u = prev.map(m => m.id === newId ? { ...m, status: 'delivered' } : m); messagesRef.current = u; return u; }), 600);
-      setTimeout(() => setMessages(prev => { const u = prev.map(m => m.id === newId ? { ...m, status: 'read' } : m); messagesRef.current = u; return u; }), 1200);
+      setTimeout(() => setMessages(prev => { const u = prev.map(m => m.id === newId ? { ...m, status: 'delivered' as const } : m); messagesRef.current = u; return u; }), 600);
+      setTimeout(() => setMessages(prev => { const u = prev.map(m => m.id === newId ? { ...m, status: 'read' as const } : m); messagesRef.current = u; return u; }), 1200);
     }
     return newId;
   }, []);
