@@ -23,6 +23,8 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useUserPermissions, useCurrentUserRole } from '@/hooks/useUserPermissions';
+import { useAuth } from '@/hooks/useAuth';
+import { useConversationShares } from '@/hooks/useConversationShares';
 
 const PipelinePage = () => {
   const { data: allPipelines = [], isLoading: pipelinesLoading } = usePipelines();
