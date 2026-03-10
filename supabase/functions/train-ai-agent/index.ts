@@ -139,9 +139,9 @@ Responda APENAS com o JSON, sem markdown ou comentários.`;
       organization_id: organizationId,
       target_type: target,
       situation: situation || 'Regra geral',
-      rule: ruleText || feedback,
+      rule: ruleText || feedback || 'Regra não especificada',
       original_message: originalMessage || null,
-      original_feedback: feedback,
+      original_feedback: feedback || null,
       message_id: messageId || null,
       is_active: true,
     };
