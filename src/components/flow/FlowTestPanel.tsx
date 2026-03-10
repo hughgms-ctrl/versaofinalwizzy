@@ -634,14 +634,9 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
         addMsg({ type: 'action', content: `Transferindo para agente: ${agentName}`, actionIcon: '🤖' });
         await wait(600);
 
-        // If there's already user messages, call AI immediately
-        const hasUserMsg = messages.some(m => m.type === 'user');
-        if (hasUserMsg) {
-          await callAI(d, node.id);
-        } else {
-          // Wait for first user message
-          setSimState(prev => ({ ...prev, waitingForInput: true, inputVariable: 'ai_query' }));
-        }
+        // Always call AI immediately — agent should greet/respond based on conversation context
+        // The agent has the full conversation history and should act proactively
+        await callAI(d, node.id);
         break;
       }
 
