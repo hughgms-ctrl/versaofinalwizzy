@@ -168,8 +168,38 @@ Deno.serve(async (req) => {
         .eq('organization_id', organizationId).eq('is_active', true),
     ]);
 
-    const messages = (messagesResult.data || []).reverse();
+    const rawMessages = (messagesResult.data || []).reverse();
     const agents = agentsResult.data || [];
+
+    // Fetch media transcriptions for messages that are audio/image/video
+    const mediaMessageIds = rawMessages
+      .filter((m: any) => ['audio', 'image', 'video'].includes(m.type) && m.id)
+      .map((m: any) => m.id);
+
+    let transcriptionsMap: Record<string, string> = {};
+    if (mediaMessageIds.length > 0) {
+      const { data: transcriptions } = await supabase
+        .from('media_transcriptions')
+        .select('message_id, transcription')
+        .in('message_id', mediaMessageIds);
+      if (transcriptions) {
+        for (const t of transcriptions) {
+          transcriptionsMap[t.message_id] = t.transcription;
+        }
+      }
+    }
+
+    // Enrich messages with transcription content
+    const messages = rawMessages.map((m: any) => {
+      if (transcriptionsMap[m.id]) {
+        const typeLabel = m.type === 'audio' ? '🎤 Áudio transcrito' : m.type === 'image' ? '🖼️ Descrição da imagem' : '🎥 Descrição do vídeo';
+        const enrichedContent = m.content
+          ? `${m.content}\n\n[${typeLabel}: ${transcriptionsMap[m.id]}]`
+          : `[${typeLabel}: ${transcriptionsMap[m.id]}]`;
+        return { ...m, content: enrichedContent };
+      }
+      return m;
+    });
     const allTags = tagsResult.data || [];
     const contactTags = contactTagsResult.data || [];
     const pipelines = pipelinesResult.data || [];
@@ -199,10 +229,10 @@ Deno.serve(async (req) => {
     let result;
     if (flowNodes && flowNodes.length > 0) {
       console.log('Using FLOW ENGINE (state machine)');
-      result = await executeFlowOrchestration(supabase, context, flowNodes, flowEdges || [], messageContent);
+      result = await executeFlowOrchestration(supabase, context, flowNodes, flowEdges || [], enrichedMessageContent);
     } else {
       console.log('Using LEGACY orchestration (AI-only)');
-      result = await executeLegacyOrchestration(supabase, context, messageContent);
+      result = await executeLegacyOrchestration(supabase, context, enrichedMessageContent);
     }
 
     // 5. Send reply (strip any leaked internal annotations)
@@ -231,6 +261,15 @@ Deno.serve(async (req) => {
       execution_time_ms: executionTimeMs,
     });
 
+    // Enrich messageContent if it's just '[mídia]' — use the last inbound message's enriched content
+    let enrichedMessageContent = messageContent;
+    if (messageContent === '[mídia]' || !messageContent) {
+      const lastInbound = [...messages].reverse().find((m: any) => m.direction === 'inbound');
+      if (lastInbound?.content && lastInbound.content !== '[mídia]') {
+        enrichedMessageContent = lastInbound.content;
+        console.log('Enriched messageContent from transcription:', enrichedMessageContent.substring(0, 100));
+      }
+    }
     console.log(`=== ORCHESTRATOR COMPLETE (${executionTimeMs}ms, ${result.toolsExecuted.length} tools) ===`);
 
     return new Response(JSON.stringify({
