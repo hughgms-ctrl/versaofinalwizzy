@@ -49,7 +49,19 @@ Deno.serve(async (req) => {
 
     if (!LOVABLE_API_KEY) throw new Error('LOVABLE_API_KEY is not configured');
 
-    const { conversationId, messageContent, masterPromptOverride, additionalContext, flowExecutionId } = await req.json();
+    const payload = await req.json();
+    const { conversationId, messageContent, masterPromptOverride, additionalContext, flowExecutionId } = payload;
+
+    // ===== SIMULATION MODE =====
+    // Called by the Flow Builder simulator. Uses exact same prompt-building logic
+    // but skips DB writes/ZAPI and takes conversation history from the request body.
+    if (payload.simulationMode) {
+      const simResult = await handleSimulation(supabase, payload, LOVABLE_API_KEY!);
+      return new Response(JSON.stringify(simResult), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     if (!conversationId || !messageContent) {
       return new Response(JSON.stringify({ error: 'conversationId and messageContent are required' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
