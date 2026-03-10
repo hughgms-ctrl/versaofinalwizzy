@@ -792,10 +792,19 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
   };
 
   const handleButtonClick = async (btn: { id: string; label: string }) => {
-    setUserInput(btn.label);
-    // Let handleUserInput process it
     const val = btn.label;
     addMsg({ type: 'user', content: val });
+    setUserInput('');
+
+    // If follow-up sequence is active, resolve it
+    if (followUpResolveRef.current) {
+      const resolve = followUpResolveRef.current;
+      followUpResolveRef.current = null;
+      setSimState(prev => ({ ...prev, followUpResolve: null, waitingForInput: false, pendingButtons: undefined, variables: { ...prev.variables, button_choice: val } }));
+      resolve(true);
+      return;
+    }
+
     setSimState(prev => ({ ...prev, waitingForInput: false, pendingButtons: undefined, variables: { ...prev.variables, button_choice: val } }));
     await wait(300);
     const nodes = simState.activeFlowData.nodes as Node[];
@@ -809,7 +818,6 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
       else endFlow();
       setIsProcessing(false);
     }
-    setUserInput('');
   };
 
   const handleListRowClick = async (row: { id: string; title: string }) => {
