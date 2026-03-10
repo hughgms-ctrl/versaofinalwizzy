@@ -754,7 +754,7 @@ async function invokeAgentAI(
   // Inject training rules
   const rulesSection = buildTrainingRulesSection(ctx.trainingRules, {
     agentId: agent?.id, masterPromptId: ctx.masterPrompt?.id,
-    flowId: (ctx.masterPrompt as any)?.flow_id, nodeId: agentNode?.id,
+    flowId: ctx.resolvedFlowId || (ctx.masterPrompt as any)?.flow_id, nodeId: agentNode?.id,
   });
   if (rulesSection) systemPrompt += rulesSection;
 
