@@ -1,29 +1,11 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import { Sheet, SheetContent } from '@/components/ui/sheet';
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet';
-import {
-  Play,
-  Send,
-  Bot,
-  User,
-  Loader2,
-  RotateCcw,
-  X,
-  CheckCheck,
-  Clock,
-  Image as ImageIcon,
-  Video,
-  Music,
-  FileText,
-  Smartphone
+  Play, Send, Bot, Loader2, RotateCcw, X, CheckCheck,
+  Video, FileText, Tag, GitBranch, ArrowRightLeft,
+  Zap, MessageSquare, Users, Sparkles, Smartphone
 } from 'lucide-react';
 import { useFlow } from '@/hooks/useFlows';
 import { Node, Edge } from '@xyflow/react';
@@ -38,716 +20,800 @@ interface FlowTestPanelProps {
   flowName: string;
 }
 
-interface SimulatedMessage {
+interface SimMessage {
   id: string;
-  type: 'user' | 'bot' | 'system';
+  type: 'user' | 'bot' | 'system' | 'action';
   content: string;
   mediaType?: 'image' | 'video' | 'audio' | 'document';
   mediaUrl?: string;
   timestamp: Date;
   status: 'sending' | 'sent' | 'delivered' | 'read';
+  agentName?: string;
+  actionIcon?: string;
 }
 
-interface SimulationState {
+interface SimState {
   currentNodeId: string | null;
   waitingForInput: boolean;
   inputVariable?: string;
-  inputType?: string;
   variables: Record<string, unknown>;
   pendingButtons?: Array<{ id: string; label: string }>;
+  pendingList?: { title: string; buttonText: string; sections: Array<{ title: string; rows: Array<{ id: string; title: string; description?: string }> }> };
   activeFlowId: string;
   activeFlowData: any;
+  activeAgentId?: string;
+  activeAgentName?: string;
+  activeAgentPrompt?: string;
+  expectedOutcomes?: string[];
+  parentFlowStack: Array<{ flowId: string; flowData: any; nodeId: string; nodes: Node[]; edges: Edge[] }>;
 }
 
-const SYSTEM_LOG_ICONS = {
-  tag: '🏷️',
-  pipeline: '📋',
-  flow: '🔄',
-  wait: '⏳',
-  agent: '🤖',
-  master: '🧠',
-  start: '▶️',
-  finish: '✅'
-};
+// Preloaded org data
+interface OrgContext {
+  tags: Array<{ id: string; name: string; color?: string }>;
+  pipelines: Array<{ id: string; name: string; columns: Array<{ id: string; name: string; order: number }> }>;
+  agents: Array<{ id: string; name: string; prompt_base: string; persona?: string }>;
+  trainingRules: Array<{ id: string; target_type: string; agent_id?: string; master_prompt_id?: string; flow_id?: string; node_id?: string; situation: string; rule: string; is_active: boolean }>;
+  organizationId: string;
+}
 
 export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTestPanelProps) {
-  const { data: flow } = useFlow(flowId);
-  const [messages, setMessages] = useState<SimulatedMessage[]>([]);
+  const { data: initialFlow } = useFlow(flowId);
+  const [messages, setMessages] = useState<SimMessage[]>([]);
   const [userInput, setUserInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
-  const { data: initialFlow } = useFlow(flowId);
-  const [simulationState, setSimulationState] = useState<SimulationState>({
+  const [isStarted, setIsStarted] = useState(false);
+  const [isThinking, setIsThinking] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [orgContext, setOrgContext] = useState<OrgContext | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const [simState, setSimState] = useState<SimState>({
     currentNodeId: null,
     waitingForInput: false,
     variables: {},
     activeFlowId: flowId,
-    activeFlowData: null
+    activeFlowData: null,
+    parentFlowStack: [],
   });
 
+  // Load flow data
   useEffect(() => {
-    if (initialFlow && !simulationState.activeFlowData) {
-      setSimulationState(prev => ({ ...prev, activeFlowData: initialFlow }));
+    if (initialFlow && !simState.activeFlowData) {
+      setSimState(prev => ({ ...prev, activeFlowData: initialFlow }));
     }
   }, [initialFlow]);
-  const [isStarted, setIsStarted] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
 
-  // States for AI thinking
-  const [isThinking, setIsThinking] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
-  const [currentAgentName, setCurrentAgentName] = useState<string | null>(null);
+  // Load org context (tags, pipelines, agents, training rules)
+  useEffect(() => {
+    if (!initialFlow?.organization_id) return;
+    const orgId = initialFlow.organization_id;
 
-  // Auto-scroll to bottom
+    Promise.all([
+      supabase.from('tags').select('id, name, color').eq('organization_id', orgId),
+      supabase.from('pipelines').select('id, name, columns:pipeline_columns(id, name, order)').eq('organization_id', orgId),
+      supabase.from('ai_agents').select('id, name, prompt_base, persona').eq('organization_id', orgId).eq('is_active', true),
+      supabase.from('agent_training_rules').select('*').eq('organization_id', orgId).eq('is_active', true),
+    ]).then(([tagsRes, pipRes, agentsRes, rulesRes]) => {
+      setOrgContext({
+        tags: tagsRes.data || [],
+        pipelines: (pipRes.data || []).map((p: any) => ({
+          ...p,
+          columns: (p.columns || []).sort((a: any, b: any) => a.order - b.order),
+        })),
+        agents: agentsRes.data || [],
+        trainingRules: rulesRes.data || [],
+        organizationId: orgId,
+      });
+    });
+  }, [initialFlow?.organization_id]);
+
+  // Auto-scroll
   useEffect(() => {
     if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      setTimeout(() => {
+        scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+      }, 100);
     }
-  }, [messages, isThinking]);
+  }, [messages, isThinking, isProcessing]);
 
-  // Focus input when waiting for user input
+  // Focus input
   useEffect(() => {
-    if (simulationState.waitingForInput && inputRef.current) {
-      inputRef.current.focus();
-    }
-  }, [simulationState.waitingForInput]);
+    if (simState.waitingForInput && inputRef.current) inputRef.current.focus();
+  }, [simState.waitingForInput]);
 
-  const resetSimulation = () => {
-    setMessages([]);
-    setSimulationState({
-      currentNodeId: null,
-      waitingForInput: false,
-      variables: {},
-      activeFlowId: flowId,
-      activeFlowData: initialFlow
-    });
-    setIsStarted(false);
-    setUserInput('');
-    setIsThinking(false);
-    setIsRecording(false);
-    setCurrentAgentName(null);
-  };
-
-  const addMessage = (msg: Omit<SimulatedMessage, 'id' | 'timestamp' | 'status'>) => {
-    const newId = `msg-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    const newMsg: SimulatedMessage = {
-      ...msg,
-      id: newId,
-      timestamp: new Date(),
-      status: msg.type === 'bot' ? 'sending' : 'sent',
-    };
+  // ===== HELPERS =====
+  const addMsg = useCallback((msg: Omit<SimMessage, 'id' | 'timestamp' | 'status'>) => {
+    const newId = `m-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const newMsg: SimMessage = { ...msg, id: newId, timestamp: new Date(), status: msg.type === 'bot' ? 'sending' : 'sent' };
     setMessages(prev => [...prev, newMsg]);
-
-    // Simulate message delivery
     if (msg.type === 'bot') {
-      setTimeout(() => {
-        setMessages(prev => prev.map(m =>
-          m.id === newId ? { ...m, status: 'delivered' as const } : m
-        ));
-      }, 500);
-      setTimeout(() => {
-        setMessages(prev => prev.map(m =>
-          m.id === newId ? { ...m, status: 'read' as const } : m
-        ));
-      }, 1000);
+      setTimeout(() => setMessages(prev => prev.map(m => m.id === newId ? { ...m, status: 'delivered' } : m)), 600);
+      setTimeout(() => setMessages(prev => prev.map(m => m.id === newId ? { ...m, status: 'read' } : m)), 1200);
     }
-
     return newId;
+  }, []);
+
+  const wait = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+  const findNext = (nodeId: string, nodes: Node[], edges: Edge[], handle?: string): Node | null => {
+    const edge = edges.find(e => e.source === nodeId && (handle ? e.sourceHandle === handle : true));
+    return edge ? nodes.find(n => n.id === edge.target) || null : null;
   };
 
-  const finalizeSimulation = (silent = false) => {
-    if (!silent) {
-      addMessage({
-        type: 'system',
-        content: `${SYSTEM_LOG_ICONS.finish} [IA_TRANSITION] O FLUXO TERMINOU. AGORA VOCÊ PODE FALAR COM A IA!`
-      });
-    }
-    setSimulationState(prev => ({
-      ...prev,
-      waitingForInput: true,
-      inputVariable: 'ai_query',
-      currentNodeId: null
-    }));
-    setIsProcessing(false);
-    setIsThinking(false);
-  };
+  const resolveTagName = (tagId: string) => orgContext?.tags.find(t => t.id === tagId)?.name || tagId;
+  const resolvePipeline = (pipelineId: string) => orgContext?.pipelines.find(p => p.id === pipelineId);
+  const resolveAgent = (agentId: string) => orgContext?.agents.find(a => a.id === agentId);
 
-  const findNextNode = (currentNodeId: string, nodes: Node[], edges: Edge[], outputHandle?: string): Node | null => {
-    const outgoingEdge = edges.find(e =>
-      e.source === currentNodeId &&
-      (outputHandle ? e.sourceHandle === outputHandle : true)
-    );
-    if (!outgoingEdge) return null;
-    return nodes.find(n => n.id === outgoingEdge.target) || null;
-  };
-
-  const processContentBlock = async (items: ContentItem[]) => {
-    for (const item of items) {
-      const waitTime = (item.delaySeconds || 2) * 1000;
-
-      if (item.type === 'delay') {
-        setIsProcessing(true);
-        await new Promise(resolve => setTimeout(resolve, waitTime));
-        setIsProcessing(false);
-      } else if (item.type === 'text' && item.content) {
-        setIsProcessing(true);
-        await new Promise(resolve => setTimeout(resolve, waitTime));
-
-        // Replace variables in text
-        let processedContent = item.content;
-        Object.entries(simulationState.variables).forEach(([key, value]) => {
-          processedContent = processedContent.replace(new RegExp(`{{${key}}}`, 'g'), String(value));
-        });
-        addMessage({ type: 'bot', content: processedContent });
-        setIsProcessing(false);
-        await new Promise(resolve => setTimeout(resolve, 500));
-      } else if (['image', 'video', 'audio', 'document'].includes(item.type)) {
-        if (item.type === 'audio') {
-          setIsRecording(true);
-          await new Promise(resolve => setTimeout(resolve, waitTime));
-          setIsRecording(false);
-        } else {
-          setIsProcessing(true);
-          await new Promise(resolve => setTimeout(resolve, waitTime));
-          setIsProcessing(false);
-        }
-        addMessage({
-          type: 'bot',
-          content: item.caption || `[${item.type.toUpperCase()}]`,
-          mediaType: item.type as 'image' | 'video' | 'audio' | 'document',
-          mediaUrl: item.mediaUrl,
-        });
-        await new Promise(resolve => setTimeout(resolve, 500));
+  // ===== TRAINING RULES (mirrors orchestrator logic) =====
+  const buildTrainingRulesPrompt = (filters: { agentId?: string; flowId?: string; nodeId?: string }) => {
+    if (!orgContext?.trainingRules.length) return '';
+    const rules = orgContext.trainingRules.filter(r => {
+      if (!r.is_active) return false;
+      if (r.target_type === 'agent') return !r.agent_id || r.agent_id === filters.agentId;
+      if (r.target_type === 'master_prompt') return true;
+      if (r.target_type === 'flow_node') {
+        if (!r.flow_id) return true;
+        if (r.flow_id === filters.flowId) return !r.node_id || r.node_id === filters.nodeId;
+        return false;
       }
-    }
+      return true;
+    });
+    if (!rules.length) return '';
+    let s = `\n## REGRAS APRENDIDAS (${rules.length}):\nEstas regras foram definidas pela equipe. Siga-as rigorosamente.\n\n`;
+    rules.forEach(r => { s += `- **Situação:** ${r.situation}\n  **Regra:** ${r.rule}\n\n`; });
+    return s;
   };
 
-  const processNode = async (node: Node, nodes: Node[], edges: Edge[]) => {
-    setSimulationState(prev => ({ ...prev, currentNodeId: node.id }));
-
-    // Visual feedback on canvas
-    window.dispatchEvent(new CustomEvent('flow:node:executing', { detail: { nodeId: node.id } }));
-
-    const nodeType = node.type as string;
-    const nodeData = node.data as Record<string, any>;
-
-    switch (nodeType) {
-      case 'start':
-        const nextAfterStart = findNextNode(node.id, nodes, edges);
-        if (nextAfterStart) {
-          await new Promise(resolve => setTimeout(resolve, 800));
-          await processNode(nextAfterStart, nodes, edges);
-        } else {
-          setSimulationState(prev => ({ ...prev, waitingForInput: true, inputVariable: 'ai_query' }));
-        }
-        break;
-
-      case 'content-block':
-        const items = (nodeData.items as ContentItem[]) || [];
-        if (items.length > 0) {
-          await processContentBlock(items);
-        }
-        const nextAfterContent = findNextNode(node.id, nodes, edges);
-        if (nextAfterContent) {
-          await processNode(nextAfterContent, nodes, edges);
-        } else {
-          // Transition to continuous AI conversation
-          addMessage({ type: 'system', content: `${SYSTEM_LOG_ICONS.finish} FLUXO FINALIZADO - AGENTE DE IA ASSUMINDO` });
-          setSimulationState(prev => ({
-            ...prev,
-            waitingForInput: true,
-            inputVariable: 'ai_query'
-          }));
-        }
-        break;
-
-      case 'message-buttons':
-        const buttonText = (nodeData.text as string) || 'Escolha uma opção:';
-        const buttons = (nodeData.buttons as Array<{ id: string; label: string }>) || [];
-
-        addMessage({ type: 'bot', content: buttonText });
-        await new Promise(resolve => setTimeout(resolve, 500));
-
-        if (buttons.length > 0) {
-          setSimulationState(prev => ({
-            ...prev,
-            waitingForInput: true,
-            pendingButtons: buttons.filter(b => b.label),
-          }));
-        } else {
-          const nextAfterButtons = findNextNode(node.id, nodes, edges);
-          if (nextAfterButtons) {
-            await processNode(nextAfterButtons, nodes, edges);
-          } else {
-            addMessage({ type: 'system', content: `${SYSTEM_LOG_ICONS.finish} FLUXO FINALIZADO - AGENTE DE IA ASSUMINDO` });
-            setSimulationState(prev => ({ ...prev, waitingForInput: true, inputVariable: 'ai_query' }));
-          }
-        }
-        break;
-
-      case 'user-input':
-        const variableName = (nodeData.variableName as string) || 'resposta';
-        addMessage({ type: 'system', content: `📝 Aguardando sua resposta para: ${variableName}` });
-
-        setSimulationState(prev => ({
-          ...prev,
-          waitingForInput: true,
-          inputVariable: variableName,
-        }));
-        break;
-
-      case 'wait':
-      case 'action-delay':
-        const seconds = Number(nodeData.seconds || nodeData.delaySeconds) || 5;
-        addMessage({ type: 'system', content: `${SYSTEM_LOG_ICONS.wait} Aguardando ${seconds} segundos...` });
-        setIsProcessing(true);
-        await new Promise(resolve => setTimeout(resolve, seconds * 1000));
-        setIsProcessing(false);
-        const nextAfterWait = findNextNode(node.id, nodes, edges); // Define nextAfterWait
-        if (nextAfterWait) {
-          await processNode(nextAfterWait, nodes, edges);
-        } else {
-          finalizeSimulation();
-        }
-        break;
-
-      case 'add-tag':
-      case 'action-tag':
-        addMessage({ type: 'system', content: `${SYSTEM_LOG_ICONS.tag} Atribuindo Tag: ${nodeData.tagName || 'Sem nome'}` });
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        const nextAfterTag = findNextNode(node.id, nodes, edges); // Define nextAfterTag
-        if (nextAfterTag) {
-          await processNode(nextAfterTag, nodes, edges);
-        } else {
-          finalizeSimulation();
-        }
-        break;
-
-      case 'pipeline-handoff':
-      case 'action-pipeline':
-        addMessage({ type: 'system', content: `${SYSTEM_LOG_ICONS.pipeline} Movendo para Pipeline: ${nodeData.pipelineName || '...'} -> ${nodeData.columnName || '...'}` });
-        await new Promise(resolve => setTimeout(resolve, 1200));
-        const nextAfterPipe = findNextNode(node.id, nodes, edges); // Define nextAfterPipe
-        if (nextAfterPipe) {
-          await processNode(nextAfterPipe, nodes, edges);
-        } else {
-          finalizeSimulation();
-        }
-        break;
-
-      case 'sub-flow':
-      case 'action-flow':
-        const targetFlowId = nodeData.flowId;
-        addMessage({ type: 'system', content: `${SYSTEM_LOG_ICONS.flow} Iniciando sub-fluxo: ${nodeData.flowName || '...'}` });
-        setIsProcessing(true);
-
-        try {
-          const { data: subFlowData, error } = await supabase
-            .from('flows' as any)
-            .select('*')
-            .eq('id', targetFlowId)
-            .single();
-
-          if (error) throw error;
-
-          setSimulationState(prev => ({
-            ...prev,
-            activeFlowId: targetFlowId,
-            activeFlowData: subFlowData
-          }));
-
-          const subNodes = (subFlowData as any).nodes as Node[];
-          const subEdges = (subFlowData as any).edges as Edge[];
-          const startNode = subNodes.find(n => n.type === 'start');
-
-          if (startNode) {
-            await new Promise(resolve => setTimeout(resolve, 1500));
-            await processNode(startNode, subNodes, subEdges);
-          }
-
-          // CRITICAL: After sub-flow finishes, check if parent flow continues
-          const nextInParent = findNextNode(node.id, nodes, edges);
-          if (nextInParent) {
-            await processNode(nextInParent, nodes, edges);
-          } else {
-            finalizeSimulation();
-          }
-        } catch (err) {
-          console.error('Error loading sub-flow:', err);
-          addMessage({ type: 'system', content: `❌ Erro ao carregar sub-fluxo: ${nodeData.flowName || 'ID não encontrado'}` });
-          finalizeSimulation(true);
-        }
-        setIsProcessing(false);
-        break;
-
-      case 'ai-handoff':
-      case 'ai-master':
-        const isMaster = nodeType === 'ai-master';
-        const agentName = isMaster ? "Orquestrador Master" : ((nodeData.agentName as string) || 'Especialista');
-
-        let agentPrompt = isMaster ? (simulationState.activeFlowData?.master_prompt || '') : (nodeData.prompt as string || '');
-
-        // CRITICAL FIX: If not master, fetch the actual base prompt from the agent table if prompt is empty or to complement
-        if (!isMaster && nodeData.agentId) {
-          try {
-            const { data: agentData } = await supabase
-              .from('ai_agents')
-              .select('prompt_base, name')
-              .eq('id', nodeData.agentId)
-              .single();
-
-            if (agentData?.prompt_base) {
-              // Combine base prompt with node-specific instructions
-              agentPrompt = `${agentData.prompt_base}\n\n[INSTRUÇÕES ESPECÍFICAS DESTE NÓ]:\n${agentPrompt}`;
-            }
-          } catch (err) {
-            console.error('Error fetching agent prompt:', err);
-          }
-        }
-
-        setCurrentAgentName(agentName);
-        setIsThinking(true);
-        addMessage({ type: 'system', content: `${isMaster ? SYSTEM_LOG_ICONS.master : SYSTEM_LOG_ICONS.agent} Transferindo para ${agentName}` });
-
-        // First message for real AI simulation
-        if (!messages.some(m => m.type === 'user')) {
-          finalizeSimulation(true);
-        } else {
-          // If we already have a user message, trigger AI response immediately
-          handleAIRealCall(agentPrompt, isMaster);
-        }
-        break;
-
-      default:
-        const nextNode = findNextNode(node.id, nodes, edges);
-        if (nextNode) {
-          await processNode(nextNode, nodes, edges);
-        } else {
-          // If no next node, transition to AI conversation instead of finishing
-          addMessage({ type: 'system', content: `${SYSTEM_LOG_ICONS.finish} FLUXO FINALIZADO - AGENTE DE IA ASSUMINDO` });
-          setIsProcessing(false);
-          setSimulationState(prev => ({
-            ...prev,
-            waitingForInput: true,
-            inputVariable: 'ai_query' // This enables continuous AI interaction
-          }));
-        }
-    }
-  };
-
-  const handleAIRealCall = async (prompt: string, useMasterPrompt: boolean = false) => {
+  // ===== AI CALL (mirrors agent-orchestrator prompt building) =====
+  const callAI = async (nodeData: any, nodeId: string) => {
     setIsThinking(true);
     try {
-      // Get conversation history from messages
+      const agentId = nodeData.agentId;
+      const agent = agentId ? resolveAgent(agentId) : null;
+      const additionalPrompt = nodeData.additionalPrompt || nodeData.contextMessage || '';
+      const masterPrompt = simState.activeFlowData?.master_prompt || '';
+
+      // Build system prompt identical to agent-orchestrator
+      let sysPrompt = '';
+      if (masterPrompt) sysPrompt += `PERSONALIDADE E REGRAS GERAIS:\n${masterPrompt}\n\n---\n\n`;
+      sysPrompt += `Você é o agente "${agent?.name || simState.activeAgentName || 'Assistente'}" neste momento da conversa.\n\n`;
+      if (agent?.prompt_base) sysPrompt += `PROMPT DO AGENTE:\n${agent.prompt_base}\n\n`;
+      if (agent?.persona) sysPrompt += `PERSONA: ${agent.persona}\n\n`;
+      if (additionalPrompt) sysPrompt += `INSTRUÇÕES ESPECÍFICAS PARA ESTE MOMENTO:\n${additionalPrompt}\n\n`;
+
+      // Training rules
+      sysPrompt += buildTrainingRulesPrompt({
+        agentId: agent?.id,
+        flowId: simState.activeFlowId,
+        nodeId,
+      });
+
+      // Expected outcomes
+      const outcomes = nodeData.expectedOutcomes
+        ? String(nodeData.expectedOutcomes).split(',').map((s: string) => s.trim()).filter(Boolean)
+        : [];
+      if (outcomes.length > 0) {
+        sysPrompt += `\nRESULTADOS ESPERADOS: ${outcomes.join(', ')}\n`;
+        sysPrompt += `Quando sua tarefa estiver concluída, inclua [RESULTADO: <valor>] no final da sua resposta com um dos resultados acima.\n\n`;
+      }
+
+      sysPrompt += `INSTRUÇÕES IMPORTANTES:\n`;
+      sysPrompt += `- Responda SEMPRE em português brasileiro.\n`;
+      sysPrompt += `- Leia TODA a conversa anterior antes de responder.\n`;
+      sysPrompt += `- NUNCA envie mensagens em inglês, sem sentido, ou genéricas.\n`;
+      sysPrompt += `- Mantenha a persona definida.\n`;
+      sysPrompt += `- NÃO produza texto entre parênteses ou pensamentos internos.\n`;
+      sysPrompt += `- Esta é uma SIMULAÇÃO DE TESTE. Responda como faria em um atendimento real.\n`;
+
+      // Conversation history
       const history = messages
         .filter(m => m.type === 'user' || m.type === 'bot')
-        .map(m => ({
-          role: m.type === 'user' ? 'user' : 'assistant',
-          content: m.content
-        }));
-
-      const organizationId = simulationState.activeFlowData?.organization_id;
-
-      const systemPrompt = `Você é um agente de atendimento virtual inteligente para um escritório de advocacia.
-      
-PERSONALIDADE E REGRAS GERAIS:
-${useMasterPrompt ? (simulationState.activeFlowData?.master_prompt || '') : ''}
-
-INSTRUÇÕES DO AGENTE ATUAL:
-${prompt}
-
-Responda sempre em português brasileiro de forma profissional e prestativa.`;
+        .map(m => ({ role: m.type === 'user' ? 'user' : 'assistant', content: m.content }));
 
       const { data, error } = await supabase.functions.invoke('generate-agent-prompt', {
         body: {
           mode: 'chat',
-          organizationId,
+          organizationId: orgContext?.organizationId,
           messages: history,
-          systemPrompt
-        }
+          systemPrompt: sysPrompt,
+        },
       });
 
+      setIsThinking(false);
       if (error) throw error;
 
-      setIsThinking(false);
+      let reply = data?.content || 'Olá! Como posso ajudar?';
 
-      // Use the content returned by the Edge Function in chat mode
-      const aiReply = data.content || "Entendido. Como posso ajudar agora?";
+      // Check for outcome in reply
+      const outcomeMatch = reply.match(/\[RESULTADO:\s*([^\]]+)\]/i);
+      let detectedOutcome: string | null = null;
+      if (outcomeMatch) {
+        detectedOutcome = outcomeMatch[1].trim();
+        reply = reply.replace(/\[RESULTADO:\s*[^\]]+\]/gi, '').trim();
+      }
 
-      addMessage({
-        type: 'bot',
-        content: aiReply
-      });
+      addMsg({ type: 'bot', content: reply, agentName: agent?.name || simState.activeAgentName });
 
-      setSimulationState(prev => ({ ...prev, waitingForInput: true, inputVariable: 'ai_query' }));
+      // If outcome detected and we have outgoing edges, try to route
+      if (detectedOutcome && simState.currentNodeId) {
+        const nodes = simState.activeFlowData.nodes as Node[];
+        const edges = simState.activeFlowData.edges as Edge[];
+        const outEdge = edges.find(e => e.source === simState.currentNodeId! && e.sourceHandle === detectedOutcome)
+          || edges.find(e => e.source === simState.currentNodeId! && e.sourceHandle === 'default')
+          || edges.find(e => e.source === simState.currentNodeId!);
+        if (outEdge) {
+          const nextNode = nodes.find(n => n.id === outEdge.target);
+          if (nextNode) {
+            addMsg({ type: 'action', content: `Resultado: ${detectedOutcome} → Avançando fluxo`, actionIcon: '🎯' });
+            await wait(800);
+            await processNode(nextNode, nodes, edges);
+            return;
+          }
+        }
+      }
+
+      // Keep waiting for user input (continuous AI conversation)
+      setSimState(prev => ({ ...prev, waitingForInput: true, inputVariable: 'ai_query' }));
     } catch (err) {
-      console.error('AI Call error:', err);
+      console.error('AI error:', err);
       setIsThinking(false);
-      addMessage({ type: 'bot', content: "⚠️ Erro técnico ao conectar com o Agente de IA. Verifique sua chave de API ou conexão." });
-      setSimulationState(prev => ({ ...prev, waitingForInput: true, inputVariable: 'ai_query' }));
+      addMsg({ type: 'bot', content: '⚠️ Erro ao conectar com o agente de IA. Verifique suas configurações.' });
+      setSimState(prev => ({ ...prev, waitingForInput: true, inputVariable: 'ai_query' }));
     }
   };
 
+  // ===== CONDITION EVALUATION =====
+  const evaluateCondition = async (nodeData: any, nodes: Node[], edges: Edge[], nodeId: string): Promise<string> => {
+    const conditionType = nodeData.conditionType || 'custom';
+    const conditionLabel = nodeData.conditionLabel || nodeData.condition || '';
+
+    // For tag/pipeline conditions, evaluate locally
+    if (conditionType === 'has_tag') {
+      const tagId = nodeData.tagId;
+      // In simulation, check if we've "added" this tag during the flow
+      const hasTag = simState.variables[`_tag_${tagId}`] === true;
+      return hasTag ? 'yes' : 'no';
+    }
+
+    if (conditionType === 'in_pipeline_stage') {
+      const columnId = nodeData.columnId;
+      const inStage = simState.variables[`_pipeline_col_${columnId}`] === true;
+      return inStage ? 'yes' : 'no';
+    }
+
+    // For custom/AI-evaluated conditions, use AI
+    try {
+      const history = messages.filter(m => m.type === 'user' || m.type === 'bot').map(m => `${m.type === 'user' ? 'CLIENTE' : 'IA'}: ${m.content}`).join('\n');
+      const outEdges = edges.filter(e => e.source === nodeId);
+      const branches = outEdges.map(e => e.sourceHandle || 'default').filter(Boolean);
+
+      const { data } = await supabase.functions.invoke('generate-agent-prompt', {
+        body: {
+          mode: 'chat',
+          organizationId: orgContext?.organizationId,
+          messages: [{ role: 'user', content: `Com base na conversa abaixo, avalie a condição: "${conditionLabel}"\n\nConversa:\n${history}\n\nResponda APENAS com uma das opções: ${branches.join(', ')}` }],
+          systemPrompt: 'Você é um avaliador de condições. Responda APENAS com o nome do branch correto, nada mais.',
+        },
+      });
+      return (data?.content || branches[0] || 'default').trim().toLowerCase();
+    } catch {
+      return 'default';
+    }
+  };
+
+  // ===== PROCESS CONTENT BLOCK =====
+  const processContentBlock = async (items: ContentItem[]) => {
+    for (const item of items) {
+      const delayMs = (item.delaySeconds || 2) * 1000;
+      if (item.type === 'delay') {
+        setIsProcessing(true);
+        await wait(delayMs);
+        setIsProcessing(false);
+      } else if (item.type === 'text' && item.content) {
+        setIsProcessing(true);
+        await wait(Math.min(delayMs, 3000));
+        let text = item.content;
+        Object.entries(simState.variables).forEach(([k, v]) => {
+          text = text.replace(new RegExp(`{{${k}}}`, 'g'), String(v));
+        });
+        addMsg({ type: 'bot', content: text });
+        setIsProcessing(false);
+        await wait(400);
+      } else if (['image', 'video', 'audio', 'document'].includes(item.type)) {
+        if (item.type === 'audio') { setIsRecording(true); await wait(delayMs); setIsRecording(false); }
+        else { setIsProcessing(true); await wait(delayMs); setIsProcessing(false); }
+        addMsg({
+          type: 'bot',
+          content: item.caption || `[${item.type.toUpperCase()}]`,
+          mediaType: item.type as any,
+          mediaUrl: item.mediaUrl,
+        });
+        await wait(400);
+      }
+    }
+  };
+
+  // ===== MAIN NODE PROCESSOR =====
+  const processNode = async (node: Node, nodes: Node[], edges: Edge[]) => {
+    setSimState(prev => ({ ...prev, currentNodeId: node.id }));
+    window.dispatchEvent(new CustomEvent('flow:node:executing', { detail: { nodeId: node.id } }));
+
+    const t = node.type as string;
+    const d = node.data as Record<string, any>;
+
+    const advanceOrEnd = async (outputHandle?: string) => {
+      const next = findNext(node.id, nodes, edges, outputHandle);
+      if (next) { await processNode(next, nodes, edges); }
+      else { endFlow(); }
+    };
+
+    switch (t) {
+      case 'start':
+        await wait(600);
+        await advanceOrEnd();
+        break;
+
+      case 'content-block': {
+        const items = (d.items as ContentItem[]) || [];
+        if (items.length > 0) await processContentBlock(items);
+        const waitForResponse = !!d.waitForResponse;
+        if (waitForResponse) {
+          setSimState(prev => ({ ...prev, waitingForInput: true, inputVariable: d.saveVariable || 'resposta' }));
+        } else {
+          await advanceOrEnd();
+        }
+        break;
+      }
+
+      case 'message-buttons': {
+        const text = (d.text as string) || 'Escolha uma opção:';
+        const buttons = (d.buttons as Array<{ id: string; label: string }>) || [];
+        addMsg({ type: 'bot', content: text });
+        await wait(400);
+        if (buttons.filter(b => b.label).length > 0) {
+          setSimState(prev => ({ ...prev, waitingForInput: true, pendingButtons: buttons.filter(b => b.label) }));
+        } else { await advanceOrEnd(); }
+        break;
+      }
+
+      case 'message-list': {
+        const bodyText = (d.body as string) || 'Selecione uma opção';
+        const buttonText = (d.buttonText as string) || 'Ver opções';
+        const sections = (d.sections as any[]) || [];
+        addMsg({ type: 'bot', content: bodyText });
+        await wait(400);
+        setSimState(prev => ({ ...prev, waitingForInput: true, pendingList: { title: bodyText, buttonText, sections } }));
+        break;
+      }
+
+      case 'user-input': {
+        const varName = (d.variableName as string) || 'resposta';
+        addMsg({ type: 'action', content: `Aguardando resposta do cliente (${varName})`, actionIcon: '📝' });
+        setSimState(prev => ({ ...prev, waitingForInput: true, inputVariable: varName }));
+        break;
+      }
+
+      case 'action-delay': {
+        const secs = Math.min(Number(d.seconds || d.delaySeconds) || 3, 10);
+        addMsg({ type: 'action', content: `Aguardando ${secs}s...`, actionIcon: '⏳' });
+        setIsProcessing(true);
+        await wait(secs * 1000);
+        setIsProcessing(false);
+        await advanceOrEnd();
+        break;
+      }
+
+      case 'action-tag': {
+        const tagId = d.tagId || d.tagName;
+        const action = d.action || 'add';
+        const tagName = resolveTagName(tagId);
+        addMsg({ type: 'action', content: `${action === 'remove' ? 'Removendo' : 'Adicionando'} tag: ${tagName}`, actionIcon: '🏷️' });
+        setSimState(prev => ({ ...prev, variables: { ...prev.variables, [`_tag_${tagId}`]: action !== 'remove' } }));
+        await wait(800);
+        await advanceOrEnd();
+        break;
+      }
+
+      case 'action-pipeline': {
+        const pipeline = resolvePipeline(d.pipelineId);
+        const colName = pipeline?.columns.find((c: any) => c.id === d.columnId)?.name || d.columnName || '...';
+        addMsg({ type: 'action', content: `Movendo para ${pipeline?.name || 'Pipeline'} → ${colName}`, actionIcon: '📋' });
+        setSimState(prev => ({ ...prev, variables: { ...prev.variables, [`_pipeline_col_${d.columnId}`]: true } }));
+        await wait(800);
+        await advanceOrEnd();
+        break;
+      }
+
+      case 'condition': {
+        addMsg({ type: 'action', content: `Avaliando condição: ${d.conditionLabel || d.condition || '...'}`, actionIcon: '🔀' });
+        setIsProcessing(true);
+        const branch = await evaluateCondition(d, nodes, edges, node.id);
+        setIsProcessing(false);
+        addMsg({ type: 'action', content: `Resultado: ${branch}`, actionIcon: '✓' });
+        await wait(500);
+        // Find the edge for this branch
+        const outEdges = edges.filter(e => e.source === node.id);
+        const targetEdge = outEdges.find(e => e.sourceHandle === branch)
+          || outEdges.find(e => e.sourceHandle === 'default')
+          || outEdges[0];
+        if (targetEdge) {
+          const next = nodes.find(n => n.id === targetEdge.target);
+          if (next) { await processNode(next, nodes, edges); return; }
+        }
+        endFlow();
+        break;
+      }
+
+      case 'action-flow': {
+        const subFlowId = d.flowId;
+        addMsg({ type: 'action', content: `Iniciando sub-fluxo: ${d.flowName || d.label || '...'}`, actionIcon: '🔄' });
+        setIsProcessing(true);
+        try {
+          const { data: subFlow, error } = await supabase.from('flows').select('*').eq('id', subFlowId).single();
+          if (error) throw error;
+
+          // Push current flow onto stack
+          setSimState(prev => ({
+            ...prev,
+            parentFlowStack: [...prev.parentFlowStack, { flowId: prev.activeFlowId, flowData: prev.activeFlowData, nodeId: node.id, nodes, edges }],
+            activeFlowId: subFlowId,
+            activeFlowData: subFlow,
+          }));
+
+          const subNodes = (subFlow as any).nodes as Node[];
+          const subEdges = (subFlow as any).edges as Edge[];
+          const start = subNodes.find(n => n.type === 'start');
+          setIsProcessing(false);
+          if (start) await processNode(start, subNodes, subEdges);
+
+          // After sub-flow, pop stack and continue parent
+          setSimState(prev => {
+            const stack = [...prev.parentFlowStack];
+            const parent = stack.pop();
+            if (parent) {
+              return { ...prev, parentFlowStack: stack, activeFlowId: parent.flowId, activeFlowData: parent.flowData };
+            }
+            return prev;
+          });
+
+          // Continue parent flow
+          const parentStack = simState.parentFlowStack;
+          if (parentStack.length > 0) {
+            const parent = parentStack[parentStack.length - 1];
+            const nextInParent = findNext(node.id, parent.nodes, parent.edges);
+            if (nextInParent) await processNode(nextInParent, parent.nodes, parent.edges);
+            else endFlow();
+          } else {
+            await advanceOrEnd();
+          }
+        } catch (err) {
+          setIsProcessing(false);
+          addMsg({ type: 'action', content: `❌ Erro ao carregar sub-fluxo`, actionIcon: '⚠️' });
+          await advanceOrEnd();
+        }
+        break;
+      }
+
+      case 'ai-handoff': {
+        const agentId = d.agentId;
+        const agent = agentId ? resolveAgent(agentId) : null;
+        const agentName = agent?.name || d.agentName || 'Agente IA';
+
+        setSimState(prev => ({
+          ...prev,
+          activeAgentId: agentId,
+          activeAgentName: agentName,
+          activeAgentPrompt: d.additionalPrompt || '',
+          expectedOutcomes: d.expectedOutcomes ? String(d.expectedOutcomes).split(',').map((s: string) => s.trim()).filter(Boolean) : [],
+        }));
+
+        addMsg({ type: 'action', content: `Transferindo para agente: ${agentName}`, actionIcon: '🤖' });
+        await wait(600);
+
+        // If there's already user messages, call AI immediately
+        const hasUserMsg = messages.some(m => m.type === 'user');
+        if (hasUserMsg) {
+          await callAI(d, node.id);
+        } else {
+          // Wait for first user message
+          setSimState(prev => ({ ...prev, waitingForInput: true, inputVariable: 'ai_query' }));
+        }
+        break;
+      }
+
+      case 'action-transfer': {
+        addMsg({ type: 'action', content: `Transferindo para atendimento humano`, actionIcon: '👤' });
+        await wait(800);
+        addMsg({ type: 'system', content: 'Conversa transferida para um atendente humano' });
+        endFlow();
+        break;
+      }
+
+      case 'action-workspace': {
+        addMsg({ type: 'action', content: `Atribuindo workspace`, actionIcon: '🏢' });
+        await wait(600);
+        await advanceOrEnd();
+        break;
+      }
+
+      case 'action-webhook': {
+        addMsg({ type: 'action', content: `Executando webhook: ${d.url || '...'}`, actionIcon: '🌐' });
+        await wait(1000);
+        await advanceOrEnd();
+        break;
+      }
+
+      default:
+        await advanceOrEnd();
+    }
+  };
+
+  const endFlow = () => {
+    addMsg({ type: 'system', content: 'Fluxo finalizado' });
+    setSimState(prev => ({ ...prev, waitingForInput: false, currentNodeId: null }));
+    setIsProcessing(false);
+    setIsThinking(false);
+  };
+
+  // ===== START =====
   const startSimulation = async () => {
-    if (!simulationState.activeFlowData) return;
+    if (!simState.activeFlowData) return;
     resetSimulation();
     setIsStarted(true);
     setIsProcessing(true);
 
-    addMessage({ type: 'system', content: `${SYSTEM_LOG_ICONS.start} Simulando entrada do usuário para ativar fluxo...` });
-    await new Promise(resolve => setTimeout(resolve, 800));
-    addMessage({ type: 'user', content: 'Olá! Gostaria de falar sobre o meu caso.' });
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    addMsg({ type: 'action', content: 'Simulando entrada do cliente...', actionIcon: '▶️' });
+    await wait(600);
+    addMsg({ type: 'user', content: 'Olá! Gostaria de falar sobre o meu caso.' });
+    await wait(800);
 
-    addMessage({ type: 'system', content: `${SYSTEM_LOG_ICONS.start} Gatilho detectado. Iniciando execução de: "${flowName}"` });
-    await new Promise(resolve => setTimeout(resolve, 800));
-
-    const { nodes, edges } = simulationState.activeFlowData;
-    const startNode = (nodes as Node[]).find(n => n.type === 'start');
-    if (startNode) await processNode(startNode, nodes as Node[], edges as Edge[]);
+    const { nodes, edges } = simState.activeFlowData;
+    const start = (nodes as Node[]).find(n => n.type === 'start');
+    if (start) await processNode(start, nodes as Node[], edges as Edge[]);
     setIsProcessing(false);
   };
 
-  const handleUserInput = async () => {
-    if (!userInput.trim() || !flow) return;
-    const inputValue = userInput.trim();
+  const resetSimulation = () => {
+    setMessages([]);
+    setSimState({ currentNodeId: null, waitingForInput: false, variables: {}, activeFlowId: flowId, activeFlowData: initialFlow, parentFlowStack: [] });
+    setIsStarted(false);
     setUserInput('');
-    addMessage({ type: 'user', content: inputValue });
-
-    if (simulationState.pendingButtons) {
-      const matchedButton = simulationState.pendingButtons.find(b =>
-        b.label.toLowerCase() === inputValue.toLowerCase()
-      );
-      if (matchedButton) {
-        setSimulationState(prev => ({
-          ...prev,
-          waitingForInput: false,
-          pendingButtons: undefined,
-          variables: { ...prev.variables, button_choice: matchedButton.label }
-        }));
-      } else {
-        addMessage({ type: 'bot', content: 'Selecione uma das opções acima.' });
-        return;
-      }
-    } else if (simulationState.inputVariable) {
-      if (simulationState.inputVariable === 'ai_query' || simulationState.inputVariable === 'master_query') {
-        const isMaster = simulationState.inputVariable === 'master_query';
-        const currentNode = (simulationState.activeFlowData.nodes as Node[]).find(n => n.id === simulationState.currentNodeId);
-
-        let prompt = isMaster ? (simulationState.activeFlowData.master_prompt || '') : (currentNode?.data?.prompt as string || '');
-
-        // Fetch agent base prompt if needed during active chat
-        if (!isMaster && currentNode?.data?.agentId) {
-          try {
-            const { data: agentData } = await supabase
-              .from('ai_agents')
-              .select('prompt_base')
-              .eq('id', currentNode.data.agentId as string)
-              .single();
-
-            if (agentData?.prompt_base) {
-              prompt = `${agentData.prompt_base}\n\n[INSTRUÇÕES ESPECÍFICAS DESTE NÓ]:\n${prompt}`;
-            }
-          } catch (err) {
-            console.error('Error fetching agent prompt during chat:', err);
-          }
-        }
-
-        await handleAIRealCall(prompt, isMaster);
-        return;
-      }
-      setSimulationState(prev => ({
-        ...prev,
-        waitingForInput: false,
-        inputVariable: undefined,
-        variables: { ...prev.variables, [simulationState.inputVariable!]: inputValue }
-      }));
-    }
-
-    await new Promise(resolve => setTimeout(resolve, 300));
-    const nodes = simulationState.activeFlowData.nodes as Node[];
-    const edges = simulationState.activeFlowData.edges as Edge[];
-    const currentNode = nodes.find(n => n.id === simulationState.currentNodeId);
-    if (currentNode) {
-      setIsProcessing(true);
-      const nextNode = findNextNode(currentNode.id, nodes, edges);
-      if (nextNode) {
-        await processNode(nextNode, nodes, edges);
-      } else {
-        // Transition to continuous AI conversation
-        addMessage({ type: 'system', content: `${SYSTEM_LOG_ICONS.finish} FLUXO FINALIZADO - AGENTE DE IA ASSUMINDO` });
-        setSimulationState(prev => ({
-          ...prev,
-          waitingForInput: true,
-          inputVariable: 'ai_query'
-        }));
-      }
-      setIsProcessing(false);
-    }
+    setIsThinking(false);
+    setIsRecording(false);
   };
 
-  const handleButtonClick = async (button: { id: string; label: string }) => {
-    if (!flow) return;
-    addMessage({ type: 'user', content: button.label });
-    setSimulationState(prev => ({
+  // ===== USER INPUT =====
+  const handleUserInput = async () => {
+    if (!userInput.trim()) return;
+    const val = userInput.trim();
+    setUserInput('');
+    addMsg({ type: 'user', content: val });
+
+    // Handle button selection
+    if (simState.pendingButtons) {
+      const matched = simState.pendingButtons.find(b => b.label.toLowerCase() === val.toLowerCase());
+      if (!matched) {
+        addMsg({ type: 'bot', content: 'Por favor, selecione uma das opções disponíveis.' });
+        return;
+      }
+      setSimState(prev => ({ ...prev, waitingForInput: false, pendingButtons: undefined, variables: { ...prev.variables, button_choice: matched.label } }));
+      await wait(300);
+      const nodes = simState.activeFlowData.nodes as Node[];
+      const edges = simState.activeFlowData.edges as Edge[];
+      const cur = nodes.find(n => n.id === simState.currentNodeId);
+      if (cur) {
+        setIsProcessing(true);
+        // Try to find edge matching button id or label
+        const btnEdge = edges.find(e => e.source === cur.id && (e.sourceHandle === matched.id || e.sourceHandle === matched.label));
+        const next = btnEdge ? nodes.find(n => n.id === btnEdge.target) : findNext(cur.id, nodes, edges);
+        if (next) await processNode(next, nodes, edges);
+        else endFlow();
+        setIsProcessing(false);
+      }
+      return;
+    }
+
+    // Handle list selection
+    if (simState.pendingList) {
+      setSimState(prev => ({ ...prev, waitingForInput: false, pendingList: undefined, variables: { ...prev.variables, list_choice: val } }));
+      await wait(300);
+      const nodes = simState.activeFlowData.nodes as Node[];
+      const edges = simState.activeFlowData.edges as Edge[];
+      const cur = nodes.find(n => n.id === simState.currentNodeId);
+      if (cur) {
+        setIsProcessing(true);
+        const next = findNext(cur.id, nodes, edges);
+        if (next) await processNode(next, nodes, edges);
+        else endFlow();
+        setIsProcessing(false);
+      }
+      return;
+    }
+
+    // Handle AI conversation
+    if (simState.inputVariable === 'ai_query') {
+      const curNode = simState.activeFlowData?.nodes?.find((n: Node) => n.id === simState.currentNodeId);
+      const nodeData = curNode?.data || {};
+      await callAI(nodeData, simState.currentNodeId || '');
+      return;
+    }
+
+    // Handle regular input
+    setSimState(prev => ({
       ...prev,
       waitingForInput: false,
-      pendingButtons: undefined,
-      variables: { ...prev.variables, button_choice: button.label }
+      inputVariable: undefined,
+      variables: { ...prev.variables, [simState.inputVariable || 'resposta']: val },
     }));
-    await new Promise(resolve => setTimeout(resolve, 300));
-    const nodes = simulationState.activeFlowData.nodes as Node[];
-    const edges = simulationState.activeFlowData.edges as Edge[];
-    const currentNode = nodes.find(n => n.id === simulationState.currentNodeId);
-    if (currentNode) {
+
+    await wait(300);
+    const nodes = simState.activeFlowData.nodes as Node[];
+    const edges = simState.activeFlowData.edges as Edge[];
+    const cur = nodes.find(n => n.id === simState.currentNodeId);
+    if (cur) {
       setIsProcessing(true);
-      const nextNode = findNextNode(currentNode.id, nodes, edges);
-      if (nextNode) {
-        await processNode(nextNode, nodes, edges);
-      } else {
-        // Transition to continuous AI conversation
-        addMessage({ type: 'system', content: `${SYSTEM_LOG_ICONS.finish} FLUXO FINALIZADO - AGENTE DE IA ASSUMINDO` });
-        setSimulationState(prev => ({
-          ...prev,
-          waitingForInput: true,
-          inputVariable: 'ai_query'
-        }));
-      }
+      const next = findNext(cur.id, nodes, edges);
+      if (next) await processNode(next, nodes, edges);
+      else endFlow();
       setIsProcessing(false);
     }
   };
 
-  const renderMediaPreview = (msg: SimulatedMessage) => {
+  const handleButtonClick = async (btn: { id: string; label: string }) => {
+    setUserInput(btn.label);
+    // Let handleUserInput process it
+    const val = btn.label;
+    addMsg({ type: 'user', content: val });
+    setSimState(prev => ({ ...prev, waitingForInput: false, pendingButtons: undefined, variables: { ...prev.variables, button_choice: val } }));
+    await wait(300);
+    const nodes = simState.activeFlowData.nodes as Node[];
+    const edges = simState.activeFlowData.edges as Edge[];
+    const cur = nodes.find(n => n.id === simState.currentNodeId);
+    if (cur) {
+      setIsProcessing(true);
+      const btnEdge = edges.find(e => e.source === cur.id && (e.sourceHandle === btn.id || e.sourceHandle === btn.label));
+      const next = btnEdge ? nodes.find(n => n.id === btnEdge.target) : findNext(cur.id, nodes, edges);
+      if (next) await processNode(next, nodes, edges);
+      else endFlow();
+      setIsProcessing(false);
+    }
+    setUserInput('');
+  };
+
+  const handleListRowClick = async (row: { id: string; title: string }) => {
+    addMsg({ type: 'user', content: row.title });
+    setSimState(prev => ({ ...prev, waitingForInput: false, pendingList: undefined, variables: { ...prev.variables, list_choice: row.title } }));
+    await wait(300);
+    const nodes = simState.activeFlowData.nodes as Node[];
+    const edges = simState.activeFlowData.edges as Edge[];
+    const cur = nodes.find(n => n.id === simState.currentNodeId);
+    if (cur) {
+      setIsProcessing(true);
+      const listEdge = edges.find(e => e.source === cur.id && (e.sourceHandle === row.id || e.sourceHandle === row.title));
+      const next = listEdge ? nodes.find(n => n.id === listEdge.target) : findNext(cur.id, nodes, edges);
+      if (next) await processNode(next, nodes, edges);
+      else endFlow();
+      setIsProcessing(false);
+    }
+  };
+
+  // ===== RENDER =====
+  const renderMediaPreview = (msg: SimMessage) => {
     if (!msg.mediaUrl) return null;
     switch (msg.mediaType) {
-      case 'image': return <img src={msg.mediaUrl} alt="Media" className="max-w-full max-h-40 rounded-lg mb-1" />;
-      case 'video': return <div className="bg-muted rounded-lg p-2 flex items-center gap-2 mb-1"><Video className="h-8 w-8 text-muted-foreground" /><span className="text-xs text-muted-foreground">Vídeo</span></div>;
-      case 'audio': return <audio src={msg.mediaUrl} controls className="max-w-full h-10 mb-1" />;
-      case 'document': return <div className="bg-muted rounded-lg p-2 flex items-center gap-2 mb-1"><FileText className="h-8 w-8 text-muted-foreground" /><span className="text-xs text-muted-foreground">Documento</span></div>;
+      case 'image': return <img src={msg.mediaUrl} alt="" className="max-w-full max-h-40 rounded-lg mb-1.5" />;
+      case 'video': return <div className="bg-muted/50 rounded-lg p-3 flex items-center gap-2 mb-1.5"><Video className="h-6 w-6 text-muted-foreground" /><span className="text-xs text-muted-foreground">Vídeo</span></div>;
+      case 'audio': return <audio src={msg.mediaUrl} controls className="max-w-full h-8 mb-1.5" />;
+      case 'document': return <div className="bg-muted/50 rounded-lg p-3 flex items-center gap-2 mb-1.5"><FileText className="h-6 w-6 text-muted-foreground" /><span className="text-xs text-muted-foreground">Documento</span></div>;
       default: return null;
     }
   };
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full sm:max-w-[480px] p-0 flex flex-col bg-slate-50 dark:bg-[#0B0F1A] border-l border-white/10 shadow-2xl overflow-hidden">
-        {/* Header - Glassmorphism */}
-        <div className="bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl px-5 py-4 flex items-center justify-between border-b border-black/5 dark:border-white/5 z-20 sticky top-0">
+      <SheetContent side="right" className="w-full sm:max-w-[440px] p-0 flex flex-col bg-[#0a0a0f] border-l border-white/[0.06] overflow-hidden">
+        {/* Header */}
+        <div className="relative px-5 py-4 flex items-center justify-between z-20 bg-gradient-to-b from-white/[0.04] to-transparent border-b border-white/[0.06]">
           <div className="flex items-center gap-3">
             <div className="relative">
-              <div className="h-11 w-11 rounded-2xl bg-gradient-to-tr from-primary/20 via-primary/10 to-transparent flex items-center justify-center border border-primary/20 shadow-inner">
-                <Bot className="h-6 w-6 text-primary" />
+              <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-emerald-500/20 to-emerald-500/5 flex items-center justify-center ring-1 ring-emerald-500/20">
+                <Smartphone className="h-5 w-5 text-emerald-400" />
               </div>
-              <div className="absolute -bottom-0.5 -right-0.5 h-3.5 w-3.5 rounded-full bg-green-500 border-2 border-white dark:border-slate-900 shadow-sm" />
+              {isStarted && <div className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full bg-emerald-500 border-2 border-[#0a0a0f] animate-pulse" />}
             </div>
             <div>
-              <h3 className="text-[16px] font-bold tracking-tight text-slate-800 dark:text-white leading-tight">Simulador de Atendimento</h3>
-              <div className="flex items-center gap-1.5 mt-0.5">
-                <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
-                  Fluxo Ativo: <span className="text-primary font-semibold">{flowName}</span>
-                </span>
-              </div>
+              <h3 className="text-sm font-semibold text-white/90 tracking-tight">Simulador</h3>
+              <p className="text-[11px] text-white/40 font-medium truncate max-w-[200px]">{flowName}</p>
             </div>
           </div>
-          <div className="flex items-center gap-1.5">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-9 w-9 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 transition-colors"
-              onClick={resetSimulation}
-              title="Reiniciar Simulação"
-            >
-              <RotateCcw className="h-4 w-4 text-slate-500" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-9 w-9 rounded-xl hover:bg-slate-100 dark:hover:bg-white/5 transition-colors"
-              onClick={() => onOpenChange(false)}
-            >
-              <X className="h-4 w-4 text-slate-500" />
+          <div className="flex items-center gap-1">
+            {isStarted && (
+              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-white/40 hover:text-white/70 hover:bg-white/5" onClick={resetSimulation}>
+                <RotateCcw className="h-3.5 w-3.5" />
+              </Button>
+            )}
+            <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-white/40 hover:text-white/70 hover:bg-white/5" onClick={() => onOpenChange(false)}>
+              <X className="h-4 w-4" />
             </Button>
           </div>
         </div>
 
-        <div
-          ref={scrollRef}
-          className="flex-1 overflow-y-auto p-6 space-y-6 relative scroll-smooth bg-slate-50/50 dark:bg-[#0B0F1A]/50"
-          style={{
-            backgroundImage: `radial-gradient(circle at 2px 2px, rgba(0,0,0,0.03) 1px, transparent 0)`,
-            backgroundSize: '24px 24px'
-          }}
-        >
+        {/* Messages area */}
+        <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-5 space-y-3 scroll-smooth" style={{ background: 'linear-gradient(180deg, #0a0a0f 0%, #0d0d15 100%)' }}>
           {!isStarted ? (
-            <div className="flex flex-col items-center justify-center h-full text-center p-8 bg-white/50 dark:bg-card/30 backdrop-blur-sm rounded-3xl border border-dashed border-border m-4">
-              <div className="h-20 w-20 rounded-full bg-[#25d366]/10 flex items-center justify-center mb-6 ring-4 ring-[#25d366]/5"><Play className="h-10 w-10 text-[#25d366] fill-current pr-0.5" /></div>
-              <h3 className="text-xl font-bold mb-3">Teste seu Fluxo</h3>
-              <p className="text-sm text-muted-foreground mb-8 leading-relaxed">Inicie a simulação para ver como seu cliente interagirá com o fluxo e como os agentes responderão.</p>
-              <Button onClick={startSimulation} className="bg-[#25d366] hover:bg-[#20bd5c] text-white font-bold px-10 h-12 rounded-full shadow-lg gap-2">Começar Simulação</Button>
+            <div className="flex flex-col items-center justify-center h-full text-center px-6">
+              <div className="h-16 w-16 rounded-2xl bg-gradient-to-br from-emerald-500/15 to-emerald-500/5 flex items-center justify-center mb-5 ring-1 ring-emerald-500/10">
+                <Zap className="h-7 w-7 text-emerald-400" />
+              </div>
+              <h3 className="text-base font-semibold text-white/90 mb-2">Testar Fluxo</h3>
+              <p className="text-[13px] text-white/35 leading-relaxed mb-6 max-w-[280px]">
+                Simule o atendimento completo: fluxos, agentes de IA, tags, pipeline — tudo como na produção.
+              </p>
+              <Button
+                onClick={startSimulation}
+                className="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold px-8 h-11 rounded-xl shadow-lg shadow-emerald-500/20 gap-2 transition-all hover:shadow-emerald-500/30"
+              >
+                <Play className="h-4 w-4" />
+                Iniciar Simulação
+              </Button>
             </div>
           ) : (
             <>
               {messages.map((msg) => (
-                <div key={msg.id} className={cn("flex flex-col animate-in fade-in slide-in-from-bottom-3 duration-500 ease-out", msg.type === 'bot' ? 'items-start' : 'items-end', msg.type === 'system' && 'items-center my-6')}>
+                <div key={msg.id} className={cn(
+                  "flex animate-in fade-in slide-in-from-bottom-2 duration-300",
+                  msg.type === 'user' ? 'justify-end' : msg.type === 'system' || msg.type === 'action' ? 'justify-center' : 'justify-start'
+                )}>
                   {msg.type === 'system' ? (
-                    <div className="bg-white/40 dark:bg-white/5 backdrop-blur-md px-5 py-2 rounded-2xl shadow-sm border border-black/5 dark:border-white/5 max-w-[90%] text-center">
-                      <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 capitalize">
-                        {msg.content.toLowerCase().replace(/\[.*?\]\s*/g, '')}
-                      </span>
+                    <div className="bg-white/[0.04] px-4 py-1.5 rounded-full">
+                      <span className="text-[10px] font-medium text-white/30">{msg.content}</span>
+                    </div>
+                  ) : msg.type === 'action' ? (
+                    <div className="flex items-center gap-2 bg-white/[0.03] border border-white/[0.06] px-3.5 py-1.5 rounded-xl">
+                      <span className="text-xs">{msg.actionIcon}</span>
+                      <span className="text-[11px] font-medium text-white/40">{msg.content}</span>
                     </div>
                   ) : (
                     <div className={cn(
-                      "max-w-[85%] px-4 py-3 rounded-2xl shadow-md relative group transition-all duration-300",
+                      "max-w-[82%] px-3.5 py-2.5 relative",
                       msg.type === 'bot'
-                        ? 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 rounded-tl-sm border border-slate-100 dark:border-slate-700/50'
-                        : 'bg-primary text-white rounded-tr-sm shadow-primary/20'
+                        ? 'bg-white/[0.06] rounded-2xl rounded-tl-md border border-white/[0.06]'
+                        : 'bg-emerald-600/90 rounded-2xl rounded-tr-md'
                     )}>
-                      {msg.type === 'bot' && (
-                        <div className="flex items-center gap-1.5 mb-1.5 text-[10px] font-bold text-primary dark:text-primary-foreground opacity-90">
-                          <Bot className="h-3 w-3" />
-                          <span className="tracking-wide">WIZZY AI</span>
+                      {msg.type === 'bot' && msg.agentName && (
+                        <div className="flex items-center gap-1 mb-1">
+                          <Sparkles className="h-2.5 w-2.5 text-emerald-400" />
+                          <span className="text-[10px] font-semibold text-emerald-400/80">{msg.agentName}</span>
                         </div>
                       )}
                       {renderMediaPreview(msg)}
-                      <p className="text-[14px] leading-[1.6] whitespace-pre-wrap font-medium">{msg.content}</p>
-                      <div className="flex items-center justify-end gap-1.5 mt-2 opacity-60">
-                        <span className="text-[10px] font-medium">{msg.timestamp.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
-                        {msg.type === 'user' && <CheckCheck className="h-3.5 w-3.5" />}
+                      <p className="text-[13px] leading-relaxed whitespace-pre-wrap text-white/85">{msg.content}</p>
+                      <div className="flex items-center justify-end gap-1 mt-1 opacity-40">
+                        <span className="text-[9px] text-white/60">{msg.timestamp.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+                        {msg.type === 'user' && <CheckCheck className={cn("h-3 w-3", msg.status === 'read' ? 'text-blue-400' : 'text-white/40')} />}
                       </div>
                     </div>
                   )}
                 </div>
               ))}
+
+              {/* Typing / thinking indicator */}
               {(isProcessing || isThinking || isRecording) && (
-                <div className="flex flex-col items-start animate-in fade-in duration-500">
-                  <div className="bg-white dark:bg-slate-800 px-5 py-4 rounded-2xl rounded-tl-sm shadow-md border border-slate-100 dark:border-slate-700/50 min-w-[140px]">
-                    <div className="flex items-center gap-2.5 mb-2.5">
-                      <div className="h-4.5 w-4.5 rounded-lg bg-primary/10 flex items-center justify-center">
-                        <Loader2 className="h-3.5 w-3.5 text-primary animate-spin" />
-                      </div>
-                      <span className="text-[11px] font-bold text-primary tracking-tight">
-                        {isThinking ? (currentAgentName || "Wizzy AI Pensando") : isRecording ? "IA Gravando Áudio" : "Wizzy AI Digitando"}
+                <div className="flex justify-start animate-in fade-in duration-300">
+                  <div className="bg-white/[0.06] border border-white/[0.06] px-4 py-3 rounded-2xl rounded-tl-md">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <Loader2 className="h-3 w-3 text-emerald-400 animate-spin" />
+                      <span className="text-[10px] font-semibold text-emerald-400/80">
+                        {isThinking ? (simState.activeAgentName || 'IA') + ' pensando' : isRecording ? 'Gravando áudio' : 'Digitando'}
                       </span>
                     </div>
-                    {isThinking && (
-                      <div className="flex flex-col gap-2.5">
-                        <div className="flex gap-1.5">
-                          <span className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce [animation-duration:0.8s]" style={{ animationDelay: '0ms' }} />
-                          <span className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce [animation-duration:0.8s]" style={{ animationDelay: '150ms' }} />
-                          <span className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce [animation-duration:0.8s]" style={{ animationDelay: '300ms' }} />
-                        </div>
-                        <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium leading-tight">Preparando uma resposta personalizada para você...</p>
-                      </div>
-                    )}
-                    {(isProcessing || isRecording) && !isThinking && (
-                      <div className="flex flex-col gap-2">
-                        <div className="flex gap-1.5">
-                          <span className={cn("w-1.5 h-1.5 rounded-full animate-bounce [animation-duration:0.8s]", isRecording ? "bg-red-500" : "bg-primary/40")} style={{ animationDelay: '0ms' }} />
-                          <span className={cn("w-1.5 h-1.5 rounded-full animate-bounce [animation-duration:0.8s]", isRecording ? "bg-red-500" : "bg-primary/40")} style={{ animationDelay: '150ms' }} />
-                          <span className={cn("w-1.5 h-1.5 rounded-full animate-bounce [animation-duration:0.8s]", isRecording ? "bg-red-500" : "bg-primary/40")} style={{ animationDelay: '300ms' }} />
-                        </div>
-                      </div>
-                    )}
+                    <div className="flex gap-1">
+                      {[0, 150, 300].map(delay => (
+                        <span key={delay} className={cn("w-1.5 h-1.5 rounded-full animate-bounce [animation-duration:0.7s]", isRecording ? "bg-red-400" : "bg-emerald-400/60")} style={{ animationDelay: `${delay}ms` }} />
+                      ))}
+                    </div>
                   </div>
                 </div>
               )}
@@ -755,48 +821,64 @@ Responda sempre em português brasileiro de forma profissional e prestativa.`;
           )}
         </div>
 
-        <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl p-4 border-t border-black/5 dark:border-white/5 space-y-4 shadow-xl z-20">
-          {simulationState.pendingButtons && simulationState.pendingButtons.length > 0 && !isProcessing && (
-            <div className="flex flex-wrap gap-2 animate-in slide-in-from-bottom-4 duration-700 ease-out px-1">
-              {simulationState.pendingButtons.map((btn) => (
-                <Button
-                  key={btn.id}
-                  variant="outline"
-                  size="sm"
-                  className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 shadow-sm hover:border-primary text-primary font-bold rounded-xl px-4 py-4 h-auto transition-all hover:scale-[1.03] active:scale-95 text-xs"
-                  onClick={() => handleButtonClick(btn)}
-                >
-                  {btn.label}
-                </Button>
-              ))}
-            </div>
-          )}
-          <form onSubmit={(e) => { e.preventDefault(); handleUserInput(); }} className="flex items-center gap-2.5 px-1">
-            <div className="flex-1 bg-slate-100 dark:bg-slate-800/50 rounded-2xl px-4 h-12 flex items-center shadow-inner border border-transparent focus-within:border-primary/30 transition-all focus-within:bg-white dark:focus-within:bg-slate-800 focus-within:shadow-md">
-              <Input
-                ref={inputRef}
-                value={userInput}
-                onChange={(e) => setUserInput(e.target.value)}
-                placeholder={simulationState.waitingForInput ? "Escreva aqui sua resposta..." : "Aguarde o simulador..."}
-                disabled={!simulationState.waitingForInput || isProcessing || isThinking}
-                className="border-none bg-transparent focus-visible:ring-0 px-0 h-full text-[14px] placeholder:text-slate-400 font-medium"
-              />
-            </div>
-            <Button
-              type="submit"
-              size="icon"
-              disabled={!simulationState.waitingForInput || isProcessing || isThinking || !userInput.trim()}
-              className="h-12 w-12 rounded-2xl bg-primary hover:bg-primary/90 shadow-lg shadow-primary/20 transition-all hover:scale-105 active:scale-95 disabled:grayscale disabled:opacity-50"
-            >
-              <Send className="h-5 w-5 text-white" />
-            </Button>
-          </form>
-          <div className="pt-1">
-            <p className="text-[10px] text-slate-400 dark:text-slate-500 text-center font-bold tracking-widest uppercase opacity-70">
-              Wizzy Simulator Engine 2026
-            </p>
+        {/* Input area */}
+        {isStarted && (
+          <div className="p-3 border-t border-white/[0.06] bg-white/[0.02] space-y-2.5">
+            {/* Button options */}
+            {simState.pendingButtons && simState.pendingButtons.length > 0 && !isProcessing && (
+              <div className="flex flex-wrap gap-1.5 px-1 animate-in slide-in-from-bottom-3 duration-500">
+                {simState.pendingButtons.map(btn => (
+                  <Button key={btn.id} variant="outline" size="sm" onClick={() => handleButtonClick(btn)}
+                    className="border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 hover:border-emerald-500/50 rounded-xl text-xs font-semibold h-9 px-4 transition-all">
+                    {btn.label}
+                  </Button>
+                ))}
+              </div>
+            )}
+
+            {/* List options */}
+            {simState.pendingList && !isProcessing && (
+              <div className="space-y-1 px-1 animate-in slide-in-from-bottom-3 duration-500 max-h-48 overflow-y-auto">
+                {simState.pendingList.sections.map((section, si) => (
+                  <div key={si}>
+                    {section.title && <p className="text-[10px] font-semibold text-white/30 uppercase tracking-wider px-2 py-1">{section.title}</p>}
+                    {section.rows?.map(row => (
+                      <Button key={row.id} variant="ghost" size="sm" onClick={() => handleListRowClick(row)}
+                        className="w-full justify-start text-left text-white/70 hover:bg-white/5 rounded-lg h-auto py-2 px-3">
+                        <div>
+                          <p className="text-xs font-medium">{row.title}</p>
+                          {row.description && <p className="text-[10px] text-white/30">{row.description}</p>}
+                        </div>
+                      </Button>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Text input */}
+            <form onSubmit={e => { e.preventDefault(); handleUserInput(); }} className="flex items-center gap-2">
+              <div className="flex-1 bg-white/[0.04] rounded-xl px-3.5 h-10 flex items-center border border-white/[0.06] focus-within:border-emerald-500/30 transition-colors">
+                <Input
+                  ref={inputRef}
+                  value={userInput}
+                  onChange={e => setUserInput(e.target.value)}
+                  placeholder={simState.waitingForInput ? "Digite sua mensagem..." : "Aguarde..."}
+                  disabled={!simState.waitingForInput || isProcessing || isThinking}
+                  className="border-none bg-transparent focus-visible:ring-0 px-0 h-full text-[13px] text-white/80 placeholder:text-white/20 font-medium"
+                />
+              </div>
+              <Button
+                type="submit"
+                size="icon"
+                disabled={!simState.waitingForInput || isProcessing || isThinking || !userInput.trim()}
+                className="h-10 w-10 rounded-xl bg-emerald-500 hover:bg-emerald-600 shadow-lg shadow-emerald-500/15 transition-all disabled:opacity-30 disabled:bg-white/5 disabled:shadow-none"
+              >
+                <Send className="h-4 w-4 text-white" />
+              </Button>
+            </form>
           </div>
-        </div>
+        )}
       </SheetContent>
     </Sheet>
   );
