@@ -104,7 +104,7 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
 
     Promise.all([
       supabase.from('tags').select('id, name, color').eq('organization_id', orgId),
-      supabase.from('pipelines').select('id, name, columns:pipeline_columns(id, name, order)').eq('organization_id', orgId),
+      supabase.from('pipelines').select('id, name, columns:pipeline_columns!pipeline_columns_pipeline_id_fkey(id, name, order)').eq('organization_id', orgId),
       supabase.from('ai_agents').select('id, name, prompt_base, persona').eq('organization_id', orgId).eq('is_active', true),
       supabase.from('agent_training_rules').select('*').eq('organization_id', orgId).eq('is_active', true),
     ]).then(([tagsRes, pipRes, agentsRes, rulesRes]) => {

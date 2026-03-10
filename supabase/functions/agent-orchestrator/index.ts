@@ -169,7 +169,7 @@ Deno.serve(async (req) => {
       supabase.from('ai_agents').select('*').eq('organization_id', organizationId).eq('is_active', true),
       supabase.from('tags').select('*').eq('organization_id', organizationId),
       supabase.from('contact_tags').select('*, tag:tags(*)').eq('contact_id', contactId),
-      supabase.from('pipelines').select('*, columns:pipeline_columns(*)').eq('organization_id', organizationId),
+      supabase.from('pipelines').select('*, columns:pipeline_columns!pipeline_columns_pipeline_id_fkey(*)').eq('organization_id', organizationId),
       supabase.from('conversation_pipeline_positions')
         .select('*, pipeline:pipelines(name), column:pipeline_columns(name)')
         .eq('conversation_id', conversationId),
@@ -335,7 +335,7 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
   const [agentsResult, tagsResult, pipelinesResult, trainingRulesResult, integrationConfigResult] = await Promise.all([
     supabase.from('ai_agents').select('*').eq('organization_id', organizationId).eq('is_active', true),
     supabase.from('tags').select('*').eq('organization_id', organizationId),
-    supabase.from('pipelines').select('*, columns:pipeline_columns(*)').eq('organization_id', organizationId),
+    supabase.from('pipelines').select('*, columns:pipeline_columns!pipeline_columns_pipeline_id_fkey(*)').eq('organization_id', organizationId),
     supabase.from('agent_training_rules').select('*').eq('organization_id', organizationId).eq('is_active', true),
     resolveIntegrationConfig(supabase, organizationId),
   ]);
@@ -348,8 +348,21 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
 
   const agent = agentId ? agents.find((a: any) => a.id === agentId) : null;
 
-  // Resolve AI config (same logic as production)
-  const aiConfig = resolveAIConfig(integrationConfig, 'agents', LOVABLE_API_KEY);
+  // Resolve AI config — IDENTICAL to production (line 223-227 + resolveAgentConfig)
+  // 1. Start with master prompt provider/model → integration_configs → defaults
+  const masterProvider = integrationConfig?.ai_provider || 'lovable';
+  const masterModel = integrationConfig?.default_model || 'google/gemini-2.5-flash';
+  const baseAiConfig = resolveAIConfig(integrationConfig, 'agents', LOVABLE_API_KEY, masterProvider, masterModel);
+  
+  // 2. Check agent-level overrides (same as resolveAgentConfig in production)
+  let aiConfig = baseAiConfig;
+  if (agent?.provider || agent?.model) {
+    const agentProvider = agent.provider || integrationConfig?.ai_provider || 'lovable';
+    const agentModel = agent.model || integrationConfig?.default_model || 'google/gemini-2.5-flash';
+    aiConfig = resolveAIConfig(integrationConfig, 'agents', LOVABLE_API_KEY, agentProvider, agentModel);
+  }
+  
+  console.log(`[SIMULATION] AI Config resolved: model=${aiConfig.model}, endpoint=${aiConfig.endpoint}`);
 
   // Build system prompt — EXACT SAME as invokeAgentAI
   let systemPrompt = '';
