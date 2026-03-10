@@ -73,9 +73,14 @@ const ConversationsPage = () => {
     const allowedTags = userPermissions?.conversations_allowed_tags || [];
     const allowedPipelineIds = userPermissions?.allowed_pipeline_ids || [];
 
+    const sharedConvIds = new Set(myShares.map(s => s.conversation_id));
+
     return conversations.filter(conv => {
+      // Shared conversations always bypass permission filters
+      const isSharedWithMe = sharedConvIds.has(conv.id);
+
       // === PERMISSION-BASED FILTER (for non-owner/admin users) ===
-      if (isRestricted && filterType !== 'all') {
+      if (isRestricted && filterType !== 'all' && !isSharedWithMe) {
         const isAssigned = conv.assigned_to === user?.id;
         const contactTagIds = allContactTags?.filter(ct => ct.contact_id === conv.contact?.id).map(ct => ct.tag_id) || [];
         const hasAllowedTag = allowedTags.length > 0 && allowedTags.some(tagId => contactTagIds.includes(tagId));
@@ -86,14 +91,12 @@ const ConversationsPage = () => {
       }
 
       // === PIPELINE-BASED FILTER (for restricted users with specific pipeline access) ===
-      if (hasPipelineRestriction && allowedPipelineIds.length > 0) {
+      if (hasPipelineRestriction && allowedPipelineIds.length > 0 && !isSharedWithMe) {
         const convPipelines = pipelinePositions.filter(pp => pp.conversation_id === conv.id);
-        // If the conversation is in any pipeline, check if it's in an allowed one
         if (convPipelines.length > 0) {
           const isInAllowedPipeline = convPipelines.some(pp => allowedPipelineIds.includes(pp.pipeline_id));
           if (!isInAllowedPipeline) return false;
         }
-        // Conversations not in any pipeline are still visible (unclassified)
       }
 
       // === WORKSPACE FILTER ===
