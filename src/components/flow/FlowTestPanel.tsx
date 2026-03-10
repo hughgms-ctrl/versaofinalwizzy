@@ -32,6 +32,12 @@ interface SimMessage {
   status: 'sending' | 'sent' | 'delivered' | 'read';
   agentName?: string;
   actionIcon?: string;
+  aiMetadata?: {
+    agent_id?: string;
+    flow_id?: string;
+    node_id?: string;
+    master_prompt_id?: string;
+  };
 }
 
 interface SimState {
