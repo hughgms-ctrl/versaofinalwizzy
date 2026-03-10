@@ -442,10 +442,14 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
     systemPrompt += `- Você é o último agente do fluxo. Continue atendendo até que a conversa se encerre naturalmente.\n`;
   }
 
-  // Build messages (from provided history)
+  // Build messages (from provided history) — limit to last 20 messages to reduce latency
+  const history = (conversationHistory || []);
+  const trimmedHistory = history.length > 20 ? history.slice(-20) : history;
+  console.log(`[SIMULATION] System prompt length: ${systemPrompt.length} chars, history: ${trimmedHistory.length}/${history.length} messages`);
+  
   const aiMessages: any[] = [
     { role: 'system', content: systemPrompt },
-    ...(conversationHistory || []),
+    ...trimmedHistory,
   ];
 
   // Tools (same as production but only send_reply for simulation — tools don't execute)
@@ -1231,14 +1235,25 @@ async function invokeAgentAI(
     console.log(`--- Agent AI Round ${round} ---`);
 
     const agentConfig = resolveAgentConfig(ctx, agent, ctx.integrationConfig);
-    const aiResponse = await fetch(agentConfig.endpoint, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${agentConfig.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ model: agentConfig.model, messages: aiMessages, tools, tool_choice: 'auto' }),
-    });
+    const abortCtrl = new AbortController();
+    const tid = setTimeout(() => abortCtrl.abort(), 25000);
+    let aiResponse: Response;
+    try {
+      aiResponse = await fetch(agentConfig.endpoint, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${agentConfig.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ model: agentConfig.model, messages: aiMessages, tools, tool_choice: 'auto' }),
+        signal: abortCtrl.signal,
+      });
+    } catch (fetchErr: any) {
+      clearTimeout(tid);
+      console.error('[AGENT] AI fetch error:', fetchErr.name, fetchErr.message);
+      break;
+    }
+    clearTimeout(tid);
 
     if (!aiResponse.ok) {
       const errorText = await aiResponse.text();
@@ -1482,14 +1497,25 @@ async function invokeDocumentAgentAI(
     round++;
     console.log(`--- Document Agent AI Round ${round} ---`);
 
-    const aiResponse = await fetch(ctx.aiEndpoint, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${ctx.aiApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ model: ctx.aiModel, messages: aiMessages, tools, tool_choice: 'auto' }),
-    });
+    const abortCtrl = new AbortController();
+    const tid = setTimeout(() => abortCtrl.abort(), 25000);
+    let aiResponse: Response;
+    try {
+      aiResponse = await fetch(ctx.aiEndpoint, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${ctx.aiApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ model: ctx.aiModel, messages: aiMessages, tools, tool_choice: 'auto' }),
+        signal: abortCtrl.signal,
+      });
+    } catch (fetchErr: any) {
+      clearTimeout(tid);
+      console.error('[DOC-AGENT] AI fetch error:', fetchErr.name, fetchErr.message);
+      break;
+    }
+    clearTimeout(tid);
 
     if (!aiResponse.ok) {
       const errorText = await aiResponse.text();
@@ -1797,11 +1823,22 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
 
   while (round < MAX_TOOL_ROUNDS) {
     round++;
-    const aiResponse = await fetch(ctx.aiEndpoint, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${ctx.aiApiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: ctx.aiModel, messages: aiMessages, tools, tool_choice: 'auto' }),
-    });
+    const abortCtrl = new AbortController();
+    const tid = setTimeout(() => abortCtrl.abort(), 25000);
+    let aiResponse: Response;
+    try {
+      aiResponse = await fetch(ctx.aiEndpoint, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${ctx.aiApiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: ctx.aiModel, messages: aiMessages, tools, tool_choice: 'auto' }),
+        signal: abortCtrl.signal,
+      });
+    } catch (fetchErr: any) {
+      clearTimeout(tid);
+      console.error('[ORCHESTRATOR] AI fetch error:', fetchErr.name, fetchErr.message);
+      break;
+    }
+    clearTimeout(tid);
 
     if (!aiResponse.ok) break;
 

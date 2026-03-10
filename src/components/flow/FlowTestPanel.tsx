@@ -268,29 +268,62 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
         content: m.content 
       }));
 
-      // Call agent-orchestrator in simulation mode — EXACT same prompt, model, and tools
+      // Call agent-orchestrator in simulation mode — with retry on timeout
       console.log('[SIM] Calling agent-orchestrator simulation', { agentId: agentId || simState.activeAgentId, isFirstActivation, hasNextNodes, historyLen: conversationHistory.length });
-      const { data, error } = await supabase.functions.invoke('agent-orchestrator', {
-        body: {
-          simulationMode: true,
-          organizationId: orgContext?.organizationId,
-          agentId: agentId || simState.activeAgentId,
-          agentName: agent?.name || simState.activeAgentName,
-          masterPrompt: masterPrompt,
-          additionalPrompt,
-          conversationHistory,
-          flowId: simState.activeFlowId,
-          nodeId,
-          isFirstActivation,
-          hasNextNodes,
-          contactName: 'Cliente Simulado',
-        },
-      });
-
-      console.log('[SIM] agent-orchestrator response:', { data, error });
+      
+      let data: any = null;
+      let lastError: any = null;
+      const MAX_RETRIES = 2;
+      
+      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        const result = await supabase.functions.invoke('agent-orchestrator', {
+          body: {
+            simulationMode: true,
+            organizationId: orgContext?.organizationId,
+            agentId: agentId || simState.activeAgentId,
+            agentName: agent?.name || simState.activeAgentName,
+            masterPrompt: masterPrompt,
+            additionalPrompt,
+            conversationHistory,
+            flowId: simState.activeFlowId,
+            nodeId,
+            isFirstActivation,
+            hasNextNodes,
+            contactName: 'Cliente Simulado',
+          },
+        });
+        
+        console.log(`[SIM] agent-orchestrator attempt ${attempt}/${MAX_RETRIES}:`, { data: result.data, error: result.error });
+        
+        if (!result.error && result.data && !result.data.error) {
+          data = result.data;
+          lastError = null;
+          break;
+        }
+        
+        lastError = result.error || (result.data?.error ? new Error(result.data.error) : null);
+        
+        // If it's a timeout/fetch error, retry
+        const isTimeout = result.error?.message?.includes('Failed to fetch') || 
+                          result.error?.message?.includes('FunctionsFetchError') ||
+                          result.data?.error?.includes('timeout');
+        
+        if (isTimeout && attempt < MAX_RETRIES) {
+          console.log(`[SIM] Retrying after timeout (attempt ${attempt}/${MAX_RETRIES})...`);
+          await new Promise(r => setTimeout(r, 1000));
+          continue;
+        }
+        
+        // Non-timeout error or last attempt
+        if (result.data?.error) {
+          lastError = new Error(result.data.error);
+        }
+        break;
+      }
+      
       setIsThinking(false);
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
+      if (lastError) throw lastError;
+      if (!data) throw new Error('Sem resposta da IA após tentativas');
 
       let reply = data?.content || '';
 
