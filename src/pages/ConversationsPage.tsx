@@ -47,14 +47,29 @@ const ConversationsPage = () => {
     },
   });
 
+  // Fetch pipeline positions to filter conversations by pipeline access
+  const isRestricted = userRole && userRole !== 'owner' && userRole !== 'admin';
+  const hasPipelineRestriction = isRestricted && userPermissions?.pipeline_access_type === 'specific' && (userPermissions?.allowed_pipeline_ids?.length ?? 0) > 0;
+
+  const { data: pipelinePositions = [] } = useQuery({
+    queryKey: ['conversation-pipeline-positions-for-permissions'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('conversation_pipeline_positions')
+        .select('conversation_id, pipeline_id');
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!hasPipelineRestriction,
+  });
+
   // Filter conversations by search query, all filters, and service mode
   const filteredConversations = useMemo(() => {
     if (!conversations) return [];
 
-    // Check if user is restricted (not owner/admin)
-    const isRestricted = userRole && userRole !== 'owner' && userRole !== 'admin';
     const filterType = userPermissions?.conversations_filter_type || 'all';
     const allowedTags = userPermissions?.conversations_allowed_tags || [];
+    const allowedPipelineIds = userPermissions?.allowed_pipeline_ids || [];
 
     return conversations.filter(conv => {
       // === PERMISSION-BASED FILTER (for non-owner/admin users) ===
@@ -66,6 +81,17 @@ const ConversationsPage = () => {
         if (filterType === 'assigned' && !isAssigned) return false;
         if (filterType === 'tags' && !hasAllowedTag) return false;
         if (filterType === 'assigned_and_tags' && !isAssigned && !hasAllowedTag) return false;
+      }
+
+      // === PIPELINE-BASED FILTER (for restricted users with specific pipeline access) ===
+      if (hasPipelineRestriction && allowedPipelineIds.length > 0) {
+        const convPipelines = pipelinePositions.filter(pp => pp.conversation_id === conv.id);
+        // If the conversation is in any pipeline, check if it's in an allowed one
+        if (convPipelines.length > 0) {
+          const isInAllowedPipeline = convPipelines.some(pp => allowedPipelineIds.includes(pp.pipeline_id));
+          if (!isInAllowedPipeline) return false;
+        }
+        // Conversations not in any pipeline are still visible (unclassified)
       }
 
       // === WORKSPACE FILTER ===
@@ -128,7 +154,7 @@ const ConversationsPage = () => {
 
       return true;
     });
-  }, [conversations, searchQuery, filters, allContactTags, serviceMode, showArchived, selectedWorkspaceId, selectedWorkspace, userRole, userPermissions, user?.id]);
+  }, [conversations, searchQuery, filters, allContactTags, serviceMode, showArchived, selectedWorkspaceId, selectedWorkspace, userRole, userPermissions, user?.id, pipelinePositions, hasPipelineRestriction]);
 
   // Count conversations by service mode (filtered by workspace + permissions)
   const serviceModeCounts = useMemo(() => {
@@ -137,6 +163,8 @@ const ConversationsPage = () => {
     const isRestricted = userRole && userRole !== 'owner' && userRole !== 'admin';
     const filterType = userPermissions?.conversations_filter_type || 'all';
     const allowedTags = userPermissions?.conversations_allowed_tags || [];
+
+    const allowedPipelineIds = userPermissions?.allowed_pipeline_ids || [];
 
     const workspaceFiltered = conversations.filter(conv => {
       if (conv.status === 'archived') return false;
@@ -150,6 +178,15 @@ const ConversationsPage = () => {
         if (filterType === 'assigned' && !isAssigned) return false;
         if (filterType === 'tags' && !hasAllowedTag) return false;
         if (filterType === 'assigned_and_tags' && !isAssigned && !hasAllowedTag) return false;
+      }
+
+      // Pipeline permission filter
+      if (hasPipelineRestriction && allowedPipelineIds.length > 0) {
+        const convPipelines = pipelinePositions.filter(pp => pp.conversation_id === conv.id);
+        if (convPipelines.length > 0) {
+          const isInAllowedPipeline = convPipelines.some(pp => allowedPipelineIds.includes(pp.pipeline_id));
+          if (!isInAllowedPipeline) return false;
+        }
       }
 
       if (selectedWorkspaceId && selectedWorkspace) {
@@ -170,7 +207,7 @@ const ConversationsPage = () => {
       }
       return acc;
     }, { ia: 0, ativo: 0, pendente: 0 });
-  }, [conversations, selectedWorkspaceId, selectedWorkspace, allContactTags, userRole, userPermissions, user?.id]);
+  }, [conversations, selectedWorkspaceId, selectedWorkspace, allContactTags, userRole, userPermissions, user?.id, pipelinePositions, hasPipelineRestriction]);
 
   // Mark conversation as read when selected (unless spy mode)
   const handleSelectConversation = useCallback(async (conversation: DbConversation) => {
