@@ -38,6 +38,9 @@ import { useUserPermissions, useUpdateUserPermissions, UserPermissions } from '@
 import { useTags, Tag } from '@/hooks/useTags';
 import { usePipelines, Pipeline } from '@/hooks/usePipelines';
 import { useWorkspaces, useUserWorkspaces, useManageWorkspaceMembers, Workspace } from '@/hooks/useWorkspaces';
+import { useConversationSharesByMember, useUnshareConversation } from '@/hooks/useConversationShares';
+import { useConversations } from '@/hooks/useConversations';
+import { Share2, Trash2 } from 'lucide-react';
 
 interface EditPermissionsDialogProps {
   open: boolean;
