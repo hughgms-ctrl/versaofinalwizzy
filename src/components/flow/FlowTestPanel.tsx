@@ -418,6 +418,27 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
       else { endFlow(); }
     };
 
+    // Helper: handle nodes that wait for response with optional follow-ups
+    const handleWaitWithFollowUps = async (variableName: string, outputHandle?: string) => {
+      const steps = (d.remarketingSteps as Array<{ id?: string; delayMinutes: number; message: string }>) || [];
+      if (steps.length > 0) {
+        addMsg({ type: 'action', content: `Aguardando resposta com ${steps.length} follow-up(s)`, actionIcon: '📩' });
+        const responded = await waitForResponseWithFollowUps(steps, variableName);
+        if (responded) {
+          addMsg({ type: 'action', content: `✓ Cliente respondeu`, actionIcon: '✅' });
+          await wait(400);
+          await advanceOrEnd('responded');
+        } else {
+          addMsg({ type: 'action', content: `✗ Timeout — sem resposta`, actionIcon: '⏱️' });
+          await wait(400);
+          await advanceOrEnd('timeout');
+        }
+      } else {
+        // No follow-ups, just wait for regular input
+        setSimState(prev => ({ ...prev, waitingForInput: true, inputVariable: variableName }));
+      }
+    };
+
     switch (t) {
       case 'start':
         await wait(600);
@@ -429,7 +450,7 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
         if (items.length > 0) await processContentBlock(items);
         const waitForResponse = !!d.waitForResponse;
         if (waitForResponse) {
-          setSimState(prev => ({ ...prev, waitingForInput: true, inputVariable: d.saveVariable || 'resposta' }));
+          await handleWaitWithFollowUps(d.saveVariable || 'resposta');
         } else {
           await advanceOrEnd();
         }
@@ -442,7 +463,14 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
         addMsg({ type: 'bot', content: text });
         await wait(400);
         if (buttons.filter(b => b.label).length > 0) {
-          setSimState(prev => ({ ...prev, waitingForInput: true, pendingButtons: buttons.filter(b => b.label) }));
+          const steps = (d.remarketingSteps as any[]) || [];
+          if (steps.length > 0) {
+            // Show buttons AND start follow-up timer
+            setSimState(prev => ({ ...prev, pendingButtons: buttons.filter(b => b.label) }));
+            await handleWaitWithFollowUps('button_choice');
+          } else {
+            setSimState(prev => ({ ...prev, waitingForInput: true, pendingButtons: buttons.filter(b => b.label) }));
+          }
         } else { await advanceOrEnd(); }
         break;
       }
@@ -453,14 +481,20 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
         const sections = (d.sections as any[]) || [];
         addMsg({ type: 'bot', content: bodyText });
         await wait(400);
-        setSimState(prev => ({ ...prev, waitingForInput: true, pendingList: { title: bodyText, buttonText, sections } }));
+        const steps = (d.remarketingSteps as any[]) || [];
+        if (steps.length > 0) {
+          setSimState(prev => ({ ...prev, pendingList: { title: bodyText, buttonText, sections } }));
+          await handleWaitWithFollowUps('list_choice');
+        } else {
+          setSimState(prev => ({ ...prev, waitingForInput: true, pendingList: { title: bodyText, buttonText, sections } }));
+        }
         break;
       }
 
       case 'user-input': {
         const varName = (d.variableName as string) || 'resposta';
         addMsg({ type: 'action', content: `Aguardando resposta do cliente (${varName})`, actionIcon: '📝' });
-        setSimState(prev => ({ ...prev, waitingForInput: true, inputVariable: varName }));
+        await handleWaitWithFollowUps(varName);
         break;
       }
 
@@ -502,7 +536,6 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
         setIsProcessing(false);
         addMsg({ type: 'action', content: `Resultado: ${branch}`, actionIcon: '✓' });
         await wait(500);
-        // Find the edge for this branch
         const outEdges = edges.filter(e => e.source === node.id);
         const targetEdge = outEdges.find(e => e.sourceHandle === branch)
           || outEdges.find(e => e.sourceHandle === 'default')
@@ -517,6 +550,12 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
 
       case 'action-flow': {
         const subFlowId = d.flowId;
+        if (!subFlowId) {
+          addMsg({ type: 'action', content: `⚠️ Nenhum fluxo selecionado`, actionIcon: '❌' });
+          await advanceOrEnd();
+          break;
+        }
+
         addMsg({ type: 'action', content: `Iniciando sub-fluxo: ${d.flowName || d.label || '...'}`, actionIcon: '🔄' });
         setIsProcessing(true);
         try {
@@ -533,11 +572,11 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
 
           const subNodes = (subFlow as any).nodes as Node[];
           const subEdges = (subFlow as any).edges as Edge[];
-          const start = subNodes.find(n => n.type === 'start');
+          const startNode = subNodes.find(n => n.type === 'start');
           setIsProcessing(false);
-          if (start) await processNode(start, subNodes, subEdges);
+          if (startNode) await processNode(startNode, subNodes, subEdges);
 
-          // After sub-flow, pop stack and continue parent
+          // After sub-flow completes, pop stack and restore parent context
           setSimState(prev => {
             const stack = [...prev.parentFlowStack];
             const parent = stack.pop();
@@ -547,13 +586,26 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
             return prev;
           });
 
-          // Continue parent flow
-          const parentStack = simState.parentFlowStack;
-          if (parentStack.length > 0) {
-            const parent = parentStack[parentStack.length - 1];
-            const nextInParent = findNext(node.id, parent.nodes, parent.edges);
-            if (nextInParent) await processNode(nextInParent, parent.nodes, parent.edges);
-            else endFlow();
+          // Now handle waitForResponse + follow-ups on the action-flow node
+          const waitForResp = d.waitForResponse !== false; // default true for action-flow
+          const followUpSteps = (d.remarketingSteps as any[]) || [];
+
+          if (waitForResp && followUpSteps.length > 0) {
+            // Wait for user to respond with follow-up messages
+            addMsg({ type: 'action', content: `Aguardando resposta com ${followUpSteps.length} follow-up(s)`, actionIcon: '📩' });
+            const responded = await waitForResponseWithFollowUps(followUpSteps, 'resposta');
+            if (responded) {
+              addMsg({ type: 'action', content: `✓ Cliente respondeu`, actionIcon: '✅' });
+              await wait(400);
+              await advanceOrEnd('responded');
+            } else {
+              addMsg({ type: 'action', content: `✗ Timeout — sem resposta`, actionIcon: '⏱️' });
+              await wait(400);
+              await advanceOrEnd('timeout');
+            }
+          } else if (waitForResp) {
+            // Wait for response but no follow-ups
+            setSimState(prev => ({ ...prev, waitingForInput: true, inputVariable: 'resposta' }));
           } else {
             await advanceOrEnd();
           }
