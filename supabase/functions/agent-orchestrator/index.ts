@@ -206,6 +206,7 @@ Deno.serve(async (req) => {
     const pipelinePositions = pipelinePositionsResult.data || [];
     const flows = flowsResult.data || [];
     const trainingRules = trainingRulesResult.data || [];
+    console.log(`[ORCHESTRATOR] Loaded ${trainingRules.length} active training rules for org ${organizationId}`);
 
     // Resolve AI config: masterPrompt > integration_configs > workspace_agent_configs > defaults
     const masterProvider = masterPrompt.provider || integrationConfig?.ai_provider || 'lovable';
@@ -232,6 +233,9 @@ Deno.serve(async (req) => {
         .single();
       if (flowExec) resolvedFlowId = flowExec.flow_id;
     }
+
+    // Inject resolvedFlowId into context so training rules can match flow_node rules
+    (context as any).resolvedFlowId = resolvedFlowId;
 
     // 5. Check for flow-based orchestration
     const flowNodes = masterPrompt.agent_rules?.orchestration_nodes;
@@ -751,7 +755,7 @@ async function invokeAgentAI(
   // Inject training rules
   const rulesSection = buildTrainingRulesSection(ctx.trainingRules, {
     agentId: agent?.id, masterPromptId: ctx.masterPrompt?.id,
-    flowId: (ctx.masterPrompt as any)?.flow_id, nodeId: agentNode?.id,
+    flowId: ctx.resolvedFlowId || (ctx.masterPrompt as any)?.flow_id, nodeId: agentNode?.id,
   });
   if (rulesSection) systemPrompt += rulesSection;
 
@@ -1796,6 +1800,7 @@ function buildLegacySystemPrompt(ctx: any): string {
   // Inject training rules
   const rulesSection = buildTrainingRulesSection(ctx.trainingRules, {
     agentId: ctx.conversation?.ai_agent_id, masterPromptId: ctx.masterPrompt?.id,
+    flowId: ctx.resolvedFlowId,
   });
   if (rulesSection) prompt += rulesSection;
 
@@ -1810,16 +1815,36 @@ function buildTrainingRulesSection(
 ): string {
   if (!allRules || allRules.length === 0) return '';
 
-  // Filter relevant rules for this context
+  // Filter relevant rules for this context — inclusive matching
   const relevant = allRules.filter((r: any) => {
     if (!r.is_active) return false;
-    if (r.target_type === 'agent' && r.agent_id === filters.agentId) return true;
-    if (r.target_type === 'master_prompt' && r.master_prompt_id === filters.masterPromptId) return true;
-    if (r.target_type === 'flow_node' && r.flow_id === filters.flowId) {
-      if (r.node_id && filters.nodeId) return r.node_id === filters.nodeId;
-      return true; // flow-level rule without specific node
+
+    // Agent rules: match if targeting this agent OR if no agent_id specified (applies to all agents)
+    if (r.target_type === 'agent') {
+      if (!r.agent_id) return true; // Global agent rule — applies to all
+      if (filters.agentId && r.agent_id === filters.agentId) return true;
+      return false;
     }
-    return false;
+
+    // Master prompt rules: match if targeting this prompt OR no master_prompt_id (global)
+    if (r.target_type === 'master_prompt') {
+      if (!r.master_prompt_id) return true; // Global master prompt rule
+      if (filters.masterPromptId && r.master_prompt_id === filters.masterPromptId) return true;
+      return false;
+    }
+
+    // Flow node rules: match by flow and optionally node
+    if (r.target_type === 'flow_node') {
+      if (!r.flow_id) return true; // Global flow rule
+      if (filters.flowId && r.flow_id === filters.flowId) {
+        if (r.node_id && filters.nodeId) return r.node_id === filters.nodeId;
+        return true; // flow-level rule without specific node
+      }
+      return false;
+    }
+
+    // Unknown target_type — include it (safety net)
+    return true;
   });
 
   if (relevant.length === 0) return '';
