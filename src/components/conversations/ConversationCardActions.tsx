@@ -245,7 +245,12 @@ export function ConversationCardActions({
 
         <DropdownMenuSeparator />
 
-        {/* Status Actions */}
+        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setShowShareDialog(true); }}>
+          <UserPlus className="h-4 w-4 mr-2 text-blue-500" />
+          Compartilhar com membro
+        </DropdownMenuItem>
+
+        <DropdownMenuSeparator />
         <DropdownMenuItem onClick={(e) => handleStatusChange('resolved', e)}>
           <CheckCircle className="h-4 w-4 mr-2 text-green-500" />
           Marcar resolvida
