@@ -329,10 +329,15 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
 
       // Keep waiting for user input (continuous AI conversation)
       setSimState(prev => ({ ...prev, waitingForInput: true, inputVariable: 'ai_query' }));
-    } catch (err) {
+    } catch (err: any) {
       console.error('AI error:', err);
       setIsThinking(false);
-      const errMsg = err instanceof Error ? err.message : 'Erro desconhecido';
+      let errMsg = 'Erro desconhecido';
+      if (err?.message?.includes('FunctionsFetchError') || err?.message?.includes('Failed to fetch') || err?.name === 'FunctionsFetchError') {
+        errMsg = 'A função de IA demorou demais (timeout). A chamada ao provedor de IA pode estar lenta. Tente novamente.';
+      } else if (err instanceof Error) {
+        errMsg = err.message;
+      }
       addMsg({ type: 'bot', content: `⚠️ Erro ao conectar com o agente de IA: ${errMsg}` });
       setSimState(prev => ({ ...prev, waitingForInput: true, inputVariable: 'ai_query' }));
     }
