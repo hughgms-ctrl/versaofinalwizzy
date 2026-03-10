@@ -211,33 +211,27 @@ export function AIFeedbackDialog({
               onValueChange={(val: any) => setTarget(val)}
               className="grid grid-cols-1 gap-2"
             >
-              {canUpdateFlow && (
-                <div className="flex items-center space-x-2 rounded-md border border-border p-3 transition-colors hover:bg-muted/50 has-[:checked]:border-primary has-[:checked]:bg-primary/5">
-                  <RadioGroupItem value="flow_node" id="target-flow" />
-                  <Label htmlFor="target-flow" className="flex-1 cursor-pointer font-normal">
-                    <span className="font-semibold block">Neste Nó do Fluxo</span>
-                    <span className="text-xs text-muted-foreground">Aplica apenas nesta etapa específica do fluxo.</span>
-                  </Label>
-                </div>
-              )}
-              {canUpdateBase && (
-                <div className="flex items-center space-x-2 rounded-md border border-border p-3 transition-colors hover:bg-muted/50 has-[:checked]:border-primary has-[:checked]:bg-primary/5">
+              <div className="flex items-center space-x-2 rounded-md border border-border p-3 transition-colors hover:bg-muted/50 has-[:checked]:border-primary has-[:checked]:bg-primary/5">
                   <RadioGroupItem value="agent" id="target-agent" />
                   <Label htmlFor="target-agent" className="flex-1 cursor-pointer font-normal">
-                    <span className="font-semibold block">No Agente</span>
+                    <span className="font-semibold block">Prompt Base (Agente)</span>
                     <span className="text-xs text-muted-foreground">O agente seguirá esta regra em todas as interações.</span>
                   </Label>
                 </div>
-              )}
-              {canUpdateMaster && (
-                <div className="flex items-center space-x-2 rounded-md border border-border p-3 transition-colors hover:bg-muted/50 has-[:checked]:border-primary has-[:checked]:bg-primary/5">
+              <div className="flex items-center space-x-2 rounded-md border border-border p-3 transition-colors hover:bg-muted/50 has-[:checked]:border-primary has-[:checked]:bg-primary/5">
+                  <RadioGroupItem value="flow_node" id="target-flow" />
+                  <Label htmlFor="target-flow" className="flex-1 cursor-pointer font-normal">
+                    <span className="font-semibold block">Prompt Adicional (Nó do Fluxo)</span>
+                    <span className="text-xs text-muted-foreground">Aplica apenas nesta etapa específica do fluxo.</span>
+                  </Label>
+                </div>
+              <div className="flex items-center space-x-2 rounded-md border border-border p-3 transition-colors hover:bg-muted/50 has-[:checked]:border-primary has-[:checked]:bg-primary/5">
                   <RadioGroupItem value="master_prompt" id="target-master" />
                   <Label htmlFor="target-master" className="flex-1 cursor-pointer font-normal">
-                    <span className="font-semibold block">No Prompt Mestre (do Fluxo)</span>
+                    <span className="font-semibold block">Prompt Mestre (do Fluxo)</span>
                     <span className="text-xs text-muted-foreground">Afeta todos os agentes dentro deste fluxo.</span>
                   </Label>
                 </div>
-              )}
             </RadioGroup>
           </div>
         </div>
