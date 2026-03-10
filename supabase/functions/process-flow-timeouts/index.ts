@@ -305,7 +305,7 @@ Deno.serve(async (req) => {
 
     console.log(`[FLOW TIMEOUTS] Processed ${processed} timed-out executions.`);
 
-    return new Response(JSON.stringify({ success: true, processed }), {
+    return new Response(JSON.stringify({ success: true, processed, autoFixed }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {
