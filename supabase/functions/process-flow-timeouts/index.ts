@@ -37,7 +37,36 @@ Deno.serve(async (req) => {
 
     if (!timedOut || timedOut.length === 0) {
       console.log('[FLOW TIMEOUTS] No timed-out executions found.');
-      return new Response(JSON.stringify({ success: true, processed: 0 }), {
+    }
+
+    // Auto-fix: find waiting_input executions with NULL timeout that should have remarketing
+    const { data: stuckExecs } = await supabase
+      .from('flow_executions')
+      .select('id, current_node_id, flow_id, remarketing_step, flow:flows(nodes)')
+      .eq('status', 'waiting_input')
+      .is('timeout_at', null)
+      .eq('remarketing_step', 0)
+      .limit(20);
+
+    let autoFixed = 0;
+    for (const exec of (stuckExecs || [])) {
+      const nodes = (exec.flow?.nodes || []) as any[];
+      const node = nodes.find((n: any) => n.id === exec.current_node_id);
+      const steps = node?.data?.remarketingSteps as any[] || [];
+      if (steps.length > 0) {
+        const firstStep = steps[0];
+        const delayMs = (firstStep.delayMinutes || 1) * 60 * 1000;
+        await supabase.from('flow_executions').update({
+          timeout_at: new Date(Date.now() + delayMs).toISOString(),
+        }).eq('id', exec.id);
+        console.log(`[FLOW TIMEOUTS] Auto-fixed stuck exec ${exec.id}: timeout in ${firstStep.delayMinutes}min`);
+        autoFixed++;
+      }
+    }
+    if (autoFixed > 0) console.log(`[FLOW TIMEOUTS] Auto-fixed ${autoFixed} stuck executions.`);
+
+    if ((!timedOut || timedOut.length === 0) && autoFixed === 0) {
+      return new Response(JSON.stringify({ success: true, processed: 0, autoFixed: 0 }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -276,7 +305,7 @@ Deno.serve(async (req) => {
 
     console.log(`[FLOW TIMEOUTS] Processed ${processed} timed-out executions.`);
 
-    return new Response(JSON.stringify({ success: true, processed }), {
+    return new Response(JSON.stringify({ success: true, processed, autoFixed }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {
