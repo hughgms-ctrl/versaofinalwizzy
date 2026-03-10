@@ -149,11 +149,44 @@ Responda APENAS com o JSON, sem markdown ou comentários.`;
     // Set the correct target reference
     if (target === 'agent' && context?.agentId) {
       ruleRecord.agent_id = context.agentId;
-    } else if (target === 'master_prompt' && context?.masterPromptId) {
-      ruleRecord.master_prompt_id = context.masterPromptId;
-    } else if (target === 'flow_node' && context?.flowId) {
-      ruleRecord.flow_id = context.flowId;
-      ruleRecord.node_id = context.nodeId || null;
+    } else if (target === 'master_prompt') {
+      if (context?.masterPromptId) {
+        ruleRecord.master_prompt_id = context.masterPromptId;
+      }
+      // Also try to resolve flow_id from master prompt or flow execution
+      if (context?.flowId) {
+        ruleRecord.flow_id = context.flowId;
+      }
+    } else if (target === 'flow_node') {
+      ruleRecord.flow_id = context?.flowId || null;
+      ruleRecord.node_id = context?.nodeId || null;
+
+      // Fallback: if flow_id/node_id missing, try to resolve from message's conversation flow execution
+      if ((!ruleRecord.flow_id || !ruleRecord.node_id) && messageId) {
+        console.log('[TRAIN-AI] flow_id/node_id missing, attempting resolution from flow execution...');
+        const { data: msg } = await supabase
+          .from('messages')
+          .select('conversation_id')
+          .eq('id', messageId)
+          .single();
+
+        if (msg) {
+          // Check active or recent flow execution for this conversation
+          const { data: flowExec } = await supabase
+            .from('flow_executions')
+            .select('flow_id, current_node_id')
+            .eq('conversation_id', msg.conversation_id)
+            .order('started_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (flowExec) {
+            if (!ruleRecord.flow_id) ruleRecord.flow_id = flowExec.flow_id;
+            if (!ruleRecord.node_id) ruleRecord.node_id = flowExec.current_node_id;
+            console.log(`[TRAIN-AI] Resolved flow_id=${ruleRecord.flow_id}, node_id=${ruleRecord.node_id} from flow execution`);
+          }
+        }
+      }
     }
 
     const { error: insertError } = await supabase
