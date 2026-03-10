@@ -139,10 +139,14 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
   const addMsg = useCallback((msg: Omit<SimMessage, 'id' | 'timestamp' | 'status'>) => {
     const newId = `m-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const newMsg: SimMessage = { ...msg, id: newId, timestamp: new Date(), status: msg.type === 'bot' ? 'sending' : 'sent' };
-    setMessages(prev => [...prev, newMsg]);
+    setMessages(prev => {
+      const updated = [...prev, newMsg];
+      messagesRef.current = updated;
+      return updated;
+    });
     if (msg.type === 'bot') {
-      setTimeout(() => setMessages(prev => prev.map(m => m.id === newId ? { ...m, status: 'delivered' } : m)), 600);
-      setTimeout(() => setMessages(prev => prev.map(m => m.id === newId ? { ...m, status: 'read' } : m)), 1200);
+      setTimeout(() => setMessages(prev => { const u = prev.map(m => m.id === newId ? { ...m, status: 'delivered' } : m); messagesRef.current = u; return u; }), 600);
+      setTimeout(() => setMessages(prev => { const u = prev.map(m => m.id === newId ? { ...m, status: 'read' } : m); messagesRef.current = u; return u; }), 1200);
     }
     return newId;
   }, []);
