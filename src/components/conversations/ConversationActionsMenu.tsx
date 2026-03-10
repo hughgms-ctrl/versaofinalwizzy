@@ -47,6 +47,7 @@ import { DbConversation } from '@/hooks/useConversations';
 import { useTags, useContactTags, useAddTagToContact, useRemoveTagFromContact } from '@/hooks/useTags';
 import { usePipelines, usePipelineColumns, useMoveConversation } from '@/hooks/usePipelines';
 import { cn } from '@/lib/utils';
+import { ShareConversationDialog } from './ShareConversationDialog';
 
 interface ConversationActionsMenuProps {
   conversation: DbConversation;
