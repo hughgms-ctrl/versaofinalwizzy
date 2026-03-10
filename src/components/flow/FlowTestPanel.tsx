@@ -269,6 +269,7 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
       }));
 
       // Call agent-orchestrator in simulation mode — EXACT same prompt, model, and tools
+      console.log('[SIM] Calling agent-orchestrator simulation', { agentId: agentId || simState.activeAgentId, isFirstActivation, hasNextNodes, historyLen: conversationHistory.length });
       const { data, error } = await supabase.functions.invoke('agent-orchestrator', {
         body: {
           simulationMode: true,
@@ -286,6 +287,7 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
         },
       });
 
+      console.log('[SIM] agent-orchestrator response:', { data, error });
       setIsThinking(false);
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
