@@ -51,7 +51,23 @@ const ConversationsPage = () => {
   const filteredConversations = useMemo(() => {
     if (!conversations) return [];
 
+    // Check if user is restricted (not owner/admin)
+    const isRestricted = userRole && userRole !== 'owner' && userRole !== 'admin';
+    const filterType = userPermissions?.conversations_filter_type || 'all';
+    const allowedTags = userPermissions?.conversations_allowed_tags || [];
+
     return conversations.filter(conv => {
+      // === PERMISSION-BASED FILTER (for non-owner/admin users) ===
+      if (isRestricted && filterType !== 'all') {
+        const isAssigned = conv.assigned_to === user?.id;
+        const contactTagIds = allContactTags?.filter(ct => ct.contact_id === conv.contact?.id).map(ct => ct.tag_id) || [];
+        const hasAllowedTag = allowedTags.length > 0 && allowedTags.some(tagId => contactTagIds.includes(tagId));
+
+        if (filterType === 'assigned' && !isAssigned) return false;
+        if (filterType === 'tags' && !hasAllowedTag) return false;
+        if (filterType === 'assigned_and_tags' && !isAssigned && !hasAllowedTag) return false;
+      }
+
       // === WORKSPACE FILTER ===
       if (selectedWorkspaceId && selectedWorkspace) {
         const workspaceTagIds = selectedWorkspace.filter_tag_ids || [];
