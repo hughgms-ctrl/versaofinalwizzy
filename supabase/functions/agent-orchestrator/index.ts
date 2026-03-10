@@ -363,7 +363,7 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
   }
   
   console.log(`[SIMULATION] AI Config resolved: model=${aiConfig.model}, endpoint=${aiConfig.endpoint}`);
-
+  console.log(`[SIMULATION] Context: agentId=${agentId}, agentName=${agentName}, historyLen=${(conversationHistory || []).length}`);
   // Build system prompt — EXACT SAME as invokeAgentAI
   let systemPrompt = '';
 
