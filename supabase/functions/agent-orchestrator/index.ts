@@ -348,8 +348,21 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
 
   const agent = agentId ? agents.find((a: any) => a.id === agentId) : null;
 
-  // Resolve AI config (same logic as production)
-  const aiConfig = resolveAIConfig(integrationConfig, 'agents', LOVABLE_API_KEY);
+  // Resolve AI config — IDENTICAL to production (line 223-227 + resolveAgentConfig)
+  // 1. Start with master prompt provider/model → integration_configs → defaults
+  const masterProvider = integrationConfig?.ai_provider || 'lovable';
+  const masterModel = integrationConfig?.default_model || 'google/gemini-2.5-flash';
+  const baseAiConfig = resolveAIConfig(integrationConfig, 'agents', LOVABLE_API_KEY, masterProvider, masterModel);
+  
+  // 2. Check agent-level overrides (same as resolveAgentConfig in production)
+  let aiConfig = baseAiConfig;
+  if (agent?.provider || agent?.model) {
+    const agentProvider = agent.provider || integrationConfig?.ai_provider || 'lovable';
+    const agentModel = agent.model || integrationConfig?.default_model || 'google/gemini-2.5-flash';
+    aiConfig = resolveAIConfig(integrationConfig, 'agents', LOVABLE_API_KEY, agentProvider, agentModel);
+  }
+  
+  console.log(`[SIMULATION] AI Config resolved: model=${aiConfig.model}, endpoint=${aiConfig.endpoint}`);
 
   // Build system prompt — EXACT SAME as invokeAgentAI
   let systemPrompt = '';
