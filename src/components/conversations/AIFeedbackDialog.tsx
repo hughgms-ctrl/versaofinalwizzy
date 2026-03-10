@@ -62,7 +62,7 @@ async function callTrainAgent(body: Record<string, unknown>, maxRetries = 2): Pr
 interface AIFeedbackDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  messageId: string;
+  messageId?: string;
   originalMessage: string;
   metadata: {
     agent_id?: string;

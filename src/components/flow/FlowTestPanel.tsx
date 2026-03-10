@@ -1064,7 +1064,7 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
         <AIFeedbackDialog
           open={feedbackDialogOpen}
           onOpenChange={setFeedbackDialogOpen}
-          messageId={feedbackMessage.id}
+          messageId={undefined}
           originalMessage={feedbackMessage.content}
           metadata={feedbackMessage.metadata || {}}
           organizationId={orgContext?.organizationId || ''}
