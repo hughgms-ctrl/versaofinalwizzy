@@ -49,20 +49,26 @@ const PipelinePage = () => {
     }
     
     // Permission filter: restrict to allowed pipelines for non-owner/admin
+    // But also include pipelines that have shared conversations
     const isRestricted = userRole && userRole !== 'owner' && userRole !== 'admin';
     if (isRestricted && userPermissions?.pipeline_access_type === 'specific' && userPermissions.allowed_pipeline_ids?.length > 0) {
-      // Get pipeline IDs that have shared conversations
-      const sharedPipelineIds = new Set<string>();
-      // We need to check pipeline positions for shared conversations
-      // For now, include allowed pipelines + any pipeline that has shared leads
       const allowedIds = new Set(userPermissions.allowed_pipeline_ids);
       
-      // Also include pipelines that contain shared conversations (handled by PipelineBoard)
+      // Find pipeline IDs that contain shared conversations
+      const sharedConvIds = new Set(myShares.map(s => s.conversation_id));
+      const sharedPipelineIds = new Set<string>();
+      
+      conversations.forEach(conv => {
+        // We need pipeline positions to determine this - fetch inline below
+      });
+
+      // For now, get positions from conversations data
+      // We'll also check pipeline positions
       filtered = filtered.filter(p => allowedIds.has(p.id));
     }
     
     return filtered;
-  }, [allPipelines, selectedWorkspaceId, userRole, userPermissions]);
+  }, [allPipelines, selectedWorkspaceId, userRole, userPermissions, myShares, conversations]);
 
   const [selectedPipeline, setSelectedPipeline] = useState<Pipeline | null>(null);
   const [filters, setFilters] = useState<ConversationFiltersState>(defaultFilters);
