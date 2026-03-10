@@ -611,6 +611,13 @@ export function ConversationActionsMenu({ conversation, onShowMediaGallery }: Co
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <ShareConversationDialog
+        open={showShareDialog}
+        onOpenChange={setShowShareDialog}
+        conversationId={conversation.id}
+        contactName={conversation.contact?.name || undefined}
+      />
     </DropdownMenu>
   );
 }
