@@ -286,21 +286,19 @@ async function runFlowExecution(
           return;
         }
 
-        // For action-flow nodes with remarketingSteps: schedule first step timeout
-        if (currentNode.type === 'action-flow') {
-          const remarketingSteps = (currentNode.data?.remarketingSteps || []) as Array<{ delayMinutes: number; message: string }>;
-          if (remarketingSteps.length > 0) {
-            const firstStep = remarketingSteps[0];
-            const delayMs = (firstStep.delayMinutes || 1) * 60 * 1000;
-            updateData.timeout_at = new Date(Date.now() + delayMs).toISOString();
-            console.log(`[FLOW EXECUTE] action-flow: scheduling first remarketing in ${firstStep.delayMinutes}min`);
-          } else {
-            updateData.timeout_at = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
-          }
+        // Check ANY node type for remarketingSteps (content-block, action-flow, etc.)
+        const remarketingSteps = (currentNode.data?.remarketingSteps || []) as Array<{ delayMinutes: number; message: string }>;
+        if (remarketingSteps.length > 0) {
+          const firstStep = remarketingSteps[0];
+          const delayMs = (firstStep.delayMinutes || 1) * 60 * 1000;
+          updateData.timeout_at = new Date(Date.now() + delayMs).toISOString();
+          console.log(`[FLOW EXECUTE] Node ${currentNode.type}: scheduling first follow-up in ${firstStep.delayMinutes}min (${remarketingSteps.length} total steps)`);
         } else {
           const timeoutMinutes = Number(currentNode.data?.timeoutMinutes || 0);
           if (timeoutMinutes > 0) {
             updateData.timeout_at = new Date(Date.now() + timeoutMinutes * 60 * 1000).toISOString();
+          } else if (currentNode.type === 'action-flow') {
+            updateData.timeout_at = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
           }
         }
 
