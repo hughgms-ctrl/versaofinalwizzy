@@ -2,8 +2,15 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
+
+function jsonResponse(body: Record<string, unknown>, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
+}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -15,43 +22,56 @@ Deno.serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const payload = await req.json();
+    let payload: Record<string, any>;
+    try {
+      payload = await req.json();
+    } catch {
+      return jsonResponse({ error: 'Invalid JSON body' }, 400);
+    }
+
     const { mode, feedback, target, context, organizationId, messageId, originalMessage } = payload;
 
+    console.log(`[TRAIN-AI] mode=${mode}, target=${target}, orgId=${organizationId}, msgId=${messageId}`);
+
+    // ========== DRAFT MODE ==========
     if (mode === 'draft') {
-      if (!feedback) throw new Error('feedback is required for drafting');
+      if (!feedback) return jsonResponse({ error: 'feedback is required for drafting' }, 400);
       
       const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-      if (!LOVABLE_API_KEY) throw new Error('LOVABLE_API_KEY is not configured');
+      if (!LOVABLE_API_KEY) return jsonResponse({ error: 'LOVABLE_API_KEY is not configured' }, 500);
 
       // Fetch conversation context around the message for better training
       let conversationContext = '';
       if (messageId) {
-        const { data: msg } = await supabase
-          .from('messages')
-          .select('conversation_id, created_at')
-          .eq('id', messageId)
-          .single();
-
-        if (msg) {
-          const { data: contextMessages } = await supabase
+        try {
+          const { data: msg } = await supabase
             .from('messages')
-            .select('content, direction, type, created_at')
-            .eq('conversation_id', msg.conversation_id)
-            .lte('created_at', msg.created_at)
-            .order('created_at', { ascending: false })
-            .limit(10);
+            .select('conversation_id, created_at')
+            .eq('id', messageId)
+            .single();
 
-          if (contextMessages && contextMessages.length > 0) {
-            conversationContext = contextMessages
-              .reverse()
-              .map((m: any) => {
-                const role = m.direction === 'inbound' ? 'CLIENTE' : 'IA';
-                const content = m.content || `[${m.type}]`;
-                return `${role}: ${content}`;
-              })
-              .join('\n');
+          if (msg) {
+            const { data: contextMessages } = await supabase
+              .from('messages')
+              .select('content, direction, type, created_at')
+              .eq('conversation_id', msg.conversation_id)
+              .lte('created_at', msg.created_at)
+              .order('created_at', { ascending: false })
+              .limit(10);
+
+            if (contextMessages && contextMessages.length > 0) {
+              conversationContext = contextMessages
+                .reverse()
+                .map((m: any) => {
+                  const role = m.direction === 'inbound' ? 'CLIENTE' : 'IA';
+                  const content = m.content || `[${m.type}]`;
+                  return `${role}: ${content}`;
+                })
+                .join('\n');
+            }
           }
+        } catch (ctxErr) {
+          console.warn('[TRAIN-AI] Failed to fetch context, proceeding without it:', ctxErr);
         }
       }
 
@@ -93,13 +113,14 @@ Responda APENAS com o JSON, sem markdown ou comentários.`;
       if (!resp.ok) {
         const err = await resp.text();
         console.error('[TRAIN-AI] AI Gateway error:', resp.status, err);
-        throw new Error(`AI Gateway error: ${resp.status}`);
+        if (resp.status === 429) return jsonResponse({ error: 'Limite de requisições excedido. Tente novamente em alguns segundos.' }, 429);
+        if (resp.status === 402) return jsonResponse({ error: 'Créditos de IA insuficientes.' }, 402);
+        return jsonResponse({ error: `Erro no gateway de IA (${resp.status})` }, 500);
       }
 
       const aiData = await resp.json();
       const rawContent = aiData.choices?.[0]?.message?.content?.trim() || '';
 
-      // Parse JSON response
       let situation = '';
       let rule = '';
       try {
@@ -108,62 +129,68 @@ Responda APENAS com o JSON, sem markdown ou comentários.`;
         situation = parsed.situation || '';
         rule = parsed.rule || '';
       } catch {
-        // Fallback: use raw content as rule
         situation = 'Situação geral';
         rule = rawContent;
       }
 
-      return new Response(JSON.stringify({ success: true, situation, rule }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      return jsonResponse({ success: true, situation, rule });
     }
 
     // ========== APPLY MODE ==========
+    if (mode !== 'apply') {
+      return jsonResponse({ error: `Modo inválido: ${mode}` }, 400);
+    }
+
+    if (!organizationId) {
+      return jsonResponse({ error: 'organizationId is required' }, 400);
+    }
+
     if (!target) {
-      return new Response(JSON.stringify({ error: 'target is required' }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      return jsonResponse({ error: 'target is required' }, 400);
     }
 
     const { situation, rule: ruleText } = payload;
     if (!situation && !ruleText && !feedback) {
-      return new Response(JSON.stringify({ error: 'situation and rule are required' }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      return jsonResponse({ error: 'situation and rule are required' }, 400);
     }
 
-    console.log(`[TRAIN-AI] Saving structured rule. Target: ${target}, messageId: ${messageId}`);
+    const finalSituation = (situation || 'Regra geral').trim();
+    const finalRule = (ruleText || feedback || 'Regra não especificada').trim();
+
+    console.log(`[TRAIN-AI] Saving rule. Target: ${target}, situation: "${finalSituation.slice(0, 50)}..."`);
 
     // Build the training rule record
-    const ruleRecord: any = {
+    const ruleRecord: Record<string, unknown> = {
       organization_id: organizationId,
       target_type: target,
-      situation: situation || 'Regra geral',
-      rule: ruleText || feedback || 'Regra não especificada',
+      situation: finalSituation,
+      rule: finalRule,
       original_message: originalMessage || null,
       original_feedback: feedback || null,
       message_id: messageId || null,
       is_active: true,
     };
 
-    // Set the correct target reference
-    if (target === 'agent' && context?.agentId) {
-      ruleRecord.agent_id = context.agentId;
-    } else if (target === 'master_prompt') {
-      if (context?.masterPromptId) {
-        ruleRecord.master_prompt_id = context.masterPromptId;
-      }
-      // Also try to resolve flow_id from master prompt or flow execution
-      if (context?.flowId) {
-        ruleRecord.flow_id = context.flowId;
-      }
-    } else if (target === 'flow_node') {
-      ruleRecord.flow_id = context?.flowId || null;
-      ruleRecord.node_id = context?.nodeId || null;
+    // Set the correct target reference based on target type
+    const ctx = context || {};
 
-      // Fallback: if flow_id/node_id missing, try to resolve from message's conversation flow execution
-      if ((!ruleRecord.flow_id || !ruleRecord.node_id) && messageId) {
-        console.log('[TRAIN-AI] flow_id/node_id missing, attempting resolution from flow execution...');
+    if (target === 'agent') {
+      ruleRecord.agent_id = ctx.agentId || null;
+      if (!ruleRecord.agent_id) {
+        console.warn('[TRAIN-AI] agent target but no agentId provided');
+      }
+    } else if (target === 'master_prompt') {
+      ruleRecord.master_prompt_id = ctx.masterPromptId || null;
+      ruleRecord.flow_id = ctx.flowId || null;
+    } else if (target === 'flow_node') {
+      ruleRecord.flow_id = ctx.flowId || null;
+      ruleRecord.node_id = ctx.nodeId || null;
+    }
+
+    // Fallback: resolve missing flow_id/node_id from recent flow execution
+    if ((target === 'flow_node' || target === 'master_prompt') && !ruleRecord.flow_id && messageId) {
+      console.log('[TRAIN-AI] Attempting to resolve flow_id from flow execution...');
+      try {
         const { data: msg } = await supabase
           .from('messages')
           .select('conversation_id')
@@ -171,7 +198,6 @@ Responda APENAS com o JSON, sem markdown ou comentários.`;
           .single();
 
         if (msg) {
-          // Check active or recent flow execution for this conversation
           const { data: flowExec } = await supabase
             .from('flow_executions')
             .select('flow_id, current_node_id')
@@ -182,34 +208,35 @@ Responda APENAS com o JSON, sem markdown ou comentários.`;
 
           if (flowExec) {
             if (!ruleRecord.flow_id) ruleRecord.flow_id = flowExec.flow_id;
-            if (!ruleRecord.node_id) ruleRecord.node_id = flowExec.current_node_id;
-            console.log(`[TRAIN-AI] Resolved flow_id=${ruleRecord.flow_id}, node_id=${ruleRecord.node_id} from flow execution`);
+            if (target === 'flow_node' && !ruleRecord.node_id) ruleRecord.node_id = flowExec.current_node_id;
+            console.log(`[TRAIN-AI] Resolved flow_id=${ruleRecord.flow_id}, node_id=${ruleRecord.node_id}`);
           }
         }
+      } catch (resolveErr) {
+        console.warn('[TRAIN-AI] Failed to resolve flow context:', resolveErr);
       }
     }
 
-    const { error: insertError } = await supabase
+    console.log('[TRAIN-AI] Inserting record:', JSON.stringify(ruleRecord));
+
+    const { data: inserted, error: insertError } = await supabase
       .from('agent_training_rules')
-      .insert(ruleRecord);
+      .insert(ruleRecord)
+      .select('id')
+      .single();
 
     if (insertError) {
-      console.error('[TRAIN-AI] Insert error:', insertError);
-      return new Response(JSON.stringify({ error: insertError.message }), {
-        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      console.error('[TRAIN-AI] Insert error:', JSON.stringify(insertError));
+      return jsonResponse({ error: `Erro ao inserir regra: ${insertError.message}` }, 500);
     }
 
-    console.log(`[TRAIN-AI] Rule saved successfully for target ${target}`);
+    console.log(`[TRAIN-AI] Rule saved successfully. ID: ${inserted?.id}`);
 
-    return new Response(JSON.stringify({ success: true }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return jsonResponse({ success: true, id: inserted?.id });
 
   } catch (error: unknown) {
-    console.error('[TRAIN-AI] Internal error:', error);
-    return new Response(JSON.stringify({ error: error instanceof Error ? error.message : 'Internal error' }), {
-      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    console.error('[TRAIN-AI] Unhandled error:', error);
+    const message = error instanceof Error ? error.message : 'Internal error';
+    return jsonResponse({ error: message }, 500);
   }
 });
