@@ -206,6 +206,7 @@ Deno.serve(async (req) => {
     const pipelinePositions = pipelinePositionsResult.data || [];
     const flows = flowsResult.data || [];
     const trainingRules = trainingRulesResult.data || [];
+    console.log(`[ORCHESTRATOR] Loaded ${trainingRules.length} active training rules for org ${organizationId}`);
 
     // Resolve AI config: masterPrompt > integration_configs > workspace_agent_configs > defaults
     const masterProvider = masterPrompt.provider || integrationConfig?.ai_provider || 'lovable';
