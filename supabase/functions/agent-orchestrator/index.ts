@@ -525,21 +525,37 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
     round++;
     console.log(`[SIMULATION] Agent AI Round ${round}`);
 
-    const aiResponse = await fetch(aiConfig.endpoint, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${aiConfig.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ model: aiConfig.model, messages: aiMessages, tools, tool_choice: 'auto' }),
-    });
+    const abortController = new AbortController();
+    const timeoutId = setTimeout(() => abortController.abort(), 25000); // 25s timeout
+
+    let aiResponse: Response;
+    try {
+      aiResponse = await fetch(aiConfig.endpoint, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${aiConfig.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ model: aiConfig.model, messages: aiMessages, tools, tool_choice: 'auto' }),
+        signal: abortController.signal,
+      });
+    } catch (fetchErr: any) {
+      clearTimeout(timeoutId);
+      if (fetchErr.name === 'AbortError') {
+        console.error('[SIMULATION] AI call timed out after 25s');
+        return { error: 'A chamada à IA demorou demais (timeout). Tente novamente.' };
+      }
+      console.error('[SIMULATION] AI fetch error:', fetchErr);
+      return { error: `Erro de conexão com a IA: ${fetchErr.message}` };
+    }
+    clearTimeout(timeoutId);
 
     if (!aiResponse.ok) {
       const errorText = await aiResponse.text();
       console.error('[SIMULATION] AI error:', aiResponse.status, errorText);
       if (aiResponse.status === 429) return { error: 'Rate limit excedido. Tente novamente em alguns segundos.' };
       if (aiResponse.status === 402) return { error: 'Créditos insuficientes.' };
-      return { error: `AI gateway error: ${aiResponse.status}` };
+      return { error: `AI gateway error: ${aiResponse.status} - ${errorText.substring(0, 200)}` };
     }
 
     const aiResult = await aiResponse.json();
