@@ -229,10 +229,10 @@ Deno.serve(async (req) => {
     let result;
     if (flowNodes && flowNodes.length > 0) {
       console.log('Using FLOW ENGINE (state machine)');
-      result = await executeFlowOrchestration(supabase, context, flowNodes, flowEdges || [], messageContent);
+      result = await executeFlowOrchestration(supabase, context, flowNodes, flowEdges || [], enrichedMessageContent);
     } else {
       console.log('Using LEGACY orchestration (AI-only)');
-      result = await executeLegacyOrchestration(supabase, context, messageContent);
+      result = await executeLegacyOrchestration(supabase, context, enrichedMessageContent);
     }
 
     // 5. Send reply (strip any leaked internal annotations)
