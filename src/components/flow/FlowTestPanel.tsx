@@ -700,6 +700,7 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
   const resetSimulation = () => {
     followUpResolveRef.current = null;
     setMessages([]);
+    messagesRef.current = [];
     setSimState({ currentNodeId: null, waitingForInput: false, variables: {}, activeFlowId: flowId, activeFlowData: initialFlow, parentFlowStack: [] });
     setIsStarted(false);
     setUserInput('');
