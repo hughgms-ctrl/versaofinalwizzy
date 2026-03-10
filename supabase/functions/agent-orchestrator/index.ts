@@ -1799,6 +1799,7 @@ function buildLegacySystemPrompt(ctx: any): string {
   // Inject training rules
   const rulesSection = buildTrainingRulesSection(ctx.trainingRules, {
     agentId: ctx.conversation?.ai_agent_id, masterPromptId: ctx.masterPrompt?.id,
+    flowId: ctx.resolvedFlowId,
   });
   if (rulesSection) prompt += rulesSection;
 
