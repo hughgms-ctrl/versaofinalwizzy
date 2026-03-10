@@ -70,14 +70,24 @@ export function AIFeedbackDialog({
         },
       });
 
-      if (error) throw error;
-      setSituation(data.situation || '');
-      setRuleText(data.rule || '');
+      if (error) {
+        console.error("AI Draft invoke error:", error);
+        throw new Error(typeof error === 'object' && error.message ? error.message : String(error));
+      }
+      
+      // Handle edge function returning error in body
+      if (data?.error) {
+        throw new Error(data.error);
+      }
+
+      setSituation(data?.situation || '');
+      setRuleText(data?.rule || '');
       setHasDrafted(true);
       toast.success("Regra gerada com sucesso!");
-    } catch (error) {
+    } catch (error: any) {
       console.error("AI Draft error:", error);
-      toast.error("Não foi possível gerar a sugestão da IA.");
+      const msg = error?.message || "Erro desconhecido";
+      toast.error(`Não foi possível gerar a sugestão: ${msg}`);
     } finally {
       setIsDrafting(false);
     }
@@ -89,33 +99,53 @@ export function AIFeedbackDialog({
       return;
     }
 
+    if (!organizationId) {
+      toast.error("Organização não identificada. Recarregue a página.");
+      return;
+    }
+
     setIsApplying(true);
     try {
-      const { error } = await supabase.functions.invoke("train-ai-agent", {
-        body: {
-          mode: "apply",
-          feedback: feedback.trim(),
-          situation: situation.trim(),
-          rule: ruleText.trim(),
-          target,
-          context: {
-            agentId: metadata.agent_id,
-            flowId: metadata.flow_id,
-            nodeId: metadata.node_id,
-            masterPromptId: metadata.master_prompt_id,
-          },
-          organizationId,
-          messageId,
-          originalMessage,
+      const body = {
+        mode: "apply",
+        feedback: feedback.trim() || null,
+        situation: situation.trim(),
+        rule: ruleText.trim(),
+        target,
+        context: {
+          agentId: metadata.agent_id || null,
+          flowId: metadata.flow_id || null,
+          nodeId: metadata.node_id || null,
+          masterPromptId: metadata.master_prompt_id || null,
         },
+        organizationId,
+        messageId,
+        originalMessage,
+      };
+
+      console.log("[AIFeedback] Saving rule with body:", JSON.stringify(body, null, 2));
+
+      const { data, error } = await supabase.functions.invoke("train-ai-agent", {
+        body,
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error("[AIFeedback] Invoke error:", error);
+        throw new Error(typeof error === 'object' && error.message ? error.message : String(error));
+      }
+
+      // Handle edge function returning error in body
+      if (data?.error) {
+        console.error("[AIFeedback] Function returned error:", data.error);
+        throw new Error(data.error);
+      }
+
       toast.success("Regra salva com sucesso!");
       onOpenChange(false);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Apply training error:", error);
-      toast.error("Erro ao salvar a regra.");
+      const msg = error?.message || "Erro desconhecido";
+      toast.error(`Erro ao salvar a regra: ${msg}`);
     } finally {
       setIsApplying(false);
     }
