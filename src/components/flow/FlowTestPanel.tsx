@@ -239,7 +239,10 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
     return s;
   };
 
-  // ===== AI CALL (mirrors agent-orchestrator prompt building) =====
+  // Track whether the current agent has had its first call already
+  const agentFirstCallRef = useRef<Set<string>>(new Set());
+
+  // ===== AI CALL (uses agent-orchestrator simulation mode for 100% parity) =====
   const callAI = async (nodeData: any, nodeId: string) => {
     setIsThinking(true);
     try {
@@ -248,91 +251,78 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
       const additionalPrompt = nodeData.additionalPrompt || nodeData.contextMessage || '';
       const masterPrompt = simState.activeFlowData?.master_prompt || '';
 
-      // Build system prompt identical to agent-orchestrator
-      let sysPrompt = '';
-      if (masterPrompt) sysPrompt += `PERSONALIDADE E REGRAS GERAIS:\n${masterPrompt}\n\n---\n\n`;
-      sysPrompt += `Você é o agente "${agent?.name || simState.activeAgentName || 'Assistente'}" neste momento da conversa.\n\n`;
-      if (agent?.prompt_base) sysPrompt += `PROMPT DO AGENTE:\n${agent.prompt_base}\n\n`;
-      if (agent?.persona) sysPrompt += `PERSONA: ${agent.persona}\n\n`;
-      if (additionalPrompt) sysPrompt += `INSTRUÇÕES ESPECÍFICAS PARA ESTE MOMENTO:\n${additionalPrompt}\n\n`;
+      // Determine if this is the first activation of this agent
+      const agentKey = `${agentId || 'default'}-${nodeId}`;
+      const isFirstActivation = !agentFirstCallRef.current.has(agentKey);
+      if (isFirstActivation) agentFirstCallRef.current.add(agentKey);
 
-      // Training rules
-      sysPrompt += buildTrainingRulesPrompt({
-        agentId: agent?.id,
-        flowId: simState.activeFlowId,
-        nodeId,
-      });
+      // Determine if there are next nodes (for advance_flow availability)
+      const nodes = simState.activeFlowData.nodes as Node[];
+      const edges = simState.activeFlowData.edges as Edge[];
+      const hasNextNodes = edges.some(e => e.source === nodeId);
 
-      // Expected outcomes
-      const outcomes = nodeData.expectedOutcomes
-        ? String(nodeData.expectedOutcomes).split(',').map((s: string) => s.trim()).filter(Boolean)
-        : [];
-      if (outcomes.length > 0) {
-        sysPrompt += `\nRESULTADOS ESPERADOS: ${outcomes.join(', ')}\n`;
-        sysPrompt += `Quando sua tarefa estiver concluída, inclua [RESULTADO: <valor>] no final da sua resposta com um dos resultados acima.\n\n`;
-      }
-
-      sysPrompt += `\nINSTRUÇÕES CRÍTICAS DE COMPORTAMENTO:\n`;
-      sysPrompt += `- Responda SEMPRE em português brasileiro.\n`;
-      sysPrompt += `- ANALISE CUIDADOSAMENTE todo o histórico da conversa antes de responder.\n`;
-      sysPrompt += `- PROIBIDO repetir perguntas que o cliente já respondeu. Se ele já deu uma resposta (mesmo que informal como "ainda não", "não sei", "acho que sim"), considere como resposta válida e AVANCE para a próxima etapa.\n`;
-      sysPrompt += `- Respostas como "ainda não", "não", "sim", "acho que sim", "talvez" são respostas VÁLIDAS. NÃO peça confirmação tipo "sim ou não?" se o cliente já respondeu.\n`;
-      sysPrompt += `- Se o cliente já forneceu informações, use-as diretamente.\n`;
-      sysPrompt += `- Continue a conversa de forma natural e fluida.\n`;
-      sysPrompt += `- NUNCA envie mensagens em inglês, sem sentido, ou genéricas.\n`;
-      sysPrompt += `- Mantenha a persona definida.\n`;
-      sysPrompt += `- NÃO produza texto entre parênteses ou pensamentos internos.\n`;
-      sysPrompt += `- NÃO mencione transições de agentes, transferências ou mudanças internas do sistema.\n`;
-      sysPrompt += `- A ÚLTIMA mensagem do usuário no histórico é a mais recente. Responda a ELA.\n`;
-
-      // Conversation history — use ref for fresh data (avoids stale closure)
-      // Only include user and bot messages (not system/action messages)
+      // Build conversation history from ref (fresh data)
       const allMsgs = messagesRef.current.filter(m => m.type === 'user' || m.type === 'bot');
-      const history = allMsgs.map(m => ({ 
+      const conversationHistory = allMsgs.map(m => ({ 
         role: m.type === 'user' ? 'user' as const : 'assistant' as const, 
         content: m.content 
       }));
 
-      const { data, error } = await supabase.functions.invoke('generate-agent-prompt', {
+      // Call agent-orchestrator in simulation mode — EXACT same prompt, model, and tools
+      const { data, error } = await supabase.functions.invoke('agent-orchestrator', {
         body: {
-          mode: 'chat',
+          simulationMode: true,
           organizationId: orgContext?.organizationId,
-          messages: history,
-          systemPrompt: sysPrompt,
+          agentId: agentId || simState.activeAgentId,
+          agentName: agent?.name || simState.activeAgentName,
+          masterPrompt: masterPrompt,
+          additionalPrompt,
+          conversationHistory,
+          flowId: simState.activeFlowId,
+          nodeId,
+          isFirstActivation,
+          hasNextNodes,
+          contactName: 'Cliente Simulado',
         },
       });
 
       setIsThinking(false);
       if (error) throw error;
+      if (data?.error) throw new Error(data.error);
 
-      let reply = data?.content || 'Olá! Como posso ajudar?';
+      let reply = data?.content || '';
 
-      // Check for outcome in reply
-      const outcomeMatch = reply.match(/\[RESULTADO:\s*([^\]]+)\]/i);
-      let detectedOutcome: string | null = null;
-      if (outcomeMatch) {
-        detectedOutcome = outcomeMatch[1].trim();
-        reply = reply.replace(/\[RESULTADO:\s*[^\]]+\]/gi, '').trim();
+      // Process tool calls executed by the AI
+      const toolsExecuted = data?.toolsExecuted || [];
+      for (const tool of toolsExecuted) {
+        if (tool.name === 'add_tag') {
+          const tagName = tool.tag_name || resolveTagName(tool.arguments?.tag_id);
+          addMsg({ type: 'action', content: `🏷️ Tag adicionada: ${tagName}`, actionIcon: '🏷️' });
+          setSimState(prev => ({ ...prev, variables: { ...prev.variables, [`_tag_${tool.arguments?.tag_id}`]: true } }));
+        } else if (tool.name === 'remove_tag') {
+          const tagName = tool.tag_name || resolveTagName(tool.arguments?.tag_id);
+          addMsg({ type: 'action', content: `🏷️ Tag removida: ${tagName}`, actionIcon: '🏷️' });
+        } else if (tool.name === 'move_pipeline') {
+          addMsg({ type: 'action', content: `📋 Pipeline: ${tool.pipeline_name || '...'} → ${tool.column_name || '...'}`, actionIcon: '📋' });
+        }
       }
 
-      addMsg({ type: 'bot', content: reply, agentName: agent?.name || simState.activeAgentName, aiMetadata: { agent_id: agent?.id || simState.activeAgentId, flow_id: simState.activeFlowId, node_id: nodeId, master_prompt_id: undefined } });
+      // Show bot reply
+      if (reply) {
+        addMsg({ type: 'bot', content: reply, agentName: agent?.name || simState.activeAgentName, aiMetadata: { agent_id: agent?.id || simState.activeAgentId, flow_id: simState.activeFlowId, node_id: nodeId, master_prompt_id: undefined } });
+      }
 
-      // If outcome detected and we have outgoing edges, try to route
-      if (detectedOutcome && simState.currentNodeId) {
-        const nodes = simState.activeFlowData.nodes as Node[];
-        const edges = simState.activeFlowData.edges as Edge[];
-        const outEdge = edges.find(e => e.source === simState.currentNodeId! && e.sourceHandle === detectedOutcome)
-          || edges.find(e => e.source === simState.currentNodeId! && e.sourceHandle === 'default')
-          || edges.find(e => e.source === simState.currentNodeId!);
-        if (outEdge) {
-          const nextNode = nodes.find(n => n.id === outEdge.target);
-          if (nextNode) {
-            addMsg({ type: 'action', content: `Resultado: ${detectedOutcome} → Avançando fluxo`, actionIcon: '🎯' });
-            await wait(800);
-            await processNode(nextNode, nodes, edges);
-            return;
-          }
+      // If AI called advance_flow, advance the flow
+      if (data?.shouldAdvance && simState.currentNodeId) {
+        addMsg({ type: 'action', content: `Agente finalizou tarefa → Avançando fluxo`, actionIcon: '🎯' });
+        await wait(800);
+        const next = findNext(nodeId, nodes, edges);
+        if (next) {
+          await processNode(next, nodes, edges);
+        } else {
+          endFlow();
         }
+        return;
       }
 
       // Keep waiting for user input (continuous AI conversation)
@@ -340,7 +330,8 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
     } catch (err) {
       console.error('AI error:', err);
       setIsThinking(false);
-      addMsg({ type: 'bot', content: '⚠️ Erro ao conectar com o agente de IA. Verifique suas configurações.' });
+      const errMsg = err instanceof Error ? err.message : 'Erro desconhecido';
+      addMsg({ type: 'bot', content: `⚠️ Erro ao conectar com o agente de IA: ${errMsg}` });
       setSimState(prev => ({ ...prev, waitingForInput: true, inputVariable: 'ai_query' }));
     }
   };
@@ -705,6 +696,7 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
 
   const resetSimulation = () => {
     followUpResolveRef.current = null;
+    agentFirstCallRef.current = new Set();
     setMessages([]);
     messagesRef.current = [];
     setSimState({ currentNodeId: null, waitingForInput: false, variables: {}, activeFlowId: flowId, activeFlowData: initialFlow, parentFlowStack: [] });
