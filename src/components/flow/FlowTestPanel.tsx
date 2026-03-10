@@ -244,7 +244,7 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
         reply = reply.replace(/\[RESULTADO:\s*[^\]]+\]/gi, '').trim();
       }
 
-      addMsg({ type: 'bot', content: reply, agentName: agent?.name || simState.activeAgentName });
+      addMsg({ type: 'bot', content: reply, agentName: agent?.name || simState.activeAgentName, aiMetadata: { agent_id: agent?.id || simState.activeAgentId, flow_id: simState.activeFlowId, node_id: nodeId, master_prompt_id: undefined } });
 
       // If outcome detected and we have outgoing edges, try to route
       if (detectedOutcome && simState.currentNodeId) {
