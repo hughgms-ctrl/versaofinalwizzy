@@ -70,14 +70,18 @@ export function AIFeedbackDialog({
         },
       });
 
+      // supabase.functions.invoke may return error for non-2xx (shouldn't happen now)
       if (error) {
         console.error("AI Draft invoke error:", error);
-        throw new Error(typeof error === 'object' && error.message ? error.message : String(error));
+        toast.error("Erro ao conectar com o servidor. Tente novamente.");
+        return;
       }
       
-      // Handle edge function returning error in body
+      // Check for application-level error in the response body
       if (data?.error) {
-        throw new Error(data.error);
+        console.error("AI Draft app error:", data.error);
+        toast.error(data.error);
+        return;
       }
 
       setSituation(data?.situation || '');
@@ -85,9 +89,8 @@ export function AIFeedbackDialog({
       setHasDrafted(true);
       toast.success("Regra gerada com sucesso!");
     } catch (error: any) {
-      console.error("AI Draft error:", error);
-      const msg = error?.message || "Erro desconhecido";
-      toast.error(`Não foi possível gerar a sugestão: ${msg}`);
+      console.error("AI Draft unexpected error:", error);
+      toast.error("Erro inesperado ao gerar regra. Tente novamente.");
     } finally {
       setIsDrafting(false);
     }
@@ -123,29 +126,31 @@ export function AIFeedbackDialog({
         originalMessage,
       };
 
-      console.log("[AIFeedback] Saving rule with body:", JSON.stringify(body, null, 2));
+      console.log("[AIFeedback] Saving rule:", JSON.stringify(body, null, 2));
 
       const { data, error } = await supabase.functions.invoke("train-ai-agent", {
         body,
       });
 
+      // supabase.functions.invoke may return error for non-2xx (shouldn't happen now)
       if (error) {
         console.error("[AIFeedback] Invoke error:", error);
-        throw new Error(typeof error === 'object' && error.message ? error.message : String(error));
+        toast.error("Erro ao conectar com o servidor. Tente novamente.");
+        return;
       }
 
-      // Handle edge function returning error in body
+      // Check for application-level error in the response body
       if (data?.error) {
-        console.error("[AIFeedback] Function returned error:", data.error);
-        throw new Error(data.error);
+        console.error("[AIFeedback] App error:", data.error);
+        toast.error(data.error);
+        return;
       }
 
       toast.success("Regra salva com sucesso!");
       onOpenChange(false);
     } catch (error: any) {
-      console.error("Apply training error:", error);
-      const msg = error?.message || "Erro desconhecido";
-      toast.error(`Erro ao salvar a regra: ${msg}`);
+      console.error("Apply training unexpected error:", error);
+      toast.error("Erro inesperado ao salvar regra. Tente novamente.");
     } finally {
       setIsApplying(false);
     }
