@@ -46,6 +46,7 @@ export function ConversationCardActions({
   onSpyView
 }: ConversationCardActionsProps) {
   const [isUpdating, setIsUpdating] = useState(false);
+  const [showShareDialog, setShowShareDialog] = useState(false);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { data: pipelines } = usePipelines();
