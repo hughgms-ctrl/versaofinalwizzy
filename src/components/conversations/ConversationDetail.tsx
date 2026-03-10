@@ -612,14 +612,18 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
                       contactId={conversation.contact?.id}
                        senderAvatar={profile?.avatar_url}
                        senderName={profile?.full_name}
-                       onAdjustPrompt={(msg) => {
-                         setFeedbackMessage({
-                           id: msg.id,
-                           content: msg.content || '',
-                           metadata: (msg.metadata as any)?.ai_metadata || {}
-                         });
-                         setFeedbackDialogOpen(true);
-                       }}
+                        onAdjustPrompt={(msg) => {
+                          const aiMeta = (msg.metadata as any)?.ai_metadata || {};
+                          setFeedbackMessage({
+                            id: msg.id,
+                            content: msg.content || '',
+                            metadata: {
+                              ...aiMeta,
+                              agent_id: aiMeta.agent_id || conversation.ai_agent_id,
+                            }
+                          });
+                          setFeedbackDialogOpen(true);
+                        }}
                      />
                   );
                 })()}
