@@ -132,8 +132,6 @@ Responda APENAS com o JSON, sem markdown ou comentários.`;
       });
     }
 
-    const { situation, rule: ruleText } = payload;
-
     console.log(`[TRAIN-AI] Saving structured rule. Target: ${target}, messageId: ${messageId}`);
 
     // Build the training rule record
