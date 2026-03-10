@@ -905,6 +905,8 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
             status: 'completed',
             variables: existingVars,
             completed_at: new Date().toISOString(),
+            timeout_at: null,
+            remarketing_step: 0,
           }).eq('id', activeFlowExec.id);
 
           // Cleanup: reset service_mode and ai_agent_id
