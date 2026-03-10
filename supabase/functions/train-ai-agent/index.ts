@@ -5,11 +5,17 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
 
-function jsonResponse(body: Record<string, unknown>, status = 200) {
+// ALWAYS return 200 so supabase.functions.invoke doesn't throw generic errors
+function ok(body: Record<string, unknown>) {
   return new Response(JSON.stringify(body), {
-    status,
+    status: 200,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
+}
+
+function fail(errorMsg: string) {
+  console.error('[TRAIN-AI] Returning error:', errorMsg);
+  return ok({ success: false, error: errorMsg });
 }
 
 Deno.serve(async (req) => {
@@ -26,7 +32,7 @@ Deno.serve(async (req) => {
     try {
       payload = await req.json();
     } catch {
-      return jsonResponse({ error: 'Invalid JSON body' }, 400);
+      return fail('JSON inválido no body da requisição');
     }
 
     const { mode, feedback, target, context, organizationId, messageId, originalMessage } = payload;
@@ -35,12 +41,12 @@ Deno.serve(async (req) => {
 
     // ========== DRAFT MODE ==========
     if (mode === 'draft') {
-      if (!feedback) return jsonResponse({ error: 'feedback is required for drafting' }, 400);
+      if (!feedback) return fail('O campo de feedback é obrigatório para gerar a regra');
       
       const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-      if (!LOVABLE_API_KEY) return jsonResponse({ error: 'LOVABLE_API_KEY is not configured' }, 500);
+      if (!LOVABLE_API_KEY) return fail('LOVABLE_API_KEY não está configurada no servidor');
 
-      // Fetch conversation context around the message for better training
+      // Fetch conversation context
       let conversationContext = '';
       if (messageId) {
         try {
@@ -113,9 +119,9 @@ Responda APENAS com o JSON, sem markdown ou comentários.`;
       if (!resp.ok) {
         const err = await resp.text();
         console.error('[TRAIN-AI] AI Gateway error:', resp.status, err);
-        if (resp.status === 429) return jsonResponse({ error: 'Limite de requisições excedido. Tente novamente em alguns segundos.' }, 429);
-        if (resp.status === 402) return jsonResponse({ error: 'Créditos de IA insuficientes.' }, 402);
-        return jsonResponse({ error: `Erro no gateway de IA (${resp.status})` }, 500);
+        if (resp.status === 429) return fail('Limite de requisições excedido. Tente novamente em alguns segundos.');
+        if (resp.status === 402) return fail('Créditos de IA insuficientes.');
+        return fail(`Erro no gateway de IA (${resp.status})`);
       }
 
       const aiData = await resp.json();
@@ -133,25 +139,25 @@ Responda APENAS com o JSON, sem markdown ou comentários.`;
         rule = rawContent;
       }
 
-      return jsonResponse({ success: true, situation, rule });
+      return ok({ success: true, situation, rule });
     }
 
     // ========== APPLY MODE ==========
     if (mode !== 'apply') {
-      return jsonResponse({ error: `Modo inválido: ${mode}` }, 400);
+      return fail(`Modo inválido: ${mode}`);
     }
 
     if (!organizationId) {
-      return jsonResponse({ error: 'organizationId is required' }, 400);
+      return fail('organizationId é obrigatório');
     }
 
     if (!target) {
-      return jsonResponse({ error: 'target is required' }, 400);
+      return fail('Selecione onde aplicar a regra (target)');
     }
 
     const { situation, rule: ruleText } = payload;
     if (!situation && !ruleText && !feedback) {
-      return jsonResponse({ error: 'situation and rule are required' }, 400);
+      return fail('Preencha a situação e a regra');
     }
 
     const finalSituation = (situation || 'Regra geral').trim();
@@ -227,16 +233,16 @@ Responda APENAS com o JSON, sem markdown ou comentários.`;
 
     if (insertError) {
       console.error('[TRAIN-AI] Insert error:', JSON.stringify(insertError));
-      return jsonResponse({ error: `Erro ao inserir regra: ${insertError.message}` }, 500);
+      return fail(`Erro ao inserir regra no banco: ${insertError.message}`);
     }
 
     console.log(`[TRAIN-AI] Rule saved successfully. ID: ${inserted?.id}`);
 
-    return jsonResponse({ success: true, id: inserted?.id });
+    return ok({ success: true, id: inserted?.id });
 
   } catch (error: unknown) {
     console.error('[TRAIN-AI] Unhandled error:', error);
-    const message = error instanceof Error ? error.message : 'Internal error';
-    return jsonResponse({ error: message }, 500);
+    const message = error instanceof Error ? error.message : 'Erro interno do servidor';
+    return fail(message);
   }
 });
