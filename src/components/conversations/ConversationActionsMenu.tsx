@@ -57,6 +57,7 @@ interface ConversationActionsMenuProps {
 export function ConversationActionsMenu({ conversation, onShowMediaGallery }: ConversationActionsMenuProps) {
   const [isUpdating, setIsUpdating] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showShareDialog, setShowShareDialog] = useState(false);
   const queryClient = useQueryClient();
   const isArchived = conversation.status === 'archived';
 
