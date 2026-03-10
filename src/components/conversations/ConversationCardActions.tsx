@@ -10,7 +10,8 @@ import {
   Loader2,
   MailWarning,
   EyeOff,
-  ArrowRightLeft
+  ArrowRightLeft,
+  UserPlus
 } from 'lucide-react';
 import {
   DropdownMenu,
