@@ -972,6 +972,51 @@ export type Database = {
           },
         ]
       }
+      conversation_shares: {
+        Row: {
+          conversation_id: string
+          created_at: string
+          id: string
+          note: string | null
+          organization_id: string
+          shared_by: string | null
+          user_id: string
+        }
+        Insert: {
+          conversation_id: string
+          created_at?: string
+          id?: string
+          note?: string | null
+          organization_id: string
+          shared_by?: string | null
+          user_id: string
+        }
+        Update: {
+          conversation_id?: string
+          created_at?: string
+          id?: string
+          note?: string | null
+          organization_id?: string
+          shared_by?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversation_shares_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversation_shares_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       conversation_stage_history: {
         Row: {
           changed_by: string | null
