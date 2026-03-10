@@ -35,6 +35,7 @@ const ConversationsPage = () => {
   const { user } = useAuth();
   const { data: userPermissions } = useUserPermissions();
   const { data: userRole } = useCurrentUserRole();
+  const { data: myShares = [] } = useConversationShares();
 
   // Fetch contact tags for filtering
   const { data: allContactTags = [] } = useQuery({
