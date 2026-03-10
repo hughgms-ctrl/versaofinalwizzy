@@ -88,6 +88,9 @@ export function EditPermissionsDialog({ open, onOpenChange, member }: EditPermis
   const { data: workspaces = [] } = useWorkspaces();
   const updatePermissions = useUpdateUserPermissions();
   const manageWorkspaceMembers = useManageWorkspaceMembers();
+  const { data: memberShares = [] } = useConversationSharesByMember(member?.user_id);
+  const { data: allConversations = [] } = useConversations();
+  const unshareConversation = useUnshareConversation();
 
   // Fetch workspaces this user belongs to
   const { data: allWorkspaceMembers = [] } = useUserWorkspaces();
