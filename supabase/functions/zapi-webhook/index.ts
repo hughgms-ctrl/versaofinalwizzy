@@ -884,6 +884,8 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
             status: 'running',
             current_node_id: nextNodeId,
             variables: existingVars,
+            timeout_at: null,
+            remarketing_step: 0,
           }).eq('id', activeFlowExec.id);
 
           const resumePromise = fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/flow-execute`, {
