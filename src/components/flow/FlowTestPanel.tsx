@@ -276,11 +276,13 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
 
       sysPrompt += `INSTRUÇÕES IMPORTANTES:\n`;
       sysPrompt += `- Responda SEMPRE em português brasileiro.\n`;
-      sysPrompt += `- Leia TODA a conversa anterior antes de responder.\n`;
+      sysPrompt += `- Leia TODA a conversa anterior antes de responder. NUNCA repita perguntas já respondidas pelo cliente.\n`;
+      sysPrompt += `- Se o cliente já forneceu informações na conversa, use-as diretamente e avance para o próximo passo.\n`;
+      sysPrompt += `- Continue a conversa de forma natural e fluida, como se fosse uma única interação contínua.\n`;
       sysPrompt += `- NUNCA envie mensagens em inglês, sem sentido, ou genéricas.\n`;
       sysPrompt += `- Mantenha a persona definida.\n`;
       sysPrompt += `- NÃO produza texto entre parênteses ou pensamentos internos.\n`;
-      sysPrompt += `- Esta é uma SIMULAÇÃO DE TESTE. Responda como faria em um atendimento real.\n`;
+      sysPrompt += `- NÃO mencione transições de agentes, transferências ou mudanças internas do sistema.\n`;
 
       // Conversation history — use ref for fresh data (avoids stale closure)
       const history = messagesRef.current
