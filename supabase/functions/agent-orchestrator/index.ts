@@ -335,7 +335,7 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
   const [agentsResult, tagsResult, pipelinesResult, trainingRulesResult, integrationConfigResult] = await Promise.all([
     supabase.from('ai_agents').select('*').eq('organization_id', organizationId).eq('is_active', true),
     supabase.from('tags').select('*').eq('organization_id', organizationId),
-    supabase.from('pipelines').select('*, columns:pipeline_columns(*)').eq('organization_id', organizationId),
+    supabase.from('pipelines').select('*, columns:pipeline_columns!pipeline_columns_pipeline_id_fkey(*)').eq('organization_id', organizationId),
     supabase.from('agent_training_rules').select('*').eq('organization_id', organizationId).eq('is_active', true),
     resolveIntegrationConfig(supabase, organizationId),
   ]);
