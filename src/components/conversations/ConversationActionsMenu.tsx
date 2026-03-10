@@ -16,7 +16,8 @@ import {
   Trash2,
   MailWarning,
   Bot,
-  UserCheck
+  UserCheck,
+  UserPlus
 } from 'lucide-react';
 import {
   DropdownMenu,
