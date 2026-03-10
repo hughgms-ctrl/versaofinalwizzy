@@ -360,7 +360,7 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
 
     // For custom/AI-evaluated conditions, use AI
     try {
-      const history = messages.filter(m => m.type === 'user' || m.type === 'bot').map(m => `${m.type === 'user' ? 'CLIENTE' : 'IA'}: ${m.content}`).join('\n');
+      const history = messagesRef.current.filter(m => m.type === 'user' || m.type === 'bot').map(m => `${m.type === 'user' ? 'CLIENTE' : 'IA'}: ${m.content}`).join('\n');
       const outEdges = edges.filter(e => e.source === nodeId);
       const branches = outEdges.map(e => e.sourceHandle || 'default').filter(Boolean);
 
