@@ -22,6 +22,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { useUserPermissions, useCurrentUserRole } from '@/hooks/useUserPermissions';
 
 const PipelinePage = () => {
   const { data: allPipelines = [], isLoading: pipelinesLoading } = usePipelines();
@@ -29,14 +30,28 @@ const PipelinePage = () => {
   const { connected: whatsappConnected, isLoading: whatsappLoading } = useWhatsAppStatus();
   const deletePipeline = useDeletePipeline();
   const { selectedWorkspaceId } = useWorkspaceContext();
+  const { data: userPermissions } = useUserPermissions();
+  const { data: userRole } = useCurrentUserRole();
 
-  // Filter pipelines by selected workspace (global/empty array + matching workspace)
+  // Filter pipelines by selected workspace AND user permissions
   const pipelines = useMemo(() => {
-    if (!selectedWorkspaceId) return allPipelines;
-    return allPipelines.filter(p =>
-      !p.workspace_ids || p.workspace_ids.length === 0 || p.workspace_ids.includes(selectedWorkspaceId)
-    );
-  }, [allPipelines, selectedWorkspaceId]);
+    let filtered = allPipelines;
+    
+    // Workspace filter
+    if (selectedWorkspaceId) {
+      filtered = filtered.filter(p =>
+        !p.workspace_ids || p.workspace_ids.length === 0 || p.workspace_ids.includes(selectedWorkspaceId)
+      );
+    }
+    
+    // Permission filter: restrict to allowed pipelines for non-owner/admin
+    const isRestricted = userRole && userRole !== 'owner' && userRole !== 'admin';
+    if (isRestricted && userPermissions?.pipeline_access_type === 'specific' && userPermissions.allowed_pipeline_ids?.length > 0) {
+      filtered = filtered.filter(p => userPermissions.allowed_pipeline_ids.includes(p.id));
+    }
+    
+    return filtered;
+  }, [allPipelines, selectedWorkspaceId, userRole, userPermissions]);
 
   const [selectedPipeline, setSelectedPipeline] = useState<Pipeline | null>(null);
   const [filters, setFilters] = useState<ConversationFiltersState>(defaultFilters);

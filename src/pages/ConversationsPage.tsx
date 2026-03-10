@@ -128,7 +128,7 @@ const ConversationsPage = () => {
 
       return true;
     });
-  }, [conversations, searchQuery, filters, allContactTags, serviceMode, showArchived, selectedWorkspaceId, selectedWorkspace]);
+  }, [conversations, searchQuery, filters, allContactTags, serviceMode, showArchived, selectedWorkspaceId, selectedWorkspace, userRole, userPermissions, user?.id]);
 
   // Count conversations by service mode (filtered by workspace)
   const serviceModeCounts = useMemo(() => {
