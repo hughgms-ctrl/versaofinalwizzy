@@ -261,6 +261,15 @@ Deno.serve(async (req) => {
       execution_time_ms: executionTimeMs,
     });
 
+    // Enrich messageContent if it's just '[mídia]' — use the last inbound message's enriched content
+    let enrichedMessageContent = messageContent;
+    if (messageContent === '[mídia]' || !messageContent) {
+      const lastInbound = [...messages].reverse().find((m: any) => m.direction === 'inbound');
+      if (lastInbound?.content && lastInbound.content !== '[mídia]') {
+        enrichedMessageContent = lastInbound.content;
+        console.log('Enriched messageContent from transcription:', enrichedMessageContent.substring(0, 100));
+      }
+    }
     console.log(`=== ORCHESTRATOR COMPLETE (${executionTimeMs}ms, ${result.toolsExecuted.length} tools) ===`);
 
     return new Response(JSON.stringify({
