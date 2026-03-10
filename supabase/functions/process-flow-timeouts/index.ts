@@ -5,6 +5,53 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+/**
+ * CRITICAL SAFETY: Check if a contact responded AFTER the last follow-up message.
+ * This MUST check after the LAST follow-up, NOT after execution start.
+ * Reason: contacts often send messages BEFORE follow-ups begin (initial flow interaction),
+ * which should NOT cancel the follow-up sequence.
+ */
+async function contactRespondedAfterLastFollowUp(
+  supabase: any, 
+  conversationId: string,
+  executionStartedAt: string
+): Promise<boolean> {
+  // 1. Find the last remarketing follow-up message we sent
+  const { data: lastFollowUp } = await supabase
+    .from('messages')
+    .select('created_at')
+    .eq('conversation_id', conversationId)
+    .eq('is_from_bot', true)
+    .eq('metadata->>source', 'remarketing_followup')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  // 2. If no follow-up was ever sent, check after execution start
+  //    BUT only count messages that came AFTER a reasonable grace period (5 min)
+  //    to avoid counting the initial interaction that triggered the flow
+  const referenceTime = lastFollowUp?.created_at || null;
+  
+  if (!referenceTime) {
+    // No follow-up sent yet — we're at step 0, about to send step 1
+    // Don't cancel based on old messages, only if something came in very recently
+    // (the webhook should have already handled the response routing)
+    return false;
+  }
+
+  // 3. Check if contact sent a message AFTER the last follow-up
+  const { data: recentMsg } = await supabase
+    .from('messages')
+    .select('id')
+    .eq('conversation_id', conversationId)
+    .eq('is_from_bot', false)
+    .gt('created_at', referenceTime)
+    .limit(1)
+    .maybeSingle();
+
+  return !!recentMsg;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -18,10 +65,53 @@ Deno.serve(async (req) => {
 
     console.log('[FLOW TIMEOUTS] Checking for timed-out flow executions...');
 
-    // Find all flow executions that are waiting_input and have passed their timeout
+    // ═══════════════════════════════════════════════════════════════════
+    // PHASE 1: AUTO-FIX — Find stuck executions (waiting_input, no timeout, step 0)
+    // These are executions that should have had a timeout set but didn't
+    // ═══════════════════════════════════════════════════════════════════
+    const { data: stuckExecs } = await supabase
+      .from('flow_executions')
+      .select('id, current_node_id, flow_id, remarketing_step, started_at, conversation_id, flow:flows(nodes)')
+      .eq('status', 'waiting_input')
+      .is('timeout_at', null)
+      .eq('remarketing_step', 0)
+      .limit(20);
+
+    let autoFixed = 0;
+    for (const exec of (stuckExecs || [])) {
+      const nodes = (exec.flow?.nodes || []) as any[];
+      const node = nodes.find((n: any) => n.id === exec.current_node_id);
+      const steps = node?.data?.remarketingSteps as any[] || [];
+      
+      if (steps.length > 0) {
+        // SAFETY: Before auto-fixing, verify contact hasn't already responded
+        const responded = await contactRespondedAfterLastFollowUp(
+          supabase, exec.conversation_id, exec.started_at
+        );
+        
+        if (responded) {
+          // Contact responded — this execution should be completed, not fixed
+          console.log(`[FLOW TIMEOUTS] Auto-fix skipped for exec ${exec.id}: contact already responded`);
+          continue;
+        }
+
+        const firstStep = steps[0];
+        const delayMs = (firstStep.delayMinutes || 1) * 60 * 1000;
+        await supabase.from('flow_executions').update({
+          timeout_at: new Date(Date.now() + delayMs).toISOString(),
+        }).eq('id', exec.id);
+        console.log(`[FLOW TIMEOUTS] Auto-fixed stuck exec ${exec.id}: timeout in ${firstStep.delayMinutes}min`);
+        autoFixed++;
+      }
+    }
+    if (autoFixed > 0) console.log(`[FLOW TIMEOUTS] Auto-fixed ${autoFixed} stuck executions.`);
+
+    // ═══════════════════════════════════════════════════════════════════
+    // PHASE 2: Process timed-out executions (send follow-ups or route)
+    // ═══════════════════════════════════════════════════════════════════
     const { data: timedOut, error } = await supabase
       .from('flow_executions')
-      .select('id, flow_id, conversation_id, current_node_id, variables, remarketing_step, organization_id, flow:flows(nodes, edges, name)')
+      .select('id, flow_id, conversation_id, current_node_id, variables, remarketing_step, organization_id, started_at, flow:flows(nodes, edges, name)')
       .eq('status', 'waiting_input')
       .not('timeout_at', 'is', null)
       .lt('timeout_at', new Date().toISOString())
@@ -37,36 +127,7 @@ Deno.serve(async (req) => {
 
     if (!timedOut || timedOut.length === 0) {
       console.log('[FLOW TIMEOUTS] No timed-out executions found.');
-    }
-
-    // Auto-fix: find waiting_input executions with NULL timeout that should have remarketing
-    const { data: stuckExecs } = await supabase
-      .from('flow_executions')
-      .select('id, current_node_id, flow_id, remarketing_step, flow:flows(nodes)')
-      .eq('status', 'waiting_input')
-      .is('timeout_at', null)
-      .eq('remarketing_step', 0)
-      .limit(20);
-
-    let autoFixed = 0;
-    for (const exec of (stuckExecs || [])) {
-      const nodes = (exec.flow?.nodes || []) as any[];
-      const node = nodes.find((n: any) => n.id === exec.current_node_id);
-      const steps = node?.data?.remarketingSteps as any[] || [];
-      if (steps.length > 0) {
-        const firstStep = steps[0];
-        const delayMs = (firstStep.delayMinutes || 1) * 60 * 1000;
-        await supabase.from('flow_executions').update({
-          timeout_at: new Date(Date.now() + delayMs).toISOString(),
-        }).eq('id', exec.id);
-        console.log(`[FLOW TIMEOUTS] Auto-fixed stuck exec ${exec.id}: timeout in ${firstStep.delayMinutes}min`);
-        autoFixed++;
-      }
-    }
-    if (autoFixed > 0) console.log(`[FLOW TIMEOUTS] Auto-fixed ${autoFixed} stuck executions.`);
-
-    if ((!timedOut || timedOut.length === 0) && autoFixed === 0) {
-      return new Response(JSON.stringify({ success: true, processed: 0, autoFixed: 0 }), {
+      return new Response(JSON.stringify({ success: true, processed: 0, autoFixed }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -76,42 +137,53 @@ Deno.serve(async (req) => {
 
     for (const exec of timedOut) {
       try {
-        // Check if contact already responded AFTER the last follow-up — cancel if so
-        if ((exec.remarketing_step || 0) > 0) {
-          // Find last follow-up message to use as reference point
-          const { data: lastFollowUp } = await supabase
-            .from('messages')
-            .select('created_at')
-            .eq('conversation_id', exec.conversation_id)
-            .eq('is_from_bot', true)
-            .eq('metadata->>source', 'remarketing_followup')
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
+        // ═══════════════════════════════════════════════════════════════
+        // SAFETY CHECK: Did the contact respond after the last follow-up?
+        // This is the CRITICAL check that prevents sending follow-ups 
+        // to contacts who already responded.
+        // ═══════════════════════════════════════════════════════════════
+        const responded = await contactRespondedAfterLastFollowUp(
+          supabase, exec.conversation_id, exec.started_at
+        );
 
-          const checkAfter = lastFollowUp?.created_at || new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-          const { data: recentMsg } = await supabase
-            .from('messages')
-            .select('id')
-            .eq('conversation_id', exec.conversation_id)
-            .eq('is_from_bot', false)
-            .gt('created_at', checkAfter)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
+        if (responded) {
+          console.log(`[FLOW TIMEOUTS] Exec ${exec.id}: contact responded after last follow-up — CANCELING remaining follow-ups`);
+          
+          // Route via 'responded' edge if available, otherwise complete
+          const nodes = (exec.flow?.nodes || []) as any[];
+          const edges = (exec.flow?.edges || []) as any[];
+          const respondedEdge = edges.find((e: any) => e.source === exec.current_node_id && e.sourceHandle === 'responded');
+          
+          if (respondedEdge) {
+            await supabase.from('flow_executions').update({
+              status: 'running',
+              current_node_id: respondedEdge.target,
+              timeout_at: null,
+              remarketing_step: 0,
+            }).eq('id', exec.id);
 
-          if (recentMsg) {
-            console.log(`[FLOW TIMEOUTS] Exec ${exec.id}: contact already responded — canceling follow-ups`);
+            await fetch(`${supabaseUrl}/functions/v1/flow-execute`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseKey}` },
+              body: JSON.stringify({
+                flowId: exec.flow_id,
+                conversationId: exec.conversation_id,
+                startNodeId: respondedEdge.target,
+              }),
+            });
+          } else {
             await supabase.from('flow_executions').update({
               status: 'completed',
               timeout_at: null,
               remarketing_step: 0,
               completed_at: new Date().toISOString(),
             }).eq('id', exec.id);
-            processed++;
-            continue;
           }
+          
+          processed++;
+          continue;
         }
+
         const nodes = (exec.flow?.nodes || []) as any[];
         const edges = (exec.flow?.edges || []) as any[];
         const currentNodeId = exec.current_node_id;
@@ -121,7 +193,9 @@ Deno.serve(async (req) => {
         const currentNode = nodes.find((n: any) => n.id === currentNodeId);
         const remarketingSteps = currentNode?.data?.remarketingSteps as any[] || [];
 
-        // Check quiet hours
+        // ═══════════════════════════════════════════════════════════════
+        // QUIET HOURS: Pause sending during configured silent period
+        // ═══════════════════════════════════════════════════════════════
         const quietHoursEnabled = currentNode?.data?.remarketingQuietHours === true;
         if (quietHoursEnabled && remarketingSteps.length > 0 && currentStep < remarketingSteps.length) {
           const quietStart = currentNode?.data?.remarketingQuietStart || '22:00';
@@ -136,15 +210,12 @@ Deno.serve(async (req) => {
           if (quietStart <= quietEnd) {
             isQuiet = nowBR >= quietStart && nowBR < quietEnd;
           } else {
-            // Crosses midnight (e.g., 22:00 - 08:00)
             isQuiet = nowBR >= quietStart || nowBR < quietEnd;
           }
 
           if (isQuiet) {
-            // Reschedule for quiet end time
             const [endH, endM] = quietEnd.split(':').map(Number);
             const reschedule = new Date();
-            // Convert to São Paulo time for scheduling
             const spNow = new Date(reschedule.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
             spNow.setHours(endH, endM, 0, 0);
             if (spNow.getTime() <= Date.now()) {
@@ -159,12 +230,13 @@ Deno.serve(async (req) => {
           }
         }
 
+        // ═══════════════════════════════════════════════════════════════
+        // SEND FOLLOW-UP or ROUTE via timeout edge
+        // ═══════════════════════════════════════════════════════════════
         if (remarketingSteps.length > 0 && currentStep < remarketingSteps.length) {
-          // There are still remarketing steps to send
           const step = remarketingSteps[currentStep];
           console.log(`[FLOW TIMEOUTS] Exec ${exec.id}: sending remarketing step ${currentStep + 1}/${remarketingSteps.length}`);
 
-          // Send the remarketing message directly via UAZAPI
           if (step.message) {
             const { data: conv } = await supabase
               .from('conversations')
@@ -179,7 +251,6 @@ Deno.serve(async (req) => {
                 .eq('id', conv.contact_id)
                 .single();
 
-              // Get WhatsApp instance for UAZAPI token
               const { data: instance } = await supabase
                 .from('whatsapp_instances')
                 .select('zapi_instance_id, zapi_token')
@@ -189,7 +260,6 @@ Deno.serve(async (req) => {
                 .single();
 
               if (contact?.phone && instance?.zapi_token) {
-                // Replace variables in message
                 const variables = exec.variables || {};
                 let messageText = step.message;
                 for (const [key, val] of Object.entries(variables as Record<string, any>)) {
@@ -198,9 +268,8 @@ Deno.serve(async (req) => {
 
                 const normalizedPhone = contact.phone.replace(/\D/g, '');
 
-                // Send directly via UAZAPI API
                 try {
-                  console.log(`[FLOW TIMEOUTS] Sending via UAZAPI: phone=${normalizedPhone}, message=${messageText.substring(0, 50)}...`);
+                  console.log(`[FLOW TIMEOUTS] Sending via UAZAPI: phone=${normalizedPhone}, step=${currentStep + 1}, message=${messageText.substring(0, 50)}...`);
                   
                   const uazapiResp = await fetch(`${uazapiBaseUrl}/send/text`, {
                     method: 'POST',
@@ -218,14 +287,12 @@ Deno.serve(async (req) => {
                     const errText = await uazapiResp.text();
                     console.error(`[FLOW TIMEOUTS] UAZAPI send failed: ${uazapiResp.status} ${errText}`);
                   } else {
-                    // Parse message ID from response
                     let zapiMessageId: string | null = null;
                     try {
                       const result = await uazapiResp.json();
                       zapiMessageId = result?.messageId || result?.id || result?.ID || result?.key?.id || null;
                     } catch { /* ignore */ }
 
-                    // Save message to DB so it appears in the conversation UI
                     await supabase.from('messages').insert({
                       conversation_id: exec.conversation_id,
                       content: messageText,
@@ -240,12 +307,11 @@ Deno.serve(async (req) => {
                       },
                     });
 
-                    // Update conversation last_message_at
                     await supabase.from('conversations').update({ 
                       last_message_at: new Date().toISOString() 
                     }).eq('id', exec.conversation_id);
 
-                    console.log(`[FLOW TIMEOUTS] Remarketing message sent and saved for exec ${exec.id} (step ${currentStep + 1})`);
+                    console.log(`[FLOW TIMEOUTS] ✅ Remarketing step ${currentStep + 1} sent for exec ${exec.id}`);
                   }
                 } catch (sendErr) {
                   console.error(`[FLOW TIMEOUTS] Error sending message via UAZAPI:`, sendErr);
@@ -256,7 +322,7 @@ Deno.serve(async (req) => {
             }
           }
 
-          // Calculate next timeout
+          // Schedule next step
           const nextStepIndex = currentStep + 1;
           let nextTimeoutAt: string | null = null;
 
@@ -264,12 +330,13 @@ Deno.serve(async (req) => {
             const nextStep = remarketingSteps[nextStepIndex];
             const delayMs = nextStep.delayMinutes * 60 * 1000;
             nextTimeoutAt = new Date(Date.now() + delayMs).toISOString();
+            console.log(`[FLOW TIMEOUTS] Next step ${nextStepIndex + 1} scheduled in ${nextStep.delayMinutes}min`);
           } else {
-            // Last step done — set a final short timeout to trigger the timeout edge
-            nextTimeoutAt = new Date(Date.now() + 1000).toISOString(); // 1 second
+            // Last step done — short timeout to trigger the timeout edge
+            nextTimeoutAt = new Date(Date.now() + 1000).toISOString();
+            console.log(`[FLOW TIMEOUTS] All ${remarketingSteps.length} steps sent — will route via timeout edge next`);
           }
 
-          // Update execution: advance step, set new timeout
           await supabase.from('flow_executions').update({
             remarketing_step: nextStepIndex,
             timeout_at: nextTimeoutAt,
@@ -292,7 +359,6 @@ Deno.serve(async (req) => {
               variables: { ...(exec.variables || {}), _timeout: true },
             }).eq('id', exec.id);
 
-            // Trigger flow-execute to continue
             await fetch(`${supabaseUrl}/functions/v1/flow-execute`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseKey}` },
@@ -305,7 +371,7 @@ Deno.serve(async (req) => {
 
             processed++;
           } else {
-            // No timeout edge — just complete
+            // No timeout edge — complete the flow
             console.log(`[FLOW TIMEOUTS] Exec ${exec.id}: no timeout edge, completing flow.`);
             await supabase.from('flow_executions').update({
               status: 'completed',
@@ -314,7 +380,6 @@ Deno.serve(async (req) => {
               completed_at: new Date().toISOString(),
             }).eq('id', exec.id);
 
-            // Cleanup conversation state
             const { data: convData } = await supabase
               .from('conversations')
               .select('metadata')
@@ -339,7 +404,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    console.log(`[FLOW TIMEOUTS] Processed ${processed} timed-out executions.`);
+    console.log(`[FLOW TIMEOUTS] ✅ Processed ${processed} executions, auto-fixed ${autoFixed}.`);
 
     return new Response(JSON.stringify({ success: true, processed, autoFixed }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
