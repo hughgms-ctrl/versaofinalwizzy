@@ -11,6 +11,7 @@ export interface DbConversation {
   unread_count: number;
   last_message_at: string | null;
   assigned_to: string | null;
+  ai_agent_id: string | null;
   created_at: string;
   updated_at: string;
   contact: {
