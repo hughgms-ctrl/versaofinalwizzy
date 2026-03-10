@@ -196,7 +196,7 @@ const ConversationsPage = () => {
       }
       return acc;
     }, { ia: 0, ativo: 0, pendente: 0 });
-  }, [conversations, selectedWorkspaceId, selectedWorkspace, allContactTags, userRole, userPermissions, user?.id]);
+  }, [conversations, selectedWorkspaceId, selectedWorkspace, allContactTags, userRole, userPermissions, user?.id, pipelinePositions, hasPipelineRestriction]);
 
   // Mark conversation as read when selected (unless spy mode)
   const handleSelectConversation = useCallback(async (conversation: DbConversation) => {
