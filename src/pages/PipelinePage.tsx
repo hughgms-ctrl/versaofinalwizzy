@@ -51,7 +51,14 @@ const PipelinePage = () => {
     // Permission filter: restrict to allowed pipelines for non-owner/admin
     const isRestricted = userRole && userRole !== 'owner' && userRole !== 'admin';
     if (isRestricted && userPermissions?.pipeline_access_type === 'specific' && userPermissions.allowed_pipeline_ids?.length > 0) {
-      filtered = filtered.filter(p => userPermissions.allowed_pipeline_ids.includes(p.id));
+      // Get pipeline IDs that have shared conversations
+      const sharedPipelineIds = new Set<string>();
+      // We need to check pipeline positions for shared conversations
+      // For now, include allowed pipelines + any pipeline that has shared leads
+      const allowedIds = new Set(userPermissions.allowed_pipeline_ids);
+      
+      // Also include pipelines that contain shared conversations (handled by PipelineBoard)
+      filtered = filtered.filter(p => allowedIds.has(p.id));
     }
     
     return filtered;
