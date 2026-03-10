@@ -1497,14 +1497,25 @@ async function invokeDocumentAgentAI(
     round++;
     console.log(`--- Document Agent AI Round ${round} ---`);
 
-    const aiResponse = await fetch(ctx.aiEndpoint, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${ctx.aiApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ model: ctx.aiModel, messages: aiMessages, tools, tool_choice: 'auto' }),
-    });
+    const abortCtrl = new AbortController();
+    const tid = setTimeout(() => abortCtrl.abort(), 25000);
+    let aiResponse: Response;
+    try {
+      aiResponse = await fetch(ctx.aiEndpoint, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${ctx.aiApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ model: ctx.aiModel, messages: aiMessages, tools, tool_choice: 'auto' }),
+        signal: abortCtrl.signal,
+      });
+    } catch (fetchErr: any) {
+      clearTimeout(tid);
+      console.error('[DOC-AGENT] AI fetch error:', fetchErr.name, fetchErr.message);
+      break;
+    }
+    clearTimeout(tid);
 
     if (!aiResponse.ok) {
       const errorText = await aiResponse.text();
