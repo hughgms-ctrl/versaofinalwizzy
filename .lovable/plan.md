@@ -140,3 +140,13 @@ A geracao automatica via agente e assinatura serao implementados na Fase 3.
 6. Componentes de packs
 7. Sidebar + rotas
 8. Edge function `generate-document-pdf` (geracao de PDF basica)
+
+---
+
+## Feature implementada: Compartilhamento Granular de Leads
+
+### Tabela `conversation_shares`
+- Permite compartilhar leads específicos com membros da equipe
+- Membros restritos veem leads compartilhados independente das restrições de pipeline/tag
+- UI: botão "Compartilhar com membro" no menu de ações da conversa e do pipeline
+- Seção de leads compartilhados no EditPermissionsDialog para revogar acesso
