@@ -1810,16 +1810,36 @@ function buildTrainingRulesSection(
 ): string {
   if (!allRules || allRules.length === 0) return '';
 
-  // Filter relevant rules for this context
+  // Filter relevant rules for this context — inclusive matching
   const relevant = allRules.filter((r: any) => {
     if (!r.is_active) return false;
-    if (r.target_type === 'agent' && r.agent_id === filters.agentId) return true;
-    if (r.target_type === 'master_prompt' && r.master_prompt_id === filters.masterPromptId) return true;
-    if (r.target_type === 'flow_node' && r.flow_id === filters.flowId) {
-      if (r.node_id && filters.nodeId) return r.node_id === filters.nodeId;
-      return true; // flow-level rule without specific node
+
+    // Agent rules: match if targeting this agent OR if no agent_id specified (applies to all agents)
+    if (r.target_type === 'agent') {
+      if (!r.agent_id) return true; // Global agent rule — applies to all
+      if (filters.agentId && r.agent_id === filters.agentId) return true;
+      return false;
     }
-    return false;
+
+    // Master prompt rules: match if targeting this prompt OR no master_prompt_id (global)
+    if (r.target_type === 'master_prompt') {
+      if (!r.master_prompt_id) return true; // Global master prompt rule
+      if (filters.masterPromptId && r.master_prompt_id === filters.masterPromptId) return true;
+      return false;
+    }
+
+    // Flow node rules: match by flow and optionally node
+    if (r.target_type === 'flow_node') {
+      if (!r.flow_id) return true; // Global flow rule
+      if (filters.flowId && r.flow_id === filters.flowId) {
+        if (r.node_id && filters.nodeId) return r.node_id === filters.nodeId;
+        return true; // flow-level rule without specific node
+      }
+      return false;
+    }
+
+    // Unknown target_type — include it (safety net)
+    return true;
   });
 
   if (relevant.length === 0) return '';
