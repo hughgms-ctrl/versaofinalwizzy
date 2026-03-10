@@ -911,6 +911,18 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
           </div>
         )}
       </SheetContent>
+
+      {/* AI Feedback Dialog - same as conversations */}
+      {feedbackMessage && (
+        <AIFeedbackDialog
+          open={feedbackDialogOpen}
+          onOpenChange={setFeedbackDialogOpen}
+          messageId={feedbackMessage.id}
+          originalMessage={feedbackMessage.content}
+          metadata={feedbackMessage.metadata || {}}
+          organizationId={orgContext?.organizationId || ''}
+        />
+      )}
     </Sheet>
   );
 }
