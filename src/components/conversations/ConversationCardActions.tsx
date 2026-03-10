@@ -320,6 +320,13 @@ export function ConversationCardActions({
           Remover do pipeline
         </DropdownMenuItem>
       </DropdownMenuContent>
+
+      <ShareConversationDialog
+        open={showShareDialog}
+        onOpenChange={setShowShareDialog}
+        conversationId={conversation.id}
+        contactName={conversation.contact?.name || undefined}
+      />
     </DropdownMenu>
   );
 }
