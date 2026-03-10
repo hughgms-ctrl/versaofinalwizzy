@@ -139,14 +139,12 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
   const addMsg = useCallback((msg: Omit<SimMessage, 'id' | 'timestamp' | 'status'>) => {
     const newId = `m-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const newMsg: SimMessage = { ...msg, id: newId, timestamp: new Date(), status: msg.type === 'bot' ? 'sending' : 'sent' };
-    setMessages(prev => {
-      const updated = [...prev, newMsg];
-      messagesRef.current = updated;
-      return updated;
-    });
+    // Update ref immediately so async callers always see latest messages
+    messagesRef.current = [...messagesRef.current, newMsg];
+    setMessages(messagesRef.current);
     if (msg.type === 'bot') {
-      setTimeout(() => setMessages(prev => { const u = prev.map(m => m.id === newId ? { ...m, status: 'delivered' as const } : m); messagesRef.current = u; return u; }), 600);
-      setTimeout(() => setMessages(prev => { const u = prev.map(m => m.id === newId ? { ...m, status: 'read' as const } : m); messagesRef.current = u; return u; }), 1200);
+      setTimeout(() => { messagesRef.current = messagesRef.current.map(m => m.id === newId ? { ...m, status: 'delivered' as const } : m); setMessages([...messagesRef.current]); }, 600);
+      setTimeout(() => { messagesRef.current = messagesRef.current.map(m => m.id === newId ? { ...m, status: 'read' as const } : m); setMessages([...messagesRef.current]); }, 1200);
     }
     return newId;
   }, []);
