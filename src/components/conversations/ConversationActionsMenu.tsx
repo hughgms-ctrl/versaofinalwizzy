@@ -464,6 +464,10 @@ export function ConversationActionsMenu({ conversation, onShowMediaGallery }: Co
           <MailWarning className="h-4 w-4 mr-2 text-amber-500" />
           Marcar como não lida
         </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => setShowShareDialog(true)}>
+          <UserPlus className="h-4 w-4 mr-2 text-blue-500" />
+          Compartilhar com membro
+        </DropdownMenuItem>
 
         <DropdownMenuSeparator />
 
