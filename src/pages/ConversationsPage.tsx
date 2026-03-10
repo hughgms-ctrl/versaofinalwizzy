@@ -164,6 +164,8 @@ const ConversationsPage = () => {
     const filterType = userPermissions?.conversations_filter_type || 'all';
     const allowedTags = userPermissions?.conversations_allowed_tags || [];
 
+    const allowedPipelineIds = userPermissions?.allowed_pipeline_ids || [];
+
     const workspaceFiltered = conversations.filter(conv => {
       if (conv.status === 'archived') return false;
 
@@ -176,6 +178,15 @@ const ConversationsPage = () => {
         if (filterType === 'assigned' && !isAssigned) return false;
         if (filterType === 'tags' && !hasAllowedTag) return false;
         if (filterType === 'assigned_and_tags' && !isAssigned && !hasAllowedTag) return false;
+      }
+
+      // Pipeline permission filter
+      if (hasPipelineRestriction && allowedPipelineIds.length > 0) {
+        const convPipelines = pipelinePositions.filter(pp => pp.conversation_id === conv.id);
+        if (convPipelines.length > 0) {
+          const isInAllowedPipeline = convPipelines.some(pp => allowedPipelineIds.includes(pp.pipeline_id));
+          if (!isInAllowedPipeline) return false;
+        }
       }
 
       if (selectedWorkspaceId && selectedWorkspace) {
