@@ -34,6 +34,8 @@ const PipelinePage = () => {
   const { selectedWorkspaceId } = useWorkspaceContext();
   const { data: userPermissions } = useUserPermissions();
   const { data: userRole } = useCurrentUserRole();
+  const { user } = useAuth();
+  const { data: myShares = [] } = useConversationShares();
 
   // Filter pipelines by selected workspace AND user permissions
   const pipelines = useMemo(() => {
