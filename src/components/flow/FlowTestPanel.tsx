@@ -157,6 +157,64 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
   const resolvePipeline = (pipelineId: string) => orgContext?.pipelines.find(p => p.id === pipelineId);
   const resolveAgent = (agentId: string) => orgContext?.agents.find(a => a.id === agentId);
 
+  // Ref to hold the follow-up resolve function (accessible from handleUserInput)
+  const followUpResolveRef = useRef<((responded: boolean) => void) | null>(null);
+
+  // ===== FOLLOW-UP MECHANISM =====
+  // Waits for user response while sending follow-up messages on timers.
+  // Returns true if user responded, false if all follow-ups exhausted (timeout).
+  const waitForResponseWithFollowUps = async (
+    remarketingSteps: Array<{ id?: string; delayMinutes: number; message: string }>,
+    variableName: string
+  ): Promise<boolean> => {
+    // Enable user input
+    setSimState(prev => ({ ...prev, waitingForInput: true, inputVariable: variableName }));
+
+    // Create a promise that resolves when user responds or all follow-ups are sent + final wait
+    return new Promise<boolean>((resolve) => {
+      followUpResolveRef.current = resolve;
+      setSimState(prev => ({ ...prev, followUpResolve: resolve }));
+
+      // Run follow-ups in background
+      (async () => {
+        for (let i = 0; i < remarketingSteps.length; i++) {
+          const step = remarketingSteps[i];
+          // Accelerate delays for simulation: cap at 5 seconds per step
+          const simDelay = Math.min((step.delayMinutes || 1) * 60 * 1000, 5000);
+          addMsg({ type: 'action', content: `⏱️ Aguardando ${step.delayMinutes}min (simulado: ${Math.round(simDelay / 1000)}s)`, actionIcon: '⏳' });
+          
+          // Wait, but check if user responded
+          const startTime = Date.now();
+          while (Date.now() - startTime < simDelay) {
+            if (!followUpResolveRef.current) return; // Already resolved (user responded)
+            await wait(200);
+          }
+          if (!followUpResolveRef.current) return; // Already resolved
+
+          // Send follow-up message
+          if (step.message) {
+            let text = step.message;
+            addMsg({ type: 'bot', content: text });
+          } else {
+            addMsg({ type: 'action', content: `Follow-up #${i + 1} (sem mensagem configurada)`, actionIcon: '📩' });
+          }
+          await wait(400);
+        }
+
+        // All follow-ups sent, wait a final 3 seconds for last chance response
+        addMsg({ type: 'action', content: `Última chance de resposta...`, actionIcon: '⏱️' });
+        await wait(3000);
+        
+        // If still not resolved, timeout
+        if (followUpResolveRef.current) {
+          followUpResolveRef.current = null;
+          setSimState(prev => ({ ...prev, followUpResolve: null, waitingForInput: false }));
+          resolve(false); // timeout
+        }
+      })();
+    });
+  };
+
   // ===== TRAINING RULES (mirrors orchestrator logic) =====
   const buildTrainingRulesPrompt = (filters: { agentId?: string; flowId?: string; nodeId?: string }) => {
     if (!orgContext?.trainingRules.length) return '';
