@@ -54,6 +54,7 @@ interface SimState {
   activeAgentPrompt?: string;
   expectedOutcomes?: string[];
   parentFlowStack: Array<{ flowId: string; flowData: any; nodeId: string; nodes: Node[]; edges: Edge[] }>;
+  followUpResolve?: ((responded: boolean) => void) | null;
 }
 
 // Preloaded org data
