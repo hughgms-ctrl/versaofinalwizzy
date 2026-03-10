@@ -272,20 +272,26 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
         sysPrompt += `Quando sua tarefa estiver concluída, inclua [RESULTADO: <valor>] no final da sua resposta com um dos resultados acima.\n\n`;
       }
 
-      sysPrompt += `INSTRUÇÕES IMPORTANTES:\n`;
+      sysPrompt += `\nINSTRUÇÕES CRÍTICAS DE COMPORTAMENTO:\n`;
       sysPrompt += `- Responda SEMPRE em português brasileiro.\n`;
-      sysPrompt += `- Leia TODA a conversa anterior antes de responder. NUNCA repita perguntas já respondidas pelo cliente.\n`;
-      sysPrompt += `- Se o cliente já forneceu informações na conversa, use-as diretamente e avance para o próximo passo.\n`;
-      sysPrompt += `- Continue a conversa de forma natural e fluida, como se fosse uma única interação contínua.\n`;
+      sysPrompt += `- ANALISE CUIDADOSAMENTE todo o histórico da conversa antes de responder.\n`;
+      sysPrompt += `- PROIBIDO repetir perguntas que o cliente já respondeu. Se ele já deu uma resposta (mesmo que informal como "ainda não", "não sei", "acho que sim"), considere como resposta válida e AVANCE para a próxima etapa.\n`;
+      sysPrompt += `- Respostas como "ainda não", "não", "sim", "acho que sim", "talvez" são respostas VÁLIDAS. NÃO peça confirmação tipo "sim ou não?" se o cliente já respondeu.\n`;
+      sysPrompt += `- Se o cliente já forneceu informações, use-as diretamente.\n`;
+      sysPrompt += `- Continue a conversa de forma natural e fluida.\n`;
       sysPrompt += `- NUNCA envie mensagens em inglês, sem sentido, ou genéricas.\n`;
       sysPrompt += `- Mantenha a persona definida.\n`;
       sysPrompt += `- NÃO produza texto entre parênteses ou pensamentos internos.\n`;
       sysPrompt += `- NÃO mencione transições de agentes, transferências ou mudanças internas do sistema.\n`;
+      sysPrompt += `- A ÚLTIMA mensagem do usuário no histórico é a mais recente. Responda a ELA.\n`;
 
       // Conversation history — use ref for fresh data (avoids stale closure)
-      const history = messagesRef.current
-        .filter(m => m.type === 'user' || m.type === 'bot')
-        .map(m => ({ role: m.type === 'user' ? 'user' : 'assistant', content: m.content }));
+      // Only include user and bot messages (not system/action messages)
+      const allMsgs = messagesRef.current.filter(m => m.type === 'user' || m.type === 'bot');
+      const history = allMsgs.map(m => ({ 
+        role: m.type === 'user' ? 'user' as const : 'assistant' as const, 
+        content: m.content 
+      }));
 
       const { data, error } = await supabase.functions.invoke('generate-agent-prompt', {
         body: {
