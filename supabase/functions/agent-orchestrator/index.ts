@@ -1235,14 +1235,25 @@ async function invokeAgentAI(
     console.log(`--- Agent AI Round ${round} ---`);
 
     const agentConfig = resolveAgentConfig(ctx, agent, ctx.integrationConfig);
-    const aiResponse = await fetch(agentConfig.endpoint, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${agentConfig.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ model: agentConfig.model, messages: aiMessages, tools, tool_choice: 'auto' }),
-    });
+    const abortCtrl = new AbortController();
+    const tid = setTimeout(() => abortCtrl.abort(), 25000);
+    let aiResponse: Response;
+    try {
+      aiResponse = await fetch(agentConfig.endpoint, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${agentConfig.apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ model: agentConfig.model, messages: aiMessages, tools, tool_choice: 'auto' }),
+        signal: abortCtrl.signal,
+      });
+    } catch (fetchErr: any) {
+      clearTimeout(tid);
+      console.error('[AGENT] AI fetch error:', fetchErr.name, fetchErr.message);
+      break;
+    }
+    clearTimeout(tid);
 
     if (!aiResponse.ok) {
       const errorText = await aiResponse.text();
