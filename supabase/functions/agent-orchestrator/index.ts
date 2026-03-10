@@ -2406,7 +2406,7 @@ function resolveAIConfig(
   const featureProvider = integrationConfig[`${feature}_provider`];
   const featureModel = integrationConfig[`${feature}_model`];
   let provider = overrideProvider || featureProvider || integrationConfig.ai_provider || 'lovable';
-  let model = overrideModel || featureModel || integrationConfig.default_model || 'google/gemini-1.5-flash-latest';
+  let model = overrideModel || featureModel || integrationConfig.default_model || 'google/gemini-2.5-flash';
 
   // Ensure format is correct depending on provider
   if (provider === 'gemini') {
