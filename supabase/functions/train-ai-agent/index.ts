@@ -119,8 +119,15 @@ Responda APENAS com o JSON, sem markdown ou comentários.`;
     }
 
     // ========== APPLY MODE ==========
-    if (!feedback || !target) {
-      return new Response(JSON.stringify({ error: 'feedback and target are required' }), {
+    if (!target) {
+      return new Response(JSON.stringify({ error: 'target is required' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const { situation, rule: ruleText } = payload;
+    if (!situation && !ruleText && !feedback) {
+      return new Response(JSON.stringify({ error: 'situation and rule are required' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
