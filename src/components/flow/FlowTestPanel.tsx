@@ -282,8 +282,8 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
       sysPrompt += `- NÃO produza texto entre parênteses ou pensamentos internos.\n`;
       sysPrompt += `- Esta é uma SIMULAÇÃO DE TESTE. Responda como faria em um atendimento real.\n`;
 
-      // Conversation history
-      const history = messages
+      // Conversation history — use ref for fresh data (avoids stale closure)
+      const history = messagesRef.current
         .filter(m => m.type === 'user' || m.type === 'bot')
         .map(m => ({ role: m.type === 'user' ? 'user' : 'assistant', content: m.content }));
 
