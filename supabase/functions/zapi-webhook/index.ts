@@ -929,6 +929,8 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
           await supabase.from('flow_executions').update({
             status: 'completed',
             completed_at: new Date().toISOString(),
+            timeout_at: null,
+            remarketing_step: 0,
           }).eq('id', activeFlowExec.id);
 
           const { data: convMeta3 } = await supabase.from('conversations').select('metadata').eq('id', conversation.id).single();
