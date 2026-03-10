@@ -169,7 +169,7 @@ Deno.serve(async (req) => {
       supabase.from('ai_agents').select('*').eq('organization_id', organizationId).eq('is_active', true),
       supabase.from('tags').select('*').eq('organization_id', organizationId),
       supabase.from('contact_tags').select('*, tag:tags(*)').eq('contact_id', contactId),
-      supabase.from('pipelines').select('*, columns:pipeline_columns(*)').eq('organization_id', organizationId),
+      supabase.from('pipelines').select('*, columns:pipeline_columns!pipeline_columns_pipeline_id_fkey(*)').eq('organization_id', organizationId),
       supabase.from('conversation_pipeline_positions')
         .select('*, pipeline:pipelines(name), column:pipeline_columns(name)')
         .eq('conversation_id', conversationId),
