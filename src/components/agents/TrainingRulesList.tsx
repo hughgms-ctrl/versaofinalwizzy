@@ -93,7 +93,23 @@ export function TrainingRulesList({
     );
   }
 
-  if (rules.length === 0) return null;
+  if (rules.length === 0) {
+    return (
+      <div className="rounded-lg border border-border bg-muted/30 overflow-hidden">
+        <div className="flex items-center gap-2 p-3">
+          <BookOpen className="h-4 w-4 text-amber-500" />
+          <span className="text-xs font-semibold text-foreground">
+            Regras Aprendidas (0)
+          </span>
+        </div>
+        <div className="border-t border-border p-3">
+          <p className="text-xs text-muted-foreground italic">
+            Nenhuma regra aprendida ainda. Use o botão de feedback (👎) nas mensagens da IA para criar regras.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="rounded-lg border border-border bg-muted/30 overflow-hidden">
