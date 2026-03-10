@@ -113,10 +113,14 @@ export function ShareConversationDialog({ open, onOpenChange, conversationId, co
                   <button
                     key={member.user_id}
                     onClick={() => handleToggle(member.user_id)}
-                    className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors text-left"
+                    className={`w-full flex items-center gap-3 p-2 rounded-lg transition-colors text-left border ${
+                      isShared
+                        ? 'bg-green-500/10 border-green-500/20 hover:bg-green-500/15'
+                        : 'border-transparent hover:bg-muted/50'
+                    }`}
                     disabled={shareConversation.isPending || unshareConversation.isPending}
                   >
-                    <Avatar className="h-8 w-8">
+                    <Avatar className={`h-8 w-8 ${isShared ? 'ring-2 ring-green-500' : ''}`}>
                       <AvatarImage src={member.avatar_url || undefined} />
                       <AvatarFallback className="text-xs">
                         {member.name?.charAt(0)?.toUpperCase() || '?'}
@@ -127,7 +131,7 @@ export function ShareConversationDialog({ open, onOpenChange, conversationId, co
                       <p className="text-xs text-muted-foreground">{member.role}</p>
                     </div>
                     {isShared ? (
-                      <Badge variant="secondary" className="gap-1 text-xs">
+                      <Badge className="gap-1 text-xs bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800">
                         <Check className="h-3 w-3" />
                         Compartilhado
                       </Badge>
