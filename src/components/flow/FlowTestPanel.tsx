@@ -822,6 +822,16 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
 
   const handleListRowClick = async (row: { id: string; title: string }) => {
     addMsg({ type: 'user', content: row.title });
+
+    // If follow-up sequence is active, resolve it
+    if (followUpResolveRef.current) {
+      const resolve = followUpResolveRef.current;
+      followUpResolveRef.current = null;
+      setSimState(prev => ({ ...prev, followUpResolve: null, waitingForInput: false, pendingList: undefined, variables: { ...prev.variables, list_choice: row.title } }));
+      resolve(true);
+      return;
+    }
+
     setSimState(prev => ({ ...prev, waitingForInput: false, pendingList: undefined, variables: { ...prev.variables, list_choice: row.title } }));
     await wait(300);
     const nodes = simState.activeFlowData.nodes as Node[];
