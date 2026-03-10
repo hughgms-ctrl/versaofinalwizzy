@@ -17,6 +17,8 @@ import { useQuery } from '@tanstack/react-query';
 import { useTags } from '@/hooks/useTags';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { NewConversationDialog } from '@/components/conversations/NewConversationDialog';
+import { useUserPermissions, useCurrentUserRole } from '@/hooks/useUserPermissions';
+import { useAuth } from '@/hooks/useAuth';
 
 const ConversationsPage = () => {
   const [selectedConversation, setSelectedConversation] = useState<DbConversation | null>(null);
@@ -29,6 +31,9 @@ const ConversationsPage = () => {
   const { data: conversations, isLoading, error, refetch } = useConversations({ onlyArchived: showArchived });
   const { connected: whatsappConnected, isLoading: whatsappLoading } = useWhatsAppStatus();
   const { selectedWorkspace, selectedWorkspaceId } = useWorkspaceContext();
+  const { user } = useAuth();
+  const { data: userPermissions } = useUserPermissions();
+  const { data: userRole } = useCurrentUserRole();
 
   // Fetch contact tags for filtering
   const { data: allContactTags = [] } = useQuery({
@@ -46,7 +51,23 @@ const ConversationsPage = () => {
   const filteredConversations = useMemo(() => {
     if (!conversations) return [];
 
+    // Check if user is restricted (not owner/admin)
+    const isRestricted = userRole && userRole !== 'owner' && userRole !== 'admin';
+    const filterType = userPermissions?.conversations_filter_type || 'all';
+    const allowedTags = userPermissions?.conversations_allowed_tags || [];
+
     return conversations.filter(conv => {
+      // === PERMISSION-BASED FILTER (for non-owner/admin users) ===
+      if (isRestricted && filterType !== 'all') {
+        const isAssigned = conv.assigned_to === user?.id;
+        const contactTagIds = allContactTags?.filter(ct => ct.contact_id === conv.contact?.id).map(ct => ct.tag_id) || [];
+        const hasAllowedTag = allowedTags.length > 0 && allowedTags.some(tagId => contactTagIds.includes(tagId));
+
+        if (filterType === 'assigned' && !isAssigned) return false;
+        if (filterType === 'tags' && !hasAllowedTag) return false;
+        if (filterType === 'assigned_and_tags' && !isAssigned && !hasAllowedTag) return false;
+      }
+
       // === WORKSPACE FILTER ===
       if (selectedWorkspaceId && selectedWorkspace) {
         const workspaceTagIds = selectedWorkspace.filter_tag_ids || [];
@@ -107,15 +128,30 @@ const ConversationsPage = () => {
 
       return true;
     });
-  }, [conversations, searchQuery, filters, allContactTags, serviceMode, showArchived, selectedWorkspaceId, selectedWorkspace]);
+  }, [conversations, searchQuery, filters, allContactTags, serviceMode, showArchived, selectedWorkspaceId, selectedWorkspace, userRole, userPermissions, user?.id]);
 
-  // Count conversations by service mode (filtered by workspace)
+  // Count conversations by service mode (filtered by workspace + permissions)
   const serviceModeCounts = useMemo(() => {
     if (!conversations) return { ia: 0, ativo: 0, pendente: 0 };
 
-    // First filter by workspace, then count by service mode
+    const isRestricted = userRole && userRole !== 'owner' && userRole !== 'admin';
+    const filterType = userPermissions?.conversations_filter_type || 'all';
+    const allowedTags = userPermissions?.conversations_allowed_tags || [];
+
     const workspaceFiltered = conversations.filter(conv => {
       if (conv.status === 'archived') return false;
+
+      // Permission filter
+      if (isRestricted && filterType !== 'all') {
+        const isAssigned = conv.assigned_to === user?.id;
+        const contactTagIds = allContactTags?.filter(ct => ct.contact_id === conv.contact?.id).map(ct => ct.tag_id) || [];
+        const hasAllowedTag = allowedTags.length > 0 && allowedTags.some(tagId => contactTagIds.includes(tagId));
+
+        if (filterType === 'assigned' && !isAssigned) return false;
+        if (filterType === 'tags' && !hasAllowedTag) return false;
+        if (filterType === 'assigned_and_tags' && !isAssigned && !hasAllowedTag) return false;
+      }
+
       if (selectedWorkspaceId && selectedWorkspace) {
         const workspaceTagIds = selectedWorkspace.filter_tag_ids || [];
         if (workspaceTagIds.length > 0) {
@@ -134,7 +170,7 @@ const ConversationsPage = () => {
       }
       return acc;
     }, { ia: 0, ativo: 0, pendente: 0 });
-  }, [conversations, selectedWorkspaceId, selectedWorkspace, allContactTags]);
+  }, [conversations, selectedWorkspaceId, selectedWorkspace, allContactTags, userRole, userPermissions, user?.id]);
 
   // Mark conversation as read when selected (unless spy mode)
   const handleSelectConversation = useCallback(async (conversation: DbConversation) => {
