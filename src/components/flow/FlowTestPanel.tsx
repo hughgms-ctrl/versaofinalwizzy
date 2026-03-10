@@ -179,8 +179,9 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
       (async () => {
         for (let i = 0; i < remarketingSteps.length; i++) {
           const step = remarketingSteps[i];
-          // Accelerate delays for simulation: cap at 5 seconds per step
-          const simDelay = Math.min((step.delayMinutes || 1) * 60 * 1000, 5000);
+          // Simulate delays proportionally: 1min real = 3s simulated, min 5s, max 15s
+          const realMinutes = step.delayMinutes || 1;
+          const simDelay = Math.max(5000, Math.min(realMinutes * 3000, 15000));
           addMsg({ type: 'action', content: `⏱️ Aguardando ${step.delayMinutes}min (simulado: ${Math.round(simDelay / 1000)}s)`, actionIcon: '⏳' });
           
           // Wait, but check if user responded
