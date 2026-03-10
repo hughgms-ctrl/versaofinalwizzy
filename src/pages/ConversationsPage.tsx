@@ -31,6 +31,9 @@ const ConversationsPage = () => {
   const { data: conversations, isLoading, error, refetch } = useConversations({ onlyArchived: showArchived });
   const { connected: whatsappConnected, isLoading: whatsappLoading } = useWhatsAppStatus();
   const { selectedWorkspace, selectedWorkspaceId } = useWorkspaceContext();
+  const { user } = useAuth();
+  const { data: userPermissions } = useUserPermissions();
+  const { data: userRole } = useCurrentUserRole();
 
   // Fetch contact tags for filtering
   const { data: allContactTags = [] } = useQuery({
