@@ -171,11 +171,15 @@ const ConversationsPage = () => {
 
     const allowedPipelineIds = userPermissions?.allowed_pipeline_ids || [];
 
+    const sharedConvIds = new Set(myShares.map(s => s.conversation_id));
+
     const workspaceFiltered = conversations.filter(conv => {
       if (conv.status === 'archived') return false;
 
+      const isSharedWithMe = sharedConvIds.has(conv.id);
+
       // Permission filter
-      if (isRestricted && filterType !== 'all') {
+      if (isRestricted && filterType !== 'all' && !isSharedWithMe) {
         const isAssigned = conv.assigned_to === user?.id;
         const contactTagIds = allContactTags?.filter(ct => ct.contact_id === conv.contact?.id).map(ct => ct.tag_id) || [];
         const hasAllowedTag = allowedTags.length > 0 && allowedTags.some(tagId => contactTagIds.includes(tagId));
@@ -186,7 +190,7 @@ const ConversationsPage = () => {
       }
 
       // Pipeline permission filter
-      if (hasPipelineRestriction && allowedPipelineIds.length > 0) {
+      if (hasPipelineRestriction && allowedPipelineIds.length > 0 && !isSharedWithMe) {
         const convPipelines = pipelinePositions.filter(pp => pp.conversation_id === conv.id);
         if (convPipelines.length > 0) {
           const isInAllowedPipeline = convPipelines.some(pp => allowedPipelineIds.includes(pp.pipeline_id));
