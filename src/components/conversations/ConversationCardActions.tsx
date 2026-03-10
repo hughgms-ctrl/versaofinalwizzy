@@ -10,7 +10,8 @@ import {
   Loader2,
   MailWarning,
   EyeOff,
-  ArrowRightLeft
+  ArrowRightLeft,
+  UserPlus
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -29,6 +30,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { DbConversation } from '@/hooks/useConversations';
 import { usePipelines, usePipelineColumns, useMoveConversation, useTransferConversation } from '@/hooks/usePipelines';
 import { useNavigate } from 'react-router-dom';
+import { ShareConversationDialog } from './ShareConversationDialog';
 
 interface ConversationCardActionsProps {
   conversation: DbConversation;
@@ -44,6 +46,7 @@ export function ConversationCardActions({
   onSpyView
 }: ConversationCardActionsProps) {
   const [isUpdating, setIsUpdating] = useState(false);
+  const [showShareDialog, setShowShareDialog] = useState(false);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { data: pipelines } = usePipelines();
@@ -242,7 +245,12 @@ export function ConversationCardActions({
 
         <DropdownMenuSeparator />
 
-        {/* Status Actions */}
+        <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setShowShareDialog(true); }}>
+          <UserPlus className="h-4 w-4 mr-2 text-blue-500" />
+          Compartilhar com membro
+        </DropdownMenuItem>
+
+        <DropdownMenuSeparator />
         <DropdownMenuItem onClick={(e) => handleStatusChange('resolved', e)}>
           <CheckCircle className="h-4 w-4 mr-2 text-green-500" />
           Marcar resolvida
@@ -312,6 +320,13 @@ export function ConversationCardActions({
           Remover do pipeline
         </DropdownMenuItem>
       </DropdownMenuContent>
+
+      <ShareConversationDialog
+        open={showShareDialog}
+        onOpenChange={setShowShareDialog}
+        conversationId={conversation.id}
+        contactName={conversation.contact?.name || undefined}
+      />
     </DropdownMenu>
   );
 }

@@ -6,11 +6,13 @@ import { PipelineSelector } from '@/components/pipeline/PipelineSelector';
 import { PipelineChatModal } from '@/components/pipeline/PipelineChatModal';
 import { ConversationFilters, ConversationFiltersState, defaultFilters } from '@/components/shared/ConversationFilters';
 import { Loader2, Search, X, Smartphone, Settings } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import { usePipelines, useDeletePipeline, Pipeline } from '@/hooks/usePipelines';
 import { useConversations, DbConversation } from '@/hooks/useConversations';
 import { useWhatsAppStatus } from '@/hooks/useWhatsAppStatus';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { Input } from '@/components/ui/input';
+import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
@@ -23,6 +25,8 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useUserPermissions, useCurrentUserRole } from '@/hooks/useUserPermissions';
+import { useAuth } from '@/hooks/useAuth';
+import { useConversationShares } from '@/hooks/useConversationShares';
 
 const PipelinePage = () => {
   const { data: allPipelines = [], isLoading: pipelinesLoading } = usePipelines();
@@ -32,6 +36,27 @@ const PipelinePage = () => {
   const { selectedWorkspaceId } = useWorkspaceContext();
   const { data: userPermissions } = useUserPermissions();
   const { data: userRole } = useCurrentUserRole();
+  const { user } = useAuth();
+  const { data: myShares = [] } = useConversationShares();
+
+  // Fetch pipeline positions for shared conversations to know which pipelines to show
+  const isRestricted = userRole && userRole !== 'owner' && userRole !== 'admin';
+  const hasPipelineRestriction = isRestricted && userPermissions?.pipeline_access_type === 'specific' && (userPermissions?.allowed_pipeline_ids?.length ?? 0) > 0;
+
+  const { data: sharedPipelinePositions = [] } = useQuery({
+    queryKey: ['shared-pipeline-positions', myShares.map(s => s.conversation_id)],
+    queryFn: async () => {
+      const sharedConvIds = myShares.map(s => s.conversation_id);
+      if (sharedConvIds.length === 0) return [];
+      const { data, error } = await supabase
+        .from('conversation_pipeline_positions')
+        .select('conversation_id, pipeline_id')
+        .in('conversation_id', sharedConvIds);
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!hasPipelineRestriction && myShares.length > 0,
+  });
 
   // Filter pipelines by selected workspace AND user permissions
   const pipelines = useMemo(() => {
@@ -44,14 +69,16 @@ const PipelinePage = () => {
       );
     }
     
-    // Permission filter: restrict to allowed pipelines for non-owner/admin
-    const isRestricted = userRole && userRole !== 'owner' && userRole !== 'admin';
-    if (isRestricted && userPermissions?.pipeline_access_type === 'specific' && userPermissions.allowed_pipeline_ids?.length > 0) {
-      filtered = filtered.filter(p => userPermissions.allowed_pipeline_ids.includes(p.id));
+    // Permission filter: restrict to allowed pipelines + pipelines with shared leads
+    if (hasPipelineRestriction && userPermissions?.allowed_pipeline_ids?.length) {
+      const allowedIds = new Set(userPermissions.allowed_pipeline_ids);
+      // Also include pipelines that contain shared conversations
+      sharedPipelinePositions.forEach(pp => allowedIds.add(pp.pipeline_id));
+      filtered = filtered.filter(p => allowedIds.has(p.id));
     }
     
     return filtered;
-  }, [allPipelines, selectedWorkspaceId, userRole, userPermissions]);
+  }, [allPipelines, selectedWorkspaceId, hasPipelineRestriction, userPermissions, sharedPipelinePositions]);
 
   const [selectedPipeline, setSelectedPipeline] = useState<Pipeline | null>(null);
   const [filters, setFilters] = useState<ConversationFiltersState>(defaultFilters);

@@ -16,7 +16,8 @@ import {
   Trash2,
   MailWarning,
   Bot,
-  UserCheck
+  UserCheck,
+  UserPlus
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -46,6 +47,7 @@ import { DbConversation } from '@/hooks/useConversations';
 import { useTags, useContactTags, useAddTagToContact, useRemoveTagFromContact } from '@/hooks/useTags';
 import { usePipelines, usePipelineColumns, useMoveConversation } from '@/hooks/usePipelines';
 import { cn } from '@/lib/utils';
+import { ShareConversationDialog } from './ShareConversationDialog';
 
 interface ConversationActionsMenuProps {
   conversation: DbConversation;
@@ -55,6 +57,7 @@ interface ConversationActionsMenuProps {
 export function ConversationActionsMenu({ conversation, onShowMediaGallery }: ConversationActionsMenuProps) {
   const [isUpdating, setIsUpdating] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showShareDialog, setShowShareDialog] = useState(false);
   const queryClient = useQueryClient();
   const isArchived = conversation.status === 'archived';
 
@@ -461,6 +464,10 @@ export function ConversationActionsMenu({ conversation, onShowMediaGallery }: Co
           <MailWarning className="h-4 w-4 mr-2 text-amber-500" />
           Marcar como não lida
         </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => setShowShareDialog(true)}>
+          <UserPlus className="h-4 w-4 mr-2 text-blue-500" />
+          Compartilhar com membro
+        </DropdownMenuItem>
 
         <DropdownMenuSeparator />
 
@@ -604,6 +611,13 @@ export function ConversationActionsMenu({ conversation, onShowMediaGallery }: Co
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <ShareConversationDialog
+        open={showShareDialog}
+        onOpenChange={setShowShareDialog}
+        conversationId={conversation.id}
+        contactName={conversation.contact?.name || undefined}
+      />
     </DropdownMenu>
   );
 }

@@ -19,6 +19,7 @@ import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { NewConversationDialog } from '@/components/conversations/NewConversationDialog';
 import { useUserPermissions, useCurrentUserRole } from '@/hooks/useUserPermissions';
 import { useAuth } from '@/hooks/useAuth';
+import { useConversationShares } from '@/hooks/useConversationShares';
 
 const ConversationsPage = () => {
   const [selectedConversation, setSelectedConversation] = useState<DbConversation | null>(null);
@@ -34,6 +35,7 @@ const ConversationsPage = () => {
   const { user } = useAuth();
   const { data: userPermissions } = useUserPermissions();
   const { data: userRole } = useCurrentUserRole();
+  const { data: myShares = [] } = useConversationShares();
 
   // Fetch contact tags for filtering
   const { data: allContactTags = [] } = useQuery({
@@ -71,9 +73,14 @@ const ConversationsPage = () => {
     const allowedTags = userPermissions?.conversations_allowed_tags || [];
     const allowedPipelineIds = userPermissions?.allowed_pipeline_ids || [];
 
+    const sharedConvIds = new Set(myShares.map(s => s.conversation_id));
+
     return conversations.filter(conv => {
+      // Shared conversations always bypass permission filters
+      const isSharedWithMe = sharedConvIds.has(conv.id);
+
       // === PERMISSION-BASED FILTER (for non-owner/admin users) ===
-      if (isRestricted && filterType !== 'all') {
+      if (isRestricted && filterType !== 'all' && !isSharedWithMe) {
         const isAssigned = conv.assigned_to === user?.id;
         const contactTagIds = allContactTags?.filter(ct => ct.contact_id === conv.contact?.id).map(ct => ct.tag_id) || [];
         const hasAllowedTag = allowedTags.length > 0 && allowedTags.some(tagId => contactTagIds.includes(tagId));
@@ -84,14 +91,12 @@ const ConversationsPage = () => {
       }
 
       // === PIPELINE-BASED FILTER (for restricted users with specific pipeline access) ===
-      if (hasPipelineRestriction && allowedPipelineIds.length > 0) {
+      if (hasPipelineRestriction && allowedPipelineIds.length > 0 && !isSharedWithMe) {
         const convPipelines = pipelinePositions.filter(pp => pp.conversation_id === conv.id);
-        // If the conversation is in any pipeline, check if it's in an allowed one
         if (convPipelines.length > 0) {
           const isInAllowedPipeline = convPipelines.some(pp => allowedPipelineIds.includes(pp.pipeline_id));
           if (!isInAllowedPipeline) return false;
         }
-        // Conversations not in any pipeline are still visible (unclassified)
       }
 
       // === WORKSPACE FILTER ===
@@ -154,7 +159,7 @@ const ConversationsPage = () => {
 
       return true;
     });
-  }, [conversations, searchQuery, filters, allContactTags, serviceMode, showArchived, selectedWorkspaceId, selectedWorkspace, userRole, userPermissions, user?.id, pipelinePositions, hasPipelineRestriction]);
+  }, [conversations, searchQuery, filters, allContactTags, serviceMode, showArchived, selectedWorkspaceId, selectedWorkspace, userRole, userPermissions, user?.id, pipelinePositions, hasPipelineRestriction, myShares]);
 
   // Count conversations by service mode (filtered by workspace + permissions)
   const serviceModeCounts = useMemo(() => {
@@ -166,11 +171,15 @@ const ConversationsPage = () => {
 
     const allowedPipelineIds = userPermissions?.allowed_pipeline_ids || [];
 
+    const sharedConvIds = new Set(myShares.map(s => s.conversation_id));
+
     const workspaceFiltered = conversations.filter(conv => {
       if (conv.status === 'archived') return false;
 
+      const isSharedWithMe = sharedConvIds.has(conv.id);
+
       // Permission filter
-      if (isRestricted && filterType !== 'all') {
+      if (isRestricted && filterType !== 'all' && !isSharedWithMe) {
         const isAssigned = conv.assigned_to === user?.id;
         const contactTagIds = allContactTags?.filter(ct => ct.contact_id === conv.contact?.id).map(ct => ct.tag_id) || [];
         const hasAllowedTag = allowedTags.length > 0 && allowedTags.some(tagId => contactTagIds.includes(tagId));
@@ -181,7 +190,7 @@ const ConversationsPage = () => {
       }
 
       // Pipeline permission filter
-      if (hasPipelineRestriction && allowedPipelineIds.length > 0) {
+      if (hasPipelineRestriction && allowedPipelineIds.length > 0 && !isSharedWithMe) {
         const convPipelines = pipelinePositions.filter(pp => pp.conversation_id === conv.id);
         if (convPipelines.length > 0) {
           const isInAllowedPipeline = convPipelines.some(pp => allowedPipelineIds.includes(pp.pipeline_id));
@@ -207,7 +216,7 @@ const ConversationsPage = () => {
       }
       return acc;
     }, { ia: 0, ativo: 0, pendente: 0 });
-  }, [conversations, selectedWorkspaceId, selectedWorkspace, allContactTags, userRole, userPermissions, user?.id, pipelinePositions, hasPipelineRestriction]);
+  }, [conversations, selectedWorkspaceId, selectedWorkspace, allContactTags, userRole, userPermissions, user?.id, pipelinePositions, hasPipelineRestriction, myShares]);
 
   // Mark conversation as read when selected (unless spy mode)
   const handleSelectConversation = useCallback(async (conversation: DbConversation) => {

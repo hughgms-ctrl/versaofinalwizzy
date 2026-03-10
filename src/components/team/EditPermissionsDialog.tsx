@@ -38,6 +38,9 @@ import { useUserPermissions, useUpdateUserPermissions, UserPermissions } from '@
 import { useTags, Tag } from '@/hooks/useTags';
 import { usePipelines, Pipeline } from '@/hooks/usePipelines';
 import { useWorkspaces, useUserWorkspaces, useManageWorkspaceMembers, Workspace } from '@/hooks/useWorkspaces';
+import { useConversationSharesByMember, useUnshareConversation } from '@/hooks/useConversationShares';
+import { useConversations } from '@/hooks/useConversations';
+import { Share2, Trash2 } from 'lucide-react';
 
 interface EditPermissionsDialogProps {
   open: boolean;
@@ -85,6 +88,9 @@ export function EditPermissionsDialog({ open, onOpenChange, member }: EditPermis
   const { data: workspaces = [] } = useWorkspaces();
   const updatePermissions = useUpdateUserPermissions();
   const manageWorkspaceMembers = useManageWorkspaceMembers();
+  const { data: memberShares = [] } = useConversationSharesByMember(member?.user_id);
+  const { data: allConversations = [] } = useConversations();
+  const unshareConversation = useUnshareConversation();
 
   // Fetch workspaces this user belongs to
   const { data: allWorkspaceMembers = [] } = useUserWorkspaces();
@@ -441,6 +447,52 @@ export function EditPermissionsDialog({ open, onOpenChange, member }: EditPermis
                           })()}
                         </div>
                       </div>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* Shared Leads Section */}
+              {memberShares.length > 0 && (
+                <>
+                  <Separator />
+                  <div>
+                    <h3 className="text-sm font-medium mb-4 flex items-center gap-2">
+                      <Share2 className="h-4 w-4" />
+                      Leads Compartilhados ({memberShares.length})
+                    </h3>
+                    <p className="text-xs text-muted-foreground mb-3">
+                      Leads compartilhados manualmente com este membro, independente das demais restrições.
+                    </p>
+                    <div className="space-y-2 p-3 border rounded-lg bg-muted/30 max-h-48 overflow-y-auto">
+                      {memberShares.map(share => {
+                        const conv = allConversations.find(c => c.id === share.conversation_id);
+                        return (
+                          <div key={share.id} className="flex items-center justify-between gap-2 py-1">
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium truncate">
+                                {conv?.contact?.name || conv?.contact?.phone || 'Lead removido'}
+                              </p>
+                              {conv?.contact?.phone && conv?.contact?.name && (
+                                <p className="text-xs text-muted-foreground">{conv.contact.phone}</p>
+                              )}
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7 text-destructive hover:text-destructive"
+                              onClick={async () => {
+                                await unshareConversation.mutateAsync({
+                                  conversationId: share.conversation_id,
+                                  userId: member!.user_id,
+                                });
+                              }}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 </>

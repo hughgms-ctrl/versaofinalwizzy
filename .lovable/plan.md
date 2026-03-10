@@ -1,58 +1,152 @@
 
+# Plano de Implementacao - Fase 2: Modulo de Documentos e Templates
 
-## Acesso Granular a Leads Específicos
+Seguindo a ordem solicitada: Fase 2 -> Fase 3 -> Fase 1 -> Fase 4. Vamos comecar pelo modulo de documentos.
 
-### Problema
-Hoje, o sistema permite filtrar por: atribuição, tags, ou pipelines permitidos. Mas não há como dar acesso a **um lead específico** sem liberar todo o pipeline ou tag onde ele está.
+---
 
-### Solução: Tabela de Compartilhamento de Conversas
+## O que sera construido nesta fase
 
-Criar uma tabela `conversation_shares` que funciona como uma lista de exceções — leads explicitamente compartilhados com um usuário, independente das demais restrições.
+Uma pagina `/documents` com 3 abas: **Templates**, **Documentos Gerados** e **Packs**. O usuario podera fazer upload de um contrato modelo, a IA vai analisar e extrair os campos variaveis (nome, endereco, CPF, etc.), criando um template reutilizavel com marcadores `{{campo}}`. Tambem sera possivel agrupar templates em packs para gerar multiplos documentos de uma vez.
+
+---
+
+## Funcionalidades
+
+### 1. Aba Templates
+- Lista de templates salvos (nome, categoria, quantidade de campos, data)
+- Botao "Novo Template" com duas opcoes:
+  - **Upload de modelo**: envia PDF/DOCX, IA analisa e gera template com `{{campos}}`
+  - **Criar manualmente**: editor de texto com insercao de campos variaveis
+- Ao clicar em um template: abre editor para visualizar/editar o texto e os campos
+- Opcoes: editar, duplicar, excluir
+
+### 2. Aba Packs
+- Agrupar multiplos templates (ex: "Pack Auxilio Reclusao" = Procuracao + Contrato + Declaracao)
+- Criar pack: selecionar templates existentes, dar nome
+- Ao gerar documentos de um pack, os mesmos dados preenchem todos os templates
+
+### 3. Aba Documentos Gerados
+- Historico de documentos gerados a partir de templates/packs
+- Status: gerado, enviado, assinado
+- Link para download do PDF
+- Vinculo com contato (quando gerado via agente)
+
+---
+
+## Detalhes Tecnicos
+
+### Novas tabelas (migracao SQL)
 
 ```text
-┌─────────────────────────┐
-│   conversation_shares   │
-├─────────────────────────┤
-│ id (uuid)               │
-│ conversation_id (uuid)  │
-│ user_id (uuid)          │
-│ shared_by (uuid)        │
-│ organization_id (uuid)  │
-│ note (text, opcional)   │
-│ created_at              │
-└─────────────────────────┘
+document_templates
+  - id (uuid, PK)
+  - organization_id (uuid, FK)
+  - name (text)
+  - description (text, nullable)
+  - category (text, nullable) -- ex: "contrato", "procuracao", "declaracao"
+  - content (text) -- texto com marcadores {{campo}}
+  - fields (jsonb) -- lista de campos detectados: [{name, label, type, required}]
+  - original_file_url (text, nullable) -- URL do arquivo modelo original
+  - workspace_id (uuid, nullable)
+  - created_by (uuid, nullable)
+  - created_at, updated_at (timestamps)
+
+document_packs
+  - id (uuid, PK)
+  - organization_id (uuid, FK)
+  - name (text)
+  - description (text, nullable)
+  - template_ids (uuid[]) -- array de IDs de templates
+  - workspace_id (uuid, nullable)
+  - created_by (uuid, nullable)
+  - created_at, updated_at (timestamps)
+
+generated_documents
+  - id (uuid, PK)
+  - organization_id (uuid, FK)
+  - template_id (uuid, nullable)
+  - pack_id (uuid, nullable)
+  - contact_id (uuid, nullable)
+  - conversation_id (uuid, nullable)
+  - name (text)
+  - filled_data (jsonb) -- dados preenchidos nos campos
+  - pdf_url (text, nullable) -- URL do PDF gerado no storage
+  - status (text) -- 'draft', 'generated', 'sent', 'signed'
+  - signing_method (text, nullable) -- 'manual', 'govbr', 'zapsign' (para Fase 3)
+  - signing_status (text, nullable)
+  - created_by (uuid, nullable)
+  - created_at, updated_at (timestamps)
 ```
 
-### Como funciona
+RLS: todas as tabelas com politicas baseadas em `organization_id = get_user_org_id(auth.uid())`.
 
-1. **Lógica de filtragem atualizada**: Um lead é visível se passa nos filtros normais (tags, atribuição, pipeline) **OU** se está na tabela `conversation_shares` para aquele usuário.
+### Nova edge function
 
-2. **Pipeline**: Se o lead compartilhado está no Pipeline Comercial, o Múcio vê **apenas aquele lead** no Comercial — sem ver os demais. O pipeline aparece no seletor apenas se tiver leads compartilhados nele.
+**`process-document-template`**: recebe arquivo (via URL do storage), usa IA para:
+1. Ler e interpretar o conteudo do documento
+2. Identificar campos variaveis (nomes, enderecos, CPFs, datas, etc.)
+3. Retornar texto reestruturado com `{{campo}}` e lista de campos detectados
 
-3. **UI para compartilhar**: Na conversa ou no pipeline, um botão "Compartilhar com membro" permite selecionar o usuário da equipe. Admins/owners podem compartilhar qualquer lead.
+**`generate-document-pdf`**: recebe template + dados preenchidos, gera PDF e salva no storage bucket `contact-files`.
 
-4. **UI de permissões**: Na tela de edição de permissões do membro, uma nova seção mostra os leads compartilhados manualmente, permitindo revogar.
+### Novos arquivos frontend
 
-### Implementação
+```text
+src/pages/DocumentsPage.tsx -- pagina principal com abas
+src/components/documents/TemplatesList.tsx -- lista de templates
+src/components/documents/TemplateEditor.tsx -- editor de template
+src/components/documents/PacksList.tsx -- lista de packs
+src/components/documents/PackEditor.tsx -- criar/editar pack
+src/components/documents/GeneratedDocumentsList.tsx -- historico
+src/components/documents/UploadTemplateDialog.tsx -- dialog de upload + processamento IA
+src/hooks/useDocumentTemplates.ts -- CRUD templates
+src/hooks/useDocumentPacks.ts -- CRUD packs
+src/hooks/useGeneratedDocuments.ts -- consulta documentos gerados
+```
 
-1. **Migração SQL**: Criar tabela `conversation_shares` com RLS e índice único `(conversation_id, user_id)`.
+### Alteracoes em arquivos existentes
 
-2. **Hook `useConversationShares`**: CRUD para compartilhamentos.
+- **App.tsx**: adicionar rotas `/documents`
+- **Sidebar.tsx**: adicionar item "Documentos" com icone FileText, abaixo de Widgets
+- **Sidebar.tsx**: adicionar permissao `module: 'flows'` (mesmo grupo de automacoes)
 
-3. **Atualizar `ConversationsPage.tsx`**: Na lógica de filtragem, adicionar:
-   ```
-   if (isSharedWithUser(conv.id)) return true; // sempre visível
-   ```
+---
 
-4. **Atualizar `PipelinePage.tsx`**: Mesma lógica — leads compartilhados aparecem mesmo em pipelines não permitidos.
+## Fluxo de uso principal
 
-5. **Componente de compartilhamento**: Dialog simples no menu de ações da conversa para selecionar membros.
+```text
+1. Usuario acessa /documents
+2. Clica em "Novo Template"
+3. Faz upload de um PDF de contrato
+4. Sistema envia para edge function que usa IA para analisar
+5. IA retorna texto com {{nome_responsavel}}, {{cpf}}, {{endereco}}, etc.
+6. Usuario revisa e salva o template
+7. Pode criar um Pack agrupando templates
+8. Documentos gerados ficam no historico (aba "Gerados")
+```
 
-6. **Seção em `EditPermissionsDialog`**: Listar leads compartilhados com aquele membro, com opção de remover.
+A geracao automatica via agente e assinatura serao implementados na Fase 3.
 
-### Resultado
-- Múcio tem acesso apenas ao Pipeline Operacional
-- Você compartilha um lead do Comercial com ele
-- Ele vê esse lead específico na lista de conversas e no Pipeline Comercial (só aquele card)
-- Sem acesso aos demais leads do Comercial
+---
 
+## Ordem de implementacao
+
+1. Migracoes SQL (tabelas + RLS)
+2. Edge function `process-document-template`
+3. Hooks de dados (useDocumentTemplates, useDocumentPacks, useGeneratedDocuments)
+4. Pagina DocumentsPage com abas
+5. Componentes de templates (lista, editor, upload)
+6. Componentes de packs
+7. Sidebar + rotas
+8. Edge function `generate-document-pdf` (geracao de PDF basica)
+
+---
+
+## Feature implementada: Compartilhamento Granular de Leads
+
+### Tabela `conversation_shares`
+- Permite compartilhar leads específicos com membros da equipe
+- Membros restritos veem leads compartilhados independente das restrições de pipeline/tag
+- UI: botão "Compartilhar com membro" no menu de ações da conversa e do pipeline
+- Seção de leads compartilhados no EditPermissionsDialog para revogar acesso
