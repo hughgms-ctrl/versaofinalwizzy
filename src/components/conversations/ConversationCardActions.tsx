@@ -30,6 +30,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { DbConversation } from '@/hooks/useConversations';
 import { usePipelines, usePipelineColumns, useMoveConversation, useTransferConversation } from '@/hooks/usePipelines';
 import { useNavigate } from 'react-router-dom';
+import { ShareConversationDialog } from './ShareConversationDialog';
 
 interface ConversationCardActionsProps {
   conversation: DbConversation;
