@@ -5,7 +5,7 @@ import { Sheet, SheetContent } from '@/components/ui/sheet';
 import {
   Play, Send, Bot, Loader2, RotateCcw, X, CheckCheck,
   Video, FileText, Tag, GitBranch, ArrowRightLeft,
-  Zap, MessageSquare, Users, Sparkles
+  Zap, MessageSquare, Users, Sparkles, Smartphone
 } from 'lucide-react';
 import { useFlow } from '@/hooks/useFlows';
 import { Node, Edge } from '@xyflow/react';
