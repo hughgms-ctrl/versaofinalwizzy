@@ -76,14 +76,26 @@ Deno.serve(async (req) => {
 
     for (const exec of timedOut) {
       try {
-        // Check if contact already responded — cancel follow-ups if so
+        // Check if contact already responded AFTER the last follow-up — cancel if so
         if ((exec.remarketing_step || 0) > 0) {
+          // Find last follow-up message to use as reference point
+          const { data: lastFollowUp } = await supabase
+            .from('messages')
+            .select('created_at')
+            .eq('conversation_id', exec.conversation_id)
+            .eq('is_from_bot', true)
+            .eq('metadata->>source', 'remarketing_followup')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          const checkAfter = lastFollowUp?.created_at || new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
           const { data: recentMsg } = await supabase
             .from('messages')
             .select('id')
             .eq('conversation_id', exec.conversation_id)
             .eq('is_from_bot', false)
-            .gt('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+            .gt('created_at', checkAfter)
             .order('created_at', { ascending: false })
             .limit(1)
             .maybeSingle();
