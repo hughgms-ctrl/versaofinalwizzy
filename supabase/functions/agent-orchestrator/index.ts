@@ -233,6 +233,9 @@ Deno.serve(async (req) => {
       if (flowExec) resolvedFlowId = flowExec.flow_id;
     }
 
+    // Inject resolvedFlowId into context so training rules can match flow_node rules
+    (context as any).resolvedFlowId = resolvedFlowId;
+
     // 5. Check for flow-based orchestration
     const flowNodes = masterPrompt.agent_rules?.orchestration_nodes;
     const flowEdges = masterPrompt.agent_rules?.orchestration_edges;
