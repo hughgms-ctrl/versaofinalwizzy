@@ -1910,6 +1910,30 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
               </div>
             )}
 
+            {/* Verificação de documentos (ambos os modos) */}
+            <div className="border-t pt-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-medium">Verificação de documentos</Label>
+                <Switch
+                  checked={!!(localData.requireDocumentVerification as boolean)}
+                  onCheckedChange={(val) => handleChange('requireDocumentVerification', val)}
+                />
+              </div>
+              {!!(localData.requireDocumentVerification as boolean) && (
+                <div className="space-y-2">
+                  <Textarea
+                    value={(localData.documentVerificationPrompt as string) || ''}
+                    onChange={(e) => handleChange('documentVerificationPrompt', e.target.value)}
+                    placeholder={"Antes de prosseguir, verifique se o contato enviou:\n- Foto da identidade (frente e verso)\n- Certidão de nascimento\n- Comprovante de residência"}
+                    className="text-xs min-h-[100px]"
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    O agente verificará se todos os documentos listados foram enviados pelo contato antes de avançar para a coleta de dados ou envio do link.
+                  </p>
+                </div>
+              )}
+            </div>
+
             {/* === MODO AGENTE IA === */}
             {docMode === 'ai_agent' && (
               <>
