@@ -14,6 +14,7 @@ export interface DocumentTemplate {
   original_file_url: string | null;
   workspace_id: string | null;
   created_by: string | null;
+  auto_send_whatsapp?: boolean;
   created_at: string;
   updated_at: string;
 }
