@@ -9,7 +9,8 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { action, token, filled_data } = await req.json();
+    const body = await req.json();
+    const { action, token } = body;
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
@@ -58,6 +59,7 @@ Deno.serve(async (req) => {
 
     // SUBMIT action: generate documents
     if (action === "submit") {
+      const { filled_data } = body;
       if (!filled_data) {
         return new Response(JSON.stringify({ error: "Dados do formulário são obrigatórios" }), {
           status: 400,
@@ -78,10 +80,9 @@ Deno.serve(async (req) => {
         });
       }
 
-      // Build a mapping from (templateId, originalFieldName) -> form value
-      // using the field_config's mappedFields when available
+      // Build mapping from field_config
       const fieldConfig = (pack.field_config as any[]) || [];
-      const fieldValueMap = new Map<string, Map<string, string>>(); // templateId -> (fieldName -> value)
+      const fieldValueMap = new Map<string, Map<string, string>>();
 
       for (const fc of fieldConfig) {
         const formValue = filled_data[fc.originalName] || '';
@@ -128,7 +129,6 @@ Deno.serve(async (req) => {
         } else {
           let pdfUrl: string | null = null;
 
-          // Try to generate PDF
           try {
             const pdfResp = await fetch(`${supabaseUrl}/functions/v1/generate-document-pdf`, {
               method: "POST",
@@ -164,8 +164,8 @@ Deno.serve(async (req) => {
         }
       }
 
-      return new Response(JSON.stringify({ 
-        success: true, 
+      return new Response(JSON.stringify({
+        success: true,
         documents_created: results.length,
         documents: results,
         organization_id: pack.organization_id,
@@ -176,13 +176,90 @@ Deno.serve(async (req) => {
 
     // SEND_WHATSAPP action: send document PDFs via WhatsApp
     if (action === "send_whatsapp") {
-      const { phone, document_ids, organization_id } = await req.json().catch(() => ({}));
-      // We already parsed the body above, so get from the parsed values
-    }
+      const { phone, document_ids } = body;
 
-    if (action === "send_whatsapp") {
-      const body = { action, token, phone: "", document_ids: [] as string[], organization_id: "" };
-      // Re-read from the original parse - let me restructure this properly
+      if (!phone || !document_ids || document_ids.length === 0) {
+        return new Response(JSON.stringify({ error: "Telefone e documentos são obrigatórios" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Normalize phone
+      let normalizedPhone = phone.replace(/\D/g, '');
+      if (!normalizedPhone.startsWith('55')) {
+        normalizedPhone = '55' + normalizedPhone;
+      }
+
+      // Get documents with PDF URLs
+      const { data: docs } = await supabase
+        .from("generated_documents")
+        .select("id, name, pdf_url")
+        .in("id", document_ids)
+        .eq("organization_id", pack.organization_id);
+
+      if (!docs || docs.length === 0) {
+        return new Response(JSON.stringify({ error: "Documentos não encontrados" }), {
+          status: 404,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Get active WhatsApp instance for this organization
+      const { data: instance } = await supabase
+        .from("whatsapp_instances")
+        .select("id, instance_name, api_token")
+        .eq("organization_id", pack.organization_id)
+        .eq("is_active", true)
+        .limit(1)
+        .maybeSingle();
+
+      if (!instance) {
+        return new Response(JSON.stringify({ error: "Nenhuma instância WhatsApp ativa" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Send each document via WhatsApp using zapi-send-message
+      let sentCount = 0;
+      for (const doc of docs) {
+        if (!doc.pdf_url) continue;
+
+        try {
+          const sendResp = await fetch(`${supabaseUrl}/functions/v1/zapi-send-message`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${supabaseKey}`,
+            },
+            body: JSON.stringify({
+              phone: normalizedPhone,
+              content: `📄 *${doc.name}*\n\nSegue seu documento para assinatura:`,
+              type: "document",
+              mediaUrl: doc.pdf_url,
+              organizationId: pack.organization_id,
+              instanceId: instance.id,
+            }),
+          });
+
+          if (sendResp.ok) {
+            sentCount++;
+          } else {
+            const errText = await sendResp.text();
+            console.error("WhatsApp send error:", errText);
+          }
+        } catch (e) {
+          console.error("WhatsApp send error:", e);
+        }
+      }
+
+      return new Response(JSON.stringify({
+        success: true,
+        sent_count: sentCount,
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     return new Response(JSON.stringify({ error: "Ação inválida" }), {
