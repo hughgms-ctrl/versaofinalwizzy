@@ -50,8 +50,8 @@ export function PacksList() {
       }
     }
 
-    // Use published URL to avoid preview auth issues
-    const isPreview = window.location.hostname.includes('preview');
+    // Always use published URL for public links
+    const isPreview = window.location.hostname.includes('preview') || window.location.hostname.includes('lovableproject.com');
     const origin = isPreview ? 'https://wizzyai.lovable.app' : window.location.origin;
     const url = `${origin}/pack-form?token=${token}`;
     await navigator.clipboard.writeText(url);
