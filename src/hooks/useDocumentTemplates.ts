@@ -50,6 +50,7 @@ export function useCreateDocumentTemplate() {
       content: string;
       fields: any[];
       original_file_url?: string;
+      auto_send_whatsapp?: boolean;
     }) => {
       const { data, error } = await (supabase as any)
         .from('document_templates')
