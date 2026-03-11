@@ -150,7 +150,8 @@ Deno.serve(async (req) => {
     // ── UPDATE CHECK STATUS ──
     if (action === 'update_check') {
       const body = await req.json()
-      const { id, status, notes } = body
+      const parsed = updateCheckSchema.parse(body)
+      const { id, status, notes } = parsed
 
       const { data, error } = await adminClient
         .from('governance_checks')
