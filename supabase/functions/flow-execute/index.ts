@@ -733,7 +733,15 @@ async function executeDocumentAction(
         promptParts.push(`\nCampos necessários:\n${fieldNames.map((f: string) => `- ${f}`).join('\n')}`);
       }
 
+      // Include already-collected variables from previous nodes
+      const collectedVars = Object.entries(context.variables).filter(([_, v]) => v != null && v !== '');
+      if (collectedVars.length > 0) {
+        const varSummary = collectedVars.map(([k, v]) => `- ${k}: ${v}`).join('\n');
+        promptParts.push(`\nDADOS JÁ COLETADOS EM ETAPAS ANTERIORES:\n${varSummary}\n\nUse estes dados como pré-preenchimento. Confirme com o contato se estão corretos antes de prosseguir.`);
+      }
+
       promptParts.push(`\nInstruções:\n- Pergunte os dados que faltam de forma natural e conversacional\n- Pré-preencha dados que já conhece do contato (nome, telefone, etc.)\n- Valide os dados fornecidos (CPF, datas, etc.)`);
+
 
       if (requireConfirmation) {
         promptParts.push(`- Antes de gerar o documento, apresente um resumo dos dados e peça confirmação`);
