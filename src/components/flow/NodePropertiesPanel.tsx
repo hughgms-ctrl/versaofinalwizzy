@@ -472,6 +472,7 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
   const { data: flowFolders = [] } = useFlowFolders();
   const { data: departments = [] } = useDepartments();
   const { data: templates = [] } = useDocumentTemplates();
+  const { data: packs = [] } = useDocumentPacks();
   const { data: pipelines = [] } = usePipelines();
   const { data: pipelineColumns = [] } = usePipelineColumns(localData.pipelineId as string || localData._conditionPipelineId as string);
   const { data: teamMembers = [] } = useTeamMembers();
