@@ -52,9 +52,35 @@ export function GovernanceChecklistTab() {
   const updateCheck = useUpdateCheck();
   const [editForm, setEditForm] = useState<CheckForm | null>(null);
   const [filterPhase, setFilterPhase] = useState<string>('all');
+  const [seeding, setSeeding] = useState(false);
+  const queryClient = useQueryClient();
 
   const checks = data?.checks || [];
   const filtered = filterPhase === 'all' ? checks : checks.filter((c: any) => c.phase === filterPhase);
+
+  const handleSeedSecurity = async () => {
+    setSeeding(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Not authenticated');
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-governance?action=seed_security`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+          'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+        },
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || 'Erro ao popular');
+      toast.success(`Checklist populado: ${result.counts.checks} itens, ${result.counts.prompts} prompts, ${result.counts.library} biblioteca`);
+      queryClient.invalidateQueries({ queryKey: ['governance'] });
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setSeeding(false);
+    }
+  };
 
   // Group by phase
   const grouped = filtered.reduce((acc: Record<string, any[]>, c: any) => {
