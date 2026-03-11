@@ -130,3 +130,6 @@ verify_jwt = false
 
 [functions.public-pack-form]
 verify_jwt = false
+
+[functions.unify-pack-fields]
+verify_jwt = false

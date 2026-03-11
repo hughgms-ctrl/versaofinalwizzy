@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { ArrowLeft, Save, Link2, GripVertical, Pencil, Info } from 'lucide-react';
+import { ArrowLeft, Save, Link2, GripVertical, Pencil, Info, Sparkles, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,6 +10,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useCreateDocumentPack, useUpdateDocumentPack, DocumentPack } from '@/hooks/useDocumentPacks';
 import { useDocumentTemplates } from '@/hooks/useDocumentTemplates';
+import { useToast } from '@/hooks/use-toast';
+import { supabase } from '@/integrations/supabase/client';
 
 interface PackEditorProps {
   pack: DocumentPack | null;
@@ -23,12 +25,15 @@ export interface PackFieldConfig {
   type: string;
   required: boolean;
   sourceTemplateIds: string[];
+  /** When AI unifies multiple original fields into one, store the mappings */
+  mappedFields?: Array<{ fieldName: string; templateId: string }>;
 }
 
 export function PackEditor({ pack, onBack }: PackEditorProps) {
   const { data: templates } = useDocumentTemplates();
   const createPack = useCreateDocumentPack();
   const updatePack = useUpdateDocumentPack();
+  const { toast } = useToast();
   const isEditing = !!pack;
 
   const [name, setName] = useState(pack?.name || '');
@@ -38,6 +43,7 @@ export function PackEditor({ pack, onBack }: PackEditorProps) {
     (pack as any)?.field_config || []
   );
   const [expandedField, setExpandedField] = useState<string | null>(null);
+  const [isUnifying, setIsUnifying] = useState(false);
 
   const toggleTemplate = (id: string) => {
     setSelectedIds(prev =>
@@ -73,6 +79,24 @@ export function PackEditor({ pack, onBack }: PackEditorProps) {
 
   // Merge field configs with detected fields
   const mergedFields = useMemo(() => {
+    // If we have AI-unified configs, use them directly
+    if (fieldConfigs.length > 0 && fieldConfigs.some(c => c.mappedFields && c.mappedFields.length > 0)) {
+      return fieldConfigs.map(c => ({
+        originalName: c.originalName,
+        label: c.label,
+        description: c.description,
+        type: c.type,
+        required: c.required,
+        sourceTemplateIds: c.sourceTemplateIds,
+        mappedFields: c.mappedFields || [],
+        count: c.mappedFields?.length || c.sourceTemplateIds.length,
+        templateNames: c.mappedFields?.map(mf => {
+          const t = templates?.find(t => t.id === mf.templateId);
+          return t?.name || mf.templateId;
+        }) || [],
+      }));
+    }
+
     return allFields.map(f => {
       const existing = fieldConfigs.find(c => c.originalName === f.name);
       return {
@@ -82,11 +106,12 @@ export function PackEditor({ pack, onBack }: PackEditorProps) {
         type: existing?.type || 'text',
         required: existing?.required ?? true,
         sourceTemplateIds: f.templateIds,
+        mappedFields: existing?.mappedFields || [],
         count: f.count,
         templateNames: f.templateNames,
       };
     });
-  }, [allFields, fieldConfigs]);
+  }, [allFields, fieldConfigs, templates]);
 
   const updateFieldConfig = (originalName: string, updates: Partial<PackFieldConfig>) => {
     setFieldConfigs(prev => {
@@ -109,10 +134,58 @@ export function PackEditor({ pack, onBack }: PackEditorProps) {
     });
   };
 
+  const handleAIUnify = async () => {
+    if (!templates || selectedIds.length < 1) return;
+
+    const selectedTemplates = selectedIds
+      .map(id => templates.find(t => t.id === id))
+      .filter(Boolean)
+      .map(t => ({
+        id: t!.id,
+        name: t!.name,
+        fields: (t!.fields as any[]) || [],
+      }));
+
+    setIsUnifying(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('unify-pack-fields', {
+        body: { templates: selectedTemplates },
+      });
+
+      if (error) throw error;
+
+      const unifiedFields: PackFieldConfig[] = (data.fields || []).map((f: any) => {
+        // Build a unique key from the first original field
+        const primaryField = f.originalFields[0];
+        const originalName = primaryField?.fieldName || f.unifiedLabel;
+
+        // Collect all template IDs
+        const templateIds = [...new Set(f.originalFields.map((of: any) => of.templateId))];
+
+        return {
+          originalName,
+          label: f.unifiedLabel,
+          description: f.description || '',
+          type: f.type || 'text',
+          required: true,
+          sourceTemplateIds: templateIds,
+          mappedFields: f.originalFields,
+        };
+      });
+
+      setFieldConfigs(unifiedFields);
+      toast({ title: 'Campos unificados pela IA', description: `${unifiedFields.length} campos configurados` });
+    } catch (err: any) {
+      console.error('AI unify error:', err);
+      toast({ title: 'Erro ao unificar campos', description: err.message, variant: 'destructive' });
+    } finally {
+      setIsUnifying(false);
+    }
+  };
+
   const handleSave = () => {
     if (!name.trim() || selectedIds.length === 0) return;
 
-    // Build final field configs from merged state
     const finalConfigs: PackFieldConfig[] = mergedFields.map(f => ({
       originalName: f.originalName,
       label: f.label,
@@ -120,6 +193,7 @@ export function PackEditor({ pack, onBack }: PackEditorProps) {
       type: f.type,
       required: f.required,
       sourceTemplateIds: f.sourceTemplateIds,
+      mappedFields: f.mappedFields,
     }));
 
     const payload: any = {
@@ -136,8 +210,8 @@ export function PackEditor({ pack, onBack }: PackEditorProps) {
     }
   };
 
-  const sharedFields = mergedFields.filter(f => f.count > 1);
-  const uniqueFields = mergedFields.filter(f => f.count === 1);
+  const sharedFields = mergedFields.filter(f => f.count > 1 || (f.mappedFields && f.mappedFields.length > 1));
+  const uniqueFields = mergedFields.filter(f => f.count <= 1 && (!f.mappedFields || f.mappedFields.length <= 1));
 
   return (
     <div className="space-y-4">
@@ -186,53 +260,75 @@ export function PackEditor({ pack, onBack }: PackEditorProps) {
         </div>
 
         {/* Field Configuration Panel */}
-        {selectedIds.length >= 1 && mergedFields.length > 0 && (
+        {selectedIds.length >= 1 && (
           <div>
-            <Label>Configuração dos campos ({mergedFields.length})</Label>
+            <div className="flex items-center justify-between mb-1">
+              <Label>Configuração dos campos ({mergedFields.length})</Label>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleAIUnify}
+                disabled={isUnifying || selectedIds.length < 1}
+                className="gap-1.5 text-xs"
+              >
+                {isUnifying ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Sparkles className="h-3.5 w-3.5" />
+                )}
+                {isUnifying ? 'Analisando...' : 'Unificar com IA'}
+              </Button>
+            </div>
             <p className="text-xs text-muted-foreground mt-1 mb-3">
-              Configure label, descrição e tipo de cada campo. Campos com o mesmo nome são automaticamente compartilhados entre documentos.
+              A IA analisa os campos de todos os templates e unifica automaticamente campos similares para que o cliente preencha uma única vez.
             </p>
 
-            <div className="space-y-2">
-              {sharedFields.length > 0 && (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-xs text-primary font-medium">
-                    <Link2 className="h-3.5 w-3.5" />
-                    Campos compartilhados ({sharedFields.length})
+            {mergedFields.length > 0 ? (
+              <div className="space-y-2">
+                {sharedFields.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-xs text-primary font-medium">
+                      <Link2 className="h-3.5 w-3.5" />
+                      Campos compartilhados ({sharedFields.length})
+                    </div>
+                    {sharedFields.map(field => (
+                      <FieldConfigCard
+                        key={field.originalName}
+                        field={field}
+                        isExpanded={expandedField === field.originalName}
+                        onToggle={() => setExpandedField(
+                          expandedField === field.originalName ? null : field.originalName
+                        )}
+                        onUpdate={(updates) => updateFieldConfig(field.originalName, updates)}
+                        templates={templates || []}
+                      />
+                    ))}
                   </div>
-                  {sharedFields.map(field => (
-                    <FieldConfigCard
-                      key={field.originalName}
-                      field={field}
-                      isExpanded={expandedField === field.originalName}
-                      onToggle={() => setExpandedField(
-                        expandedField === field.originalName ? null : field.originalName
-                      )}
-                      onUpdate={(updates) => updateFieldConfig(field.originalName, updates)}
-                    />
-                  ))}
-                </div>
-              )}
+                )}
 
-              {uniqueFields.length > 0 && (
-                <div className="space-y-2 mt-4">
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium">
-                    Campos únicos ({uniqueFields.length})
+                {uniqueFields.length > 0 && (
+                  <div className="space-y-2 mt-4">
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium">
+                      Campos únicos ({uniqueFields.length})
+                    </div>
+                    {uniqueFields.map(field => (
+                      <FieldConfigCard
+                        key={field.originalName}
+                        field={field}
+                        isExpanded={expandedField === field.originalName}
+                        onToggle={() => setExpandedField(
+                          expandedField === field.originalName ? null : field.originalName
+                        )}
+                        onUpdate={(updates) => updateFieldConfig(field.originalName, updates)}
+                        templates={templates || []}
+                      />
+                    ))}
                   </div>
-                  {uniqueFields.map(field => (
-                    <FieldConfigCard
-                      key={field.originalName}
-                      field={field}
-                      isExpanded={expandedField === field.originalName}
-                      onToggle={() => setExpandedField(
-                        expandedField === field.originalName ? null : field.originalName
-                      )}
-                      onUpdate={(updates) => updateFieldConfig(field.originalName, updates)}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">Selecione templates para ver os campos.</p>
+            )}
           </div>
         )}
       </div>
@@ -245,6 +341,7 @@ function FieldConfigCard({
   isExpanded,
   onToggle,
   onUpdate,
+  templates,
 }: {
   field: {
     originalName: string;
@@ -254,11 +351,15 @@ function FieldConfigCard({
     required: boolean;
     count: number;
     templateNames: string[];
+    mappedFields?: Array<{ fieldName: string; templateId: string }>;
   };
   isExpanded: boolean;
   onToggle: () => void;
   onUpdate: (updates: Partial<PackFieldConfig>) => void;
+  templates: any[];
 }) {
+  const hasMappings = field.mappedFields && field.mappedFields.length > 1;
+
   return (
     <Collapsible open={isExpanded} onOpenChange={onToggle}>
       <Card className="p-0 overflow-hidden">
@@ -267,9 +368,10 @@ function FieldConfigCard({
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium truncate">{field.label}</span>
-              {field.count > 1 && (
+              {(field.count > 1 || hasMappings) && (
                 <Badge variant="default" className="text-[10px] px-1.5 py-0">
-                  {field.count} docs
+                  <Link2 className="h-2.5 w-2.5 mr-0.5" />
+                  {hasMappings ? field.mappedFields!.length : field.count} docs
                 </Badge>
               )}
               {field.required && (
@@ -330,7 +432,28 @@ function FieldConfigCard({
                 <Label htmlFor={`req-${field.originalName}`} className="text-xs">Obrigatório</Label>
               </div>
             </div>
-            {field.count > 1 && (
+
+            {/* Show AI-mapped fields */}
+            {hasMappings && (
+              <div className="p-2 rounded bg-primary/5 space-y-1">
+                <div className="flex items-center gap-1.5 text-xs text-primary font-medium">
+                  <Sparkles className="h-3 w-3" />
+                  Campos unificados pela IA
+                </div>
+                {field.mappedFields!.map((mf, i) => {
+                  const tpl = templates.find(t => t.id === mf.templateId);
+                  return (
+                    <div key={i} className="text-[11px] text-muted-foreground flex items-center gap-1">
+                      <code className="bg-muted px-1 rounded">{mf.fieldName}</code>
+                      <span>→</span>
+                      <span>{tpl?.name || mf.templateId}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {!hasMappings && field.count > 1 && (
               <div className="flex items-start gap-1.5 p-2 rounded bg-primary/5 text-xs text-primary">
                 <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
                 <span>Presente em: {field.templateNames.join(', ')}</span>

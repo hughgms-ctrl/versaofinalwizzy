@@ -78,15 +78,36 @@ Deno.serve(async (req) => {
         });
       }
 
+      // Build a mapping from (templateId, originalFieldName) -> form value
+      // using the field_config's mappedFields when available
+      const fieldConfig = (pack.field_config as any[]) || [];
+      const fieldValueMap = new Map<string, Map<string, string>>(); // templateId -> (fieldName -> value)
+
+      for (const fc of fieldConfig) {
+        const formValue = filled_data[fc.originalName] || '';
+        const mappings = fc.mappedFields && fc.mappedFields.length > 0
+          ? fc.mappedFields
+          : (fc.sourceTemplateIds || []).map((tid: string) => ({ fieldName: fc.originalName, templateId: tid }));
+
+        for (const m of mappings) {
+          if (!fieldValueMap.has(m.templateId)) {
+            fieldValueMap.set(m.templateId, new Map());
+          }
+          fieldValueMap.get(m.templateId)!.set(m.fieldName, formValue);
+        }
+      }
+
       // Generate a document for each template
       const results = [];
       for (const template of templates) {
         const templateFields = (template.fields as any[]) || [];
         const templateData: Record<string, string> = {};
+        const tplMap = fieldValueMap.get(template.id);
 
         templateFields.forEach((field: any) => {
           const name = field.name || field;
-          templateData[name] = filled_data[name] || '';
+          // First check AI mapping, then fallback to direct match
+          templateData[name] = tplMap?.get(name) ?? filled_data[name] ?? '';
         });
 
         const { data: doc, error: docErr } = await supabase
