@@ -76,11 +76,9 @@ function DocCard({ doc, onDelete, onRegenerate, onDownload, isRegenerating }: { 
             </Button>
           )}
           {doc.pdf_url && (
-            <a href={doc.pdf_url} target="_blank" rel="noopener noreferrer" download>
-              <Button variant="ghost" size="icon">
-                <Download className="h-4 w-4" />
-              </Button>
-            </a>
+            <Button variant="ghost" size="icon" onClick={() => onDownload(doc)}>
+              <Download className="h-4 w-4" />
+            </Button>
           )}
           <AlertDialog>
             <AlertDialogTrigger asChild>
