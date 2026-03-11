@@ -1818,30 +1818,97 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
               </p>
             </div>
 
-            {/* Template selection */}
+            {/* Tipo de documento */}
             <div className="space-y-2">
-              <Label>Template do Documento</Label>
+              <Label>Tipo de documento</Label>
               <Select
-                value={(localData.templateId as string) || ''}
+                value={(localData.documentSource as string) || 'template'}
                 onValueChange={(val) => {
-                  const template = templates.find(t => t.id === val);
                   const newData = {
                     ...localData,
-                    templateId: val,
-                    templateName: template?.name || 'Template'
+                    documentSource: val,
+                    templateId: '',
+                    templateName: '',
+                    packId: '',
+                    packName: '',
                   };
                   setLocalData(newData);
                   onUpdate(node.id, newData);
                 }}
               >
-                <SelectTrigger><SelectValue placeholder="Selecione um template..." /></SelectTrigger>
+                <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {templates.map((t) => (
-                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                  ))}
+                  <SelectItem value="template">Template individual</SelectItem>
+                  <SelectItem value="pack">Pack de documentos</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+
+            {/* Template selection */}
+            {(localData.documentSource as string || 'template') === 'template' && (
+              <div className="space-y-2">
+                <Label>Template do Documento</Label>
+                <Select
+                  value={(localData.templateId as string) || ''}
+                  onValueChange={(val) => {
+                    const template = templates.find(t => t.id === val);
+                    const newData = {
+                      ...localData,
+                      templateId: val,
+                      templateName: template?.name || 'Template'
+                    };
+                    setLocalData(newData);
+                    onUpdate(node.id, newData);
+                  }}
+                >
+                  <SelectTrigger><SelectValue placeholder="Selecione um template..." /></SelectTrigger>
+                  <SelectContent>
+                    {templates.map((t) => (
+                      <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Pack selection */}
+            {(localData.documentSource as string) === 'pack' && (
+              <div className="space-y-2">
+                <Label>Pack de Documentos</Label>
+                <Select
+                  value={(localData.packId as string) || ''}
+                  onValueChange={(val) => {
+                    const pack = packs.find(p => p.id === val);
+                    const newData = {
+                      ...localData,
+                      packId: val,
+                      packName: pack?.name || 'Pack',
+                      templateId: '',
+                    };
+                    setLocalData(newData);
+                    onUpdate(node.id, newData);
+                  }}
+                >
+                  <SelectTrigger><SelectValue placeholder="Selecione um pack..." /></SelectTrigger>
+                  <SelectContent>
+                    {packs.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        <div className="flex items-center gap-2">
+                          <Layers className="h-3.5 w-3.5" />
+                          {p.name}
+                          <span className="text-[10px] text-muted-foreground">({p.template_ids?.length || 0} docs)</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-muted-foreground">
+                  {docMode === 'ai_agent'
+                    ? 'O agente coletará todos os campos compartilhados do pack e gerará todos os documentos de uma vez.'
+                    : 'Será enviado o link do formulário público do pack.'}
+                </p>
+              </div>
+            )}
 
             {/* === MODO AGENTE IA === */}
             {docMode === 'ai_agent' && (
