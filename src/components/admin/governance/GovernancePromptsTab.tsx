@@ -14,12 +14,13 @@ import { Plus, Edit, Trash2, ChevronDown, Copy, Clock, Search, FileText } from '
 import { toast } from 'sonner';
 
 const CATEGORIES = [
-  { value: 'security', label: 'Segurança' },
-  { value: 'backend', label: 'Backend' },
-  { value: 'frontend', label: 'Frontend' },
-  { value: 'ux', label: 'UX' },
-  { value: 'infrastructure', label: 'Infraestrutura' },
-  { value: 'logs', label: 'Logs' },
+  { value: 'Segurança', label: 'Segurança' },
+  { value: 'Backend', label: 'Backend' },
+  { value: 'Frontend', label: 'Frontend' },
+  { value: 'UX', label: 'UX' },
+  { value: 'Infraestrutura', label: 'Infraestrutura' },
+  { value: 'Governança', label: 'Governança' },
+  { value: 'Logs', label: 'Logs' },
 ];
 
 const CRITICALITIES = [
