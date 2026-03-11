@@ -60,7 +60,8 @@ serve(async (req) => {
     if (fileName.endsWith('.docx')) {
       // Parse DOCX properly using mammoth to extract clean text
       const arrayBuffer = await fileResp.arrayBuffer();
-      const result = await mammoth.extractRawText({ arrayBuffer });
+      const buffer = new Uint8Array(arrayBuffer);
+      const result = await mammoth.extractRawText({ buffer });
       fileContent = result.value;
       console.log(`DOCX extracted: ${fileContent.length} chars of clean text`);
     } else if (fileName.endsWith('.txt') || fileName.endsWith('.md')) {
