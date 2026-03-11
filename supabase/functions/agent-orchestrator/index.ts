@@ -1731,90 +1731,97 @@ async function invokeDocumentAgentAI(
         toolsExecuted.push({ name: 'confirm_document_data', arguments: {}, result: { success: true } });
 
       } else if (fnName === 'generate_document') {
-        // Generate the PDF via the generate-document-pdf function
-        console.log('Generating document PDF...');
+        // Generate PDF(s) - supports both single template and pack
+        console.log('Generating document PDF(s)... isPack:', !!docCtx.is_pack);
         const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
         const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
         try {
-          const pdfResp = await fetch(`${supabaseUrl}/functions/v1/generate-document-pdf`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseKey}` },
-            body: JSON.stringify({
-              template_content: docCtx.template_content,
-              filled_data: docCtx.collected_data,
-              document_name: docCtx.template_name,
-            }),
-          });
-          const pdfResult = await pdfResp.json();
+          const generatedDocs: { id: string; name: string; pdf_url: string }[] = [];
+          const submissionGroup = docCtx.is_pack ? crypto.randomUUID() : undefined;
 
-          if (pdfResult.pdf_url) {
-            console.log('PDF generated:', pdfResult.pdf_url);
-            docCtx.pdf_generated = true;
-            docCtx.pdf_url = pdfResult.pdf_url;
+          // Determine templates to generate
+          const templatesToGenerate = docCtx.is_pack && docCtx.pack_templates?.length
+            ? docCtx.pack_templates
+            : [{ id: docCtx.template_id, name: docCtx.template_name, content: docCtx.template_content }];
 
-            // Save to generated_documents
-            const { data: genDoc } = await supabase.from('generated_documents').insert({
-              organization_id: ctx.organizationId,
-              template_id: docCtx.template_id,
-              name: docCtx.template_name,
-              filled_data: docCtx.collected_data,
-              pdf_url: pdfResult.pdf_url,
-              contact_id: ctx.contactId,
-              conversation_id: ctx.conversationId,
-              status: 'generated',
-              signing_method: docCtx.signing_method !== 'none' ? docCtx.signing_method : null,
-              signing_status: docCtx.signing_method !== 'none' ? 'pending' : null,
-            }).select('id').single();
+          for (const tmpl of templatesToGenerate) {
+            const pdfResp = await fetch(`${supabaseUrl}/functions/v1/generate-document-pdf`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseKey}` },
+              body: JSON.stringify({
+                template_content: tmpl.content,
+                filled_data: docCtx.collected_data,
+                document_name: tmpl.name,
+              }),
+            });
+            const pdfResult = await pdfResp.json();
 
-            // Send PDF in chat if enabled
-            if (docCtx.send_pdf_in_chat) {
-              await sendMediaViaZAPI(supabase, ctx.conversation, pdfResult.pdf_url, `📄 ${docCtx.template_name}.pdf`);
-            }
+            if (pdfResult.pdf_url) {
+              console.log('PDF generated:', tmpl.name, pdfResult.pdf_url);
 
-            // Create signature request if signing method is set
-            if (docCtx.signing_method && docCtx.signing_method !== 'none' && docCtx.signing_method !== 'manual' && genDoc?.id) {
-              const contact = ctx.conversation.contact;
-              let signatureUrl: string | null = null;
-
-              if (docCtx.signing_method === 'govbr') {
-                // Generate public signature page URL
-                const previewUrl = Deno.env.get('SUPABASE_URL')?.replace('.supabase.co', '') || '';
-                // Use a predictable URL pattern
-                signatureUrl = `${supabaseUrl.replace('supabase.co', 'lovable.app').replace('/rest', '')}/signature/${genDoc.id}`;
-                // Actually use the app's origin (stored or derived)
-                signatureUrl = null; // Will be set from frontend origin
-              }
-
-              await supabase.from('document_signatures').insert({
+              const { data: genDoc } = await supabase.from('generated_documents').insert({
                 organization_id: ctx.organizationId,
-                generated_document_id: genDoc.id,
+                template_id: tmpl.id || null,
+                pack_id: docCtx.pack_id || null,
+                name: tmpl.name,
+                filled_data: docCtx.collected_data,
+                pdf_url: pdfResult.pdf_url,
                 contact_id: ctx.contactId,
                 conversation_id: ctx.conversationId,
-                signing_method: docCtx.signing_method,
-                signer_name: contact?.name || docCtx.collected_data['nome_completo'] || docCtx.collected_data['nome'],
-                signer_phone: contact?.phone,
-                signer_email: contact?.email || docCtx.collected_data['email'],
-                signer_cpf: docCtx.collected_data['cpf'],
-                status: 'pending',
-              });
+                status: 'generated',
+                signing_method: docCtx.signing_method !== 'none' ? docCtx.signing_method : null,
+                signing_status: docCtx.signing_method !== 'none' ? 'pending' : null,
+                submission_group: submissionGroup || null,
+              }).select('id').single();
 
-              docCtx.signature_requested = true;
-              console.log('Signature request created:', docCtx.signing_method);
+              generatedDocs.push({ id: genDoc?.id || '', name: tmpl.name, pdf_url: pdfResult.pdf_url });
 
-              // Send signature link in chat if enabled
-              if (docCtx.send_signature_link && docCtx.signing_method === 'govbr') {
-                const sigMessage = `📝 *Assinatura Digital*\n\nO documento "${docCtx.template_name}" foi gerado e precisa de assinatura via Gov.br.\n\nVocê receberá o link para assinatura em breve.`;
-                await sendReplyViaZAPI(supabase, ctx.conversation, sigMessage);
+              // Send each PDF in chat if enabled
+              if (docCtx.send_pdf_in_chat) {
+                await sendMediaViaZAPI(supabase, ctx.conversation, pdfResult.pdf_url, `📄 ${tmpl.name}.pdf`);
               }
-            }
 
-            let resultMsg = 'Documento gerado com sucesso!';
+              // Create signature request per document if needed
+              if (docCtx.signing_method && docCtx.signing_method !== 'none' && docCtx.signing_method !== 'manual' && genDoc?.id) {
+                const contact = ctx.conversation.contact;
+                await supabase.from('document_signatures').insert({
+                  organization_id: ctx.organizationId,
+                  generated_document_id: genDoc.id,
+                  contact_id: ctx.contactId,
+                  conversation_id: ctx.conversationId,
+                  signing_method: docCtx.signing_method,
+                  signer_name: contact?.name || docCtx.collected_data['nome_completo'] || docCtx.collected_data['nome'],
+                  signer_phone: contact?.phone,
+                  signer_email: contact?.email || docCtx.collected_data['email'],
+                  signer_cpf: docCtx.collected_data['cpf'],
+                  status: 'pending',
+                });
+                docCtx.signature_requested = true;
+              }
+            } else {
+              console.error('PDF generation failed for', tmpl.name, pdfResult.error);
+            }
+          }
+
+          if (generatedDocs.length > 0) {
+            docCtx.pdf_generated = true;
+            docCtx.pdf_url = generatedDocs[0].pdf_url;
+
+            let resultMsg = docCtx.is_pack
+              ? `${generatedDocs.length} documento(s) gerado(s) com sucesso!`
+              : 'Documento gerado com sucesso!';
             if (docCtx.signature_requested) {
               resultMsg += ` Solicitação de assinatura via ${docCtx.signing_method === 'govbr' ? 'Gov.br' : 'ZapSign'} criada.`;
             }
 
-            toolResults.push({ role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify({ success: true, pdf_url: pdfResult.pdf_url, message: resultMsg }) });
-            toolsExecuted.push({ name: 'generate_document', arguments: {}, result: { success: true, pdf_url: pdfResult.pdf_url, signature_method: docCtx.signing_method } });
+            // Send signature link if needed
+            if (docCtx.send_signature_link && docCtx.signing_method === 'govbr') {
+              const sigMessage = `📝 *Assinatura Digital*\n\nOs documentos foram gerados e precisam de assinatura via Gov.br.\n\nVocê receberá o link para assinatura em breve.`;
+              await sendReplyViaZAPI(supabase, ctx.conversation, sigMessage);
+            }
+
+            toolResults.push({ role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify({ success: true, documents_count: generatedDocs.length, message: resultMsg }) });
+            toolsExecuted.push({ name: 'generate_document', arguments: {}, result: { success: true, documents_count: generatedDocs.length, signing_method: docCtx.signing_method } });
 
             // Send internal note if enabled
             const currentNode = ctx.nodes?.find((n: any) => n.id === state.current_node_id);
@@ -1824,7 +1831,9 @@ async function invokeDocumentAgentAI(
                 const contact = ctx.conversation.contact;
                 let noteTemplate = currentNode?.data?.internalNoteTemplate as string || '';
                 if (!noteTemplate) {
-                  noteTemplate = `📋 *Documento gerado*\n\n📄 *Template:* {{template_name}}\n👤 *Contato:* {{contact_name}}\n📱 *Telefone:* {{contact_phone}}`;
+                  noteTemplate = docCtx.is_pack
+                    ? `📋 *Pack gerado*\n\n📦 *Pack:* {{template_name}}\n📄 *Documentos:* ${generatedDocs.length}\n👤 *Contato:* {{contact_name}}\n📱 *Telefone:* {{contact_phone}}`
+                    : `📋 *Documento gerado*\n\n📄 *Template:* {{template_name}}\n👤 *Contato:* {{contact_name}}\n📱 *Telefone:* {{contact_phone}}`;
                 }
                 const noteContent = noteTemplate
                   .replace(/\{\{template_name\}\}/g, docCtx.template_name || '')
@@ -1858,7 +1867,6 @@ async function invokeDocumentAgentAI(
                   if (firstCol) targetColumnId = firstCol.id;
                 }
                 if (targetColumnId) {
-                  // Upsert pipeline position
                   await supabase.from('conversation_pipeline_positions').upsert({
                     conversation_id: ctx.conversationId,
                     pipeline_id: docPipelineId,
@@ -1866,7 +1874,6 @@ async function invokeDocumentAgentAI(
                     order: 0,
                   }, { onConflict: 'conversation_id' });
 
-                  // Record stage history
                   await supabase.from('conversation_stage_history').insert({
                     conversation_id: ctx.conversationId,
                     pipeline_id: docPipelineId,
@@ -1881,11 +1888,10 @@ async function invokeDocumentAgentAI(
               }
             }
 
-            // Document complete - allow advance
             shouldAdvance = hasNextNodes;
           } else {
-            toolResults.push({ role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify({ success: false, error: pdfResult.error || 'Falha ao gerar PDF' }) });
-            toolsExecuted.push({ name: 'generate_document', arguments: {}, result: { success: false, error: pdfResult.error } });
+            toolResults.push({ role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify({ success: false, error: 'Nenhum PDF gerado' }) });
+            toolsExecuted.push({ name: 'generate_document', arguments: {}, result: { success: false, error: 'No PDFs generated' } });
           }
         } catch (e) {
           console.error('PDF generation error:', e);
