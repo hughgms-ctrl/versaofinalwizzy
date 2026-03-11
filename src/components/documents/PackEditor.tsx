@@ -237,6 +237,7 @@ export function PackEditor({ pack, onBack }: PackEditorProps) {
       description: description || null,
       template_ids: selectedIds,
       field_config: finalConfigs,
+      auto_send_whatsapp: autoSendWhatsApp,
     };
 
     if (isEditing) {
