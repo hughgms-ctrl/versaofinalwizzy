@@ -85,7 +85,7 @@ Deno.serve(async (req) => {
           });
         }
       } catch (e) {
-        console.log('Existing token validation failed, creating new instance:', e);
+        console.log('Existing token validation failed, creating new instance');
       }
     }
 
