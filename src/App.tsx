@@ -72,6 +72,7 @@ const App = () => (
                     <Route path="/documents" element={<ProtectedRoute><DocumentsPage /></ProtectedRoute>} />
                     <Route path="/integrations" element={<ProtectedRoute><IntegrationsPage /></ProtectedRoute>} />
                     <Route path="/form" element={<PublicFormPage />} />
+                    <Route path="/pack-form" element={<PublicPackFormPage />} />
                     <Route path="/signature/:documentId" element={<SignaturePage />} />
                     <Route path="/sign/:token" element={<PublicSignaturePage />} />
                     <Route path="/agendar/:slug" element={<PublicBookingPage />} />
