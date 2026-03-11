@@ -175,18 +175,75 @@ export function FlowActionNode({ data, selected }: NodeProps<ActionNode>) {
 }
 
 export function DocumentActionNode({ data, selected }: NodeProps<ActionNode>) {
+  const waitForResponse = data.waitForResponse === true || data.documentMode === 'agent_ai';
+
   return (
-    <BaseActionNode selected={!!selected} icon={FileText} color="bg-rose-500" title="Gerar Documento">
-      <div className="space-y-1">
+    <div
+      className={cn(
+        "group relative min-w-[180px] max-w-[240px] rounded-xl bg-card shadow-lg border-2 transition-all overflow-visible",
+        selected ? 'border-primary ring-2 ring-primary/30' : 'border-border'
+      )}
+    >
+      <Handle
+        type="target"
+        position={Position.Left}
+        className="!w-3.5 !h-3.5 !bg-rose-500 !border-2 !border-background !-left-[7px] !z-50"
+      />
+
+      <div className="flex items-center gap-2 px-3 py-2 bg-rose-500 rounded-t-[10px]">
+        <FileText className="h-4 w-4 text-white" />
+        <span className="font-medium text-sm text-white">Gerar Documento</span>
+      </div>
+
+      <div className="p-3 bg-card rounded-b-[10px] space-y-1">
         <p className="text-xs text-muted-foreground text-rose-700/70 truncate">
-          {data.templateName || 'Selecionar template...'}
+          {data.templateName || data.packName || 'Selecionar template...'}
         </p>
         <div className="flex items-center gap-1 text-[9px] text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded-full w-fit">
           <Clock className="h-2.5 w-2.5" />
           <span>Assinatura: {String(data.signingMethod || 'Manual')}</span>
         </div>
       </div>
-    </BaseActionNode>
+
+      {!waitForResponse ? (
+        <Handle
+          type="source"
+          position={Position.Right}
+          className="!w-3.5 !h-3.5 !bg-rose-500 !border-2 !border-background !-right-[7px] !z-50"
+        />
+      ) : (
+        <>
+          <Handle
+            type="source"
+            position={Position.Right}
+            id="responded"
+            className="!w-3.5 !h-3.5 !bg-green-500 !border-2 !border-background !-right-[7px] !z-50"
+            style={{ top: '40%' }}
+            title="Respondeu"
+          />
+          <Handle
+            type="source"
+            position={Position.Right}
+            id="timeout"
+            className="!w-3.5 !h-3.5 !bg-red-500 !border-2 !border-background !-right-[7px] !z-50"
+            style={{ top: '70%' }}
+            title="Não respondeu (timeout)"
+          />
+          <span
+            className="absolute text-[9px] text-green-600 dark:text-green-400 font-medium whitespace-nowrap pointer-events-none"
+            style={{ right: '-8px', top: '40%', transform: 'translate(100%, -50%)', paddingLeft: '4px' }}
+          >
+            ✓ Respondeu
+          </span>
+          <span
+            className="absolute text-[9px] text-red-500 font-medium whitespace-nowrap pointer-events-none"
+            style={{ right: '-8px', top: '70%', transform: 'translate(100%, -50%)', paddingLeft: '4px' }}
+          >
+            ✗ Timeout
+          </span>
+        </>
+      )}
+    </div>
   );
 }
 
