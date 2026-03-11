@@ -921,21 +921,15 @@ async function walkFlowForward(
       case 'orch-document':
       case 'action-document': {
         const templateId = nextNode.data?.templateId;
+        const packId = nextNode.data?.packId;
+        const documentSource = nextNode.data?.documentSource || 'template';
         const documentMode = nextNode.data?.documentMode || 'ai_agent';
 
-        if (!templateId) {
-          console.log('Document node has no template configured');
-          state.completed_nodes.push(nextNode.id);
-          state.current_node_id = nextNode.id;
-          continue;
-        }
+        const isPack = documentSource === 'pack' && !!packId;
+        const hasSource = isPack ? !!packId : !!templateId;
 
-        // Load template
-        const { data: template } = await supabase.from('document_templates')
-          .select('id, name, content, fields, auto_send_whatsapp').eq('id', templateId).single();
-
-        if (!template) {
-          console.log('Template not found:', templateId);
+        if (!hasSource) {
+          console.log('Document node has no template/pack configured');
           state.completed_nodes.push(nextNode.id);
           state.current_node_id = nextNode.id;
           continue;
@@ -943,46 +937,136 @@ async function walkFlowForward(
 
         // === PUBLIC LINK MODE ===
         if (documentMode === 'public_link') {
-          console.log('Document node: public_link mode');
-          // Build the public form URL
+          console.log('Document node: public_link mode, isPack:', isPack);
           const appUrl = 'https://wizzyai.lovable.app';
-          const publicLink = `${appUrl}/public-form/${templateId}`;
+
+          let publicLink: string;
+          if (isPack) {
+            // Need pack's public_token
+            const { data: pack } = await supabase.from('document_packs')
+              .select('id, name, public_token').eq('id', packId).single();
+            if (!pack?.public_token) {
+              console.log('Pack has no public_token, skipping');
+              state.completed_nodes.push(nextNode.id);
+              state.current_node_id = nextNode.id;
+              continue;
+            }
+            publicLink = `${appUrl}/pack-form/${pack.public_token}`;
+          } else {
+            publicLink = `${appUrl}/public-form/${templateId}`;
+          }
 
           let linkMessage = (nextNode.data?.publicLinkMessage as string) || '';
           if (!linkMessage) {
-            linkMessage = `📋 Por favor, preencha seus dados neste link para gerar o documento:\n\n${publicLink}`;
+            linkMessage = `📋 Por favor, preencha seus dados neste link para gerar ${isPack ? 'os documentos' : 'o documento'}:\n\n${publicLink}`;
           } else {
             linkMessage = linkMessage.replace(/\{\{link\}\}/g, publicLink);
           }
 
-          // Send the link via Z-API
           await sendReplyViaZAPI(supabase, ctx.conversation, linkMessage);
           replyText = linkMessage;
 
           toolsExecuted.push({
             name: 'send_public_link',
-            arguments: { template_id: templateId, link: publicLink },
+            arguments: { source: documentSource, link: publicLink },
             result: { success: true }
           });
 
-          // Mark as completed and continue flow
           state.completed_nodes.push(nextNode.id);
           state.current_node_id = nextNode.id;
           continue;
         }
 
-        // === AI AGENT MODE (default) ===
-        // Initialize document collection context
-        const fields = Array.isArray(template.fields) ? template.fields : [];
-        state.document_context = {
-          template_id: templateId,
-          template_name: template.name,
-          template_content: template.content,
-          fields: fields.map((f: any) => ({
+        // === AI AGENT MODE ===
+        let docFields: { name: string; label: string; type: string }[] = [];
+        let docTemplateName = '';
+        let docTemplateContent = '';
+        let packTemplates: { id: string; name: string; content: string }[] = [];
+
+        if (isPack) {
+          // Load pack with its field_config (unified fields) and templates
+          const { data: pack } = await supabase.from('document_packs')
+            .select('id, name, template_ids, field_config').eq('id', packId).single();
+
+          if (!pack) {
+            console.log('Pack not found:', packId);
+            state.completed_nodes.push(nextNode.id);
+            state.current_node_id = nextNode.id;
+            continue;
+          }
+
+          docTemplateName = pack.name;
+
+          // Use unified field_config from the pack
+          const fieldConfig = Array.isArray(pack.field_config) ? pack.field_config : [];
+          if (fieldConfig.length > 0) {
+            // field_config has unified/shared fields
+            docFields = fieldConfig.map((f: any) => ({
+              name: f.name || f.unified_name || f.label || '',
+              label: f.label || f.unified_name || f.name || '',
+              type: f.type || 'text',
+            }));
+          } else {
+            // Fallback: load all template fields
+            const { data: templates } = await supabase.from('document_templates')
+              .select('id, name, content, fields').in('id', pack.template_ids || []);
+            if (templates) {
+              const seenFields = new Set<string>();
+              for (const t of templates) {
+                packTemplates.push({ id: t.id, name: t.name, content: t.content });
+                const tFields = Array.isArray(t.fields) ? t.fields : [];
+                for (const f of tFields) {
+                  const fname = typeof f === 'string' ? f : (f.name || f);
+                  if (!seenFields.has(fname)) {
+                    seenFields.add(fname);
+                    docFields.push({
+                      name: fname,
+                      label: typeof f === 'string' ? f : (f.label || f.name || f),
+                      type: typeof f === 'string' ? 'text' : (f.type || 'text'),
+                    });
+                  }
+                }
+              }
+            }
+          }
+
+          // Load templates for PDF generation later
+          if (packTemplates.length === 0 && pack.template_ids?.length) {
+            const { data: templates } = await supabase.from('document_templates')
+              .select('id, name, content').in('id', pack.template_ids);
+            if (templates) packTemplates = templates.map(t => ({ id: t.id, name: t.name, content: t.content }));
+          }
+
+          docTemplateContent = packTemplates.map(t => `--- ${t.name} ---\n${t.content?.substring(0, 500)}`).join('\n\n');
+
+        } else {
+          // Single template
+          const { data: template } = await supabase.from('document_templates')
+            .select('id, name, content, fields').eq('id', templateId).single();
+
+          if (!template) {
+            console.log('Template not found:', templateId);
+            state.completed_nodes.push(nextNode.id);
+            state.current_node_id = nextNode.id;
+            continue;
+          }
+
+          docTemplateName = template.name;
+          docTemplateContent = template.content;
+          const fields = Array.isArray(template.fields) ? template.fields : [];
+          docFields = fields.map((f: any) => ({
             name: typeof f === 'string' ? f : (f.name || f),
             label: typeof f === 'string' ? f : (f.label || f.name || f),
             type: typeof f === 'string' ? 'text' : (f.type || 'text'),
-          })),
+          }));
+        }
+
+        // Initialize document collection context
+        state.document_context = {
+          template_id: isPack ? '' : templateId,
+          template_name: docTemplateName,
+          template_content: docTemplateContent,
+          fields: docFields,
           collected_data: {},
           require_confirmation: nextNode.data?.requireConfirmation !== false,
           send_pdf_in_chat: nextNode.data?.sendPdfInChat !== false,
@@ -992,9 +1076,14 @@ async function walkFlowForward(
           confirmed: false,
           pdf_generated: false,
           signature_requested: false,
+          is_pack: isPack,
+          pack_id: isPack ? packId : undefined,
+          pack_name: isPack ? docTemplateName : undefined,
+          pack_template_ids: isPack ? packTemplates.map(t => t.id) : undefined,
+          pack_templates: isPack ? packTemplates : undefined,
         };
 
-        // Pre-fill with contact data if available
+        // Pre-fill with contact data
         const contact = ctx.conversation.contact;
         if (contact) {
           for (const field of state.document_context.fields) {
@@ -1011,7 +1100,7 @@ async function walkFlowForward(
           }
         }
 
-        // If a specific agent is configured for this node, switch to it
+        // Specific agent for this node
         const docAgentId = nextNode.data?.documentAgentId as string;
         if (docAgentId) {
           const docAgent = ctx.agents.find((a: any) => a.id === docAgentId);
@@ -1021,14 +1110,13 @@ async function walkFlowForward(
           }
         }
 
-        console.log('Document collection started:', template.name, 'Fields:', state.document_context.fields.length);
+        console.log('Document collection started:', docTemplateName, 'Fields:', docFields.length, 'isPack:', isPack);
         toolsExecuted.push({
           name: 'start_document_collection',
-          arguments: { template_id: templateId, template_name: template.name, mode: 'ai_agent' },
-          result: { success: true, fields_count: state.document_context.fields.length }
+          arguments: { template_name: docTemplateName, mode: 'ai_agent', is_pack: isPack },
+          result: { success: true, fields_count: docFields.length }
         });
 
-        // Set as current, invoke document agent for first message
         state.current_node_id = nextNode.id;
         state.waiting_for_response = true;
 
