@@ -212,6 +212,7 @@ export function GovernancePromptsTab() {
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editForm?.id ? 'Editar Prompt' : 'Novo Prompt'}</DialogTitle>
+            <p className="text-sm text-muted-foreground">Configure o prompt de governança abaixo.</p>
           </DialogHeader>
           {editForm && (
             <div className="space-y-3 py-2">
