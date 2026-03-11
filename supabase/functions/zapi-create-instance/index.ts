@@ -183,7 +183,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    console.log(`Instance created: id=${uazapiInstanceId}, token=${uazapiToken.substring(0, 8)}...`);
+    console.log(`Instance created: id=${uazapiInstanceId}`);
 
     // Configure webhook
     const webhookUrl = `${supabaseUrl}/functions/v1/zapi-webhook`;
