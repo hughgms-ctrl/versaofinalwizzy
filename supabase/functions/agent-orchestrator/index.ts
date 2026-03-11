@@ -1679,6 +1679,71 @@ async function invokeDocumentAgentAI(
             toolResults.push({ role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify({ success: true, pdf_url: pdfResult.pdf_url, message: resultMsg }) });
             toolsExecuted.push({ name: 'generate_document', arguments: {}, result: { success: true, pdf_url: pdfResult.pdf_url, signature_method: docCtx.signing_method } });
 
+            // Send internal note if enabled
+            const currentNode = ctx.nodes?.find((n: any) => n.id === state.current_node_id);
+            const sendInternalNote = currentNode?.data?.sendInternalNote !== false;
+            if (sendInternalNote && ctx.conversationId) {
+              try {
+                const contact = ctx.conversation.contact;
+                let noteTemplate = currentNode?.data?.internalNoteTemplate as string || '';
+                if (!noteTemplate) {
+                  noteTemplate = `📋 *Documento gerado*\n\n📄 *Template:* {{template_name}}\n👤 *Contato:* {{contact_name}}\n📱 *Telefone:* {{contact_phone}}`;
+                }
+                const noteContent = noteTemplate
+                  .replace(/\{\{template_name\}\}/g, docCtx.template_name || '')
+                  .replace(/\{\{contact_name\}\}/g, contact?.name || '')
+                  .replace(/\{\{contact_phone\}\}/g, contact?.phone || '')
+                  .replace(/\{\{document_name\}\}/g, docCtx.template_name || '');
+
+                await supabase.from('messages').insert({
+                  conversation_id: ctx.conversationId,
+                  content: noteContent,
+                  direction: 'outbound',
+                  is_from_bot: true,
+                  type: 'text',
+                  metadata: { is_internal_note: true, type: 'document_generated', template_name: docCtx.template_name },
+                });
+              } catch (noteErr) {
+                console.error('Internal note error:', noteErr);
+              }
+            }
+
+            // Move pipeline if configured
+            const movePipelineAfter = currentNode?.data?.movePipelineAfter;
+            const docPipelineId = currentNode?.data?.docPipelineId as string;
+            const docPipelineColumnId = currentNode?.data?.docPipelineColumnId as string;
+            if (movePipelineAfter && docPipelineId && ctx.conversationId) {
+              try {
+                let targetColumnId = docPipelineColumnId;
+                if (!targetColumnId || targetColumnId === 'first') {
+                  const { data: firstCol } = await supabase.from('pipeline_columns')
+                    .select('id').eq('pipeline_id', docPipelineId).order('order', { ascending: true }).limit(1).single();
+                  if (firstCol) targetColumnId = firstCol.id;
+                }
+                if (targetColumnId) {
+                  // Upsert pipeline position
+                  await supabase.from('conversation_pipeline_positions').upsert({
+                    conversation_id: ctx.conversationId,
+                    pipeline_id: docPipelineId,
+                    column_id: targetColumnId,
+                    order: 0,
+                  }, { onConflict: 'conversation_id' });
+
+                  // Record stage history
+                  await supabase.from('conversation_stage_history').insert({
+                    conversation_id: ctx.conversationId,
+                    pipeline_id: docPipelineId,
+                    to_column_id: targetColumnId,
+                    organization_id: ctx.organizationId,
+                    changed_by_type: 'flow',
+                  });
+                  console.log('Pipeline moved after document generation');
+                }
+              } catch (pipeErr) {
+                console.error('Pipeline move error:', pipeErr);
+              }
+            }
+
             // Document complete - allow advance
             shouldAdvance = hasNextNodes;
           } else {
