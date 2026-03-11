@@ -215,7 +215,7 @@ export function GeneratedDocumentsList() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <h3 className="font-medium text-sm truncate">
-                        {docs[0]?.name?.replace(/\s*\(.*\)$/, '') || 'Pack'}
+                        {docs[0]?.document_packs?.name || 'Pack'}
                       </h3>
                       <Badge variant="secondary" className="text-xs shrink-0">
                         {docs.length} doc{docs.length > 1 ? 's' : ''}

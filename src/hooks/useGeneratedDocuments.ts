@@ -30,7 +30,7 @@ export function useGeneratedDocuments() {
     queryFn: async () => {
       const { data, error } = await (supabase as any)
         .from('generated_documents')
-        .select('*')
+        .select('*, document_packs(name)')
         .order('created_at', { ascending: false });
       if (error) throw error;
       return data as GeneratedDocument[];
