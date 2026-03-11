@@ -434,29 +434,17 @@ function FieldConfigCard({
   onToggle,
   onUpdate,
   templates,
-}: {
-  field: {
-    originalName: string;
-    label: string;
-    description: string;
-    type: string;
-    required: boolean;
-    count: number;
-    templateNames: string[];
-    mappedFields?: Array<{ fieldName: string; templateId: string }>;
-  };
-  isExpanded: boolean;
-  onToggle: () => void;
-  onUpdate: (updates: Partial<PackFieldConfig>) => void;
-  templates: any[];
-}) {
+  dragHandleProps,
+}: FieldConfigCardProps) {
   const hasMappings = field.mappedFields && field.mappedFields.length > 1;
 
   return (
     <Collapsible open={isExpanded} onOpenChange={onToggle}>
       <Card className="p-0 overflow-hidden">
         <CollapsibleTrigger className="w-full p-3 flex items-center gap-2 hover:bg-muted/50 transition-colors text-left">
-          <GripVertical className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+          <div {...dragHandleProps} className="cursor-grab active:cursor-grabbing" onClick={e => e.stopPropagation()}>
+            <GripVertical className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+          </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium truncate">{field.label}</span>
