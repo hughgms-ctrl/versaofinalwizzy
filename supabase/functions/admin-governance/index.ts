@@ -647,6 +647,9 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ error: 'Unknown action' }), { status: 400, headers: corsHeaders })
 
   } catch (err) {
+    if (err.name === 'ZodError') {
+      return new Response(JSON.stringify({ error: 'Dados inválidos', details: err.errors }), { status: 400, headers: corsHeaders })
+    }
     const status = err.message === 'Forbidden' ? 403 : err.message === 'Unauthorized' ? 401 : 500
     return new Response(JSON.stringify({ error: err.message }), { status, headers: corsHeaders })
   }
