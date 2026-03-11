@@ -59,12 +59,63 @@ Deno.serve(async (req) => {
 
     // SUBMIT action: generate documents
     if (action === "submit") {
-      const { filled_data } = body;
+      const { filled_data, signer_name, signer_phone } = body;
       if (!filled_data) {
         return new Response(JSON.stringify({ error: "Dados do formulário são obrigatórios" }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
+      }
+
+      if (!signer_name || !signer_phone) {
+        return new Response(JSON.stringify({ error: "Nome e telefone são obrigatórios" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Normalize phone
+      let normalizedPhone = signer_phone.replace(/\D/g, '');
+      if (!normalizedPhone.startsWith('55')) {
+        normalizedPhone = '55' + normalizedPhone;
+      }
+
+      // Create a submission group ID for grouping docs together
+      const submissionGroup = `${pack.id}_${signer_name.trim().replace(/\s+/g, '_')}_${Date.now()}`;
+
+      const submittedBy = {
+        name: signer_name.trim(),
+        phone: normalizedPhone,
+        submitted_at: new Date().toISOString(),
+      };
+
+      // Try to find existing contact by phone
+      let contactId: string | null = null;
+      let conversationId: string | null = null;
+
+      const { data: existingContact } = await supabase
+        .from("contacts")
+        .select("id")
+        .eq("organization_id", pack.organization_id)
+        .eq("phone", normalizedPhone)
+        .maybeSingle();
+
+      if (existingContact) {
+        contactId = existingContact.id;
+
+        // Find conversation for this contact
+        const { data: conv } = await supabase
+          .from("conversations")
+          .select("id")
+          .eq("contact_id", contactId)
+          .eq("organization_id", pack.organization_id)
+          .order("last_message_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (conv) {
+          conversationId = conv.id;
+        }
       }
 
       // Get templates
@@ -110,16 +161,22 @@ Deno.serve(async (req) => {
           templateData[name] = tplMap?.get(name) ?? filled_data[name] ?? '';
         });
 
+        const docName = `${pack.name} - ${template.name} - ${signer_name.trim()}`;
+
         const { data: doc, error: docErr } = await supabase
           .from("generated_documents")
           .insert({
             organization_id: pack.organization_id,
             template_id: template.id,
             pack_id: pack.id,
-            name: `${pack.name} - ${template.name}`,
+            contact_id: contactId,
+            conversation_id: conversationId,
+            name: docName,
             filled_data: templateData,
             status: "generated",
             signing_method: "manual",
+            submitted_by: submittedBy,
+            submission_group: submissionGroup,
           })
           .select()
           .single();
@@ -139,7 +196,7 @@ Deno.serve(async (req) => {
               body: JSON.stringify({
                 template_content: template.content,
                 filled_data: templateData,
-                document_name: `${pack.name} - ${template.name}`,
+                document_name: docName,
               }),
             });
 
@@ -157,10 +214,50 @@ Deno.serve(async (req) => {
 
           results.push({
             id: doc.id,
-            name: `${pack.name} - ${template.name}`,
+            name: docName,
             pdf_url: pdfUrl,
             template_name: template.name,
           });
+        }
+      }
+
+      // Send internal message to conversation if linked
+      if (conversationId) {
+        try {
+          const docNames = results.map(r => `• ${r.template_name}`).join('\n');
+          const internalMessage = `📋 *Formulário de pack preenchido*\n\n` +
+            `👤 *Nome:* ${signer_name.trim()}\n` +
+            `📱 *Telefone:* ${normalizedPhone}\n` +
+            `📦 *Pack:* ${pack.name}\n\n` +
+            `📄 *Documentos gerados:*\n${docNames}\n\n` +
+            `_${results.length} documento(s) gerado(s) automaticamente via formulário público._`;
+
+          await supabase
+            .from("messages")
+            .insert({
+              conversation_id: conversationId,
+              organization_id: pack.organization_id,
+              content: internalMessage,
+              sender_type: "system",
+              is_internal: true,
+              metadata: {
+                type: "pack_form_submitted",
+                pack_id: pack.id,
+                pack_name: pack.name,
+                signer_name: signer_name.trim(),
+                signer_phone: normalizedPhone,
+                document_ids: results.map(r => r.id),
+                submission_group: submissionGroup,
+              },
+            });
+
+          // Update conversation last_message_at
+          await supabase
+            .from("conversations")
+            .update({ last_message_at: new Date().toISOString() })
+            .eq("id", conversationId);
+        } catch (msgErr) {
+          console.error("Error sending internal message:", msgErr);
         }
       }
 
@@ -169,6 +266,7 @@ Deno.serve(async (req) => {
         documents_created: results.length,
         documents: results,
         organization_id: pack.organization_id,
+        submission_group: submissionGroup,
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });

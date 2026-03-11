@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Loader2, CheckCircle, FileText, Send, Info, Download, MessageCircle, Phone } from 'lucide-react';
+import { Loader2, CheckCircle, FileText, Send, Info, Download, MessageCircle, Phone, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -46,6 +46,10 @@ export default function PublicPackFormPage() {
   const [generatedDocs, setGeneratedDocs] = useState<GeneratedDoc[] | null>(null);
   const [organizationId, setOrganizationId] = useState<string | null>(null);
 
+  // Fixed identification fields
+  const [signerName, setSignerName] = useState('');
+  const [signerPhone, setSignerPhone] = useState('');
+
   // WhatsApp send state
   const [showWhatsAppInput, setShowWhatsAppInput] = useState(false);
   const [whatsappPhone, setWhatsappPhone] = useState('');
@@ -89,6 +93,16 @@ export default function PublicPackFormPage() {
   const handleSubmit = async () => {
     if (!packData || !token) return;
 
+    // Validate fixed fields
+    if (!signerName.trim()) {
+      setError('Informe seu nome completo.');
+      return;
+    }
+    if (!signerPhone.trim() || signerPhone.replace(/\D/g, '').length < 10) {
+      setError('Informe um número de telefone válido.');
+      return;
+    }
+
     const fields = packData.field_config || [];
     const missing = fields.filter(f => f.required && !formData[f.originalName]?.trim());
     if (missing.length > 0) {
@@ -101,11 +115,19 @@ export default function PublicPackFormPage() {
 
     try {
       const { data, error: fnError } = await supabase.functions.invoke('public-pack-form', {
-        body: { action: 'submit', token, filled_data: formData },
+        body: {
+          action: 'submit',
+          token,
+          filled_data: formData,
+          signer_name: signerName.trim(),
+          signer_phone: signerPhone.replace(/\D/g, ''),
+        },
       });
       if (fnError || data?.error) throw new Error(data?.error || 'Erro ao enviar');
       setGeneratedDocs(data.documents || []);
       setOrganizationId(data.organization_id || null);
+      // Pre-fill WhatsApp phone with the signer's phone
+      setWhatsappPhone(signerPhone);
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -118,7 +140,6 @@ export default function PublicPackFormPage() {
 
     setSendingWhatsApp(true);
     try {
-      // Send each document PDF via WhatsApp
       const { data, error: fnError } = await supabase.functions.invoke('public-pack-form', {
         body: {
           action: 'send_whatsapp',
@@ -180,7 +201,7 @@ export default function PublicPackFormPage() {
             <CheckCircle className="h-12 w-12 mx-auto text-primary mb-3" />
             <h2 className="text-xl font-semibold">Documentos gerados com sucesso!</h2>
             <p className="text-sm text-muted-foreground mt-1">
-              {generatedDocs.length} documento{generatedDocs.length > 1 ? 's foram gerados' : ' foi gerado'}
+              {generatedDocs.length} documento{generatedDocs.length > 1 ? 's foram gerados' : ' foi gerado'} para <strong>{signerName}</strong>
             </p>
           </div>
 
@@ -243,7 +264,7 @@ export default function PublicPackFormPage() {
                 <div className="space-y-3">
                   <div className="flex items-center gap-2 justify-center mb-2">
                     <MessageCircle className="h-5 w-5 text-green-600" />
-                    <h3 className="text-base font-semibold">Informe seu WhatsApp</h3>
+                    <h3 className="text-base font-semibold">Confirme seu WhatsApp</h3>
                   </div>
                   <div className="flex gap-2 max-w-sm mx-auto">
                     <div className="relative flex-1">
@@ -337,9 +358,47 @@ export default function PublicPackFormPage() {
           </div>
         )}
 
+        {/* Fixed identification fields */}
+        <Card className="mb-4">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <User className="h-4 w-4" />
+              Identificação
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <Label className="text-sm">
+                Nome completo <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                value={signerName}
+                onChange={e => setSignerName(e.target.value)}
+                placeholder="Seu nome completo"
+              />
+            </div>
+            <div>
+              <Label className="text-sm">
+                Telefone (WhatsApp) <span className="text-destructive">*</span>
+              </Label>
+              <div className="relative">
+                <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  type="tel"
+                  value={signerPhone}
+                  onChange={e => setSignerPhone(e.target.value)}
+                  placeholder="(11) 99999-9999"
+                  className="pl-9"
+                />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Dynamic fields from pack */}
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Preencha seus dados</CardTitle>
+            <CardTitle className="text-base">Preencha os dados dos documentos</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             {fields.map((field) => (
