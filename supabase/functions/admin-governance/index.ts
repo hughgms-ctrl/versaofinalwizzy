@@ -207,7 +207,7 @@ Deno.serve(async (req) => {
     // ── DELETE CHECK ──
     if (action === 'delete_check') {
       const body = await req.json()
-      const { data: existing } = await adminClient.from('governance_checks').select('name').eq('id', body.id).single()
+      const { id } = deleteSchema.parse(body)
       
       const { error } = await adminClient.from('governance_checks').delete().eq('id', body.id)
       if (error) throw error
