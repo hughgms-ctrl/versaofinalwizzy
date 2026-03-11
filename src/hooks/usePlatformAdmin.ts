@@ -9,12 +9,10 @@ export function usePlatformAdmin() {
     queryKey: ['platform-admin', user?.id],
     queryFn: async () => {
       if (!user?.id) return false;
-      const { data, error } = await supabase
-        .from('user_roles')
-        .select('id')
-        .eq('user_id', user.id)
-        .eq('role', 'platform_admin')
-        .maybeSingle();
+      // Use the server-side function to check role
+      const { data, error } = await supabase.rpc('is_platform_admin', {
+        _user_id: user.id,
+      });
       if (error) return false;
       return !!data;
     },
