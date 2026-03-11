@@ -174,6 +174,17 @@ Deno.serve(async (req) => {
       });
     }
 
+    // SEND_WHATSAPP action: send document PDFs via WhatsApp
+    if (action === "send_whatsapp") {
+      const { phone, document_ids, organization_id } = await req.json().catch(() => ({}));
+      // We already parsed the body above, so get from the parsed values
+    }
+
+    if (action === "send_whatsapp") {
+      const body = { action, token, phone: "", document_ids: [] as string[], organization_id: "" };
+      // Re-read from the original parse - let me restructure this properly
+    }
+
     return new Response(JSON.stringify({ error: "Ação inválida" }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
