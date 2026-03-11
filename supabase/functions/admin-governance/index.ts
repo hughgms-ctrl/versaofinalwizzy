@@ -257,7 +257,8 @@ Deno.serve(async (req) => {
     // ── CREATE/UPDATE PROMPT ──
     if (action === 'upsert_prompt') {
       const body = await req.json()
-      const { id, ...fields } = body
+      const parsed = upsertPromptSchema.parse(body)
+      const { id, ...fields } = parsed
 
       if (id) {
         // Get current version to save it
