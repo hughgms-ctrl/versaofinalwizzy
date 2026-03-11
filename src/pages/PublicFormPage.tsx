@@ -155,6 +155,8 @@ export default function PublicFormPage() {
           document_name: documentName,
           logo_url: logoUrl,
           auto_send_whatsapp: template.auto_send_whatsapp || false,
+          signer_name: signerName.trim(),
+          signer_phone: signerPhone.replace(/\D/g, ''),
         },
       });
 
