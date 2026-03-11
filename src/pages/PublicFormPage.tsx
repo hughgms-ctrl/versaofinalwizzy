@@ -110,6 +110,16 @@ export default function PublicFormPage() {
     if (!template) return;
 
     const fields = template.fields || [];
+    if (template.auto_send_whatsapp) {
+      if (!signerName.trim()) {
+        setError('Informe seu nome completo.');
+        return;
+      }
+      if (!signerPhone.trim() || signerPhone.replace(/\D/g, '').length < 10) {
+        setError('Informe um número de WhatsApp válido.');
+        return;
+      }
+    }
     const missing = fields.filter(f => f.required && !formData[f.name]?.trim());
     if (missing.length > 0) {
       setError(`Preencha os campos obrigatórios: ${missing.map(f => f.label).join(', ')}`);
