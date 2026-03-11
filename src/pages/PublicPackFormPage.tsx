@@ -130,6 +130,10 @@ export default function PublicPackFormPage() {
       setOrganizationId(data.organization_id || null);
       // Pre-fill WhatsApp phone with the signer's phone
       setWhatsappPhone(signerPhone);
+      // If auto-sent, mark as sent
+      if (data.whatsapp_sent > 0) {
+        setWhatsappSent(true);
+      }
     } catch (e: any) {
       setError(e.message);
     } finally {
