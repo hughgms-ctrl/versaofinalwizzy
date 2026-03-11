@@ -1360,6 +1360,7 @@ export type Database = {
       }
       document_packs: {
         Row: {
+          auto_send_whatsapp: boolean | null
           created_at: string
           created_by: string | null
           description: string | null
@@ -1373,6 +1374,7 @@ export type Database = {
           workspace_id: string | null
         }
         Insert: {
+          auto_send_whatsapp?: boolean | null
           created_at?: string
           created_by?: string | null
           description?: string | null
@@ -1386,6 +1388,7 @@ export type Database = {
           workspace_id?: string | null
         }
         Update: {
+          auto_send_whatsapp?: boolean | null
           created_at?: string
           created_by?: string | null
           description?: string | null

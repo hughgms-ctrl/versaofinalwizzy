@@ -25,6 +25,7 @@ interface PackData {
   field_config: FieldConfig[];
   organization: { name: string; logo_url: string | null } | null;
   template_count: number;
+  auto_send_whatsapp?: boolean;
 }
 
 interface GeneratedDoc {
@@ -121,6 +122,7 @@ export default function PublicPackFormPage() {
           filled_data: formData,
           signer_name: signerName.trim(),
           signer_phone: signerPhone.replace(/\D/g, ''),
+          auto_send_whatsapp: packData.auto_send_whatsapp || false,
         },
       });
       if (fnError || data?.error) throw new Error(data?.error || 'Erro ao enviar');
@@ -128,6 +130,10 @@ export default function PublicPackFormPage() {
       setOrganizationId(data.organization_id || null);
       // Pre-fill WhatsApp phone with the signer's phone
       setWhatsappPhone(signerPhone);
+      // If auto-sent, mark as sent
+      if (data.whatsapp_sent > 0) {
+        setWhatsappSent(true);
+      }
     } catch (e: any) {
       setError(e.message);
     } finally {

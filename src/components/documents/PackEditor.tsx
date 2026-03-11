@@ -1,11 +1,12 @@
 import { useState, useMemo, useCallback } from 'react';
-import { ArrowLeft, Save, Link2, GripVertical, Pencil, Info, Sparkles, Loader2 } from 'lucide-react';
+import { ArrowLeft, Save, Link2, GripVertical, Pencil, Info, Sparkles, Loader2, MessageCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useCreateDocumentPack, useUpdateDocumentPack, DocumentPack } from '@/hooks/useDocumentPacks';
@@ -61,6 +62,7 @@ export function PackEditor({ pack, onBack }: PackEditorProps) {
   );
   const [expandedField, setExpandedField] = useState<string | null>(null);
   const [isUnifying, setIsUnifying] = useState(false);
+  const [autoSendWhatsApp, setAutoSendWhatsApp] = useState((pack as any)?.auto_send_whatsapp || false);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -235,6 +237,7 @@ export function PackEditor({ pack, onBack }: PackEditorProps) {
       description: description || null,
       template_ids: selectedIds,
       field_config: finalConfigs,
+      auto_send_whatsapp: autoSendWhatsApp,
     };
 
     if (isEditing) {
@@ -274,6 +277,20 @@ export function PackEditor({ pack, onBack }: PackEditorProps) {
           <Input value={description} onChange={e => setDescription(e.target.value)} placeholder="Breve descrição" />
         </div>
       </div>
+
+      {/* Auto-send WhatsApp toggle */}
+      <Card className="p-4 flex items-center justify-between max-w-lg">
+        <div className="flex items-center gap-3">
+          <MessageCircle className="h-5 w-5 text-green-600 shrink-0" />
+          <div>
+            <p className="text-sm font-medium">Enviar automaticamente pelo WhatsApp</p>
+            <p className="text-xs text-muted-foreground">
+              Ao preencher o formulário, os documentos serão enviados automaticamente pelo WhatsApp
+            </p>
+          </div>
+        </div>
+        <Switch checked={autoSendWhatsApp} onCheckedChange={setAutoSendWhatsApp} />
+      </Card>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <div>
