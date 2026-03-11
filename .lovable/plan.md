@@ -1,69 +1,152 @@
 
+# Plano de Implementacao - Fase 2: Modulo de Documentos e Templates
 
-# Painel Administrativo -- Fase 1: Base de Dados + Acesso
+Seguindo a ordem solicitada: Fase 2 -> Fase 3 -> Fase 1 -> Fase 4. Vamos comecar pelo modulo de documentos.
 
-## Resumo
+---
 
-Criar a infraestrutura do painel admin da plataforma: tabelas de planos, uso, chaves de API, governança e audit logs. Adicionar role `platform_admin`, atribuir ao seu usuário, criar a rota `/admin` protegida e o link na sidebar. Os planos de pagamento (Stripe) ficam para depois -- agora criamos apenas a estrutura.
+## O que sera construido nesta fase
 
-## O que será criado
+Uma pagina `/documents` com 3 abas: **Templates**, **Documentos Gerados** e **Packs**. O usuario podera fazer upload de um contrato modelo, a IA vai analisar e extrair os campos variaveis (nome, endereco, CPF, etc.), criando um template reutilizavel com marcadores `{{campo}}`. Tambem sera possivel agrupar templates em packs para gerar multiplos documentos de uma vez.
 
-### Banco de Dados (Migration)
+---
 
-1. **Nova role** `platform_admin` no enum `app_role`
-2. **Tabela `platform_plans`** -- estrutura de planos (sem dados de pagamento por enquanto)
-   - name, slug, price_monthly, ai_mode (`own_api` | `platform_api`), storage_limit_bytes, max_conversations, max_team_members, max_ai_requests_month, features (jsonb), is_active
-3. **Tabela `organization_plans`** -- liga org ao plano
-   - organization_id, plan_id, status (active/trial/suspended/cancelled), trial_ends_at, current_period_start/end, payment_status (paid/pending/overdue), stripe_customer_id, stripe_subscription_id (campos preparados para Stripe futuro)
-4. **Tabela `platform_api_keys`** -- chaves de IA da plataforma
-   - provider, api_key_encrypted, is_active, monthly_budget, current_month_cost
-5. **Tabela `organization_usage`** -- métricas de uso por org/mês
-   - organization_id, period (YYYY-MM), storage_bytes, messages_sent, messages_received, ai_requests, ai_cost_usd, contacts_count
-6. **Tabela `admin_audit_logs`** -- histórico de ações admin
-   - action, entity_type, entity_id, performed_by, details (jsonb)
-7. **Tabelas de governança:**
-   - `governance_checks` -- checklist de maturidade (phase, name, weight, is_blocker, status, notes)
-   - `governance_snapshots` -- histórico de scores (score_total + scores por dimensão)
-   - `governance_prompts` -- biblioteca de prompts (name, category, content, criticality, status, related_files)
-   - `governance_prompt_versions` -- versionamento (prompt_id, version, content, changed_by, reason)
-8. **Função `is_platform_admin(uuid)`** -- SECURITY DEFINER para verificar acesso
-9. **RLS** em todas as tabelas: apenas `platform_admin` pode ler/escrever
-10. **Atribuir role** `platform_admin` ao usuário `d816224c-eead-4a6c-91f7-89c5560f8cde`
-11. **Adicionar campos** na `organizations`: `storage_limit_bytes`, `storage_used_bytes`
+## Funcionalidades
 
-### Frontend
+### 1. Aba Templates
+- Lista de templates salvos (nome, categoria, quantidade de campos, data)
+- Botao "Novo Template" com duas opcoes:
+  - **Upload de modelo**: envia PDF/DOCX, IA analisa e gera template com `{{campos}}`
+  - **Criar manualmente**: editor de texto com insercao de campos variaveis
+- Ao clicar em um template: abre editor para visualizar/editar o texto e os campos
+- Opcoes: editar, duplicar, excluir
 
-1. **`src/hooks/usePlatformAdmin.ts`** -- hook que verifica se o usuário logado tem role `platform_admin`
-2. **`src/pages/AdminPage.tsx`** -- página com tabs:
-   - Visão Geral (cards de resumo placeholder)
-   - Clientes (lista de orgs -- placeholder)
-   - Planos (CRUD placeholder)
-   - API & Custos (placeholder)
-   - Governança (placeholder)
-   - Segurança (placeholder)
-   - Histórico (placeholder)
-3. **`src/components/admin/AdminProtectedRoute.tsx`** -- wrapper que verifica `platform_admin`
-4. **Atualizar `App.tsx`** -- adicionar rota `/admin`
-5. **Atualizar `Sidebar.tsx`** -- mostrar link "Admin" com ícone Shield apenas para `platform_admin`
+### 2. Aba Packs
+- Agrupar multiplos templates (ex: "Pack Auxilio Reclusao" = Procuracao + Contrato + Declaracao)
+- Criar pack: selecionar templates existentes, dar nome
+- Ao gerar documentos de um pack, os mesmos dados preenchem todos os templates
 
-### Edge Function
+### 3. Aba Documentos Gerados
+- Historico de documentos gerados a partir de templates/packs
+- Status: gerado, enviado, assinado
+- Link para download do PDF
+- Vinculo com contato (quando gerado via agente)
 
-1. **`admin-dashboard`** -- edge function com SECURITY DEFINER que busca dados cross-org (total de orgs, contatos, mensagens, storage). Verifica role `platform_admin` server-side antes de retornar dados.
+---
 
-## Segurança
+## Detalhes Tecnicos
 
-- Role `platform_admin` separada no enum, nunca no profile
-- Função `is_platform_admin()` como SECURITY DEFINER para RLS
-- Edge function valida token + role server-side
-- Sidebar só mostra link para `platform_admin`
-- Rota protegida client-side E server-side
+### Novas tabelas (migracao SQL)
 
-## Ordem de Implementação
+```text
+document_templates
+  - id (uuid, PK)
+  - organization_id (uuid, FK)
+  - name (text)
+  - description (text, nullable)
+  - category (text, nullable) -- ex: "contrato", "procuracao", "declaracao"
+  - content (text) -- texto com marcadores {{campo}}
+  - fields (jsonb) -- lista de campos detectados: [{name, label, type, required}]
+  - original_file_url (text, nullable) -- URL do arquivo modelo original
+  - workspace_id (uuid, nullable)
+  - created_by (uuid, nullable)
+  - created_at, updated_at (timestamps)
 
-1. Migration SQL (enum + todas as tabelas + RLS + atribuir role)
-2. Hook `usePlatformAdmin`
-3. `AdminProtectedRoute`
-4. `AdminPage` com tabs e placeholders
-5. Atualizar `App.tsx` e `Sidebar.tsx`
-6. Edge function `admin-dashboard`
+document_packs
+  - id (uuid, PK)
+  - organization_id (uuid, FK)
+  - name (text)
+  - description (text, nullable)
+  - template_ids (uuid[]) -- array de IDs de templates
+  - workspace_id (uuid, nullable)
+  - created_by (uuid, nullable)
+  - created_at, updated_at (timestamps)
 
+generated_documents
+  - id (uuid, PK)
+  - organization_id (uuid, FK)
+  - template_id (uuid, nullable)
+  - pack_id (uuid, nullable)
+  - contact_id (uuid, nullable)
+  - conversation_id (uuid, nullable)
+  - name (text)
+  - filled_data (jsonb) -- dados preenchidos nos campos
+  - pdf_url (text, nullable) -- URL do PDF gerado no storage
+  - status (text) -- 'draft', 'generated', 'sent', 'signed'
+  - signing_method (text, nullable) -- 'manual', 'govbr', 'zapsign' (para Fase 3)
+  - signing_status (text, nullable)
+  - created_by (uuid, nullable)
+  - created_at, updated_at (timestamps)
+```
+
+RLS: todas as tabelas com politicas baseadas em `organization_id = get_user_org_id(auth.uid())`.
+
+### Nova edge function
+
+**`process-document-template`**: recebe arquivo (via URL do storage), usa IA para:
+1. Ler e interpretar o conteudo do documento
+2. Identificar campos variaveis (nomes, enderecos, CPFs, datas, etc.)
+3. Retornar texto reestruturado com `{{campo}}` e lista de campos detectados
+
+**`generate-document-pdf`**: recebe template + dados preenchidos, gera PDF e salva no storage bucket `contact-files`.
+
+### Novos arquivos frontend
+
+```text
+src/pages/DocumentsPage.tsx -- pagina principal com abas
+src/components/documents/TemplatesList.tsx -- lista de templates
+src/components/documents/TemplateEditor.tsx -- editor de template
+src/components/documents/PacksList.tsx -- lista de packs
+src/components/documents/PackEditor.tsx -- criar/editar pack
+src/components/documents/GeneratedDocumentsList.tsx -- historico
+src/components/documents/UploadTemplateDialog.tsx -- dialog de upload + processamento IA
+src/hooks/useDocumentTemplates.ts -- CRUD templates
+src/hooks/useDocumentPacks.ts -- CRUD packs
+src/hooks/useGeneratedDocuments.ts -- consulta documentos gerados
+```
+
+### Alteracoes em arquivos existentes
+
+- **App.tsx**: adicionar rotas `/documents`
+- **Sidebar.tsx**: adicionar item "Documentos" com icone FileText, abaixo de Widgets
+- **Sidebar.tsx**: adicionar permissao `module: 'flows'` (mesmo grupo de automacoes)
+
+---
+
+## Fluxo de uso principal
+
+```text
+1. Usuario acessa /documents
+2. Clica em "Novo Template"
+3. Faz upload de um PDF de contrato
+4. Sistema envia para edge function que usa IA para analisar
+5. IA retorna texto com {{nome_responsavel}}, {{cpf}}, {{endereco}}, etc.
+6. Usuario revisa e salva o template
+7. Pode criar um Pack agrupando templates
+8. Documentos gerados ficam no historico (aba "Gerados")
+```
+
+A geracao automatica via agente e assinatura serao implementados na Fase 3.
+
+---
+
+## Ordem de implementacao
+
+1. Migracoes SQL (tabelas + RLS)
+2. Edge function `process-document-template`
+3. Hooks de dados (useDocumentTemplates, useDocumentPacks, useGeneratedDocuments)
+4. Pagina DocumentsPage com abas
+5. Componentes de templates (lista, editor, upload)
+6. Componentes de packs
+7. Sidebar + rotas
+8. Edge function `generate-document-pdf` (geracao de PDF basica)
+
+---
+
+## Feature implementada: Compartilhamento Granular de Leads
+
+### Tabela `conversation_shares`
+- Permite compartilhar leads específicos com membros da equipe
+- Membros restritos veem leads compartilhados independente das restrições de pipeline/tag
+- UI: botão "Compartilhar com membro" no menu de ações da conversa e do pipeline
+- Seção de leads compartilhados no EditPermissionsDialog para revogar acesso

@@ -14,6 +14,36 @@ export type Database = {
   }
   public: {
     Tables: {
+      admin_audit_logs: {
+        Row: {
+          action: string
+          created_at: string
+          details: Json | null
+          entity_id: string | null
+          entity_type: string
+          id: string
+          performed_by: string | null
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          details?: Json | null
+          entity_id?: string | null
+          entity_type: string
+          id?: string
+          performed_by?: string | null
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          details?: Json | null
+          entity_id?: string | null
+          entity_type?: string
+          id?: string
+          performed_by?: string | null
+        }
+        Relationships: []
+      }
       agent_execution_logs: {
         Row: {
           agent_id: string | null
@@ -2000,6 +2030,167 @@ export type Database = {
           },
         ]
       }
+      governance_checks: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          is_blocker: boolean
+          name: string
+          notes: string | null
+          phase: string
+          status: string
+          updated_at: string
+          weight: number
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_blocker?: boolean
+          name: string
+          notes?: string | null
+          phase: string
+          status?: string
+          updated_at?: string
+          weight?: number
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_blocker?: boolean
+          name?: string
+          notes?: string | null
+          phase?: string
+          status?: string
+          updated_at?: string
+          weight?: number
+        }
+        Relationships: []
+      }
+      governance_prompt_versions: {
+        Row: {
+          changed_by: string | null
+          content: string
+          created_at: string
+          id: string
+          prompt_id: string
+          reason: string | null
+          version: number
+        }
+        Insert: {
+          changed_by?: string | null
+          content: string
+          created_at?: string
+          id?: string
+          prompt_id: string
+          reason?: string | null
+          version?: number
+        }
+        Update: {
+          changed_by?: string | null
+          content?: string
+          created_at?: string
+          id?: string
+          prompt_id?: string
+          reason?: string | null
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "governance_prompt_versions_prompt_id_fkey"
+            columns: ["prompt_id"]
+            isOneToOne: false
+            referencedRelation: "governance_prompts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      governance_prompts: {
+        Row: {
+          category: string
+          content: string
+          created_at: string
+          criticality: string
+          id: string
+          name: string
+          related_files: string[] | null
+          related_functions: string[] | null
+          related_tables: string[] | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          category: string
+          content: string
+          created_at?: string
+          criticality?: string
+          id?: string
+          name: string
+          related_files?: string[] | null
+          related_functions?: string[] | null
+          related_tables?: string[] | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          category?: string
+          content?: string
+          created_at?: string
+          criticality?: string
+          id?: string
+          name?: string
+          related_files?: string[] | null
+          related_functions?: string[] | null
+          related_tables?: string[] | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      governance_snapshots: {
+        Row: {
+          created_at: string
+          id: string
+          is_certified: boolean | null
+          risk_level: string | null
+          score_backend: number | null
+          score_continuity: number | null
+          score_governance: number | null
+          score_help: number | null
+          score_security: number | null
+          score_total: number
+          score_ux: number | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_certified?: boolean | null
+          risk_level?: string | null
+          score_backend?: number | null
+          score_continuity?: number | null
+          score_governance?: number | null
+          score_help?: number | null
+          score_security?: number | null
+          score_total?: number
+          score_ux?: number | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_certified?: boolean | null
+          risk_level?: string | null
+          score_backend?: number | null
+          score_continuity?: number | null
+          score_governance?: number | null
+          score_help?: number | null
+          score_security?: number | null
+          score_total?: number
+          score_ux?: number | null
+        }
+        Relationships: []
+      }
       integration_configs: {
         Row: {
           agents_model: string | null
@@ -2275,6 +2466,116 @@ export type Database = {
           },
         ]
       }
+      organization_plans: {
+        Row: {
+          created_at: string
+          current_period_end: string | null
+          current_period_start: string | null
+          id: string
+          organization_id: string
+          payment_status: string
+          plan_id: string
+          status: string
+          stripe_customer_id: string | null
+          stripe_subscription_id: string | null
+          trial_ends_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          current_period_end?: string | null
+          current_period_start?: string | null
+          id?: string
+          organization_id: string
+          payment_status?: string
+          plan_id: string
+          status?: string
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          trial_ends_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          current_period_end?: string | null
+          current_period_start?: string | null
+          id?: string
+          organization_id?: string
+          payment_status?: string
+          plan_id?: string
+          status?: string
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          trial_ends_at?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_plans_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "organization_plans_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "platform_plans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organization_usage: {
+        Row: {
+          ai_cost_usd: number | null
+          ai_requests: number | null
+          contacts_count: number | null
+          created_at: string
+          id: string
+          messages_received: number | null
+          messages_sent: number | null
+          organization_id: string
+          period: string
+          storage_bytes: number | null
+          updated_at: string
+        }
+        Insert: {
+          ai_cost_usd?: number | null
+          ai_requests?: number | null
+          contacts_count?: number | null
+          created_at?: string
+          id?: string
+          messages_received?: number | null
+          messages_sent?: number | null
+          organization_id: string
+          period: string
+          storage_bytes?: number | null
+          updated_at?: string
+        }
+        Update: {
+          ai_cost_usd?: number | null
+          ai_requests?: number | null
+          contacts_count?: number | null
+          created_at?: string
+          id?: string
+          messages_received?: number | null
+          messages_sent?: number | null
+          organization_id?: string
+          period?: string
+          storage_bytes?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organization_usage_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       organizations: {
         Row: {
           created_at: string
@@ -2282,6 +2583,8 @@ export type Database = {
           logo_url: string | null
           name: string
           slug: string
+          storage_limit_bytes: number | null
+          storage_used_bytes: number | null
           updated_at: string
         }
         Insert: {
@@ -2290,6 +2593,8 @@ export type Database = {
           logo_url?: string | null
           name: string
           slug: string
+          storage_limit_bytes?: number | null
+          storage_used_bytes?: number | null
           updated_at?: string
         }
         Update: {
@@ -2298,6 +2603,8 @@ export type Database = {
           logo_url?: string | null
           name?: string
           slug?: string
+          storage_limit_bytes?: number | null
+          storage_used_bytes?: number | null
           updated_at?: string
         }
         Relationships: []
@@ -2406,6 +2713,87 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      platform_api_keys: {
+        Row: {
+          api_key_encrypted: string
+          created_at: string
+          current_month_cost: number | null
+          id: string
+          is_active: boolean
+          monthly_budget: number | null
+          provider: string
+          updated_at: string
+        }
+        Insert: {
+          api_key_encrypted: string
+          created_at?: string
+          current_month_cost?: number | null
+          id?: string
+          is_active?: boolean
+          monthly_budget?: number | null
+          provider: string
+          updated_at?: string
+        }
+        Update: {
+          api_key_encrypted?: string
+          created_at?: string
+          current_month_cost?: number | null
+          id?: string
+          is_active?: boolean
+          monthly_budget?: number | null
+          provider?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      platform_plans: {
+        Row: {
+          ai_mode: string
+          created_at: string
+          features: Json
+          id: string
+          is_active: boolean
+          max_ai_requests_month: number | null
+          max_conversations: number | null
+          max_team_members: number
+          name: string
+          price_monthly: number
+          slug: string
+          storage_limit_bytes: number
+          updated_at: string
+        }
+        Insert: {
+          ai_mode?: string
+          created_at?: string
+          features?: Json
+          id?: string
+          is_active?: boolean
+          max_ai_requests_month?: number | null
+          max_conversations?: number | null
+          max_team_members?: number
+          name: string
+          price_monthly?: number
+          slug: string
+          storage_limit_bytes?: number
+          updated_at?: string
+        }
+        Update: {
+          ai_mode?: string
+          created_at?: string
+          features?: Json
+          id?: string
+          is_active?: boolean
+          max_ai_requests_month?: number | null
+          max_conversations?: number | null
+          max_team_members?: number
+          name?: string
+          price_monthly?: number
+          slug?: string
+          storage_limit_bytes?: number
+          updated_at?: string
+        }
+        Relationships: []
       }
       profiles: {
         Row: {
@@ -3448,6 +3836,7 @@ export type Database = {
         Args: { campaign_id: string }
         Returns: undefined
       }
+      is_platform_admin: { Args: { _user_id: string }; Returns: boolean }
       user_belongs_to_org: {
         Args: { _org_id: string; _user_id: string }
         Returns: boolean
@@ -3462,7 +3851,7 @@ export type Database = {
       }
     }
     Enums: {
-      app_role: "owner" | "admin" | "supervisor" | "agent"
+      app_role: "owner" | "admin" | "supervisor" | "agent" | "platform_admin"
       conversation_status: "open" | "pending" | "resolved" | "archived"
       message_direction: "inbound" | "outbound"
       message_type:
@@ -3606,7 +3995,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["owner", "admin", "supervisor", "agent"],
+      app_role: ["owner", "admin", "supervisor", "agent", "platform_admin"],
       conversation_status: ["open", "pending", "resolved", "archived"],
       message_direction: ["inbound", "outbound"],
       message_type: [
