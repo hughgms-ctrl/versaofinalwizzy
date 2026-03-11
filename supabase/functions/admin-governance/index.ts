@@ -208,14 +208,15 @@ Deno.serve(async (req) => {
     if (action === 'delete_check') {
       const body = await req.json()
       const { id } = deleteSchema.parse(body)
+      const { data: existing } = await adminClient.from('governance_checks').select('name').eq('id', id).single()
       
-      const { error } = await adminClient.from('governance_checks').delete().eq('id', body.id)
+      const { error } = await adminClient.from('governance_checks').delete().eq('id', id)
       if (error) throw error
 
       await adminClient.from('governance_action_logs').insert({
         action: 'delete_check',
         entity_type: 'check',
-        entity_id: body.id,
+        entity_id: id,
         entity_name: existing?.name,
         performed_by: user.id,
       })
