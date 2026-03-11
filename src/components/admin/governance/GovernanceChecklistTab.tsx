@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,27 +8,22 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Progress } from '@/components/ui/progress';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { useGovernanceDashboard, useUpsertCheck, useDeleteCheck, useUpdateCheck } from '@/hooks/useGovernance';
-import { Plus, Edit, Trash2, CheckCircle2, Clock, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { Plus, Edit, Trash2, CheckCircle2, Clock, AlertTriangle, ShieldCheck, BarChart3 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
 
 const PHASES = [
-  { value: 'security', label: 'Segurança' },
-  { value: 'backend', label: 'Backend' },
-  { value: 'continuity', label: 'Continuidade' },
-  { value: 'help', label: 'Ajuda' },
-  { value: 'ux', label: 'UX' },
-  { value: 'governance', label: 'Governança' },
+  { value: 'security', label: 'Segurança', number: 1 },
+  { value: 'backend', label: 'Backend', number: 2 },
+  { value: 'continuity', label: 'Backup & Continuidade', number: 3 },
+  { value: 'help', label: 'Ajuda', number: 4 },
+  { value: 'ux', label: 'UX / Educação', number: 5 },
+  { value: 'governance', label: 'Governança', number: 6 },
 ];
-
-const statusConfig: Record<string, { label: string; color: string; icon: React.ElementType }> = {
-  done: { label: 'Concluído', color: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20', icon: CheckCircle2 },
-  pending: { label: 'Pendente', color: 'bg-amber-500/10 text-amber-600 border-amber-500/20', icon: Clock },
-  failed: { label: 'Falhou', color: 'bg-destructive/10 text-destructive border-destructive/20', icon: AlertTriangle },
-};
 
 interface CheckForm {
   id?: string;
@@ -51,12 +46,10 @@ export function GovernanceChecklistTab() {
   const deleteCheck = useDeleteCheck();
   const updateCheck = useUpdateCheck();
   const [editForm, setEditForm] = useState<CheckForm | null>(null);
-  const [filterPhase, setFilterPhase] = useState<string>('all');
   const [seeding, setSeeding] = useState(false);
   const queryClient = useQueryClient();
 
   const checks = data?.checks || [];
-  const filtered = filterPhase === 'all' ? checks : checks.filter((c: any) => c.phase === filterPhase);
 
   const handleSeedSecurity = async () => {
     setSeeding(true);
@@ -82,32 +75,19 @@ export function GovernanceChecklistTab() {
     }
   };
 
-  // Group by phase
-  const grouped = filtered.reduce((acc: Record<string, any[]>, c: any) => {
-    const p = c.phase || 'other';
-    if (!acc[p]) acc[p] = [];
-    acc[p].push(c);
-    return acc;
-  }, {});
-
   if (isLoading) {
     return <div className="space-y-3">{[1, 2, 3].map(i => <Skeleton key={i} className="h-20" />)}</div>;
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Select value={filterPhase} onValueChange={setFilterPhase}>
-            <SelectTrigger className="w-40">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todas as fases</SelectItem>
-              {PHASES.map(p => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <span className="text-sm text-muted-foreground">{filtered.length} itens</span>
+          <BarChart3 className="h-5 w-5 text-muted-foreground" />
+          <div>
+            <h3 className="font-semibold text-foreground">Conformidade com Arquitetura Base</h3>
+          </div>
         </div>
         <div className="flex gap-2">
           {checks.length === 0 && (
@@ -123,68 +103,84 @@ export function GovernanceChecklistTab() {
         </div>
       </div>
 
-      {Object.entries(grouped).map(([phase, items]) => {
-        const phaseLabel = PHASES.find(p => p.value === phase)?.label || phase;
-        const doneCount = (items as any[]).filter(i => i.status === 'done').length;
+      {/* Phases */}
+      {PHASES.map((phase) => {
+        const phaseChecks = checks.filter((c: any) => c.phase === phase.value);
+        if (phaseChecks.length === 0) return null;
+        const doneCount = phaseChecks.filter((c: any) => c.status === 'done').length;
+        const pct = Math.round((doneCount / phaseChecks.length) * 100);
+        const hasBlocker = phaseChecks.some((c: any) => c.is_blocker);
+
         return (
-          <Card key={phase}>
-            <CardHeader className="py-3">
-              <CardTitle className="text-sm flex items-center justify-between">
-                <span>{phaseLabel}</span>
-                <Badge variant="outline">{doneCount}/{(items as any[]).length}</Badge>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="pt-0">
-              <div className="space-y-2">
-                {(items as any[]).map((check: any) => {
-                  const cfg = statusConfig[check.status] || statusConfig.pending;
-                  return (
-                    <div key={check.id} className="flex items-start gap-3 py-2 border-b border-border last:border-0">
-                      <button
-                        onClick={() => updateCheck.mutate({
-                          id: check.id,
-                          status: check.status === 'done' ? 'pending' : 'done',
-                        })}
-                        className="mt-0.5 flex-shrink-0"
-                      >
-                        <cfg.icon className={`h-5 w-5 ${check.status === 'done' ? 'text-emerald-500' : 'text-muted-foreground'}`} />
-                      </button>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className={`font-medium text-sm ${check.status === 'done' ? 'line-through text-muted-foreground' : ''}`}>
-                            {check.name}
-                          </span>
-                          {check.is_blocker && <Badge variant="destructive" className="text-xs py-0">Blocker</Badge>}
-                          <Badge variant="outline" className="text-xs py-0">Peso: {check.weight}</Badge>
-                        </div>
-                        {check.description && <p className="text-xs text-muted-foreground mt-0.5">{check.description}</p>}
-                        {check.notes && <p className="text-xs italic text-muted-foreground mt-0.5">{check.notes}</p>}
-                      </div>
-                      <div className="flex gap-1">
-                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditForm({
-                          id: check.id, name: check.name, description: check.description || '',
-                          phase: check.phase, weight: check.weight, is_blocker: check.is_blocker,
-                          status: check.status, notes: check.notes || '',
-                        })}>
-                          <Edit className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => {
-                          if (confirm('Remover este item?')) deleteCheck.mutate(check.id);
-                        }}>
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
+          <Card key={phase.value} className="overflow-hidden">
+            <div className="px-6 pt-5 pb-3">
+              {/* Phase header */}
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-3">
+                  <span className="flex items-center justify-center w-7 h-7 rounded-full bg-primary text-primary-foreground text-sm font-bold">
+                    {phase.number}
+                  </span>
+                  <span className="font-semibold text-foreground">{phase.label}</span>
+                  {hasBlocker && (
+                    <Badge className="bg-destructive text-destructive-foreground text-xs font-semibold px-2.5 py-0.5">
+                      BLOQUEANTE
+                    </Badge>
+                  )}
+                </div>
+                <span className="text-sm text-muted-foreground font-medium">
+                  {doneCount}/{phaseChecks.length} ({pct}%)
+                </span>
+              </div>
+              {/* Progress bar */}
+              <Progress value={pct} className="h-2" />
+            </div>
+
+            <CardContent className="pt-2 pb-4">
+              <div className="space-y-1 ml-1">
+                {phaseChecks.map((check: any) => (
+                  <div key={check.id} className="flex items-center gap-3 py-1.5 group">
+                    <button
+                      onClick={() => updateCheck.mutate({
+                        id: check.id,
+                        status: check.status === 'done' ? 'pending' : 'done',
+                      })}
+                      className="flex-shrink-0"
+                    >
+                      <CheckCircle2 className={`h-5 w-5 transition-colors ${
+                        check.status === 'done' ? 'text-emerald-500' : 'text-muted-foreground/40 hover:text-muted-foreground'
+                      }`} />
+                    </button>
+                    <span className={`text-sm flex-1 ${
+                      check.status === 'done' ? 'line-through text-muted-foreground' : 'text-foreground'
+                    }`}>
+                      {check.name}
+                    </span>
+                    <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditForm({
+                        id: check.id, name: check.name, description: check.description || '',
+                        phase: check.phase, weight: check.weight, is_blocker: check.is_blocker,
+                        status: check.status, notes: check.notes || '',
+                      })}>
+                        <Edit className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => {
+                        if (confirm('Remover este item?')) deleteCheck.mutate(check.id);
+                      }}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
                     </div>
-                  );
-                })}
+                  </div>
+                ))}
               </div>
             </CardContent>
           </Card>
         );
       })}
 
-      {filtered.length === 0 && (
-        <Card><CardContent className="py-8 text-center text-muted-foreground">Nenhum item de checklist.</CardContent></Card>
+      {checks.length === 0 && (
+        <Card><CardContent className="py-12 text-center text-muted-foreground">
+          Nenhum item de checklist. Clique em "Popular Checklist de Segurança" para começar.
+        </CardContent></Card>
       )}
 
       {/* Edit/Create Dialog */}
