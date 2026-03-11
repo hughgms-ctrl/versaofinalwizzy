@@ -14,12 +14,13 @@ import { Plus, Edit, Trash2, ChevronDown, Copy, Clock, Search, FileText } from '
 import { toast } from 'sonner';
 
 const CATEGORIES = [
-  { value: 'security', label: 'Segurança' },
-  { value: 'backend', label: 'Backend' },
-  { value: 'frontend', label: 'Frontend' },
-  { value: 'ux', label: 'UX' },
-  { value: 'infrastructure', label: 'Infraestrutura' },
-  { value: 'logs', label: 'Logs' },
+  { value: 'Segurança', label: 'Segurança' },
+  { value: 'Backend', label: 'Backend' },
+  { value: 'Frontend', label: 'Frontend' },
+  { value: 'UX', label: 'UX' },
+  { value: 'Infraestrutura', label: 'Infraestrutura' },
+  { value: 'Governança', label: 'Governança' },
+  { value: 'Logs', label: 'Logs' },
 ];
 
 const CRITICALITIES = [
@@ -48,7 +49,7 @@ interface PromptForm {
 }
 
 const emptyPrompt: PromptForm = {
-  name: '', category: 'backend', content: '', criticality: 'medium',
+  name: '', category: 'Backend', content: '', criticality: 'medium',
   status: 'pending', related_files: '', related_tables: '', related_functions: '', change_reason: '',
 };
 
@@ -211,6 +212,7 @@ export function GovernancePromptsTab() {
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editForm?.id ? 'Editar Prompt' : 'Novo Prompt'}</DialogTitle>
+            <p className="text-sm text-muted-foreground">Configure o prompt de governança abaixo.</p>
           </DialogHeader>
           {editForm && (
             <div className="space-y-3 py-2">

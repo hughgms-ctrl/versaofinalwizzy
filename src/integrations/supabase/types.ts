@@ -2182,7 +2182,9 @@ export type Database = {
           content: string
           created_at: string
           criticality: string
+          description: string | null
           id: string
+          is_generic: boolean | null
           name: string
           related_files: string[] | null
           related_functions: string[] | null
@@ -2195,7 +2197,9 @@ export type Database = {
           content: string
           created_at?: string
           criticality?: string
+          description?: string | null
           id?: string
+          is_generic?: boolean | null
           name: string
           related_files?: string[] | null
           related_functions?: string[] | null
@@ -2208,7 +2212,9 @@ export type Database = {
           content?: string
           created_at?: string
           criticality?: string
+          description?: string | null
           id?: string
+          is_generic?: boolean | null
           name?: string
           related_files?: string[] | null
           related_functions?: string[] | null

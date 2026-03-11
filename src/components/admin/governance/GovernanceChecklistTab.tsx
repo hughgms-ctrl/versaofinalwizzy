@@ -188,6 +188,7 @@ export function GovernanceChecklistTab() {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>{editForm?.id ? 'Editar Item' : 'Novo Item'}</DialogTitle>
+            <p className="text-sm text-muted-foreground">Preencha os campos abaixo para {editForm?.id ? 'editar o' : 'criar um novo'} item do checklist.</p>
           </DialogHeader>
           {editForm && (
             <div className="space-y-3 py-2">
