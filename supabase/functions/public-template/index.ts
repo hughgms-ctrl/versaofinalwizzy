@@ -58,6 +58,7 @@ Deno.serve(async (req) => {
         category: data.category,
         content: data.content,
         fields: data.fields,
+        auto_send_whatsapp: data.auto_send_whatsapp,
       },
       organization: org ? { name: org.name, logo_url: org.logo_url } : null,
     }), {

@@ -142,6 +142,7 @@ export default function PublicFormPage() {
           filled_data: formData,
           document_name: documentName,
           logo_url: logoUrl,
+          auto_send_whatsapp: template.auto_send_whatsapp || false,
         },
       });
 
