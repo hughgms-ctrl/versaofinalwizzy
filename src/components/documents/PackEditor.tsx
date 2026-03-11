@@ -307,48 +307,58 @@ export function PackEditor({ pack, onBack }: PackEditorProps) {
             </p>
 
             {mergedFields.length > 0 ? (
-              <div className="space-y-2">
-                {sharedFields.length > 0 && (
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-xs text-primary font-medium">
-                      <Link2 className="h-3.5 w-3.5" />
-                      Campos compartilhados ({sharedFields.length})
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleDragEnd}
+              >
+                <div className="space-y-2">
+                  {sharedFields.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 text-xs text-primary font-medium">
+                        <Link2 className="h-3.5 w-3.5" />
+                        Campos compartilhados ({sharedFields.length})
+                      </div>
+                      <SortableContext items={sharedFields.map(f => f.originalName)} strategy={verticalListSortingStrategy}>
+                        {sharedFields.map(field => (
+                          <SortableFieldConfigCard
+                            key={field.originalName}
+                            field={field}
+                            isExpanded={expandedField === field.originalName}
+                            onToggle={() => setExpandedField(
+                              expandedField === field.originalName ? null : field.originalName
+                            )}
+                            onUpdate={(updates) => updateFieldConfig(field.originalName, updates)}
+                            templates={templates || []}
+                          />
+                        ))}
+                      </SortableContext>
                     </div>
-                    {sharedFields.map(field => (
-                      <FieldConfigCard
-                        key={field.originalName}
-                        field={field}
-                        isExpanded={expandedField === field.originalName}
-                        onToggle={() => setExpandedField(
-                          expandedField === field.originalName ? null : field.originalName
-                        )}
-                        onUpdate={(updates) => updateFieldConfig(field.originalName, updates)}
-                        templates={templates || []}
-                      />
-                    ))}
-                  </div>
-                )}
+                  )}
 
-                {uniqueFields.length > 0 && (
-                  <div className="space-y-2 mt-4">
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium">
-                      Campos únicos ({uniqueFields.length})
+                  {uniqueFields.length > 0 && (
+                    <div className="space-y-2 mt-4">
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium">
+                        Campos únicos ({uniqueFields.length})
+                      </div>
+                      <SortableContext items={uniqueFields.map(f => f.originalName)} strategy={verticalListSortingStrategy}>
+                        {uniqueFields.map(field => (
+                          <SortableFieldConfigCard
+                            key={field.originalName}
+                            field={field}
+                            isExpanded={expandedField === field.originalName}
+                            onToggle={() => setExpandedField(
+                              expandedField === field.originalName ? null : field.originalName
+                            )}
+                            onUpdate={(updates) => updateFieldConfig(field.originalName, updates)}
+                            templates={templates || []}
+                          />
+                        ))}
+                      </SortableContext>
                     </div>
-                    {uniqueFields.map(field => (
-                      <FieldConfigCard
-                        key={field.originalName}
-                        field={field}
-                        isExpanded={expandedField === field.originalName}
-                        onToggle={() => setExpandedField(
-                          expandedField === field.originalName ? null : field.originalName
-                        )}
-                        onUpdate={(updates) => updateFieldConfig(field.originalName, updates)}
-                        templates={templates || []}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
+                  )}
+                </div>
+              </DndContext>
             ) : (
               <p className="text-sm text-muted-foreground">Selecione templates para ver os campos.</p>
             )}
