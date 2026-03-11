@@ -1524,6 +1524,7 @@ export type Database = {
       }
       document_templates: {
         Row: {
+          auto_send_whatsapp: boolean | null
           category: string | null
           content: string
           created_at: string
@@ -1539,6 +1540,7 @@ export type Database = {
           workspace_id: string | null
         }
         Insert: {
+          auto_send_whatsapp?: boolean | null
           category?: string | null
           content?: string
           created_at?: string
@@ -1554,6 +1556,7 @@ export type Database = {
           workspace_id?: string | null
         }
         Update: {
+          auto_send_whatsapp?: boolean | null
           category?: string | null
           content?: string
           created_at?: string

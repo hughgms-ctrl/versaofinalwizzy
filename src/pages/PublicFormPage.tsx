@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Loader2, FileDown, Image as ImageIcon, X, CheckCircle, FileText } from 'lucide-react';
+import { Loader2, FileDown, Image as ImageIcon, X, CheckCircle, FileText, Phone, User, MessageCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -21,6 +21,7 @@ interface PublicTemplate {
   description: string | null;
   content: string;
   fields: TemplateField[];
+  auto_send_whatsapp?: boolean;
 }
 
 interface OrgInfo {
@@ -43,6 +44,8 @@ export default function PublicFormPage() {
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [signerName, setSignerName] = useState('');
+  const [signerPhone, setSignerPhone] = useState('');
 
   useEffect(() => {
     if (!templateId) {
@@ -107,6 +110,16 @@ export default function PublicFormPage() {
     if (!template) return;
 
     const fields = template.fields || [];
+    if (template.auto_send_whatsapp) {
+      if (!signerName.trim()) {
+        setError('Informe seu nome completo.');
+        return;
+      }
+      if (!signerPhone.trim() || signerPhone.replace(/\D/g, '').length < 10) {
+        setError('Informe um número de WhatsApp válido.');
+        return;
+      }
+    }
     const missing = fields.filter(f => f.required && !formData[f.name]?.trim());
     if (missing.length > 0) {
       setError(`Preencha os campos obrigatórios: ${missing.map(f => f.label).join(', ')}`);
@@ -141,6 +154,9 @@ export default function PublicFormPage() {
           filled_data: formData,
           document_name: documentName,
           logo_url: logoUrl,
+          auto_send_whatsapp: template.auto_send_whatsapp || false,
+          signer_name: signerName.trim(),
+          signer_phone: signerPhone.replace(/\D/g, ''),
         },
       });
 
@@ -253,6 +269,33 @@ export default function PublicFormPage() {
                     placeholder="Ex: Contrato João Silva"
                   />
                 </div>
+                {template.auto_send_whatsapp && (
+                  <Card className="p-4 border-border/60 bg-muted/20">
+                    <div className="flex items-start gap-3 mb-3">
+                      <MessageCircle className="h-5 w-5 text-primary mt-0.5" />
+                      <div>
+                        <p className="text-sm font-medium">Entrega automática por WhatsApp</p>
+                        <p className="text-xs text-muted-foreground">Este documento será enviado automaticamente após o preenchimento.</p>
+                      </div>
+                    </div>
+                    <div className="space-y-3">
+                      <div>
+                        <Label>Nome completo</Label>
+                        <div className="relative mt-1">
+                          <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                          <Input value={signerName} onChange={e => setSignerName(e.target.value)} className="pl-9" placeholder="Seu nome completo" />
+                        </div>
+                      </div>
+                      <div>
+                        <Label>WhatsApp</Label>
+                        <div className="relative mt-1">
+                          <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                          <Input value={signerPhone} onChange={e => setSignerPhone(e.target.value)} className="pl-9" placeholder="(11) 99999-9999" />
+                        </div>
+                      </div>
+                    </div>
+                  </Card>
+                )}
                 <div>
                   <Label>Logo (cabeçalho)</Label>
                   {logoPreview ? (

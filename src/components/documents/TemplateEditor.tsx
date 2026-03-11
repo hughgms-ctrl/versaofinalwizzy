@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowLeft, Save, Plus, X, Tag } from 'lucide-react';
+import { ArrowLeft, Save, Plus, X, Tag, MessageCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -7,6 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { useCreateDocumentTemplate, useUpdateDocumentTemplate, DocumentTemplate } from '@/hooks/useDocumentTemplates';
 
 interface TemplateEditorProps {
@@ -28,6 +29,7 @@ export function TemplateEditor({ template, onBack }: TemplateEditorProps) {
   const [fields, setFields] = useState<Array<{ name: string; label: string; type: string; required: boolean }>>(
     template?.fields || []
   );
+  const [autoSendWhatsApp, setAutoSendWhatsApp] = useState(template?.auto_send_whatsapp || false);
 
   const [newFieldName, setNewFieldName] = useState('');
 
@@ -50,22 +52,24 @@ export function TemplateEditor({ template, onBack }: TemplateEditorProps) {
   const handleSave = () => {
     if (!name.trim()) return;
     if (isEditing) {
-      updateTemplate.mutate({
-        id: template.id,
-        name,
-        description: description || null,
-        category: category || null,
-        content,
-        fields,
-      }, { onSuccess: onBack });
-    } else {
-      createTemplate.mutate({
-        name,
-        description: description || undefined,
-        category: category || undefined,
-        content,
-        fields,
-      }, { onSuccess: onBack });
+        updateTemplate.mutate({
+          id: template.id,
+          name,
+          description: description || null,
+          category: category || null,
+          content,
+          fields,
+          auto_send_whatsapp: autoSendWhatsApp,
+        }, { onSuccess: onBack });
+      } else {
+        createTemplate.mutate({
+          name,
+          description: description || undefined,
+          category: category || undefined,
+          content,
+          fields,
+          auto_send_whatsapp: autoSendWhatsApp,
+        }, { onSuccess: onBack });
     }
   };
 
@@ -111,6 +115,18 @@ export function TemplateEditor({ template, onBack }: TemplateEditorProps) {
             <Label>Descrição (opcional)</Label>
             <Input value={description} onChange={e => setDescription(e.target.value)} placeholder="Breve descrição do template" />
           </div>
+          <Card className="p-4 sm:col-span-2">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <MessageCircle className="h-5 w-5 text-primary" />
+                <div>
+                  <p className="text-sm font-medium">Enviar automaticamente pelo WhatsApp</p>
+                  <p className="text-xs text-muted-foreground">No formulário público deste documento, envia automaticamente ao finalizar.</p>
+                </div>
+              </div>
+              <Switch checked={autoSendWhatsApp} onCheckedChange={setAutoSendWhatsApp} />
+            </div>
+          </Card>
           <div>
             <Label>Conteúdo do template</Label>
             <p className="text-xs text-muted-foreground mb-2">

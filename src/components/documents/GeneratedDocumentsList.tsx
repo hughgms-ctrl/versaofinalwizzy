@@ -33,7 +33,7 @@ interface SubmittedBy {
   submitted_at?: string;
 }
 
-function DocCard({ doc, onDelete, onRegenerate, isRegenerating }: { doc: any; onDelete: (id: string) => void; onRegenerate: (doc: any) => void; isRegenerating: boolean }) {
+function DocCard({ doc, onDelete, onRegenerate, onDownload, isRegenerating }: { doc: any; onDelete: (id: string) => void; onRegenerate: (doc: any) => void; onDownload: (doc: any) => void; isRegenerating: boolean }) {
   const isMissingPdf = !doc.pdf_url && doc.status === 'generated';
   const status = isMissingPdf 
     ? { label: 'PDF falhou', variant: 'destructive' as const }
@@ -76,11 +76,9 @@ function DocCard({ doc, onDelete, onRegenerate, isRegenerating }: { doc: any; on
             </Button>
           )}
           {doc.pdf_url && (
-            <a href={doc.pdf_url} target="_blank" rel="noopener noreferrer" download>
-              <Button variant="ghost" size="icon">
-                <Download className="h-4 w-4" />
-              </Button>
-            </a>
+            <Button variant="ghost" size="icon" onClick={() => onDownload(doc)}>
+              <Download className="h-4 w-4" />
+            </Button>
           )}
           <AlertDialog>
             <AlertDialogTrigger asChild>
@@ -121,6 +119,25 @@ export function GeneratedDocumentsList() {
       onSuccess: () => toast.success('Documento excluído'),
       onError: () => toast.error('Erro ao excluir documento'),
     });
+  };
+
+  const handleDownload = async (doc: any) => {
+    if (!doc.pdf_url) return;
+    try {
+      const response = await fetch(doc.pdf_url);
+      if (!response.ok) throw new Error('Falha ao baixar arquivo');
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${doc.name || 'documento'}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      window.open(doc.pdf_url, '_blank', 'noopener,noreferrer');
+    }
   };
 
   const toggleGroup = (group: string) => {
@@ -224,7 +241,7 @@ export function GeneratedDocumentsList() {
                 {!isCollapsed && (
                   <div className="border-t px-4 pb-3 pt-2 space-y-2">
                     {docs.map(doc => (
-                      <DocCard key={doc.id} doc={doc} onDelete={handleDelete} onRegenerate={(d) => regeneratePdf.mutate(d)} isRegenerating={regeneratePdf.isPending} />
+                      <DocCard key={doc.id} doc={doc} onDelete={handleDelete} onRegenerate={(d) => regeneratePdf.mutate(d)} onDownload={handleDownload} isRegenerating={regeneratePdf.isPending} />
                     ))}
                   </div>
                 )}
@@ -234,7 +251,7 @@ export function GeneratedDocumentsList() {
 
           {/* Standalone documents */}
           {standalone.map(doc => (
-            <DocCard key={doc.id} doc={doc} onDelete={handleDelete} onRegenerate={(d) => regeneratePdf.mutate(d)} isRegenerating={regeneratePdf.isPending} />
+            <DocCard key={doc.id} doc={doc} onDelete={handleDelete} onRegenerate={(d) => regeneratePdf.mutate(d)} onDownload={handleDownload} isRegenerating={regeneratePdf.isPending} />
           ))}
         </div>
       )}

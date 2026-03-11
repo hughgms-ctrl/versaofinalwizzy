@@ -14,6 +14,7 @@ export interface DocumentTemplate {
   original_file_url: string | null;
   workspace_id: string | null;
   created_by: string | null;
+  auto_send_whatsapp?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -49,6 +50,7 @@ export function useCreateDocumentTemplate() {
       content: string;
       fields: any[];
       original_file_url?: string;
+      auto_send_whatsapp?: boolean;
     }) => {
       const { data, error } = await (supabase as any)
         .from('document_templates')
