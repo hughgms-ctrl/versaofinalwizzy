@@ -115,6 +115,18 @@ export function TemplateEditor({ template, onBack }: TemplateEditorProps) {
             <Label>Descrição (opcional)</Label>
             <Input value={description} onChange={e => setDescription(e.target.value)} placeholder="Breve descrição do template" />
           </div>
+          <Card className="p-4 sm:col-span-2">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <MessageCircle className="h-5 w-5 text-primary" />
+                <div>
+                  <p className="text-sm font-medium">Enviar automaticamente pelo WhatsApp</p>
+                  <p className="text-xs text-muted-foreground">No formulário público deste documento, envia automaticamente ao finalizar.</p>
+                </div>
+              </div>
+              <Switch checked={autoSendWhatsApp} onCheckedChange={setAutoSendWhatsApp} />
+            </div>
+          </Card>
           <div>
             <Label>Conteúdo do template</Label>
             <p className="text-xs text-muted-foreground mb-2">
