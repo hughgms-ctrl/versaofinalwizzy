@@ -374,12 +374,17 @@ function FieldConfigCard({
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium truncate">{field.label}</span>
-              {(field.count > 1 || hasMappings) && (
-                <Badge variant="default" className="text-[10px] px-1.5 py-0">
-                  <Link2 className="h-2.5 w-2.5 mr-0.5" />
-                  {hasMappings ? field.mappedFields!.length : field.count} docs
-                </Badge>
-              )}
+              {(() => {
+                const uniqueDocCount = hasMappings
+                  ? new Set(field.mappedFields!.map(mf => mf.templateId)).size
+                  : field.count;
+                return uniqueDocCount > 1 ? (
+                  <Badge variant="default" className="text-[10px] px-1.5 py-0">
+                    <Link2 className="h-2.5 w-2.5 mr-0.5" />
+                    {uniqueDocCount} docs
+                  </Badge>
+                ) : null;
+              })()}
               {field.required && (
                 <span className="text-destructive text-xs">*</span>
               )}
