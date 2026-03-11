@@ -69,6 +69,12 @@ function DocCard({ doc, onDelete, onRegenerate, isRegenerating }: { doc: any; on
               {doc.signing_method === 'manual' ? 'Manual' : doc.signing_method === 'govbr' ? 'Gov.br' : 'ZapSign'}
             </Badge>
           )}
+          {isMissingPdf && (
+            <Button variant="outline" size="sm" onClick={() => onRegenerate(doc)} disabled={isRegenerating} className="text-xs gap-1">
+              <RefreshCw className={`h-3 w-3 ${isRegenerating ? 'animate-spin' : ''}`} />
+              {isRegenerating ? 'Gerando...' : 'Regenerar PDF'}
+            </Button>
+          )}
           {doc.pdf_url && (
             <Button variant="ghost" size="icon" asChild>
               <a href={doc.pdf_url} target="_blank" rel="noopener noreferrer">
