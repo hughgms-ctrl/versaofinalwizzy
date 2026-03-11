@@ -210,8 +210,14 @@ export function PackEditor({ pack, onBack }: PackEditorProps) {
     }
   };
 
-  const sharedFields = mergedFields.filter(f => f.count > 1 || (f.mappedFields && f.mappedFields.length > 1));
-  const uniqueFields = mergedFields.filter(f => f.count <= 1 && (!f.mappedFields || f.mappedFields.length <= 1));
+  const sharedFields = mergedFields.filter(f => {
+    const uniqueTemplates = new Set(f.mappedFields?.map(mf => mf.templateId) || []).size;
+    return uniqueTemplates > 1 || (!f.mappedFields?.length && f.count > 1);
+  });
+  const uniqueFields = mergedFields.filter(f => {
+    const uniqueTemplates = new Set(f.mappedFields?.map(mf => mf.templateId) || []).size;
+    return uniqueTemplates <= 1 && (f.mappedFields?.length ? true : f.count <= 1);
+  });
 
   return (
     <div className="space-y-4">
