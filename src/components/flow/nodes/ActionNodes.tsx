@@ -197,7 +197,7 @@ export function DocumentActionNode({ data, selected }: NodeProps<ActionNode>) {
 
       <div className="p-3 bg-card rounded-b-[10px] space-y-1">
         <p className="text-xs text-muted-foreground text-rose-700/70 truncate">
-          {data.templateName || data.packName || 'Selecionar template...'}
+          {String(data.templateName || data.packName || 'Selecionar template...')}
         </p>
         <div className="flex items-center gap-1 text-[9px] text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded-full w-fit">
           <Clock className="h-2.5 w-2.5" />
