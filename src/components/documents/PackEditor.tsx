@@ -278,6 +278,20 @@ export function PackEditor({ pack, onBack }: PackEditorProps) {
         </div>
       </div>
 
+      {/* Auto-send WhatsApp toggle */}
+      <Card className="p-4 flex items-center justify-between max-w-lg">
+        <div className="flex items-center gap-3">
+          <MessageCircle className="h-5 w-5 text-green-600 shrink-0" />
+          <div>
+            <p className="text-sm font-medium">Enviar automaticamente pelo WhatsApp</p>
+            <p className="text-xs text-muted-foreground">
+              Ao preencher o formulário, os documentos serão enviados automaticamente pelo WhatsApp
+            </p>
+          </div>
+        </div>
+        <Switch checked={autoSendWhatsApp} onCheckedChange={setAutoSendWhatsApp} />
+      </Card>
+
       <div className="grid gap-6 lg:grid-cols-2">
         <div>
           <Label>Selecione os templates</Label>
