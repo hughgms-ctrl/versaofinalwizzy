@@ -25,6 +25,7 @@ interface PackData {
   field_config: FieldConfig[];
   organization: { name: string; logo_url: string | null } | null;
   template_count: number;
+  auto_send_whatsapp?: boolean;
 }
 
 interface GeneratedDoc {
