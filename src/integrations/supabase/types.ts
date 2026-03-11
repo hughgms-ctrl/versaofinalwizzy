@@ -3851,7 +3851,7 @@ export type Database = {
       }
     }
     Enums: {
-      app_role: "owner" | "admin" | "supervisor" | "agent"
+      app_role: "owner" | "admin" | "supervisor" | "agent" | "platform_admin"
       conversation_status: "open" | "pending" | "resolved" | "archived"
       message_direction: "inbound" | "outbound"
       message_type:
@@ -3995,7 +3995,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["owner", "admin", "supervisor", "agent"],
+      app_role: ["owner", "admin", "supervisor", "agent", "platform_admin"],
       conversation_status: ["open", "pending", "resolved", "archived"],
       message_direction: ["inbound", "outbound"],
       message_type: [
