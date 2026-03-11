@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { ArrowLeft, Save, Link2, GripVertical, Pencil, Info, Sparkles, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,6 +12,23 @@ import { useCreateDocumentPack, useUpdateDocumentPack, DocumentPack } from '@/ho
 import { useDocumentTemplates } from '@/hooks/useDocumentTemplates';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
 interface PackEditorProps {
   pack: DocumentPack | null;
@@ -45,11 +62,28 @@ export function PackEditor({ pack, onBack }: PackEditorProps) {
   const [expandedField, setExpandedField] = useState<string | null>(null);
   const [isUnifying, setIsUnifying] = useState(false);
 
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
   const toggleTemplate = (id: string) => {
     setSelectedIds(prev =>
       prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
     );
   };
+
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    setFieldConfigs(prev => {
+      const oldIndex = prev.findIndex(f => f.originalName === active.id);
+      const newIndex = prev.findIndex(f => f.originalName === over.id);
+      if (oldIndex === -1 || newIndex === -1) return prev;
+      return arrayMove(prev, oldIndex, newIndex);
+    });
+  }, []);
 
   // Collect all fields from selected templates
   const allFields = useMemo(() => {
@@ -290,48 +324,58 @@ export function PackEditor({ pack, onBack }: PackEditorProps) {
             </p>
 
             {mergedFields.length > 0 ? (
-              <div className="space-y-2">
-                {sharedFields.length > 0 && (
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-xs text-primary font-medium">
-                      <Link2 className="h-3.5 w-3.5" />
-                      Campos compartilhados ({sharedFields.length})
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleDragEnd}
+              >
+                <div className="space-y-2">
+                  {sharedFields.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 text-xs text-primary font-medium">
+                        <Link2 className="h-3.5 w-3.5" />
+                        Campos compartilhados ({sharedFields.length})
+                      </div>
+                      <SortableContext items={sharedFields.map(f => f.originalName)} strategy={verticalListSortingStrategy}>
+                        {sharedFields.map(field => (
+                          <SortableFieldConfigCard
+                            key={field.originalName}
+                            field={field}
+                            isExpanded={expandedField === field.originalName}
+                            onToggle={() => setExpandedField(
+                              expandedField === field.originalName ? null : field.originalName
+                            )}
+                            onUpdate={(updates) => updateFieldConfig(field.originalName, updates)}
+                            templates={templates || []}
+                          />
+                        ))}
+                      </SortableContext>
                     </div>
-                    {sharedFields.map(field => (
-                      <FieldConfigCard
-                        key={field.originalName}
-                        field={field}
-                        isExpanded={expandedField === field.originalName}
-                        onToggle={() => setExpandedField(
-                          expandedField === field.originalName ? null : field.originalName
-                        )}
-                        onUpdate={(updates) => updateFieldConfig(field.originalName, updates)}
-                        templates={templates || []}
-                      />
-                    ))}
-                  </div>
-                )}
+                  )}
 
-                {uniqueFields.length > 0 && (
-                  <div className="space-y-2 mt-4">
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium">
-                      Campos únicos ({uniqueFields.length})
+                  {uniqueFields.length > 0 && (
+                    <div className="space-y-2 mt-4">
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground font-medium">
+                        Campos únicos ({uniqueFields.length})
+                      </div>
+                      <SortableContext items={uniqueFields.map(f => f.originalName)} strategy={verticalListSortingStrategy}>
+                        {uniqueFields.map(field => (
+                          <SortableFieldConfigCard
+                            key={field.originalName}
+                            field={field}
+                            isExpanded={expandedField === field.originalName}
+                            onToggle={() => setExpandedField(
+                              expandedField === field.originalName ? null : field.originalName
+                            )}
+                            onUpdate={(updates) => updateFieldConfig(field.originalName, updates)}
+                            templates={templates || []}
+                          />
+                        ))}
+                      </SortableContext>
                     </div>
-                    {uniqueFields.map(field => (
-                      <FieldConfigCard
-                        key={field.originalName}
-                        field={field}
-                        isExpanded={expandedField === field.originalName}
-                        onToggle={() => setExpandedField(
-                          expandedField === field.originalName ? null : field.originalName
-                        )}
-                        onUpdate={(updates) => updateFieldConfig(field.originalName, updates)}
-                        templates={templates || []}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
+                  )}
+                </div>
+              </DndContext>
             ) : (
               <p className="text-sm text-muted-foreground">Selecione templates para ver os campos.</p>
             )}
@@ -342,13 +386,7 @@ export function PackEditor({ pack, onBack }: PackEditorProps) {
   );
 }
 
-function FieldConfigCard({
-  field,
-  isExpanded,
-  onToggle,
-  onUpdate,
-  templates,
-}: {
+type FieldConfigCardProps = {
   field: {
     originalName: string;
     label: string;
@@ -363,14 +401,50 @@ function FieldConfigCard({
   onToggle: () => void;
   onUpdate: (updates: Partial<PackFieldConfig>) => void;
   templates: any[];
-}) {
+  dragHandleProps?: Record<string, any>;
+};
+
+function SortableFieldConfigCard(props: Omit<FieldConfigCardProps, 'dragHandleProps'>) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: props.field.originalName });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 10 : undefined,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style}>
+      <FieldConfigCard {...props} dragHandleProps={{ ...attributes, ...listeners }} />
+    </div>
+  );
+}
+
+function FieldConfigCard({
+  field,
+  isExpanded,
+  onToggle,
+  onUpdate,
+  templates,
+  dragHandleProps,
+}: FieldConfigCardProps) {
   const hasMappings = field.mappedFields && field.mappedFields.length > 1;
 
   return (
     <Collapsible open={isExpanded} onOpenChange={onToggle}>
       <Card className="p-0 overflow-hidden">
         <CollapsibleTrigger className="w-full p-3 flex items-center gap-2 hover:bg-muted/50 transition-colors text-left">
-          <GripVertical className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+          <div {...dragHandleProps} className="cursor-grab active:cursor-grabbing" onClick={e => e.stopPropagation()}>
+            <GripVertical className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+          </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium truncate">{field.label}</span>
