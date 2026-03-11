@@ -419,6 +419,9 @@ async function executeNode(
     case 'action-flow':
       return await executeSubFlow(data, context, supabase);
 
+    case 'action-document':
+      return await executeDocumentAction(data, context, supabase, flow);
+
     case 'action-transfer':
       return await executeTransfer(data, context, supabase);
 
@@ -579,6 +582,206 @@ async function executeSubFlow(
   } catch (error) {
     console.error(`[FLOW EXECUTE] Sub-flow trigger error:`, error);
     return { success: false, error: `Sub-flow trigger failed: ${error}` };
+  }
+}
+
+// Execute document generation action
+async function executeDocumentAction(
+  data: Record<string, unknown>,
+  context: ExecutionContext,
+  supabase: SupabaseClientType,
+  flow?: any
+): Promise<NodeResult> {
+  const documentMode = String(data.documentMode || 'ai_agent');
+  const documentSource = String(data.documentSource || 'template');
+  const templateId = String(data.templateId || '');
+  const templateName = String(data.templateName || '');
+  const packId = String(data.packId || '');
+  const packName = String(data.packName || '');
+
+  console.log(`[FLOW EXECUTE] action-document: mode=${documentMode}, source=${documentSource}, templateId=${templateId}, packId=${packId}`);
+
+  if (documentSource === 'template' && !templateId) {
+    console.log('[FLOW EXECUTE] action-document: no templateId configured');
+    return { success: true, metadata: { skipped: 'no_template_id' } };
+  }
+  if (documentSource === 'pack' && !packId) {
+    console.log('[FLOW EXECUTE] action-document: no packId configured');
+    return { success: true, metadata: { skipped: 'no_pack_id' } };
+  }
+
+  try {
+    if (documentMode === 'public_link') {
+      // === PUBLIC LINK MODE ===
+      // Build the public form URL and send it via WhatsApp
+      const appUrl = 'https://wizzyai.lovable.app';
+      let formUrl = '';
+
+      if (documentSource === 'pack') {
+        // Get pack's public_token
+        const { data: pack } = await supabase
+          .from('document_packs')
+          .select('public_token')
+          .eq('id', packId)
+          .single();
+
+        if (!pack?.public_token) {
+          console.error('[FLOW EXECUTE] Pack has no public_token');
+          return { success: false, error: 'Pack não possui token público configurado' };
+        }
+        formUrl = `${appUrl}/pack-form?token=${pack.public_token}`;
+      } else {
+        formUrl = `${appUrl}/form?id=${templateId}`;
+      }
+
+      // Build message with link
+      const publicLinkMessage = String(data.publicLinkMessage || '');
+      let message = '';
+      if (publicLinkMessage) {
+        message = publicLinkMessage.replace(/\{\{link\}\}/g, formUrl);
+      } else {
+        const docName = documentSource === 'pack' ? packName : templateName;
+        message = `📋 Por favor, preencha o formulário para o documento "${docName}":\n\n${formUrl}`;
+      }
+
+      // Replace flow variables in message
+      message = replaceVariables(message, context.variables);
+
+      // Send via WhatsApp
+      await sendPresence('typing', context);
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      await sendTextMessage(message, context, supabase);
+
+      console.log(`[FLOW EXECUTE] action-document: public link sent: ${formUrl}`);
+      return { success: true, metadata: { mode: 'public_link', formUrl, documentSource } };
+
+    } else {
+      // === AI AGENT MODE ===
+      // Similar to ai-handoff: set agent, store document context, wait for input
+      const agentId = String(data.documentAgentId || '');
+      const additionalInstructions = String(data.additionalInstructions || '');
+      const requireConfirmation = data.requireConfirmation !== false;
+      const sendPdfInChat = data.sendPdfInChat !== false;
+
+      // Set agent on conversation
+      const updateData: Record<string, unknown> = { service_mode: 'ia' };
+      if (agentId) updateData.ai_agent_id = agentId;
+      await supabase.from('conversations').update(updateData).eq('id', context.conversationId);
+
+      // Get template/pack details for the AI context
+      let templateContent = '';
+      let templateFields: any[] = [];
+      let docNames: string[] = [];
+
+      if (documentSource === 'pack') {
+        const { data: pack } = await supabase
+          .from('document_packs')
+          .select('*, field_config')
+          .eq('id', packId)
+          .single();
+        if (pack) {
+          docNames = [pack.name];
+          templateFields = pack.field_config ? (Array.isArray(pack.field_config) ? pack.field_config : []) : [];
+          // Get all templates in the pack for field info
+          if (pack.template_ids?.length) {
+            const { data: templates } = await supabase
+              .from('document_templates')
+              .select('name, fields')
+              .in('id', pack.template_ids);
+            if (templates) {
+              docNames = templates.map((t: any) => t.name);
+              if (templateFields.length === 0) {
+                // Merge fields from all templates
+                const fieldSet = new Set<string>();
+                templates.forEach((t: any) => {
+                  const f = t.fields || [];
+                  if (Array.isArray(f)) f.forEach((field: any) => {
+                    const key = typeof field === 'string' ? field : field.name || field.key;
+                    if (key) fieldSet.add(key);
+                  });
+                });
+                templateFields = Array.from(fieldSet).map(name => ({ name, label: name }));
+              }
+            }
+          }
+        }
+      } else {
+        const { data: template } = await supabase
+          .from('document_templates')
+          .select('name, content, fields')
+          .eq('id', templateId)
+          .single();
+        if (template) {
+          docNames = [template.name];
+          templateContent = template.content || '';
+          templateFields = template.fields ? (Array.isArray(template.fields) ? template.fields : []) : [];
+        }
+      }
+
+      // Build AI context with document collection instructions
+      const fieldNames = templateFields.map((f: any) => typeof f === 'string' ? f : f.label || f.name || f.key).filter(Boolean);
+      const promptParts: string[] = [];
+
+      if (flow?.master_prompt?.trim()) {
+        promptParts.push(flow.master_prompt);
+      }
+
+      promptParts.push(`---\nTAREFA: COLETA DE DADOS PARA DOCUMENTO`);
+      promptParts.push(`Você precisa coletar os seguintes dados do contato para gerar o(s) documento(s): ${docNames.join(', ')}`);
+      
+      if (fieldNames.length > 0) {
+        promptParts.push(`\nCampos necessários:\n${fieldNames.map((f: string) => `- ${f}`).join('\n')}`);
+      }
+
+      promptParts.push(`\nInstruções:\n- Pergunte os dados que faltam de forma natural e conversacional\n- Pré-preencha dados que já conhece do contato (nome, telefone, etc.)\n- Valide os dados fornecidos (CPF, datas, etc.)`);
+
+      if (requireConfirmation) {
+        promptParts.push(`- Antes de gerar o documento, apresente um resumo dos dados e peça confirmação`);
+      }
+
+      promptParts.push(`- Quando todos os campos estiverem preenchidos${requireConfirmation ? ' e confirmados' : ''}, use finalizar_interacao(dados_coletados) passando um JSON com os dados`);
+
+      if (additionalInstructions) {
+        promptParts.push(`\nINSTRUÇÕES ADICIONAIS:\n${additionalInstructions}`);
+      }
+
+      // Store document context in metadata
+      const { data: convData } = await supabase
+        .from('conversations').select('metadata').eq('id', context.conversationId).single();
+      
+      const metadata = {
+        ...(convData?.metadata || {}),
+        ai_handoff_context: {
+          additionalContext: promptParts.join('\n\n'),
+          agentId: agentId || undefined,
+          documentAction: {
+            source: documentSource,
+            templateId: documentSource === 'template' ? templateId : undefined,
+            packId: documentSource === 'pack' ? packId : undefined,
+            sendPdfInChat,
+            signingMethod: String(data.signingMethod || 'manual'),
+            sendSignatureLink: data.sendSignatureLink !== false,
+            sendInternalNote: data.sendInternalNote !== false,
+            internalNoteTemplate: String(data.internalNoteTemplate || ''),
+            movePipelineAfter: !!data.movePipelineAfter,
+            docPipelineId: String(data.docPipelineId || ''),
+            docPipelineColumnId: String(data.docPipelineColumnId || ''),
+          },
+        },
+      };
+
+      await supabase.from('conversations').update({ metadata }).eq('id', context.conversationId);
+
+      console.log(`[FLOW EXECUTE] action-document AI mode: agent=${agentId || 'default'}, fields=${fieldNames.length}, waiting for input`);
+      return { 
+        success: true, 
+        waitForInput: true,
+        metadata: { mode: 'ai_agent', agentId, documentSource, fieldsCount: fieldNames.length },
+      };
+    }
+  } catch (error) {
+    console.error('[FLOW EXECUTE] action-document error:', error);
+    return { success: false, error: String(error) };
   }
 }
 
