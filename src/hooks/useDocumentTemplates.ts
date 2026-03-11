@@ -103,6 +103,28 @@ export function useDeleteDocumentTemplate() {
 
   return useMutation({
     mutationFn: async (id: string) => {
+      // First get generated documents linked to this template
+      const { data: genDocs } = await (supabase as any)
+        .from('generated_documents')
+        .select('id')
+        .eq('template_id', id);
+
+      // Delete signatures for each generated document
+      if (genDocs && genDocs.length > 0) {
+        const genDocIds = genDocs.map((d: any) => d.id);
+        await (supabase as any)
+          .from('document_signatures')
+          .delete()
+          .in('generated_document_id', genDocIds);
+      }
+
+      // Delete generated documents linked to this template
+      await (supabase as any)
+        .from('generated_documents')
+        .delete()
+        .eq('template_id', id);
+
+      // Now delete the template
       const { error } = await (supabase as any)
         .from('document_templates')
         .delete()
