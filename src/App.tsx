@@ -38,6 +38,7 @@ import NotFound from "./pages/NotFound";
 import CampaignsPage from "./pages/CampaignsPage";
 import CalendarPage from "./pages/CalendarPage";
 import AdminPage from "./pages/AdminPage";
+import AdminLoginPage from "./pages/AdminLoginPage";
 import { AdminProtectedRoute } from "@/components/admin/AdminProtectedRoute";
 
 const queryClient = new QueryClient();
