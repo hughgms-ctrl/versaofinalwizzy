@@ -224,7 +224,7 @@ export function GeneratedDocumentsList() {
                 {!isCollapsed && (
                   <div className="border-t px-4 pb-3 pt-2 space-y-2">
                     {docs.map(doc => (
-                      <DocCard key={doc.id} doc={doc} onDelete={handleDelete} />
+                      <DocCard key={doc.id} doc={doc} onDelete={handleDelete} onRegenerate={(d) => regeneratePdf.mutate(d)} isRegenerating={regeneratePdf.isPending} />
                     ))}
                   </div>
                 )}
