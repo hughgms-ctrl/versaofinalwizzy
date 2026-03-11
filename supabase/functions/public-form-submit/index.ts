@@ -9,7 +9,7 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { template_id, filled_data, document_name, logo_url } = await req.json();
+    const { template_id, filled_data, document_name, logo_url, auto_send_whatsapp, signer_name, signer_phone } = await req.json();
 
     if (!template_id || !filled_data) {
       return new Response(JSON.stringify({ error: "template_id and filled_data are required" }), {
@@ -20,11 +20,12 @@ Deno.serve(async (req) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const uazapiBaseUrl = Deno.env.get("UAZAPI_BASE_URL")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const { data: template, error: tErr } = await supabase
       .from("document_templates")
-      .select("content, organization_id, name")
+      .select("content, organization_id, name, auto_send_whatsapp")
       .eq("id", template_id)
       .maybeSingle();
 
@@ -61,9 +62,49 @@ Deno.serve(async (req) => {
       filled_data,
       pdf_url: pdfData.pdf_url,
       status: "generated",
+      submitted_by: signer_name && signer_phone ? {
+        name: signer_name,
+        phone: signer_phone,
+        submitted_at: new Date().toISOString(),
+      } : null,
     });
 
-    return new Response(JSON.stringify({ pdf_url: pdfData.pdf_url }), {
+    let whatsappSent = false;
+    if ((auto_send_whatsapp || template.auto_send_whatsapp) && signer_phone) {
+      let normalizedPhone = String(signer_phone).replace(/\D/g, '');
+      if (!normalizedPhone.startsWith('55')) normalizedPhone = `55${normalizedPhone}`;
+
+      const { data: instance } = await supabase
+        .from("whatsapp_instances")
+        .select("zapi_token")
+        .eq("organization_id", template.organization_id)
+        .eq("status", "connected")
+        .limit(1)
+        .maybeSingle();
+
+      if (instance?.zapi_token) {
+        const baseUrl = uazapiBaseUrl.endsWith('/') ? uazapiBaseUrl.slice(0, -1) : uazapiBaseUrl;
+        const sendResp = await fetch(`${baseUrl}/send/media`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "token": instance.zapi_token,
+          },
+          body: JSON.stringify({
+            number: normalizedPhone,
+            file: pdfData.pdf_url,
+            caption: `📄 *${document_name || template.name}*\n\nSegue seu documento:`,
+            type: "document",
+          }),
+        });
+        whatsappSent = sendResp.ok;
+        if (!sendResp.ok) {
+          console.error("public-form-submit whatsapp error:", await sendResp.text());
+        }
+      }
+    }
+
+    return new Response(JSON.stringify({ pdf_url: pdfData.pdf_url, whatsapp_sent: whatsappSent }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
