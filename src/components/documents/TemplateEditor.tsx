@@ -29,6 +29,7 @@ export function TemplateEditor({ template, onBack }: TemplateEditorProps) {
   const [fields, setFields] = useState<Array<{ name: string; label: string; type: string; required: boolean }>>(
     template?.fields || []
   );
+  const [autoSendWhatsApp, setAutoSendWhatsApp] = useState(template?.auto_send_whatsapp || false);
 
   const [newFieldName, setNewFieldName] = useState('');
 
