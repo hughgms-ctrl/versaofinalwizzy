@@ -33,13 +33,23 @@ serve(async (req) => {
 Sua tarefa é analisar os campos de múltiplos templates de documentos e identificar quais campos são similares/equivalentes entre eles, mesmo que tenham nomes ligeiramente diferentes.
 
 Exemplos de campos similares que devem ser unificados:
-- "nome_responsavel" e "nome_mae" podem ser o MESMO campo se os documentos forem sobre a mesma pessoa
 - "documento_menor" e "documento_do_menor" e "doc_menor" são o mesmo campo
-- "cpf" e "cpf_responsavel" podem ser o mesmo se se referem à mesma pessoa
 - "endereco" e "endereco_completo" são o mesmo campo
 - "data_nascimento" e "dt_nascimento" e "nascimento" são o mesmo campo
 
-IMPORTANTE: Analise o CONTEXTO dos templates para decidir. Se dois templates são sobre a mesma transação/processo, campos com dados da mesma pessoa devem ser unificados.
+REGRAS CRÍTICAS:
+
+1. DEDUPLICAÇÃO INTRA-TEMPLATE: Se um campo aparece mais de uma vez dentro do MESMO template (ex: "cidade" aparece 2x no template X), gere APENAS UMA entrada {fieldName: "cidade", templateId: X} para esse template. Nunca duplique o mesmo campo+template.
+
+2. NÃO UNIFIQUE ENTIDADES DIFERENTES: Campos que se referem a PESSOAS ou ENTIDADES diferentes NÃO devem ser unificados, mesmo que o tipo de dado seja o mesmo. Exemplos:
+   - "cpf_segurado_preso" ≠ "cpf_responsavel" (pessoas diferentes)
+   - "nome_do_menor" ≠ "nome_da_mae" (pessoas diferentes)
+   - "documento_responsavel" ≠ "documento_menor" (pessoas diferentes)
+   Só unifique quando o dado se refere EXATAMENTE à mesma pessoa/entidade.
+
+3. NENHUM CAMPO PODE SER DESCARTADO: Todo campo original de todo template DEVE aparecer em pelo menos um grupo no resultado. Se um campo é único e não tem similar, ele deve aparecer sozinho.
+
+4. O badge "X docs" deve refletir em quantos TEMPLATES DISTINTOS o campo aparece, não quantas vezes ele aparece no total.
 
 Retorne APENAS a chamada de função, sem texto adicional.`;
 

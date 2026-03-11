@@ -210,8 +210,14 @@ export function PackEditor({ pack, onBack }: PackEditorProps) {
     }
   };
 
-  const sharedFields = mergedFields.filter(f => f.count > 1 || (f.mappedFields && f.mappedFields.length > 1));
-  const uniqueFields = mergedFields.filter(f => f.count <= 1 && (!f.mappedFields || f.mappedFields.length <= 1));
+  const sharedFields = mergedFields.filter(f => {
+    const uniqueTemplates = new Set(f.mappedFields?.map(mf => mf.templateId) || []).size;
+    return uniqueTemplates > 1 || (!f.mappedFields?.length && f.count > 1);
+  });
+  const uniqueFields = mergedFields.filter(f => {
+    const uniqueTemplates = new Set(f.mappedFields?.map(mf => mf.templateId) || []).size;
+    return uniqueTemplates <= 1 && (f.mappedFields?.length ? true : f.count <= 1);
+  });
 
   return (
     <div className="space-y-4">
@@ -368,12 +374,17 @@ function FieldConfigCard({
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium truncate">{field.label}</span>
-              {(field.count > 1 || hasMappings) && (
-                <Badge variant="default" className="text-[10px] px-1.5 py-0">
-                  <Link2 className="h-2.5 w-2.5 mr-0.5" />
-                  {hasMappings ? field.mappedFields!.length : field.count} docs
-                </Badge>
-              )}
+              {(() => {
+                const uniqueDocCount = hasMappings
+                  ? new Set(field.mappedFields!.map(mf => mf.templateId)).size
+                  : field.count;
+                return uniqueDocCount > 1 ? (
+                  <Badge variant="default" className="text-[10px] px-1.5 py-0">
+                    <Link2 className="h-2.5 w-2.5 mr-0.5" />
+                    {uniqueDocCount} docs
+                  </Badge>
+                ) : null;
+              })()}
               {field.required && (
                 <span className="text-destructive text-xs">*</span>
               )}
