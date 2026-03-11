@@ -1383,8 +1383,9 @@ async function invokeDocumentAgentAI(
 
   const docCtx = state.document_context!;
 
-  // Find the agent connected before this document node (use conversation's current agent)
-  const activeAgentId = ctx.conversation.ai_agent_id;
+  // Use the agent configured on the document node, or fall back to conversation's active agent
+  const docAgentId = state.active_agent_id;
+  const activeAgentId = docAgentId || ctx.conversation.ai_agent_id;
   const agent = ctx.agents.find((a: any) => a.id === activeAgentId);
 
   // Build system prompt for document collection
