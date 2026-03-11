@@ -1913,6 +1913,8 @@ export type Database = {
           signing_method: string | null
           signing_status: string | null
           status: string
+          submission_group: string | null
+          submitted_by: Json | null
           template_id: string | null
           updated_at: string
         }
@@ -1930,6 +1932,8 @@ export type Database = {
           signing_method?: string | null
           signing_status?: string | null
           status?: string
+          submission_group?: string | null
+          submitted_by?: Json | null
           template_id?: string | null
           updated_at?: string
         }
@@ -1947,6 +1951,8 @@ export type Database = {
           signing_method?: string | null
           signing_status?: string | null
           status?: string
+          submission_group?: string | null
+          submitted_by?: Json | null
           template_id?: string | null
           updated_at?: string
         }
