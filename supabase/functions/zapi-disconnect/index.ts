@@ -72,7 +72,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    console.log(`[DEBUG] Disconnecting instance ${instance.id} (Token: ${instance.zapi_token?.substring(0, 8)}...)`);
+    console.log(`[DEBUG] Disconnecting instance ${instance.id}`);;
 
     // UAZAPI Disconnect
     if (instance.zapi_token) {

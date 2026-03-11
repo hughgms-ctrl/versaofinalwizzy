@@ -65,7 +65,7 @@ Deno.serve(async (req) => {
         headers: { 'token': instanceToken.trim() },
       });
       const statusText = await statusResponse.text();
-      console.log(`UAZAPI token validation: HTTP ${statusResponse.status}`, statusText);
+      console.log(`UAZAPI token validation: HTTP ${statusResponse.status}`);
       // 401 = truly invalid token; anything else (200, 400, etc.) means token is recognized
       if (statusResponse.status === 401) {
         return new Response(JSON.stringify({
