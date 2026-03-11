@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useCreateDocumentPack, useUpdateDocumentPack, DocumentPack } from '@/hooks/useDocumentPacks';
