@@ -9,6 +9,8 @@ export interface DocumentPack {
   name: string;
   description: string | null;
   template_ids: string[];
+  field_config: any[];
+  public_token: string | null;
   workspace_id: string | null;
   created_by: string | null;
   created_at: string;
@@ -39,7 +41,7 @@ export function useCreateDocumentPack() {
   const { toast } = useToast();
 
   return useMutation({
-    mutationFn: async (pack: { name: string; description?: string; template_ids: string[] }) => {
+    mutationFn: async (pack: { name: string; description?: string; template_ids: string[]; field_config?: any[] }) => {
       const { data, error } = await (supabase as any)
         .from('document_packs')
         .insert({
@@ -105,6 +107,32 @@ export function useDeleteDocumentPack() {
     },
     onError: (error: any) => {
       toast({ title: 'Erro ao excluir pack', description: error.message, variant: 'destructive' });
+    },
+  });
+}
+
+export function useGeneratePackToken() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  return useMutation({
+    mutationFn: async (packId: string) => {
+      // Generate a random token
+      const token = crypto.randomUUID().replace(/-/g, '').slice(0, 24);
+      const { data, error } = await (supabase as any)
+        .from('document_packs')
+        .update({ public_token: token })
+        .eq('id', packId)
+        .select()
+        .single();
+      if (error) throw error;
+      return data as DocumentPack;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['document-packs'] });
+    },
+    onError: (error: any) => {
+      toast({ title: 'Erro ao gerar link', description: error.message, variant: 'destructive' });
     },
   });
 }
