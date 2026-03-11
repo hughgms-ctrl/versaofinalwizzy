@@ -149,6 +149,29 @@ export function Sidebar() {
             );
           })}
 
+          {/* Admin link - only for platform_admin */}
+          {isPlatformAdmin && (
+            <>
+              <Separator className="my-2 bg-sidebar-border" />
+              <Link
+                to="/admin"
+                className={cn(
+                  "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                  location.pathname === '/admin'
+                    ? "bg-sidebar-accent text-sidebar-primary shadow-sm"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
+                  collapsed && "justify-center px-2"
+                )}
+              >
+                <ShieldCheck className={cn(
+                  "h-5 w-5 flex-shrink-0 transition-colors",
+                  location.pathname === '/admin' ? "text-sidebar-primary" : "text-sidebar-foreground/60 group-hover:text-sidebar-foreground"
+                )} />
+                {!collapsed && <span>Admin</span>}
+              </Link>
+            </>
+          )}
+
           {/* Logout below settings */}
           <Separator className="my-2 bg-sidebar-border" />
           <button
