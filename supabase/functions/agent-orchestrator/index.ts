@@ -914,8 +914,9 @@ async function walkFlowForward(
 
       case 'orch-document':
       case 'action-document': {
-        // Document/Contract node: load template, set up collection context, invoke document agent
         const templateId = nextNode.data?.templateId;
+        const documentMode = nextNode.data?.documentMode || 'ai_agent';
+
         if (!templateId) {
           console.log('Document node has no template configured');
           state.completed_nodes.push(nextNode.id);
@@ -925,7 +926,7 @@ async function walkFlowForward(
 
         // Load template
         const { data: template } = await supabase.from('document_templates')
-          .select('id, name, content, fields').eq('id', templateId).single();
+          .select('id, name, content, fields, auto_send_whatsapp').eq('id', templateId).single();
 
         if (!template) {
           console.log('Template not found:', templateId);
@@ -934,6 +935,37 @@ async function walkFlowForward(
           continue;
         }
 
+        // === PUBLIC LINK MODE ===
+        if (documentMode === 'public_link') {
+          console.log('Document node: public_link mode');
+          // Build the public form URL
+          const appUrl = 'https://wizzyai.lovable.app';
+          const publicLink = `${appUrl}/public-form/${templateId}`;
+
+          let linkMessage = (nextNode.data?.publicLinkMessage as string) || '';
+          if (!linkMessage) {
+            linkMessage = `📋 Por favor, preencha seus dados neste link para gerar o documento:\n\n${publicLink}`;
+          } else {
+            linkMessage = linkMessage.replace(/\{\{link\}\}/g, publicLink);
+          }
+
+          // Send the link via Z-API
+          await sendReplyViaZAPI(supabase, ctx.conversation, linkMessage);
+          replyText = linkMessage;
+
+          toolsExecuted.push({
+            name: 'send_public_link',
+            arguments: { template_id: templateId, link: publicLink },
+            result: { success: true }
+          });
+
+          // Mark as completed and continue flow
+          state.completed_nodes.push(nextNode.id);
+          state.current_node_id = nextNode.id;
+          continue;
+        }
+
+        // === AI AGENT MODE (default) ===
         // Initialize document collection context
         const fields = Array.isArray(template.fields) ? template.fields : [];
         state.document_context = {
@@ -973,10 +1005,20 @@ async function walkFlowForward(
           }
         }
 
+        // If a specific agent is configured for this node, switch to it
+        const docAgentId = nextNode.data?.documentAgentId as string;
+        if (docAgentId) {
+          const docAgent = ctx.agents.find((a: any) => a.id === docAgentId);
+          if (docAgent) {
+            state.active_agent_id = docAgentId;
+            console.log('Document node using specific agent:', docAgent.name);
+          }
+        }
+
         console.log('Document collection started:', template.name, 'Fields:', state.document_context.fields.length);
         toolsExecuted.push({
           name: 'start_document_collection',
-          arguments: { template_id: templateId, template_name: template.name },
+          arguments: { template_id: templateId, template_name: template.name, mode: 'ai_agent' },
           result: { success: true, fields_count: state.document_context.fields.length }
         });
 
