@@ -44,6 +44,8 @@ export default function PublicFormPage() {
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
+  const [signerName, setSignerName] = useState('');
+  const [signerPhone, setSignerPhone] = useState('');
 
   useEffect(() => {
     if (!templateId) {
