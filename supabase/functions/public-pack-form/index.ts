@@ -13,6 +13,7 @@ Deno.serve(async (req) => {
     const { action, token } = body;
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const uazapiBaseUrl = Deno.env.get("UAZAPI_BASE_URL")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     if (!token) {
@@ -57,9 +58,56 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Helper: get active WhatsApp instance and token for org
+    async function getWhatsAppInstance(orgId: string) {
+      const { data: instance } = await supabase
+        .from("whatsapp_instances")
+        .select("id, instance_name, zapi_token")
+        .eq("organization_id", orgId)
+        .eq("status", "connected")
+        .limit(1)
+        .maybeSingle();
+      return instance;
+    }
+
+    // Helper: send document via UAZAPI directly
+    async function sendDocumentViaWhatsApp(
+      phone: string,
+      docName: string,
+      pdfUrl: string,
+      instanceToken: string
+    ): Promise<boolean> {
+      try {
+        const baseUrl = uazapiBaseUrl.endsWith('/') ? uazapiBaseUrl.slice(0, -1) : uazapiBaseUrl;
+        const response = await fetch(`${baseUrl}/send/media`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "token": instanceToken,
+          },
+          body: JSON.stringify({
+            number: phone,
+            file: pdfUrl,
+            caption: `📄 *${docName}*\n\nSegue seu documento:`,
+            type: "document",
+          }),
+        });
+
+        if (!response.ok) {
+          const errText = await response.text();
+          console.error("UAZAPI send error:", errText);
+          return false;
+        }
+        return true;
+      } catch (e) {
+        console.error("UAZAPI send error:", e);
+        return false;
+      }
+    }
+
     // SUBMIT action: generate documents
     if (action === "submit") {
-      const { filled_data, signer_name, signer_phone } = body;
+      const { filled_data, signer_name, signer_phone, auto_send_whatsapp } = body;
       if (!filled_data) {
         return new Response(JSON.stringify({ error: "Dados do formulário são obrigatórios" }), {
           status: 400,
@@ -236,10 +284,10 @@ Deno.serve(async (req) => {
             .from("messages")
             .insert({
               conversation_id: conversationId,
-              organization_id: pack.organization_id,
               content: internalMessage,
-              sender_type: "system",
-              is_internal: true,
+              direction: "outbound",
+              is_from_bot: true,
+              type: "text",
               metadata: {
                 type: "pack_form_submitted",
                 pack_id: pack.id,
@@ -248,6 +296,7 @@ Deno.serve(async (req) => {
                 signer_phone: normalizedPhone,
                 document_ids: results.map(r => r.id),
                 submission_group: submissionGroup,
+                is_internal_note: true,
               },
             });
 
@@ -261,18 +310,38 @@ Deno.serve(async (req) => {
         }
       }
 
+      // Auto-send via WhatsApp if enabled
+      let whatsappSentCount = 0;
+      if (auto_send_whatsapp) {
+        const instance = await getWhatsAppInstance(pack.organization_id);
+        if (instance?.zapi_token) {
+          for (const doc of results) {
+            if (doc.pdf_url) {
+              const sent = await sendDocumentViaWhatsApp(
+                normalizedPhone,
+                doc.name,
+                doc.pdf_url,
+                instance.zapi_token
+              );
+              if (sent) whatsappSentCount++;
+            }
+          }
+        }
+      }
+
       return new Response(JSON.stringify({
         success: true,
         documents_created: results.length,
         documents: results,
         organization_id: pack.organization_id,
         submission_group: submissionGroup,
+        whatsapp_sent: whatsappSentCount,
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // SEND_WHATSAPP action: send document PDFs via WhatsApp
+    // SEND_WHATSAPP action: send document PDFs via WhatsApp using UAZAPI directly
     if (action === "send_whatsapp") {
       const { phone, document_ids } = body;
 
@@ -303,53 +372,27 @@ Deno.serve(async (req) => {
         });
       }
 
-      // Get active WhatsApp instance for this organization
-      const { data: instance } = await supabase
-        .from("whatsapp_instances")
-        .select("id, instance_name, api_token")
-        .eq("organization_id", pack.organization_id)
-        .eq("is_active", true)
-        .limit(1)
-        .maybeSingle();
+      // Get active WhatsApp instance
+      const instance = await getWhatsAppInstance(pack.organization_id);
 
-      if (!instance) {
-        return new Response(JSON.stringify({ error: "Nenhuma instância WhatsApp ativa" }), {
+      if (!instance?.zapi_token) {
+        return new Response(JSON.stringify({ error: "Nenhuma instância WhatsApp conectada" }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      // Send each document via WhatsApp using zapi-send-message
+      // Send each document via UAZAPI directly
       let sentCount = 0;
       for (const doc of docs) {
         if (!doc.pdf_url) continue;
-
-        try {
-          const sendResp = await fetch(`${supabaseUrl}/functions/v1/zapi-send-message`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${supabaseKey}`,
-            },
-            body: JSON.stringify({
-              phone: normalizedPhone,
-              content: `📄 *${doc.name}*\n\nSegue seu documento para assinatura:`,
-              type: "document",
-              mediaUrl: doc.pdf_url,
-              organizationId: pack.organization_id,
-              instanceId: instance.id,
-            }),
-          });
-
-          if (sendResp.ok) {
-            sentCount++;
-          } else {
-            const errText = await sendResp.text();
-            console.error("WhatsApp send error:", errText);
-          }
-        } catch (e) {
-          console.error("WhatsApp send error:", e);
-        }
+        const sent = await sendDocumentViaWhatsApp(
+          normalizedPhone,
+          doc.name,
+          doc.pdf_url,
+          instance.zapi_token
+        );
+        if (sent) sentCount++;
       }
 
       return new Response(JSON.stringify({
