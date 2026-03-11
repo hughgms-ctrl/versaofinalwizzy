@@ -1847,6 +1847,74 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
               </div>
             </div>
 
+            {/* Notificação interna */}
+            <div className="border-t pt-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">Notificar equipe (nota interna)</Label>
+                <Switch
+                  checked={(localData.sendInternalNote as boolean) ?? true}
+                  onCheckedChange={(val) => handleChange('sendInternalNote', val)}
+                />
+              </div>
+              {(localData.sendInternalNote as boolean) !== false && (
+                <div className="space-y-2">
+                  <Label className="text-xs">Mensagem da notificação</Label>
+                  <Textarea
+                    value={(localData.internalNoteTemplate as string) || ''}
+                    onChange={(e) => handleChange('internalNoteTemplate', e.target.value)}
+                    placeholder="📋 Documento gerado: {{template_name}} para {{contact_name}}"
+                    className="text-xs min-h-[50px]"
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    Variáveis: {'{{template_name}}'}, {'{{contact_name}}'}, {'{{contact_phone}}'}, {'{{document_name}}'}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Mover Pipeline após geração */}
+            <div className="border-t pt-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">Mover Pipeline após gerar</Label>
+                <Switch
+                  checked={!!(localData.movePipelineAfter as boolean)}
+                  onCheckedChange={(val) => handleChange('movePipelineAfter', val)}
+                />
+              </div>
+              {!!(localData.movePipelineAfter as boolean) && (
+                <div className="space-y-2">
+                  <Label className="text-xs">Pipeline</Label>
+                  <Select
+                    value={(localData.docPipelineId as string) || ''}
+                    onValueChange={(val) => {
+                      const p = pipelines.find(pl => pl.id === val);
+                      handleChange('docPipelineId', val);
+                      handleChange('docPipelineName', p?.name || '');
+                      handleChange('docPipelineColumnId', '');
+                    }}
+                  >
+                    <SelectTrigger className="text-xs"><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                    <SelectContent>
+                      {pipelines.map(p => (
+                        <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  {(localData.docPipelineId as string) && (
+                    <>
+                      <Label className="text-xs">Coluna de destino</Label>
+                      <OutcomeColumnSelect
+                        pipelineId={localData.docPipelineId as string}
+                        value={(localData.docPipelineColumnId as string) || ''}
+                        onChange={(val) => handleChange('docPipelineColumnId', val)}
+                      />
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+
             <div className="space-y-2">
               <Label className="text-xs">Instruções Adicionais</Label>
               <Textarea
