@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
-import { ArrowLeft, Save, Link2, GripVertical, Pencil, Info, Sparkles, Loader2 } from 'lucide-react';
+import { ArrowLeft, Save, Link2, GripVertical, Pencil, Info, Sparkles, Loader2, MessageCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
