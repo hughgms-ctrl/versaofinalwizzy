@@ -76,11 +76,11 @@ function DocCard({ doc, onDelete, onRegenerate, isRegenerating }: { doc: any; on
             </Button>
           )}
           {doc.pdf_url && (
-            <Button variant="ghost" size="icon" asChild>
-              <a href={doc.pdf_url} target="_blank" rel="noopener noreferrer">
+            <a href={doc.pdf_url} target="_blank" rel="noopener noreferrer" download>
+              <Button variant="ghost" size="icon">
                 <Download className="h-4 w-4" />
-              </a>
-            </Button>
+              </Button>
+            </a>
           )}
           <AlertDialog>
             <AlertDialogTrigger asChild>

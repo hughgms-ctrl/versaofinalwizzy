@@ -122,6 +122,7 @@ export default function PublicPackFormPage() {
           filled_data: formData,
           signer_name: signerName.trim(),
           signer_phone: signerPhone.replace(/\D/g, ''),
+          auto_send_whatsapp: packData.auto_send_whatsapp || false,
         },
       });
       if (fnError || data?.error) throw new Error(data?.error || 'Erro ao enviar');
