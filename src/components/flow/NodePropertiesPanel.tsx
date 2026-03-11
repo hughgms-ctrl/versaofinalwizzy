@@ -1601,7 +1601,7 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
                         )}
                         {foldersToRender.map((folder) => {
                           const isOpen = expandedFlowFolders.has(folder.id);
-                          const folderFlows = flows.filter(f => f.folder_id === folder.id);
+                          const folderFlows = flows.filter(f => f.folder_id === folder.id && f.id !== flowId);
                           return (
                             <SelectGroup key={folder.id}>
                               <div
