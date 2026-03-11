@@ -49,7 +49,7 @@ interface PromptForm {
 }
 
 const emptyPrompt: PromptForm = {
-  name: '', category: 'backend', content: '', criticality: 'medium',
+  name: '', category: 'Backend', content: '', criticality: 'medium',
   status: 'pending', related_files: '', related_tables: '', related_functions: '', change_reason: '',
 };
 
