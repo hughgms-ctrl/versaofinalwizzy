@@ -251,7 +251,7 @@ export function GeneratedDocumentsList() {
 
           {/* Standalone documents */}
           {standalone.map(doc => (
-            <DocCard key={doc.id} doc={doc} onDelete={handleDelete} onRegenerate={(d) => regeneratePdf.mutate(d)} isRegenerating={regeneratePdf.isPending} />
+            <DocCard key={doc.id} doc={doc} onDelete={handleDelete} onRegenerate={(d) => regeneratePdf.mutate(d)} onDownload={handleDownload} isRegenerating={regeneratePdf.isPending} />
           ))}
         </div>
       )}
