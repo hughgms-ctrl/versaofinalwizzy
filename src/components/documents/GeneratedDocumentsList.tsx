@@ -121,6 +121,25 @@ export function GeneratedDocumentsList() {
     });
   };
 
+  const handleDownload = async (doc: any) => {
+    if (!doc.pdf_url) return;
+    try {
+      const response = await fetch(doc.pdf_url);
+      if (!response.ok) throw new Error('Falha ao baixar arquivo');
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${doc.name || 'documento'}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      window.open(doc.pdf_url, '_blank', 'noopener,noreferrer');
+    }
+  };
+
   const toggleGroup = (group: string) => {
     setCollapsedGroups(prev => {
       const next = new Set(prev);
