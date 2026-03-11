@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react';
-import { Package, Plus, Edit, Trash2, MoreHorizontal, Search, FileText, ClipboardList } from 'lucide-react';
+import { useState } from 'react';
+import { Package, Plus, Edit, Trash2, MoreHorizontal, Search, FileText, ClipboardList, Link2, Copy, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -8,23 +8,27 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useDocumentPacks, useDeleteDocumentPack, DocumentPack } from '@/hooks/useDocumentPacks';
+import { useDocumentPacks, useDeleteDocumentPack, useGeneratePackToken, DocumentPack } from '@/hooks/useDocumentPacks';
 import { useDocumentTemplates } from '@/hooks/useDocumentTemplates';
 import { PackEditor } from './PackEditor';
 import { PackFillForm } from './PackFillForm';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { toast } from 'sonner';
 
 export function PacksList() {
   const { data: packs, isLoading } = useDocumentPacks();
   const { data: templates } = useDocumentTemplates();
   const deletePack = useDeleteDocumentPack();
+  const generateToken = useGeneratePackToken();
   const [search, setSearch] = useState('');
   const [editingPack, setEditingPack] = useState<DocumentPack | null>(null);
   const [fillingPack, setFillingPack] = useState<DocumentPack | null>(null);
   const [showNew, setShowNew] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const filtered = packs?.filter(p =>
     p.name.toLowerCase().includes(search.toLowerCase())
@@ -32,6 +36,25 @@ export function PacksList() {
 
   const getTemplateNames = (ids: string[]) => {
     return ids.map(id => templates?.find(t => t.id === id)?.name || 'Template removido');
+  };
+
+  const handleCopyLink = async (pack: DocumentPack) => {
+    let token = pack.public_token;
+
+    if (!token) {
+      try {
+        const result = await generateToken.mutateAsync(pack.id);
+        token = result.public_token;
+      } catch {
+        return;
+      }
+    }
+
+    const url = `${window.location.origin}/pack-form?token=${token}`;
+    await navigator.clipboard.writeText(url);
+    setCopiedId(pack.id);
+    toast.success('Link copiado!');
+    setTimeout(() => setCopiedId(null), 2000);
   };
 
   if (fillingPack) {
@@ -108,6 +131,15 @@ export function PacksList() {
                     <DropdownMenuItem onClick={() => setFillingPack(pack)}>
                       <ClipboardList className="h-4 w-4 mr-2" /> Preencher
                     </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleCopyLink(pack)}>
+                      {copiedId === pack.id ? (
+                        <Check className="h-4 w-4 mr-2 text-primary" />
+                      ) : (
+                        <Link2 className="h-4 w-4 mr-2" />
+                      )}
+                      Copiar link público
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={() => setEditingPack(pack)}>
                       <Edit className="h-4 w-4 mr-2" /> Editar
                     </DropdownMenuItem>
@@ -125,9 +157,17 @@ export function PacksList() {
                 ))}
               </div>
               <div className="mt-3 flex items-center justify-between">
-                <p className="text-xs text-muted-foreground">
-                  {format(new Date(pack.created_at), "dd MMM yyyy", { locale: ptBR })}
-                </p>
+                <div className="flex items-center gap-2">
+                  <p className="text-xs text-muted-foreground">
+                    {format(new Date(pack.created_at), "dd MMM yyyy", { locale: ptBR })}
+                  </p>
+                  {pack.public_token && (
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-primary border-primary/30">
+                      <Link2 className="h-2.5 w-2.5 mr-0.5" />
+                      Link ativo
+                    </Badge>
+                  )}
+                </div>
                 <Button size="sm" variant="outline" onClick={() => setFillingPack(pack)}>
                   <ClipboardList className="h-3.5 w-3.5 mr-1.5" />
                   Preencher

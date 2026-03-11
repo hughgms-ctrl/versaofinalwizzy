@@ -30,6 +30,7 @@ import WidgetEditorPage from "./pages/WidgetEditorPage";
 import DocumentsPage from "./pages/DocumentsPage";
 import IntegrationsPage from "./pages/IntegrationsPage";
 import PublicFormPage from "./pages/PublicFormPage";
+import PublicPackFormPage from "./pages/PublicPackFormPage";
 import SignaturePage from "./pages/SignaturePage";
 import PublicSignaturePage from "./pages/PublicSignaturePage";
 import PublicBookingPage from "./pages/PublicBookingPage";
@@ -71,6 +72,7 @@ const App = () => (
                     <Route path="/documents" element={<ProtectedRoute><DocumentsPage /></ProtectedRoute>} />
                     <Route path="/integrations" element={<ProtectedRoute><IntegrationsPage /></ProtectedRoute>} />
                     <Route path="/form" element={<PublicFormPage />} />
+                    <Route path="/pack-form" element={<PublicPackFormPage />} />
                     <Route path="/signature/:documentId" element={<SignaturePage />} />
                     <Route path="/sign/:token" element={<PublicSignaturePage />} />
                     <Route path="/agendar/:slug" element={<PublicBookingPage />} />
