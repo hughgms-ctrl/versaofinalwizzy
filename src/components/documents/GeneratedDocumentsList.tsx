@@ -1,4 +1,4 @@
-import { FileText, Download, Search, Trash2, User, FolderOpen, ChevronDown, ChevronRight } from 'lucide-react';
+import { FileText, Download, Search, Trash2, User, FolderOpen, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
