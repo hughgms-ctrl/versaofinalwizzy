@@ -22,6 +22,7 @@ import { useFlows } from '@/hooks/useFlows';
 import { useFlowFolders } from '@/hooks/useFlowFolders';
 import { useDepartments } from '@/hooks/useCrmEntities';
 import { useDocumentTemplates } from '@/hooks/useDocumentTemplates';
+import { useDocumentPacks } from '@/hooks/useDocumentPacks';
 import { usePipelines, usePipelineColumns } from '@/hooks/usePipelines';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
