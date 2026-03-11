@@ -30,6 +30,12 @@ interface DocumentCollectionContext {
   pdf_generated?: boolean;
   pdf_url?: string;
   signature_requested?: boolean;
+  // Pack support
+  is_pack?: boolean;
+  pack_id?: string;
+  pack_name?: string;
+  pack_template_ids?: string[];
+  pack_templates?: { id: string; name: string; content: string }[];
 }
 
 const MAX_TOOL_ROUNDS = 3;
