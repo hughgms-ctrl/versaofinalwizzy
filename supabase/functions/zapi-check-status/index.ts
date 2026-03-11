@@ -238,7 +238,7 @@ async function checkSingleInstance(
             if (matched) {
               const newToken = matched.token || matched.key || matched.instanceToken;
               if (newToken && newToken !== instanceToken) {
-                console.log(`[SELF-HEALING] Found new token: ${newToken.substring(0, 8)}... Updating DB.`);
+                console.log(`[SELF-HEALING] Found new token. Updating DB.`);
                 await supabase.from('whatsapp_instances').update({ zapi_token: newToken }).eq('id', instance.id);
 
                 // Retry the original request with the new token

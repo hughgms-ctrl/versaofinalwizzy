@@ -85,7 +85,7 @@ Deno.serve(async (req) => {
           });
         }
       } catch (e) {
-        console.log('Existing token validation failed, creating new instance:', e);
+        console.log('Existing token validation failed, creating new instance');
       }
     }
 
@@ -164,7 +164,7 @@ Deno.serve(async (req) => {
           if (matched) {
             uazapiToken = matched.token || matched.key || matched.instanceToken;
             uazapiInstanceId = matched.id || matched.name || uazapiInstanceId;
-            console.log(`[SELF-HEALING] Token recovered for ${instanceName}: ${uazapiToken?.substring(0, 8)}...`);
+            console.log(`[SELF-HEALING] Token recovered for ${instanceName}`);
           }
         }
       } catch (e) {
@@ -183,7 +183,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    console.log(`Instance created: id=${uazapiInstanceId}, token=${uazapiToken.substring(0, 8)}...`);
+    console.log(`Instance created: id=${uazapiInstanceId}`);
 
     // Configure webhook
     const webhookUrl = `${supabaseUrl}/functions/v1/zapi-webhook`;

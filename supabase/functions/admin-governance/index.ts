@@ -1,4 +1,34 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { z } from 'https://esm.sh/zod@3.23.8'
+
+// Input schemas
+const updateCheckSchema = z.object({ id: z.string().uuid(), status: z.string(), notes: z.string().optional() })
+const upsertCheckSchema = z.object({
+  id: z.string().uuid().optional(),
+  name: z.string().min(1).max(200),
+  description: z.string().max(1000).optional(),
+  phase: z.enum(['security', 'backend', 'continuity', 'help', 'ux', 'governance']),
+  weight: z.number().int().min(1).max(10).optional(),
+  is_blocker: z.boolean().optional(),
+  status: z.enum(['pending', 'done', 'failed']).optional(),
+  notes: z.string().max(1000).optional(),
+})
+const deleteSchema = z.object({ id: z.string().uuid() })
+const upsertPromptSchema = z.object({
+  id: z.string().uuid().optional(),
+  name: z.string().min(1).max(200),
+  category: z.string().max(100).optional(),
+  criticality: z.string().optional(),
+  status: z.string().optional(),
+  description: z.string().max(1000).optional(),
+  content: z.string().optional(),
+  related_files: z.array(z.string()).optional(),
+  related_tables: z.array(z.string()).optional(),
+  related_functions: z.array(z.string()).optional(),
+  is_generic: z.boolean().optional(),
+  change_reason: z.string().max(500).optional(),
+})
+const revokeCertSchema = z.object({ id: z.string().uuid(), reason: z.string().min(1).max(500) })
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -120,7 +150,8 @@ Deno.serve(async (req) => {
     // ── UPDATE CHECK STATUS ──
     if (action === 'update_check') {
       const body = await req.json()
-      const { id, status, notes } = body
+      const parsed = updateCheckSchema.parse(body)
+      const { id, status, notes } = parsed
 
       const { data, error } = await adminClient
         .from('governance_checks')
@@ -149,7 +180,8 @@ Deno.serve(async (req) => {
     // ── CREATE/UPDATE CHECK ──
     if (action === 'upsert_check') {
       const body = await req.json()
-      const { id, ...fields } = body
+      const parsed = upsertCheckSchema.parse(body)
+      const { id, ...fields } = parsed
 
       let data, error
       if (id) {
@@ -175,15 +207,16 @@ Deno.serve(async (req) => {
     // ── DELETE CHECK ──
     if (action === 'delete_check') {
       const body = await req.json()
-      const { data: existing } = await adminClient.from('governance_checks').select('name').eq('id', body.id).single()
+      const { id } = deleteSchema.parse(body)
+      const { data: existing } = await adminClient.from('governance_checks').select('name').eq('id', id).single()
       
-      const { error } = await adminClient.from('governance_checks').delete().eq('id', body.id)
+      const { error } = await adminClient.from('governance_checks').delete().eq('id', id)
       if (error) throw error
 
       await adminClient.from('governance_action_logs').insert({
         action: 'delete_check',
         entity_type: 'check',
-        entity_id: body.id,
+        entity_id: id,
         entity_name: existing?.name,
         performed_by: user.id,
       })
@@ -224,7 +257,8 @@ Deno.serve(async (req) => {
     // ── CREATE/UPDATE PROMPT ──
     if (action === 'upsert_prompt') {
       const body = await req.json()
-      const { id, ...fields } = body
+      const parsed = upsertPromptSchema.parse(body)
+      const { id, ...fields } = parsed
 
       if (id) {
         // Get current version to save it
@@ -290,15 +324,16 @@ Deno.serve(async (req) => {
     // ── DELETE PROMPT ──
     if (action === 'delete_prompt') {
       const body = await req.json()
-      const { data: existing } = await adminClient.from('governance_prompts').select('name').eq('id', body.id).single()
+      const { id } = deleteSchema.parse(body)
+      const { data: existing } = await adminClient.from('governance_prompts').select('name').eq('id', id).single()
       
-      const { error } = await adminClient.from('governance_prompts').delete().eq('id', body.id)
+      const { error } = await adminClient.from('governance_prompts').delete().eq('id', id)
       if (error) throw error
 
       await adminClient.from('governance_action_logs').insert({
         action: 'delete_prompt',
         entity_type: 'prompt',
-        entity_id: body.id,
+        entity_id: id,
         entity_name: existing?.name,
         performed_by: user.id,
       })
@@ -360,10 +395,11 @@ Deno.serve(async (req) => {
     // ── REVOKE CERTIFICATION ──
     if (action === 'revoke_certification') {
       const body = await req.json()
+      const { id, reason } = revokeCertSchema.parse(body)
       
       const { data, error } = await adminClient.from('governance_certifications')
-        .update({ status: 'revoked', revoked_at: new Date().toISOString(), revoke_reason: body.reason })
-        .eq('id', body.id)
+        .update({ status: 'revoked', revoked_at: new Date().toISOString(), revoke_reason: reason })
+        .eq('id', id)
         .select().single()
 
       if (error) throw error
@@ -371,8 +407,8 @@ Deno.serve(async (req) => {
       await adminClient.from('governance_action_logs').insert({
         action: 'revoke_certification',
         entity_type: 'certification',
-        entity_id: body.id,
-        entity_name: body.reason,
+        entity_id: id,
+        entity_name: reason,
         performed_by: user.id,
       })
 
@@ -611,6 +647,9 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({ error: 'Unknown action' }), { status: 400, headers: corsHeaders })
 
   } catch (err) {
+    if (err.name === 'ZodError') {
+      return new Response(JSON.stringify({ error: 'Dados inválidos', details: err.errors }), { status: 400, headers: corsHeaders })
+    }
     const status = err.message === 'Forbidden' ? 403 : err.message === 'Unauthorized' ? 401 : 500
     return new Response(JSON.stringify({ error: err.message }), { status, headers: corsHeaders })
   }
