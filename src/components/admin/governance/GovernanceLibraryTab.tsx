@@ -1,176 +1,203 @@
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useState } from 'react';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useGovernancePrompts } from '@/hooks/useGovernance';
-import { BookOpen, Copy, Shield, Server, RefreshCw, HelpCircle, Palette, ScrollText } from 'lucide-react';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { useGovernanceDashboard, useGovernancePrompts } from '@/hooks/useGovernance';
+import { BookOpen, Copy, CheckCircle2, ChevronDown, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 
-const PHASE_ICONS: Record<string, React.ElementType> = {
-  security: Shield,
-  backend: Server,
-  continuity: RefreshCw,
-  help: HelpCircle,
-  ux: Palette,
-  governance: ScrollText,
-  frontend: Palette,
-  infrastructure: Server,
-  logs: ScrollText,
+const PHASES = [
+  { value: 'security', label: 'Segurança', number: 1 },
+  { value: 'backend', label: 'Backend', number: 2 },
+  { value: 'continuity', label: 'Backup & Continuidade', number: 3 },
+  { value: 'help', label: 'Ajuda', number: 4 },
+  { value: 'ux', label: 'UX / Educação', number: 5 },
+  { value: 'governance', label: 'Governança', number: 6 },
+];
+
+// Map prompt categories to phase values
+const CATEGORY_TO_PHASE: Record<string, string> = {
+  'Segurança': 'security',
+  'Backend': 'backend',
+  'Infraestrutura': 'backend',
+  'Continuidade': 'continuity',
+  'Ajuda': 'help',
+  'UX': 'ux',
+  'Governança': 'governance',
 };
 
-const PHASE_LABELS: Record<string, string> = {
-  security: 'Segurança',
-  backend: 'Backend',
-  continuity: 'Continuidade',
-  help: 'Ajuda',
-  ux: 'UX',
-  governance: 'Governança',
-  frontend: 'Frontend',
-  infrastructure: 'Infraestrutura',
-  logs: 'Logs',
-};
-
-// These are generic, reusable prompts that can be copied for any new project
+// Built-in generic prompts
 const BUILTIN_PROMPTS = [
   {
-    category: 'security',
-    name: 'RBAC com User Roles',
-    problem: 'Evitar privilege escalation armazenando roles na tabela de profiles.',
-    content: `Roles MUST be stored in a separate table (user_roles). Never on profiles.
-Create enum: CREATE TYPE public.app_role AS ENUM ('admin', 'moderator', 'user');
-Create table: user_roles (id, user_id, role, UNIQUE(user_id, role))
-Create SECURITY DEFINER function: has_role(user_id, role) -> boolean
-Use in RLS policies: USING (has_role(auth.uid(), 'admin'))`,
+    phase: 'security',
+    name: 'Implementar RBAC com papéis e permissões granulares',
+    problem: 'Sem controle de acesso, qualquer usuário autenticado pode acessar dados e funcionalidades administrativas, expondo dados sensíveis e permitindo ações destrutivas.',
+    content: `Roles MUST be stored in a separate table (user_roles). Never on profiles.\nCreate enum: CREATE TYPE public.app_role AS ENUM ('admin', 'moderator', 'user');\nCreate table: user_roles (id, user_id, role, UNIQUE(user_id, role))\nCreate SECURITY DEFINER function: has_role(user_id, role) -> boolean\nUse in RLS policies: USING (has_role(auth.uid(), 'admin'))`,
   },
   {
-    category: 'security',
-    name: 'RLS em Todas as Tabelas',
-    problem: 'Garantir que nenhuma tabela seja acessível sem política de segurança.',
-    content: `Every public table MUST have RLS enabled.
-Use SECURITY DEFINER helper functions to avoid recursive RLS.
-Pattern: organization_id = get_user_org_id(auth.uid())
-Never use USING(true) for INSERT/UPDATE/DELETE operations.`,
+    phase: 'security',
+    name: 'Configurar RLS em todas as tabelas com dados de usuário',
+    problem: 'Sem RLS, qualquer usuário pode ler, modificar ou deletar dados de outros usuários através de chamadas diretas à API.',
+    content: `Every public table MUST have RLS enabled.\nUse SECURITY DEFINER helper functions to avoid recursive RLS.\nPattern: organization_id = get_user_org_id(auth.uid())\nNever use USING(true) for INSERT/UPDATE/DELETE operations.`,
   },
   {
-    category: 'security',
-    name: 'Validação Server-Side em Edge Functions',
-    problem: 'Impedir que usuários manipulem requisições para acessar dados não autorizados.',
-    content: `Every Edge Function must:
-1. Extract Bearer token from Authorization header
-2. Verify user via supabase.auth.getUser()
-3. Check user role/permissions server-side
-4. Use service_role client only for cross-org operations
-5. Validate all input with Zod schemas`,
+    phase: 'security',
+    name: 'Implementar Rate Limiting para endpoints críticos',
+    problem: 'Sem rate limiting, o sistema fica vulnerável a ataques de força bruta, abuso de recursos de IA e scraping automatizado.',
+    content: `Implement rate limiting on:\n- Auth endpoints (login, signup, reset)\n- AI/LLM calls (token-expensive)\n- Public webhooks\n- File uploads\nUse sliding window counters or token bucket algorithm.`,
   },
   {
-    category: 'backend',
-    name: 'Estrutura de Edge Functions',
-    problem: 'Padronizar a criação de Edge Functions com CORS, auth e error handling.',
-    content: `Standard Edge Function template:
-- CORS headers for OPTIONS preflight
-- Auth verification via Bearer token
-- Try/catch with proper error responses
-- Service role client for privileged operations
-- Input validation before processing`,
+    phase: 'backend',
+    name: 'Validação server-side em todas as Edge Functions',
+    problem: 'Sem validação server-side, dados maliciosos podem ser injetados, causando corrupção de dados ou acesso não autorizado.',
+    content: `Every Edge Function must:\n1. Extract Bearer token\n2. Verify user via supabase.auth.getUser()\n3. Check permissions server-side\n4. Validate all input with Zod\n5. Never trust client-sent permissions`,
   },
   {
-    category: 'continuity',
-    name: 'Backup via Google Drive',
-    problem: 'Garantir recuperação de dados em caso de perda.',
-    content: `Implement automated backup system:
-- Google Drive integration with OAuth2
-- Configurable backup frequency (manual/daily/weekly)
-- Backup includes: conversations, contacts, files, pipeline, tags
-- Restore capability from backup files
-- Backup logs with status tracking`,
+    phase: 'continuity',
+    name: 'Configurar backup automatizado criptografado',
+    problem: 'Sem backup, perda de dados por falha humana, ataque ou bug pode ser irreversível.',
+    content: `Implement automated backup:\n- Google Drive / S3 integration\n- Configurable frequency\n- Encrypt sensitive data\n- Test restore regularly\n- Maintain backup logs`,
   },
   {
-    category: 'ux',
-    name: 'Design System com Tokens Semânticos',
-    problem: 'Evitar cores hardcoded e garantir consistência visual.',
-    content: `All colors must use semantic design tokens from index.css.
-Never use hardcoded colors (text-white, bg-black) in components.
-Use: bg-background, text-foreground, bg-primary, bg-muted, etc.
-Define custom tokens in :root for brand-specific colors.
-Ensure proper contrast in both light and dark modes.`,
-  },
-  {
-    category: 'governance',
-    name: 'Dashboard de Maturidade',
-    problem: 'Medir objetivamente a qualidade técnica do projeto.',
-    content: `Implement maturity scoring (0-100) across 6 dimensions:
-- Security (30%): RLS, RBAC, input validation, rate limiting
-- Backend (20%): Edge functions, DB design, error handling
-- Continuity (20%): Backups, monitoring, disaster recovery
-- Help (10%): Documentation, onboarding, error messages
-- UX (10%): Responsive design, accessibility, performance
-- Governance (10%): Versioned prompts, audit logs, certifications`,
+    phase: 'governance',
+    name: 'Dashboard de maturidade técnica',
+    problem: 'Sem métricas, não há como medir objetivamente a qualidade do projeto.',
+    content: `Implement maturity scoring (0-100) across 6 dimensions:\n- Security (30%): RLS, RBAC, input validation\n- Backend (20%): Edge functions, DB design\n- Continuity (20%): Backups, monitoring\n- Help (10%): Documentation, error messages\n- UX (10%): Responsive, accessibility\n- Governance (10%): Versioned prompts, audit logs`,
   },
 ];
 
 export function GovernanceLibraryTab() {
-  const { data, isLoading } = useGovernancePrompts();
+  const { data: dashData } = useGovernanceDashboard();
+  const { data: promptsData, isLoading } = useGovernancePrompts();
 
-  // Combine builtin + user-created generic prompts
-  const allPrompts = [...BUILTIN_PROMPTS];
+  const checks = dashData?.checks || [];
+  const dbPrompts = (promptsData?.prompts || []).filter((p: any) => p.is_generic);
 
-  // Group by category
-  const grouped = allPrompts.reduce((acc: Record<string, typeof BUILTIN_PROMPTS>, p) => {
-    if (!acc[p.category]) acc[p.category] = [];
-    acc[p.category].push(p);
-    return acc;
-  }, {});
+  if (isLoading) {
+    return <div className="space-y-3">{[1, 2, 3].map(i => <Skeleton key={i} className="h-20" />)}</div>;
+  }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-2 mb-2">
-        <BookOpen className="h-5 w-5 text-primary" />
-        <div>
-          <h3 className="font-medium">Biblioteca de Prompts Genéricos</h3>
-          <p className="text-xs text-muted-foreground">Prompts reutilizáveis para qualquer projeto novo. Copie com um clique.</p>
-        </div>
-      </div>
+    <div className="space-y-6">
+      {PHASES.map((phase) => {
+        const phaseChecks = checks.filter((c: any) => c.phase === phase.value);
+        const doneCount = phaseChecks.filter((c: any) => c.status === 'done').length;
+        const hasBlocker = phaseChecks.some((c: any) => c.is_blocker);
 
-      {Object.entries(grouped).map(([cat, items]) => {
-        const Icon = PHASE_ICONS[cat] || ScrollText;
-        const label = PHASE_LABELS[cat] || cat;
+        // Get prompts for this phase (built-in + db generic prompts)
+        const builtinForPhase = BUILTIN_PROMPTS.filter(p => p.phase === phase.value);
+        const dbForPhase = dbPrompts.filter((p: any) => CATEGORY_TO_PHASE[p.category] === phase.value);
+        const allPromptsForPhase = [...builtinForPhase, ...dbForPhase.map((p: any) => ({
+          phase: phase.value,
+          name: p.name,
+          problem: p.description,
+          content: p.content,
+        }))];
+
+        if (phaseChecks.length === 0 && allPromptsForPhase.length === 0) return null;
+
         return (
-          <Card key={cat}>
-            <CardHeader className="py-3">
-              <CardTitle className="text-sm flex items-center gap-2">
-                <Icon className="h-4 w-4 text-primary" />
-                {label}
-                <Badge variant="outline" className="ml-auto">{items.length}</Badge>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="pt-0 space-y-3">
-              {items.map((prompt, idx) => (
-                <div key={idx} className="border border-border rounded-lg p-3">
-                  <div className="flex items-start justify-between mb-2">
-                    <div>
-                      <p className="font-medium text-sm">{prompt.name}</p>
-                      <p className="text-xs text-muted-foreground">{prompt.problem}</p>
-                    </div>
-                    <Button
-                      variant="outline" size="sm"
-                      onClick={() => {
-                        navigator.clipboard.writeText(prompt.content);
-                        toast.success('Prompt copiado!');
-                      }}
-                    >
-                      <Copy className="h-3.5 w-3.5 mr-1" />
-                      Copiar
-                    </Button>
-                  </div>
-                  <pre className="text-xs bg-muted p-2 rounded overflow-x-auto whitespace-pre-wrap max-h-32">
-                    {prompt.content}
-                  </pre>
+          <Card key={phase.value} className="overflow-hidden">
+            <div className="px-6 pt-5 pb-4">
+              {/* Phase header */}
+              <div className="flex items-center gap-3 mb-3">
+                <div className={`flex items-center justify-center w-8 h-8 rounded-full ${
+                  doneCount === phaseChecks.length && phaseChecks.length > 0 ? 'bg-emerald-100 dark:bg-emerald-950/40' : 'bg-muted'
+                }`}>
+                  {doneCount === phaseChecks.length && phaseChecks.length > 0 ? (
+                    <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                  ) : (
+                    <span className="text-sm font-bold text-muted-foreground">{phase.number}</span>
+                  )}
                 </div>
-              ))}
-            </CardContent>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-foreground">FASE {phase.number} — {phase.label}</span>
+                  </div>
+                  <span className="text-xs text-muted-foreground">
+                    {doneCount}/{phaseChecks.length} completo
+                    {hasBlocker && ' • BLOQUEANTE'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Check items */}
+              {phaseChecks.length > 0 && (
+                <div className="space-y-1 ml-2 mb-4">
+                  {phaseChecks.map((check: any) => (
+                    <div key={check.id} className="flex items-center gap-2.5 py-1">
+                      <CheckCircle2 className={`h-4.5 w-4.5 flex-shrink-0 ${
+                        check.status === 'done' ? 'text-emerald-500' : 'text-muted-foreground/30'
+                      }`} />
+                      <span className={`text-sm ${check.status === 'done' ? 'text-muted-foreground' : 'text-foreground'}`}>
+                        {check.name}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Generic prompts for this phase */}
+              {allPromptsForPhase.length > 0 && (
+                <div className="mt-3">
+                  <div className="flex items-center gap-1.5 mb-3">
+                    <FileText className="h-4 w-4 text-primary" />
+                    <span className="text-sm font-medium text-primary">Prompts Genéricos para esta Fase</span>
+                  </div>
+                  <div className="space-y-2">
+                    {allPromptsForPhase.map((prompt, idx) => (
+                      <PromptCard key={idx} prompt={prompt} />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
           </Card>
         );
       })}
+    </div>
+  );
+}
+
+function PromptCard({ prompt }: { prompt: { name: string; problem: string; content: string } }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="border border-border rounded-lg px-4 py-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex-1 min-w-0">
+          <p className="font-medium text-sm text-foreground">{prompt.name}</p>
+          <p className="text-xs text-muted-foreground mt-0.5">{prompt.problem}</p>
+        </div>
+        <div className="flex items-center gap-1.5 flex-shrink-0">
+          <Button
+            variant="outline" size="sm"
+            onClick={() => {
+              navigator.clipboard.writeText(prompt.content);
+              toast.success('Prompt copiado!');
+            }}
+          >
+            <Copy className="h-3.5 w-3.5 mr-1" />
+            Copiar
+          </Button>
+          <Collapsible open={open} onOpenChange={setOpen}>
+            <CollapsibleTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-8 w-8">
+                <ChevronDown className={`h-4 w-4 transition-transform ${open ? 'rotate-180' : ''}`} />
+              </Button>
+            </CollapsibleTrigger>
+          </Collapsible>
+        </div>
+      </div>
+      <Collapsible open={open} onOpenChange={setOpen}>
+        <CollapsibleContent>
+          <pre className="text-xs bg-muted p-3 rounded-md mt-3 overflow-x-auto whitespace-pre-wrap max-h-48">
+            {prompt.content}
+          </pre>
+        </CollapsibleContent>
+      </Collapsible>
     </div>
   );
 }

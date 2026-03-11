@@ -1,23 +1,52 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useGovernanceDashboard, useIssueCertification, useRecordScore } from '@/hooks/useGovernance';
 import {
-  Shield, Server, RefreshCw, HelpCircle, Palette, ScrollText,
-  Award, AlertTriangle, TrendingUp, CheckCircle2, XCircle
+  Shield, AlertTriangle, TrendingUp, Award
 } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 
-const PHASE_CONFIG: Record<string, { label: string; icon: React.ElementType; weight: string }> = {
-  security: { label: 'Segurança', icon: Shield, weight: '30%' },
-  backend: { label: 'Backend', icon: Server, weight: '20%' },
-  continuity: { label: 'Continuidade', icon: RefreshCw, weight: '20%' },
-  help: { label: 'Ajuda', icon: HelpCircle, weight: '10%' },
-  ux: { label: 'UX', icon: Palette, weight: '10%' },
-  governance: { label: 'Governança', icon: ScrollText, weight: '10%' },
+const PHASE_CONFIG: Record<string, { label: string; weight: string }> = {
+  security: { label: 'Segurança', weight: '30%' },
+  backend: { label: 'Backend', weight: '20%' },
+  continuity: { label: 'Continuidade', weight: '20%' },
+  help: { label: 'Ajuda', weight: '10%' },
+  ux: { label: 'UX', weight: '10%' },
+  governance: { label: 'Governança', weight: '10%' },
 };
+
+function CircularScore({ score, size = 120, strokeWidth = 8, label }: { score: number; size?: number; strokeWidth?: number; label?: string }) {
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - (score / 100) * circumference;
+  const color = score >= 85 ? 'hsl(142, 71%, 45%)' : score >= 60 ? 'hsl(38, 92%, 50%)' : 'hsl(0, 84%, 60%)';
+
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <div className="relative" style={{ width: size, height: size }}>
+        <svg width={size} height={size} className="-rotate-90">
+          <circle
+            cx={size / 2} cy={size / 2} r={radius}
+            fill="none" stroke="hsl(var(--muted))" strokeWidth={strokeWidth}
+          />
+          <circle
+            cx={size / 2} cy={size / 2} r={radius}
+            fill="none" stroke={color} strokeWidth={strokeWidth}
+            strokeDasharray={circumference} strokeDashoffset={offset}
+            strokeLinecap="round"
+            className="transition-all duration-700 ease-out"
+          />
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <span className="text-2xl font-bold text-foreground">{score}</span>
+          <span className="text-xs text-muted-foreground">/100</span>
+        </div>
+      </div>
+      {label && <span className="text-xs text-muted-foreground text-center">{label}</span>}
+    </div>
+  );
+}
 
 export function GovernanceDashboardTab() {
   const { data, isLoading } = useGovernanceDashboard();
@@ -31,141 +60,128 @@ export function GovernanceDashboardTab() {
   const { scores, canCertify, currentCertification, currentCertValid, scoreHistory } = data || {};
   const totalScore = scores?.totalScore || 0;
   const riskLevel = scores?.riskLevel || 'low';
-  const riskColors = { low: 'text-emerald-600', medium: 'text-amber-600', high: 'text-destructive' };
-  const riskLabels = { low: 'Baixo', medium: 'Médio', high: 'Alto' };
+  const criticalCount = (scores?.criticalFailures || []).length;
+
+  const riskConfig = {
+    low: { label: 'Risco Baixo', color: 'text-emerald-600', bg: 'bg-emerald-50 dark:bg-emerald-950/30', icon: Shield },
+    medium: { label: 'Risco Médio', color: 'text-amber-600', bg: 'bg-amber-50 dark:bg-amber-950/30', icon: AlertTriangle },
+    high: { label: 'Risco Alto', color: 'text-destructive', bg: 'bg-red-50 dark:bg-red-950/30', icon: AlertTriangle },
+  };
+  const risk = riskConfig[riskLevel as keyof typeof riskConfig] || riskConfig.low;
+  const RiskIcon = risk.icon;
 
   return (
     <div className="space-y-6">
-      {/* Score + Certification + Risk */}
+      {/* Top 3 Cards */}
       <div className="grid gap-4 md:grid-cols-3">
-        {/* Maturity Score */}
+        {/* Score de Maturidade */}
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base flex items-center gap-2">
-              <TrendingUp className="h-5 w-5 text-primary" />
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <TrendingUp className="h-4 w-4 text-muted-foreground" />
               Score de Maturidade
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="flex items-end gap-2 mb-3">
-              <span className="text-5xl font-bold">{totalScore}</span>
-              <span className="text-xl text-muted-foreground mb-1">/100</span>
-            </div>
-            <Progress value={totalScore} className="h-3 mb-2" />
-            <Button variant="outline" size="sm" className="mt-2" onClick={() => recordScore.mutate()}>
-              Registrar Score
+          <CardContent className="flex flex-col items-center pb-4">
+            <CircularScore score={totalScore} size={140} strokeWidth={10} />
+            <span className="text-sm text-muted-foreground mt-1">Score Geral</span>
+            <Button variant="outline" size="sm" className="mt-3" onClick={() => recordScore.mutate()}>
+              <TrendingUp className="h-3.5 w-3.5 mr-1.5" />
+              Registrar Snapshot
             </Button>
           </CardContent>
         </Card>
 
-        {/* Risk Analysis */}
+        {/* Indicador de Risco */}
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-amber-500" />
-              Análise de Risco
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-muted-foreground" />
+              Indicador de Risco
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className={`text-3xl font-bold mb-2 ${riskColors[riskLevel as keyof typeof riskColors]}`}>
-              {riskLabels[riskLevel as keyof typeof riskLabels]}
+          <CardContent className="flex flex-col items-center pb-4">
+            <div className={`rounded-xl p-6 w-full flex flex-col items-center ${risk.bg}`}>
+              <RiskIcon className={`h-10 w-10 mb-2 ${risk.color}`} />
+              <span className={`text-lg font-bold ${risk.color}`}>{risk.label}</span>
+              <span className="text-xs text-muted-foreground mt-1">{criticalCount} falha(s) detectada(s)</span>
             </div>
-            <p className="text-sm text-muted-foreground">
-              {(scores?.criticalFailures || []).length} falha(s) crítica(s) aberta(s)
-            </p>
-            {(scores?.criticalFailures || []).length > 0 && (
-              <div className="mt-3 space-y-1">
-                {scores.criticalFailures.slice(0, 3).map((f: any) => (
-                  <div key={f.id} className="text-xs flex items-center gap-1.5 text-destructive">
-                    <XCircle className="h-3 w-3 flex-shrink-0" />
-                    <span className="truncate">{f.name}</span>
-                  </div>
-                ))}
+            {criticalCount === 0 && (
+              <div className="flex items-center gap-1.5 mt-3 text-emerald-600 text-sm">
+                <Shield className="h-4 w-4" />
+                Nenhuma falha detectada
               </div>
             )}
           </CardContent>
         </Card>
 
-        {/* Certification */}
+        {/* Selo de Certificação */}
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Award className="h-5 w-5 text-primary" />
-              Certificação
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <Award className="h-4 w-4 text-muted-foreground" />
+              Selo de Certificação
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="flex flex-col items-center pb-4">
             {currentCertValid ? (
-              <div className="space-y-2">
-                <Badge className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 text-sm px-3 py-1">
-                  <CheckCircle2 className="h-4 w-4 mr-1" />
-                  Arquitetura Aprovada
-                </Badge>
-                <p className="text-xs text-muted-foreground">
-                  Score: {currentCertification?.score}/100 · Segurança: {currentCertification?.security_score}%
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Emitida em {new Date(currentCertification?.issued_at).toLocaleDateString('pt-BR')}
-                </p>
-              </div>
+              <>
+                <div className="rounded-full bg-emerald-50 dark:bg-emerald-950/30 p-4 mb-2">
+                  <Award className="h-10 w-10 text-emerald-600" />
+                </div>
+                <span className="font-bold text-sm text-emerald-700 dark:text-emerald-400 tracking-wide">ARQUITETURA APROVADA</span>
+                <span className="text-xs text-muted-foreground mt-1">
+                  Certificado em {new Date(currentCertification?.issued_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                </span>
+                <span className="text-xs text-muted-foreground">Score: {currentCertification?.score}/100</span>
+              </>
             ) : (
-              <div className="space-y-2">
-                <p className="text-sm text-muted-foreground">
-                  {canCertify
-                    ? 'Requisitos atingidos! Emita a certificação.'
-                    : 'Score ≥ 85 e Segurança ≥ 90% necessários. Sem falhas críticas.'}
-                </p>
+              <>
+                <div className="rounded-full bg-muted p-4 mb-2">
+                  <Award className="h-10 w-10 text-muted-foreground" />
+                </div>
+                <span className="text-sm text-muted-foreground text-center">
+                  {canCertify ? 'Requisitos atingidos!' : 'Score ≥ 85 e Segurança ≥ 90%'}
+                </span>
                 <Button
-                  size="sm"
+                  size="sm" className="mt-3"
                   disabled={!canCertify || issueCert.isPending}
                   onClick={() => issueCert.mutate()}
                 >
-                  <Award className="h-4 w-4 mr-2" />
+                  <Award className="h-3.5 w-3.5 mr-1.5" />
                   Emitir Certificação
                 </Button>
-              </div>
+              </>
             )}
           </CardContent>
         </Card>
       </div>
 
-      {/* Phase Breakdown */}
+      {/* Score por Categoria */}
       <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Dimensões</CardTitle>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-medium">Score por Categoria (pesos)</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
             {Object.entries(PHASE_CONFIG).map(([phase, cfg]) => {
               const phaseScore = scores?.phaseScores?.[phase] || 0;
               const maxScore = parseInt(cfg.weight);
               const pct = maxScore > 0 ? Math.round((phaseScore / maxScore) * 100) : 0;
-              const Icon = cfg.icon;
               return (
-                <div key={phase} className="flex items-center gap-3 p-3 rounded-lg border border-border">
-                  <Icon className="h-5 w-5 text-muted-foreground flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm font-medium">{cfg.label}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {phaseScore.toFixed(0)}/{maxScore} ({cfg.weight})
-                      </span>
-                    </div>
-                    <Progress value={pct} className="h-2" />
-                  </div>
-                </div>
+                <CircularScore key={phase} score={pct} size={90} strokeWidth={6} label={`${cfg.label} (${cfg.weight})`} />
               );
             })}
           </div>
         </CardContent>
       </Card>
 
-      {/* Temporal Evolution */}
+      {/* Evolução Temporal */}
       {scoreHistory && scoreHistory.length > 1 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
-              <TrendingUp className="h-5 w-5 text-primary" />
+            <CardTitle className="text-sm font-medium flex items-center gap-2">
+              <TrendingUp className="h-4 w-4 text-muted-foreground" />
               Evolução Temporal
             </CardTitle>
           </CardHeader>
@@ -180,7 +196,7 @@ export function GovernanceDashboardTab() {
                   <XAxis dataKey="date" className="text-xs" />
                   <YAxis domain={[0, 100]} className="text-xs" />
                   <Tooltip />
-                  <Line type="monotone" dataKey="total_score" name="Score Total" stroke="hsl(var(--primary))" strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="total_score" name="Score Total" stroke="hsl(142, 71%, 45%)" strokeWidth={2} dot={false} />
                   <Line type="monotone" dataKey="security_score" name="Segurança" stroke="#ef4444" strokeWidth={1} dot={false} strokeDasharray="4 4" />
                 </LineChart>
               </ResponsiveContainer>
