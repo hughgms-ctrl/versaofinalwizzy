@@ -269,6 +269,33 @@ export default function PublicFormPage() {
                     placeholder="Ex: Contrato João Silva"
                   />
                 </div>
+                {template.auto_send_whatsapp && (
+                  <Card className="p-4 border-border/60 bg-muted/20">
+                    <div className="flex items-start gap-3 mb-3">
+                      <MessageCircle className="h-5 w-5 text-primary mt-0.5" />
+                      <div>
+                        <p className="text-sm font-medium">Entrega automática por WhatsApp</p>
+                        <p className="text-xs text-muted-foreground">Este documento será enviado automaticamente após o preenchimento.</p>
+                      </div>
+                    </div>
+                    <div className="space-y-3">
+                      <div>
+                        <Label>Nome completo</Label>
+                        <div className="relative mt-1">
+                          <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                          <Input value={signerName} onChange={e => setSignerName(e.target.value)} className="pl-9" placeholder="Seu nome completo" />
+                        </div>
+                      </div>
+                      <div>
+                        <Label>WhatsApp</Label>
+                        <div className="relative mt-1">
+                          <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                          <Input value={signerPhone} onChange={e => setSignerPhone(e.target.value)} className="pl-9" placeholder="(11) 99999-9999" />
+                        </div>
+                      </div>
+                    </div>
+                  </Card>
+                )}
                 <div>
                   <Label>Logo (cabeçalho)</Label>
                   {logoPreview ? (
