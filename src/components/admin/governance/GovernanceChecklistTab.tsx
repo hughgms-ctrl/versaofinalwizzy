@@ -10,7 +10,10 @@ import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { useGovernanceDashboard, useUpsertCheck, useDeleteCheck, useUpdateCheck } from '@/hooks/useGovernance';
-import { Plus, Edit, Trash2, CheckCircle2, Clock, AlertTriangle } from 'lucide-react';
+import { Plus, Edit, Trash2, CheckCircle2, Clock, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
+import { useQueryClient } from '@tanstack/react-query';
 
 const PHASES = [
   { value: 'security', label: 'Segurança' },
@@ -49,9 +52,35 @@ export function GovernanceChecklistTab() {
   const updateCheck = useUpdateCheck();
   const [editForm, setEditForm] = useState<CheckForm | null>(null);
   const [filterPhase, setFilterPhase] = useState<string>('all');
+  const [seeding, setSeeding] = useState(false);
+  const queryClient = useQueryClient();
 
   const checks = data?.checks || [];
   const filtered = filterPhase === 'all' ? checks : checks.filter((c: any) => c.phase === filterPhase);
+
+  const handleSeedSecurity = async () => {
+    setSeeding(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Not authenticated');
+      const res = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-governance?action=seed_security`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+          'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+        },
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || 'Erro ao popular');
+      toast.success(`Checklist populado: ${result.counts.checks} itens, ${result.counts.prompts} prompts, ${result.counts.library} biblioteca`);
+      queryClient.invalidateQueries({ queryKey: ['governance'] });
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally {
+      setSeeding(false);
+    }
+  };
 
   // Group by phase
   const grouped = filtered.reduce((acc: Record<string, any[]>, c: any) => {
@@ -80,10 +109,18 @@ export function GovernanceChecklistTab() {
           </Select>
           <span className="text-sm text-muted-foreground">{filtered.length} itens</span>
         </div>
-        <Button onClick={() => setEditForm({ ...emptyCheck })} size="sm">
-          <Plus className="h-4 w-4 mr-2" />
-          Novo Item
-        </Button>
+        <div className="flex gap-2">
+          {checks.length === 0 && (
+            <Button onClick={handleSeedSecurity} size="sm" variant="outline" disabled={seeding}>
+              <ShieldCheck className="h-4 w-4 mr-2" />
+              {seeding ? 'Populando...' : 'Popular Checklist de Segurança'}
+            </Button>
+          )}
+          <Button onClick={() => setEditForm({ ...emptyCheck })} size="sm">
+            <Plus className="h-4 w-4 mr-2" />
+            Novo Item
+          </Button>
+        </div>
       </div>
 
       {Object.entries(grouped).map(([phase, items]) => {
