@@ -10,7 +10,10 @@ import { Switch } from '@/components/ui/switch';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { useGovernanceDashboard, useUpsertCheck, useDeleteCheck, useUpdateCheck } from '@/hooks/useGovernance';
-import { Plus, Edit, Trash2, CheckCircle2, Clock, AlertTriangle } from 'lucide-react';
+import { Plus, Edit, Trash2, CheckCircle2, Clock, AlertTriangle, ShieldCheck } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
+import { useQueryClient } from '@tanstack/react-query';
 
 const PHASES = [
   { value: 'security', label: 'Segurança' },

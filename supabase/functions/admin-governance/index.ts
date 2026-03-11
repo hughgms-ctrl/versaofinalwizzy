@@ -427,6 +427,187 @@ Deno.serve(async (req) => {
       })
     }
 
+    // ── SEED SECURITY ──
+    if (action === 'seed_security') {
+      // Check if already seeded
+      const { data: existingChecks } = await adminClient.from('governance_checks').select('id').limit(1)
+      if (existingChecks && existingChecks.length > 0) {
+        return new Response(JSON.stringify({ error: 'Checklist já possui itens. Remova-os antes de popular novamente.' }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        })
+      }
+
+      // ── CHECKLIST ITEMS ──
+      const checkItems = [
+        // Security (blocker)
+        { name: 'Roles em tabela separada (user_roles)', description: 'NUNCA armazenar roles na tabela profiles ou users. Usar tabela user_roles com RLS.', phase: 'security', weight: 3, is_blocker: true, status: 'pending' },
+        { name: 'RLS habilitado em todas as tabelas', description: 'Todas as tabelas com dados de usuário devem ter RLS ativo. Usar SECURITY DEFINER para evitar recursão.', phase: 'security', weight: 3, is_blocker: true, status: 'pending' },
+        { name: 'Validação server-side em Edge Functions', description: 'Toda edge function que modifique dados deve validar token via supabase.auth.getUser(token) e verificar permissões em user_roles.', phase: 'security', weight: 3, is_blocker: true, status: 'pending' },
+        { name: 'Service Role Key apenas no servidor', description: 'SUPABASE_SERVICE_ROLE_KEY nunca deve ser exposta ao cliente. Apenas em edge functions/servidor.', phase: 'security', weight: 3, is_blocker: true, status: 'pending' },
+        { name: 'Nunca admin via localStorage/sessionStorage', description: 'Verificação de admin deve ser sempre server-side. Nunca confiar em dados do cliente.', phase: 'security', weight: 3, is_blocker: true, status: 'pending' },
+        { name: 'Validação de input com Zod', description: 'Inputs do usuário validados com Zod tanto no client quanto no server antes de qualquer operação.', phase: 'security', weight: 2, is_blocker: true, status: 'pending' },
+        { name: 'Sanitização HTML (DOMPurify)', description: 'Sanitizar HTML antes de renderizar para prevenir XSS.', phase: 'security', weight: 2, is_blocker: false, status: 'pending' },
+        { name: 'Proteção contra SQL injection', description: 'NUNCA permitir SQL raw ou IDs de outros usuários. Sempre filtrar por auth.uid().', phase: 'security', weight: 3, is_blocker: true, status: 'pending' },
+        { name: 'Campos sensíveis protegidos contra UPDATE', description: 'Nunca permitir UPDATE em user_id, role ou campos sensíveis via API pública.', phase: 'security', weight: 2, is_blocker: true, status: 'pending' },
+        { name: 'Secrets e chaves nunca logadas', description: 'NUNCA logar senhas, tokens ou chaves no console.', phase: 'security', weight: 2, is_blocker: false, status: 'pending' },
+        // Backend
+        { name: 'Rate limiting implementado', description: 'Endpoints públicos e webhooks devem ter rate limiting para prevenir abuso.', phase: 'backend', weight: 2, is_blocker: true, status: 'pending' },
+        { name: 'Edge Functions com auth validation', description: 'Toda edge function administrativa deve verificar role do usuário no banco antes de prosseguir.', phase: 'backend', weight: 3, is_blocker: true, status: 'pending' },
+        { name: 'Tokens únicos para webhooks públicos', description: 'Webhooks devem usar tokens únicos para autenticação. Validar e sanitizar todos os dados recebidos.', phase: 'backend', weight: 2, is_blocker: false, status: 'pending' },
+        { name: 'Validação de webhook signatures', description: 'Nunca confiar em headers como x-forwarded-for para autenticação de webhooks.', phase: 'backend', weight: 2, is_blocker: false, status: 'pending' },
+        // Continuity
+        { name: 'Backup automatizado configurado', description: 'Sistema de backup automático (Google Drive ou equivalente) configurado e testado.', phase: 'continuity', weight: 3, is_blocker: true, status: 'pending' },
+        { name: 'Tokens rotativos (15min)', description: 'Proteção contra roubo de tokens com rotação automática a cada 15 minutos.', phase: 'continuity', weight: 2, is_blocker: false, status: 'pending' },
+        { name: 'Proteção contra exfiltração de dados', description: 'HWID para evitar que 1 licença seja usada por múltiplos usuários.', phase: 'continuity', weight: 2, is_blocker: false, status: 'pending' },
+        // Help
+        { name: 'Documentação de APIs internas', description: 'Edge functions e endpoints documentados com parâmetros e exemplos.', phase: 'help', weight: 1, is_blocker: false, status: 'pending' },
+        { name: 'Logs de erro estruturados', description: 'Sistema de logging com níveis (info, warn, error) e contexto.', phase: 'help', weight: 1, is_blocker: false, status: 'pending' },
+        // UX
+        { name: 'Feedback de erros de permissão', description: 'Mensagens claras quando usuário não tem permissão para uma ação.', phase: 'ux', weight: 1, is_blocker: false, status: 'pending' },
+        { name: 'Loading states em operações críticas', description: 'Indicadores visuais durante operações que afetam dados.', phase: 'ux', weight: 1, is_blocker: false, status: 'pending' },
+        // Governance
+        { name: 'Registro de prompts de IA', description: 'Todos os prompts de IA utilizados no sistema cadastrados com categoria e criticidade.', phase: 'governance', weight: 2, is_blocker: false, status: 'pending' },
+        { name: 'Versionamento automático de prompts', description: 'Toda edição de prompt salva versão anterior automaticamente.', phase: 'governance', weight: 2, is_blocker: false, status: 'pending' },
+        { name: 'Trilha de auditoria de ações', description: 'Log completo de todas as ações no sistema de governança.', phase: 'governance', weight: 1, is_blocker: false, status: 'pending' },
+      ]
+
+      const { error: checksErr } = await adminClient.from('governance_checks').insert(checkItems)
+      if (checksErr) throw checksErr
+
+      // ── PROMPTS ──
+      const prompts = [
+        {
+          name: 'Proteção contra Escalação de Privilégios',
+          category: 'Segurança',
+          criticality: 'high',
+          status: 'implemented',
+          description: 'Regras para prevenir escalação de privilégios administrativos.',
+          content: `NUNCA armazene roles/permissões na tabela de perfis ou users. Roles DEVEM estar em uma tabela separada (user_roles) com RLS habilitado. NUNCA verifique status de admin via localStorage, sessionStorage ou credenciais hardcoded. Sempre use validação server-side com SECURITY DEFINER functions. Qualquer edge function que execute ações administrativas DEVE verificar a role do usuário no banco antes de prosseguir.`,
+          related_files: ['src/hooks/useAuth.tsx', 'src/hooks/usePlatformAdmin.ts'],
+          related_tables: ['user_roles', 'profiles'],
+          related_functions: ['has_role', 'is_platform_admin'],
+        },
+        {
+          name: 'Proteção de Edge Functions',
+          category: 'Backend',
+          criticality: 'high',
+          status: 'implemented',
+          description: 'Regras obrigatórias para segurança de Edge Functions.',
+          content: `Toda edge function que modifique dados DEVE: 1) Validar o token de autenticação via supabase.auth.getUser(token). 2) Verificar permissões na tabela user_roles. 3) NUNCA confiar em dados enviados pelo cliente para determinar permissões. 4) Usar SUPABASE_SERVICE_ROLE_KEY apenas no servidor, nunca expor ao cliente.`,
+          related_files: ['supabase/functions/'],
+          related_tables: ['user_roles'],
+          related_functions: ['verifyAdmin'],
+        },
+        {
+          name: 'Row Level Security (RLS)',
+          category: 'Segurança',
+          criticality: 'high',
+          status: 'implemented',
+          description: 'Padrões obrigatórios de RLS para todas as tabelas.',
+          content: `TODAS as tabelas com dados de usuário DEVEM ter RLS habilitado. Use funções SECURITY DEFINER para evitar recursão em policies. Nunca desabilite RLS "temporariamente". Policies devem usar auth.uid() para verificar propriedade dos dados. Para dados de equipe, use uma função auxiliar que valide membership.`,
+          related_tables: ['todas as tabelas públicas'],
+          related_functions: ['get_user_org_id', 'has_role'],
+        },
+        {
+          name: 'Proteção contra Manipulação de Banco',
+          category: 'Segurança',
+          criticality: 'high',
+          status: 'implemented',
+          description: 'Regras contra manipulação direta de dados.',
+          content: `NUNCA permita que o cliente envie SQL raw ou IDs de outros usuários para acessar dados alheios. Sempre filtre por auth.uid() ou team_id validado. Inputs do usuário devem ser validados com zod antes de qualquer operação. Limite campos atualizáveis - nunca permita UPDATE em user_id, role ou campos sensíveis via API pública.`,
+          related_tables: ['todas as tabelas públicas'],
+        },
+        {
+          name: 'Proteção de Webhooks e APIs Públicas',
+          category: 'Backend',
+          criticality: 'high',
+          status: 'partial',
+          description: 'Segurança para endpoints públicos e webhooks.',
+          content: `Webhooks públicos DEVEM usar tokens únicos para autenticação. Valide e sanitize TODOS os dados recebidos. Nunca confie em headers como x-forwarded-for para autenticação. Rate limiting deve ser implementado. Dados sensíveis nunca devem ser logados no console.`,
+          related_files: ['supabase/functions/zapi-webhook/index.ts', 'supabase/functions/widget-submit/index.ts'],
+        },
+        {
+          name: 'Proteção de Secrets e API Keys',
+          category: 'Infraestrutura',
+          criticality: 'high',
+          status: 'implemented',
+          description: 'Gerenciamento seguro de chaves e secrets.',
+          content: `NUNCA armazene chaves privadas no código-fonte. Use variáveis de ambiente/secrets do servidor. Chaves publicáveis (ex: Supabase anon key) podem estar no código. Service Role Keys NUNCA devem ser expostas ao cliente. Sempre valide se o ambiente é produção antes de executar ações destrutivas.`,
+          related_files: ['.env', 'supabase/functions/'],
+        },
+        {
+          name: 'Prompt Completo para Outra Ferramenta',
+          category: 'Governança',
+          criticality: 'high',
+          status: 'documented',
+          description: 'Prompt master com todas as regras de segurança para uso em qualquer ferramenta de IA.',
+          content: `REGRAS DE SEGURANÇA OBRIGATÓRIAS:\n- Roles em tabela separada (user_roles), NUNCA no profile\n- RLS habilitado em TODAS as tabelas\n- Verificação server-side de permissões em TODA edge function\n- NUNCA confiar em dados do cliente para autenticação/autorização\n- Validação de input com zod em client E server\n- Service Role Key apenas no servidor\n- Tokens únicos para webhooks públicos\n- NUNCA usar localStorage/sessionStorage para verificar admin\n- NUNCA permitir UPDATE em campos de role via API pública\n- Funções SECURITY DEFINER para evitar recursão de RLS\n- NUNCA logar dados sensíveis (senhas, tokens, chaves)\n- Sanitizar HTML antes de renderizar (DOMPurify)`,
+        },
+      ]
+
+      const { error: promptsErr } = await adminClient.from('governance_prompts').insert(prompts)
+      if (promptsErr) throw promptsErr
+
+      // ── GENERIC LIBRARY PROMPTS ──
+      const libraryPrompts = [
+        {
+          name: 'Roubo de Tokens de Acesso',
+          category: 'Segurança',
+          criticality: 'high',
+          status: 'documented',
+          is_generic: true,
+          description: 'Ameaça real: reutilização de token de projeto rotativo a cada 15min.',
+          content: `É preciso o token do projeto para que consiga conectar/disparar via API direto pro projeto. O token de projeto é rotativo a cada 15 minutos e gera um novo automaticamente. O script fica pegando automaticamente o token novo. Mitigação: rotação automática, validação server-side, monitoramento de uso anômalo.`,
+        },
+        {
+          name: 'Bloqueio e Manipulação de Conteúdo',
+          category: 'Segurança',
+          criticality: 'high',
+          status: 'documented',
+          is_generic: true,
+          description: 'Ameaça real: manipulação via event socket para evitar consumo de crédito.',
+          content: `Utiliza-se event socket para manipular conteúdos enviados para API, evitando que dispare para rota padrão (/chat) para não ter consumação de crédito. Mitigação: validação server-side de todas as rotas, assinatura de requests, monitoramento de padrões anômalos.`,
+        },
+        {
+          name: 'Rastreamento e Exfiltração de Dados',
+          category: 'Segurança',
+          criticality: 'high',
+          status: 'documented',
+          is_generic: true,
+          description: 'Ameaça real: uso de HWID para controle de licenças.',
+          content: `Código de HWID usado para evitar que 1 licença seja usada para múltiplas pessoas. Mitigação: fingerprinting de dispositivo, limite de sessões simultâneas, alertas de uso compartilhado.`,
+        },
+        {
+          name: 'Ofuscação Extrema de Código',
+          category: 'Infraestrutura',
+          criticality: 'high',
+          status: 'documented',
+          is_generic: true,
+          description: 'Ameaça real: proteção contra vazamento de chaves Supabase.',
+          content: `Ofuscação de código própria para evitar vazamento das chaves Supabase (anon-key e URL colocados no supabase-config.js para disparar edge functions). Mitigação: nunca expor service role key, usar apenas anon key no client, ofuscação de código, variáveis de ambiente no servidor.`,
+        },
+      ]
+
+      const { error: libErr } = await adminClient.from('governance_prompts').insert(libraryPrompts)
+      if (libErr) throw libErr
+
+      // Log action
+      await adminClient.from('governance_action_logs').insert({
+        action: 'seed_security',
+        entity_type: 'system',
+        entity_name: 'Security Seed',
+        details: { checks: checkItems.length, prompts: prompts.length, library: libraryPrompts.length },
+        performed_by: user.id,
+      })
+
+      return new Response(JSON.stringify({ 
+        success: true, 
+        counts: { checks: checkItems.length, prompts: prompts.length, library: libraryPrompts.length } 
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
     return new Response(JSON.stringify({ error: 'Unknown action' }), { status: 400, headers: corsHeaders })
 
   } catch (err) {
