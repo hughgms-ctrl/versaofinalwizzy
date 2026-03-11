@@ -164,7 +164,7 @@ Deno.serve(async (req) => {
           if (matched) {
             uazapiToken = matched.token || matched.key || matched.instanceToken;
             uazapiInstanceId = matched.id || matched.name || uazapiInstanceId;
-            console.log(`[SELF-HEALING] Token recovered for ${instanceName}: ${uazapiToken?.substring(0, 8)}...`);
+            console.log(`[SELF-HEALING] Token recovered for ${instanceName}`);
           }
         }
       } catch (e) {
