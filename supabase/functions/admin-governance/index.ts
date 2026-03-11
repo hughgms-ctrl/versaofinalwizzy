@@ -407,8 +407,8 @@ Deno.serve(async (req) => {
       await adminClient.from('governance_action_logs').insert({
         action: 'revoke_certification',
         entity_type: 'certification',
-        entity_id: body.id,
-        entity_name: body.reason,
+        entity_id: id,
+        entity_name: reason,
         performed_by: user.id,
       })
 
