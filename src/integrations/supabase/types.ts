@@ -2030,6 +2030,75 @@ export type Database = {
           },
         ]
       }
+      governance_action_logs: {
+        Row: {
+          action: string
+          created_at: string
+          details: Json | null
+          entity_id: string | null
+          entity_name: string | null
+          entity_type: string
+          id: string
+          performed_by: string | null
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          details?: Json | null
+          entity_id?: string | null
+          entity_name?: string | null
+          entity_type: string
+          id?: string
+          performed_by?: string | null
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          details?: Json | null
+          entity_id?: string | null
+          entity_name?: string | null
+          entity_type?: string
+          id?: string
+          performed_by?: string | null
+        }
+        Relationships: []
+      }
+      governance_certifications: {
+        Row: {
+          created_at: string
+          id: string
+          issued_at: string
+          revoke_reason: string | null
+          revoked_at: string | null
+          score: number
+          security_score: number
+          snapshot: Json | null
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          issued_at?: string
+          revoke_reason?: string | null
+          revoked_at?: string | null
+          score: number
+          security_score: number
+          snapshot?: Json | null
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          issued_at?: string
+          revoke_reason?: string | null
+          revoked_at?: string | null
+          score?: number
+          security_score?: number
+          snapshot?: Json | null
+          status?: string
+        }
+        Relationships: []
+      }
       governance_checks: {
         Row: {
           created_at: string
@@ -2146,6 +2215,42 @@ export type Database = {
           related_tables?: string[] | null
           status?: string
           updated_at?: string
+        }
+        Relationships: []
+      }
+      governance_score_history: {
+        Row: {
+          backend_score: number
+          continuity_score: number
+          governance_dim_score: number
+          help_score: number
+          id: string
+          recorded_at: string
+          security_score: number
+          total_score: number
+          ux_score: number
+        }
+        Insert: {
+          backend_score?: number
+          continuity_score?: number
+          governance_dim_score?: number
+          help_score?: number
+          id?: string
+          recorded_at?: string
+          security_score?: number
+          total_score: number
+          ux_score?: number
+        }
+        Update: {
+          backend_score?: number
+          continuity_score?: number
+          governance_dim_score?: number
+          help_score?: number
+          id?: string
+          recorded_at?: string
+          security_score?: number
+          total_score?: number
+          ux_score?: number
         }
         Relationships: []
       }
