@@ -127,9 +127,9 @@ export const flowComponentCategories: FlowComponentCategory[] = [
       },
       {
         type: 'user-input',
-        label: 'Entrada do Usuário',
-        description: 'Captura a resposta e salva em uma variável',
-        icon: 'Type',
+        label: 'Pergunta',
+        description: 'Faz uma pergunta e salva a resposta em uma variável do fluxo',
+        icon: 'FormInput',
         color: 'bg-teal-500',
       },
     ],
