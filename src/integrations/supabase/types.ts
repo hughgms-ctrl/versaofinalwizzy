@@ -1363,9 +1363,11 @@ export type Database = {
           created_at: string
           created_by: string | null
           description: string | null
+          field_config: Json | null
           id: string
           name: string
           organization_id: string
+          public_token: string | null
           template_ids: string[]
           updated_at: string
           workspace_id: string | null
@@ -1374,9 +1376,11 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           description?: string | null
+          field_config?: Json | null
           id?: string
           name: string
           organization_id: string
+          public_token?: string | null
           template_ids?: string[]
           updated_at?: string
           workspace_id?: string | null
@@ -1385,9 +1389,11 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           description?: string | null
+          field_config?: Json | null
           id?: string
           name?: string
           organization_id?: string
+          public_token?: string | null
           template_ids?: string[]
           updated_at?: string
           workspace_id?: string | null
