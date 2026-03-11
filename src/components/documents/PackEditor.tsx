@@ -386,6 +386,48 @@ export function PackEditor({ pack, onBack }: PackEditorProps) {
   );
 }
 
+type FieldConfigCardProps = {
+  field: {
+    originalName: string;
+    label: string;
+    description: string;
+    type: string;
+    required: boolean;
+    count: number;
+    templateNames: string[];
+    mappedFields?: Array<{ fieldName: string; templateId: string }>;
+  };
+  isExpanded: boolean;
+  onToggle: () => void;
+  onUpdate: (updates: Partial<PackFieldConfig>) => void;
+  templates: any[];
+  dragHandleProps?: Record<string, any>;
+};
+
+function SortableFieldConfigCard(props: Omit<FieldConfigCardProps, 'dragHandleProps'>) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: props.field.originalName });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 10 : undefined,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style}>
+      <FieldConfigCard {...props} dragHandleProps={{ ...attributes, ...listeners }} />
+    </div>
+  );
+}
+
 function FieldConfigCard({
   field,
   isExpanded,
