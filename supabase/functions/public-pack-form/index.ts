@@ -106,7 +106,6 @@ Deno.serve(async (req) => {
 
         templateFields.forEach((field: any) => {
           const name = field.name || field;
-          // First check AI mapping, then fallback to direct match
           templateData[name] = tplMap?.get(name) ?? filled_data[name] ?? '';
         });
 
@@ -127,7 +126,7 @@ Deno.serve(async (req) => {
         if (docErr) {
           console.error("Error creating document:", docErr);
         } else {
-          results.push(doc);
+          let pdfUrl: string | null = null;
 
           // Try to generate PDF
           try {
@@ -146,20 +145,30 @@ Deno.serve(async (req) => {
 
             const pdfData = await pdfResp.json();
             if (pdfResp.ok && pdfData.pdf_url) {
+              pdfUrl = pdfData.pdf_url;
               await supabase
                 .from("generated_documents")
-                .update({ pdf_url: pdfData.pdf_url })
+                .update({ pdf_url: pdfUrl })
                 .eq("id", doc.id);
             }
           } catch (pdfErr) {
             console.error("PDF generation error:", pdfErr);
           }
+
+          results.push({
+            id: doc.id,
+            name: `${pack.name} - ${template.name}`,
+            pdf_url: pdfUrl,
+            template_name: template.name,
+          });
         }
       }
 
       return new Response(JSON.stringify({ 
         success: true, 
-        documents_created: results.length 
+        documents_created: results.length,
+        documents: results,
+        organization_id: pack.organization_id,
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
