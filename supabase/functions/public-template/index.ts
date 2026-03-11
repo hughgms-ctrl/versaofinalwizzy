@@ -33,7 +33,7 @@ Deno.serve(async (req) => {
 
     const { data, error } = await supabase
       .from("document_templates")
-      .select("id, name, description, category, content, fields, organization_id")
+      .select("id, name, description, category, content, fields, organization_id, auto_send_whatsapp")
       .eq("id", templateId)
       .maybeSingle();
 

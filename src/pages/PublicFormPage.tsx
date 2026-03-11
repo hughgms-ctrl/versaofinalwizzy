@@ -21,6 +21,7 @@ interface PublicTemplate {
   description: string | null;
   content: string;
   fields: TemplateField[];
+  auto_send_whatsapp?: boolean;
 }
 
 interface OrgInfo {
