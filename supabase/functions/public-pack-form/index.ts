@@ -70,7 +70,7 @@ Deno.serve(async (req) => {
     async function getWhatsAppInstance(orgId: string) {
       const { data: instance } = await supabase
         .from("whatsapp_instances")
-        .select("id, instance_name, zapi_token")
+        .select("id, label, zapi_token")
         .eq("organization_id", orgId)
         .eq("status", "connected")
         .limit(1)
