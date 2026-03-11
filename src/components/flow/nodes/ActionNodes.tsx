@@ -59,7 +59,7 @@ function BaseActionNode({
       <Handle
         type="source"
         position={Position.Right}
-        className="!w-3 !h-3 !bg-primary !border-2 !border-background opacity-0 group-hover:opacity-100 transition-opacity !-right-1.5"
+        className="!w-3.5 !h-3.5 !bg-primary !border-2 !border-background !-right-[7px] !z-50"
       />
     </div>
   );
