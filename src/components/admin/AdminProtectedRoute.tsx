@@ -14,18 +14,14 @@ export function AdminProtectedRoute({ children }: AdminProtectedRouteProps) {
 
   if (authLoading || adminLoading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
       </div>
     );
   }
 
-  if (!user) {
-    return <Navigate to="/auth" replace />;
-  }
-
-  if (!isPlatformAdmin) {
-    return <Navigate to="/" replace />;
+  if (!user || !isPlatformAdmin) {
+    return <Navigate to="/admin/login" replace />;
   }
 
   return <>{children}</>;
