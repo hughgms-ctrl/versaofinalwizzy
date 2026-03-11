@@ -112,6 +112,7 @@ function DocCard({ doc, onDelete, onRegenerate, isRegenerating }: { doc: any; on
 export function GeneratedDocumentsList() {
   const { data: documents, isLoading } = useGeneratedDocuments();
   const deleteDocument = useDeleteGeneratedDocument();
+  const regeneratePdf = useRegenerateDocumentPdf();
   const [search, setSearch] = useState('');
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
