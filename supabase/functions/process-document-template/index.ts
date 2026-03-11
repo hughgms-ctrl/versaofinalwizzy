@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import mammoth from "npm:mammoth@1.8.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -53,17 +54,30 @@ serve(async (req) => {
     const fileResp = await fetch(file_url);
     if (!fileResp.ok) throw new Error("Failed to fetch file");
 
-    // For text-based content, read directly. For binary (PDF), we send the URL.
-    const isText = file_name?.endsWith('.txt') || file_name?.endsWith('.md');
+    const fileName = (file_name || '').toLowerCase();
     let fileContent = '';
-    if (isText) {
+
+    if (fileName.endsWith('.docx')) {
+      // Parse DOCX properly using mammoth to extract clean text
+      const arrayBuffer = await fileResp.arrayBuffer();
+      const result = await mammoth.extractRawText({ arrayBuffer });
+      fileContent = result.value;
+      console.log(`DOCX extracted: ${fileContent.length} chars of clean text`);
+    } else if (fileName.endsWith('.txt') || fileName.endsWith('.md')) {
       fileContent = await fileResp.text();
     } else {
-      // For PDF/DOCX, we'll pass the URL to the AI and ask it to analyze
+      // For PDF and other formats, try reading as text
       fileContent = await fileResp.text().catch(() => '');
     }
 
-    // Truncate content to avoid exceeding AI model token limits (~800K chars ≈ ~200K tokens)
+    if (!fileContent || fileContent.trim().length === 0) {
+      return new Response(JSON.stringify({ error: "Não foi possível extrair o conteúdo do arquivo. Tente enviar em formato .docx ou .txt." }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Safety truncation (should rarely trigger now with proper parsing)
     const MAX_CHARS = 800000;
     if (fileContent.length > MAX_CHARS) {
       console.warn(`Content truncated from ${fileContent.length} to ${MAX_CHARS} chars`);
@@ -103,7 +117,7 @@ Os types possíveis para campos são: text, cpf, date, email, phone, number, add
           { role: "system", content: systemPrompt },
           {
             role: "user",
-            content: `Analise este documento modelo e extraia os campos variáveis:\n\nNome do arquivo: ${file_name || 'documento'}\n\nConteúdo:\n${fileContent || 'Arquivo binário - URL: ' + file_url}`,
+            content: `Analise este documento modelo e extraia os campos variáveis. IMPORTANTE: retorne o documento COMPLETO, sem omitir nenhuma parte.\n\nNome do arquivo: ${file_name || 'documento'}\n\nConteúdo:\n${fileContent}`,
           },
         ],
       }),
@@ -118,6 +132,12 @@ Os types possíveis para campos são: text, cpf, date, email, phone, number, add
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
+      if (response.status === 402) {
+        return new Response(JSON.stringify({ error: "Créditos de IA esgotados. Adicione créditos no workspace." }), {
+          status: 402,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
       throw new Error("AI processing failed");
     }
 
@@ -127,12 +147,10 @@ Os types possíveis para campos são: text, cpf, date, email, phone, number, add
     // Parse the JSON from AI response
     let parsed;
     try {
-      // Try to extract JSON from markdown code blocks if present
       const jsonMatch = aiContent.match(/```(?:json)?\s*([\s\S]*?)```/);
       const jsonStr = jsonMatch ? jsonMatch[1].trim() : aiContent.trim();
       parsed = JSON.parse(jsonStr);
     } catch {
-      // Fallback: return raw content
       parsed = {
         content: aiContent,
         fields: [],
