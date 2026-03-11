@@ -324,15 +324,16 @@ Deno.serve(async (req) => {
     // ── DELETE PROMPT ──
     if (action === 'delete_prompt') {
       const body = await req.json()
-      const { data: existing } = await adminClient.from('governance_prompts').select('name').eq('id', body.id).single()
+      const { id } = deleteSchema.parse(body)
+      const { data: existing } = await adminClient.from('governance_prompts').select('name').eq('id', id).single()
       
-      const { error } = await adminClient.from('governance_prompts').delete().eq('id', body.id)
+      const { error } = await adminClient.from('governance_prompts').delete().eq('id', id)
       if (error) throw error
 
       await adminClient.from('governance_action_logs').insert({
         action: 'delete_prompt',
         entity_type: 'prompt',
-        entity_id: body.id,
+        entity_id: id,
         entity_name: existing?.name,
         performed_by: user.id,
       })
