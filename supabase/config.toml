@@ -136,3 +136,6 @@ verify_jwt = false
 
 [functions.generate-document-pdf]
 verify_jwt = false
+
+[functions.admin-dashboard]
+verify_jwt = false
