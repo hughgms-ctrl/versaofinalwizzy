@@ -30,6 +30,7 @@ import WidgetEditorPage from "./pages/WidgetEditorPage";
 import DocumentsPage from "./pages/DocumentsPage";
 import IntegrationsPage from "./pages/IntegrationsPage";
 import PublicFormPage from "./pages/PublicFormPage";
+import PublicPackFormPage from "./pages/PublicPackFormPage";
 import SignaturePage from "./pages/SignaturePage";
 import PublicSignaturePage from "./pages/PublicSignaturePage";
 import PublicBookingPage from "./pages/PublicBookingPage";
