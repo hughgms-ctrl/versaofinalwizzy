@@ -20,7 +20,6 @@ Deno.serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!
 
-    // Verify user token
     const userClient = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: authHeader } }
     })
@@ -29,7 +28,6 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders })
     }
 
-    // Verify platform_admin role server-side
     const adminClient = createClient(supabaseUrl, supabaseServiceKey)
     const { data: roleData } = await adminClient
       .from('user_roles')
@@ -42,29 +40,202 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: corsHeaders })
     }
 
-    // Fetch cross-org stats
-    const [orgsRes, contactsRes, conversationsRes, messagesRes] = await Promise.all([
-      adminClient.from('organizations').select('id, name, slug, storage_used_bytes, created_at', { count: 'exact' }),
-      adminClient.from('contacts').select('id', { count: 'exact', head: true }),
-      adminClient.from('conversations').select('id', { count: 'exact', head: true }),
-      adminClient.from('messages').select('id', { count: 'exact', head: true }),
-    ])
+    // Parse action from URL
+    const url = new URL(req.url)
+    const action = url.searchParams.get('action') || 'overview'
 
-    // Get plans info
-    const { data: plans } = await adminClient.from('platform_plans').select('*').eq('is_active', true)
-    const { data: orgPlans } = await adminClient.from('organization_plans').select('*, platform_plans(name)')
+    if (action === 'overview') {
+      const [orgsRes, contactsRes, conversationsRes, messagesRes, instancesRes, profilesRes] = await Promise.all([
+        adminClient.from('organizations').select('id, name, slug, storage_used_bytes, created_at', { count: 'exact' }),
+        adminClient.from('contacts').select('id', { count: 'exact', head: true }),
+        adminClient.from('conversations').select('id', { count: 'exact', head: true }),
+        adminClient.from('messages').select('id', { count: 'exact', head: true }),
+        adminClient.from('whatsapp_instances').select('id, is_active', { count: 'exact' }),
+        adminClient.from('profiles').select('id', { count: 'exact', head: true }),
+      ])
 
-    return new Response(JSON.stringify({
-      stats: {
-        total_organizations: orgsRes.count || 0,
-        total_contacts: contactsRes.count || 0,
-        total_conversations: conversationsRes.count || 0,
-        total_messages: messagesRes.count || 0,
-      },
-      organizations: orgsRes.data || [],
-      plans: plans || [],
-      organization_plans: orgPlans || [],
-    }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      const activeInstances = (instancesRes.data || []).filter((i: any) => i.is_active).length
+
+      return new Response(JSON.stringify({
+        stats: {
+          total_organizations: orgsRes.count || 0,
+          total_contacts: contactsRes.count || 0,
+          total_conversations: conversationsRes.count || 0,
+          total_messages: messagesRes.count || 0,
+          total_users: profilesRes.count || 0,
+          total_instances: instancesRes.count || 0,
+          active_instances: activeInstances,
+        },
+        organizations: orgsRes.data || [],
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    if (action === 'clients') {
+      // Get all orgs with their user counts, instance counts, plan info
+      const { data: orgs } = await adminClient
+        .from('organizations')
+        .select('id, name, slug, storage_used_bytes, storage_limit_bytes, created_at')
+        .order('created_at', { ascending: false })
+
+      // Get profiles per org
+      const { data: profiles } = await adminClient
+        .from('profiles')
+        .select('id, organization_id, full_name, user_id')
+
+      // Get instances per org
+      const { data: instances } = await adminClient
+        .from('whatsapp_instances')
+        .select('id, organization_id, is_active, phone_number, label, status')
+
+      // Get conversations count per org
+      const { data: convCounts } = await adminClient
+        .from('conversations')
+        .select('organization_id')
+
+      // Get org plans
+      const { data: orgPlans } = await adminClient
+        .from('organization_plans')
+        .select('organization_id, plan_id, status, payment_status, trial_ends_at, current_period_end, platform_plans(name, slug, price_monthly)')
+
+      // Build enriched org list
+      const enrichedOrgs = (orgs || []).map((org: any) => {
+        const orgProfiles = (profiles || []).filter((p: any) => p.organization_id === org.id)
+        const orgInstances = (instances || []).filter((i: any) => i.organization_id === org.id)
+        const orgConvs = (convCounts || []).filter((c: any) => c.organization_id === org.id)
+        const orgPlan = (orgPlans || []).find((p: any) => p.organization_id === org.id)
+
+        return {
+          ...org,
+          user_count: orgProfiles.length,
+          instance_count: orgInstances.length,
+          active_instances: orgInstances.filter((i: any) => i.is_active).length,
+          conversation_count: orgConvs.length,
+          instances: orgInstances,
+          plan: orgPlan ? {
+            name: orgPlan.platform_plans?.name,
+            slug: orgPlan.platform_plans?.slug,
+            price: orgPlan.platform_plans?.price_monthly,
+            status: orgPlan.status,
+            payment_status: orgPlan.payment_status,
+            trial_ends_at: orgPlan.trial_ends_at,
+            current_period_end: orgPlan.current_period_end,
+          } : null,
+        }
+      })
+
+      return new Response(JSON.stringify({ organizations: enrichedOrgs }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    if (action === 'plans') {
+      const [plansRes, orgPlansRes] = await Promise.all([
+        adminClient.from('platform_plans').select('*').order('price_monthly', { ascending: true }),
+        adminClient.from('organization_plans').select('plan_id, status'),
+      ])
+
+      const plans = (plansRes.data || []).map((plan: any) => ({
+        ...plan,
+        subscriber_count: (orgPlansRes.data || []).filter((op: any) => op.plan_id === plan.id && op.status === 'active').length,
+      }))
+
+      return new Response(JSON.stringify({ plans }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    if (action === 'security') {
+      const { data: logs } = await adminClient
+        .from('admin_audit_logs')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(100)
+
+      return new Response(JSON.stringify({ logs: logs || [] }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    if (action === 'governance') {
+      const { data: checks } = await adminClient
+        .from('governance_checks')
+        .select('*')
+        .order('phase', { ascending: true })
+
+      return new Response(JSON.stringify({ checks: checks || [] }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    if (action === 'api') {
+      // Get agent execution logs for cost estimation
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
+      const { data: execLogs, count: execCount } = await adminClient
+        .from('agent_execution_logs')
+        .select('id, organization_id, execution_time_ms, created_at', { count: 'exact' })
+        .gte('created_at', thirtyDaysAgo)
+
+      // Group by org
+      const orgUsage: Record<string, number> = {}
+      for (const log of execLogs || []) {
+        orgUsage[log.organization_id] = (orgUsage[log.organization_id] || 0) + 1
+      }
+
+      // Get org names
+      const orgIds = Object.keys(orgUsage)
+      const { data: orgNames } = await adminClient
+        .from('organizations')
+        .select('id, name')
+        .in('id', orgIds.length > 0 ? orgIds : ['00000000-0000-0000-0000-000000000000'])
+
+      const usageByOrg = orgIds.map(orgId => ({
+        organization_id: orgId,
+        organization_name: (orgNames || []).find((o: any) => o.id === orgId)?.name || 'Desconhecida',
+        request_count: orgUsage[orgId],
+      })).sort((a, b) => b.request_count - a.request_count)
+
+      return new Response(JSON.stringify({
+        total_requests_30d: execCount || 0,
+        usage_by_org: usageByOrg,
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    if (action === 'update_plan') {
+      const body = await req.json()
+      const { id, ...updates } = body
+
+      if (id) {
+        const { data, error } = await adminClient.from('platform_plans').update(updates).eq('id', id).select().single()
+        if (error) throw error
+        return new Response(JSON.stringify({ plan: data }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      } else {
+        const { data, error } = await adminClient.from('platform_plans').insert(updates).select().single()
+        if (error) throw error
+        return new Response(JSON.stringify({ plan: data }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      }
+    }
+
+    if (action === 'assign_plan') {
+      const body = await req.json()
+      const { organization_id, plan_id } = body
+
+      const { data, error } = await adminClient
+        .from('organization_plans')
+        .upsert({
+          organization_id,
+          plan_id,
+          status: 'active',
+          current_period_start: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'organization_id' })
+        .select()
+        .single()
+
+      if (error) throw error
+      return new Response(JSON.stringify({ result: data }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    return new Response(JSON.stringify({ error: 'Unknown action' }), { status: 400, headers: corsHeaders })
 
   } catch (err) {
     return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: corsHeaders })
