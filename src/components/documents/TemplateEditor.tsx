@@ -52,22 +52,24 @@ export function TemplateEditor({ template, onBack }: TemplateEditorProps) {
   const handleSave = () => {
     if (!name.trim()) return;
     if (isEditing) {
-      updateTemplate.mutate({
-        id: template.id,
-        name,
-        description: description || null,
-        category: category || null,
-        content,
-        fields,
-      }, { onSuccess: onBack });
-    } else {
-      createTemplate.mutate({
-        name,
-        description: description || undefined,
-        category: category || undefined,
-        content,
-        fields,
-      }, { onSuccess: onBack });
+        updateTemplate.mutate({
+          id: template.id,
+          name,
+          description: description || null,
+          category: category || null,
+          content,
+          fields,
+          auto_send_whatsapp: autoSendWhatsApp,
+        }, { onSuccess: onBack });
+      } else {
+        createTemplate.mutate({
+          name,
+          description: description || undefined,
+          category: category || undefined,
+          content,
+          fields,
+          auto_send_whatsapp: autoSendWhatsApp,
+        }, { onSuccess: onBack });
     }
   };
 
