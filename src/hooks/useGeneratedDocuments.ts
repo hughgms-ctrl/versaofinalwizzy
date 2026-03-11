@@ -44,13 +44,11 @@ export function useDeleteGeneratedDocument() {
 
   return useMutation({
     mutationFn: async (id: string) => {
-      // First delete related signatures
       await (supabase as any)
         .from('document_signatures')
         .delete()
         .eq('generated_document_id', id);
       
-      // Then delete the document
       const { error } = await (supabase as any)
         .from('generated_documents')
         .delete()
@@ -59,6 +57,48 @@ export function useDeleteGeneratedDocument() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['generated-documents'] });
+    },
+  });
+}
+
+export function useRegenerateDocumentPdf() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (doc: GeneratedDocument) => {
+      let templateContent = '';
+      if (doc.template_id) {
+        const { data: template } = await (supabase as any)
+          .from('document_templates')
+          .select('content')
+          .eq('id', doc.template_id)
+          .single();
+        templateContent = template?.content || '';
+      }
+
+      const { data, error } = await supabase.functions.invoke('generate-document-pdf', {
+        body: {
+          template_content: templateContent,
+          filled_data: doc.filled_data,
+          document_name: doc.name,
+        },
+      });
+      if (error) throw error;
+
+      const { error: updateError } = await (supabase as any)
+        .from('generated_documents')
+        .update({ pdf_url: data.pdf_url })
+        .eq('id', doc.id);
+      if (updateError) throw updateError;
+
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['generated-documents'] });
+      toast.success('PDF regenerado com sucesso');
+    },
+    onError: (err: any) => {
+      toast.error('Erro ao regenerar PDF: ' + (err.message || 'erro desconhecido'));
     },
   });
 }

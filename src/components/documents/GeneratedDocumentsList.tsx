@@ -1,10 +1,10 @@
-import { FileText, Download, Search, Trash2, User, FolderOpen, ChevronDown, ChevronRight } from 'lucide-react';
+import { FileText, Download, Search, Trash2, User, FolderOpen, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
-import { useGeneratedDocuments, useDeleteGeneratedDocument } from '@/hooks/useGeneratedDocuments';
+import { useGeneratedDocuments, useDeleteGeneratedDocument, useRegenerateDocumentPdf } from '@/hooks/useGeneratedDocuments';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import {
@@ -33,8 +33,11 @@ interface SubmittedBy {
   submitted_at?: string;
 }
 
-function DocCard({ doc, onDelete }: { doc: any; onDelete: (id: string) => void }) {
-  const status = STATUS_MAP[doc.status] || STATUS_MAP.draft;
+function DocCard({ doc, onDelete, onRegenerate, isRegenerating }: { doc: any; onDelete: (id: string) => void; onRegenerate: (doc: any) => void; isRegenerating: boolean }) {
+  const isMissingPdf = !doc.pdf_url && doc.status === 'generated';
+  const status = isMissingPdf 
+    ? { label: 'PDF falhou', variant: 'destructive' as const }
+    : (STATUS_MAP[doc.status] || STATUS_MAP.draft);
   const submittedBy = doc.submitted_by as SubmittedBy | null;
 
   return (
@@ -65,6 +68,12 @@ function DocCard({ doc, onDelete }: { doc: any; onDelete: (id: string) => void }
             <Badge variant="outline" className="text-xs">
               {doc.signing_method === 'manual' ? 'Manual' : doc.signing_method === 'govbr' ? 'Gov.br' : 'ZapSign'}
             </Badge>
+          )}
+          {isMissingPdf && (
+            <Button variant="outline" size="sm" onClick={() => onRegenerate(doc)} disabled={isRegenerating} className="text-xs gap-1">
+              <RefreshCw className={`h-3 w-3 ${isRegenerating ? 'animate-spin' : ''}`} />
+              {isRegenerating ? 'Gerando...' : 'Regenerar PDF'}
+            </Button>
           )}
           {doc.pdf_url && (
             <Button variant="ghost" size="icon" asChild>
@@ -103,6 +112,7 @@ function DocCard({ doc, onDelete }: { doc: any; onDelete: (id: string) => void }
 export function GeneratedDocumentsList() {
   const { data: documents, isLoading } = useGeneratedDocuments();
   const deleteDocument = useDeleteGeneratedDocument();
+  const regeneratePdf = useRegenerateDocumentPdf();
   const [search, setSearch] = useState('');
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
@@ -214,7 +224,7 @@ export function GeneratedDocumentsList() {
                 {!isCollapsed && (
                   <div className="border-t px-4 pb-3 pt-2 space-y-2">
                     {docs.map(doc => (
-                      <DocCard key={doc.id} doc={doc} onDelete={handleDelete} />
+                      <DocCard key={doc.id} doc={doc} onDelete={handleDelete} onRegenerate={(d) => regeneratePdf.mutate(d)} isRegenerating={regeneratePdf.isPending} />
                     ))}
                   </div>
                 )}
@@ -224,7 +234,7 @@ export function GeneratedDocumentsList() {
 
           {/* Standalone documents */}
           {standalone.map(doc => (
-            <DocCard key={doc.id} doc={doc} onDelete={handleDelete} />
+            <DocCard key={doc.id} doc={doc} onDelete={handleDelete} onRegenerate={(d) => regeneratePdf.mutate(d)} isRegenerating={regeneratePdf.isPending} />
           ))}
         </div>
       )}
