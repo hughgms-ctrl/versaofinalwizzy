@@ -1774,16 +1774,49 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
           </div>
         );
 
-      case 'action-document':
+      case 'action-document': {
+        const docMode = (localData.documentMode as string) || 'ai_agent';
         return (
           <div className="space-y-4">
             <div className="p-3 bg-rose-50 rounded-lg flex items-center gap-3">
               <FileText className="h-5 w-5 text-rose-500" />
               <div>
                 <p className="text-xs font-semibold">Gerar Contrato / Documento</p>
-                <p className="text-[10px] text-muted-foreground text-rose-700/70">Utiliza as variáveis do fluxo para preencher um PDF.</p>
+                <p className="text-[10px] text-muted-foreground text-rose-700/70">Coleta dados e gera PDFs automaticamente.</p>
               </div>
             </div>
+
+            {/* Modo de operação */}
+            <div className="space-y-2">
+              <Label>Modo de operação</Label>
+              <Select
+                value={docMode}
+                onValueChange={(val) => handleChange('documentMode', val)}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ai_agent">
+                    <div className="flex items-center gap-2">
+                      <Bot className="h-3.5 w-3.5" />
+                      Agente IA (coleta conversacional)
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="public_link">
+                    <div className="flex items-center gap-2">
+                      <Link className="h-3.5 w-3.5" />
+                      Link Público (formulário web)
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-muted-foreground">
+                {docMode === 'ai_agent'
+                  ? 'O agente coleta os dados conversando pelo WhatsApp e gera o documento automaticamente.'
+                  : 'Envia um link de formulário público para o contato preencher os dados.'}
+              </p>
+            </div>
+
+            {/* Template selection */}
             <div className="space-y-2">
               <Label>Template do Documento</Label>
               <Select
@@ -1808,7 +1841,89 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
               </Select>
             </div>
 
-            <div className="space-y-2">
+            {/* === MODO AGENTE IA === */}
+            {docMode === 'ai_agent' && (
+              <>
+                {/* Agent selector */}
+                <div className="space-y-2">
+                  <Label>Agente para coleta</Label>
+                  <Select
+                    value={(localData.documentAgentId as string) || '_default'}
+                    onValueChange={(val) => handleChange('documentAgentId', val === '_default' ? '' : val)}
+                  >
+                    <SelectTrigger><SelectValue placeholder="Agente padrão da conversa" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="_default">
+                        <span className="text-muted-foreground">Usar agente ativo da conversa</span>
+                      </SelectItem>
+                      {agents.map((a) => (
+                        <SelectItem key={a.id} value={a.id}>
+                          <div className="flex items-center gap-2">
+                            <Bot className="h-3.5 w-3.5" />
+                            {a.name}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[10px] text-muted-foreground">
+                    Escolha qual agente conduzirá a coleta de dados. O prompt e personalidade dele serão usados.
+                  </p>
+                </div>
+
+                {/* Prompt adicional para coleta */}
+                <div className="space-y-2">
+                  <Label>Prompt adicional para coleta</Label>
+                  <Textarea
+                    value={(localData.additionalInstructions as string) || ''}
+                    onChange={(e) => handleChange('additionalInstructions', e.target.value)}
+                    placeholder="Ex: Peça o CPF formatado com pontos e traço. Seja objetivo e não faça perguntas extras."
+                    className="text-xs min-h-[60px]"
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    Instruções extras que o agente seguirá durante a coleta dos dados do documento.
+                  </p>
+                </div>
+
+                <div className="space-y-3 pt-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs">Solicitar confirmação</Label>
+                    <Switch
+                      checked={(localData.requireConfirmation as boolean) !== false}
+                      onCheckedChange={(val) => handleChange('requireConfirmation', val)}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs">Enviar PDF no chat</Label>
+                    <Switch
+                      checked={(localData.sendPdfInChat as boolean) !== false}
+                      onCheckedChange={(val) => handleChange('sendPdfInChat', val)}
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* === MODO LINK PÚBLICO === */}
+            {docMode === 'public_link' && (
+              <>
+                <div className="space-y-2">
+                  <Label>Mensagem de envio do link</Label>
+                  <Textarea
+                    value={(localData.publicLinkMessage as string) || ''}
+                    onChange={(e) => handleChange('publicLinkMessage', e.target.value)}
+                    placeholder="📋 Olá! Para prosseguir, por favor preencha seus dados neste link: {{link}}"
+                    className="text-xs min-h-[60px]"
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    Use {'{{link}}'} para incluir o link do formulário. Se vazio, o link será enviado diretamente.
+                  </p>
+                </div>
+              </>
+            )}
+
+            {/* Assinatura (ambos os modos) */}
+            <div className="border-t pt-4 space-y-2">
               <Label>Método de Assinatura</Label>
               <Select
                 value={(localData.signingMethod as string) || 'manual'}
@@ -1821,30 +1936,15 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
                   <SelectItem value="zapsign">ZapSign</SelectItem>
                 </SelectContent>
               </Select>
-            </div>
-
-            <div className="space-y-3 pt-2">
-              <div className="flex items-center justify-between">
-                <Label className="text-xs">Solicitar confirmação</Label>
-                <Switch
-                  checked={(localData.requireConfirmation as boolean) !== false}
-                  onCheckedChange={(val) => handleChange('requireConfirmation', val)}
-                />
-              </div>
-              <div className="flex items-center justify-between">
-                <Label className="text-xs">Enviar PDF no chat</Label>
-                <Switch
-                  checked={(localData.sendPdfInChat as boolean) !== false}
-                  onCheckedChange={(val) => handleChange('sendPdfInChat', val)}
-                />
-              </div>
-              <div className="flex items-center justify-between">
-                <Label className="text-xs">Enviar link de assinatura</Label>
-                <Switch
-                  checked={(localData.sendSignatureLink as boolean) !== false}
-                  onCheckedChange={(val) => handleChange('sendSignatureLink', val)}
-                />
-              </div>
+              {(localData.signingMethod as string) !== 'manual' && (
+                <div className="flex items-center justify-between pt-1">
+                  <Label className="text-xs">Enviar link de assinatura</Label>
+                  <Switch
+                    checked={(localData.sendSignatureLink as boolean) !== false}
+                    onCheckedChange={(val) => handleChange('sendSignatureLink', val)}
+                  />
+                </div>
+              )}
             </div>
 
             {/* Notificação interna */}
@@ -1914,18 +2014,9 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
                 </div>
               )}
             </div>
-
-            <div className="space-y-2">
-              <Label className="text-xs">Instruções Adicionais</Label>
-              <Textarea
-                value={(localData.additionalInstructions as string) || ''}
-                onChange={(e) => handleChange('additionalInstructions', e.target.value)}
-                placeholder="Ex: Peça o CPF se não tiver..."
-                className="text-xs min-h-[60px]"
-              />
-            </div>
           </div>
         );
+      }
 
       // Condition is handled above via renderAdvancedConditionEditor
 
