@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Loader2, CheckCircle, FileText, Send, Info } from 'lucide-react';
+import { Loader2, CheckCircle, FileText, Send, Info, Download, MessageCircle, Phone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -27,6 +27,13 @@ interface PackData {
   template_count: number;
 }
 
+interface GeneratedDoc {
+  id: string;
+  name: string;
+  pdf_url: string | null;
+  template_name: string;
+}
+
 export default function PublicPackFormPage() {
   const [searchParams] = useSearchParams();
   const token = searchParams.get('token');
@@ -36,7 +43,14 @@ export default function PublicPackFormPage() {
   const [error, setError] = useState<string | null>(null);
   const [formData, setFormData] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
+  const [generatedDocs, setGeneratedDocs] = useState<GeneratedDoc[] | null>(null);
+  const [organizationId, setOrganizationId] = useState<string | null>(null);
+
+  // WhatsApp send state
+  const [showWhatsAppInput, setShowWhatsAppInput] = useState(false);
+  const [whatsappPhone, setWhatsappPhone] = useState('');
+  const [sendingWhatsApp, setSendingWhatsApp] = useState(false);
+  const [whatsappSent, setWhatsappSent] = useState(false);
 
   useEffect(() => {
     if (!token) {
@@ -90,11 +104,36 @@ export default function PublicPackFormPage() {
         body: { action: 'submit', token, filled_data: formData },
       });
       if (fnError || data?.error) throw new Error(data?.error || 'Erro ao enviar');
-      setSubmitted(true);
+      setGeneratedDocs(data.documents || []);
+      setOrganizationId(data.organization_id || null);
     } catch (e: any) {
       setError(e.message);
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleSendWhatsApp = async () => {
+    if (!whatsappPhone.trim() || !generatedDocs || !organizationId) return;
+
+    setSendingWhatsApp(true);
+    try {
+      // Send each document PDF via WhatsApp
+      const { data, error: fnError } = await supabase.functions.invoke('public-pack-form', {
+        body: {
+          action: 'send_whatsapp',
+          token,
+          phone: whatsappPhone.replace(/\D/g, ''),
+          document_ids: generatedDocs.map(d => d.id),
+          organization_id: organizationId,
+        },
+      });
+      if (fnError || data?.error) throw new Error(data?.error || 'Erro ao enviar');
+      setWhatsappSent(true);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setSendingWhatsApp(false);
     }
   };
 
@@ -106,7 +145,7 @@ export default function PublicPackFormPage() {
     );
   }
 
-  if (error && !packData) {
+  if (error && !packData && !generatedDocs) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background p-4">
         <Card className="max-w-md w-full text-center p-8">
@@ -118,16 +157,141 @@ export default function PublicPackFormPage() {
     );
   }
 
-  if (submitted) {
+  // ---- Results page after form submission ----
+  if (generatedDocs) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background p-4">
-        <Card className="max-w-md w-full text-center p-8">
-          <CheckCircle className="h-12 w-12 mx-auto text-primary mb-4" />
-          <h2 className="text-lg font-semibold mb-2">Formulário enviado!</h2>
-          <p className="text-sm text-muted-foreground">
-            Seus dados foram recebidos e os documentos serão gerados em breve.
-          </p>
-        </Card>
+      <div className="min-h-screen bg-background">
+        <header className="border-b bg-card py-4 px-6">
+          <div className="max-w-2xl mx-auto flex items-center gap-3">
+            {packData?.organization?.logo_url && (
+              <img src={packData.organization.logo_url} alt="" className="h-8 w-auto object-contain" />
+            )}
+            <div>
+              <h1 className="text-lg font-semibold">{packData?.name}</h1>
+              {packData?.organization?.name && (
+                <p className="text-xs text-muted-foreground">{packData.organization.name}</p>
+              )}
+            </div>
+          </div>
+        </header>
+
+        <main className="max-w-2xl mx-auto p-4 md:p-6">
+          <div className="text-center mb-6">
+            <CheckCircle className="h-12 w-12 mx-auto text-primary mb-3" />
+            <h2 className="text-xl font-semibold">Documentos gerados com sucesso!</h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              {generatedDocs.length} documento{generatedDocs.length > 1 ? 's foram gerados' : ' foi gerado'}
+            </p>
+          </div>
+
+          {error && (
+            <div className="mb-4 p-3 rounded-lg bg-destructive/10 text-destructive text-sm">
+              {error}
+            </div>
+          )}
+
+          <div className="space-y-3 mb-6">
+            {generatedDocs.map((doc) => (
+              <Card key={doc.id} className="p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <FileText className="h-5 w-5 text-primary shrink-0" />
+                    <div>
+                      <p className="text-sm font-medium">{doc.template_name}</p>
+                      <p className="text-xs text-muted-foreground">{doc.name}</p>
+                    </div>
+                  </div>
+                  {doc.pdf_url ? (
+                    <a
+                      href={doc.pdf_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
+                    >
+                      <Download className="h-4 w-4" />
+                      Baixar PDF
+                    </a>
+                  ) : (
+                    <Badge variant="secondary" className="text-xs">Processando...</Badge>
+                  )}
+                </div>
+              </Card>
+            ))}
+          </div>
+
+          {/* WhatsApp section */}
+          <Card className="p-5">
+            <div className="text-center">
+              {!showWhatsAppInput && !whatsappSent && (
+                <>
+                  <MessageCircle className="h-8 w-8 mx-auto text-green-600 mb-2" />
+                  <h3 className="text-base font-semibold mb-1">Receber documentos para assinatura</h3>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Clique abaixo para receber os documentos diretamente no seu WhatsApp
+                  </p>
+                  <Button
+                    onClick={() => setShowWhatsAppInput(true)}
+                    className="bg-green-600 hover:bg-green-700 text-white gap-2"
+                  >
+                    <MessageCircle className="h-4 w-4" />
+                    Receber pelo WhatsApp
+                  </Button>
+                </>
+              )}
+
+              {showWhatsAppInput && !whatsappSent && (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2 justify-center mb-2">
+                    <MessageCircle className="h-5 w-5 text-green-600" />
+                    <h3 className="text-base font-semibold">Informe seu WhatsApp</h3>
+                  </div>
+                  <div className="flex gap-2 max-w-sm mx-auto">
+                    <div className="relative flex-1">
+                      <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        type="tel"
+                        value={whatsappPhone}
+                        onChange={e => setWhatsappPhone(e.target.value)}
+                        placeholder="(11) 99999-9999"
+                        className="pl-9"
+                      />
+                    </div>
+                    <Button
+                      onClick={handleSendWhatsApp}
+                      disabled={sendingWhatsApp || !whatsappPhone.trim()}
+                      className="bg-green-600 hover:bg-green-700 text-white gap-1.5"
+                    >
+                      {sendingWhatsApp ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Send className="h-4 w-4" />
+                      )}
+                      Enviar
+                    </Button>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowWhatsAppInput(false)}
+                    className="text-xs text-muted-foreground"
+                  >
+                    Cancelar
+                  </Button>
+                </div>
+              )}
+
+              {whatsappSent && (
+                <div className="space-y-2">
+                  <CheckCircle className="h-8 w-8 mx-auto text-green-600" />
+                  <h3 className="text-base font-semibold">Documentos enviados!</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Verifique seu WhatsApp para receber os documentos.
+                  </p>
+                </div>
+              )}
+            </div>
+          </Card>
+        </main>
       </div>
     );
   }
@@ -219,7 +383,7 @@ export default function PublicPackFormPage() {
           {submitting ? (
             <>
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              Enviando...
+              Gerando documentos...
             </>
           ) : (
             <>
