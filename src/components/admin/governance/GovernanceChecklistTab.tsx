@@ -109,10 +109,18 @@ export function GovernanceChecklistTab() {
           </Select>
           <span className="text-sm text-muted-foreground">{filtered.length} itens</span>
         </div>
-        <Button onClick={() => setEditForm({ ...emptyCheck })} size="sm">
-          <Plus className="h-4 w-4 mr-2" />
-          Novo Item
-        </Button>
+        <div className="flex gap-2">
+          {checks.length === 0 && (
+            <Button onClick={handleSeedSecurity} size="sm" variant="outline" disabled={seeding}>
+              <ShieldCheck className="h-4 w-4 mr-2" />
+              {seeding ? 'Populando...' : 'Popular Checklist de Segurança'}
+            </Button>
+          )}
+          <Button onClick={() => setEditForm({ ...emptyCheck })} size="sm">
+            <Plus className="h-4 w-4 mr-2" />
+            Novo Item
+          </Button>
+        </div>
       </div>
 
       {Object.entries(grouped).map(([phase, items]) => {
