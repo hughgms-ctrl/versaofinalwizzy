@@ -1588,7 +1588,7 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
                 <SelectTrigger><SelectValue placeholder="Selecione um fluxo..." /></SelectTrigger>
                 <SelectContent>
                   {(() => {
-                    const rootFlows = flows.filter(f => !f.folder_id);
+                    const rootFlows = flows.filter(f => !f.folder_id && f.id !== flowId);
                     const foldersToRender = flowFolders;
                     return (
                       <>
