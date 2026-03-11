@@ -180,7 +180,8 @@ Deno.serve(async (req) => {
     // ── CREATE/UPDATE CHECK ──
     if (action === 'upsert_check') {
       const body = await req.json()
-      const { id, ...fields } = body
+      const parsed = upsertCheckSchema.parse(body)
+      const { id, ...fields } = parsed
 
       let data, error
       if (id) {
