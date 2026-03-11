@@ -419,6 +419,9 @@ async function executeNode(
     case 'action-flow':
       return await executeSubFlow(data, context, supabase);
 
+    case 'action-document':
+      return await executeDocumentAction(data, context, supabase, flow);
+
     case 'action-transfer':
       return await executeTransfer(data, context, supabase);
 
