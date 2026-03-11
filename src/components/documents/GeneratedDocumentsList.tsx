@@ -33,8 +33,11 @@ interface SubmittedBy {
   submitted_at?: string;
 }
 
-function DocCard({ doc, onDelete }: { doc: any; onDelete: (id: string) => void }) {
-  const status = STATUS_MAP[doc.status] || STATUS_MAP.draft;
+function DocCard({ doc, onDelete, onRegenerate, isRegenerating }: { doc: any; onDelete: (id: string) => void; onRegenerate: (doc: any) => void; isRegenerating: boolean }) {
+  const isMissingPdf = !doc.pdf_url && doc.status === 'generated';
+  const status = isMissingPdf 
+    ? { label: 'PDF falhou', variant: 'destructive' as const }
+    : (STATUS_MAP[doc.status] || STATUS_MAP.draft);
   const submittedBy = doc.submitted_by as SubmittedBy | null;
 
   return (
