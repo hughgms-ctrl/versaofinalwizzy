@@ -25,7 +25,6 @@ import { Button } from '@/components/ui/button';
 import { useSidebarContext } from '@/contexts/SidebarContext';
 import { useAuth } from '@/hooks/useAuth';
 import { useUserPermissions, useCurrentUserRole } from '@/hooks/useUserPermissions';
-import { usePlatformAdmin } from '@/hooks/usePlatformAdmin';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import wizzyLogo from '@/assets/wizzy-logo.png';
