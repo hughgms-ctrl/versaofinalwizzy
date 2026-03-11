@@ -62,11 +62,28 @@ export function PackEditor({ pack, onBack }: PackEditorProps) {
   const [expandedField, setExpandedField] = useState<string | null>(null);
   const [isUnifying, setIsUnifying] = useState(false);
 
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
   const toggleTemplate = (id: string) => {
     setSelectedIds(prev =>
       prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
     );
   };
+
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    setFieldConfigs(prev => {
+      const oldIndex = prev.findIndex(f => f.originalName === active.id);
+      const newIndex = prev.findIndex(f => f.originalName === over.id);
+      if (oldIndex === -1 || newIndex === -1) return prev;
+      return arrayMove(prev, oldIndex, newIndex);
+    });
+  }, []);
 
   // Collect all fields from selected templates
   const allFields = useMemo(() => {
