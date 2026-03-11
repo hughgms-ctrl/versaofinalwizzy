@@ -50,7 +50,10 @@ export function PacksList() {
       }
     }
 
-    const url = `${window.location.origin}/pack-form?token=${token}`;
+    // Use published URL to avoid preview auth issues
+    const isPreview = window.location.hostname.includes('preview');
+    const origin = isPreview ? 'https://wizzyai.lovable.app' : window.location.origin;
+    const url = `${origin}/pack-form?token=${token}`;
     await navigator.clipboard.writeText(url);
     setCopiedId(pack.id);
     toast.success('Link copiado!');
