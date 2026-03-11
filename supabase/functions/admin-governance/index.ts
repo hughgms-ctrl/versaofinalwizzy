@@ -1,4 +1,34 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { z } from 'https://esm.sh/zod@3.23.8'
+
+// Input schemas
+const updateCheckSchema = z.object({ id: z.string().uuid(), status: z.string(), notes: z.string().optional() })
+const upsertCheckSchema = z.object({
+  id: z.string().uuid().optional(),
+  name: z.string().min(1).max(200),
+  description: z.string().max(1000).optional(),
+  phase: z.enum(['security', 'backend', 'continuity', 'help', 'ux', 'governance']),
+  weight: z.number().int().min(1).max(10).optional(),
+  is_blocker: z.boolean().optional(),
+  status: z.enum(['pending', 'done', 'failed']).optional(),
+  notes: z.string().max(1000).optional(),
+})
+const deleteSchema = z.object({ id: z.string().uuid() })
+const upsertPromptSchema = z.object({
+  id: z.string().uuid().optional(),
+  name: z.string().min(1).max(200),
+  category: z.string().max(100).optional(),
+  criticality: z.string().optional(),
+  status: z.string().optional(),
+  description: z.string().max(1000).optional(),
+  content: z.string().optional(),
+  related_files: z.array(z.string()).optional(),
+  related_tables: z.array(z.string()).optional(),
+  related_functions: z.array(z.string()).optional(),
+  is_generic: z.boolean().optional(),
+  change_reason: z.string().max(500).optional(),
+})
+const revokeCertSchema = z.object({ id: z.string().uuid(), reason: z.string().min(1).max(500) })
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
