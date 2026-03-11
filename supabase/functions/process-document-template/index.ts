@@ -63,6 +63,13 @@ serve(async (req) => {
       fileContent = await fileResp.text().catch(() => '');
     }
 
+    // Truncate content to avoid exceeding AI model token limits (~800K chars ≈ ~200K tokens)
+    const MAX_CHARS = 800000;
+    if (fileContent.length > MAX_CHARS) {
+      console.warn(`Content truncated from ${fileContent.length} to ${MAX_CHARS} chars`);
+      fileContent = fileContent.slice(0, MAX_CHARS);
+    }
+
     const systemPrompt = `Você é um assistente jurídico especializado em análise de documentos e contratos brasileiros.
 
 Sua tarefa é analisar o conteúdo de um documento modelo e:
