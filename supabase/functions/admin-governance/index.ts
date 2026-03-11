@@ -395,10 +395,11 @@ Deno.serve(async (req) => {
     // ── REVOKE CERTIFICATION ──
     if (action === 'revoke_certification') {
       const body = await req.json()
+      const { id, reason } = revokeCertSchema.parse(body)
       
       const { data, error } = await adminClient.from('governance_certifications')
-        .update({ status: 'revoked', revoked_at: new Date().toISOString(), revoke_reason: body.reason })
-        .eq('id', body.id)
+        .update({ status: 'revoked', revoked_at: new Date().toISOString(), revoke_reason: reason })
+        .eq('id', id)
         .select().single()
 
       if (error) throw error
