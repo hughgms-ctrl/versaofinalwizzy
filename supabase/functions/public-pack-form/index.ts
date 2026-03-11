@@ -45,6 +45,13 @@ Deno.serve(async (req) => {
         .eq("id", pack.organization_id)
         .maybeSingle();
 
+      // Check if auto_send_whatsapp is enabled
+      const { data: fullPack } = await supabase
+        .from("document_packs")
+        .select("auto_send_whatsapp")
+        .eq("id", pack.id)
+        .maybeSingle();
+
       return new Response(JSON.stringify({
         id: pack.id,
         name: pack.name,
@@ -53,6 +60,7 @@ Deno.serve(async (req) => {
         field_config: pack.field_config || [],
         organization: org,
         template_count: pack.template_ids?.length || 0,
+        auto_send_whatsapp: fullPack?.auto_send_whatsapp || false,
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
