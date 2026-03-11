@@ -82,7 +82,7 @@ const nodeLabels: Record<FlowNodeType, string> = {
   'action-tag': 'Tag',
   'action-pipeline': 'Mover Pipeline',
   'condition': 'Condição',
-  'user-input': 'Pergunta',
+  'user-input': 'Pergunta (Variável)',
   'action-workspace': 'Atribuir Workspace',
   'randomizer': 'Randomizador',
   'smart-delay': 'Atraso Inteligente',
