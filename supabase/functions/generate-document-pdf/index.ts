@@ -25,6 +25,21 @@ serve(async (req) => {
       finalText = finalText.replace(new RegExp(`\\{\\{${key}\\}\\}`, "g"), String(value));
     }
 
+    // Sanitize text: replace Unicode characters that WinAnsi (StandardFonts) cannot encode
+    finalText = finalText
+      .replace(/[\u2610]/g, '[ ]')   // ☐ → [ ]
+      .replace(/[\u2611]/g, '[x]')   // ☑ → [x]
+      .replace(/[\u2612]/g, '[x]')   // ☒ → [x]
+      .replace(/[\u2013]/g, '-')     // – (en dash)
+      .replace(/[\u2014]/g, '--')    // — (em dash)
+      .replace(/[\u2018\u2019]/g, "'") // ' ' → '
+      .replace(/[\u201C\u201D]/g, '"') // " " → "
+      .replace(/[\u2022]/g, '*')     // • → *
+      .replace(/[\u2026]/g, '...')   // … → ...
+      .replace(/[\u00A0]/g, ' ')     // non-breaking space
+      // Remove any remaining non-WinAnsi characters (keep basic Latin + Latin-1 Supplement)
+      .replace(/[^\x00-\xFF]/g, '');
+
     // Create PDF
     const pdfDoc = await PDFDocument.create();
     const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
