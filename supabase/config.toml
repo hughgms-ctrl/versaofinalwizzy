@@ -127,3 +127,6 @@ verify_jwt = false
 
 [functions.process-document-template]
 verify_jwt = false
+
+[functions.public-pack-form]
+verify_jwt = false
