@@ -62,7 +62,6 @@ export function Sidebar() {
   const { data: userRole } = useCurrentUserRole();
   const { data: permissions } = useUserPermissions();
   const { signOut } = useAuth();
-  const { isPlatformAdmin } = usePlatformAdmin();
 
   // Check if user can access a module
   const canAccessModule = (module?: string) => {
