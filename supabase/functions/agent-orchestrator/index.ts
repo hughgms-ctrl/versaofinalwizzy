@@ -1489,7 +1489,12 @@ async function invokeDocumentAgentAI(
     systemPrompt += `PERSONALIDADE E REGRAS GERAIS:\n${ctx.masterPrompt.content}\n\n---\n\n`;
   }
 
-  systemPrompt += `Você é o agente "${agent?.name || 'Assistente'}" e está na etapa de COLETA DE DADOS para gerar o documento "${docCtx.template_name}".\n\n`;
+  if (docCtx.is_pack) {
+    systemPrompt += `Você é o agente "${agent?.name || 'Assistente'}" e está na etapa de COLETA DE DADOS para gerar o PACK DE DOCUMENTOS "${docCtx.template_name}" (${docCtx.pack_templates?.length || 0} documentos).\n`;
+    systemPrompt += `Ao concluir, TODOS os documentos do pack serão gerados simultaneamente com os mesmos dados.\n\n`;
+  } else {
+    systemPrompt += `Você é o agente "${agent?.name || 'Assistente'}" e está na etapa de COLETA DE DADOS para gerar o documento "${docCtx.template_name}".\n\n`;
+  }
 
   if (agent?.prompt_base) {
     systemPrompt += `PROMPT DO AGENTE:\n${agent.prompt_base}\n\n`;
