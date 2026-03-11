@@ -88,7 +88,7 @@ export function AIHandoffNode({ data, selected }: NodeProps<AINode>) {
                 type="source"
                 position={Position.Right}
                 id={`outcome-${outcome}`}
-                className="!w-3 !h-3 !bg-violet-500 !border-2 !border-background !-right-1.5"
+                className="!w-3.5 !h-3.5 !bg-violet-500 !border-2 !border-background !-right-[7px] !z-50"
                 style={{ top: `${offset}%` }}
                 title={outcome}
               />
