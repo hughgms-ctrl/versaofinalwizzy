@@ -38,6 +38,7 @@ import NotFound from "./pages/NotFound";
 import CampaignsPage from "./pages/CampaignsPage";
 import CalendarPage from "./pages/CalendarPage";
 import AdminPage from "./pages/AdminPage";
+import AdminLoginPage from "./pages/AdminLoginPage";
 import { AdminProtectedRoute } from "@/components/admin/AdminProtectedRoute";
 
 const queryClient = new QueryClient();
@@ -80,6 +81,7 @@ const App = () => (
                     <Route path="/agendar/:slug" element={<PublicBookingPage />} />
                     <Route path="/campaigns" element={<ProtectedRoute><CampaignsPage /></ProtectedRoute>} />
                     <Route path="/calendar" element={<ProtectedRoute><CalendarPage /></ProtectedRoute>} />
+                    <Route path="/admin/login" element={<AdminLoginPage />} />
                     <Route path="/admin" element={<AdminProtectedRoute><AdminPage /></AdminProtectedRoute>} />
                     {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                     <Route path="*" element={<NotFound />} />
