@@ -49,6 +49,7 @@ interface EditPermissionsDialogProps {
 }
 
 const defaultPermissions: Partial<UserPermissions> = {
+  can_access_dashboard: true,
   can_access_conversations: false,
   can_access_pipeline: false,
   can_access_flows: false,
@@ -57,6 +58,7 @@ const defaultPermissions: Partial<UserPermissions> = {
   can_access_settings: false,
   can_access_team: false,
   can_access_scheduled: false,
+  can_access_calendar: false,
   conversations_filter_type: 'all',
   conversations_allowed_tags: [],
   pipeline_access_type: 'all',
