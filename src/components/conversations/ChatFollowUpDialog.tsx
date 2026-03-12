@@ -99,7 +99,7 @@ export function ChatFollowUpDialog({
           conversation_id: conversationId,
           organization_id: organizationId,
           status: 'waiting_input',
-          remarketing_step: 1,
+          remarketing_step: 0,
           timeout_at: timeoutAt.toISOString(),
           variables: {
             remarketingSteps: steps,
