@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
+import { useQueryClient } from '@tanstack/react-query';
 import { Loader2, ShieldCheck, Lock, Mail } from 'lucide-react';
 
 export default function AdminLoginPage() {
@@ -14,6 +15,7 @@ export default function AdminLoginPage() {
   const { user, loading: authLoading, signIn } = useAuth();
   const { isPlatformAdmin, isLoading: adminLoading } = usePlatformAdmin();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const [isLoading, setIsLoading] = useState(false);
   const [email, setEmail] = useState('');
@@ -39,8 +41,12 @@ export default function AdminLoginPage() {
         description: 'Credenciais inválidas ou sem permissão de administrador.',
         variant: 'destructive',
       });
+      setIsLoading(false);
+      return;
     }
 
+    // Invalidate and refetch platform admin status after successful login
+    await queryClient.invalidateQueries({ queryKey: ['platform-admin'] });
     setIsLoading(false);
   };
 
