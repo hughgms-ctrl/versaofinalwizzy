@@ -187,6 +187,25 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
     }
   };
 
+  const handleSaveNote = async () => {
+    if (!contact?.id) return;
+    setIsSavingNote(true);
+    try {
+      const currentMetadata = (contact?.metadata as Record<string, unknown>) || {};
+      const { error } = await supabase
+        .from('contacts')
+        .update({ metadata: { ...currentMetadata, note: editedNote.trim() || null } })
+        .eq('id', contact.id);
+      if (error) throw error;
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      toast({ title: 'Nota atualizada' });
+      setIsEditingNote(false);
+    } catch (error: any) {
+      toast({ title: 'Erro', description: error.message, variant: 'destructive' });
+    } finally {
+      setIsSavingNote(false);
+    }
+
   const availableTags = tags?.filter(
     tag => !contactTags?.some(ct => ct.tag_id === tag.id)
   ) || [];
