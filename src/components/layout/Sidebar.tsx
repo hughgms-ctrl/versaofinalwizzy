@@ -38,16 +38,16 @@ interface NavItem {
 }
 
 const navigation: NavItem[] = [
-  { name: 'Dashboard', href: '/', icon: LayoutDashboard },
+  { name: 'Dashboard', href: '/', icon: LayoutDashboard, module: 'dashboard' },
   { name: 'Conversas', href: '/conversations', icon: MessageSquare, module: 'conversations' },
   { name: 'Contatos', href: '/contacts', icon: BookUser, module: 'conversations' },
-  { name: 'Agenda', href: '/calendar', icon: Calendar, module: 'pipeline' },
+  { name: 'Agenda', href: '/calendar', icon: Calendar, module: 'calendar' },
   { name: 'Pipeline', href: '/pipeline', icon: Kanban, module: 'pipeline' },
   { name: 'Fluxos', href: '/flows', icon: Workflow, module: 'flows' },
   { name: 'Campanhas', href: '/campaigns', icon: Megaphone, module: 'flows' },
   { name: 'Widgets', href: '/widgets', icon: MousePointerClick, module: 'flows' },
   { name: 'Documentos', href: '/documents', icon: FileText, module: 'flows' },
-  { name: 'Envios em Massa', href: '/scheduled', icon: CalendarClock, module: 'flows' },
+  { name: 'Envios em Massa', href: '/scheduled', icon: CalendarClock, module: 'scheduled' },
   { name: 'Agentes IA', href: '/agents', icon: Bot, module: 'agents' },
   { name: 'Equipe', href: '/team', icon: Users, module: 'team' },
   { name: 'Relatórios', href: '/reports', icon: BarChart3, module: 'reports' },
