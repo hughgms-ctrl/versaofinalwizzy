@@ -17,7 +17,7 @@ import { ptBR } from 'date-fns/locale';
 
 interface Notification {
   id: string;
-  type: 'message' | 'alert' | 'system' | 'disconnect';
+  type: 'message' | 'alert' | 'system';
   title: string;
   description: string;
   timestamp: Date;
