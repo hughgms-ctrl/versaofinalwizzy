@@ -719,10 +719,13 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
           <div
             key={column.id}
             className={cn(
-              "pipeline-column transition-all duration-200 border-l-4",
-              isDragOver && "ring-2 ring-primary ring-offset-2"
+              "pipeline-column transition-all duration-300 border-l-4",
+              isDragOver && "scale-[1.01]"
             )}
-            style={{ borderLeftColor: column.color }}
+            style={{
+              borderLeftColor: column.color,
+              ...(isDragOver ? { boxShadow: `inset 0 0 20px ${column.color}15, 0 0 0 1px ${column.color}40` } : {}),
+            }}
             onDragOver={(e) => handleDragOver(e, column.id)}
             onDrop={(e) => handleDrop(e, column.id)}
           >
