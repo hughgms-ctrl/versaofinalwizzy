@@ -968,10 +968,14 @@ function MessageBubbleList({ messages, mediaMessageIds, contactAvatar, contactNa
               contactId={contactId}
               transcription={mergedTranscriptions[message.id]}
               isTranscriptionLoading={transcriptionsLoading && !mergedTranscriptions[message.id]}
-               senderAvatar={senderAvatar}
-               senderName={senderName}
-               onTranscriptionUpdate={handleTranscriptionUpdate}
-               onAdjustPrompt={onAdjustPrompt}
+              senderAvatar={senderAvatar}
+              senderName={senderName}
+              isHighlighted={highlightedMessageId === message.id}
+              hasFollowUp={!!(followUpMap && followUpMap[message.conversation_id])}
+              onReply={onReply}
+              onFollowUp={onFollowUp}
+              onTranscriptionUpdate={handleTranscriptionUpdate}
+              onAdjustPrompt={onAdjustPrompt}
              />
           </div>
         );
