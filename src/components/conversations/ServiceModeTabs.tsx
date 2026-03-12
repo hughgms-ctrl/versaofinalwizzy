@@ -18,7 +18,7 @@ interface ServiceModeTabsProps {
 const tabs = [
   { value: 'all' as const, label: 'Todas', icon: Users, color: 'bg-muted-foreground' },
   { value: 'pendente' as const, label: 'Fila', icon: Clock, color: 'bg-yellow-500' },
-  { value: 'ativo' as const, label: 'Em Atendimento', icon: User, color: 'bg-green-500' },
+  { value: 'ativo' as const, label: 'Humano', icon: User, color: 'bg-green-500' },
   { value: 'ia' as const, label: 'IA', icon: Bot, color: 'bg-purple-500' },
 ];
 
