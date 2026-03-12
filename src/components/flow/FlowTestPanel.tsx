@@ -621,7 +621,7 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
           const subEdges = (subFlow as any).edges as Edge[];
           const startNode = subNodes.find(n => n.type === 'start');
           setIsProcessing(false);
-          if (startNode) await processNode(startNode, subNodes, subEdges);
+          if (startNode) await processNode(startNode, subNodes, subEdges, true);
 
           // After sub-flow completes, pop stack and restore parent context
           setSimState(prev => {
