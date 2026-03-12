@@ -254,6 +254,12 @@ export function EditPermissionsDialog({ open, onOpenChange, member }: EditPermis
                 <h3 className="text-sm font-medium mb-4">Acesso aos Módulos</h3>
                 <div className="grid grid-cols-2 gap-4">
                   <ModuleSwitch
+                    icon={LayoutDashboard}
+                    label="Dashboard"
+                    checked={permissions.can_access_dashboard ?? true}
+                    onCheckedChange={(v) => toggleModule('can_access_dashboard', v)}
+                  />
+                  <ModuleSwitch
                     icon={MessageSquare}
                     label="Conversas"
                     checked={permissions.can_access_conversations || false}
@@ -264,6 +270,12 @@ export function EditPermissionsDialog({ open, onOpenChange, member }: EditPermis
                     label="Pipeline"
                     checked={permissions.can_access_pipeline || false}
                     onCheckedChange={(v) => toggleModule('can_access_pipeline', v)}
+                  />
+                  <ModuleSwitch
+                    icon={Calendar}
+                    label="Agenda"
+                    checked={permissions.can_access_calendar ?? true}
+                    onCheckedChange={(v) => toggleModule('can_access_calendar', v)}
                   />
                   <ModuleSwitch
                     icon={Workflow}
@@ -296,7 +308,7 @@ export function EditPermissionsDialog({ open, onOpenChange, member }: EditPermis
                     onCheckedChange={(v) => toggleModule('can_access_team', v)}
                   />
                   <ModuleSwitch
-                    icon={Calendar}
+                    icon={CalendarClock}
                     label="Envios em Massa"
                     checked={permissions.can_access_scheduled || false}
                     onCheckedChange={(v) => toggleModule('can_access_scheduled', v)}
