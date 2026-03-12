@@ -31,7 +31,7 @@ describe('ProtectedRoute', () => {
   });
 
   it('renders children when authenticated', () => {
-    mockUseAuth.mockReturnValue({ session: { user: { id: '1' } }, loading: false });
+    mockUseAuth.mockReturnValue({ user: { id: '1' }, loading: false });
     render(<ProtectedRoute><div>Protected</div></ProtectedRoute>);
     expect(screen.getByText('Protected')).toBeInTheDocument();
   });
