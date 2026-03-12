@@ -539,7 +539,7 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
             </>
           )}
         </div>
-      </ScrollArea>
+      </div>
 
       {/* Schedule Dialog */}
       <CreateScheduledMessageDialog
