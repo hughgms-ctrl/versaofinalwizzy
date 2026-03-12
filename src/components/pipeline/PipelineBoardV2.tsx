@@ -20,6 +20,7 @@ import { ConversationFiltersState } from '@/components/shared/ConversationFilter
 import { useUserPermissions, useCurrentUserRole } from '@/hooks/useUserPermissions';
 import { useTags } from '@/hooks/useTags';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { useFollowUpStatus } from '@/hooks/useFollowUpStatus';
 
 interface PipelineBoardProps {
   pipeline: Pipeline | null;
