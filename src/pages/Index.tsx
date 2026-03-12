@@ -25,11 +25,17 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Zap } from 'lucide-react';
 
 const Index = () => {
+  const { canAccess, isLoading: accessLoading } = useCanAccessModule('dashboard');
   const { data: metrics, isLoading } = useDashboardMetrics();
   const { data: pipelines = [] } = usePipelines();
   const [selectedPipelineId, setSelectedPipelineId] = useState<string | null>(null);
   const { data: stageData = [], isLoading: loadingStages } = usePipelineStageDistribution(selectedPipelineId);
   const { data: teamByPipeline = [], isLoading: loadingTeamPipeline } = useTeamPerformanceByPipeline(selectedPipelineId);
+
+  // Redirect to pipeline if user doesn't have dashboard access
+  if (!accessLoading && !canAccess) {
+    return <Navigate to="/pipeline" replace />;
+  }
 
   const getInitials = (name: string) =>
     name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
