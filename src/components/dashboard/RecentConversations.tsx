@@ -5,12 +5,15 @@ import { MessageSquare, Bot, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useNavigate } from 'react-router-dom';
+import { useCanAccessModule } from '@/hooks/useUserPermissions';
 
 export function RecentConversations() {
   const { data: recentConversations = [], isLoading } = useRecentConversations(5);
+  const { canAccess: canAccessConversations } = useCanAccessModule('conversations');
   const navigate = useNavigate();
 
   const handleClick = (conversationId: string) => {
+    if (!canAccessConversations) return;
     navigate(`/conversations?id=${conversationId}`);
   };
 
