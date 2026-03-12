@@ -242,8 +242,8 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
         />
       )}
 
-      <ScrollArea className="flex-1">
-        <div className="p-4 pb-16 space-y-6">
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+        <div className="w-full min-w-0 space-y-6 p-4 pb-16">
           {/* Avatar & Name */}
           <div className="flex flex-col items-center text-center">
             <div className="h-20 w-20 rounded-full bg-gradient-to-br from-primary/20 to-purple-500/20 flex items-center justify-center mb-3">
