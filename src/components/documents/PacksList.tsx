@@ -18,8 +18,10 @@ import { PackFillForm } from './PackFillForm';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from 'sonner';
+import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 
 export function PacksList() {
+  const { selectedWorkspaceId } = useWorkspaceContext();
   const { data: packs, isLoading } = useDocumentPacks();
   const { data: templates } = useDocumentTemplates();
   const deletePack = useDeleteDocumentPack();
