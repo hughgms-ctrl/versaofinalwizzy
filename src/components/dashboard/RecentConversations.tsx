@@ -45,7 +45,10 @@ export function RecentConversations() {
               <div 
                 key={conversation.id}
                 onClick={() => handleClick(conversation.id)}
-                className="flex items-center gap-3 p-3 rounded-lg bg-secondary/50 hover:bg-secondary transition-colors cursor-pointer"
+                className={cn(
+                  "flex items-center gap-3 p-3 rounded-lg bg-secondary/50 transition-colors",
+                  canAccessConversations ? "hover:bg-secondary cursor-pointer" : "opacity-80"
+                )}
               >
                 <div className="relative">
                   <div className="h-10 w-10 rounded-full bg-gradient-to-br from-primary/20 to-purple-500/20 flex items-center justify-center">
