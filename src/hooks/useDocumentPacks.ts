@@ -11,6 +11,7 @@ export interface DocumentPack {
   template_ids: string[];
   field_config: any[];
   public_token: string | null;
+  folder_id: string | null;
   workspace_id: string | null;
   created_by: string | null;
   created_at: string;
