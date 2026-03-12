@@ -91,8 +91,7 @@ export function NotificationDropdown() {
                 key={notification.id}
                 className={cn(
                   'flex items-start gap-3 p-3 cursor-pointer',
-                  !notification.read && 'bg-muted/50',
-                  !notification.read && notification.type === 'disconnect' && 'bg-destructive/10'
+                  !notification.read && 'bg-muted/50'
                 )}
                 onClick={() => markAsRead(notification.id)}
               >
