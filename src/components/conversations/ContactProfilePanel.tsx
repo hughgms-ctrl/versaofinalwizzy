@@ -315,7 +315,8 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
           {/* Quick Note (Nota Rápida) */}
           <div className="space-y-2">
             <Label className="text-xs text-muted-foreground uppercase tracking-wider">
-              Nota Rápida
+              Observação
+            </Label>
             </Label>
             <div className="flex items-start gap-2">
               {isEditingNote ? (
