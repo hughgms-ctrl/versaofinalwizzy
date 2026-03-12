@@ -352,9 +352,10 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
         addMsg({ type: 'action', content: `Agente finalizou tarefa → Avançando fluxo`, actionIcon: '🎯' });
         await wait(800);
         const next = findNext(nodeId, nodes, edges);
+        const isSubFlowExecution = simState.parentFlowStack.length > 0;
         if (next) {
-          await processNode(next, nodes, edges);
-        } else {
+          await processNode(next, nodes, edges, isSubFlowExecution);
+        } else if (!isSubFlowExecution) {
           endFlow();
         }
         return;
