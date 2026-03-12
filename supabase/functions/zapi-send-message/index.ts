@@ -10,6 +10,9 @@ interface SendMessageRequest {
   content: string;
   type?: 'text' | 'image' | 'audio' | 'document';
   mediaUrl?: string;
+  quotedMessageId?: string;
+  quotedContent?: string;
+  quotedSender?: string;
 }
 
 // Build UAZAPI URL with token as query parameter
