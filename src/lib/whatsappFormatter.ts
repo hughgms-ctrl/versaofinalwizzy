@@ -20,7 +20,9 @@ export function formatWhatsAppMessage(text: string): string {
   formatted = formatted
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
   
   // Handle code blocks first (triple backticks)
   formatted = formatted.replace(/```([^`]+)```/g, '<code class="block bg-black/20 px-2 py-1 rounded text-xs font-mono">$1</code>');
