@@ -12,6 +12,7 @@ export interface DocumentTemplate {
   content: string;
   fields: Array<{ name: string; label: string; type: string; required: boolean }>;
   original_file_url: string | null;
+  folder_id: string | null;
   workspace_id: string | null;
   created_by: string | null;
   auto_send_whatsapp?: boolean;

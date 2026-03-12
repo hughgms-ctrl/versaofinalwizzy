@@ -1388,6 +1388,51 @@ export type Database = {
           },
         ]
       }
+      document_folders: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          organization_id: string
+          position: number | null
+          updated_at: string
+          workspace_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          organization_id: string
+          position?: number | null
+          updated_at?: string
+          workspace_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          organization_id?: string
+          position?: number | null
+          updated_at?: string
+          workspace_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "document_folders_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "document_folders_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       document_packs: {
         Row: {
           auto_send_whatsapp: boolean | null
@@ -1395,6 +1440,7 @@ export type Database = {
           created_by: string | null
           description: string | null
           field_config: Json | null
+          folder_id: string | null
           id: string
           name: string
           organization_id: string
@@ -1409,6 +1455,7 @@ export type Database = {
           created_by?: string | null
           description?: string | null
           field_config?: Json | null
+          folder_id?: string | null
           id?: string
           name: string
           organization_id: string
@@ -1423,6 +1470,7 @@ export type Database = {
           created_by?: string | null
           description?: string | null
           field_config?: Json | null
+          folder_id?: string | null
           id?: string
           name?: string
           organization_id?: string
@@ -1432,6 +1480,13 @@ export type Database = {
           workspace_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "document_packs_folder_id_fkey"
+            columns: ["folder_id"]
+            isOneToOne: false
+            referencedRelation: "document_folders"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "document_packs_organization_id_fkey"
             columns: ["organization_id"]
@@ -1562,6 +1617,7 @@ export type Database = {
           default_signing_method: string | null
           description: string | null
           fields: Json
+          folder_id: string | null
           id: string
           name: string
           organization_id: string
@@ -1578,6 +1634,7 @@ export type Database = {
           default_signing_method?: string | null
           description?: string | null
           fields?: Json
+          folder_id?: string | null
           id?: string
           name: string
           organization_id: string
@@ -1594,6 +1651,7 @@ export type Database = {
           default_signing_method?: string | null
           description?: string | null
           fields?: Json
+          folder_id?: string | null
           id?: string
           name?: string
           organization_id?: string
@@ -1602,6 +1660,13 @@ export type Database = {
           workspace_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "document_templates_folder_id_fkey"
+            columns: ["folder_id"]
+            isOneToOne: false
+            referencedRelation: "document_folders"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "document_templates_organization_id_fkey"
             columns: ["organization_id"]
