@@ -379,7 +379,8 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
     const lastMessage = conversation.last_message?.[0];
     const isAIActive = lastMessage?.is_from_bot;
     const searchSnippet = searchQuery.trim().length >= 2 ? messageSearchResult?.snippets?.get(conversation.id) : undefined;
-    const messagePreview = searchSnippet ? `🔍 ${stripMarkdown(searchSnippet)}` : getLastMessagePreview(conversation);
+    const highlightedSnippet = searchSnippet ? highlightTerm(stripMarkdown(searchSnippet), searchQuery) : null;
+    const messagePreview = searchSnippet ? null : getLastMessagePreview(conversation);
 
     // Real presence logic using contact_presence table
     const presenceData = conversation.contact?.contact_presence;
