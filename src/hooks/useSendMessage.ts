@@ -8,6 +8,9 @@ interface SendMessageParams {
   content: string;
   type?: 'text' | 'image' | 'audio' | 'document';
   mediaUrl?: string;
+  quotedMessageId?: string;
+  quotedContent?: string;
+  quotedSender?: string;
 }
 
 export function useSendMessage() {
