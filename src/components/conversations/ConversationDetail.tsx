@@ -1194,7 +1194,7 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
     <div
       id={`message-${message.id}`}
       className={cn(
-        "flex gap-3 group/msg relative",
+        "flex gap-1.5 group/msg",
         isInbound ? "justify-start" : "justify-end",
         isHighlighted && "animate-pulse bg-primary/10 rounded-lg -mx-2 px-2 py-1"
       )}
