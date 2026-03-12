@@ -90,14 +90,7 @@ export function ChatFollowUpDialog({
         .eq('flow_id', systemFlow.id)
         .in('status', ['waiting_input', 'running']);
 
-      // Create the flow execution with remarketing steps in variables
-      const now = new Date();
-      const firstStep = steps[0];
-      const timeoutAt = new Date(now.getTime() + (firstStep.delayMinutes * 60 * 1000));
-
-      const { error: execError } = await supabase
-        .from('flow_executions')
-        .insert({
+      const execPayload = {
           flow_id: systemFlow.id,
           conversation_id: conversationId,
           organization_id: organizationId,
@@ -111,15 +104,19 @@ export function ChatFollowUpDialog({
             remarketingQuietEnd: localData.remarketingQuietEnd,
             source: 'chat_follow_up',
             triggerMessageId: lastMessage?.id,
-          },
+          } as unknown as import('@/integrations/supabase/types').Json,
           current_node_id: 'chat-follow-up',
           execution_log: [{
             type: 'chat_follow_up_started',
             timestamp: now.toISOString(),
             steps: steps.length,
             startedBy: session?.user?.id,
-          }],
-        });
+          }] as unknown as import('@/integrations/supabase/types').Json,
+      };
+
+      const { error: execError } = await supabase
+        .from('flow_executions')
+        .insert(execPayload);
 
       if (execError) throw execError;
 
