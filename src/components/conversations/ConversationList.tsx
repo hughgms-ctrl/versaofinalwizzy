@@ -59,7 +59,9 @@ export function ConversationList({ conversations, selectedId, onSelect, onSpyVie
           const isAIActive = lastMessage?.is_from_bot;
           const isInFollowUp = !!followUpMap[conversation.id];
           const followUpStep = followUpMap[conversation.id]?.step;
+          const searchSnippet = searchQuery && searchQuery.trim().length >= 2 ? messageSnippets?.get(conversation.id) : undefined;
           const messagePreview = (() => {
+            if (searchSnippet) return `🔍 ${stripMarkdown(searchSnippet)}`;
             if (!lastMessage) return null;
             if (lastMessage.type !== 'text') {
               const typeLabels: Record<string, string> = {
