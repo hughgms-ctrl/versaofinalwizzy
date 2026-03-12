@@ -214,7 +214,7 @@
 
   /* Pipeline Column Styles */
   .pipeline-column {
-    @apply flex-shrink-0 w-[280px] bg-muted/50 rounded-xl p-3 flex flex-col max-h-[calc(100vh-140px)];
+    @apply flex-shrink-0 w-[420px] bg-muted/50 rounded-xl p-3 flex flex-col max-h-[calc(100vh-140px)];
   }
 
   .pipeline-card {
