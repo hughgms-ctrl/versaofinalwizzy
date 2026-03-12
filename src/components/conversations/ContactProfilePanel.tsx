@@ -353,7 +353,7 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
                   {editedNote ? (
                     <span className="text-sm text-amber-600 dark:text-amber-400 flex-1">{editedNote}</span>
                   ) : (
-                    <span className="text-sm text-muted-foreground flex-1">Adicionar nota rápida...</span>
+                    <span className="text-sm text-muted-foreground flex-1">Adicionar observação...</span>
                   )}
                   <Pencil className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
                 </button>
