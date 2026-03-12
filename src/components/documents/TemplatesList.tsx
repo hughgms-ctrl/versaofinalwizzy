@@ -17,9 +17,11 @@ import { TemplateFillForm } from './TemplateFillForm';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useToast } from '@/hooks/use-toast';
+import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 
 export function TemplatesList() {
   const { data: templates, isLoading } = useDocumentTemplates();
+  const { selectedWorkspaceId } = useWorkspaceContext();
   const deleteTemplate = useDeleteDocumentTemplate();
   const createTemplate = useCreateDocumentTemplate();
   const { toast } = useToast();
@@ -35,10 +37,11 @@ export function TemplatesList() {
     toast({ title: 'Link copiado!', description: 'O link do formulário foi copiado para a área de transferência.' });
   };
 
-  const filtered = templates?.filter(t =>
-    t.name.toLowerCase().includes(search.toLowerCase()) ||
-    t.category?.toLowerCase().includes(search.toLowerCase())
-  ) || [];
+  const filtered = templates?.filter(t => {
+    if (selectedWorkspaceId && t.workspace_id && t.workspace_id !== selectedWorkspaceId) return false;
+    return t.name.toLowerCase().includes(search.toLowerCase()) ||
+      t.category?.toLowerCase().includes(search.toLowerCase());
+  }) || [];
 
   const handleDuplicate = (template: DocumentTemplate) => {
     createTemplate.mutate({

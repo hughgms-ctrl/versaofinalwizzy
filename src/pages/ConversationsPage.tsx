@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { ConversationList } from '@/components/conversations/ConversationList';
 import { ConversationDetail } from '@/components/conversations/ConversationDetail';
@@ -22,6 +22,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useConversationShares } from '@/hooks/useConversationShares';
 
 const ConversationsPage = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [selectedConversation, setSelectedConversation] = useState<DbConversation | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filters, setFilters] = useState<ConversationFiltersState>(defaultFilters);
@@ -245,6 +246,20 @@ const ConversationsPage = () => {
     setIsSpyMode(true);
     // Don't mark as read - keep unread badge
   }, []);
+
+  // Auto-select conversation from URL ?id= param
+  useEffect(() => {
+    const convId = searchParams.get('id');
+    if (convId && conversations && conversations.length > 0 && !selectedConversation) {
+      const target = conversations.find(c => c.id === convId);
+      if (target) {
+        handleSelectConversation(target);
+        // Remove the param from URL after selecting
+        searchParams.delete('id');
+        setSearchParams(searchParams, { replace: true });
+      }
+    }
+  }, [conversations, searchParams]);
 
   // Keep selected conversation in sync with updated data or clear if archived
   useEffect(() => {
