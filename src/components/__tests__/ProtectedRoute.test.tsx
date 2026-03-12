@@ -18,13 +18,13 @@ import { ProtectedRoute } from '../ProtectedRoute';
 
 describe('ProtectedRoute', () => {
   it('shows loading when auth is loading', () => {
-    mockUseAuth.mockReturnValue({ session: null, loading: true });
+    mockUseAuth.mockReturnValue({ user: null, loading: true });
     render(<ProtectedRoute><div>Protected</div></ProtectedRoute>);
     expect(screen.queryByText('Protected')).not.toBeInTheDocument();
   });
 
   it('redirects to /auth when not authenticated', () => {
-    mockUseAuth.mockReturnValue({ session: null, loading: false });
+    mockUseAuth.mockReturnValue({ user: null, loading: false });
     render(<ProtectedRoute><div>Protected</div></ProtectedRoute>);
     const nav = screen.getByTestId('navigate');
     expect(nav).toHaveAttribute('data-to', '/auth');
