@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { ConversationList } from '@/components/conversations/ConversationList';
 import { ConversationDetail } from '@/components/conversations/ConversationDetail';
