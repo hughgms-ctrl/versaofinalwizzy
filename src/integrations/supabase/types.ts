@@ -3281,7 +3281,9 @@ export type Database = {
         Row: {
           allowed_pipeline_ids: string[] | null
           can_access_agents: boolean
+          can_access_calendar: boolean
           can_access_conversations: boolean
+          can_access_dashboard: boolean
           can_access_flows: boolean
           can_access_pipeline: boolean
           can_access_reports: boolean
@@ -3301,7 +3303,9 @@ export type Database = {
         Insert: {
           allowed_pipeline_ids?: string[] | null
           can_access_agents?: boolean
+          can_access_calendar?: boolean
           can_access_conversations?: boolean
+          can_access_dashboard?: boolean
           can_access_flows?: boolean
           can_access_pipeline?: boolean
           can_access_reports?: boolean
@@ -3321,7 +3325,9 @@ export type Database = {
         Update: {
           allowed_pipeline_ids?: string[] | null
           can_access_agents?: boolean
+          can_access_calendar?: boolean
           can_access_conversations?: boolean
+          can_access_dashboard?: boolean
           can_access_flows?: boolean
           can_access_pipeline?: boolean
           can_access_reports?: boolean
