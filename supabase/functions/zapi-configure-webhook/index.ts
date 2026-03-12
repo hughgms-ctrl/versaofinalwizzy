@@ -66,7 +66,8 @@ Deno.serve(async (req) => {
       enabled: true,
       base64: true,
       media: true,
-      events: ["messages", "connection", "history", "presence", "status", "documents", "media", "chat"]
+      events: ["messages", "connection", "history", "presence", "ChatPresence", "chatpresence", "status", "documents", "media", "chat"],
+      subscribe: ["Message", "ReadReceipt", "ChatPresence", "HistorySync"],
     };
 
     // Try multiple possible webhook endpoints for V1/V2 compatibility
