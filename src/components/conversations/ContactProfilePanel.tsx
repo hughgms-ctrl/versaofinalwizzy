@@ -222,7 +222,7 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
       "bg-card flex flex-col overflow-hidden",
       embedded
         ? "w-full h-full"
-        : "w-80 min-w-[320px] max-w-80 border-l border-border h-full flex-shrink-0"
+        : "w-full sm:w-80 sm:min-w-[320px] sm:max-w-80 border-l border-border h-full flex-shrink-0 fixed inset-0 z-50 sm:static sm:z-auto"
     )}>
       {/* Header */}
       {!embedded && (
