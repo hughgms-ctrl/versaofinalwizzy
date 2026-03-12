@@ -619,6 +619,13 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
                       contactId={conversation.contact?.id}
                        senderAvatar={profile?.avatar_url}
                        senderName={profile?.full_name}
+                       highlightedMessageId={highlightedMessageId}
+                       followUpMap={followUpMap || {}}
+                       onReply={(msg) => setReplyingTo(msg)}
+                       onFollowUp={(msg) => {
+                         setFollowUpMessage(msg);
+                         setFollowUpDialogOpen(true);
+                       }}
                         onAdjustPrompt={(msg) => {
                           const aiMeta = (msg.metadata as any)?.ai_metadata || {};
                           setFeedbackMessage({
