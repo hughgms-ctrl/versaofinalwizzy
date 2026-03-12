@@ -312,7 +312,7 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
 
           <Separator />
 
-          {/* Quick Note (Nota Rápida) */}
+          {/* Observação */}
           <div className="space-y-2">
             <Label className="text-xs text-muted-foreground uppercase tracking-wider">
               Observação
