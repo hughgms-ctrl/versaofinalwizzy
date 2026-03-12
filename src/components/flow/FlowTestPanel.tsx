@@ -890,8 +890,9 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
       setIsProcessing(true);
       const listEdge = edges.find(e => e.source === cur.id && (e.sourceHandle === row.id || e.sourceHandle === row.title));
       const next = listEdge ? nodes.find(n => n.id === listEdge.target) : findNext(cur.id, nodes, edges);
-      if (next) await processNode(next, nodes, edges);
-      else endFlow();
+      const isSubFlowExecution = simState.parentFlowStack.length > 0;
+      if (next) await processNode(next, nodes, edges, isSubFlowExecution);
+      else if (!isSubFlowExecution) endFlow();
       setIsProcessing(false);
     }
   };
