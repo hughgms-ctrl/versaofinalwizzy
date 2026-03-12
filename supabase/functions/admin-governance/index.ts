@@ -133,6 +133,16 @@ Deno.serve(async (req) => {
   }
 
   try {
+    // Rate limit check
+    const clientIP = req.headers.get('x-forwarded-for') || req.headers.get('cf-connecting-ip') || 'unknown'
+    const { allowed, remaining } = checkRateLimit(clientIP)
+    if (!allowed) {
+      return new Response(JSON.stringify({ error: 'Too many requests. Try again later.' }), {
+        status: 429,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Retry-After': '60', 'X-RateLimit-Remaining': '0' },
+      })
+    }
+
     const { adminClient, user } = await verifyAdmin(req)
     const url = new URL(req.url)
     const action = url.searchParams.get('action') || 'dashboard'

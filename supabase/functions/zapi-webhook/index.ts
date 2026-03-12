@@ -63,12 +63,44 @@ function isGroupChat(chatid: string): boolean {
   return chatid?.includes('@g.us') || chatid?.includes('@broadcast') || false;
 }
 
+// ── RATE LIMITING for webhook ──
+const webhookRateStore = new Map<string, { count: number; resetAt: number }>()
+const WEBHOOK_RATE_LIMIT = 300 // per minute per IP
+const WEBHOOK_WINDOW_MS = 60_000
+
+function checkWebhookRate(ip: string): boolean {
+  const now = Date.now()
+  const entry = webhookRateStore.get(ip)
+  if (!entry || now > entry.resetAt) {
+    webhookRateStore.set(ip, { count: 1, resetAt: now + WEBHOOK_WINDOW_MS })
+    return true
+  }
+  entry.count++
+  return entry.count <= WEBHOOK_RATE_LIMIT
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
+    // Rate limiting
+    const clientIP = req.headers.get('x-forwarded-for') || req.headers.get('cf-connecting-ip') || 'unknown';
+    if (!checkWebhookRate(clientIP)) {
+      console.warn(`[RATE_LIMIT] Webhook rate limit exceeded for IP: ${clientIP.substring(0, 8)}***`);
+      return new Response(JSON.stringify({ error: 'Rate limit exceeded' }), { status: 429, headers: corsHeaders });
+    }
+
+    // Webhook signature validation (UAZAPI token-based)
+    const webhookToken = req.headers.get('x-webhook-token') || req.headers.get('x-api-key') || '';
+    const zapiClientToken = Deno.env.get('ZAPI_CLIENT_TOKEN') || '';
+    // If ZAPI_CLIENT_TOKEN is configured and a token header is present, validate it
+    if (zapiClientToken && webhookToken && webhookToken !== zapiClientToken) {
+      console.warn('[WEBHOOK_AUTH] Invalid webhook token received');
+      return new Response(JSON.stringify({ error: 'Invalid webhook token' }), { status: 401, headers: corsHeaders });
+    }
+
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
