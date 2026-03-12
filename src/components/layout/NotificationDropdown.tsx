@@ -57,11 +57,7 @@ export function NotificationDropdown() {
         <Button variant="ghost" size="icon" className="relative">
           <Bell className="h-5 w-5 text-muted-foreground" />
           {unreadCount > 0 && (
-            <span className={cn(
-              "absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-medium",
-              notifications.some(n => !n.read && n.type === 'disconnect')
-                ? "bg-destructive text-destructive-foreground animate-pulse"
-                : "bg-destructive text-destructive-foreground"
+            <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-medium bg-destructive text-destructive-foreground">
             )}>
               {unreadCount > 9 ? '9+' : unreadCount}
             </span>
