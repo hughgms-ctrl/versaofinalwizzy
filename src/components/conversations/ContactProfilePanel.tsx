@@ -24,7 +24,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { ScrollArea } from '@/components/ui/scroll-area';
+
 import {
   Popover,
   PopoverContent,
@@ -219,10 +219,10 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
 
   return (
     <div className={cn(
-      "bg-card flex flex-col overflow-hidden",
+      "bg-card flex min-h-0 flex-col",
       embedded
         ? "w-full h-full"
-        : "w-full border-l border-border h-full fixed inset-0 z-50 sm:static sm:z-auto sm:w-[280px] lg:w-80 sm:flex-shrink-0 overflow-y-auto"
+        : "fixed inset-0 z-50 h-[100dvh] w-screen border-l border-border sm:static sm:z-auto sm:h-full sm:w-[min(22rem,42vw)] sm:min-w-[18rem] sm:max-w-[22rem] sm:flex-shrink-0"
     )}>
       {/* Header */}
       {!embedded && (
@@ -242,8 +242,8 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
         />
       )}
 
-      <ScrollArea className="flex-1">
-        <div className="p-4 pb-16 space-y-6">
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+        <div className="w-full min-w-0 space-y-6 p-4 pb-16">
           {/* Avatar & Name */}
           <div className="flex flex-col items-center text-center">
             <div className="h-20 w-20 rounded-full bg-gradient-to-br from-primary/20 to-purple-500/20 flex items-center justify-center mb-3">
@@ -539,7 +539,7 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
             </>
           )}
         </div>
-      </ScrollArea>
+      </div>
 
       {/* Schedule Dialog */}
       <CreateScheduledMessageDialog
