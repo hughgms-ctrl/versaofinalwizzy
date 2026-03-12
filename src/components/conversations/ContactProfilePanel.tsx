@@ -219,10 +219,10 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
 
   return (
     <div className={cn(
-      "bg-card flex flex-col overflow-hidden",
+      "bg-card flex min-h-0 flex-col",
       embedded
         ? "w-full h-full"
-        : "w-full border-l border-border h-full fixed inset-0 z-50 sm:static sm:z-auto sm:w-[280px] lg:w-80 sm:flex-shrink-0 overflow-y-auto"
+        : "fixed inset-0 z-50 h-[100dvh] w-screen border-l border-border sm:static sm:z-auto sm:h-full sm:w-[min(22rem,42vw)] sm:min-w-[18rem] sm:max-w-[22rem] sm:flex-shrink-0"
     )}>
       {/* Header */}
       {!embedded && (
