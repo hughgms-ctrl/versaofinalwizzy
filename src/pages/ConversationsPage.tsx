@@ -459,6 +459,8 @@ const ConversationsPage = () => {
                   selectedId={selectedConversation?.id}
                   onSelect={handleSelectConversation}
                   onSpyView={handleSpyView}
+                  searchQuery={searchQuery}
+                  messageSnippets={messageSearchResult?.snippets}
                 />
               ) : searchQuery || filters.datePreset !== 'all' || filters.statusFilter !== 'all' || filters.tagFilter !== 'all' || filters.showOnlyUnread || filters.showOnlyAI ? (
                 <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-8">
