@@ -6,7 +6,7 @@ import { PipelineSelector } from '@/components/pipeline/PipelineSelector';
 import { PipelineChatModal } from '@/components/pipeline/PipelineChatModal';
 import { ConversationFilters, ConversationFiltersState, defaultFilters } from '@/components/shared/ConversationFilters';
 import { Loader2, Search, X, Smartphone, Settings } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { usePipelines, useDeletePipeline, Pipeline } from '@/hooks/usePipelines';
 import { useConversations, DbConversation } from '@/hooks/useConversations';
 import { useWhatsAppStatus } from '@/hooks/useWhatsAppStatus';
