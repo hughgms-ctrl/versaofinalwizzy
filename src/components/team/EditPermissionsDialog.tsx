@@ -68,6 +68,7 @@ const defaultPermissions: Partial<UserPermissions> = {
 
 // Permissões padrão para Supervisor
 const supervisorDefaultPermissions: Partial<UserPermissions> = {
+  can_access_dashboard: true,
   can_access_conversations: true,
   can_access_pipeline: true,
   can_access_flows: false,
@@ -76,6 +77,7 @@ const supervisorDefaultPermissions: Partial<UserPermissions> = {
   can_access_settings: false,
   can_access_team: true,
   can_access_scheduled: true,
+  can_access_calendar: true,
   conversations_filter_type: 'all',
   conversations_allowed_tags: [],
   pipeline_access_type: 'all',
