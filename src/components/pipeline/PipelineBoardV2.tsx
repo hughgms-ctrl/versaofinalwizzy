@@ -21,6 +21,7 @@ import { useUserPermissions, useCurrentUserRole } from '@/hooks/useUserPermissio
 import { useTags } from '@/hooks/useTags';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useFollowUpStatus } from '@/hooks/useFollowUpStatus';
+import { useMessageSearch } from '@/hooks/useMessageSearch';
 
 interface PipelineBoardProps {
   pipeline: Pipeline | null;
