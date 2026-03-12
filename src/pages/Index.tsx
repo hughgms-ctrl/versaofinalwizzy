@@ -133,7 +133,11 @@ const Index = () => {
                             border: '1px solid hsl(var(--border))',
                             borderRadius: '8px',
                           }}
-                          formatter={(value: number) => [`${value} contatos`, '']}
+                          formatter={(value: number) => {
+                            const total = stageData.reduce((sum, s) => sum + s.value, 0);
+                            const pct = total > 0 ? ((value / total) * 100).toFixed(1) : '0';
+                            return [`${value} contatos (${pct}%)`, ''];
+                          }}
                         />
                         <Bar dataKey="value" radius={[0, 4, 4, 0]}>
                           {stageData.map((entry, index) => (
