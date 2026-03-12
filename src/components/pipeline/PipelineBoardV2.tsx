@@ -29,9 +29,10 @@ interface PipelineBoardProps {
   filters: ConversationFiltersState;
   searchQuery?: string;
   onConversationClick: (conversation: DbConversation) => void;
+  sharedConversationIds?: Set<string>;
 }
 
-export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversationClick }: PipelineBoardProps) {
+export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversationClick, sharedConversationIds }: PipelineBoardProps) {
   const isMobile = useIsMobile();
   const queryClient = useQueryClient();
   const { selectedWorkspace, selectedWorkspaceId, isAdmin } = useWorkspaceContext();
