@@ -186,7 +186,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
         const name = conv.contact?.name?.toLowerCase() || '';
         const phone = conv.contact?.phone || '';
         const matchesNameOrPhone = name.includes(query) || phone.includes(query);
-        const matchesMessage = messageMatchIds?.has(conv.id) ?? false;
+        const matchesMessage = messageSearchResult?.matchIds?.has(conv.id) ?? false;
         if (!matchesNameOrPhone && !matchesMessage) return false;
       }
 
