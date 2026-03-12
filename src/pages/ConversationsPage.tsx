@@ -20,6 +20,7 @@ import { NewConversationDialog } from '@/components/conversations/NewConversatio
 import { useUserPermissions, useCurrentUserRole } from '@/hooks/useUserPermissions';
 import { useAuth } from '@/hooks/useAuth';
 import { useConversationShares } from '@/hooks/useConversationShares';
+import { useMessageSearch } from '@/hooks/useMessageSearch';
 
 const ConversationsPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
