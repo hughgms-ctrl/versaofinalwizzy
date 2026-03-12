@@ -385,6 +385,40 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
     }
   }
 
+  // --- Extract quoted/reply context ---
+  // WhatsApp reply messages contain contextInfo with stanzaId (original message ID)
+  let quotedMessageMeta: any = null;
+  const contextInfo = extendedText?.contextInfo || extendedText?.ContextInfo
+    || imageMsg?.contextInfo || imageMsg?.ContextInfo
+    || audioMsg?.contextInfo || audioMsg?.ContextInfo
+    || videoMsg?.contextInfo || videoMsg?.ContextInfo
+    || documentMsg?.contextInfo || documentMsg?.ContextInfo
+    || eventMessage?.contextInfo || eventMessage?.ContextInfo
+    || null;
+  
+  if (contextInfo) {
+    const stanzaId = contextInfo.stanzaId || contextInfo.StanzaId || contextInfo.quotedMessageId || null;
+    const participant = contextInfo.participant || contextInfo.Participant || null;
+    const quotedMsg = contextInfo.quotedMessage || contextInfo.QuotedMessage || null;
+    
+    if (stanzaId) {
+      let quotedText = null;
+      if (quotedMsg) {
+        quotedText = quotedMsg.conversation || quotedMsg.Conversation
+          || quotedMsg.extendedTextMessage?.text || quotedMsg.ExtendedTextMessage?.Text
+          || quotedMsg.imageMessage?.caption || quotedMsg.ImageMessage?.Caption
+          || quotedMsg.videoMessage?.caption || quotedMsg.VideoMessage?.Caption
+          || null;
+      }
+      quotedMessageMeta = {
+        zapi_message_id: stanzaId,
+        content: quotedText,
+        participant: participant,
+      };
+      console.log(`[WEBHOOK] Quoted message detected: stanzaId=${stanzaId}, text=${quotedText?.substring(0, 50) || 'none'}`);
+    }
+  }
+
   // Skip protocol/system messages
   if (eventMessage.protocolMessage || eventMessage.ProtocolMessage) {
     return respond({ success: true, ignored: true, reason: 'protocol_message' });
@@ -642,6 +676,37 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
     }
   }
 
+  // Build metadata with quoted message info if present
+  let messageMetadata: any = null;
+  if (quotedMessageMeta) {
+    // Try to resolve the quoted message's internal ID by zapi_message_id
+    let resolvedQuotedId: string | null = null;
+    let resolvedQuotedSender: string | null = null;
+    if (quotedMessageMeta.zapi_message_id) {
+      const { data: quotedRow } = await supabase
+        .from('messages')
+        .select('id, direction, content')
+        .eq('zapi_message_id', quotedMessageMeta.zapi_message_id)
+        .maybeSingle();
+      if (quotedRow) {
+        resolvedQuotedId = quotedRow.id;
+        resolvedQuotedSender = quotedRow.direction === 'inbound' ? (contact.name || phone) : 'Você';
+        // Use the stored content if webhook didn't provide it
+        if (!quotedMessageMeta.content && quotedRow.content) {
+          quotedMessageMeta.content = quotedRow.content;
+        }
+      }
+    }
+    messageMetadata = {
+      quoted_message: {
+        id: resolvedQuotedId || null,
+        zapi_message_id: quotedMessageMeta.zapi_message_id,
+        content: quotedMessageMeta.content || null,
+        sender: resolvedQuotedSender || quotedMessageMeta.participant || null,
+      }
+    };
+  }
+
   // Insert message into the CORRECT conversation
   const { data: savedMessage, error: messageError } = await supabase
     .from('messages')
@@ -653,6 +718,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
       is_from_bot: finalIsFromBot,
       media_url: mediaUrl,
       zapi_message_id: msgId || null,
+      ...(messageMetadata ? { metadata: messageMetadata } : {}),
     })
     .select().maybeSingle();
 

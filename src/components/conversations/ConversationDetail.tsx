@@ -301,7 +301,11 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
         conversationId: conversation.id,
         content: messageContent,
         type: 'text',
+        quotedMessageId: replyingTo?.id,
+        quotedContent: replyingTo?.content || undefined,
+        quotedSender: replyingTo ? (replyingTo.direction === 'inbound' ? (conversation.contact?.name || 'Contato') : 'Você') : undefined,
       });
+      setReplyingTo(null);
     } catch (error) {
       // Error is handled in the hook
       setNewMessage(messageContent); // Restore message on error
@@ -1259,6 +1263,47 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
           }
         }}
       >
+        {/* Quoted message block */}
+        {(() => {
+          const meta = message.metadata as any;
+          const quoted = meta?.quoted_message;
+          if (!quoted) return null;
+          return (
+            <div
+              className={cn(
+                "mb-2 p-2 rounded-lg border-l-2 cursor-pointer",
+                isInbound
+                  ? "bg-muted/50 border-primary/50"
+                  : isBot
+                    ? "bg-white/10 border-white/30"
+                    : "bg-white/15 border-white/40"
+              )}
+              onClick={() => {
+                if (quoted.id) {
+                  const el = document.getElementById(`message-${quoted.id}`);
+                  if (el) {
+                    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    el.classList.add('animate-pulse', 'bg-primary/10');
+                    setTimeout(() => el.classList.remove('animate-pulse', 'bg-primary/10'), 2000);
+                  }
+                }
+              }}
+            >
+              <p className={cn(
+                "text-[10px] font-semibold mb-0.5",
+                isInbound ? "text-primary" : "opacity-80"
+              )}>
+                {quoted.sender || 'Mensagem'}
+              </p>
+              <p className={cn(
+                "text-xs truncate",
+                isInbound ? "text-muted-foreground" : "opacity-70"
+              )}>
+                {quoted.content || '📎 Mídia'}
+              </p>
+            </div>
+          );
+        })()}
         {/* Follow-up badge */}
         {hasFollowUp && !isInbound && !isBot && (
           <div className="flex items-center gap-1 mb-1">

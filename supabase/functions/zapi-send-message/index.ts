@@ -10,6 +10,9 @@ interface SendMessageRequest {
   content: string;
   type?: 'text' | 'image' | 'audio' | 'document';
   mediaUrl?: string;
+  quotedMessageId?: string;
+  quotedContent?: string;
+  quotedSender?: string;
 }
 
 // Build UAZAPI URL with token as query parameter
@@ -47,7 +50,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { conversationId, content, type = 'text', mediaUrl } = await req.json() as SendMessageRequest;
+    const { conversationId, content, type = 'text', mediaUrl, quotedMessageId, quotedContent, quotedSender } = await req.json() as SendMessageRequest;
 
     if (!conversationId || !content) {
       return new Response(JSON.stringify({ error: 'conversationId and content are required' }), {
@@ -138,25 +141,47 @@ Deno.serve(async (req) => {
       console.log('Presence update failed:', e);
     }
 
+    // Look up the zapi_message_id for the quoted message (for WhatsApp reply)
+    let zapiQuotedMsgId: string | null = null;
+    if (quotedMessageId) {
+      const { data: quotedMsg } = await supabase
+        .from('messages')
+        .select('zapi_message_id')
+        .eq('id', quotedMessageId)
+        .maybeSingle();
+      zapiQuotedMsgId = quotedMsg?.zapi_message_id || null;
+      console.log(`Quoted message lookup: id=${quotedMessageId}, zapi_id=${zapiQuotedMsgId}`);
+    }
+
     let endpoint: string;
     let body: Record<string, any>;
+
+    // Build ContextInfo for reply/quote if we have a zapi message ID
+    const contextInfo = zapiQuotedMsgId ? {
+      StanzaId: zapiQuotedMsgId,
+      Participant: `${normalizedPhone}@s.whatsapp.net`,
+    } : undefined;
 
     switch (type) {
       case 'text':
         endpoint = uazapiUrl(uazapiBaseUrl, '/send/text');
         body = { number: normalizedPhone, text: content };
+        if (contextInfo) body.ContextInfo = contextInfo;
         break;
       case 'image':
         endpoint = uazapiUrl(uazapiBaseUrl, '/send/media');
         body = { number: normalizedPhone, file: mediaUrl, caption: content, type: 'image' };
+        if (contextInfo) body.ContextInfo = contextInfo;
         break;
       case 'audio':
         endpoint = uazapiUrl(uazapiBaseUrl, '/send/media');
         body = { number: normalizedPhone, file: mediaUrl, type: 'audio' };
+        if (contextInfo) body.ContextInfo = contextInfo;
         break;
       case 'document':
         endpoint = uazapiUrl(uazapiBaseUrl, '/send/media');
         body = { number: normalizedPhone, file: mediaUrl, caption: content, type: 'document' };
+        if (contextInfo) body.ContextInfo = contextInfo;
         break;
       default:
         return new Response(JSON.stringify({ error: 'Invalid message type' }), {
@@ -205,6 +230,19 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Build metadata with quoted message info and UAZAPI response
+    const messageMetadata: Record<string, any> = sendFailed
+      ? { send_error: sendErrorText, failed_at: new Date().toISOString() }
+      : { uazapi_response: uazapiResult };
+
+    if (quotedMessageId) {
+      messageMetadata.quoted_message = {
+        id: quotedMessageId,
+        content: quotedContent || null,
+        sender: quotedSender || null,
+      };
+    }
+
     // ALWAYS save message to DB — even on UAZAPI failure — so nothing is lost
     const { data: message, error: msgError } = await supabase
       .from('messages')
@@ -217,9 +255,7 @@ Deno.serve(async (req) => {
         sent_by: user.id,
         media_url: mediaUrl || null,
         zapi_message_id: zapiMsgId,
-        metadata: sendFailed
-          ? { send_error: sendErrorText, failed_at: new Date().toISOString() }
-          : { uazapi_response: uazapiResult },
+        metadata: messageMetadata,
         ...(sendFailed ? { failed_at: new Date().toISOString(), error_message: sendErrorText } : {}),
       })
       .select()
