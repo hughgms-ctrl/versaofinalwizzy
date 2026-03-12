@@ -196,46 +196,51 @@ export function ConversationAttributesPanel({
 
           {activePipeline && columns.length > 0 && (
             <TooltipProvider delayDuration={200}>
-              <div className="flex items-center gap-0.5 overflow-x-auto scrollbar-hide pb-1 flex-nowrap" style={{ WebkitOverflowScrolling: 'touch' }}>
-                {columns.map((col, idx) => {
-                  const isActive = col.id === currentColumnId;
-                  const isPast = currentColumnId 
-                    ? columns.findIndex(c => c.id === currentColumnId) > idx
-                    : false;
+              <div
+                className="w-full overflow-x-auto overflow-y-hidden scrollbar-hide pb-1"
+                style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-x' }}
+              >
+                <div className="flex min-w-max items-center gap-0.5 pr-2">
+                  {columns.map((col, idx) => {
+                    const isActive = col.id === currentColumnId;
+                    const isPast = currentColumnId
+                      ? columns.findIndex(c => c.id === currentColumnId) > idx
+                      : false;
 
-                  return (
-                    <Tooltip key={col.id}>
-                      <TooltipTrigger asChild>
-                        <button
-                          onClick={() => handleStageClick(col.id)}
-                          disabled={moveConversation.isPending}
-                          className={cn(
-                            "min-w-[2rem] flex-shrink-0 h-7 relative flex items-center justify-center text-[10px] font-medium transition-all rounded-sm",
-                            isActive 
-                              ? "text-white shadow-sm" 
-                              : isPast 
-                                ? "text-white/80" 
-                                : "bg-muted text-muted-foreground hover:bg-muted/80"
-                          )}
-                          style={isActive || isPast ? { backgroundColor: col.color } : undefined}
-                        >
-                          {isPast && !isActive && (
-                            <Check className="h-3 w-3" />
-                          )}
-                          {isActive && (
-                            <span className="truncate px-1">{col.name}</span>
-                          )}
-                          {!isActive && !isPast && (
-                            <span className="truncate px-1 opacity-70">{col.name}</span>
-                          )}
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent side="top" className="text-xs">
-                        {col.name}
-                      </TooltipContent>
-                    </Tooltip>
-                  );
-                })}
+                    return (
+                      <Tooltip key={col.id}>
+                        <TooltipTrigger asChild>
+                          <button
+                            onClick={() => handleStageClick(col.id)}
+                            disabled={moveConversation.isPending}
+                            className={cn(
+                              "h-7 px-2 shrink-0 relative flex items-center justify-center text-[10px] font-medium transition-all rounded-sm whitespace-nowrap",
+                              isActive
+                                ? "text-white shadow-sm"
+                                : isPast
+                                  ? "text-white/80"
+                                  : "bg-muted text-muted-foreground hover:bg-muted/80"
+                            )}
+                            style={isActive || isPast ? { backgroundColor: col.color } : undefined}
+                          >
+                            {isPast && !isActive && (
+                              <Check className="h-3 w-3" />
+                            )}
+                            {isActive && (
+                              <span className="px-1">{col.name}</span>
+                            )}
+                            {!isActive && !isPast && (
+                              <span className="px-1 opacity-70">{col.name}</span>
+                            )}
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top" className="text-xs">
+                          {col.name}
+                        </TooltipContent>
+                      </Tooltip>
+                    );
+                  })}
+                </div>
               </div>
             </TooltipProvider>
           )}
