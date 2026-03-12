@@ -38,7 +38,7 @@ const ConversationsPage = () => {
   const { data: userPermissions } = useUserPermissions();
   const { data: userRole } = useCurrentUserRole();
   const { data: myShares = [] } = useConversationShares();
-  const { data: messageMatchIds } = useMessageSearch(searchQuery);
+  const { data: messageSearchResult } = useMessageSearch(searchQuery);
 
   // Fetch contact tags for filtering
   const { data: allContactTags = [] } = useQuery({
@@ -124,7 +124,7 @@ const ConversationsPage = () => {
         const name = conv.contact?.name?.toLowerCase() || '';
         const phone = conv.contact?.phone || '';
         const matchesNameOrPhone = name.includes(query) || phone.includes(query);
-        const matchesMessage = messageMatchIds?.has(conv.id) ?? false;
+        const matchesMessage = messageSearchResult?.matchIds?.has(conv.id) ?? false;
         if (!matchesNameOrPhone && !matchesMessage) return false;
       }
 
@@ -164,7 +164,7 @@ const ConversationsPage = () => {
 
       return true;
     });
-  }, [conversations, searchQuery, filters, allContactTags, serviceMode, showArchived, selectedWorkspaceId, selectedWorkspace, userRole, userPermissions, user?.id, pipelinePositions, hasPipelineRestriction, myShares, messageMatchIds]);
+  }, [conversations, searchQuery, filters, allContactTags, serviceMode, showArchived, selectedWorkspaceId, selectedWorkspace, userRole, userPermissions, user?.id, pipelinePositions, hasPipelineRestriction, myShares, messageSearchResult]);
 
   // Count conversations by service mode (filtered by workspace + permissions)
   const serviceModeCounts = useMemo(() => {
@@ -459,6 +459,8 @@ const ConversationsPage = () => {
                   selectedId={selectedConversation?.id}
                   onSelect={handleSelectConversation}
                   onSpyView={handleSpyView}
+                  searchQuery={searchQuery}
+                  messageSnippets={messageSearchResult?.snippets}
                 />
               ) : searchQuery || filters.datePreset !== 'all' || filters.statusFilter !== 'all' || filters.tagFilter !== 'all' || filters.showOnlyUnread || filters.showOnlyAI ? (
                 <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-8">

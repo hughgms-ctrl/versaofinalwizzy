@@ -42,7 +42,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
   const { data: userRole } = useCurrentUserRole();
   const { data: tags = [] } = useTags();
   const { data: followUpMap } = useFollowUpStatus();
-  const { data: messageMatchIds } = useMessageSearch(searchQuery);
+  const { data: messageSearchResult } = useMessageSearch(searchQuery);
 
   const [draggedCard, setDraggedCard] = useState<string | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
@@ -186,7 +186,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
         const name = conv.contact?.name?.toLowerCase() || '';
         const phone = conv.contact?.phone || '';
         const matchesNameOrPhone = name.includes(query) || phone.includes(query);
-        const matchesMessage = messageMatchIds?.has(conv.id) ?? false;
+        const matchesMessage = messageSearchResult?.matchIds?.has(conv.id) ?? false;
         if (!matchesNameOrPhone && !matchesMessage) return false;
       }
 
@@ -226,7 +226,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
 
       return true;
     });
-  }, [conversations, filters, searchQuery, allContactTags, selectedWorkspaceId, selectedWorkspace, messageMatchIds]);
+  }, [conversations, filters, searchQuery, allContactTags, selectedWorkspaceId, selectedWorkspace, messageSearchResult]);
 
   // Map conversations to columns
   const getConversationsByColumn = (columnId: string) => {
@@ -378,7 +378,8 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
     const hasUnread = conversation.unread_count > 0;
     const lastMessage = conversation.last_message?.[0];
     const isAIActive = lastMessage?.is_from_bot;
-    const messagePreview = getLastMessagePreview(conversation);
+    const searchSnippet = searchQuery.trim().length >= 2 ? messageSearchResult?.snippets?.get(conversation.id) : undefined;
+    const messagePreview = searchSnippet ? `🔍 ${stripMarkdown(searchSnippet)}` : getLastMessagePreview(conversation);
 
     // Real presence logic using contact_presence table
     const presenceData = conversation.contact?.contact_presence;
