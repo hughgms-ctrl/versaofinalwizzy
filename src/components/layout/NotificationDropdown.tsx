@@ -13,7 +13,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { useWhatsAppStatus } from '@/hooks/useWhatsAppStatus';
+
 
 interface Notification {
   id: string;
