@@ -44,9 +44,16 @@ import {
   useReportsStatusDistribution,
   useReportsAgentPerformance,
 } from '@/hooks/useDashboardData';
+import { usePipelines } from '@/hooks/usePipelines';
+import { usePipelineStageDistribution, useTeamPerformanceByPipeline } from '@/hooks/usePipelineStats';
+import { GitBranch, Zap } from 'lucide-react';
 
 export default function ReportsPage() {
   const [period, setPeriod] = useState('7d');
+  const [selectedPipelineId, setSelectedPipelineId] = useState<string | null>(null);
+  const { data: pipelines = [] } = usePipelines();
+  const { data: stageData = [], isLoading: loadingStages } = usePipelineStageDistribution(selectedPipelineId);
+  const { data: teamByPipeline = [], isLoading: loadingTeamPipeline } = useTeamPerformanceByPipeline(selectedPipelineId);
   
   const { data: metrics, isLoading: loadingMetrics } = useReportsMetrics(period);
   const { data: convByDay = [], isLoading: loadingConvByDay } = useConversationsByDay(period);
