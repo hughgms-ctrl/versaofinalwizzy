@@ -42,6 +42,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
   const { data: userRole } = useCurrentUserRole();
   const { data: tags = [] } = useTags();
   const { data: followUpMap } = useFollowUpStatus();
+  const { data: messageMatchIds } = useMessageSearch(searchQuery);
 
   const [draggedCard, setDraggedCard] = useState<string | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
