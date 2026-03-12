@@ -24,6 +24,7 @@ import { useUserPermissions, useCurrentUserRole } from '@/hooks/useUserPermissio
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import wizzyLogo from '@/assets/wizzy-logo.png';
+import { WorkspaceSwitcher } from './WorkspaceSwitcher';
 
 interface NavItem {
   name: string;
