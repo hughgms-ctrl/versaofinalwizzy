@@ -16,37 +16,65 @@ const SENTRY_PROJECT_URL = "https://wizzy-ai.sentry.io/issues/";
 
 export default function AdminMonitoringPage() {
   const [testSent, setTestSent] = useState(false);
+  const [isSending, setIsSending] = useState(false);
 
   const sentryEnabled = !!SENTRY_DSN;
   const sentryOrg = SENTRY_DSN.match(/o(\d+)\./)?.[1] || '';
   const sentryProject = SENTRY_DSN.match(/\/(\d+)$/)?.[1] || '';
 
-  const handleTestError = () => {
+  const handleTestError = async () => {
+    setIsSending(true);
     try {
-      Sentry.captureMessage('Wizzy Admin: Teste de integração Sentry', 'info');
-      setTestSent(true);
-      toast({
-        title: 'Evento enviado ao Sentry',
-        description: 'Verifique o dashboard do Sentry em alguns segundos.',
-      });
+      const eventId = Sentry.captureMessage(`Wizzy Admin: Teste de integração Sentry ${new Date().toISOString()}`, 'info');
+      const delivered = await Sentry.flush(4000);
+      console.info('[Sentry] test message', { eventId, delivered });
+
+      if (delivered) {
+        setTestSent(true);
+        toast({
+          title: 'Evento enviado ao Sentry',
+          description: `ID: ${eventId}. Verifique o dashboard do Sentry em alguns segundos.`,
+        });
+      } else {
+        toast({
+          title: 'Envio bloqueado/pendente',
+          description: 'O evento não confirmou envio (possível bloqueio por adblock/firewall).',
+          variant: 'destructive',
+        });
+      }
     } catch {
       toast({
         title: 'Erro ao enviar teste',
         description: 'Verifique a configuração do DSN.',
         variant: 'destructive',
       });
+    } finally {
+      setIsSending(false);
     }
   };
 
-  const handleTestException = () => {
+  const handleTestException = async () => {
+    setIsSending(true);
     try {
-      throw new Error('Wizzy Admin: Exceção de teste para validação do Sentry');
-    } catch (e) {
-      Sentry.captureException(e);
-      toast({
-        title: 'Exceção capturada',
-        description: 'Uma exceção de teste foi enviada ao Sentry.',
-      });
+      const eventId = Sentry.captureException(new Error(`Wizzy Admin: Exceção de teste ${new Date().toISOString()}`));
+      const delivered = await Sentry.flush(4000);
+      console.info('[Sentry] test exception', { eventId, delivered });
+
+      if (delivered) {
+        setTestSent(true);
+        toast({
+          title: 'Exceção enviada ao Sentry',
+          description: `ID: ${eventId}. Uma exceção de teste foi entregue.`,
+        });
+      } else {
+        toast({
+          title: 'Envio bloqueado/pendente',
+          description: 'A exceção não confirmou envio (possível bloqueio por adblock/firewall).',
+          variant: 'destructive',
+        });
+      }
+    } finally {
+      setIsSending(false);
     }
   };
 
