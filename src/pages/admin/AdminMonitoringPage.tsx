@@ -12,41 +12,69 @@ import {
 import { toast } from '@/hooks/use-toast';
 
 const SENTRY_DSN = "https://e182c0b36f3c05825b22c0b0c5743cab@o4511028911734784.ingest.us.sentry.io/4511028921761792";
-const SENTRY_PROJECT_URL = "https://wizzy-ai.sentry.io/issues/";
+const SENTRY_PROJECT_URL = "https://sentry.io/organizations/wizzy-ai/issues/?project=4511028921761792";
 
 export default function AdminMonitoringPage() {
   const [testSent, setTestSent] = useState(false);
+  const [isSending, setIsSending] = useState(false);
 
   const sentryEnabled = !!SENTRY_DSN;
   const sentryOrg = SENTRY_DSN.match(/o(\d+)\./)?.[1] || '';
   const sentryProject = SENTRY_DSN.match(/\/(\d+)$/)?.[1] || '';
 
-  const handleTestError = () => {
+  const handleTestError = async () => {
+    setIsSending(true);
     try {
-      Sentry.captureMessage('Wizzy Admin: Teste de integração Sentry', 'info');
-      setTestSent(true);
-      toast({
-        title: 'Evento enviado ao Sentry',
-        description: 'Verifique o dashboard do Sentry em alguns segundos.',
-      });
+      const eventId = Sentry.captureMessage(`Wizzy Admin: Teste de integração Sentry ${new Date().toISOString()}`, 'info');
+      const delivered = await Sentry.flush(4000);
+      console.info('[Sentry] test message', { eventId, delivered });
+
+      if (delivered) {
+        setTestSent(true);
+        toast({
+          title: 'Evento enviado ao Sentry',
+          description: `ID: ${eventId}. Verifique o dashboard do Sentry em alguns segundos.`,
+        });
+      } else {
+        toast({
+          title: 'Envio bloqueado/pendente',
+          description: 'O evento não confirmou envio (possível bloqueio por adblock/firewall).',
+          variant: 'destructive',
+        });
+      }
     } catch {
       toast({
         title: 'Erro ao enviar teste',
         description: 'Verifique a configuração do DSN.',
         variant: 'destructive',
       });
+    } finally {
+      setIsSending(false);
     }
   };
 
-  const handleTestException = () => {
+  const handleTestException = async () => {
+    setIsSending(true);
     try {
-      throw new Error('Wizzy Admin: Exceção de teste para validação do Sentry');
-    } catch (e) {
-      Sentry.captureException(e);
-      toast({
-        title: 'Exceção capturada',
-        description: 'Uma exceção de teste foi enviada ao Sentry.',
-      });
+      const eventId = Sentry.captureException(new Error(`Wizzy Admin: Exceção de teste ${new Date().toISOString()}`));
+      const delivered = await Sentry.flush(4000);
+      console.info('[Sentry] test exception', { eventId, delivered });
+
+      if (delivered) {
+        setTestSent(true);
+        toast({
+          title: 'Exceção enviada ao Sentry',
+          description: `ID: ${eventId}. Uma exceção de teste foi entregue.`,
+        });
+      } else {
+        toast({
+          title: 'Envio bloqueado/pendente',
+          description: 'A exceção não confirmou envio (possível bloqueio por adblock/firewall).',
+          variant: 'destructive',
+        });
+      }
+    } finally {
+      setIsSending(false);
     }
   };
 
@@ -170,13 +198,13 @@ export default function AdminMonitoringPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex flex-wrap gap-3">
-              <Button onClick={handleTestError} variant="outline" className="gap-2">
+              <Button onClick={handleTestError} disabled={isSending} variant="outline" className="gap-2">
                 <Activity className="h-4 w-4" />
-                Enviar evento de teste
+                {isSending ? 'Enviando...' : 'Enviar evento de teste'}
               </Button>
-              <Button onClick={handleTestException} variant="outline" className="gap-2 border-amber-500/30 text-amber-600 hover:bg-amber-50">
+              <Button onClick={handleTestException} disabled={isSending} variant="outline" className="gap-2 border-amber-500/30 text-amber-600 hover:bg-amber-50">
                 <AlertTriangle className="h-4 w-4" />
-                Enviar exceção de teste
+                {isSending ? 'Enviando...' : 'Enviar exceção de teste'}
               </Button>
               <Button asChild variant="default" className="gap-2">
                 <a href={SENTRY_PROJECT_URL} target="_blank" rel="noopener noreferrer">
