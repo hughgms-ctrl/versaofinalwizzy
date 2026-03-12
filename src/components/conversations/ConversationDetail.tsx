@@ -706,7 +706,7 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
             </div>
           )}
 
-          <div className="flex items-center gap-1 md:gap-2 p-3 md:p-4">
+          <div className="flex items-center gap-1 md:gap-2 p-2 md:p-4">
             <MediaUploadButton
               onUpload={handleFileSelect}
               disabled={sendMessage.isPending || isUploading || isSendingMedia}
