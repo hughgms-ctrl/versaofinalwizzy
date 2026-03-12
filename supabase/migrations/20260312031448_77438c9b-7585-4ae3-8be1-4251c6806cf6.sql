@@ -1,0 +1,1 @@
+UPDATE flow_executions SET status = 'waiting_input', remarketing_step = 0, timeout_at = (now() + interval '10 seconds'), completed_at = NULL WHERE id = '298cc3b7-4445-423f-8aac-99a8294350e7';
