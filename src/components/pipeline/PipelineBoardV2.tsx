@@ -9,6 +9,7 @@ import { GripVertical, Loader2, Inbox, MessageCircle, Bot, Check, CheckCheck, Ey
 import { Button } from '@/components/ui/button';
 import { ConversationCardActions } from '@/components/conversations/ConversationCardActions';
 import { cn } from '@/lib/utils';
+import { highlightTerm } from '@/lib/highlightTerm';
 import { useIsMobile } from '@/hooks/use-mobile';
 import {
   Pipeline,

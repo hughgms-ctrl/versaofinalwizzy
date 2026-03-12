@@ -6,6 +6,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Bot, MessageCircle, Check, CheckCheck, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { highlightTerm } from '@/lib/highlightTerm';
 import { ConversationCardActions } from './ConversationCardActions';
 
 interface ConversationListProps {
