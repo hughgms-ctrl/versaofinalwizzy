@@ -1211,42 +1211,55 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
         </div>
       )}
 
-      {/* Hover Action Buttons - attached to the bubble edge */}
-      <div className={cn(
-        "absolute top-1 flex items-center gap-0.5 opacity-0 group-hover/msg:opacity-100 transition-opacity z-10",
-        isInbound ? "-right-[3.5rem]" : "-left-[3.5rem]"
-      )}>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              onClick={() => onReply?.(message)}
-              className="h-6 w-6 rounded-full bg-card border border-border shadow-sm flex items-center justify-center hover:bg-muted transition-colors"
-            >
-              <Reply className="h-3 w-3 text-muted-foreground" />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="top" className="text-xs">Responder</TooltipContent>
-        </Tooltip>
-        {/* Follow-up button: only on outbound non-bot messages */}
-        {!isInbound && !isBot && (
+      {/* Hover Action Buttons - inline next to bubble */}
+      {!isInbound && (
+        <div className="flex items-center gap-0.5 opacity-0 group-hover/msg:opacity-100 transition-opacity self-start mt-1">
+          {!isBot && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => onFollowUp?.(message)}
+                  className={cn(
+                    "h-6 w-6 rounded-full bg-card border shadow-sm flex items-center justify-center hover:bg-muted transition-colors",
+                    hasFollowUp ? "border-primary text-primary" : "border-border text-muted-foreground"
+                  )}
+                >
+                  <Clock className="h-3 w-3" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="text-xs">
+                {hasFollowUp ? 'Follow-up ativo' : 'Programar follow-up'}
+              </TooltipContent>
+            </Tooltip>
+          )}
           <Tooltip>
             <TooltipTrigger asChild>
               <button
-                onClick={() => onFollowUp?.(message)}
-                className={cn(
-                  "h-6 w-6 rounded-full bg-card border shadow-sm flex items-center justify-center hover:bg-muted transition-colors",
-                  hasFollowUp ? "border-primary text-primary" : "border-border text-muted-foreground"
-                )}
+                onClick={() => onReply?.(message)}
+                className="h-6 w-6 rounded-full bg-card border border-border shadow-sm flex items-center justify-center hover:bg-muted transition-colors"
               >
-                <Clock className="h-3 w-3" />
+                <Reply className="h-3 w-3 text-muted-foreground" />
               </button>
             </TooltipTrigger>
-            <TooltipContent side="top" className="text-xs">
-              {hasFollowUp ? 'Follow-up ativo' : 'Programar follow-up'}
-            </TooltipContent>
+            <TooltipContent side="top" className="text-xs">Responder</TooltipContent>
           </Tooltip>
-        )}
-      </div>
+        </div>
+      )}
+      {isInbound && (
+        <div className="flex items-center gap-0.5 opacity-0 group-hover/msg:opacity-100 transition-opacity self-start mt-1 order-last">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={() => onReply?.(message)}
+                className="h-6 w-6 rounded-full bg-card border border-border shadow-sm flex items-center justify-center hover:bg-muted transition-colors"
+              >
+                <Reply className="h-3 w-3 text-muted-foreground" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="text-xs">Responder</TooltipContent>
+          </Tooltip>
+        </div>
+      )}
 
       <div 
         className={cn(
