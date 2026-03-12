@@ -141,7 +141,7 @@ export function GeneratedDocumentsList() {
   };
 
   const toggleGroup = (group: string) => {
-    setCollapsedGroups(prev => {
+    setExpandedGroups(prev => {
       const next = new Set(prev);
       if (next.has(group)) next.delete(group);
       else next.add(group);
