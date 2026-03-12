@@ -901,12 +901,16 @@ interface MessageBubbleListProps {
   contactName?: string | null;
   contactPhone?: string;
   contactId?: string | null;
-   senderAvatar?: string | null;
-   senderName?: string | null;
-   onAdjustPrompt?: (message: DbMessage) => void;
- }
+  senderAvatar?: string | null;
+  senderName?: string | null;
+  highlightedMessageId?: string | null;
+  followUpMap?: Record<string, number>;
+  onReply?: (message: DbMessage) => void;
+  onFollowUp?: (message: DbMessage) => void;
+  onAdjustPrompt?: (message: DbMessage) => void;
+}
 
- function MessageBubbleList({ messages, mediaMessageIds, contactAvatar, contactName, contactPhone, contactId, senderAvatar, senderName, onAdjustPrompt }: MessageBubbleListProps) {
+function MessageBubbleList({ messages, mediaMessageIds, contactAvatar, contactName, contactPhone, contactId, senderAvatar, senderName, highlightedMessageId, followUpMap, onReply, onFollowUp, onAdjustPrompt }: MessageBubbleListProps) {
   const { transcriptions, isLoading: transcriptionsLoading } = useMediaTranscriptions(mediaMessageIds);
   const [localTranscriptions, setLocalTranscriptions] = useState<Record<string, string>>({});
 
