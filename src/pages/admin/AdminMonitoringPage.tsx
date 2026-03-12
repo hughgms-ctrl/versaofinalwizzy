@@ -12,7 +12,7 @@ import {
 import { toast } from '@/hooks/use-toast';
 
 const SENTRY_DSN = "https://e182c0b36f3c05825b22c0b0c5743cab@o4511028911734784.ingest.us.sentry.io/4511028921761792";
-const SENTRY_PROJECT_URL = "https://wizzy-ai.sentry.io/issues/";
+const SENTRY_PROJECT_URL = "https://sentry.io/organizations/wizzy-ai/issues/?project=4511028921761792";
 
 export default function AdminMonitoringPage() {
   const [testSent, setTestSent] = useState(false);
