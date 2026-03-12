@@ -38,7 +38,7 @@ const ConversationsPage = () => {
   const { data: userPermissions } = useUserPermissions();
   const { data: userRole } = useCurrentUserRole();
   const { data: myShares = [] } = useConversationShares();
-  const { data: messageMatchIds } = useMessageSearch(searchQuery);
+  const { data: messageSearchResult } = useMessageSearch(searchQuery);
 
   // Fetch contact tags for filtering
   const { data: allContactTags = [] } = useQuery({
