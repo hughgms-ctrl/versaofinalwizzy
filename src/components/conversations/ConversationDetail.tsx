@@ -906,7 +906,7 @@ interface MessageBubbleListProps {
   senderAvatar?: string | null;
   senderName?: string | null;
   highlightedMessageId?: string | null;
-  followUpMap?: Record<string, number>;
+  followUpMap?: Record<string, { step: number; triggerMessageId?: string }>;
   onReply?: (message: DbMessage) => void;
   onFollowUp?: (message: DbMessage) => void;
   onAdjustPrompt?: (message: DbMessage) => void;
@@ -944,15 +944,21 @@ function MessageBubbleList({ messages, mediaMessageIds, contactAvatar, contactNa
     return format(date, 'dd/MM/yyyy', { locale: ptBR });
   };
 
-  // Find last outbound non-bot message for follow-up badge
-  const lastOutboundHumanId = useMemo(() => {
+  // Find follow-up info for this conversation
+  const conversationFollowUp = useMemo(() => {
+    if (!messages.length || !followUpMap) return null;
+    return followUpMap[messages[0]?.conversation_id] || null;
+  }, [messages, followUpMap]);
+
+  const followUpTargetId = useMemo(() => {
+    if (!conversationFollowUp) return null;
+    if (conversationFollowUp.triggerMessageId) return conversationFollowUp.triggerMessageId;
+    // Fallback: last outbound human message
     for (let i = messages.length - 1; i >= 0; i--) {
       if (messages[i].direction === 'outbound' && !messages[i].is_from_bot) return messages[i].id;
     }
     return null;
-  }, [messages]);
-
-  const conversationHasFollowUp = messages.length > 0 && followUpMap && followUpMap[messages[0].conversation_id];
+  }, [messages, conversationFollowUp]);
 
   let lastDateKey: string | null = null;
 
@@ -983,7 +989,7 @@ function MessageBubbleList({ messages, mediaMessageIds, contactAvatar, contactNa
               senderAvatar={senderAvatar}
               senderName={senderName}
               isHighlighted={highlightedMessageId === message.id}
-              hasFollowUp={!!(conversationHasFollowUp && message.id === lastOutboundHumanId)}
+              hasFollowUp={!!(conversationFollowUp && message.id === followUpTargetId)}
               onReply={onReply}
               onFollowUp={onFollowUp}
               onTranscriptionUpdate={handleTranscriptionUpdate}
