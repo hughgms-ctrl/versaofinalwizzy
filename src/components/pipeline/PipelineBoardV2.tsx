@@ -671,8 +671,8 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
       {!shouldHideUnassigned && (unassignedConversations.length > 0 || draggedCard) && (
         <div
           className={cn(
-            "pipeline-column border-dashed transition-all duration-200",
-            isDragOverUnassigned && "ring-2 ring-primary ring-offset-2"
+            "pipeline-column border-dashed transition-all duration-300",
+            isDragOverUnassigned && "bg-muted/40 scale-[1.01]"
           )}
           onDragOver={(e) => { e.preventDefault(); setDragOverColumn('unassigned'); }}
           onDragLeave={() => setDragOverColumn(null)}
