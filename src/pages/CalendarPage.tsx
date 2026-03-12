@@ -28,6 +28,9 @@ export default function CalendarPage() {
       api.gotoDate(selectedDate);
     }
   }, [selectedDate]);
+  if (!accessLoading && !canAccess) {
+    return <Navigate to="/pipeline" replace />;
+  }
 
   const events = useMemo(() => {
     return bookings.map(booking => ({
