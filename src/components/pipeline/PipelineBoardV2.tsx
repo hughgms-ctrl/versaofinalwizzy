@@ -21,6 +21,7 @@ import { useUserPermissions, useCurrentUserRole } from '@/hooks/useUserPermissio
 import { useTags } from '@/hooks/useTags';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useFollowUpStatus } from '@/hooks/useFollowUpStatus';
+import { useMessageSearch } from '@/hooks/useMessageSearch';
 
 interface PipelineBoardProps {
   pipeline: Pipeline | null;
@@ -41,6 +42,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
   const { data: userRole } = useCurrentUserRole();
   const { data: tags = [] } = useTags();
   const { data: followUpMap } = useFollowUpStatus();
+  const { data: messageMatchIds } = useMessageSearch(searchQuery);
 
   const [draggedCard, setDraggedCard] = useState<string | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
@@ -178,12 +180,14 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
         }
       }
 
-      // Search filter (name or phone)
+      // Search filter (name, phone, or message content)
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase().trim();
         const name = conv.contact?.name?.toLowerCase() || '';
         const phone = conv.contact?.phone || '';
-        if (!name.includes(query) && !phone.includes(query)) return false;
+        const matchesNameOrPhone = name.includes(query) || phone.includes(query);
+        const matchesMessage = messageMatchIds?.has(conv.id) ?? false;
+        if (!matchesNameOrPhone && !matchesMessage) return false;
       }
 
       // Status filter
@@ -222,7 +226,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
 
       return true;
     });
-  }, [conversations, filters, searchQuery, allContactTags, selectedWorkspaceId, selectedWorkspace]);
+  }, [conversations, filters, searchQuery, allContactTags, selectedWorkspaceId, selectedWorkspace, messageMatchIds]);
 
   // Map conversations to columns
   const getConversationsByColumn = (columnId: string) => {

@@ -20,6 +20,7 @@ import { NewConversationDialog } from '@/components/conversations/NewConversatio
 import { useUserPermissions, useCurrentUserRole } from '@/hooks/useUserPermissions';
 import { useAuth } from '@/hooks/useAuth';
 import { useConversationShares } from '@/hooks/useConversationShares';
+import { useMessageSearch } from '@/hooks/useMessageSearch';
 
 const ConversationsPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -37,6 +38,7 @@ const ConversationsPage = () => {
   const { data: userPermissions } = useUserPermissions();
   const { data: userRole } = useCurrentUserRole();
   const { data: myShares = [] } = useConversationShares();
+  const { data: messageMatchIds } = useMessageSearch(searchQuery);
 
   // Fetch contact tags for filtering
   const { data: allContactTags = [] } = useQuery({
@@ -121,7 +123,9 @@ const ConversationsPage = () => {
         const query = searchQuery.toLowerCase().trim();
         const name = conv.contact?.name?.toLowerCase() || '';
         const phone = conv.contact?.phone || '';
-        if (!name.includes(query) && !phone.includes(query)) return false;
+        const matchesNameOrPhone = name.includes(query) || phone.includes(query);
+        const matchesMessage = messageMatchIds?.has(conv.id) ?? false;
+        if (!matchesNameOrPhone && !matchesMessage) return false;
       }
 
       // Status filter
@@ -160,7 +164,7 @@ const ConversationsPage = () => {
 
       return true;
     });
-  }, [conversations, searchQuery, filters, allContactTags, serviceMode, showArchived, selectedWorkspaceId, selectedWorkspace, userRole, userPermissions, user?.id, pipelinePositions, hasPipelineRestriction, myShares]);
+  }, [conversations, searchQuery, filters, allContactTags, serviceMode, showArchived, selectedWorkspaceId, selectedWorkspace, userRole, userPermissions, user?.id, pipelinePositions, hasPipelineRestriction, myShares, messageMatchIds]);
 
   // Count conversations by service mode (filtered by workspace + permissions)
   const serviceModeCounts = useMemo(() => {
