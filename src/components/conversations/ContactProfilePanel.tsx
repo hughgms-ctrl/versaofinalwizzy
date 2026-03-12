@@ -292,6 +292,57 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
 
           <Separator />
 
+          {/* Quick Note (Nota Rápida) */}
+          <div className="space-y-2">
+            <Label className="text-xs text-muted-foreground uppercase tracking-wider">
+              Nota Rápida
+            </Label>
+            <div className="flex items-start gap-2">
+              {isEditingNote ? (
+                <>
+                  <Input
+                    value={editedNote}
+                    onChange={(e) => setEditedNote(e.target.value)}
+                    placeholder="Ex: Cliente VIP, ligar às 14h..."
+                    className="text-sm flex-1"
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        handleSaveNote();
+                      } else if (e.key === 'Escape') {
+                        setIsEditingNote(false);
+                        setEditedNote((contact?.metadata as { note?: string } | null)?.note || '');
+                      }
+                    }}
+                  />
+                  <Button size="icon" className="h-9 w-9 shrink-0" onClick={handleSaveNote} disabled={isSavingNote}>
+                    {isSavingNote ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  </Button>
+                  <Button size="icon" variant="ghost" className="h-9 w-9 shrink-0" onClick={() => {
+                    setIsEditingNote(false);
+                    setEditedNote((contact?.metadata as { note?: string } | null)?.note || '');
+                  }}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                </>
+              ) : (
+                <button
+                  onClick={() => setIsEditingNote(true)}
+                  className="w-full text-left p-2 rounded-lg bg-muted/50 hover:bg-muted transition-colors group flex items-center gap-2"
+                >
+                  {editedNote ? (
+                    <span className="text-sm text-amber-600 dark:text-amber-400 flex-1">{editedNote}</span>
+                  ) : (
+                    <span className="text-sm text-muted-foreground flex-1">Adicionar nota rápida...</span>
+                  )}
+                  <Pencil className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          <Separator />
+
           {/* Conversation Attributes */}
           <ConversationAttributesPanel conversation={conversation} compact />
 
