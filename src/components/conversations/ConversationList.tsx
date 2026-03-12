@@ -60,8 +60,9 @@ export function ConversationList({ conversations, selectedId, onSelect, onSpyVie
           const isInFollowUp = !!followUpMap[conversation.id];
           const followUpStep = followUpMap[conversation.id]?.step;
           const searchSnippet = searchQuery && searchQuery.trim().length >= 2 ? messageSnippets?.get(conversation.id) : undefined;
+          const highlightedSnippet = searchSnippet ? highlightTerm(stripMarkdown(searchSnippet), searchQuery || '') : null;
           const messagePreview = (() => {
-            if (searchSnippet) return `🔍 ${stripMarkdown(searchSnippet)}`;
+            if (searchSnippet) return null; // handled separately
             if (!lastMessage) return null;
             if (lastMessage.type !== 'text') {
               const typeLabels: Record<string, string> = {
