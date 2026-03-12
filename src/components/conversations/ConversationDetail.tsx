@@ -787,13 +787,17 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
               <Button
                 onClick={handleSend}
                 disabled={(!newMessage.trim() && !attachedMedia) || sendMessage.isPending || isSendingMedia}
+                size="icon"
+                className="h-9 w-9 md:h-10 md:w-auto md:px-4 flex-shrink-0"
               >
                 {(sendMessage.isPending || isSendingMedia) ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
-                  <Send className="h-4 w-4 mr-2" />
+                  <Send className="h-4 w-4" />
                 )}
-                {(sendMessage.isPending || isSendingMedia) ? 'Enviando...' : 'Enviar'}
+                <span className="hidden md:inline ml-2">
+                  {(sendMessage.isPending || isSendingMedia) ? 'Enviando...' : 'Enviar'}
+                </span>
               </Button>
             ) : (
               <AudioRecordButton
