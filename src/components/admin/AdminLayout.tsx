@@ -171,6 +171,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
         "transition-all duration-300",
         collapsed ? "ml-20" : "ml-20 lg:ml-64"
       )}>
+        <WhatsAppDisconnectedBanner />
         <main className="p-3 md:p-6">
           {children}
         </main>

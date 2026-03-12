@@ -27,53 +27,6 @@ interface Notification {
 export function NotificationDropdown() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [open, setOpen] = useState(false);
-  const { connected, status, isLoading } = useWhatsAppStatus();
-  const [disconnectedAt, setDisconnectedAt] = useState<Date | null>(null);
-
-  // Track WhatsApp disconnection events
-  useEffect(() => {
-    if (isLoading) return;
-    
-    if (!connected && status !== 'pending' && status !== 'not_configured') {
-      if (!disconnectedAt) {
-        const now = new Date();
-        setDisconnectedAt(now);
-        setNotifications(prev => {
-          // Don't duplicate disconnect notifications
-          const filtered = prev.filter(n => n.type !== 'disconnect');
-          return [
-            {
-              id: `disconnect-${now.getTime()}`,
-              type: 'disconnect' as const,
-              title: '⚠️ WhatsApp desconectado',
-              description: 'Sua instância perdeu a conexão. Mensagens não estão sendo enviadas.',
-              timestamp: now,
-              read: false,
-            },
-            ...filtered,
-          ];
-        });
-      }
-    } else if (connected && disconnectedAt) {
-      // Reconnected — add reconnection notification
-      const now = new Date();
-      setDisconnectedAt(null);
-      setNotifications(prev => {
-        const filtered = prev.filter(n => n.type !== 'disconnect');
-        return [
-          {
-            id: `reconnect-${now.getTime()}`,
-            type: 'system' as const,
-            title: '✅ WhatsApp reconectado',
-            description: 'Sua instância voltou a funcionar normalmente.',
-            timestamp: now,
-            read: false,
-          },
-          ...filtered,
-        ];
-      });
-    }
-  }, [connected, status, isLoading, disconnectedAt]);
 
   const unreadCount = notifications.filter(n => !n.read).length;
 
