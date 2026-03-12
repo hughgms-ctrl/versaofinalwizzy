@@ -95,9 +95,7 @@ export function NotificationDropdown() {
                 )}
                 onClick={() => markAsRead(notification.id)}
               >
-                <div className={cn(
-                  "h-8 w-8 rounded-full flex items-center justify-center shrink-0",
-                  notification.type === 'disconnect' ? "bg-destructive/20" : "bg-muted"
+                <div className="h-8 w-8 rounded-full flex items-center justify-center shrink-0 bg-muted">
                 )}>
                   {getIcon(notification.type)}
                 </div>
