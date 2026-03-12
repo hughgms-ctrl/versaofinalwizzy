@@ -171,6 +171,9 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
     if (!conversations) return [];
 
     return conversations.filter(conv => {
+      // === SHARED-ONLY PIPELINE: only show shared conversations ===
+      if (sharedConversationIds && !sharedConversationIds.has(conv.id)) return false;
+
       // === WORKSPACE FILTER (must come first) ===
       // When a workspace is selected, only show contacts that have at least one of the workspace's tags
       if (selectedWorkspaceId && selectedWorkspace) {
