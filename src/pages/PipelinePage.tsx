@@ -29,6 +29,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useConversationShares } from '@/hooks/useConversationShares';
 
 const PipelinePage = () => {
+  const queryClient = useQueryClient();
   const { data: allPipelines = [], isLoading: pipelinesLoading } = usePipelines();
   const { data: conversations = [], isLoading: conversationsLoading } = useConversations();
   const { connected: whatsappConnected, isLoading: whatsappLoading } = useWhatsAppStatus();
