@@ -46,8 +46,6 @@ export function NotificationDropdown() {
         return <MessageSquare className="h-4 w-4 text-primary" />;
       case 'alert':
         return <Clock className="h-4 w-4 text-yellow-500" />;
-      case 'disconnect':
-        return <WifiOff className="h-4 w-4 text-destructive" />;
       case 'system':
         return <AlertCircle className="h-4 w-4 text-muted-foreground" />;
     }
