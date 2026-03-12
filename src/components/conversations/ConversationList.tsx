@@ -239,7 +239,14 @@ export function ConversationList({ conversations, selectedId, onSelect, onSpyVie
                         )}
                       </span>
                     )}
-                    {messagePreview ? (
+                    {highlightedSnippet ? (
+                      <p className={cn(
+                        "text-[11px] truncate flex-1 min-w-0",
+                        hasUnread ? "text-foreground font-medium" : "text-muted-foreground"
+                      )}>
+                        🔍 {highlightedSnippet}
+                      </p>
+                    ) : messagePreview ? (
                       <p className={cn(
                         "text-[11px] truncate flex-1 min-w-0",
                         hasUnread ? "text-foreground font-medium" : "text-muted-foreground"

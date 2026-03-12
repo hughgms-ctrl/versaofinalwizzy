@@ -538,6 +538,13 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
                 <p className="text-[11px] text-green-500 font-medium animate-pulse truncate flex-1 min-w-0">
                   {isTyping ? 'Digitando...' : 'Gravando áudio...'}
                 </p>
+              ) : highlightedSnippet ? (
+                <p className={cn(
+                  "text-[11px] truncate flex-1 min-w-0",
+                  hasUnread ? "text-foreground font-medium" : "text-muted-foreground"
+                )}>
+                  🔍 {highlightedSnippet}
+                </p>
               ) : messagePreview ? (
                 <p className={cn(
                   "text-[11px] truncate flex-1 min-w-0",
