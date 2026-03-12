@@ -27,7 +27,6 @@ export function useFollowUpStatus() {
     queryKey: ['follow-up-status'],
     queryFn: async () => {
       // Get all active follow-ups (waiting_input)
-      // Include both chat follow-ups (step 0) and flow remarketing (step > 0)
       const { data, error } = await supabase
         .from('flow_executions')
         .select('conversation_id, remarketing_step, status, variables, current_node_id')
@@ -35,16 +34,16 @@ export function useFollowUpStatus() {
 
       if (error) throw error;
 
-      const map: Record<string, number> = {};
+      const map: Record<string, { step: number; triggerMessageId?: string }> = {};
       (data || []).forEach((row) => {
         const vars = row.variables as Record<string, any> | null;
         const isChatFollowUp = vars?.source === 'chat_follow_up' || row.current_node_id === 'chat-follow-up';
         
-        // Show badge for:
-        // 1. Chat follow-ups at any step (including step 0)
-        // 2. Flow remarketing only after step 0 (step > 0)
         if (isChatFollowUp || row.remarketing_step > 0) {
-          map[row.conversation_id] = Math.max(row.remarketing_step, 1);
+          map[row.conversation_id] = {
+            step: Math.max(row.remarketing_step, 1),
+            triggerMessageId: vars?.triggerMessageId || undefined,
+          };
         }
       });
       return map;
