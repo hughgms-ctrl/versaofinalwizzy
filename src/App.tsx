@@ -45,6 +45,8 @@ import AdminApiPage from "./pages/admin/AdminApiPage";
 import AdminGovernancePage from "./pages/admin/AdminGovernancePage";
 import AdminSecurityPage from "./pages/admin/AdminSecurityPage";
 import AdminHistoryPage from "./pages/admin/AdminHistoryPage";
+import AdminMonitoringPage from "./pages/admin/AdminMonitoringPage";
+import AdminDocsPage from "./pages/admin/AdminDocsPage";
 import { AdminProtectedRoute } from "@/components/admin/AdminProtectedRoute";
 
 const queryClient = new QueryClient();
@@ -94,6 +96,8 @@ const App = () => (
                     <Route path="/admin/api" element={<AdminProtectedRoute><AdminApiPage /></AdminProtectedRoute>} />
                     <Route path="/admin/governance" element={<AdminProtectedRoute><AdminGovernancePage /></AdminProtectedRoute>} />
                     <Route path="/admin/security" element={<AdminProtectedRoute><AdminSecurityPage /></AdminProtectedRoute>} />
+                    <Route path="/admin/monitoring" element={<AdminProtectedRoute><AdminMonitoringPage /></AdminProtectedRoute>} />
+                    <Route path="/admin/docs" element={<AdminProtectedRoute><AdminDocsPage /></AdminProtectedRoute>} />
                     <Route path="/admin/history" element={<AdminProtectedRoute><AdminHistoryPage /></AdminProtectedRoute>} />
                     {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                     <Route path="*" element={<NotFound />} />
