@@ -109,9 +109,23 @@ const PipelinePage = () => {
     }
   }, [pipelines]);
 
-  const handleConversationClick = (conversation: DbConversation) => {
+  const handleConversationClick = async (conversation: DbConversation) => {
     setChatConversation(conversation);
     setChatOpen(true);
+
+    // Mark as read if there are unread messages
+    if (conversation.unread_count > 0) {
+      try {
+        await supabase
+          .from('conversations')
+          .update({ unread_count: 0 })
+          .eq('id', conversation.id);
+        queryClient.invalidateQueries({ queryKey: ['conversations'] });
+        queryClient.invalidateQueries({ queryKey: ['pipeline-conversations'] });
+      } catch (err) {
+        console.error('Error marking conversation as read:', err);
+      }
+    }
   };
 
   const handleDeletePipeline = async () => {
