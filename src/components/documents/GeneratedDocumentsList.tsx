@@ -112,7 +112,7 @@ export function GeneratedDocumentsList() {
   const deleteDocument = useDeleteGeneratedDocument();
   const regeneratePdf = useRegenerateDocumentPdf();
   const [search, setSearch] = useState('');
-  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set(['__all__']));
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   const handleDelete = (id: string) => {
     deleteDocument.mutate(id, {
