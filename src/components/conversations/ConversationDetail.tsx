@@ -1211,18 +1211,18 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
         </div>
       )}
 
-      {/* Hover Action Buttons - positioned outside the bubble */}
+      {/* Hover Action Buttons - attached to the bubble edge */}
       <div className={cn(
-        "absolute top-0 flex items-center gap-0.5 opacity-0 group-hover/msg:opacity-100 transition-opacity z-10",
-        isInbound ? "right-2" : "left-2"
+        "absolute top-1 flex items-center gap-0.5 opacity-0 group-hover/msg:opacity-100 transition-opacity z-10",
+        isInbound ? "-right-[3.5rem]" : "-left-[3.5rem]"
       )}>
         <Tooltip>
           <TooltipTrigger asChild>
             <button
               onClick={() => onReply?.(message)}
-              className="h-7 w-7 rounded-full bg-card border border-border shadow-sm flex items-center justify-center hover:bg-muted transition-colors"
+              className="h-6 w-6 rounded-full bg-card border border-border shadow-sm flex items-center justify-center hover:bg-muted transition-colors"
             >
-              <Reply className="h-3.5 w-3.5 text-muted-foreground" />
+              <Reply className="h-3 w-3 text-muted-foreground" />
             </button>
           </TooltipTrigger>
           <TooltipContent side="top" className="text-xs">Responder</TooltipContent>
@@ -1234,11 +1234,11 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
               <button
                 onClick={() => onFollowUp?.(message)}
                 className={cn(
-                  "h-7 w-7 rounded-full bg-card border shadow-sm flex items-center justify-center hover:bg-muted transition-colors",
+                  "h-6 w-6 rounded-full bg-card border shadow-sm flex items-center justify-center hover:bg-muted transition-colors",
                   hasFollowUp ? "border-primary text-primary" : "border-border text-muted-foreground"
                 )}
               >
-                <Clock className="h-3.5 w-3.5" />
+                <Clock className="h-3 w-3" />
               </button>
             </TooltipTrigger>
             <TooltipContent side="top" className="text-xs">
