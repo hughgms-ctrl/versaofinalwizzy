@@ -230,6 +230,19 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Build metadata with quoted message info and UAZAPI response
+    const messageMetadata: Record<string, any> = sendFailed
+      ? { send_error: sendErrorText, failed_at: new Date().toISOString() }
+      : { uazapi_response: uazapiResult };
+
+    if (quotedMessageId) {
+      messageMetadata.quoted_message = {
+        id: quotedMessageId,
+        content: quotedContent || null,
+        sender: quotedSender || null,
+      };
+    }
+
     // ALWAYS save message to DB — even on UAZAPI failure — so nothing is lost
     const { data: message, error: msgError } = await supabase
       .from('messages')
@@ -242,9 +255,7 @@ Deno.serve(async (req) => {
         sent_by: user.id,
         media_url: mediaUrl || null,
         zapi_message_id: zapiMsgId,
-        metadata: sendFailed
-          ? { send_error: sendErrorText, failed_at: new Date().toISOString() }
-          : { uazapi_response: uazapiResult },
+        metadata: messageMetadata,
         ...(sendFailed ? { failed_at: new Date().toISOString(), error_message: sendErrorText } : {}),
       })
       .select()
