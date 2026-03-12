@@ -677,6 +677,23 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
 
         {/* Input */}
         <div className="border-t border-border bg-card">
+          {/* Reply Preview */}
+          {replyingTo && (
+            <div className="px-4 pt-3 pb-0">
+              <div className="flex items-center gap-2 p-2 bg-primary/5 border-l-2 border-primary rounded-r-lg">
+                <Reply className="h-4 w-4 text-primary shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] text-primary font-medium">
+                    {replyingTo.direction === 'inbound' ? (conversation.contact?.name || 'Contato') : 'Você'}
+                  </p>
+                  <p className="text-xs text-muted-foreground truncate">{replyingTo.content}</p>
+                </div>
+                <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => setReplyingTo(null)}>
+                  <X className="h-3 w-3" />
+                </Button>
+              </div>
+            </div>
+          )}
           {/* Attached Media Preview */}
           {attachedMedia && (
             <div className="px-4 pt-3 pb-0">
