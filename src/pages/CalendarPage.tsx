@@ -1,3 +1,4 @@
+import { Navigate } from 'react-router-dom';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { useCalendarBookings, useAllCalendarConfigs } from '@/hooks/useCalendarConfig';
 import FullCalendar from '@fullcalendar/react';
@@ -10,8 +11,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { EventContentArg } from '@fullcalendar/core';
 import { Calendar } from '@/components/ui/calendar';
 import { ptBR } from 'date-fns/locale';
+import { useCanAccessModule } from '@/hooks/useUserPermissions';
 
 export default function CalendarPage() {
+  const { canAccess, isLoading: accessLoading } = useCanAccessModule('calendar');
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
   const calendarRef = useRef<FullCalendar>(null);
