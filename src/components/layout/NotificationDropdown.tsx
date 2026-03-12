@@ -116,7 +116,6 @@ export function NotificationDropdown() {
                 </div>
                 {!notification.read && (
                   <div className="h-2 w-2 rounded-full shrink-0 mt-1 bg-primary" />
-                  )} />
                 )}
               </DropdownMenuItem>
             ))
