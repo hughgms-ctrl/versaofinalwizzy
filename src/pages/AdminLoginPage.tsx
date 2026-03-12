@@ -15,6 +15,7 @@ export default function AdminLoginPage() {
   const { user, loading: authLoading, signIn } = useAuth();
   const { isPlatformAdmin, isLoading: adminLoading } = usePlatformAdmin();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const [isLoading, setIsLoading] = useState(false);
   const [email, setEmail] = useState('');
@@ -40,8 +41,12 @@ export default function AdminLoginPage() {
         description: 'Credenciais inválidas ou sem permissão de administrador.',
         variant: 'destructive',
       });
+      setIsLoading(false);
+      return;
     }
 
+    // Invalidate and refetch platform admin status after successful login
+    await queryClient.invalidateQueries({ queryKey: ['platform-admin'] });
     setIsLoading(false);
   };
 
