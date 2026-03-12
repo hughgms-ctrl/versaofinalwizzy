@@ -122,11 +122,13 @@ export function ConversationList({ conversations, selectedId, onSelect, onSpyVie
                       </span>
                     )}
 
-                    {/* Online Status Dot */}
-                    <div className={cn(
-                      "absolute top-0 right-0 h-2.5 w-2.5 rounded-full ring-2 ring-card",
-                      isOnline ? "bg-green-500" : "bg-gray-400"
-                    )} />
+                    {/* Online Status Dot - only show when presence is active */}
+                    {isOnline && (
+                      <div className={cn(
+                        "absolute top-0 right-0 h-2.5 w-2.5 rounded-full ring-2 ring-card",
+                        isTyping ? "bg-blue-500 animate-pulse" : isRecording ? "bg-red-500 animate-pulse" : "bg-green-500"
+                      )} />
+                    )}
                   </div>
 
                   <div className={cn(

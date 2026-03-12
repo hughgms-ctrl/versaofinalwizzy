@@ -178,7 +178,7 @@ Deno.serve(async (req) => {
     }
 
     // Handle presence
-    if (eventType === 'presence' || eventType === 'chatpresence') {
+    if (eventType === 'presence' || eventType === 'chatpresence' || eventType === 'presence.update' || eventType === 'presences') {
       return await handlePresence(supabase, payload, instanceId, instanceName);
     }
 
