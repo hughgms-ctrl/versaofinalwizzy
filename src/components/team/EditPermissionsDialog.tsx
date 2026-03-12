@@ -120,6 +120,7 @@ export function EditPermissionsDialog({ open, onOpenChange, member }: EditPermis
   useEffect(() => {
     if (existingPermissions) {
       setPermissions({
+        can_access_dashboard: existingPermissions.can_access_dashboard ?? true,
         can_access_conversations: existingPermissions.can_access_conversations,
         can_access_pipeline: existingPermissions.can_access_pipeline,
         can_access_flows: existingPermissions.can_access_flows,
@@ -128,6 +129,7 @@ export function EditPermissionsDialog({ open, onOpenChange, member }: EditPermis
         can_access_settings: existingPermissions.can_access_settings,
         can_access_team: existingPermissions.can_access_team,
         can_access_scheduled: existingPermissions.can_access_scheduled,
+        can_access_calendar: (existingPermissions as any).can_access_calendar ?? true,
         conversations_filter_type: existingPermissions.conversations_filter_type,
         conversations_allowed_tags: existingPermissions.conversations_allowed_tags || [],
         pipeline_access_type: existingPermissions.pipeline_access_type,
