@@ -6,6 +6,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Bot, MessageCircle, Check, CheckCheck, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { highlightTerm } from '@/lib/highlightTerm';
 import { ConversationCardActions } from './ConversationCardActions';
 
 interface ConversationListProps {
@@ -60,8 +61,9 @@ export function ConversationList({ conversations, selectedId, onSelect, onSpyVie
           const isInFollowUp = !!followUpMap[conversation.id];
           const followUpStep = followUpMap[conversation.id]?.step;
           const searchSnippet = searchQuery && searchQuery.trim().length >= 2 ? messageSnippets?.get(conversation.id) : undefined;
+          const highlightedSnippet = searchSnippet ? highlightTerm(stripMarkdown(searchSnippet), searchQuery || '') : null;
           const messagePreview = (() => {
-            if (searchSnippet) return `🔍 ${stripMarkdown(searchSnippet)}`;
+            if (searchSnippet) return null; // handled separately
             if (!lastMessage) return null;
             if (lastMessage.type !== 'text') {
               const typeLabels: Record<string, string> = {
@@ -238,7 +240,14 @@ export function ConversationList({ conversations, selectedId, onSelect, onSpyVie
                         )}
                       </span>
                     )}
-                    {messagePreview ? (
+                    {highlightedSnippet ? (
+                      <p className={cn(
+                        "text-[11px] truncate flex-1 min-w-0",
+                        hasUnread ? "text-foreground font-medium" : "text-muted-foreground"
+                      )}>
+                        🔍 {highlightedSnippet}
+                      </p>
+                    ) : messagePreview ? (
                       <p className={cn(
                         "text-[11px] truncate flex-1 min-w-0",
                         hasUnread ? "text-foreground font-medium" : "text-muted-foreground"

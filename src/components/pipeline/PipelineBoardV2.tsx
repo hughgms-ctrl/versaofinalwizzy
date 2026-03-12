@@ -9,6 +9,7 @@ import { GripVertical, Loader2, Inbox, MessageCircle, Bot, Check, CheckCheck, Ey
 import { Button } from '@/components/ui/button';
 import { ConversationCardActions } from '@/components/conversations/ConversationCardActions';
 import { cn } from '@/lib/utils';
+import { highlightTerm } from '@/lib/highlightTerm';
 import { useIsMobile } from '@/hooks/use-mobile';
 import {
   Pipeline,
@@ -379,7 +380,8 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
     const lastMessage = conversation.last_message?.[0];
     const isAIActive = lastMessage?.is_from_bot;
     const searchSnippet = searchQuery.trim().length >= 2 ? messageSearchResult?.snippets?.get(conversation.id) : undefined;
-    const messagePreview = searchSnippet ? `🔍 ${stripMarkdown(searchSnippet)}` : getLastMessagePreview(conversation);
+    const highlightedSnippet = searchSnippet ? highlightTerm(stripMarkdown(searchSnippet), searchQuery) : null;
+    const messagePreview = searchSnippet ? null : getLastMessagePreview(conversation);
 
     // Real presence logic using contact_presence table
     const presenceData = conversation.contact?.contact_presence;
@@ -536,6 +538,13 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
               {isTyping || isRecording ? (
                 <p className="text-[11px] text-green-500 font-medium animate-pulse truncate flex-1 min-w-0">
                   {isTyping ? 'Digitando...' : 'Gravando áudio...'}
+                </p>
+              ) : highlightedSnippet ? (
+                <p className={cn(
+                  "text-[11px] truncate flex-1 min-w-0",
+                  hasUnread ? "text-foreground font-medium" : "text-muted-foreground"
+                )}>
+                  🔍 {highlightedSnippet}
                 </p>
               ) : messagePreview ? (
                 <p className={cn(
