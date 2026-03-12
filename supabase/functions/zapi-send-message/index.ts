@@ -156,32 +156,26 @@ Deno.serve(async (req) => {
     let endpoint: string;
     let body: Record<string, any>;
 
-    // Build ContextInfo for reply/quote if we have a zapi message ID
-    const contextInfo = zapiQuotedMsgId ? {
-      StanzaId: zapiQuotedMsgId,
-      Participant: `${normalizedPhone}@s.whatsapp.net`,
-    } : undefined;
-
     switch (type) {
       case 'text':
         endpoint = uazapiUrl(uazapiBaseUrl, '/send/text');
         body = { number: normalizedPhone, text: content };
-        if (contextInfo) body.ContextInfo = contextInfo;
+        if (zapiQuotedMsgId) body.quotedMessageId = zapiQuotedMsgId;
         break;
       case 'image':
         endpoint = uazapiUrl(uazapiBaseUrl, '/send/media');
         body = { number: normalizedPhone, file: mediaUrl, caption: content, type: 'image' };
-        if (contextInfo) body.ContextInfo = contextInfo;
+        if (zapiQuotedMsgId) body.quotedMessageId = zapiQuotedMsgId;
         break;
       case 'audio':
         endpoint = uazapiUrl(uazapiBaseUrl, '/send/media');
         body = { number: normalizedPhone, file: mediaUrl, type: 'audio' };
-        if (contextInfo) body.ContextInfo = contextInfo;
+        if (zapiQuotedMsgId) body.quotedMessageId = zapiQuotedMsgId;
         break;
       case 'document':
         endpoint = uazapiUrl(uazapiBaseUrl, '/send/media');
         body = { number: normalizedPhone, file: mediaUrl, caption: content, type: 'document' };
-        if (contextInfo) body.ContextInfo = contextInfo;
+        if (zapiQuotedMsgId) body.quotedMessageId = zapiQuotedMsgId;
         break;
       default:
         return new Response(JSON.stringify({ error: 'Invalid message type' }), {
