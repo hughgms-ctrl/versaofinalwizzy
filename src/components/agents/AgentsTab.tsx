@@ -1,15 +1,18 @@
 import { useState } from 'react';
 import { useAIAgents, useCreateAIAgent, useUpdateAIAgent } from '@/hooks/useAIAgents';
 import { useAgentFunctionRoles, useCreateAgentFunctionRole, useDeleteAgentFunctionRole } from '@/hooks/useAgentFunctionRoles';
-import { useAgentFolders, useCreateAgentFolder, useDeleteAgentFolder } from '@/hooks/useAgentFolders';
+import { useAgentFolders, useCreateAgentFolder, useDeleteAgentFolder, useRenameAgentFolder, useMoveAgentToFolder } from '@/hooks/useAgentFolders';
 import { AgentListItem } from './AgentListItem';
 import { Button } from '@/components/ui/button';
-import { Plus, Settings2, X, FolderPlus, Folder, ChevronDown, ChevronRight, MoreHorizontal, Trash2, Pencil } from 'lucide-react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Plus, Settings2, X, FolderPlus, Folder, ChevronDown, ChevronRight, MoreHorizontal, Trash2, Pencil, MapPinned } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent } from '@/components/ui/dropdown-menu';
+import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
+import { AgentFolder } from '@/hooks/useAgentFolders';
 
 export function AgentsTab() {
   const { data: agents = [], isLoading } = useAIAgents();
@@ -21,6 +24,10 @@ export function AgentsTab() {
   const deleteRole = useDeleteAgentFunctionRole();
   const createFolder = useCreateAgentFolder();
   const deleteFolder = useDeleteAgentFolder();
+  const renameFolder = useRenameAgentFolder();
+  const moveToFolder = useMoveAgentToFolder();
+  const { selectedWorkspaceId, availableWorkspaces, isAdmin } = useWorkspaceContext();
+
   const [open, setOpen] = useState(false);
   const [rolesOpen, setRolesOpen] = useState(false);
   const [newName, setNewName] = useState('');
@@ -28,19 +35,27 @@ export function AgentsTab() {
   const [newRoleLabel, setNewRoleLabel] = useState('');
   const [newFolderName, setNewFolderName] = useState('');
   const [folderDialogOpen, setFolderDialogOpen] = useState(false);
-  const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set());
+  const [folderWorkspaceId, setFolderWorkspaceId] = useState<string | null>(null);
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
+  // Rename/edit folder dialog
+  const [editingFolder, setEditingFolder] = useState<AgentFolder | null>(null);
+  const [showRenameDialog, setShowRenameDialog] = useState(false);
 
   const handleCreate = () => {
     if (!newName.trim()) return;
     createAgent.mutate({
       name: newName,
       function_role: newRole,
-      ...(selectedFolder ? {} : {}),
     }, {
       onSuccess: (data) => {
         if (selectedFolder && data) {
-          updateAgent.mutate({ id: (data as any).id, folder_id: selectedFolder } as any);
+          const folder = folders.find(f => f.id === selectedFolder);
+          moveToFolder.mutate({
+            agentId: (data as any).id,
+            folderId: selectedFolder,
+            folderWorkspaceId: folder?.workspace_id,
+          });
         }
         setOpen(false);
         setNewName('');
@@ -58,16 +73,33 @@ export function AgentsTab() {
 
   const handleCreateFolder = () => {
     if (!newFolderName.trim()) return;
-    createFolder.mutate(newFolderName.trim(), {
+    createFolder.mutate({ name: newFolderName.trim(), workspaceId: folderWorkspaceId }, {
       onSuccess: () => {
         setNewFolderName('');
+        setFolderWorkspaceId(null);
         setFolderDialogOpen(false);
       },
     });
   };
 
+  const handleRenameFolder = () => {
+    if (!editingFolder || !newFolderName.trim()) return;
+    renameFolder.mutate({
+      id: editingFolder.id,
+      name: newFolderName.trim(),
+      workspaceId: folderWorkspaceId,
+    }, {
+      onSuccess: () => {
+        setShowRenameDialog(false);
+        setEditingFolder(null);
+        setNewFolderName('');
+        setFolderWorkspaceId(null);
+      },
+    });
+  };
+
   const toggleFolder = (folderId: string) => {
-    setCollapsedFolders(prev => {
+    setExpandedFolders(prev => {
       const next = new Set(prev);
       if (next.has(folderId)) next.delete(folderId);
       else next.add(folderId);
@@ -75,13 +107,33 @@ export function AgentsTab() {
     });
   };
 
-  const moveAgentToFolder = (agentId: string, folderId: string | null) => {
-    updateAgent.mutate({ id: agentId, folder_id: folderId } as any);
+  const handleMoveAgentToFolder = (agentId: string, folderId: string | null) => {
+    const folder = folderId ? folders.find(f => f.id === folderId) : null;
+    moveToFolder.mutate({
+      agentId,
+      folderId,
+      folderWorkspaceId: folder?.workspace_id ?? null,
+    });
   };
 
-  // Agents grouped by folder
+  // Filter by workspace
+  const filteredFolders = folders.filter(f => {
+    if (!selectedWorkspaceId) return true;
+    return !f.workspace_id || f.workspace_id === selectedWorkspaceId;
+  });
+
   const agentsInFolder = (folderId: string) => agents.filter(a => (a as any).folder_id === folderId);
-  const agentsWithoutFolder = agents.filter(a => !(a as any).folder_id);
+  const agentsWithoutFolder = agents.filter(a => {
+    const folderId = (a as any).folder_id;
+    if (folderId) return false;
+    if (!selectedWorkspaceId) return true;
+    return !a.workspace_id || a.workspace_id === selectedWorkspaceId;
+  });
+
+  const getWorkspaceName = (wsId: string | null) => {
+    if (!wsId) return null;
+    return availableWorkspaces?.find((w: any) => w.id === wsId)?.name;
+  };
 
   if (isLoading) {
     return <div className="text-muted-foreground text-sm">Carregando agentes...</div>;
@@ -103,17 +155,39 @@ export function AgentsTab() {
             </DialogTrigger>
             <DialogContent>
               <DialogHeader><DialogTitle>Criar Pasta</DialogTitle></DialogHeader>
-              <div className="flex gap-2 mt-2">
-                <Input
-                  value={newFolderName}
-                  onChange={e => setNewFolderName(e.target.value)}
-                  placeholder="Nome da pasta"
-                  onKeyDown={e => { if (e.key === 'Enter') handleCreateFolder(); }}
-                />
+              <div className="space-y-4 mt-2">
+                <div>
+                  <label className="text-sm font-medium mb-1 block">Nome</label>
+                  <Input
+                    value={newFolderName}
+                    onChange={e => setNewFolderName(e.target.value)}
+                    placeholder="Nome da pasta"
+                    onKeyDown={e => { if (e.key === 'Enter') handleCreateFolder(); }}
+                  />
+                </div>
+                {availableWorkspaces && availableWorkspaces.length > 0 && (
+                  <div>
+                    <label className="text-sm font-medium mb-1 block">Workspace (visibilidade)</label>
+                    <Select value={folderWorkspaceId || 'all'} onValueChange={v => setFolderWorkspaceId(v === 'all' ? null : v)}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Todos os workspaces" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos os workspaces</SelectItem>
+                        {availableWorkspaces.map((ws: any) => (
+                          <SelectItem key={ws.id} value={ws.id}>{ws.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground mt-1">Agentes nesta pasta serão vinculados ao workspace selecionado.</p>
+                  </div>
+                )}
+              </div>
+              <DialogFooter>
                 <Button size="sm" disabled={!newFolderName.trim() || createFolder.isPending} onClick={handleCreateFolder}>
                   Criar
                 </Button>
-              </div>
+              </DialogFooter>
             </DialogContent>
           </Dialog>
 
@@ -196,7 +270,10 @@ export function AgentsTab() {
                       <SelectContent>
                         <SelectItem value="none">Sem pasta</SelectItem>
                         {folders.map(f => (
-                          <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>
+                          <SelectItem key={f.id} value={f.id}>
+                            {f.name}
+                            {f.workspace_id && getWorkspaceName(f.workspace_id) ? ` (${getWorkspaceName(f.workspace_id)})` : ''}
+                          </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -211,10 +288,51 @@ export function AgentsTab() {
         </div>
       </div>
 
-      {/* Folders */}
-      {folders.map(folder => {
+      {/* Rename folder dialog */}
+      <Dialog open={showRenameDialog} onOpenChange={setShowRenameDialog}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Editar Pasta</DialogTitle></DialogHeader>
+          <div className="space-y-4 mt-2">
+            <div>
+              <label className="text-sm font-medium mb-1 block">Nome</label>
+              <Input
+                value={newFolderName}
+                onChange={e => setNewFolderName(e.target.value)}
+                placeholder="Nome da pasta"
+                onKeyDown={e => { if (e.key === 'Enter') handleRenameFolder(); }}
+              />
+            </div>
+            {availableWorkspaces && availableWorkspaces.length > 0 && (
+              <div>
+                <label className="text-sm font-medium mb-1 block">Workspace (visibilidade)</label>
+                <Select value={folderWorkspaceId || 'all'} onValueChange={v => setFolderWorkspaceId(v === 'all' ? null : v)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Todos os workspaces" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos os workspaces</SelectItem>
+                    {availableWorkspaces.map((ws: any) => (
+                      <SelectItem key={ws.id} value={ws.id}>{ws.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground mt-1">Agentes nesta pasta herdarão este workspace.</p>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button size="sm" disabled={!newFolderName.trim() || renameFolder.isPending} onClick={handleRenameFolder}>
+              Salvar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Folders - collapsed by default */}
+      {filteredFolders.map(folder => {
         const folderAgents = agentsInFolder(folder.id);
-        const isCollapsed = collapsedFolders.has(folder.id);
+        const isExpanded = expandedFolders.has(folder.id);
+        const wsName = getWorkspaceName(folder.workspace_id);
 
         return (
           <div key={folder.id} className="mb-4">
@@ -223,11 +341,17 @@ export function AgentsTab() {
                 onClick={() => toggleFolder(folder.id)}
                 className="flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
               >
-                {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
                 <Folder className="h-4 w-4 text-primary" />
                 <span>{folder.name}</span>
                 <span className="text-xs text-muted-foreground/60">({folderAgents.length})</span>
               </button>
+              {wsName && (
+                <Badge variant="outline" className="text-[10px] gap-1 px-1.5 py-0">
+                  <MapPinned className="h-2.5 w-2.5" />
+                  {wsName}
+                </Badge>
+              )}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" size="icon" className="h-6 w-6 opacity-0 group-hover/folder:opacity-100 transition-opacity">
@@ -235,6 +359,16 @@ export function AgentsTab() {
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent>
+                  <DropdownMenuItem
+                    onClick={() => {
+                      setEditingFolder(folder);
+                      setNewFolderName(folder.name);
+                      setFolderWorkspaceId(folder.workspace_id);
+                      setShowRenameDialog(true);
+                    }}
+                  >
+                    <Pencil className="h-3.5 w-3.5 mr-2" /> Editar pasta
+                  </DropdownMenuItem>
                   <DropdownMenuItem
                     className="text-destructive"
                     onClick={() => deleteFolder.mutate(folder.id)}
@@ -244,11 +378,14 @@ export function AgentsTab() {
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
-            {!isCollapsed && (
+            {isExpanded && (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3 pl-6">
                 {folderAgents.map(agent => (
-                  <AgentListItem key={agent.id} agent={agent} folders={folders} onMoveToFolder={moveAgentToFolder} />
+                  <AgentListItem key={agent.id} agent={agent} folders={folders} onMoveToFolder={handleMoveAgentToFolder} />
                 ))}
+                {folderAgents.length === 0 && (
+                  <p className="text-xs text-muted-foreground col-span-full py-2">Nenhum agente nesta pasta</p>
+                )}
               </div>
             )}
           </div>
@@ -259,7 +396,7 @@ export function AgentsTab() {
       {agentsWithoutFolder.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
           {agentsWithoutFolder.map(agent => (
-            <AgentListItem key={agent.id} agent={agent} folders={folders} onMoveToFolder={moveAgentToFolder} />
+            <AgentListItem key={agent.id} agent={agent} folders={folders} onMoveToFolder={handleMoveAgentToFolder} />
           ))}
         </div>
       )}

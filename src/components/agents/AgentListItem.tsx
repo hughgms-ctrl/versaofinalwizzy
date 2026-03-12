@@ -8,6 +8,7 @@ import { useUpdateAIAgent } from '@/hooks/useAIAgents';
 import { useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent } from '@/components/ui/dropdown-menu';
+import { MoreHorizontal } from 'lucide-react';
 
 interface AgentListItemProps {
   agent: AIAgent;
@@ -56,14 +57,49 @@ export function AgentListItem({ agent, folders = [], onMoveToFolder }: AgentList
               checked={agent.is_active}
               onCheckedChange={(checked) => updateAgent.mutate({ id: agent.id, is_active: checked })}
             />
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
-              onClick={() => deleteAgent.mutate(agent.id)}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
+            {/* Move to folder / actions menu */}
+            {folders.length > 0 && onMoveToFolder && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <MoreHorizontal className="h-3.5 w-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent>
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>
+                      <FolderInput className="h-3.5 w-3.5 mr-2" /> Mover para pasta
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent>
+                      <DropdownMenuItem onClick={() => onMoveToFolder(agent.id, null)}>
+                        Sem pasta
+                      </DropdownMenuItem>
+                      {folders.map(f => (
+                        <DropdownMenuItem key={f.id} onClick={() => onMoveToFolder(agent.id, f.id)}>
+                          {f.name}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                  <DropdownMenuItem
+                    className="text-destructive"
+                    onClick={() => deleteAgent.mutate(agent.id)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5 mr-2" /> Excluir
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+            {(!folders.length || !onMoveToFolder) && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                onClick={() => deleteAgent.mutate(agent.id)}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            )}
           </div>
         </div>
 
