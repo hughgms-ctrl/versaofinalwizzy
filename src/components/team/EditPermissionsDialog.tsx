@@ -31,7 +31,9 @@ import {
   Loader2,
   Shield,
   Calendar,
+  CalendarClock,
   Building2,
+  LayoutDashboard,
 } from 'lucide-react';
 import { TeamMember } from '@/hooks/useTeamMembers';
 import { useUserPermissions, useUpdateUserPermissions, UserPermissions } from '@/hooks/useUserPermissions';
