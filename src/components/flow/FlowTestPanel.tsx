@@ -783,8 +783,9 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
         // Try to find edge matching button id or label
         const btnEdge = edges.find(e => e.source === cur.id && (e.sourceHandle === matched.id || e.sourceHandle === matched.label));
         const next = btnEdge ? nodes.find(n => n.id === btnEdge.target) : findNext(cur.id, nodes, edges);
-        if (next) await processNode(next, nodes, edges);
-        else endFlow();
+        const isSubFlowExecution = simState.parentFlowStack.length > 0;
+        if (next) await processNode(next, nodes, edges, isSubFlowExecution);
+        else if (!isSubFlowExecution) endFlow();
         setIsProcessing(false);
       }
       return;
