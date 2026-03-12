@@ -17,9 +17,11 @@ import { TemplateFillForm } from './TemplateFillForm';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useToast } from '@/hooks/use-toast';
+import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 
 export function TemplatesList() {
   const { data: templates, isLoading } = useDocumentTemplates();
+  const { selectedWorkspaceId } = useWorkspaceContext();
   const deleteTemplate = useDeleteDocumentTemplate();
   const createTemplate = useCreateDocumentTemplate();
   const { toast } = useToast();
