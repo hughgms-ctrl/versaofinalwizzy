@@ -281,6 +281,106 @@ export default function ReportsPage() {
               </Card>
             </TabsContent>
 
+            {/* Pipeline Tab */}
+            <TabsContent value="pipeline" className="space-y-6">
+              <div className="flex items-center gap-3 mb-4">
+                <GitBranch className="h-5 w-5 text-muted-foreground" />
+                <h3 className="text-lg font-semibold text-foreground">Visão por Pipeline</h3>
+                <Select
+                  value={selectedPipelineId || ''}
+                  onValueChange={(v) => setSelectedPipelineId(v || null)}
+                >
+                  <SelectTrigger className="w-[220px]">
+                    <SelectValue placeholder="Selecionar pipeline..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {pipelines.map(p => (
+                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {selectedPipelineId ? (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <Card className="bg-card border-border">
+                    <CardHeader>
+                      <CardTitle className="text-foreground">Distribuição por Estágio</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      {loadingStages ? (
+                        <Skeleton className="w-full h-[300px]" />
+                      ) : stageData.length === 0 ? (
+                        <p className="text-center py-8 text-muted-foreground">Nenhum dado</p>
+                      ) : (
+                        <ResponsiveContainer width="100%" height={300}>
+                          <BarChart data={stageData} layout="vertical" margin={{ left: 20 }}>
+                            <XAxis type="number" stroke="hsl(var(--muted-foreground))" fontSize={12} />
+                            <YAxis type="category" dataKey="name" stroke="hsl(var(--muted-foreground))" fontSize={11} width={100} />
+                            <Tooltip
+                              contentStyle={{
+                                backgroundColor: 'hsl(var(--card))',
+                                border: '1px solid hsl(var(--border))',
+                                borderRadius: '8px',
+                              }}
+                              formatter={(value: number) => [`${value} contatos`, '']}
+                            />
+                            <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+                              {stageData.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={entry.color} />
+                              ))}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  <Card className="bg-card border-border">
+                    <CardHeader>
+                      <CardTitle className="text-foreground">Performance por Equipe</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      {loadingTeamPipeline ? (
+                        <div className="space-y-4">
+                          {[1, 2, 3].map(i => <Skeleton key={i} className="h-16 w-full rounded-xl" />)}
+                        </div>
+                      ) : teamByPipeline.length === 0 ? (
+                        <p className="text-center py-8 text-muted-foreground">Nenhum atendimento registrado</p>
+                      ) : (
+                        <div className="space-y-3">
+                          {teamByPipeline.map((member) => (
+                            <div key={member.id} className="p-3 rounded-xl bg-muted/50 border border-border">
+                              <div className="flex items-center gap-3">
+                                <Avatar className="h-9 w-9">
+                                  <AvatarImage src={member.avatar_url || undefined} />
+                                  <AvatarFallback className="bg-gradient-to-br from-primary to-purple-500 text-primary-foreground font-semibold text-xs">
+                                    {getInitials(member.name)}
+                                  </AvatarFallback>
+                                </Avatar>
+                                <div className="flex-1">
+                                  <p className="text-sm font-medium text-foreground">{member.name}</p>
+                                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                                    <Zap className="h-3 w-3 text-primary" />
+                                    <span>{member.conversationsHandled} conversas</span>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
+              ) : (
+                <Card className="bg-card border-border p-12 text-center">
+                  <GitBranch className="h-12 w-12 mx-auto text-muted-foreground mb-4 opacity-30" />
+                  <p className="text-muted-foreground">Selecione um pipeline acima para ver os dados</p>
+                </Card>
+              )}
+            </TabsContent>
+
             <TabsContent value="agents" className="space-y-6">
               <Card className="bg-card border-border">
                 <CardHeader>
