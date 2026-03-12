@@ -61,6 +61,7 @@ export function MobileNav() {
     if (!permissions) return false;
 
     const moduleMap: Record<string, keyof typeof permissions> = {
+      dashboard: 'can_access_dashboard',
       conversations: 'can_access_conversations',
       pipeline: 'can_access_pipeline',
       flows: 'can_access_flows',
@@ -68,6 +69,8 @@ export function MobileNav() {
       agents: 'can_access_agents',
       settings: 'can_access_settings',
       team: 'can_access_team',
+      scheduled: 'can_access_scheduled',
+      calendar: 'can_access_calendar',
     };
 
     const key = moduleMap[module];
