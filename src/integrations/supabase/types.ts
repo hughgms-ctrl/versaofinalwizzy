@@ -2009,6 +2009,59 @@ export type Database = {
           },
         ]
       }
+      followup_templates: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          move_column_id: string | null
+          move_pipeline_id: string | null
+          name: string
+          organization_id: string
+          quiet_end: string
+          quiet_hours: boolean
+          quiet_start: string
+          steps: Json
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          move_column_id?: string | null
+          move_pipeline_id?: string | null
+          name: string
+          organization_id: string
+          quiet_end?: string
+          quiet_hours?: boolean
+          quiet_start?: string
+          steps?: Json
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          move_column_id?: string | null
+          move_pipeline_id?: string | null
+          name?: string
+          organization_id?: string
+          quiet_end?: string
+          quiet_hours?: boolean
+          quiet_start?: string
+          steps?: Json
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "followup_templates_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       generated_documents: {
         Row: {
           contact_id: string | null
