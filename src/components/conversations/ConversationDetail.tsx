@@ -942,6 +942,16 @@ function MessageBubbleList({ messages, mediaMessageIds, contactAvatar, contactNa
     return format(date, 'dd/MM/yyyy', { locale: ptBR });
   };
 
+  // Find last outbound non-bot message for follow-up badge
+  const lastOutboundHumanId = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].direction === 'outbound' && !messages[i].is_from_bot) return messages[i].id;
+    }
+    return null;
+  }, [messages]);
+
+  const conversationHasFollowUp = messages.length > 0 && followUpMap && followUpMap[messages[0].conversation_id];
+
   let lastDateKey: string | null = null;
 
   return (
