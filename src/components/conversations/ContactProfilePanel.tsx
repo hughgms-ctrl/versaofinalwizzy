@@ -317,7 +317,6 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
             <Label className="text-xs text-muted-foreground uppercase tracking-wider">
               Observação
             </Label>
-            </Label>
             <div className="flex items-start gap-2">
               {isEditingNote ? (
                 <>
