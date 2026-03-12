@@ -23,6 +23,8 @@ const adminNav = [
   { name: 'API & Custos', href: '/admin/api', icon: Key },
   { name: 'Governança', href: '/admin/governance', icon: ScrollText },
   { name: 'Segurança', href: '/admin/security', icon: Shield },
+  { name: 'Monitoramento', href: '/admin/monitoring', icon: ShieldCheck },
+  { name: 'Documentação', href: '/admin/docs', icon: ScrollText },
   { name: 'Histórico', href: '/admin/history', icon: TrendingUp },
 ];
 
