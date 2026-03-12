@@ -301,7 +301,11 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
         conversationId: conversation.id,
         content: messageContent,
         type: 'text',
+        quotedMessageId: replyingTo?.id,
+        quotedContent: replyingTo?.content || undefined,
+        quotedSender: replyingTo ? (replyingTo.direction === 'inbound' ? (conversation.contact?.name || 'Contato') : 'Você') : undefined,
       });
+      setReplyingTo(null);
     } catch (error) {
       // Error is handled in the hook
       setNewMessage(messageContent); // Restore message on error

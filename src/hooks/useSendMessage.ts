@@ -49,6 +49,13 @@ export function useSendMessage() {
           read_at: null,
           delivered_at: null,
           media_url: newMessage.mediaUrl || null,
+          metadata: newMessage.quotedMessageId ? {
+            quoted_message: {
+              id: newMessage.quotedMessageId,
+              content: newMessage.quotedContent || '',
+              sender: newMessage.quotedSender || '',
+            }
+          } : undefined,
         };
 
         queryClient.setQueryData<DbMessage[]>(
