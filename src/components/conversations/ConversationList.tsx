@@ -13,6 +13,8 @@ interface ConversationListProps {
   selectedId?: string;
   onSelect: (conversation: DbConversation) => void;
   onSpyView?: (conversation: DbConversation) => void;
+  searchQuery?: string;
+  messageSnippets?: Map<string, string>;
 }
 
 export function ConversationList({ conversations, selectedId, onSelect, onSpyView }: ConversationListProps) {
