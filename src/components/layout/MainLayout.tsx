@@ -38,7 +38,7 @@ export function MainLayout({
         "transition-all duration-300",
         collapsed ? "md:pl-20" : "md:pl-20 lg:pl-64"
       )}>
-        <WhatsAppDisconnectedBanner />
+        
         <Header 
           title={title} 
           subtitle={subtitle}
