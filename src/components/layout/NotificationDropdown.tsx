@@ -117,9 +117,7 @@ export function NotificationDropdown() {
                   </p>
                 </div>
                 {!notification.read && (
-                  <div className={cn(
-                    "h-2 w-2 rounded-full shrink-0 mt-1",
-                    notification.type === 'disconnect' ? "bg-destructive" : "bg-primary"
+                  <div className="h-2 w-2 rounded-full shrink-0 mt-1 bg-primary" />
                   )} />
                 )}
               </DropdownMenuItem>
