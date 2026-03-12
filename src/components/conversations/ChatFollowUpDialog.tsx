@@ -90,6 +90,10 @@ export function ChatFollowUpDialog({
         .eq('flow_id', systemFlow.id)
         .in('status', ['waiting_input', 'running']);
 
+      const now = new Date();
+      const firstStep = steps[0];
+      const timeoutAt = new Date(now.getTime() + (firstStep.delayMinutes * 60 * 1000));
+
       const execPayload = {
           flow_id: systemFlow.id,
           conversation_id: conversationId,
