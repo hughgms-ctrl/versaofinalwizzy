@@ -6,6 +6,7 @@ import "./index.css";
 
 Sentry.init({
   dsn: "https://e182c0b36f3c05825b22c0b0c5743cab@o4511028911734784.ingest.us.sentry.io/4511028921761792",
+  tunnel: `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sentry-tunnel`,
   integrations: [
     Sentry.browserTracingIntegration(),
     Sentry.replayIntegration(),
