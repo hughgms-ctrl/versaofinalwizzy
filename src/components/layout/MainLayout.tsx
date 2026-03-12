@@ -1,7 +1,7 @@
 import { ReactNode } from 'react';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
-import { WhatsAppDisconnectedBanner } from './WhatsAppDisconnectedBanner';
+
 import { cn } from '@/lib/utils';
 import { useSidebarContext } from '@/contexts/SidebarContext';
 
