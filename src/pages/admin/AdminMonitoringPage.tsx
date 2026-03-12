@@ -198,13 +198,13 @@ export default function AdminMonitoringPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex flex-wrap gap-3">
-              <Button onClick={handleTestError} variant="outline" className="gap-2">
+              <Button onClick={handleTestError} disabled={isSending} variant="outline" className="gap-2">
                 <Activity className="h-4 w-4" />
-                Enviar evento de teste
+                {isSending ? 'Enviando...' : 'Enviar evento de teste'}
               </Button>
-              <Button onClick={handleTestException} variant="outline" className="gap-2 border-amber-500/30 text-amber-600 hover:bg-amber-50">
+              <Button onClick={handleTestException} disabled={isSending} variant="outline" className="gap-2 border-amber-500/30 text-amber-600 hover:bg-amber-50">
                 <AlertTriangle className="h-4 w-4" />
-                Enviar exceção de teste
+                {isSending ? 'Enviando...' : 'Enviar exceção de teste'}
               </Button>
               <Button asChild variant="default" className="gap-2">
                 <a href={SENTRY_PROJECT_URL} target="_blank" rel="noopener noreferrer">
