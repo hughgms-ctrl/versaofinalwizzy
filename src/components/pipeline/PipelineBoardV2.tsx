@@ -599,19 +599,10 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
                 );
               })()}
               {followUpMap?.[conversation.id] && (
-                <TooltipProvider delayDuration={200}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span className="inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-500 font-medium">
-                        <Clock className="h-2.5 w-2.5" />
-                        Follow-up
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent side="top">
-                      Follow-up ativo (etapa {followUpMap[conversation.id].step})
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
+                <span className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full bg-orange-500/15 text-orange-600 dark:text-orange-400 font-medium animate-pulse">
+                  <RefreshCw className="h-2.5 w-2.5" />
+                  Follow-up #{followUpMap[conversation.id].step}
+                </span>
               )}
             </div>
           </div>
