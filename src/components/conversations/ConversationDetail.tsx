@@ -989,7 +989,7 @@ function MessageBubbleList({ messages, mediaMessageIds, contactAvatar, contactNa
               senderAvatar={senderAvatar}
               senderName={senderName}
               isHighlighted={highlightedMessageId === message.id}
-              hasFollowUp={!!(conversationFollowUp && (followUpTriggerMessageId ? message.id === followUpTriggerMessageId : (message.direction === 'outbound' && !message.is_from_bot)))}
+              hasFollowUp={!!(conversationFollowUp && message.id === followUpTargetId)}
               onReply={onReply}
               onFollowUp={onFollowUp}
               onTranscriptionUpdate={handleTranscriptionUpdate}
