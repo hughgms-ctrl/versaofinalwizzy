@@ -385,6 +385,40 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
     }
   }
 
+  // --- Extract quoted/reply context ---
+  // WhatsApp reply messages contain contextInfo with stanzaId (original message ID)
+  let quotedMessageMeta: any = null;
+  const contextInfo = extendedText?.contextInfo || extendedText?.ContextInfo
+    || imageMsg?.contextInfo || imageMsg?.ContextInfo
+    || audioMsg?.contextInfo || audioMsg?.ContextInfo
+    || videoMsg?.contextInfo || videoMsg?.ContextInfo
+    || documentMsg?.contextInfo || documentMsg?.ContextInfo
+    || eventMessage?.contextInfo || eventMessage?.ContextInfo
+    || null;
+  
+  if (contextInfo) {
+    const stanzaId = contextInfo.stanzaId || contextInfo.StanzaId || contextInfo.quotedMessageId || null;
+    const participant = contextInfo.participant || contextInfo.Participant || null;
+    const quotedMsg = contextInfo.quotedMessage || contextInfo.QuotedMessage || null;
+    
+    if (stanzaId) {
+      let quotedText = null;
+      if (quotedMsg) {
+        quotedText = quotedMsg.conversation || quotedMsg.Conversation
+          || quotedMsg.extendedTextMessage?.text || quotedMsg.ExtendedTextMessage?.Text
+          || quotedMsg.imageMessage?.caption || quotedMsg.ImageMessage?.Caption
+          || quotedMsg.videoMessage?.caption || quotedMsg.VideoMessage?.Caption
+          || null;
+      }
+      quotedMessageMeta = {
+        zapi_message_id: stanzaId,
+        content: quotedText,
+        participant: participant,
+      };
+      console.log(`[WEBHOOK] Quoted message detected: stanzaId=${stanzaId}, text=${quotedText?.substring(0, 50) || 'none'}`);
+    }
+  }
+
   // Skip protocol/system messages
   if (eventMessage.protocolMessage || eventMessage.ProtocolMessage) {
     return respond({ success: true, ignored: true, reason: 'protocol_message' });
