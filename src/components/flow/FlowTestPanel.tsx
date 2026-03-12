@@ -801,8 +801,9 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
       if (cur) {
         setIsProcessing(true);
         const next = findNext(cur.id, nodes, edges);
-        if (next) await processNode(next, nodes, edges);
-        else endFlow();
+        const isSubFlowExecution = simState.parentFlowStack.length > 0;
+        if (next) await processNode(next, nodes, edges, isSubFlowExecution);
+        else if (!isSubFlowExecution) endFlow();
         setIsProcessing(false);
       }
       return;
