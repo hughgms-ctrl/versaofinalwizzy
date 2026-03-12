@@ -950,7 +950,15 @@ function MessageBubbleList({ messages, mediaMessageIds, contactAvatar, contactNa
     return followUpMap[messages[0]?.conversation_id] || null;
   }, [messages, followUpMap]);
 
-  const followUpTriggerMessageId = conversationFollowUp?.triggerMessageId;
+  const followUpTargetId = useMemo(() => {
+    if (!conversationFollowUp) return null;
+    if (conversationFollowUp.triggerMessageId) return conversationFollowUp.triggerMessageId;
+    // Fallback: last outbound human message
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].direction === 'outbound' && !messages[i].is_from_bot) return messages[i].id;
+    }
+    return null;
+  }, [messages, conversationFollowUp]);
 
   let lastDateKey: string | null = null;
 
