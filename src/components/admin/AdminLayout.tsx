@@ -1,5 +1,6 @@
 import { ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { WhatsAppDisconnectedBanner } from '@/components/layout/WhatsAppDisconnectedBanner';
 import {
   LayoutDashboard, Building2, CreditCard, Key, Shield,
   ScrollText, TrendingUp, LogOut, ShieldCheck, ChevronLeft, ChevronRight
@@ -170,6 +171,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
         "transition-all duration-300",
         collapsed ? "ml-20" : "ml-20 lg:ml-64"
       )}>
+        <WhatsAppDisconnectedBanner />
         <main className="p-3 md:p-6">
           {children}
         </main>
