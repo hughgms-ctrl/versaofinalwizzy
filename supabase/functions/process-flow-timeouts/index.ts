@@ -191,15 +191,22 @@ Deno.serve(async (req) => {
 
         // Find the current node to check for remarketing steps
         const currentNode = nodes.find((n: any) => n.id === currentNodeId);
-        const remarketingSteps = currentNode?.data?.remarketingSteps as any[] || [];
+        // Chat follow-ups store steps in variables, flow nodes store in node data
+        const execVars = (exec.variables || {}) as Record<string, any>;
+        const isChatFollowUp = execVars.source === 'chat_follow_up';
+        const remarketingSteps = isChatFollowUp
+          ? (execVars.remarketingSteps as any[] || [])
+          : (currentNode?.data?.remarketingSteps as any[] || []);
 
         // ═══════════════════════════════════════════════════════════════
         // QUIET HOURS: Pause sending during configured silent period
         // ═══════════════════════════════════════════════════════════════
-        const quietHoursEnabled = currentNode?.data?.remarketingQuietHours === true;
+        const quietHoursEnabled = isChatFollowUp
+          ? (execVars.remarketingQuietHours === true)
+          : (currentNode?.data?.remarketingQuietHours === true);
         if (quietHoursEnabled && remarketingSteps.length > 0 && currentStep < remarketingSteps.length) {
-          const quietStart = currentNode?.data?.remarketingQuietStart || '22:00';
-          const quietEnd = currentNode?.data?.remarketingQuietEnd || '08:00';
+          const quietStart = isChatFollowUp ? (execVars.remarketingQuietStart || '22:00') : (currentNode?.data?.remarketingQuietStart || '22:00');
+          const quietEnd = isChatFollowUp ? (execVars.remarketingQuietEnd || '08:00') : (currentNode?.data?.remarketingQuietEnd || '08:00');
           
           const nowBR = new Intl.DateTimeFormat('pt-BR', {
             timeZone: 'America/Sao_Paulo',
