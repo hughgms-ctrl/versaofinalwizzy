@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Bell, Check, MessageSquare, Clock, AlertCircle } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { Bell, Check, MessageSquare, Clock, AlertCircle, WifiOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -13,47 +13,67 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { useWhatsAppStatus } from '@/hooks/useWhatsAppStatus';
 
 interface Notification {
   id: string;
-  type: 'message' | 'alert' | 'system';
+  type: 'message' | 'alert' | 'system' | 'disconnect';
   title: string;
   description: string;
   timestamp: Date;
   read: boolean;
 }
 
-// Mock notifications - In a real app, these would come from the database
-const mockNotifications: Notification[] = [
-  {
-    id: '1',
-    type: 'message',
-    title: 'Nova mensagem',
-    description: 'Você tem novas mensagens não lidas',
-    timestamp: new Date(Date.now() - 5 * 60 * 1000),
-    read: false,
-  },
-  {
-    id: '2',
-    type: 'alert',
-    title: 'Conversa pendente',
-    description: 'Uma conversa está aguardando resposta há mais de 1 hora',
-    timestamp: new Date(Date.now() - 30 * 60 * 1000),
-    read: false,
-  },
-  {
-    id: '3',
-    type: 'system',
-    title: 'WhatsApp conectado',
-    description: 'Sua instância do WhatsApp está online',
-    timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000),
-    read: true,
-  },
-];
-
 export function NotificationDropdown() {
-  const [notifications, setNotifications] = useState<Notification[]>(mockNotifications);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [open, setOpen] = useState(false);
+  const { connected, status, isLoading } = useWhatsAppStatus();
+  const [disconnectedAt, setDisconnectedAt] = useState<Date | null>(null);
+
+  // Track WhatsApp disconnection events
+  useEffect(() => {
+    if (isLoading) return;
+    
+    if (!connected && status !== 'pending' && status !== 'not_configured') {
+      if (!disconnectedAt) {
+        const now = new Date();
+        setDisconnectedAt(now);
+        setNotifications(prev => {
+          // Don't duplicate disconnect notifications
+          const filtered = prev.filter(n => n.type !== 'disconnect');
+          return [
+            {
+              id: `disconnect-${now.getTime()}`,
+              type: 'disconnect' as const,
+              title: '⚠️ WhatsApp desconectado',
+              description: 'Sua instância perdeu a conexão. Mensagens não estão sendo enviadas.',
+              timestamp: now,
+              read: false,
+            },
+            ...filtered,
+          ];
+        });
+      }
+    } else if (connected && disconnectedAt) {
+      // Reconnected — add reconnection notification
+      const now = new Date();
+      setDisconnectedAt(null);
+      setNotifications(prev => {
+        const filtered = prev.filter(n => n.type !== 'disconnect');
+        return [
+          {
+            id: `reconnect-${now.getTime()}`,
+            type: 'system' as const,
+            title: '✅ WhatsApp reconectado',
+            description: 'Sua instância voltou a funcionar normalmente.',
+            timestamp: now,
+            read: false,
+          },
+          ...filtered,
+        ];
+      });
+    }
+  }, [connected, status, isLoading, disconnectedAt]);
 
   const unreadCount = notifications.filter(n => !n.read).length;
 
@@ -73,6 +93,8 @@ export function NotificationDropdown() {
         return <MessageSquare className="h-4 w-4 text-primary" />;
       case 'alert':
         return <Clock className="h-4 w-4 text-yellow-500" />;
+      case 'disconnect':
+        return <WifiOff className="h-4 w-4 text-destructive" />;
       case 'system':
         return <AlertCircle className="h-4 w-4 text-muted-foreground" />;
     }
@@ -84,7 +106,12 @@ export function NotificationDropdown() {
         <Button variant="ghost" size="icon" className="relative">
           <Bell className="h-5 w-5 text-muted-foreground" />
           {unreadCount > 0 && (
-            <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-medium text-destructive-foreground">
+            <span className={cn(
+              "absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-medium",
+              notifications.some(n => !n.read && n.type === 'disconnect')
+                ? "bg-destructive text-destructive-foreground animate-pulse"
+                : "bg-destructive text-destructive-foreground"
+            )}>
               {unreadCount > 9 ? '9+' : unreadCount}
             </span>
           )}
@@ -117,11 +144,15 @@ export function NotificationDropdown() {
                 key={notification.id}
                 className={cn(
                   'flex items-start gap-3 p-3 cursor-pointer',
-                  !notification.read && 'bg-muted/50'
+                  !notification.read && 'bg-muted/50',
+                  !notification.read && notification.type === 'disconnect' && 'bg-destructive/10'
                 )}
                 onClick={() => markAsRead(notification.id)}
               >
-                <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center shrink-0">
+                <div className={cn(
+                  "h-8 w-8 rounded-full flex items-center justify-center shrink-0",
+                  notification.type === 'disconnect' ? "bg-destructive/20" : "bg-muted"
+                )}>
                   {getIcon(notification.type)}
                 </div>
                 <div className="flex-1 min-w-0">
@@ -142,7 +173,10 @@ export function NotificationDropdown() {
                   </p>
                 </div>
                 {!notification.read && (
-                  <div className="h-2 w-2 rounded-full bg-primary shrink-0 mt-1" />
+                  <div className={cn(
+                    "h-2 w-2 rounded-full shrink-0 mt-1",
+                    notification.type === 'disconnect' ? "bg-destructive" : "bg-primary"
+                  )} />
                 )}
               </DropdownMenuItem>
             ))

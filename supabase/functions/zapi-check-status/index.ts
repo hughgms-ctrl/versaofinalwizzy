@@ -428,11 +428,32 @@ async function checkSingleInstance(
   const isConnectingState = ['connecting', 'pairing', 'qrcode', 'qr'].includes(probeState);
 
   if (isConnectingState) {
-    // If it was already connected, and it now says 'connecting/pairing', 
-    // it might be a temporary re-pair or UAZAPI state lag. 
-    // We stay 'connected' in DB for a bit longer if possible.
+    // CRITICAL FIX: If UAZAPI explicitly says connected=false, respect that
+    // even if DB still says 'connected'. This prevents false-positive connected status.
+    if (statusData?.connected === false || statusData?.instance?.connected === false) {
+      console.log('[DEBUG] UAZAPI says connected=false with state connecting/pairing. Marking as disconnected.');
+      
+      await supabase
+        .from('whatsapp_instances')
+        .update({
+          status: 'disconnected',
+          is_active: false,
+          disconnected_at: new Date().toISOString(),
+        })
+        .eq('id', instance.id);
+
+      return {
+        status: 'disconnected',
+        connected: false,
+        phoneNumber: instance.phone_number,
+        hasCredentials: true,
+        wasConnected: instance.status === 'connected',
+      };
+    }
+
+    // If connected field is not explicitly false, and was connected, stay connected briefly
     if (instance.status === 'connected') {
-      console.log('[DEBUG] Instance was connected, but UAZAPI says connecting/pairing. Staying connected for now.');
+      console.log('[DEBUG] Instance was connected, UAZAPI says connecting but not explicitly disconnected. Staying connected briefly.');
       return {
         status: 'connected',
         connected: true,
