@@ -906,7 +906,7 @@ interface MessageBubbleListProps {
   senderAvatar?: string | null;
   senderName?: string | null;
   highlightedMessageId?: string | null;
-  followUpMap?: Record<string, number>;
+  followUpMap?: Record<string, { step: number; triggerMessageId?: string }>;
   onReply?: (message: DbMessage) => void;
   onFollowUp?: (message: DbMessage) => void;
   onAdjustPrompt?: (message: DbMessage) => void;
