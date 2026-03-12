@@ -17,7 +17,7 @@ interface ConversationListProps {
   messageSnippets?: Map<string, string>;
 }
 
-export function ConversationList({ conversations, selectedId, onSelect, onSpyView }: ConversationListProps) {
+export function ConversationList({ conversations, selectedId, onSelect, onSpyView, searchQuery, messageSnippets }: ConversationListProps) {
   const { data: profiles } = useProfiles();
   const { data: workspaces = [] } = useWorkspaces();
   const { data: followUpMap = {} } = useFollowUpStatus();
