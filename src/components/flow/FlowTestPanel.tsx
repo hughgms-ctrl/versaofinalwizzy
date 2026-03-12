@@ -862,8 +862,9 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
       setIsProcessing(true);
       const btnEdge = edges.find(e => e.source === cur.id && (e.sourceHandle === btn.id || e.sourceHandle === btn.label));
       const next = btnEdge ? nodes.find(n => n.id === btnEdge.target) : findNext(cur.id, nodes, edges);
-      if (next) await processNode(next, nodes, edges);
-      else endFlow();
+      const isSubFlowExecution = simState.parentFlowStack.length > 0;
+      if (next) await processNode(next, nodes, edges, isSubFlowExecution);
+      else if (!isSubFlowExecution) endFlow();
       setIsProcessing(false);
     }
   };
