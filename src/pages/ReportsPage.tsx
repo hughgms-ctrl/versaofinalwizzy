@@ -332,7 +332,10 @@ export default function ReportsPage() {
                                 backgroundColor: 'hsl(var(--card))',
                                 border: '1px solid hsl(var(--border))',
                                 borderRadius: '8px',
+                                color: 'hsl(var(--foreground))',
                               }}
+                              labelStyle={{ color: 'hsl(var(--foreground))' }}
+                              itemStyle={{ color: 'hsl(var(--foreground))' }}
                               formatter={(value: number) => {
                                 const total = stageData.reduce((sum, s) => sum + s.value, 0);
                                 const pct = total > 0 ? ((value / total) * 100).toFixed(1) : '0';
