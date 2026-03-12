@@ -448,7 +448,7 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
   };
 
   // ===== MAIN NODE PROCESSOR =====
-  const processNode = async (node: Node, nodes: Node[], edges: Edge[]) => {
+  const processNode = async (node: Node, nodes: Node[], edges: Edge[], isSubFlowExecution: boolean = false) => {
     setSimState(prev => ({ ...prev, currentNodeId: node.id }));
     window.dispatchEvent(new CustomEvent('flow:node:executing', { detail: { nodeId: node.id } }));
 
@@ -457,8 +457,11 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
 
     const advanceOrEnd = async (outputHandle?: string) => {
       const next = findNext(node.id, nodes, edges, outputHandle);
-      if (next) { await processNode(next, nodes, edges); }
-      else { endFlow(); }
+      if (next) {
+        await processNode(next, nodes, edges, isSubFlowExecution);
+      } else if (!isSubFlowExecution) {
+        endFlow();
+      }
     };
 
     // Helper: handle nodes that wait for response with optional follow-ups
