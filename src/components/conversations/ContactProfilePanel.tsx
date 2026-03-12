@@ -205,6 +205,7 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
     } finally {
       setIsSavingNote(false);
     }
+  };
 
   const availableTags = tags?.filter(
     tag => !contactTags?.some(ct => ct.tag_id === tag.id)
