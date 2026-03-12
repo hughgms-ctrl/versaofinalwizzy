@@ -31,7 +31,9 @@ import {
   Loader2,
   Shield,
   Calendar,
+  CalendarClock,
   Building2,
+  LayoutDashboard,
 } from 'lucide-react';
 import { TeamMember } from '@/hooks/useTeamMembers';
 import { useUserPermissions, useUpdateUserPermissions, UserPermissions } from '@/hooks/useUserPermissions';
@@ -49,6 +51,7 @@ interface EditPermissionsDialogProps {
 }
 
 const defaultPermissions: Partial<UserPermissions> = {
+  can_access_dashboard: true,
   can_access_conversations: false,
   can_access_pipeline: false,
   can_access_flows: false,
@@ -57,6 +60,7 @@ const defaultPermissions: Partial<UserPermissions> = {
   can_access_settings: false,
   can_access_team: false,
   can_access_scheduled: false,
+  can_access_calendar: false,
   conversations_filter_type: 'all',
   conversations_allowed_tags: [],
   pipeline_access_type: 'all',
@@ -66,6 +70,7 @@ const defaultPermissions: Partial<UserPermissions> = {
 
 // Permissões padrão para Supervisor
 const supervisorDefaultPermissions: Partial<UserPermissions> = {
+  can_access_dashboard: true,
   can_access_conversations: true,
   can_access_pipeline: true,
   can_access_flows: false,
@@ -74,6 +79,7 @@ const supervisorDefaultPermissions: Partial<UserPermissions> = {
   can_access_settings: false,
   can_access_team: true,
   can_access_scheduled: true,
+  can_access_calendar: true,
   conversations_filter_type: 'all',
   conversations_allowed_tags: [],
   pipeline_access_type: 'all',
@@ -116,6 +122,7 @@ export function EditPermissionsDialog({ open, onOpenChange, member }: EditPermis
   useEffect(() => {
     if (existingPermissions) {
       setPermissions({
+        can_access_dashboard: existingPermissions.can_access_dashboard ?? true,
         can_access_conversations: existingPermissions.can_access_conversations,
         can_access_pipeline: existingPermissions.can_access_pipeline,
         can_access_flows: existingPermissions.can_access_flows,
@@ -124,6 +131,7 @@ export function EditPermissionsDialog({ open, onOpenChange, member }: EditPermis
         can_access_settings: existingPermissions.can_access_settings,
         can_access_team: existingPermissions.can_access_team,
         can_access_scheduled: existingPermissions.can_access_scheduled,
+        can_access_calendar: (existingPermissions as any).can_access_calendar ?? true,
         conversations_filter_type: existingPermissions.conversations_filter_type,
         conversations_allowed_tags: existingPermissions.conversations_allowed_tags || [],
         pipeline_access_type: existingPermissions.pipeline_access_type,
@@ -248,6 +256,12 @@ export function EditPermissionsDialog({ open, onOpenChange, member }: EditPermis
                 <h3 className="text-sm font-medium mb-4">Acesso aos Módulos</h3>
                 <div className="grid grid-cols-2 gap-4">
                   <ModuleSwitch
+                    icon={LayoutDashboard}
+                    label="Dashboard"
+                    checked={permissions.can_access_dashboard ?? true}
+                    onCheckedChange={(v) => toggleModule('can_access_dashboard', v)}
+                  />
+                  <ModuleSwitch
                     icon={MessageSquare}
                     label="Conversas"
                     checked={permissions.can_access_conversations || false}
@@ -258,6 +272,12 @@ export function EditPermissionsDialog({ open, onOpenChange, member }: EditPermis
                     label="Pipeline"
                     checked={permissions.can_access_pipeline || false}
                     onCheckedChange={(v) => toggleModule('can_access_pipeline', v)}
+                  />
+                  <ModuleSwitch
+                    icon={Calendar}
+                    label="Agenda"
+                    checked={permissions.can_access_calendar ?? true}
+                    onCheckedChange={(v) => toggleModule('can_access_calendar', v)}
                   />
                   <ModuleSwitch
                     icon={Workflow}
@@ -290,7 +310,7 @@ export function EditPermissionsDialog({ open, onOpenChange, member }: EditPermis
                     onCheckedChange={(v) => toggleModule('can_access_team', v)}
                   />
                   <ModuleSwitch
-                    icon={Calendar}
+                    icon={CalendarClock}
                     label="Envios em Massa"
                     checked={permissions.can_access_scheduled || false}
                     onCheckedChange={(v) => toggleModule('can_access_scheduled', v)}

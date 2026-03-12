@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Navigate } from 'react-router-dom';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { MetricCard } from '@/components/dashboard/MetricCard';
 import { ConversationsChart } from '@/components/dashboard/ConversationsChart';
@@ -8,6 +9,7 @@ import { AgentPerformance } from '@/components/dashboard/AgentPerformance';
 import { useDashboardMetrics } from '@/hooks/useDashboardData';
 import { usePipelines } from '@/hooks/usePipelines';
 import { usePipelineStageDistribution, useTeamPerformanceByPipeline } from '@/hooks/usePipelineStats';
+import { useCanAccessModule } from '@/hooks/useUserPermissions';
 import { MessageSquare, Clock, Bot, ThumbsUp, GitBranch } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -23,11 +25,17 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Zap } from 'lucide-react';
 
 const Index = () => {
+  const { canAccess, isLoading: accessLoading } = useCanAccessModule('dashboard');
   const { data: metrics, isLoading } = useDashboardMetrics();
   const { data: pipelines = [] } = usePipelines();
   const [selectedPipelineId, setSelectedPipelineId] = useState<string | null>(null);
   const { data: stageData = [], isLoading: loadingStages } = usePipelineStageDistribution(selectedPipelineId);
   const { data: teamByPipeline = [], isLoading: loadingTeamPipeline } = useTeamPerformanceByPipeline(selectedPipelineId);
+
+  // Redirect to pipeline if user doesn't have dashboard access
+  if (!accessLoading && !canAccess) {
+    return <Navigate to="/pipeline" replace />;
+  }
 
   const getInitials = (name: string) =>
     name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);

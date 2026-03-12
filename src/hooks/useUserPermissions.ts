@@ -7,6 +7,7 @@ export interface UserPermissions {
   id: string;
   user_id: string;
   organization_id: string;
+  can_access_dashboard: boolean;
   can_access_conversations: boolean;
   can_access_pipeline: boolean;
   can_access_flows: boolean;
@@ -15,6 +16,7 @@ export interface UserPermissions {
   can_access_settings: boolean;
   can_access_team: boolean;
   can_access_scheduled: boolean;
+  can_access_calendar: boolean;
   conversations_filter_type: 'all' | 'assigned' | 'tags' | 'assigned_and_tags';
   conversations_allowed_tags: string[];
   pipeline_access_type: 'all' | 'specific';
@@ -130,6 +132,7 @@ export function useCanAccessModule(module: string) {
   }
 
   const moduleMap: Record<string, keyof UserPermissions> = {
+    dashboard: 'can_access_dashboard',
     conversations: 'can_access_conversations',
     pipeline: 'can_access_pipeline',
     flows: 'can_access_flows',
@@ -138,6 +141,7 @@ export function useCanAccessModule(module: string) {
     settings: 'can_access_settings',
     team: 'can_access_team',
     scheduled: 'can_access_scheduled',
+    calendar: 'can_access_calendar',
   };
 
   const key = moduleMap[module];

@@ -5,12 +5,15 @@ import { MessageSquare, Bot, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useNavigate } from 'react-router-dom';
+import { useCanAccessModule } from '@/hooks/useUserPermissions';
 
 export function RecentConversations() {
   const { data: recentConversations = [], isLoading } = useRecentConversations(5);
+  const { canAccess: canAccessConversations } = useCanAccessModule('conversations');
   const navigate = useNavigate();
 
   const handleClick = (conversationId: string) => {
+    if (!canAccessConversations) return;
     navigate(`/conversations?id=${conversationId}`);
   };
 
@@ -42,7 +45,10 @@ export function RecentConversations() {
               <div 
                 key={conversation.id}
                 onClick={() => handleClick(conversation.id)}
-                className="flex items-center gap-3 p-3 rounded-lg bg-secondary/50 hover:bg-secondary transition-colors cursor-pointer"
+                className={cn(
+                  "flex items-center gap-3 p-3 rounded-lg bg-secondary/50 transition-colors",
+                  canAccessConversations ? "hover:bg-secondary cursor-pointer" : "opacity-80"
+                )}
               >
                 <div className="relative">
                   <div className="h-10 w-10 rounded-full bg-gradient-to-br from-primary/20 to-purple-500/20 flex items-center justify-center">
