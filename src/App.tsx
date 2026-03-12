@@ -45,6 +45,8 @@ import AdminApiPage from "./pages/admin/AdminApiPage";
 import AdminGovernancePage from "./pages/admin/AdminGovernancePage";
 import AdminSecurityPage from "./pages/admin/AdminSecurityPage";
 import AdminHistoryPage from "./pages/admin/AdminHistoryPage";
+import AdminMonitoringPage from "./pages/admin/AdminMonitoringPage";
+import AdminDocsPage from "./pages/admin/AdminDocsPage";
 import { AdminProtectedRoute } from "@/components/admin/AdminProtectedRoute";
 
 const queryClient = new QueryClient();
