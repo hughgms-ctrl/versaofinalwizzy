@@ -38,7 +38,9 @@ import { AIContextBar } from './AIContextBar';
 import { supabase } from '@/integrations/supabase/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { AIFeedbackDialog } from './AIFeedbackDialog';
+import { ChatFollowUpDialog } from './ChatFollowUpDialog';
 import { Sparkles } from 'lucide-react';
+import { useFollowUpStatus } from '@/hooks/useFollowUpStatus';
 
 interface ConversationDetailProps {
   conversation: DbConversation;
