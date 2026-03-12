@@ -26,7 +26,7 @@ export function ServiceModeTabs({ value, onChange, counts, className }: ServiceM
   const totalCount = counts ? counts.ia + counts.ativo + counts.pendente : undefined;
 
   return (
-    <div className={cn("flex items-center gap-1 bg-muted/30 p-1 rounded-xl border border-border/40 overflow-x-auto scrollbar-hide w-full", className)}>
+    <div className={cn("flex items-center gap-1 bg-muted/30 pt-3 pb-1 px-2 rounded-xl border border-border/40 overflow-x-auto scrollbar-hide w-full", className)}>
       {tabs.map((tab) => {
         const count = tab.value === 'all'
           ? totalCount
@@ -39,7 +39,7 @@ export function ServiceModeTabs({ value, onChange, counts, className }: ServiceM
             key={tab.value}
             onClick={() => onChange(tab.value)}
             className={cn(
-              "relative flex flex-col items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg transition-all text-xs font-medium min-w-[64px] flex-shrink-0",
+              "relative flex flex-col items-center gap-1.5 px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg transition-all text-xs font-medium min-w-[60px] flex-1",
               isActive
                 ? "bg-card shadow-sm text-foreground ring-1 ring-border/50"
                 : "text-muted-foreground hover:text-foreground hover:bg-card/50"
@@ -54,12 +54,12 @@ export function ServiceModeTabs({ value, onChange, counts, className }: ServiceM
                 isActive ? "text-white" : "text-muted-foreground"
               )} />
             </div>
-            <span className="hidden sm:block text-[11px] font-semibold">{tab.label}</span>
+            <span className="text-[10px] sm:text-[11px] font-semibold truncate max-w-full">{tab.label}</span>
             {count !== undefined && count > 0 && (
               <Badge
                 variant="secondary"
                 className={cn(
-                  "absolute -top-1.5 -right-1.5 h-5 min-w-5 px-1.5 flex items-center justify-center text-[10px] font-bold shadow-sm",
+                  "absolute -top-2 -right-0.5 h-5 min-w-5 px-1.5 flex items-center justify-center text-[10px] font-bold shadow-sm",
                   isActive && "bg-primary text-primary-foreground shadow-primary/20"
                 )}
               >

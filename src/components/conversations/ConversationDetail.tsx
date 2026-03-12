@@ -706,19 +706,19 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
             </div>
           )}
 
-          <div className="flex items-center gap-1 md:gap-2 p-3 md:p-4">
+          <div className="flex items-center gap-1 md:gap-2 p-2 md:p-4">
             <MediaUploadButton
               onUpload={handleFileSelect}
               disabled={sendMessage.isPending || isUploading || isSendingMedia}
             />
 
-            {/* Variable insertion button */}
+            {/* Variable insertion button - hidden on mobile */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-9 w-9 md:h-10 md:w-10 flex-shrink-0"
+                  className="h-9 w-9 md:h-10 md:w-10 flex-shrink-0 hidden sm:flex"
                   title="Inserir variável"
                 >
                   <Variable className="h-4 w-4" />
@@ -741,14 +741,14 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
               </DropdownMenuContent>
             </DropdownMenu>
 
-            {/* Signature toggle button */}
+            {/* Signature toggle button - hidden on mobile */}
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
                   variant={signatureEnabled ? "default" : "ghost"}
                   size="icon"
                   className={cn(
-                    "h-9 w-9 md:h-10 md:w-10 flex-shrink-0 transition-colors",
+                    "h-9 w-9 md:h-10 md:w-10 flex-shrink-0 transition-colors hidden sm:flex",
                     signatureEnabled && "bg-primary/20 text-primary hover:bg-primary/30"
                   )}
                   onClick={() => toggleSignature(!signatureEnabled)}
@@ -787,13 +787,17 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
               <Button
                 onClick={handleSend}
                 disabled={(!newMessage.trim() && !attachedMedia) || sendMessage.isPending || isSendingMedia}
+                size="icon"
+                className="h-9 w-9 md:h-10 md:w-auto md:px-4 flex-shrink-0"
               >
                 {(sendMessage.isPending || isSendingMedia) ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
-                  <Send className="h-4 w-4 mr-2" />
+                  <Send className="h-4 w-4" />
                 )}
-                {(sendMessage.isPending || isSendingMedia) ? 'Enviando...' : 'Enviar'}
+                <span className="hidden md:inline ml-2">
+                  {(sendMessage.isPending || isSendingMedia) ? 'Enviando...' : 'Enviar'}
+                </span>
               </Button>
             ) : (
               <AudioRecordButton
