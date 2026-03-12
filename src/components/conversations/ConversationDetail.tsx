@@ -981,7 +981,7 @@ function MessageBubbleList({ messages, mediaMessageIds, contactAvatar, contactNa
               senderAvatar={senderAvatar}
               senderName={senderName}
               isHighlighted={highlightedMessageId === message.id}
-              hasFollowUp={!!(followUpMap && followUpMap[message.conversation_id])}
+              hasFollowUp={!!(conversationHasFollowUp && message.id === lastOutboundHumanId)}
               onReply={onReply}
               onFollowUp={onFollowUp}
               onTranscriptionUpdate={handleTranscriptionUpdate}
