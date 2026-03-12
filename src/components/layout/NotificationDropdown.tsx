@@ -95,7 +95,6 @@ export function NotificationDropdown() {
                 onClick={() => markAsRead(notification.id)}
               >
                 <div className="h-8 w-8 rounded-full flex items-center justify-center shrink-0 bg-muted">
-                )}>
                   {getIcon(notification.type)}
                 </div>
                 <div className="flex-1 min-w-0">
