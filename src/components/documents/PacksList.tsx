@@ -32,9 +32,10 @@ export function PacksList() {
   const [showNew, setShowNew] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  const filtered = packs?.filter(p =>
-    p.name.toLowerCase().includes(search.toLowerCase())
-  ) || [];
+  const filtered = packs?.filter(p => {
+    if (selectedWorkspaceId && p.workspace_id && p.workspace_id !== selectedWorkspaceId) return false;
+    return p.name.toLowerCase().includes(search.toLowerCase());
+  }) || [];
 
   const getTemplateNames = (ids: string[]) => {
     return ids.map(id => templates?.find(t => t.id === id)?.name || 'Template removido');

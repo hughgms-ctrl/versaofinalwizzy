@@ -76,6 +76,7 @@ export default function ReportsPage() {
               <TabsList className="bg-muted">
                 <TabsTrigger value="overview">Visão Geral</TabsTrigger>
                 <TabsTrigger value="conversations">Conversas</TabsTrigger>
+                <TabsTrigger value="pipeline">Pipeline</TabsTrigger>
                 <TabsTrigger value="agents">Agentes</TabsTrigger>
               </TabsList>
               
