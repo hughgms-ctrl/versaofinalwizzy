@@ -50,7 +50,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { conversationId, content, type = 'text', mediaUrl } = await req.json() as SendMessageRequest;
+    const { conversationId, content, type = 'text', mediaUrl, quotedMessageId, quotedContent, quotedSender } = await req.json() as SendMessageRequest;
 
     if (!conversationId || !content) {
       return new Response(JSON.stringify({ error: 'conversationId and content are required' }), {
