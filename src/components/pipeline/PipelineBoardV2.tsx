@@ -231,7 +231,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
 
       return true;
     });
-  }, [conversations, filters, searchQuery, allContactTags, selectedWorkspaceId, selectedWorkspace, messageSearchResult]);
+  }, [conversations, filters, searchQuery, allContactTags, selectedWorkspaceId, selectedWorkspace, messageSearchResult, sharedConversationIds]);
 
   // Map conversations to columns
   const getConversationsByColumn = (columnId: string) => {
