@@ -123,7 +123,9 @@ const ConversationsPage = () => {
         const query = searchQuery.toLowerCase().trim();
         const name = conv.contact?.name?.toLowerCase() || '';
         const phone = conv.contact?.phone || '';
-        if (!name.includes(query) && !phone.includes(query)) return false;
+        const matchesNameOrPhone = name.includes(query) || phone.includes(query);
+        const matchesMessage = messageMatchIds?.has(conv.id) ?? false;
+        if (!matchesNameOrPhone && !matchesMessage) return false;
       }
 
       // Status filter
