@@ -115,12 +115,15 @@ export function ConversationList({ conversations, selectedId, onSelect, onSpyVie
                         src={conversation.contact.avatar_url}
                         alt={contactName || contactPhone}
                         className="h-10 w-10 rounded-full object-cover"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                          e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                        }}
                       />
-                    ) : (
-                      <span className="text-xs font-semibold text-primary">
-                        {getInitials(contactName || null, contactPhone)}
-                      </span>
-                    )}
+                    ) : null}
+                    <span className={cn("text-xs font-semibold text-primary", conversation.contact?.avatar_url && "hidden")}>
+                      {getInitials(contactName || null, contactPhone)}
+                    </span>
 
                     {/* Online Status Dot - only show when presence is active */}
                     {isOnline && (
