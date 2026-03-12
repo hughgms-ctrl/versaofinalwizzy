@@ -222,7 +222,7 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
       "bg-card flex flex-col overflow-hidden",
       embedded
         ? "w-full h-full"
-        : "w-80 min-w-[320px] max-w-80 border-l border-border h-full flex-shrink-0"
+        : "w-full sm:w-80 sm:min-w-[320px] sm:max-w-80 border-l border-border h-full flex-shrink-0 fixed inset-0 z-50 sm:static sm:z-auto"
     )}>
       {/* Header */}
       {!embedded && (
@@ -312,10 +312,10 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
 
           <Separator />
 
-          {/* Quick Note (Nota Rápida) */}
+          {/* Observação */}
           <div className="space-y-2">
             <Label className="text-xs text-muted-foreground uppercase tracking-wider">
-              Nota Rápida
+              Observação
             </Label>
             <div className="flex items-start gap-2">
               {isEditingNote ? (
@@ -353,7 +353,7 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
                   {editedNote ? (
                     <span className="text-sm text-amber-600 dark:text-amber-400 flex-1">{editedNote}</span>
                   ) : (
-                    <span className="text-sm text-muted-foreground flex-1">Adicionar nota rápida...</span>
+                    <span className="text-sm text-muted-foreground flex-1">Adicionar observação...</span>
                   )}
                   <Pencil className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
                 </button>
