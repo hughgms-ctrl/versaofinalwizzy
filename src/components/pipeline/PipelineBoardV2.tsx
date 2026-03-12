@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { formatDistanceToNow, isWithinInterval, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { GripVertical, Loader2, Inbox, MessageCircle, Bot, Check, CheckCheck, EyeOff, Eye } from 'lucide-react';
+import { GripVertical, Loader2, Inbox, MessageCircle, Bot, Check, CheckCheck, EyeOff, Eye, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ConversationCardActions } from '@/components/conversations/ConversationCardActions';
 import { cn } from '@/lib/utils';
@@ -20,6 +20,7 @@ import { ConversationFiltersState } from '@/components/shared/ConversationFilter
 import { useUserPermissions, useCurrentUserRole } from '@/hooks/useUserPermissions';
 import { useTags } from '@/hooks/useTags';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { useFollowUpStatus } from '@/hooks/useFollowUpStatus';
 
 interface PipelineBoardProps {
   pipeline: Pipeline | null;
@@ -39,6 +40,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
   const { data: userPermissions } = useUserPermissions();
   const { data: userRole } = useCurrentUserRole();
   const { data: tags = [] } = useTags();
+  const { data: followUpMap } = useFollowUpStatus();
 
   const [draggedCard, setDraggedCard] = useState<string | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
@@ -550,51 +552,68 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
               )}
             </div>
 
-            {/* Line 5: Contact Tags */}
-            {(() => {
-              const contactTagIds = allContactTags?.filter(ct => ct.contact_id === conversation.contact?.id).map(ct => ct.tag_id) || [];
-              const contactTags = tags.filter(t => contactTagIds.includes(t.id));
-              if (contactTags.length === 0) return null;
-              const visibleTags = contactTags.slice(0, 2);
-              const hiddenTags = contactTags.slice(2);
-              return (
-                <div className="flex items-center gap-1 mt-1 overflow-hidden">
-                  {visibleTags.map(tag => (
-                    <span
-                      key={tag.id}
-                      className="text-[9px] px-1.5 py-0.5 rounded truncate max-w-[80px]"
-                      style={{ backgroundColor: `${tag.color}20`, color: tag.color }}
-                    >
-                      {tag.name}
-                    </span>
-                  ))}
-                  {hiddenTags.length > 0 && (
-                    <TooltipProvider delayDuration={200}>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <span className="text-[9px] px-1 py-0.5 rounded bg-muted text-muted-foreground cursor-default">
-                            +{hiddenTags.length}
-                          </span>
-                        </TooltipTrigger>
-                        <TooltipContent side="top" className="max-w-[200px]">
-                          <div className="flex flex-wrap gap-1">
-                            {hiddenTags.map(tag => (
-                              <span
-                                key={tag.id}
-                                className="text-[10px] px-1.5 py-0.5 rounded"
-                                style={{ backgroundColor: `${tag.color}20`, color: tag.color }}
-                              >
-                                {tag.name}
-                              </span>
-                            ))}
-                          </div>
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  )}
-                </div>
-              );
-            })()}
+            {/* Line 5: Contact Tags + Follow-up badge */}
+            <div className="flex items-center gap-1 mt-1 overflow-hidden flex-wrap">
+              {(() => {
+                const contactTagIds = allContactTags?.filter(ct => ct.contact_id === conversation.contact?.id).map(ct => ct.tag_id) || [];
+                const contactTags = tags.filter(t => contactTagIds.includes(t.id));
+                if (contactTags.length === 0) return null;
+                const visibleTags = contactTags.slice(0, 2);
+                const hiddenTags = contactTags.slice(2);
+                return (
+                  <>
+                    {visibleTags.map(tag => (
+                      <span
+                        key={tag.id}
+                        className="text-[9px] px-1.5 py-0.5 rounded truncate max-w-[80px]"
+                        style={{ backgroundColor: `${tag.color}20`, color: tag.color }}
+                      >
+                        {tag.name}
+                      </span>
+                    ))}
+                    {hiddenTags.length > 0 && (
+                      <TooltipProvider delayDuration={200}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span className="text-[9px] px-1 py-0.5 rounded bg-muted text-muted-foreground cursor-default">
+                              +{hiddenTags.length}
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="max-w-[200px]">
+                            <div className="flex flex-wrap gap-1">
+                              {hiddenTags.map(tag => (
+                                <span
+                                  key={tag.id}
+                                  className="text-[10px] px-1.5 py-0.5 rounded"
+                                  style={{ backgroundColor: `${tag.color}20`, color: tag.color }}
+                                >
+                                  {tag.name}
+                                </span>
+                              ))}
+                            </div>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    )}
+                  </>
+                );
+              })()}
+              {followUpMap?.[conversation.id] && (
+                <TooltipProvider delayDuration={200}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-500 font-medium">
+                        <Clock className="h-2.5 w-2.5" />
+                        Follow-up
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">
+                      Follow-up ativo (etapa {followUpMap[conversation.id].step})
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+            </div>
           </div>
         </div>
       </div>
