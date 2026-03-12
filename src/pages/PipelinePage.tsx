@@ -240,6 +240,12 @@ const PipelinePage = () => {
           filters={filters}
           searchQuery={searchQuery}
           onConversationClick={handleConversationClick}
+          sharedConversationIds={
+            hasPipelineRestriction && selectedPipeline && 
+            !userPermissions?.allowed_pipeline_ids?.includes(selectedPipeline.id)
+              ? new Set(myShares.map(s => s.conversation_id))
+              : undefined
+          }
         />
 
         {/* Chat Modal */}
