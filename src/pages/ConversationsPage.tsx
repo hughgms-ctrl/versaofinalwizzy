@@ -368,26 +368,44 @@ const ConversationsPage = () => {
             "w-full md:w-80 lg:w-96 md:min-w-[320px] md:max-w-96",
             selectedConversation && "hidden md:flex"
           )}>
-            {/* Mobile Search Bar */}
-            <div className="p-2 border-b border-border md:hidden flex gap-2">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder="Pesquisar conversas..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-9 pr-9 bg-secondary/50 border-0 text-sm"
+            {/* Mobile Search Bar + Filters */}
+            <div className="p-2 border-b border-border md:hidden flex flex-col gap-2">
+              <div className="flex gap-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    placeholder="Pesquisar conversas..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-9 pr-9 bg-secondary/50 border-0 text-sm"
+                  />
+                  {searchQuery && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
+                      onClick={() => setSearchQuery('')}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+                <Button
+                  size="icon"
+                  className="h-9 w-9 shrink-0 flex-none"
+                  title="Nova Conversa"
+                  onClick={() => setShowNewConversationDialog(true)}
+                >
+                  <MessageSquarePlus className="h-4 w-4" />
+                </Button>
+              </div>
+              <div className="overflow-x-auto scrollbar-hide">
+                <ConversationFilters
+                  conversations={conversations || []}
+                  filters={filters}
+                  onFiltersChange={setFilters}
+                  showCount={false}
                 />
-                {searchQuery && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7"
-                    onClick={() => setSearchQuery('')}
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                )}
               </div>
             </div>
 
