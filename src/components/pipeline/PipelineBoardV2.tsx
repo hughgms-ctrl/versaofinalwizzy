@@ -552,59 +552,42 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
               )}
             </div>
 
-            {/* Line 5: Contact Tags + Follow-up badge */}
-            <div className="flex items-center gap-1 mt-1 overflow-hidden flex-wrap">
-              {(() => {
-                const contactTagIds = allContactTags?.filter(ct => ct.contact_id === conversation.contact?.id).map(ct => ct.tag_id) || [];
-                const contactTags = tags.filter(t => contactTagIds.includes(t.id));
-                if (contactTags.length === 0) return null;
-                const visibleTags = contactTags.slice(0, 2);
-                const hiddenTags = contactTags.slice(2);
-                return (
-                  <>
-                    {visibleTags.map(tag => (
-                      <span
-                        key={tag.id}
-                        className="text-[9px] px-1.5 py-0.5 rounded truncate max-w-[80px]"
-                        style={{ backgroundColor: `${tag.color}20`, color: tag.color }}
-                      >
-                        {tag.name}
-                      </span>
-                    ))}
-                    {hiddenTags.length > 0 && (
-                      <TooltipProvider delayDuration={200}>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <span className="text-[9px] px-1 py-0.5 rounded bg-muted text-muted-foreground cursor-default">
-                              +{hiddenTags.length}
-                            </span>
-                          </TooltipTrigger>
-                          <TooltipContent side="top" className="max-w-[200px]">
-                            <div className="flex flex-wrap gap-1">
-                              {hiddenTags.map(tag => (
-                                <span
-                                  key={tag.id}
-                                  className="text-[10px] px-1.5 py-0.5 rounded"
-                                  style={{ backgroundColor: `${tag.color}20`, color: tag.color }}
-                                >
-                                  {tag.name}
-                                </span>
-                              ))}
-                            </div>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
-                    )}
-                  </>
-                );
-              })()}
-              {followUpMap?.[conversation.id] && (
+            {/* Follow-up Badge */}
+            {followUpMap?.[conversation.id] && (
+              <div className="flex items-center gap-1 mt-1">
                 <span className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full bg-orange-500/15 text-orange-600 dark:text-orange-400 font-medium animate-pulse">
                   <RefreshCw className="h-2.5 w-2.5" />
                   Follow-up #{followUpMap[conversation.id].step}
                 </span>
-              )}
-            </div>
+              </div>
+            )}
+
+            {/* Contact Tags */}
+            {(() => {
+              const contactTagIds = allContactTags?.filter(ct => ct.contact_id === conversation.contact?.id).map(ct => ct.tag_id) || [];
+              const contactTags = tags.filter(t => contactTagIds.includes(t.id));
+              if (contactTags.length === 0) return null;
+              const visibleTags = contactTags.slice(0, 3);
+              const remainingCount = contactTags.length - 3;
+              return (
+                <div className="flex items-center gap-1 mt-1 flex-wrap">
+                  {visibleTags.map(tag => (
+                    <span
+                      key={tag.id}
+                      className="text-[9px] px-1.5 py-0.5 rounded truncate max-w-[80px]"
+                      style={{ backgroundColor: `${tag.color}20`, color: tag.color }}
+                    >
+                      {tag.name}
+                    </span>
+                  ))}
+                  {remainingCount > 0 && (
+                    <span className="text-[10px] text-muted-foreground">
+                      +{remainingCount}
+                    </span>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         </div>
       </div>
