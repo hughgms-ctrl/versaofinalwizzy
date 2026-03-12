@@ -1179,10 +1179,14 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
   };
 
   return (
-    <div className={cn(
-      "flex gap-3",
-      isInbound ? "justify-start" : "justify-end"
-    )}>
+    <div
+      id={`message-${message.id}`}
+      className={cn(
+        "flex gap-3 group/msg relative",
+        isInbound ? "justify-start" : "justify-end",
+        isHighlighted && "animate-pulse bg-primary/10 rounded-lg -mx-2 px-2 py-1"
+      )}
+    >
       {isInbound && (
         <div className="h-8 w-8 rounded-full bg-gradient-to-br from-slate-400 to-slate-500 flex items-center justify-center flex-shrink-0 overflow-hidden">
           {contactAvatar ? (
@@ -1194,6 +1198,43 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
           )}
         </div>
       )}
+
+      {/* Hover Action Buttons - positioned outside the bubble */}
+      <div className={cn(
+        "absolute top-0 flex items-center gap-0.5 opacity-0 group-hover/msg:opacity-100 transition-opacity z-10",
+        isInbound ? "right-2" : "left-2"
+      )}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={() => onReply?.(message)}
+              className="h-7 w-7 rounded-full bg-card border border-border shadow-sm flex items-center justify-center hover:bg-muted transition-colors"
+            >
+              <Reply className="h-3.5 w-3.5 text-muted-foreground" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="text-xs">Responder</TooltipContent>
+        </Tooltip>
+        {/* Follow-up button: only on outbound non-bot messages */}
+        {!isInbound && !isBot && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={() => onFollowUp?.(message)}
+                className={cn(
+                  "h-7 w-7 rounded-full bg-card border shadow-sm flex items-center justify-center hover:bg-muted transition-colors",
+                  hasFollowUp ? "border-primary text-primary" : "border-border text-muted-foreground"
+                )}
+              >
+                <Clock className="h-3.5 w-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="text-xs">
+              {hasFollowUp ? 'Follow-up ativo' : 'Programar follow-up'}
+            </TooltipContent>
+          </Tooltip>
+        )}
+      </div>
 
       <div 
         className={cn(
@@ -1210,6 +1251,13 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
           }
         }}
       >
+        {/* Follow-up badge */}
+        {hasFollowUp && !isInbound && !isBot && (
+          <div className="flex items-center gap-1 mb-1">
+            <Clock className="h-3 w-3 text-white/80" />
+            <span className="text-[10px] text-white/80 font-medium">Follow-up ativo</span>
+          </div>
+        )}
         {/* Show contact name for inbound messages */}
         {isInbound && contactName && (
           <p className="text-xs font-semibold italic text-primary mb-1">
