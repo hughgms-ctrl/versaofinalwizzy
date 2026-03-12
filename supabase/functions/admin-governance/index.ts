@@ -35,6 +35,34 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+// ── RATE LIMITING ──
+const rateLimitStore = new Map<string, { count: number; resetAt: number }>()
+const RATE_LIMIT_WINDOW_MS = 60_000 // 1 minute
+const RATE_LIMIT_MAX = 60 // max requests per window
+
+function checkRateLimit(key: string): { allowed: boolean; remaining: number } {
+  const now = Date.now()
+  const entry = rateLimitStore.get(key)
+  if (!entry || now > entry.resetAt) {
+    rateLimitStore.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS })
+    return { allowed: true, remaining: RATE_LIMIT_MAX - 1 }
+  }
+  entry.count++
+  if (entry.count > RATE_LIMIT_MAX) {
+    return { allowed: false, remaining: 0 }
+  }
+  return { allowed: true, remaining: RATE_LIMIT_MAX - entry.count }
+}
+
+// ── DATA EXFILTRATION PROTECTION ──
+const MAX_EXPORT_ROWS = 500
+const MAX_RESPONSE_SIZE_BYTES = 5 * 1024 * 1024 // 5MB
+
+function enforceRowLimit<T>(data: T[] | null, limit = MAX_EXPORT_ROWS): T[] {
+  if (!data) return []
+  return data.slice(0, limit)
+}
+
 async function verifyAdmin(req: Request) {
   const authHeader = req.headers.get('Authorization')
   if (!authHeader) throw new Error('Missing auth')
@@ -105,6 +133,16 @@ Deno.serve(async (req) => {
   }
 
   try {
+    // Rate limit check
+    const clientIP = req.headers.get('x-forwarded-for') || req.headers.get('cf-connecting-ip') || 'unknown'
+    const { allowed, remaining } = checkRateLimit(clientIP)
+    if (!allowed) {
+      return new Response(JSON.stringify({ error: 'Too many requests. Try again later.' }), {
+        status: 429,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Retry-After': '60', 'X-RateLimit-Remaining': '0' },
+      })
+    }
+
     const { adminClient, user } = await verifyAdmin(req)
     const url = new URL(req.url)
     const action = url.searchParams.get('action') || 'dashboard'
