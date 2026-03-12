@@ -188,8 +188,11 @@ export default function ReportsPage() {
                             contentStyle={{ 
                               backgroundColor: 'hsl(var(--card))', 
                               border: '1px solid hsl(var(--border))',
-                              borderRadius: '8px'
-                            }} 
+                              borderRadius: '8px',
+                              color: 'hsl(var(--foreground))',
+                            }}
+                            labelStyle={{ color: 'hsl(var(--foreground))' }}
+                            itemStyle={{ color: 'hsl(var(--foreground))' }}
                           />
                           <Bar dataKey="ia" name="IA" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
                           <Bar dataKey="humano" name="Humano" fill="hsl(142 71% 45%)" radius={[4, 4, 0, 0]} />
