@@ -523,9 +523,7 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
             </div>
 
             {/* Flow Trigger Dropdown - Hidden on small screens */}
-            <div className="hidden sm:block">
-              <FlowTriggerDropdown key={conversation.id} conversationId={conversation.id} />
-            </div>
+            <FlowTriggerDropdown key={conversation.id} conversationId={conversation.id} />
 
             <Button variant="ghost" size="icon" className="h-8 w-8 md:h-9 md:w-9" onClick={() => setShowProfilePanel(!showProfilePanel)}>
               <UserCircle className="h-4 w-4" />
