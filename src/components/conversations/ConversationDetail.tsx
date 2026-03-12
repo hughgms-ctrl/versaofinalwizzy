@@ -881,6 +881,15 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
           organizationId={conversation.organization_id}
         />
       )}
+
+      {/* Chat Follow-up Dialog */}
+      <ChatFollowUpDialog
+        open={followUpDialogOpen}
+        onOpenChange={setFollowUpDialogOpen}
+        conversationId={conversation.id}
+        organizationId={conversation.organization_id}
+        lastMessage={followUpMessage}
+      />
     </div>
   );
 }
