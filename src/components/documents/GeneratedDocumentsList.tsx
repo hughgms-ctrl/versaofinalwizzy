@@ -201,7 +201,7 @@ export function GeneratedDocumentsList() {
           {grouped.map(([groupKey, docs]) => {
             const firstDoc = docs[0];
             const submittedBy = firstDoc?.submitted_by as SubmittedBy | null;
-            const isCollapsed = collapsedGroups.has(groupKey);
+            const isCollapsed = !expandedGroups.has(groupKey);
 
             return (
               <Card key={groupKey} className="overflow-hidden">
