@@ -992,13 +992,17 @@ interface MessageBubbleProps {
   contactId?: string | null;
   transcription?: string;
   isTranscriptionLoading?: boolean;
-   senderAvatar?: string | null;
-   senderName?: string | null;
-   onTranscriptionUpdate?: (messageId: string, transcription: string) => void;
-   onAdjustPrompt?: (message: DbMessage) => void;
- }
+  senderAvatar?: string | null;
+  senderName?: string | null;
+  isHighlighted?: boolean;
+  hasFollowUp?: boolean;
+  onReply?: (message: DbMessage) => void;
+  onFollowUp?: (message: DbMessage) => void;
+  onTranscriptionUpdate?: (messageId: string, transcription: string) => void;
+  onAdjustPrompt?: (message: DbMessage) => void;
+}
 
- function MessageBubble({ message, contactAvatar, contactName, contactPhone, contactId, transcription, isTranscriptionLoading, senderAvatar, senderName, onTranscriptionUpdate, onAdjustPrompt }: MessageBubbleProps) {
+function MessageBubble({ message, contactAvatar, contactName, contactPhone, contactId, transcription, isTranscriptionLoading, senderAvatar, senderName, isHighlighted, hasFollowUp, onReply, onFollowUp, onTranscriptionUpdate, onAdjustPrompt }: MessageBubbleProps) {
   const isInbound = message.direction === 'inbound';
   const isBot = message.is_from_bot;
 
