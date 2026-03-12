@@ -74,6 +74,11 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
   const [feedbackDialogOpen, setFeedbackDialogOpen] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState<{ id: string; content: string; metadata: any } | null>(null);
+  const [replyingTo, setReplyingTo] = useState<DbMessage | null>(null);
+  const [followUpDialogOpen, setFollowUpDialogOpen] = useState(false);
+  const [followUpMessage, setFollowUpMessage] = useState<DbMessage | null>(null);
+
+  const { data: followUpMap } = useFollowUpStatus();
 
   const queryClient = useQueryClient();
   const { profile } = useAuth();
