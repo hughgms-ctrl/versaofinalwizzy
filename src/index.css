@@ -373,3 +373,16 @@
     display: none;
   }
 }
+
+/* React Flow / xyflow - Remove default ugly green selection outline */
+.react-flow__node.selected > div,
+.react-flow__node.selected {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.react-flow__node.selected > .react-flow__node-default,
+.react-flow__node.selected .react-flow__node-default {
+  outline: none !important;
+  box-shadow: none !important;
+}
