@@ -205,37 +205,63 @@ export function GeneratedDocumentsList() {
 
             return (
               <Card key={groupKey} className="overflow-hidden">
-                <button
-                  onClick={() => toggleGroup(groupKey)}
-                  className="w-full p-4 flex items-center gap-3 hover:bg-muted/50 transition-colors text-left"
-                >
-                  <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                    <FolderOpen className="h-5 w-5 text-primary" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <h3 className="font-medium text-sm truncate">
-                        {docs[0]?.document_packs?.name || 'Pack'}
-                      </h3>
-                      <Badge variant="secondary" className="text-xs shrink-0">
-                        {docs.length} doc{docs.length > 1 ? 's' : ''}
-                      </Badge>
+                <div className="flex items-center">
+                  <button
+                    onClick={() => toggleGroup(groupKey)}
+                    className="flex-1 p-4 flex items-center gap-3 hover:bg-muted/50 transition-colors text-left"
+                  >
+                    <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                      <FolderOpen className="h-5 w-5 text-primary" />
                     </div>
-                    {submittedBy && (
-                      <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
-                        <User className="h-3 w-3" />
-                        {submittedBy.name} • {submittedBy.phone}
-                        {' • '}
-                        {format(new Date(firstDoc.created_at), "dd MMM yyyy 'às' HH:mm", { locale: ptBR })}
-                      </p>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-medium text-sm truncate">
+                          {docs[0]?.document_packs?.name || 'Pack'}
+                        </h3>
+                        <Badge variant="secondary" className="text-xs shrink-0">
+                          {docs.length} doc{docs.length > 1 ? 's' : ''}
+                        </Badge>
+                      </div>
+                      {submittedBy && (
+                        <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
+                          <User className="h-3 w-3" />
+                          {submittedBy.name} • {submittedBy.phone}
+                          {' • '}
+                          {format(new Date(firstDoc.created_at), "dd MMM yyyy 'às' HH:mm", { locale: ptBR })}
+                        </p>
+                      )}
+                    </div>
+                    {isCollapsed ? (
+                      <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
                     )}
-                  </div>
-                  {isCollapsed ? (
-                    <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
-                  ) : (
-                    <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
-                  )}
-                </button>
+                  </button>
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button variant="ghost" size="icon" className="mr-2 text-destructive hover:text-destructive shrink-0">
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Excluir todos os documentos do grupo?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          Isso excluirá {docs.length} documento(s) e suas assinaturas permanentemente.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={() => docs.forEach(d => handleDelete(d.id))}
+                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
+                          Excluir grupo
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </div>
                 {!isCollapsed && (
                   <div className="border-t px-4 pb-3 pt-2 space-y-2">
                     {docs.map(doc => (
