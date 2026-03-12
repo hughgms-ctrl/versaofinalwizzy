@@ -6,7 +6,7 @@ import { PipelineSelector } from '@/components/pipeline/PipelineSelector';
 import { PipelineChatModal } from '@/components/pipeline/PipelineChatModal';
 import { ConversationFilters, ConversationFiltersState, defaultFilters } from '@/components/shared/ConversationFilters';
 import { Loader2, Search, X, Smartphone, Settings } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { usePipelines, useDeletePipeline, Pipeline } from '@/hooks/usePipelines';
 import { useConversations, DbConversation } from '@/hooks/useConversations';
 import { useWhatsAppStatus } from '@/hooks/useWhatsAppStatus';
@@ -29,6 +29,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useConversationShares } from '@/hooks/useConversationShares';
 
 const PipelinePage = () => {
+  const queryClient = useQueryClient();
   const { data: allPipelines = [], isLoading: pipelinesLoading } = usePipelines();
   const { data: conversations = [], isLoading: conversationsLoading } = useConversations();
   const { connected: whatsappConnected, isLoading: whatsappLoading } = useWhatsAppStatus();
@@ -109,9 +110,23 @@ const PipelinePage = () => {
     }
   }, [pipelines]);
 
-  const handleConversationClick = (conversation: DbConversation) => {
+  const handleConversationClick = async (conversation: DbConversation) => {
     setChatConversation(conversation);
     setChatOpen(true);
+
+    // Mark as read if there are unread messages
+    if (conversation.unread_count > 0) {
+      try {
+        await supabase
+          .from('conversations')
+          .update({ unread_count: 0 })
+          .eq('id', conversation.id);
+        queryClient.invalidateQueries({ queryKey: ['conversations'] });
+        queryClient.invalidateQueries({ queryKey: ['pipeline-conversations'] });
+      } catch (err) {
+        console.error('Error marking conversation as read:', err);
+      }
+    }
   };
 
   const handleDeletePipeline = async () => {
