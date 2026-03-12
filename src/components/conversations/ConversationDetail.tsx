@@ -712,13 +712,13 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
               disabled={sendMessage.isPending || isUploading || isSendingMedia}
             />
 
-            {/* Variable insertion button */}
+            {/* Variable insertion button - hidden on mobile */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-9 w-9 md:h-10 md:w-10 flex-shrink-0"
+                  className="h-9 w-9 md:h-10 md:w-10 flex-shrink-0 hidden sm:flex"
                   title="Inserir variável"
                 >
                   <Variable className="h-4 w-4" />
