@@ -110,6 +110,9 @@ export function MobileNav() {
           </SheetTitle>
         </SheetHeader>
 
+        {/* Workspace Switcher */}
+        <WorkspaceSwitcher collapsed={false} />
+
         <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
           {visibleNavigation.map((item) => {
             const isActive = location.pathname === item.href;
