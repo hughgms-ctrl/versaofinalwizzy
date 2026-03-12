@@ -589,9 +589,9 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
           || outEdges[0];
         if (targetEdge) {
           const next = nodes.find(n => n.id === targetEdge.target);
-          if (next) { await processNode(next, nodes, edges); return; }
+          if (next) { await processNode(next, nodes, edges, isSubFlowExecution); return; }
         }
-        endFlow();
+        if (!isSubFlowExecution) endFlow();
         break;
       }
 
