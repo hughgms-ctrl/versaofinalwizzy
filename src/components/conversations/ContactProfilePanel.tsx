@@ -187,6 +187,26 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
     }
   };
 
+  const handleSaveNote = async () => {
+    if (!contact?.id) return;
+    setIsSavingNote(true);
+    try {
+      const currentMetadata = (contact?.metadata as Record<string, unknown>) || {};
+      const { error } = await supabase
+        .from('contacts')
+        .update({ metadata: { ...currentMetadata, note: editedNote.trim() || null } })
+        .eq('id', contact.id);
+      if (error) throw error;
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      toast({ title: 'Nota atualizada' });
+      setIsEditingNote(false);
+    } catch (error: any) {
+      toast({ title: 'Erro', description: error.message, variant: 'destructive' });
+    } finally {
+      setIsSavingNote(false);
+    }
+  };
+
   const availableTags = tags?.filter(
     tag => !contactTags?.some(ct => ct.tag_id === tag.id)
   ) || [];
@@ -223,7 +243,7 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
       )}
 
       <ScrollArea className="flex-1">
-        <div className="p-4 pb-8 space-y-6">
+        <div className="p-4 pb-16 space-y-6">
           {/* Avatar & Name */}
           <div className="flex flex-col items-center text-center">
             <div className="h-20 w-20 rounded-full bg-gradient-to-br from-primary/20 to-purple-500/20 flex items-center justify-center mb-3">
@@ -288,6 +308,57 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
               <Clock className="h-4 w-4 mr-2" />
               Agendar mensagem
             </Button>
+          </div>
+
+          <Separator />
+
+          {/* Quick Note (Nota Rápida) */}
+          <div className="space-y-2">
+            <Label className="text-xs text-muted-foreground uppercase tracking-wider">
+              Nota Rápida
+            </Label>
+            <div className="flex items-start gap-2">
+              {isEditingNote ? (
+                <>
+                  <Input
+                    value={editedNote}
+                    onChange={(e) => setEditedNote(e.target.value)}
+                    placeholder="Ex: Cliente VIP, ligar às 14h..."
+                    className="text-sm flex-1"
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        handleSaveNote();
+                      } else if (e.key === 'Escape') {
+                        setIsEditingNote(false);
+                        setEditedNote((contact?.metadata as { note?: string } | null)?.note || '');
+                      }
+                    }}
+                  />
+                  <Button size="icon" className="h-9 w-9 shrink-0" onClick={handleSaveNote} disabled={isSavingNote}>
+                    {isSavingNote ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  </Button>
+                  <Button size="icon" variant="ghost" className="h-9 w-9 shrink-0" onClick={() => {
+                    setIsEditingNote(false);
+                    setEditedNote((contact?.metadata as { note?: string } | null)?.note || '');
+                  }}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                </>
+              ) : (
+                <button
+                  onClick={() => setIsEditingNote(true)}
+                  className="w-full text-left p-2 rounded-lg bg-muted/50 hover:bg-muted transition-colors group flex items-center gap-2"
+                >
+                  {editedNote ? (
+                    <span className="text-sm text-amber-600 dark:text-amber-400 flex-1">{editedNote}</span>
+                  ) : (
+                    <span className="text-sm text-muted-foreground flex-1">Adicionar nota rápida...</span>
+                  )}
+                  <Pencil className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+                </button>
+              )}
+            </div>
           </div>
 
           <Separator />

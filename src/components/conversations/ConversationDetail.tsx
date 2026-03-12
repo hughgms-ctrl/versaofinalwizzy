@@ -10,7 +10,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useSignatureSettings } from '@/hooks/useSignatureSettings';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Bot, User, Send, Loader2, MessageCircle, Mic, Check, CheckCheck, ArrowUp, FileText, MapPin, Play, UserCircle, X, Variable, PenLine, Archive, Search } from 'lucide-react';
+import { Bot, User, Send, Loader2, MessageCircle, Mic, Check, CheckCheck, ArrowUp, FileText, MapPin, Play, UserCircle, X, Variable, PenLine, Archive, Search, Reply, Clock } from 'lucide-react';
 import { formatWhatsAppMessage, parseMessageVariables, messageVariables } from '@/lib/whatsappFormatter';
 import {
   DropdownMenu,
@@ -38,7 +38,9 @@ import { AIContextBar } from './AIContextBar';
 import { supabase } from '@/integrations/supabase/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { AIFeedbackDialog } from './AIFeedbackDialog';
+import { ChatFollowUpDialog } from './ChatFollowUpDialog';
 import { Sparkles } from 'lucide-react';
+import { useFollowUpStatus } from '@/hooks/useFollowUpStatus';
 
 interface ConversationDetailProps {
   conversation: DbConversation;
@@ -72,6 +74,11 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
   const [feedbackDialogOpen, setFeedbackDialogOpen] = useState(false);
   const [feedbackMessage, setFeedbackMessage] = useState<{ id: string; content: string; metadata: any } | null>(null);
+  const [replyingTo, setReplyingTo] = useState<DbMessage | null>(null);
+  const [followUpDialogOpen, setFollowUpDialogOpen] = useState(false);
+  const [followUpMessage, setFollowUpMessage] = useState<DbMessage | null>(null);
+
+  const { data: followUpMap } = useFollowUpStatus();
 
   const queryClient = useQueryClient();
   const { profile } = useAuth();
@@ -612,6 +619,13 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
                       contactId={conversation.contact?.id}
                        senderAvatar={profile?.avatar_url}
                        senderName={profile?.full_name}
+                       highlightedMessageId={highlightedMessageId}
+                       followUpMap={followUpMap || {}}
+                       onReply={(msg) => setReplyingTo(msg)}
+                       onFollowUp={(msg) => {
+                         setFollowUpMessage(msg);
+                         setFollowUpDialogOpen(true);
+                       }}
                         onAdjustPrompt={(msg) => {
                           const aiMeta = (msg.metadata as any)?.ai_metadata || {};
                           setFeedbackMessage({
@@ -663,6 +677,23 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
 
         {/* Input */}
         <div className="border-t border-border bg-card">
+          {/* Reply Preview */}
+          {replyingTo && (
+            <div className="px-4 pt-3 pb-0">
+              <div className="flex items-center gap-2 p-2 bg-primary/5 border-l-2 border-primary rounded-r-lg">
+                <Reply className="h-4 w-4 text-primary shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] text-primary font-medium">
+                    {replyingTo.direction === 'inbound' ? (conversation.contact?.name || 'Contato') : 'Você'}
+                  </p>
+                  <p className="text-xs text-muted-foreground truncate">{replyingTo.content}</p>
+                </div>
+                <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => setReplyingTo(null)}>
+                  <X className="h-3 w-3" />
+                </Button>
+              </div>
+            </div>
+          )}
           {/* Attached Media Preview */}
           {attachedMedia && (
             <div className="px-4 pt-3 pb-0">
@@ -850,6 +881,15 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
           organizationId={conversation.organization_id}
         />
       )}
+
+      {/* Chat Follow-up Dialog */}
+      <ChatFollowUpDialog
+        open={followUpDialogOpen}
+        onOpenChange={setFollowUpDialogOpen}
+        conversationId={conversation.id}
+        organizationId={conversation.organization_id}
+        lastMessage={followUpMessage}
+      />
     </div>
   );
 }
@@ -861,12 +901,16 @@ interface MessageBubbleListProps {
   contactName?: string | null;
   contactPhone?: string;
   contactId?: string | null;
-   senderAvatar?: string | null;
-   senderName?: string | null;
-   onAdjustPrompt?: (message: DbMessage) => void;
- }
+  senderAvatar?: string | null;
+  senderName?: string | null;
+  highlightedMessageId?: string | null;
+  followUpMap?: Record<string, number>;
+  onReply?: (message: DbMessage) => void;
+  onFollowUp?: (message: DbMessage) => void;
+  onAdjustPrompt?: (message: DbMessage) => void;
+}
 
- function MessageBubbleList({ messages, mediaMessageIds, contactAvatar, contactName, contactPhone, contactId, senderAvatar, senderName, onAdjustPrompt }: MessageBubbleListProps) {
+function MessageBubbleList({ messages, mediaMessageIds, contactAvatar, contactName, contactPhone, contactId, senderAvatar, senderName, highlightedMessageId, followUpMap, onReply, onFollowUp, onAdjustPrompt }: MessageBubbleListProps) {
   const { transcriptions, isLoading: transcriptionsLoading } = useMediaTranscriptions(mediaMessageIds);
   const [localTranscriptions, setLocalTranscriptions] = useState<Record<string, string>>({});
 
@@ -898,6 +942,16 @@ interface MessageBubbleListProps {
     return format(date, 'dd/MM/yyyy', { locale: ptBR });
   };
 
+  // Find last outbound non-bot message for follow-up badge
+  const lastOutboundHumanId = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].direction === 'outbound' && !messages[i].is_from_bot) return messages[i].id;
+    }
+    return null;
+  }, [messages]);
+
+  const conversationHasFollowUp = messages.length > 0 && followUpMap && followUpMap[messages[0].conversation_id];
+
   let lastDateKey: string | null = null;
 
   return (
@@ -924,10 +978,14 @@ interface MessageBubbleListProps {
               contactId={contactId}
               transcription={mergedTranscriptions[message.id]}
               isTranscriptionLoading={transcriptionsLoading && !mergedTranscriptions[message.id]}
-               senderAvatar={senderAvatar}
-               senderName={senderName}
-               onTranscriptionUpdate={handleTranscriptionUpdate}
-               onAdjustPrompt={onAdjustPrompt}
+              senderAvatar={senderAvatar}
+              senderName={senderName}
+              isHighlighted={highlightedMessageId === message.id}
+              hasFollowUp={!!(conversationHasFollowUp && message.id === lastOutboundHumanId)}
+              onReply={onReply}
+              onFollowUp={onFollowUp}
+              onTranscriptionUpdate={handleTranscriptionUpdate}
+              onAdjustPrompt={onAdjustPrompt}
              />
           </div>
         );
@@ -944,13 +1002,17 @@ interface MessageBubbleProps {
   contactId?: string | null;
   transcription?: string;
   isTranscriptionLoading?: boolean;
-   senderAvatar?: string | null;
-   senderName?: string | null;
-   onTranscriptionUpdate?: (messageId: string, transcription: string) => void;
-   onAdjustPrompt?: (message: DbMessage) => void;
- }
+  senderAvatar?: string | null;
+  senderName?: string | null;
+  isHighlighted?: boolean;
+  hasFollowUp?: boolean;
+  onReply?: (message: DbMessage) => void;
+  onFollowUp?: (message: DbMessage) => void;
+  onTranscriptionUpdate?: (messageId: string, transcription: string) => void;
+  onAdjustPrompt?: (message: DbMessage) => void;
+}
 
- function MessageBubble({ message, contactAvatar, contactName, contactPhone, contactId, transcription, isTranscriptionLoading, senderAvatar, senderName, onTranscriptionUpdate, onAdjustPrompt }: MessageBubbleProps) {
+function MessageBubble({ message, contactAvatar, contactName, contactPhone, contactId, transcription, isTranscriptionLoading, senderAvatar, senderName, isHighlighted, hasFollowUp, onReply, onFollowUp, onTranscriptionUpdate, onAdjustPrompt }: MessageBubbleProps) {
   const isInbound = message.direction === 'inbound';
   const isBot = message.is_from_bot;
 
@@ -1127,10 +1189,14 @@ interface MessageBubbleProps {
   };
 
   return (
-    <div className={cn(
-      "flex gap-3",
-      isInbound ? "justify-start" : "justify-end"
-    )}>
+    <div
+      id={`message-${message.id}`}
+      className={cn(
+        "flex gap-3 group/msg relative",
+        isInbound ? "justify-start" : "justify-end",
+        isHighlighted && "animate-pulse bg-primary/10 rounded-lg -mx-2 px-2 py-1"
+      )}
+    >
       {isInbound && (
         <div className="h-8 w-8 rounded-full bg-gradient-to-br from-slate-400 to-slate-500 flex items-center justify-center flex-shrink-0 overflow-hidden">
           {contactAvatar ? (
@@ -1142,6 +1208,43 @@ interface MessageBubbleProps {
           )}
         </div>
       )}
+
+      {/* Hover Action Buttons - positioned outside the bubble */}
+      <div className={cn(
+        "absolute top-0 flex items-center gap-0.5 opacity-0 group-hover/msg:opacity-100 transition-opacity z-10",
+        isInbound ? "right-2" : "left-2"
+      )}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={() => onReply?.(message)}
+              className="h-7 w-7 rounded-full bg-card border border-border shadow-sm flex items-center justify-center hover:bg-muted transition-colors"
+            >
+              <Reply className="h-3.5 w-3.5 text-muted-foreground" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="text-xs">Responder</TooltipContent>
+        </Tooltip>
+        {/* Follow-up button: only on outbound non-bot messages */}
+        {!isInbound && !isBot && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={() => onFollowUp?.(message)}
+                className={cn(
+                  "h-7 w-7 rounded-full bg-card border shadow-sm flex items-center justify-center hover:bg-muted transition-colors",
+                  hasFollowUp ? "border-primary text-primary" : "border-border text-muted-foreground"
+                )}
+              >
+                <Clock className="h-3.5 w-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="text-xs">
+              {hasFollowUp ? 'Follow-up ativo' : 'Programar follow-up'}
+            </TooltipContent>
+          </Tooltip>
+        )}
+      </div>
 
       <div 
         className={cn(
@@ -1158,6 +1261,13 @@ interface MessageBubbleProps {
           }
         }}
       >
+        {/* Follow-up badge */}
+        {hasFollowUp && !isInbound && !isBot && (
+          <div className="flex items-center gap-1 mb-1">
+            <Clock className="h-3 w-3 text-white/80" />
+            <span className="text-[10px] text-white/80 font-medium">Follow-up ativo</span>
+          </div>
+        )}
         {/* Show contact name for inbound messages */}
         {isInbound && contactName && (
           <p className="text-xs font-semibold italic text-primary mb-1">
