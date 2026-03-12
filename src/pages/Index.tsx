@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Navigate } from 'react-router-dom';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { MetricCard } from '@/components/dashboard/MetricCard';
 import { ConversationsChart } from '@/components/dashboard/ConversationsChart';
@@ -8,6 +9,7 @@ import { AgentPerformance } from '@/components/dashboard/AgentPerformance';
 import { useDashboardMetrics } from '@/hooks/useDashboardData';
 import { usePipelines } from '@/hooks/usePipelines';
 import { usePipelineStageDistribution, useTeamPerformanceByPipeline } from '@/hooks/usePipelineStats';
+import { useCanAccessModule } from '@/hooks/useUserPermissions';
 import { MessageSquare, Clock, Bot, ThumbsUp, GitBranch } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
