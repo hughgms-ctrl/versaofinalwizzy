@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
-import { Bell, Check, MessageSquare, Clock, AlertCircle, WifiOff } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { Bell, Check, MessageSquare, Clock, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
