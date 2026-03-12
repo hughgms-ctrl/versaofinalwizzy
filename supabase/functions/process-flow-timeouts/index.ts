@@ -16,36 +16,44 @@ async function contactRespondedAfterLastFollowUp(
   conversationId: string,
   executionStartedAt: string
 ): Promise<boolean> {
-  // 1. Find the last remarketing follow-up message we sent
+  // 1. Find the last remarketing follow-up message we sent AFTER this execution started
+  //    This prevents old follow-up messages from previous executions from interfering
   const { data: lastFollowUp } = await supabase
     .from('messages')
     .select('created_at')
     .eq('conversation_id', conversationId)
     .eq('is_from_bot', true)
     .eq('metadata->>source', 'remarketing_followup')
+    .gt('created_at', executionStartedAt)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
 
-  // 2. If no follow-up was ever sent, check after execution start
-  //    BUT only count messages that came AFTER a reasonable grace period (5 min)
-  //    to avoid counting the initial interaction that triggered the flow
-  const referenceTime = lastFollowUp?.created_at || null;
-  
-  if (!referenceTime) {
-    // No follow-up sent yet — we're at step 0, about to send step 1
-    // Don't cancel based on old messages, only if something came in very recently
-    // (the webhook should have already handled the response routing)
-    return false;
+  // 2. If no follow-up was sent in THIS execution, we're at step 0
+  //    Check if contact sent a message AFTER this execution started
+  //    (meaning they responded before we even sent the first follow-up)
+  if (!lastFollowUp?.created_at) {
+    // Check for inbound messages after execution start
+    const { data: recentInbound } = await supabase
+      .from('messages')
+      .select('id')
+      .eq('conversation_id', conversationId)
+      .eq('is_from_bot', false)
+      .eq('direction', 'inbound')
+      .gt('created_at', executionStartedAt)
+      .limit(1)
+      .maybeSingle();
+
+    return !!recentInbound;
   }
 
-  // 3. Check if contact sent a message AFTER the last follow-up
+  // 3. Check if contact sent a message AFTER the last follow-up of THIS execution
   const { data: recentMsg } = await supabase
     .from('messages')
     .select('id')
     .eq('conversation_id', conversationId)
     .eq('is_from_bot', false)
-    .gt('created_at', referenceTime)
+    .gt('created_at', lastFollowUp.created_at)
     .limit(1)
     .maybeSingle();
 
