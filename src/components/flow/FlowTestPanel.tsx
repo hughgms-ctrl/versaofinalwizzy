@@ -352,9 +352,10 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
         addMsg({ type: 'action', content: `Agente finalizou tarefa → Avançando fluxo`, actionIcon: '🎯' });
         await wait(800);
         const next = findNext(nodeId, nodes, edges);
+        const isSubFlowExecution = simState.parentFlowStack.length > 0;
         if (next) {
-          await processNode(next, nodes, edges);
-        } else {
+          await processNode(next, nodes, edges, isSubFlowExecution);
+        } else if (!isSubFlowExecution) {
           endFlow();
         }
         return;
@@ -448,7 +449,7 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
   };
 
   // ===== MAIN NODE PROCESSOR =====
-  const processNode = async (node: Node, nodes: Node[], edges: Edge[]) => {
+  const processNode = async (node: Node, nodes: Node[], edges: Edge[], isSubFlowExecution: boolean = false) => {
     setSimState(prev => ({ ...prev, currentNodeId: node.id }));
     window.dispatchEvent(new CustomEvent('flow:node:executing', { detail: { nodeId: node.id } }));
 
@@ -457,8 +458,11 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
 
     const advanceOrEnd = async (outputHandle?: string) => {
       const next = findNext(node.id, nodes, edges, outputHandle);
-      if (next) { await processNode(next, nodes, edges); }
-      else { endFlow(); }
+      if (next) {
+        await processNode(next, nodes, edges, isSubFlowExecution);
+      } else if (!isSubFlowExecution) {
+        endFlow();
+      }
     };
 
     // Helper: handle nodes that wait for response with optional follow-ups
@@ -585,9 +589,9 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
           || outEdges[0];
         if (targetEdge) {
           const next = nodes.find(n => n.id === targetEdge.target);
-          if (next) { await processNode(next, nodes, edges); return; }
+          if (next) { await processNode(next, nodes, edges, isSubFlowExecution); return; }
         }
-        endFlow();
+        if (!isSubFlowExecution) endFlow();
         break;
       }
 
@@ -617,7 +621,7 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
           const subEdges = (subFlow as any).edges as Edge[];
           const startNode = subNodes.find(n => n.type === 'start');
           setIsProcessing(false);
-          if (startNode) await processNode(startNode, subNodes, subEdges);
+          if (startNode) await processNode(startNode, subNodes, subEdges, true);
 
           // After sub-flow completes, pop stack and restore parent context
           setSimState(prev => {
@@ -779,8 +783,9 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
         // Try to find edge matching button id or label
         const btnEdge = edges.find(e => e.source === cur.id && (e.sourceHandle === matched.id || e.sourceHandle === matched.label));
         const next = btnEdge ? nodes.find(n => n.id === btnEdge.target) : findNext(cur.id, nodes, edges);
-        if (next) await processNode(next, nodes, edges);
-        else endFlow();
+        const isSubFlowExecution = simState.parentFlowStack.length > 0;
+        if (next) await processNode(next, nodes, edges, isSubFlowExecution);
+        else if (!isSubFlowExecution) endFlow();
         setIsProcessing(false);
       }
       return;
@@ -796,8 +801,9 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
       if (cur) {
         setIsProcessing(true);
         const next = findNext(cur.id, nodes, edges);
-        if (next) await processNode(next, nodes, edges);
-        else endFlow();
+        const isSubFlowExecution = simState.parentFlowStack.length > 0;
+        if (next) await processNode(next, nodes, edges, isSubFlowExecution);
+        else if (!isSubFlowExecution) endFlow();
         setIsProcessing(false);
       }
       return;
@@ -826,8 +832,9 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
     if (cur) {
       setIsProcessing(true);
       const next = findNext(cur.id, nodes, edges);
-      if (next) await processNode(next, nodes, edges);
-      else endFlow();
+      const isSubFlowExecution = simState.parentFlowStack.length > 0;
+      if (next) await processNode(next, nodes, edges, isSubFlowExecution);
+      else if (!isSubFlowExecution) endFlow();
       setIsProcessing(false);
     }
   };
@@ -855,8 +862,9 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
       setIsProcessing(true);
       const btnEdge = edges.find(e => e.source === cur.id && (e.sourceHandle === btn.id || e.sourceHandle === btn.label));
       const next = btnEdge ? nodes.find(n => n.id === btnEdge.target) : findNext(cur.id, nodes, edges);
-      if (next) await processNode(next, nodes, edges);
-      else endFlow();
+      const isSubFlowExecution = simState.parentFlowStack.length > 0;
+      if (next) await processNode(next, nodes, edges, isSubFlowExecution);
+      else if (!isSubFlowExecution) endFlow();
       setIsProcessing(false);
     }
   };
@@ -882,8 +890,9 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
       setIsProcessing(true);
       const listEdge = edges.find(e => e.source === cur.id && (e.sourceHandle === row.id || e.sourceHandle === row.title));
       const next = listEdge ? nodes.find(n => n.id === listEdge.target) : findNext(cur.id, nodes, edges);
-      if (next) await processNode(next, nodes, edges);
-      else endFlow();
+      const isSubFlowExecution = simState.parentFlowStack.length > 0;
+      if (next) await processNode(next, nodes, edges, isSubFlowExecution);
+      else if (!isSubFlowExecution) endFlow();
       setIsProcessing(false);
     }
   };
