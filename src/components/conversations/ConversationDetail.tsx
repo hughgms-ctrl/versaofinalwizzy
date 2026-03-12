@@ -741,14 +741,14 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
               </DropdownMenuContent>
             </DropdownMenu>
 
-            {/* Signature toggle button */}
+            {/* Signature toggle button - hidden on mobile */}
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
                   variant={signatureEnabled ? "default" : "ghost"}
                   size="icon"
                   className={cn(
-                    "h-9 w-9 md:h-10 md:w-10 flex-shrink-0 transition-colors",
+                    "h-9 w-9 md:h-10 md:w-10 flex-shrink-0 transition-colors hidden sm:flex",
                     signatureEnabled && "bg-primary/20 text-primary hover:bg-primary/30"
                   )}
                   onClick={() => toggleSignature(!signatureEnabled)}
