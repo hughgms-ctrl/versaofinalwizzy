@@ -403,6 +403,53 @@ Deno.serve(async (req) => {
               metadata: cleanMeta,
             }).eq('id', exec.conversation_id);
 
+            // ═══════════════════════════════════════════════════════════════
+            // PIPELINE MOVE: Move conversation when follow-up exhausted
+            // ═══════════════════════════════════════════════════════════════
+            const execVarsMove = (exec.variables || {}) as Record<string, any>;
+            const movePipelineId = execVarsMove.movePipelineId;
+            const moveColumnId = execVarsMove.moveColumnId;
+
+            if (movePipelineId && moveColumnId) {
+              console.log(`[FLOW TIMEOUTS] Exec ${exec.id}: moving conversation to pipeline ${movePipelineId} column ${moveColumnId}`);
+              
+              const { data: existingPos } = await supabase
+                .from('conversation_pipeline_positions')
+                .select('id, column_id')
+                .eq('conversation_id', exec.conversation_id)
+                .maybeSingle();
+
+              const fromColumnId = existingPos?.column_id || null;
+
+              if (existingPos) {
+                await supabase.from('conversation_pipeline_positions').update({
+                  pipeline_id: movePipelineId,
+                  column_id: moveColumnId,
+                  order: 0,
+                  updated_at: new Date().toISOString(),
+                }).eq('id', existingPos.id);
+              } else {
+                await supabase.from('conversation_pipeline_positions').insert({
+                  conversation_id: exec.conversation_id,
+                  pipeline_id: movePipelineId,
+                  column_id: moveColumnId,
+                  order: 0,
+                });
+              }
+
+              // Log stage change
+              await supabase.from('conversation_stage_history').insert({
+                conversation_id: exec.conversation_id,
+                pipeline_id: movePipelineId,
+                from_column_id: fromColumnId,
+                to_column_id: moveColumnId,
+                changed_by_type: 'followup_exhausted',
+                organization_id: exec.organization_id,
+              });
+
+              console.log(`[FLOW TIMEOUTS] ✅ Conversation moved after follow-up exhaustion`);
+            }
+
             processed++;
           }
         }
