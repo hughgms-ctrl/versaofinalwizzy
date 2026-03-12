@@ -85,11 +85,10 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Rate limiting
+    // Rate monitoring (log-only, never reject to avoid losing messages)
     const clientIP = req.headers.get('x-forwarded-for') || req.headers.get('cf-connecting-ip') || 'unknown';
     if (!checkWebhookRate(clientIP)) {
-      console.warn(`[RATE_LIMIT] Webhook rate limit exceeded for IP: ${clientIP.substring(0, 8)}***`);
-      return new Response(JSON.stringify({ error: 'Rate limit exceeded' }), { status: 429, headers: corsHeaders });
+      console.warn(`[RATE_MONITOR] High webhook volume from IP: ${clientIP.substring(0, 8)}*** — processing normally`);
     }
 
     // Webhook signature validation (UAZAPI token-based)
