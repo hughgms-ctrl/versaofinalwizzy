@@ -541,9 +541,9 @@ Deno.serve(async (req) => {
       }
     }
 
-    console.log(`[FLOW TIMEOUTS] ✅ Processed ${processed} executions, auto-fixed ${autoFixed}.`);
+    console.log(`[FLOW TIMEOUTS] ✅ Processed ${processed} executions, auto-fixed ${autoFixed}, recovered ${recoveredFromQuietBug}.`);
 
-    return new Response(JSON.stringify({ success: true, processed, autoFixed }), {
+    return new Response(JSON.stringify({ success: true, processed, autoFixed, recoveredFromQuietBug }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {
