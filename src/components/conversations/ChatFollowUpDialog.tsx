@@ -203,36 +203,39 @@ export function ChatFollowUpDialog({
           </DialogTitle>
         </DialogHeader>
 
-        {/* Templates section */}
+        {/* Templates section — collapsible select */}
         {templates && templates.length > 0 && (
-          <div className="space-y-1.5">
-            <Label className="text-xs font-semibold flex items-center gap-1.5">
-              <FolderOpen className="h-3.5 w-3.5" />
-              Modelos salvos
-            </Label>
-            <div className="flex flex-wrap gap-1.5">
+          <Select
+            onValueChange={(val) => {
+              const tpl = templates.find((t) => t.id === val);
+              if (tpl) loadTemplate(tpl);
+            }}
+          >
+            <SelectTrigger className="h-8 text-xs gap-1.5">
+              <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+              <SelectValue placeholder="Carregar modelo salvo..." />
+            </SelectTrigger>
+            <SelectContent>
               {templates.map((tpl) => (
-                <div key={tpl.id} className="flex items-center gap-1">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 text-xs"
-                    onClick={() => loadTemplate(tpl)}
-                  >
+                <div key={tpl.id} className="flex items-center justify-between pr-1">
+                  <SelectItem value={tpl.id} className="flex-1 text-xs">
                     {tpl.name}
-                  </Button>
+                  </SelectItem>
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-5 w-5 text-destructive"
-                    onClick={() => deleteTemplate.mutate(tpl.id)}
+                    className="h-5 w-5 text-destructive shrink-0"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      deleteTemplate.mutate(tpl.id);
+                    }}
                   >
                     <Trash2 className="h-3 w-3" />
                   </Button>
                 </div>
               ))}
-            </div>
-          </div>
+            </SelectContent>
+          </Select>
         )}
 
         {lastMessage && (
