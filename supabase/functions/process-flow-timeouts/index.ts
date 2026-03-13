@@ -301,33 +301,20 @@ Deno.serve(async (req) => {
           ? (execVars.remarketingQuietHours === true)
           : (currentNode?.data?.remarketingQuietHours === true);
         if (quietHoursEnabled && remarketingSteps.length > 0 && currentStep < remarketingSteps.length) {
-          const quietStart = isChatFollowUp ? (execVars.remarketingQuietStart || '22:00') : (currentNode?.data?.remarketingQuietStart || '22:00');
-          const quietEnd = isChatFollowUp ? (execVars.remarketingQuietEnd || '08:00') : (currentNode?.data?.remarketingQuietEnd || '08:00');
-          
-          const nowBR = new Intl.DateTimeFormat('pt-BR', {
-            timeZone: 'America/Sao_Paulo',
-            hour: '2-digit', minute: '2-digit', hour12: false
-          }).format(new Date());
+          const quietStart = String(isChatFollowUp ? (execVars.remarketingQuietStart || '22:00') : (currentNode?.data?.remarketingQuietStart || '22:00'));
+          const quietEnd = String(isChatFollowUp ? (execVars.remarketingQuietEnd || '08:00') : (currentNode?.data?.remarketingQuietEnd || '08:00'));
+          const nowBR = getNowInSaoPauloHHMM();
 
-          let isQuiet = false;
-          if (quietStart <= quietEnd) {
-            isQuiet = nowBR >= quietStart && nowBR < quietEnd;
-          } else {
-            isQuiet = nowBR >= quietStart || nowBR < quietEnd;
-          }
+          if (isWithinQuietHours(nowBR, quietStart, quietEnd)) {
+            const minutesToResume = Math.max(1, minutesUntilQuietEnd(nowBR, quietEnd));
+            const resumeAt = new Date(Date.now() + minutesToResume * 60 * 1000);
 
-          if (isQuiet) {
-            const [endH, endM] = quietEnd.split(':').map(Number);
-            const reschedule = new Date();
-            const spNow = new Date(reschedule.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
-            spNow.setHours(endH, endM, 0, 0);
-            if (spNow.getTime() <= Date.now()) {
-              spNow.setDate(spNow.getDate() + 1);
-            }
-            
-            console.log(`[FLOW TIMEOUTS] Exec ${exec.id}: quiet hours active (${nowBR} in ${quietStart}-${quietEnd}). Rescheduling to ${spNow.toISOString()}`);
+            console.log(
+              `[FLOW TIMEOUTS] Exec ${exec.id}: quiet hours active (${nowBR} in ${quietStart}-${quietEnd}). Rescheduling to ${resumeAt.toISOString()}`
+            );
+
             await supabase.from('flow_executions').update({
-              timeout_at: spNow.toISOString(),
+              timeout_at: resumeAt.toISOString(),
             }).eq('id', exec.id);
             continue;
           }
