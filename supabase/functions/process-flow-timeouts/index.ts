@@ -60,6 +60,48 @@ async function contactRespondedAfterLastFollowUp(
   return !!recentMsg;
 }
 
+function getNowInSaoPauloHHMM(): string {
+  return new Intl.DateTimeFormat('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date());
+}
+
+function toMinutes(hhmm: string, fallback: string): number {
+  const [h, m] = (hhmm || fallback).split(':').map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) {
+    const [fh, fm] = fallback.split(':').map(Number);
+    return fh * 60 + fm;
+  }
+  return h * 60 + m;
+}
+
+function isWithinQuietHours(nowHHMM: string, quietStart: string, quietEnd: string): boolean {
+  const nowMin = toMinutes(nowHHMM, '00:00');
+  const startMin = toMinutes(quietStart, '22:00');
+  const endMin = toMinutes(quietEnd, '08:00');
+
+  if (startMin <= endMin) {
+    return nowMin >= startMin && nowMin < endMin;
+  }
+
+  // Overnight window (e.g. 19:00 -> 08:00)
+  return nowMin >= startMin || nowMin < endMin;
+}
+
+function minutesUntilQuietEnd(nowHHMM: string, quietEnd: string): number {
+  const nowMin = toMinutes(nowHHMM, '00:00');
+  const endMin = toMinutes(quietEnd, '08:00');
+
+  if (nowMin < endMin) {
+    return endMin - nowMin;
+  }
+
+  return (24 * 60 - nowMin) + endMin;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -115,6 +157,52 @@ Deno.serve(async (req) => {
     if (autoFixed > 0) console.log(`[FLOW TIMEOUTS] Auto-fixed ${autoFixed} stuck executions.`);
 
     // ═══════════════════════════════════════════════════════════════════
+    // PHASE 1.5: RECOVERY — Catch-up old quiet-hours schedules that were pushed to the wrong day
+    // (legacy bug for chat follow-up created during silent period)
+    // ═══════════════════════════════════════════════════════════════════
+    const nowIso = new Date().toISOString();
+    const nowBR = getNowInSaoPauloHHMM();
+
+    const { data: quietRecoveryCandidates } = await supabase
+      .from('flow_executions')
+      .select('id, started_at, timeout_at, variables')
+      .eq('status', 'waiting_input')
+      .eq('remarketing_step', 0)
+      .not('timeout_at', 'is', null)
+      .gt('timeout_at', nowIso)
+      .eq('variables->>source', 'chat_follow_up')
+      .eq('variables->>remarketingQuietHours', 'true')
+      .limit(200);
+
+    let recoveredFromQuietBug = 0;
+    for (const exec of (quietRecoveryCandidates || [])) {
+      const vars = (exec.variables || {}) as Record<string, any>;
+      const steps = (vars.remarketingSteps as any[]) || [];
+      if (!steps.length) continue;
+
+      const quietStart = String(vars.remarketingQuietStart || '22:00');
+      const quietEnd = String(vars.remarketingQuietEnd || '08:00');
+      const isQuietNow = isWithinQuietHours(nowBR, quietStart, quietEnd);
+      if (isQuietNow) continue;
+
+      const firstDelayMinutes = Number(steps[0]?.delayMinutes || 1);
+      const expectedFirstSendAtMs = new Date(exec.started_at).getTime() + firstDelayMinutes * 60 * 1000;
+
+      if (expectedFirstSendAtMs <= Date.now()) {
+        await supabase
+          .from('flow_executions')
+          .update({ timeout_at: new Date(Date.now() - 1000).toISOString() })
+          .eq('id', exec.id);
+
+        recoveredFromQuietBug++;
+      }
+    }
+
+    if (recoveredFromQuietBug > 0) {
+      console.log(`[FLOW TIMEOUTS] Recovered ${recoveredFromQuietBug} quiet-hours executions stuck in future schedule.`);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
     // PHASE 2: Process timed-out executions (send follow-ups or route)
     // ═══════════════════════════════════════════════════════════════════
     const { data: timedOut, error } = await supabase
@@ -135,7 +223,7 @@ Deno.serve(async (req) => {
 
     if (!timedOut || timedOut.length === 0) {
       console.log('[FLOW TIMEOUTS] No timed-out executions found.');
-      return new Response(JSON.stringify({ success: true, processed: 0, autoFixed }), {
+      return new Response(JSON.stringify({ success: true, processed: 0, autoFixed, recoveredFromQuietBug }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -213,33 +301,20 @@ Deno.serve(async (req) => {
           ? (execVars.remarketingQuietHours === true)
           : (currentNode?.data?.remarketingQuietHours === true);
         if (quietHoursEnabled && remarketingSteps.length > 0 && currentStep < remarketingSteps.length) {
-          const quietStart = isChatFollowUp ? (execVars.remarketingQuietStart || '22:00') : (currentNode?.data?.remarketingQuietStart || '22:00');
-          const quietEnd = isChatFollowUp ? (execVars.remarketingQuietEnd || '08:00') : (currentNode?.data?.remarketingQuietEnd || '08:00');
-          
-          const nowBR = new Intl.DateTimeFormat('pt-BR', {
-            timeZone: 'America/Sao_Paulo',
-            hour: '2-digit', minute: '2-digit', hour12: false
-          }).format(new Date());
+          const quietStart = String(isChatFollowUp ? (execVars.remarketingQuietStart || '22:00') : (currentNode?.data?.remarketingQuietStart || '22:00'));
+          const quietEnd = String(isChatFollowUp ? (execVars.remarketingQuietEnd || '08:00') : (currentNode?.data?.remarketingQuietEnd || '08:00'));
+          const nowBR = getNowInSaoPauloHHMM();
 
-          let isQuiet = false;
-          if (quietStart <= quietEnd) {
-            isQuiet = nowBR >= quietStart && nowBR < quietEnd;
-          } else {
-            isQuiet = nowBR >= quietStart || nowBR < quietEnd;
-          }
+          if (isWithinQuietHours(nowBR, quietStart, quietEnd)) {
+            const minutesToResume = Math.max(1, minutesUntilQuietEnd(nowBR, quietEnd));
+            const resumeAt = new Date(Date.now() + minutesToResume * 60 * 1000);
 
-          if (isQuiet) {
-            const [endH, endM] = quietEnd.split(':').map(Number);
-            const reschedule = new Date();
-            const spNow = new Date(reschedule.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
-            spNow.setHours(endH, endM, 0, 0);
-            if (spNow.getTime() <= Date.now()) {
-              spNow.setDate(spNow.getDate() + 1);
-            }
-            
-            console.log(`[FLOW TIMEOUTS] Exec ${exec.id}: quiet hours active (${nowBR} in ${quietStart}-${quietEnd}). Rescheduling to ${spNow.toISOString()}`);
+            console.log(
+              `[FLOW TIMEOUTS] Exec ${exec.id}: quiet hours active (${nowBR} in ${quietStart}-${quietEnd}). Rescheduling to ${resumeAt.toISOString()}`
+            );
+
             await supabase.from('flow_executions').update({
-              timeout_at: spNow.toISOString(),
+              timeout_at: resumeAt.toISOString(),
             }).eq('id', exec.id);
             continue;
           }
@@ -466,9 +541,9 @@ Deno.serve(async (req) => {
       }
     }
 
-    console.log(`[FLOW TIMEOUTS] ✅ Processed ${processed} executions, auto-fixed ${autoFixed}.`);
+    console.log(`[FLOW TIMEOUTS] ✅ Processed ${processed} executions, auto-fixed ${autoFixed}, recovered ${recoveredFromQuietBug}.`);
 
-    return new Response(JSON.stringify({ success: true, processed, autoFixed }), {
+    return new Response(JSON.stringify({ success: true, processed, autoFixed, recoveredFromQuietBug }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {
