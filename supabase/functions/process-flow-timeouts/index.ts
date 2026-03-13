@@ -60,6 +60,48 @@ async function contactRespondedAfterLastFollowUp(
   return !!recentMsg;
 }
 
+function getNowInSaoPauloHHMM(): string {
+  return new Intl.DateTimeFormat('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date());
+}
+
+function toMinutes(hhmm: string, fallback: string): number {
+  const [h, m] = (hhmm || fallback).split(':').map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) {
+    const [fh, fm] = fallback.split(':').map(Number);
+    return fh * 60 + fm;
+  }
+  return h * 60 + m;
+}
+
+function isWithinQuietHours(nowHHMM: string, quietStart: string, quietEnd: string): boolean {
+  const nowMin = toMinutes(nowHHMM, '00:00');
+  const startMin = toMinutes(quietStart, '22:00');
+  const endMin = toMinutes(quietEnd, '08:00');
+
+  if (startMin <= endMin) {
+    return nowMin >= startMin && nowMin < endMin;
+  }
+
+  // Overnight window (e.g. 19:00 -> 08:00)
+  return nowMin >= startMin || nowMin < endMin;
+}
+
+function minutesUntilQuietEnd(nowHHMM: string, quietEnd: string): number {
+  const nowMin = toMinutes(nowHHMM, '00:00');
+  const endMin = toMinutes(quietEnd, '08:00');
+
+  if (nowMin < endMin) {
+    return endMin - nowMin;
+  }
+
+  return (24 * 60 - nowMin) + endMin;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
