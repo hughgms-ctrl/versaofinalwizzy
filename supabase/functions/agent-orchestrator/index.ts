@@ -13,6 +13,8 @@ interface OrchestrationState {
   active_agent_id?: string;
   flow_completed?: boolean;
   document_context?: DocumentCollectionContext;
+  last_outcome?: string;
+  variables?: Record<string, any>;
 }
 
 interface DocumentCollectionContext {
@@ -763,12 +765,12 @@ async function walkFlowForward(
   nodes: any[], edges: any[], messageContent: string
 ) {
   const toolsExecuted: any[] = [];
-  let replyText: string | null = null;
+  const replies: string[] = [];
   let safetyCounter = 0;
 
   while (safetyCounter++ < 20) {
-    const nextNodeIds = findNextNodeIds(edges, state.current_node_id!);
-    if (nextNodeIds.length === 0) {
+    const currentEdges = edges.filter((e: any) => e.source === state.current_node_id);
+    if (currentEdges.length === 0) {
       console.log('End of flow reached — resetting service_mode to humano');
       state.flow_completed = true;
       // Reset service_mode so AI stops responding after flow ends
@@ -776,7 +778,27 @@ async function walkFlowForward(
       break;
     }
 
-    const nextNodeId = nextNodeIds[0]; // Take first path (conditions handled separately)
+    let nextEdge: any = null;
+
+    // A. Outcome-based path selection
+    if (state.last_outcome) {
+      const outcomeHandle = `outcome-${state.last_outcome}`;
+      nextEdge = currentEdges.find((e: any) => e.sourceHandle === outcomeHandle);
+      if (!nextEdge) {
+        // Fallback to default handle
+        nextEdge = currentEdges.find((e: any) => e.sourceHandle === 'outcome-default');
+      }
+      console.log(`[ORCHESTRATOR] Outcome routing: outcome="${state.last_outcome}", matched handle="${nextEdge?.sourceHandle || 'none'}"`);
+      // Clear outcome after use to avoid sticking on future nodes
+      state.last_outcome = undefined;
+    }
+
+    // B. Default path selection (if no outcome or no matching handle found)
+    if (!nextEdge) {
+      nextEdge = currentEdges[0];
+    }
+
+    const nextNodeId = nextEdge?.target;
     const nextNode = nodes.find((n: any) => n.id === nextNodeId);
     if (!nextNode) { console.log('Node not found:', nextNodeId); break; }
 
@@ -800,48 +822,35 @@ async function walkFlowForward(
             if (!existing) {
               await supabase.from('contact_tags').insert({ contact_id: ctx.contactId, tag_id: tagId, added_by_type: 'ai' });
             }
-            console.log('Tag added:', tagId);
           } else {
             await supabase.from('contact_tags').delete().eq('contact_id', ctx.contactId).eq('tag_id', tagId);
-            console.log('Tag removed:', tagId);
           }
           toolsExecuted.push({ name: action === 'add' ? 'add_tag' : 'remove_tag', arguments: { tag_id: tagId }, result: { success: true } });
         }
         state.completed_nodes.push(nextNode.id);
         state.current_node_id = nextNode.id;
-        if (nextNode.data?.waitForResponse) { state.waiting_for_response = true; return { replyText, toolsExecuted }; }
+        if (nextNode.data?.waitForResponse) { 
+          state.waiting_for_response = true; 
+          return { replyText: replies.join('\n\n'), toolsExecuted }; 
+        }
         continue;
       }
-
       case 'orch-pipeline':
       case 'action-pipeline': {
         const pipelineId = nextNode.data?.pipelineId;
         const columnId = nextNode.data?.columnId;
         if (pipelineId && columnId) {
-          // Get old column for history
           const { data: oldPos } = await supabase.from('conversation_pipeline_positions')
-            .select('column_id').eq('conversation_id', ctx.conversationId)
-            .eq('pipeline_id', pipelineId).maybeSingle();
+            .select('column_id').eq('conversation_id', ctx.conversationId).eq('pipeline_id', pipelineId).maybeSingle();
           const fromColumnId = oldPos?.column_id || null;
-
           await supabase.from('conversation_pipeline_positions').upsert({
             conversation_id: ctx.conversationId, pipeline_id: pipelineId,
             column_id: columnId, updated_at: new Date().toISOString(),
           }, { onConflict: 'conversation_id,pipeline_id' });
-          console.log('Pipeline moved:', pipelineId, columnId);
-
-          // Log stage history
           await supabase.from('conversation_stage_history').insert({
-            conversation_id: ctx.conversationId,
-            pipeline_id: pipelineId,
-            from_column_id: fromColumnId,
-            to_column_id: columnId,
-            changed_by_type: 'orchestrator',
-            changed_by: null,
-            organization_id: ctx.organizationId,
+            conversation_id: ctx.conversationId, pipeline_id: pipelineId, from_column_id: fromColumnId,
+            to_column_id: columnId, changed_by_type: 'orchestrator', organization_id: ctx.organizationId,
           });
-
-          // Trigger stage notification
           try {
             const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
             const srvKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -851,12 +860,14 @@ async function walkFlowForward(
               body: JSON.stringify({ conversationId: ctx.conversationId, columnId, organizationId: ctx.organizationId }),
             });
           } catch (e) { console.error('Stage notification error:', e); }
-
           toolsExecuted.push({ name: 'move_pipeline', arguments: { pipeline_id: pipelineId, column_id: columnId }, result: { success: true } });
         }
         state.completed_nodes.push(nextNode.id);
         state.current_node_id = nextNode.id;
-        if (nextNode.data?.waitForResponse) { state.waiting_for_response = true; return { replyText, toolsExecuted }; }
+        if (nextNode.data?.waitForResponse) { 
+          state.waiting_for_response = true; 
+          return { replyText: replies.join('\n\n'), toolsExecuted }; 
+        }
         continue;
       }
 
@@ -874,7 +885,10 @@ async function walkFlowForward(
         }
         state.completed_nodes.push(nextNode.id);
         state.current_node_id = nextNode.id;
-        if (nextNode.data?.waitForResponse) { state.waiting_for_response = true; return { replyText, toolsExecuted }; }
+        if (nextNode.data?.waitForResponse) { 
+          state.waiting_for_response = true; 
+          return { replyText: replies.join('\n\n'), toolsExecuted }; 
+        }
         continue;
       }
 
@@ -903,7 +917,10 @@ async function walkFlowForward(
         state.current_node_id = nextNode.id;
         // Default: wait after flow unless explicitly disabled
         const shouldWait = nextNode.data?.waitForResponse !== false;
-        if (shouldWait) { state.waiting_for_response = true; return { replyText, toolsExecuted }; }
+        if (shouldWait) { 
+          state.waiting_for_response = true; 
+          return { replyText: replies.join('\n\n'), toolsExecuted }; 
+        }
         continue;
       }
 
@@ -911,7 +928,6 @@ async function walkFlowForward(
       case 'ai-handoff': {
         const agentId = nextNode.data?.agentId;
         if (agentId) {
-          // Switch agent in conversation
           const { data: agent } = await supabase.from('ai_agents').select('function_role').eq('id', agentId).single();
           const updateData: any = { ai_agent_id: agentId };
           if (agent?.function_role) {
@@ -920,24 +936,26 @@ async function walkFlowForward(
             if (dept) updateData.department_id = dept.id;
           }
           await supabase.from('conversations').update(updateData).eq('id', ctx.conversationId);
-          console.log('Agent switched:', agentId);
           toolsExecuted.push({ name: 'switch_agent', arguments: { agent_id: agentId }, result: { success: true } });
         }
-        // Agent node: set as current, mark waiting, invoke AI
+        
         state.current_node_id = nextNode.id;
-        state.waiting_for_response = true;
         state.active_agent_id = nextNode.data?.agentId;
 
-        // FIRST ACTIVATION: agent must send its first message and WAIT.
-        // advance_flow is NOT available on first activation to prevent skipping.
-        const isFirstActivation = true;
-        const agentResult = await invokeAgentAI(supabase, ctx, nextNode, state, messageContent, false, isFirstActivation);
-        replyText = agentResult.replyText;
+        const hasNextNodes = findNextNodeIds(edges, nextNode.id).length > 0;
+        const agentResult = await invokeAgentAI(supabase, ctx, nextNode, state, messageContent, hasNextNodes, true);
+        if (agentResult.replyText) replies.push(agentResult.replyText);
         toolsExecuted.push(...agentResult.toolsExecuted);
 
-        // Never allow advance on first activation - always wait for user response
-        console.log('Agent first activation complete - waiting for user response');
-        return { replyText, toolsExecuted };
+        if (agentResult.shouldAdvance) {
+          console.log('[WALK] Agent advanced immediately - continuing walk');
+          state.completed_nodes.push(nextNode.id);
+          state.active_agent_id = undefined;
+          continue;
+        }
+
+        state.waiting_for_response = true;
+        return { replyText: replies.join('\n\n'), toolsExecuted };
       }
 
       case 'orch-document':
@@ -946,207 +964,52 @@ async function walkFlowForward(
         const packId = nextNode.data?.packId;
         const documentSource = nextNode.data?.documentSource || 'template';
         const documentMode = nextNode.data?.documentMode || 'ai_agent';
-
         const isPack = documentSource === 'pack' && !!packId;
-        const hasSource = isPack ? !!packId : !!templateId;
 
-        if (!hasSource) {
-          console.log('Document node has no template/pack configured');
+        if (!(isPack ? !!packId : !!templateId)) {
           state.completed_nodes.push(nextNode.id);
           state.current_node_id = nextNode.id;
           continue;
         }
 
-        // === PUBLIC LINK MODE ===
         if (documentMode === 'public_link') {
-          console.log('Document node: public_link mode, isPack:', isPack);
           const appUrl = 'https://wizzyai.lovable.app';
-
-          let publicLink: string;
+          let publicLink = isPack ? `${appUrl}/pack-form/${packId}` : `${appUrl}/public-form/${templateId}`;
           if (isPack) {
-            // Need pack's public_token
-            const { data: pack } = await supabase.from('document_packs')
-              .select('id, name, public_token').eq('id', packId).single();
-            if (!pack?.public_token) {
-              console.log('Pack has no public_token, skipping');
-              state.completed_nodes.push(nextNode.id);
-              state.current_node_id = nextNode.id;
-              continue;
-            }
-            publicLink = `${appUrl}/pack-form/${pack.public_token}`;
-          } else {
-            publicLink = `${appUrl}/public-form/${templateId}`;
+             const { data: pack } = await supabase.from('document_packs').select('public_token').eq('id', packId).single();
+             if (pack?.public_token) publicLink = `${appUrl}/pack-form/${pack.public_token}`;
           }
 
-          let linkMessage = (nextNode.data?.publicLinkMessage as string) || '';
-          if (!linkMessage) {
-            linkMessage = `📋 Por favor, preencha seus dados neste link para gerar ${isPack ? 'os documentos' : 'o documento'}:\n\n${publicLink}`;
-          } else {
-            linkMessage = linkMessage.replace(/\{\{link\}\}/g, publicLink);
-          }
-
+          let linkMessage = (nextNode.data?.publicLinkMessage as string) || `📋 Preencha seus dados aqui: ${publicLink}`;
+          linkMessage = linkMessage.replace(/\{\{link\}\}/g, publicLink);
+          
           await sendReplyViaZAPI(supabase, ctx.conversation, linkMessage);
-          replyText = linkMessage;
-
-          toolsExecuted.push({
-            name: 'send_public_link',
-            arguments: { source: documentSource, link: publicLink },
-            result: { success: true }
-          });
-
+          replies.push(linkMessage);
+          
+          toolsExecuted.push({ name: 'send_public_link', arguments: { link: publicLink }, result: { success: true } });
           state.completed_nodes.push(nextNode.id);
           state.current_node_id = nextNode.id;
           continue;
         }
 
-        // === AI AGENT MODE ===
-        let docFields: { name: string; label: string; type: string }[] = [];
-        let docTemplateName = '';
-        let docTemplateContent = '';
-        let packTemplates: { id: string; name: string; content: string }[] = [];
-
-        if (isPack) {
-          // Load pack with its field_config (unified fields) and templates
-          const { data: pack } = await supabase.from('document_packs')
-            .select('id, name, template_ids, field_config').eq('id', packId).single();
-
-          if (!pack) {
-            console.log('Pack not found:', packId);
-            state.completed_nodes.push(nextNode.id);
-            state.current_node_id = nextNode.id;
-            continue;
-          }
-
-          docTemplateName = pack.name;
-
-          // Use unified field_config from the pack
-          const fieldConfig = Array.isArray(pack.field_config) ? pack.field_config : [];
-          if (fieldConfig.length > 0) {
-            // field_config has unified/shared fields
-            docFields = fieldConfig.map((f: any) => ({
-              name: f.name || f.unified_name || f.label || '',
-              label: f.label || f.unified_name || f.name || '',
-              type: f.type || 'text',
-            }));
-          } else {
-            // Fallback: load all template fields
-            const { data: templates } = await supabase.from('document_templates')
-              .select('id, name, content, fields').in('id', pack.template_ids || []);
-            if (templates) {
-              const seenFields = new Set<string>();
-              for (const t of templates) {
-                packTemplates.push({ id: t.id, name: t.name, content: t.content });
-                const tFields = Array.isArray(t.fields) ? t.fields : [];
-                for (const f of tFields) {
-                  const fname = typeof f === 'string' ? f : (f.name || f);
-                  if (!seenFields.has(fname)) {
-                    seenFields.add(fname);
-                    docFields.push({
-                      name: fname,
-                      label: typeof f === 'string' ? f : (f.label || f.name || f),
-                      type: typeof f === 'string' ? 'text' : (f.type || 'text'),
-                    });
-                  }
-                }
-              }
-            }
-          }
-
-          // Load templates for PDF generation later
-          if (packTemplates.length === 0 && pack.template_ids?.length) {
-            const { data: templates } = await supabase.from('document_templates')
-              .select('id, name, content').in('id', pack.template_ids);
-            if (templates) packTemplates = templates.map(t => ({ id: t.id, name: t.name, content: t.content }));
-          }
-
-          docTemplateContent = packTemplates.map(t => `--- ${t.name} ---\n${t.content?.substring(0, 500)}`).join('\n\n');
-
-        } else {
-          // Single template
-          const { data: template } = await supabase.from('document_templates')
-            .select('id, name, content, fields').eq('id', templateId).single();
-
-          if (!template) {
-            console.log('Template not found:', templateId);
-            state.completed_nodes.push(nextNode.id);
-            state.current_node_id = nextNode.id;
-            continue;
-          }
-
-          docTemplateName = template.name;
-          docTemplateContent = template.content;
-          const fields = Array.isArray(template.fields) ? template.fields : [];
-          docFields = fields.map((f: any) => ({
-            name: typeof f === 'string' ? f : (f.name || f),
-            label: typeof f === 'string' ? f : (f.label || f.name || f),
-            type: typeof f === 'string' ? 'text' : (f.type || 'text'),
-          }));
-        }
-
-        // Initialize document collection context
-        state.document_context = {
-          template_id: isPack ? '' : templateId,
-          template_name: docTemplateName,
-          template_content: docTemplateContent,
-          fields: docFields,
-          collected_data: {},
-          require_confirmation: nextNode.data?.requireConfirmation !== false,
-          send_pdf_in_chat: nextNode.data?.sendPdfInChat !== false,
-          send_signature_link: nextNode.data?.sendSignatureLink !== false,
-          signing_method: nextNode.data?.signingMethod || 'manual',
-          additional_instructions: nextNode.data?.additionalInstructions || '',
-          confirmed: false,
-          pdf_generated: false,
-          signature_requested: false,
-          is_pack: isPack,
-          pack_id: isPack ? packId : undefined,
-          pack_name: isPack ? docTemplateName : undefined,
-          pack_template_ids: isPack ? packTemplates.map(t => t.id) : undefined,
-          pack_templates: isPack ? packTemplates : undefined,
-        };
-
-        // Pre-fill with contact data
-        const contact = ctx.conversation.contact;
-        if (contact) {
-          for (const field of state.document_context.fields) {
-            const fn = field.name.toLowerCase();
-            if ((fn.includes('nome') || fn.includes('name')) && contact.name) {
-              state.document_context.collected_data[field.name] = contact.name;
-            }
-            if ((fn.includes('telefone') || fn.includes('phone') || fn.includes('celular')) && contact.phone) {
-              state.document_context.collected_data[field.name] = contact.phone;
-            }
-            if ((fn.includes('email') || fn.includes('e-mail')) && contact.email) {
-              state.document_context.collected_data[field.name] = contact.email;
-            }
-          }
-        }
-
-        // Specific agent for this node
-        const docAgentId = nextNode.data?.documentAgentId as string;
-        if (docAgentId) {
-          const docAgent = ctx.agents.find((a: any) => a.id === docAgentId);
-          if (docAgent) {
-            state.active_agent_id = docAgentId;
-            console.log('Document node using specific agent:', docAgent.name);
-          }
-        }
-
-        console.log('Document collection started:', docTemplateName, 'Fields:', docFields.length, 'isPack:', isPack);
-        toolsExecuted.push({
-          name: 'start_document_collection',
-          arguments: { template_name: docTemplateName, mode: 'ai_agent', is_pack: isPack },
-          result: { success: true, fields_count: docFields.length }
-        });
-
+        // AI Document collection mode
         state.current_node_id = nextNode.id;
-        state.waiting_for_response = true;
+        state.active_agent_id = nextNode.data?.documentAgentId;
 
-        const docResult = await invokeDocumentAgentAI(supabase, ctx, nextNode, state, messageContent, false, true);
-        replyText = docResult.replyText;
+        const hasNext = findNextNodeIds(edges, nextNode.id).length > 0;
+        const docResult = await invokeDocumentAgentAI(supabase, ctx, nextNode, state, messageContent, hasNext, true);
+        if (docResult.replyText) replies.push(docResult.replyText);
         toolsExecuted.push(...docResult.toolsExecuted);
 
-        return { replyText, toolsExecuted };
+        if (docResult.shouldAdvance) {
+          console.log('[WALK] Doc agent advanced immediately - continuing walk');
+          state.completed_nodes.push(nextNode.id);
+          state.active_agent_id = undefined;
+          continue;
+        }
+
+        state.waiting_for_response = true;
+        return { replyText: replies.join('\n\n'), toolsExecuted };
       }
 
       case 'orch-human':
@@ -1158,7 +1021,7 @@ async function walkFlowForward(
         state.completed_nodes.push(nextNode.id);
         state.current_node_id = nextNode.id;
         state.flow_completed = true;
-        return { replyText, toolsExecuted };
+        return { replyText: replies.join('\n\n'), toolsExecuted };
       }
 
       case 'orch-delay':
@@ -1184,16 +1047,11 @@ async function walkFlowForward(
 
         // Find the correct branch edge
         const branchEdges = edges.filter((e: any) => e.source === nextNode.id);
-        const targetEdge = branchEdges.find((e: any) => e.sourceHandle === branch) || branchEdges[0];
+        const targetEdge = branchEdges.find((e: any) => e.sourceHandle === (branch.startsWith('outcome-') ? branch : `outcome-${branch}`)) || branchEdges.find((e: any) => e.sourceHandle === branch) || branchEdges[0];
         if (targetEdge) {
-          // Override next iteration to follow this branch
-          state.current_node_id = nextNode.id;
-          // We need to manually set which edge to follow
-          const branchTarget = nodes.find((n: any) => n.id === targetEdge.target);
-          if (branchTarget) {
-            // Temporarily adjust: skip the normal findNextNodeIds by executing this node directly
-            // We'll handle this by continuing the loop with a modified state
-          }
+          state.current_node_id = nextNode.id; 
+          // Clear outcome to ensure normal loop iteration picks up the branch target
+          state.last_outcome = undefined;
         }
         continue;
       }
@@ -1206,7 +1064,7 @@ async function walkFlowForward(
     }
   }
 
-  return { replyText, toolsExecuted };
+  return { replyText: replies.join('\n\n'), toolsExecuted };
 }
 
 // Helper to clean up meta-instructions from user-provided prompts
@@ -1392,7 +1250,33 @@ async function invokeAgentAI(
     },
   ];
 
-  if (hasNextNodes) {
+  // Logic for outcome-based tools or advance_flow
+  const expectedOutcomes = agentNode.data?.expectedOutcomes as string;
+  if (expectedOutcomes) {
+    const outcomes = expectedOutcomes.split(',').map(s => s.trim()).filter(Boolean);
+    if (outcomes.length > 0) {
+      tools.push({
+        type: 'function',
+        function: {
+          name: 'finalizar_interacao',
+          description: `Finalizar esta etapa com um resultado. Resultados possíveis: ${outcomes.join(', ')}.`,
+          parameters: {
+            type: 'object',
+            properties: {
+              resultado: { 
+                type: 'string', 
+                enum: outcomes,
+                description: 'O resultado da sua interação/qualificação.' 
+              }
+            },
+            required: ['resultado'],
+          },
+        },
+      });
+    }
+  }
+
+  if (hasNextNodes && !expectedOutcomes) {
     tools.push({
       type: 'function',
       function: {
@@ -1480,6 +1364,13 @@ async function invokeAgentAI(
         shouldAdvance = true;
         toolResults.push({ role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify({ success: true, message: 'Advancing to next step' }) });
         toolsExecuted.push({ name: 'advance_flow', arguments: {}, result: { success: true } });
+      } else if (fnName === 'finalizar_interacao') {
+        const resultado = fnArgs.resultado || 'concluido';
+        state.last_outcome = resultado;
+        state.variables = { ...(state.variables || {}), ai_resultado: resultado };
+        shouldAdvance = true;
+        toolResults.push({ role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify({ success: true, resultado }) });
+        toolsExecuted.push({ name: 'finalizar_interacao', arguments: fnArgs, result: { success: true, resultado } });
       } else if (fnName === 'add_tag') {
         const result = await executeToolDirect(supabase, 'add_tag', fnArgs, ctx);
         toolResults.push({ role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify(result) });
