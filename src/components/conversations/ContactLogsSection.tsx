@@ -369,11 +369,21 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
           
           const eventTime = new Date(event.timestamp).getTime();
           const diff = Math.abs(stepTime - eventTime);
-          if (diff > 2000) return false;
+          
+          // Increase window to 10 seconds and prioritize matching types
+          if (diff > 10000) return false;
 
-          // Type matching
-          if (step.meta?.nodeType === 'action-pipeline' && (event.type === 'pipeline_moved' || event.type === 'stage_changed')) return true;
-          if (step.meta?.nodeType === 'action-tag' && event.type === 'tag_added') return true;
+          const nType = String(step.meta?.nodeType || '').toLowerCase();
+          
+          // Pipeline matching
+          if ((nType.includes('pipeline') || nType.includes('estagio')) && 
+              (event.type === 'pipeline_moved' || event.type === 'stage_changed')) return true;
+          
+          // Tag matching
+          if (nType.includes('tag') && event.type === 'tag_added') return true;
+          
+          // Generic fallback for very close events (within 1s) of the same broad category
+          if (diff < 1000) return true;
           
           return false;
         });
@@ -450,14 +460,13 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
   };
 
   const getNodeIcon = (nodeType: string) => {
-    switch (nodeType) {
-      case 'ai-handoff': return Bot;
-      case 'action-pipeline': return Columns;
-      case 'action-tag': return Tag;
-      case 'action-delay': return RefreshCw;
-      case 'content-block': return MessageSquare;
-      default: return GitBranch;
-    }
+    const type = String(nodeType || '').toLowerCase();
+    if (type.includes('handoff')) return Bot;
+    if (type.includes('pipeline') || type.includes('estagio')) return Columns;
+    if (type.includes('tag')) return Tag;
+    if (type.includes('delay') || type.includes('aguardar')) return RefreshCw;
+    if (type.includes('content') || type.includes('mensagem')) return MessageSquare;
+    return GitBranch;
   };
 
   const getColor = (type: TimelineEntry['type']) => {
@@ -491,13 +500,12 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
   };
 
   const getNodeColor = (nodeType: string) => {
-    switch (nodeType) {
-      case 'ai-handoff': return 'text-purple-500';
-      case 'action-pipeline': return 'text-blue-500';
-      case 'action-tag': return 'text-green-500';
-      case 'action-delay': return 'text-orange-500';
-      default: return 'text-purple-400';
-    }
+    const type = String(nodeType || '').toLowerCase();
+    if (type.includes('handoff')) return 'text-purple-500';
+    if (type.includes('pipeline') || type.includes('estagio')) return 'text-blue-500';
+    if (type.includes('tag')) return 'text-green-500';
+    if (type.includes('delay')) return 'text-orange-500';
+    return 'text-purple-400';
   };
 
   let lastDate = '';
