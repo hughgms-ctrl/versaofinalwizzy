@@ -30,7 +30,7 @@ interface TimelineEntry {
 }
 
 export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) {
-  const { data: entries = [], isLoading } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ['contact-timeline', conversationId],
     queryFn: async () => {
       // First get conversation to know contact_id
