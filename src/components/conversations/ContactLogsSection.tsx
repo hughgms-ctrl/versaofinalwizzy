@@ -376,6 +376,86 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
     );
   }
 
+  const getIcon = (type: TimelineEntry['type']) => {
+    switch (type) {
+      case 'agent_activated':
+      case 'agent_switched':
+      case 'ai_response':
+        return Bot;
+      case 'tag_added':
+      case 'tag_removed':
+        return Tag;
+      case 'pipeline_moved':
+      case 'stage_changed':
+        return Columns;
+      case 'flow_triggered':
+      case 'flow_step':
+        return GitBranch;
+      case 'human_intervened':
+      case 'status_changed':
+        return User;
+      case 'conversation_started':
+        return MessageSquare;
+      case 'followup_sent':
+        return RefreshCw;
+      default:
+        return ArrowRightLeft;
+    }
+  };
+
+  const getNodeIcon = (nodeType: string) => {
+    switch (nodeType) {
+      case 'ai-handoff': return Bot;
+      case 'action-pipeline': return Columns;
+      case 'action-tag': return Tag;
+      case 'action-delay': return RefreshCw;
+      case 'content-block': return MessageSquare;
+      default: return GitBranch;
+    }
+  };
+
+  const getColor = (type: TimelineEntry['type']) => {
+    switch (type) {
+      case 'agent_activated':
+        return 'text-primary';
+      case 'tag_added':
+        return 'text-green-500';
+      case 'tag_removed':
+        return 'text-red-400';
+      case 'pipeline_moved':
+      case 'stage_changed':
+        return 'text-blue-500';
+      case 'flow_triggered':
+        return 'text-purple-500';
+      case 'agent_switched':
+        return 'text-amber-500';
+      case 'human_intervened':
+        return 'text-orange-500';
+      case 'conversation_started':
+        return 'text-muted-foreground';
+      case 'ai_response':
+        return 'text-muted-foreground';
+      case 'followup_sent':
+        return 'text-orange-500';
+      case 'flow_step':
+        return 'text-purple-500';
+      default:
+        return 'text-muted-foreground';
+    }
+  };
+
+  const getNodeColor = (nodeType: string) => {
+    switch (nodeType) {
+      case 'ai-handoff': return 'text-purple-500';
+      case 'action-pipeline': return 'text-blue-500';
+      case 'action-tag': return 'text-green-500';
+      case 'action-delay': return 'text-orange-500';
+      default: return 'text-purple-400';
+    }
+  };
+
+  let lastDate = '';
+
   return (
     <div className="space-y-4 pr-1">
       {migrationError && (
