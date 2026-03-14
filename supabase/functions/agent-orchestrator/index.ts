@@ -227,8 +227,8 @@ Deno.serve(async (req) => {
     console.log(`[ORCHESTRATOR] Loaded ${trainingRules.length} active training rules for org ${organizationId}`);
 
     // Resolve AI config: masterPrompt > integration_configs > workspace_agent_configs > defaults
-    const masterProvider = masterPrompt.provider || integrationConfig?.ai_provider || 'lovable';
-    const masterModel = masterPrompt.model || integrationConfig?.default_model || 'google/gemini-3-flash-preview';
+    const masterProvider = masterPrompt?.provider || integrationConfig?.ai_provider || 'lovable';
+    const masterModel = masterPrompt?.model || integrationConfig?.default_model || 'google/gemini-1.5-flash';
 
     const aiConfig = resolveAIConfig(integrationConfig, 'agents', LOVABLE_API_KEY!, masterProvider, masterModel);
     const aiModel = aiConfig.model;
@@ -2482,7 +2482,7 @@ async function resolveActiveMasterPrompt(supabase: any, conversation: any) {
     .from('flow_executions')
     .select('*, flow:flows(*)')
     .eq('conversation_id', conversation.id)
-    .eq('status', 'running')
+    .in('status', ['running', 'waiting_input'])
     .maybeSingle();
 
   if (execution?.flow?.is_master_active && execution.flow.master_prompt) {
@@ -2643,7 +2643,7 @@ function stripInternalAnnotations(text: string): string {
 function resolveAgentConfig(ctx: any, agent: any, integrationConfig: any): AIConfigResult {
   if (agent?.provider || agent?.model) {
     const provider = agent.provider || integrationConfig?.ai_provider || 'lovable';
-    const model = agent.model || integrationConfig?.default_model || 'google/gemini-3-flash-preview';
+    const model = agent.model || integrationConfig?.default_model || 'google/gemini-1.5-flash';
     return resolveAIConfig(integrationConfig, 'agents', ctx.LOVABLE_API_KEY, provider, model);
   }
   return { endpoint: ctx.aiEndpoint, apiKey: ctx.aiApiKey, model: ctx.aiModel };
@@ -2678,18 +2678,20 @@ function resolveAIConfig(
   const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
 
   if (!integrationConfig) {
-    return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model: 'google/gemini-2.5-flash' };
+    return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model: 'google/gemini-1.5-flash' };
   }
 
   // Check feature-specific override first
   const featureProvider = integrationConfig[`${feature}_provider`];
   const featureModel = integrationConfig[`${feature}_model`];
   let provider = overrideProvider || featureProvider || integrationConfig.ai_provider || 'lovable';
-  let model = overrideModel || featureModel || integrationConfig.default_model || 'google/gemini-2.5-flash';
+  let model = overrideModel || featureModel || integrationConfig.default_model || 'google/gemini-1.5-flash';
 
   // Ensure format is correct depending on provider
   if (provider === 'gemini') {
     model = model.replace('google/', ''); // Google API doesn't use prefix
+  } else if (provider === 'openai') {
+    model = model.replace('openai/', ''); // OpenAI API doesn't use prefix
   } else if (provider === 'lovable') {
     if (!model.startsWith('google/') && !model.startsWith('openai/')) {
       model = model.includes('gpt') ? `openai/${model}` : `google/${model}`;
@@ -2700,13 +2702,13 @@ function resolveAIConfig(
     case 'openai':
       if (!integrationConfig.openai_api_key) {
         console.warn('OpenAI selected but no API key, falling back to Lovable');
-        return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model: 'google/gemini-2.5-flash' };
+        return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model: 'google/gemini-1.5-flash' };
       }
       return { endpoint: OPENAI_ENDPOINT, apiKey: integrationConfig.openai_api_key, model };
     case 'gemini':
       if (!integrationConfig.gemini_api_key) {
         console.warn('Gemini selected but no API key, falling back to Lovable');
-        return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model: 'google/gemini-2.5-flash' };
+        return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model: 'google/gemini-1.5-flash' };
       }
       return { endpoint: GEMINI_ENDPOINT, apiKey: integrationConfig.gemini_api_key, model };
     default:
