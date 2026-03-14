@@ -48,7 +48,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { useNavigate } from 'react-router-dom';
-import { useFlows, useToggleFlowActive, useDeleteFlow, useToggleFlowVisibleInChat } from '@/hooks/useFlows';
+import { useFlows, useToggleFlowActive, useDeleteFlow, useToggleFlowVisibleInChat, useDuplicateFlow } from '@/hooks/useFlows';
 import {
   useFlowFolders,
   useCreateFlowFolder,
@@ -56,6 +56,7 @@ import {
   useRenameFlowFolder,
   useMoveFlowToFolder,
   useToggleFolderVisibleInChat,
+  useDuplicateFlowFolder,
   FlowFolder
 } from '@/hooks/useFlowFolders';
 import { useSaveFlow } from '@/hooks/useFlows';
@@ -128,6 +129,8 @@ const FlowsPage = () => {
   const toggleFlowVisibility = useToggleFlowVisibleInChat();
   const toggleFolderVisibility = useToggleFolderVisibleInChat();
   const saveFlow = useSaveFlow();
+  const duplicateFlow = useDuplicateFlow();
+  const duplicateFolder = useDuplicateFlowFolder();
   const { selectedWorkspaceId, availableWorkspaces, isAdmin } = useWorkspaceContext();
 
   const sensors = useSensors(
@@ -457,7 +460,7 @@ const FlowsPage = () => {
                 <><MessageSquare className="h-4 w-4 mr-2" />Mostrar no Chat</>
               )}
             </DropdownMenuItem>
-            <DropdownMenuItem>
+            <DropdownMenuItem onClick={() => duplicateFlow.mutate({ flowId: flow.id })}>
               <Copy className="h-4 w-4 mr-2" />
               Duplicar
             </DropdownMenuItem>
@@ -637,6 +640,14 @@ const FlowsPage = () => {
                   )}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator className="bg-[#2a2a2e]" />
+                <DropdownMenuItem onClick={(e) => {
+                  e.stopPropagation();
+                  duplicateFolder.mutate({ folderId: folder.id, newParentId: folder.parent_id });
+                }}>
+                  <Copy className="h-4 w-4 mr-2" />
+                  Duplicar pasta
+                </DropdownMenuItem>
+
                 <DropdownMenuItem
                   className="text-red-500 hover:text-red-400"
                   onClick={(e) => {

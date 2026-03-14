@@ -237,3 +237,100 @@ export function useToggleFolderVisibleInChat() {
     },
   });
 }
+
+export function useDuplicateFlowFolder() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ folderId, newParentId }: { folderId: string, newParentId?: string | null }) => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('organization_id')
+        .eq('user_id', user.id)
+        .single();
+        
+      if (!profile) throw new Error('Profile not found');
+
+      // Helper function for recursive duplication
+      const duplicateFolderRecursive = async (currentFolderId: string, parentIdForNew: string | null, isRoot: boolean) => {
+        // 1. Fetch current folder
+        const { data: folder, error: fetchErr } = await supabase
+          .from('flow_folders')
+          .select('*')
+          .eq('id', currentFolderId)
+          .single();
+          
+        if (fetchErr || !folder) throw fetchErr;
+
+        // 2. Create new folder
+        const newFolderName = isRoot ? `${folder.name} (Cópia)` : folder.name;
+        const { data: newFolder, error: insertErr } = await supabase
+          .from('flow_folders')
+          .insert({
+            name: newFolderName,
+            organization_id: profile.organization_id,
+            parent_id: parentIdForNew,
+            workspace_id: folder.workspace_id,
+          } as never)
+          .select()
+          .single();
+          
+        if (insertErr || !newFolder) throw insertErr;
+
+        // 3. Fetch and duplicate all flows in this folder
+        const query: any = supabase.from('flows' as 'contacts').select('*');
+        const { data: flows, error: flowsErr } = await query.eq('folder_id', currentFolderId);
+          
+        if (!flowsErr && flows && flows.length > 0) {
+          const newFlows = flows.map(f => ({
+            organization_id: f.organization_id,
+            name: f.name,
+            description: f.description,
+            is_active: false,
+            trigger_type: f.trigger_type,
+            trigger_config: f.trigger_config || {},
+            nodes: f.nodes || [],
+            edges: f.edges || [],
+            variables: f.variables || {},
+            created_by: user.id,
+            folder_id: (newFolder as any).id,
+            workspace_id: f.workspace_id,
+            master_prompt: f.master_prompt,
+            is_master_active: f.is_master_active,
+            provider: f.provider,
+            model: f.model,
+            visible_in_chat: f.visible_in_chat,
+          }));
+          
+          await supabase.from('flows' as 'contacts').insert(newFlows as never);
+        }
+
+        // 4. Fetch and recursively duplicate subfolders
+        const { data: subfolders, error: subfErr } = await supabase
+          .from('flow_folders')
+          .select('id')
+          .eq('parent_id', currentFolderId);
+          
+        if (!subfErr && subfolders && subfolders.length > 0) {
+          for (const sub of subfolders) {
+            await duplicateFolderRecursive(sub.id, (newFolder as any).id, false);
+          }
+        }
+      };
+
+      await duplicateFolderRecursive(folderId, newParentId || null, true);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['flow-folders'] });
+      queryClient.invalidateQueries({ queryKey: ['flows'] });
+      toast.success('Pasta duplicada com sucesso!');
+    },
+    onError: (error) => {
+      console.error('Error duplicating folder:', error);
+      toast.error('Erro ao duplicar pasta: ' + error.message);
+    },
+  });
+}

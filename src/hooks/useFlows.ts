@@ -345,3 +345,66 @@ export function useUpdateFlowPositions() {
     },
   });
 }
+
+export function useDuplicateFlow() {
+  const queryClient = useQueryClient();
+  const { user, profile } = useAuth();
+
+  return useMutation({
+    mutationFn: async ({ flowId, newFolderId }: { flowId: string, newFolderId?: string | null }) => {
+      if (!profile?.organization_id || !user?.id) {
+        throw new Error('User not authenticated');
+      }
+
+      // 1. Fetch the original flow
+      const { data: originalFlow, error: fetchError } = await (supabase
+        .from('flows' as 'contacts')
+        .select('*')
+        .eq('id', flowId)
+        .single() as unknown as Promise<{ data: any | null; error: Error | null }>);
+
+      if (fetchError || !originalFlow) {
+        throw new Error(`Failed to fetch original flow: ${fetchError?.message}`);
+      }
+
+      // 2. Prepare the duplicated flow data
+      const duplicatedData = {
+        organization_id: originalFlow.organization_id,
+        name: `${originalFlow.name} (Cópia)`,
+        description: originalFlow.description,
+        is_active: false, // Always inactive by default
+        trigger_type: originalFlow.trigger_type,
+        trigger_config: originalFlow.trigger_config || {},
+        nodes: originalFlow.nodes || [],
+        edges: originalFlow.edges || [],
+        variables: originalFlow.variables || {},
+        created_by: user.id,
+        folder_id: newFolderId !== undefined ? newFolderId : originalFlow.folder_id,
+        workspace_id: originalFlow.workspace_id,
+        master_prompt: originalFlow.master_prompt,
+        is_master_active: originalFlow.is_master_active,
+        provider: originalFlow.provider,
+        model: originalFlow.model,
+        visible_in_chat: originalFlow.visible_in_chat,
+      };
+
+      // 3. Insert the new flow
+      const { data: newFlow, error: insertError } = await (supabase
+        .from('flows' as 'contacts')
+        .insert(duplicatedData as never)
+        .select()
+        .single() as unknown as Promise<{ data: any | null; error: Error | null }>);
+
+      if (insertError) throw insertError;
+      return newFlow;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['flows'] });
+      toast.success('Fluxo duplicado com sucesso!');
+    },
+    onError: (error) => {
+      console.error('Error duplicating flow:', error);
+      toast.error('Erro ao duplicar fluxo: ' + error.message);
+    },
+  });
+}
