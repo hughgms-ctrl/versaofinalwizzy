@@ -37,6 +37,7 @@ interface ExecutionContext {
   zapiInstanceId: string;
   zapiToken: string;
   isFromOrchestrator?: boolean;
+  triggerMessage?: string;
 }
 
 // deno-lint-ignore no-explicit-any
@@ -52,8 +53,8 @@ Deno.serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const { flowId, conversationId, startNodeId, isFromOrchestrator } = await req.json();
-    console.log(`[FLOW EXECUTE] Received request: flowId=${flowId}, conversationId=${conversationId}, startNodeId=${startNodeId}, isFromOrchestrator=${isFromOrchestrator}`);
+    const { flowId, conversationId, startNodeId, isFromOrchestrator, triggerMessage } = await req.json();
+    console.log(`[FLOW EXECUTE] Received request: flowId=${flowId}, conversationId=${conversationId}, startNodeId=${startNodeId}, isFromOrchestrator=${isFromOrchestrator}, triggerMessage=${triggerMessage}`);
 
     if (!flowId || !conversationId) {
       return new Response(
@@ -133,6 +134,7 @@ Deno.serve(async (req) => {
           zapiInstanceId: instance.zapi_instance_id!,
           zapiToken: instance.zapi_token!,
           isFromOrchestrator: !!isFromOrchestrator,
+          triggerMessage: triggerMessage,
         };
 
         await runFlowExecution(execution.id, flow, nodes, edges, context, supabase);
@@ -234,7 +236,7 @@ async function runFlowExecution(
     }
 
     try {
-      const result = await executeNode(currentNode, context, supabase, flow);
+      const result = await executeNode(currentNode, context, supabase, flow, executionId);
       executionLog.push({
         nodeId: currentNode.id,
         type: currentNode.type,
@@ -375,7 +377,8 @@ async function executeNode(
   node: FlowNode,
   context: ExecutionContext,
   supabase: SupabaseClientType,
-  flow?: any
+  flow?: any,
+  executionId?: string
 ): Promise<NodeResult> {
   const { type, data } = node;
 
@@ -411,7 +414,7 @@ async function executeNode(
       return await executeWebhook(data, context);
 
     case 'ai-handoff':
-      return await executeAIHandoff(data, context, supabase, flow);
+      return await executeAIHandoff(data, context, supabase, flow, executionId);
 
     case 'ai-return':
       return { success: true };
@@ -462,7 +465,8 @@ async function executeAIHandoff(
   data: Record<string, unknown>,
   context: ExecutionContext,
   supabase: SupabaseClientType,
-  flow?: any
+  flow?: any,
+  executionId?: string
 ): Promise<NodeResult> {
   try {
     const agentId = String(data.agentId || '');
@@ -516,9 +520,42 @@ async function executeAIHandoff(
     await supabase.from('conversations').update({ metadata }).eq('id', context.conversationId);
 
     console.log(`[FLOW EXECUTE] AI Handoff: pausing flow, waiting for user message. Agent: ${agentId || 'default'}`);
+    
+    // 4. NEW: If we have a triggerMessage (from subflow resumption), invoke orchestrator IMMEDIATELY
+    if (context.triggerMessage) {
+      console.log(`[FLOW EXECUTE] AI Handoff: triggerMessage detected ("${context.triggerMessage}"), invoking orchestrator now.`);
+      
+      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+      const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
-    // 3. Return waitForInput — the flow PAUSES here.
-    // The webhook will detect this state and route subsequent messages to the orchestrator.
+      try {
+        const orchestratorBody: Record<string, unknown> = {
+          conversationId: context.conversationId,
+          messageContent: context.triggerMessage,
+          flowExecutionId: executionId,
+        };
+
+        if (flowContext.additionalContext) {
+          orchestratorBody.additionalContext = flowContext.additionalContext;
+        }
+
+        // Call agent-orchestrator
+        fetch(`${supabaseUrl}/functions/v1/agent-orchestrator`, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json', 
+            'Authorization': `Bearer ${serviceRoleKey}` 
+          },
+          body: JSON.stringify(orchestratorBody),
+        }).catch(err => console.error('[FLOW EXECUTE] Error invoking orchestrator in handoff:', err));
+        
+        console.log(`[FLOW EXECUTE] AI Handoff: orchestrator invoked successfully in background`);
+      } catch (e) {
+        console.error('[FLOW EXECUTE] Critical error preparing orchestrator call:', e);
+      }
+    }
+
+    // 5. Return waitForInput — the flow PAUSES here.
     return { success: true, waitForInput: true };
   } catch (error) {
     console.error('Error in executeAIHandoff:', error);

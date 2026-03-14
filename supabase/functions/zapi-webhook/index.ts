@@ -938,6 +938,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
               flowId: activeFlowExec.flow_id,
               conversationId: conversation.id,
               startNodeId: respondedTarget,
+              triggerMessage: triggerText || '[mídia]',
             }),
           });
           runBackground(resumePromise);
@@ -992,6 +993,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
               flowId: activeFlowExec.flow_id,
               conversationId: conversation.id,
               startNodeId: nextNodeId,
+              triggerMessage: triggerText || '[mídia]',
             }),
           });
           runBackground(resumePromise);
@@ -1046,6 +1048,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
               flowId: activeFlowExec.flow_id,
               conversationId: conversation.id,
               startNodeId: activeFlowExec.current_node_id,
+              triggerMessage: triggerText || '[mídia]',
             }),
           });
           runBackground(resumePromise);
