@@ -283,29 +283,34 @@ export function useDuplicateFlowFolder() {
         // 3. Fetch and duplicate all flows in this folder
         const query: any = supabase.from('flows' as 'contacts').select('*');
         const { data: flows, error: flowsErr } = await query.eq('folder_id', currentFolderId);
+        if (flowsErr) throw flowsErr;
           
-        if (!flowsErr && flows && flows.length > 0) {
-          const newFlows = flows.map(f => ({
-            organization_id: f.organization_id,
-            name: f.name,
-            description: f.description,
-            is_active: false,
-            trigger_type: f.trigger_type,
-            trigger_config: f.trigger_config || {},
-            nodes: f.nodes || [],
-            edges: f.edges || [],
-            variables: f.variables || {},
-            created_by: user.id,
-            folder_id: (newFolder as any).id,
-            workspace_id: f.workspace_id,
-            master_prompt: f.master_prompt,
-            is_master_active: f.is_master_active,
-            provider: f.provider,
-            model: f.model,
-            visible_in_chat: f.visible_in_chat,
-          }));
+        if (flows && flows.length > 0) {
+          const newFlows = flows.map((f: any) => {
+            const flowData: any = {
+              organization_id: f.organization_id,
+              name: f.name,
+              description: f.description,
+              is_active: false,
+              trigger_type: f.trigger_type,
+              trigger_config: f.trigger_config || {},
+              nodes: f.nodes || [],
+              edges: f.edges || [],
+              variables: f.variables || {},
+              created_by: user.id,
+              folder_id: (newFolder as any).id,
+              workspace_id: f.workspace_id,
+              visible_in_chat: f.visible_in_chat,
+            };
+            if (f.master_prompt !== undefined) flowData.master_prompt = f.master_prompt;
+            if (f.is_master_active !== undefined) flowData.is_master_active = f.is_master_active;
+            if (f.provider !== undefined) flowData.provider = f.provider;
+            if (f.model !== undefined) flowData.model = f.model;
+            return flowData;
+          });
           
-          await supabase.from('flows' as 'contacts').insert(newFlows as never);
+          const { error: insertFlowsErr } = await supabase.from('flows' as 'contacts').insert(newFlows as never);
+          if (insertFlowsErr) throw insertFlowsErr;
         }
 
         // 4. Fetch and recursively duplicate subfolders
@@ -313,8 +318,9 @@ export function useDuplicateFlowFolder() {
           .from('flow_folders')
           .select('id')
           .eq('parent_id', currentFolderId);
+        if (subfErr) throw subfErr;
           
-        if (!subfErr && subfolders && subfolders.length > 0) {
+        if (subfolders && subfolders.length > 0) {
           for (const sub of subfolders) {
             await duplicateFolderRecursive(sub.id, (newFolder as any).id, false);
           }
