@@ -62,7 +62,8 @@ Deno.serve(async (req) => {
       masterPromptOverride, 
       additionalContext, 
       flowExecutionId, 
-      agentIdOverride 
+      agentIdOverride,
+      forceResponse
     } = payload;
 
     // ===== SIMULATION MODE =====
@@ -258,6 +259,16 @@ Deno.serve(async (req) => {
     const finalProvider = activeAgent?.provider || masterPrompt?.provider || integrationConfig?.ai_provider || 'lovable';
     const finalModel = activeAgent?.model || masterPrompt?.model || integrationConfig?.default_model || 'google/gemini-1.5-flash';
 
+    // Enrich messageContent if it's just '[mídia]' — use the last inbound message's enriched content
+    let enrichedMessageContent = messageContent;
+    if (messageContent === '[mídia]' || !messageContent) {
+      const lastInbound = [...messages].reverse().find((m: any) => m.direction === 'inbound');
+      if (lastInbound?.content && lastInbound.content !== '[mídia]') {
+        enrichedMessageContent = lastInbound.content;
+        console.log('Enriched messageContent from transcription:', enrichedMessageContent.substring(0, 100));
+      }
+    }
+
     const aiConfig = resolveAIConfig(integrationConfig, 'agents', LOVABLE_API_KEY!, finalProvider, finalModel);
     const aiModel = aiConfig.model;
     
@@ -269,6 +280,7 @@ Deno.serve(async (req) => {
       flows, aiModel, masterPrompt, LOVABLE_API_KEY,
       aiEndpoint: aiConfig.endpoint, aiApiKey: aiConfig.apiKey,
       integrationConfig, flowExecutionId, trainingRules,
+      forceResponse, // PASS TO CONTEXT
     };
 
     // 4. Resolve flow_id from available sources
@@ -324,15 +336,6 @@ Deno.serve(async (req) => {
       execution_time_ms: executionTimeMs,
     });
 
-    // Enrich messageContent if it's just '[mídia]' — use the last inbound message's enriched content
-    let enrichedMessageContent = messageContent;
-    if (messageContent === '[mídia]' || !messageContent) {
-      const lastInbound = [...messages].reverse().find((m: any) => m.direction === 'inbound');
-      if (lastInbound?.content && lastInbound.content !== '[mídia]') {
-        enrichedMessageContent = lastInbound.content;
-        console.log('Enriched messageContent from transcription:', enrichedMessageContent.substring(0, 100));
-      }
-    }
     console.log(`=== ORCHESTRATOR COMPLETE (${executionTimeMs}ms, ${result.toolsExecuted.length} tools) ===`);
 
     return new Response(JSON.stringify({
@@ -1321,7 +1324,11 @@ async function invokeAgentAI(
   ];
 
   // Ensure last message is the current one
-  if (aiMessages[aiMessages.length - 1]?.role !== 'user' ||
+  if (ctx.forceResponse) {
+    // FORCE: Ensure the user's message is the last one in the prompt
+    // This overcomes the "bot-last" deadlock after a content block
+    aiMessages.push({ role: 'user', content: messageContent });
+  } else if (aiMessages[aiMessages.length - 1]?.role !== 'user' ||
     aiMessages[aiMessages.length - 1]?.content !== messageContent) {
     aiMessages.push({ role: 'user', content: messageContent });
   }
@@ -1592,7 +1599,9 @@ async function invokeDocumentAgentAI(
     })),
   ];
 
-  if (aiMessages[aiMessages.length - 1]?.role !== 'user' ||
+  if (ctx.forceResponse) {
+    aiMessages.push({ role: 'user', content: messageContent });
+  } else if (aiMessages[aiMessages.length - 1]?.role !== 'user' ||
     aiMessages[aiMessages.length - 1]?.content !== messageContent) {
     aiMessages.push({ role: 'user', content: messageContent });
   }

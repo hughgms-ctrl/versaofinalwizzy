@@ -13,17 +13,19 @@ Deno.serve(async (req) => {
         const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
         const supabase = createClient(supabaseUrl, supabaseKey);
 
-        const { data: configs } = await supabase.from('integration_configs').select('*');
-        const { data: recentMessages } = await supabase.from('messages')
-            .select('*, conversation:conversations(*)')
-            .ilike('content', '%prisão%')
-            .order('created_at', { ascending: false })
+        const { data: flows } = await supabase.from('flows')
+            .select('id, name, nodes, edges')
+            .ilike('name', '%AR%');
+
+        const { data: recentExecutions } = await supabase.from('flow_executions')
+            .select('*, flow:flows(name)')
+            .order('started_at', { ascending: false })
             .limit(5);
 
-        return new Response(JSON.stringify({ configs, recentMessages }), {
+        return new Response(JSON.stringify({ flows, recentExecutions }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
     } catch (e) {
-        return new Response(JSON.stringify({ error: String(e) }), { status: 500 });
+        return new Response(JSON.stringify({ error: String(e) }), { status: 500, headers: corsHeaders });
     }
 });

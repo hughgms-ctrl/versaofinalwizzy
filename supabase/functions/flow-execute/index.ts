@@ -207,7 +207,22 @@ async function cleanupFlowEnd(
 
     console.log(`[FLOW EXECUTE] Flow ended — reset service_mode to humano, cleared ai_agent_id`);
   } else {
-    console.log(`[FLOW EXECUTE] Sub-flow ended — parent flow still active, NOT resetting service_mode`);
+    const parentExec = otherActiveFlows[0];
+    console.log(`[FLOW EXECUTE] Sub-flow ended — parent flow ${parentExec.id} still active. RESUMING parent.`);
+    
+    // Resume parent flow automatically
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    
+    // We fetch without waiting to avoid circular dependency/timeout lag
+    fetch(`${supabaseUrl}/functions/v1/flow-execute`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
+      body: JSON.stringify({ 
+        conversationId, 
+        resumeExecutionId: parentExec.id 
+      }),
+    }).catch(err => console.error('[FLOW EXECUTE] Error resuming parent flow:', err));
   }
 
   await supabase
@@ -537,6 +552,7 @@ async function executeAIHandoff(
           messageContent: context.triggerMessage,
           flowExecutionId: executionId,
           agentIdOverride: agentId, // CRITICAL: Pass the specific agent to avoid database lag issues
+          forceResponse: true, // NEW: Tell orchestrator to ignore bot-last-speaker check
         };
 
         if (flowContext.additionalContext) {
