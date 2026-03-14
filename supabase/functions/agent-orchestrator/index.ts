@@ -136,33 +136,21 @@ Deno.serve(async (req) => {
 
     // Fallback/Enhancement: if we have an active agent, load its context
     const activeAgentId = agentIdOverride || conversation.ai_agent_id;
-    if (activeAgentId) {
+    if (activeAgentId && !masterPrompt) {
       const { data: agent } = await supabase.from('ai_agents').select('*').eq('id', activeAgentId).single();
       if (agent) {
-        console.log(`[ORCHESTRATOR] Applying context for agent: ${agent.name} (${agent.id})`);
+        console.log(`[ORCHESTRATOR] Building master prompt from agent: ${agent.name}`);
         
         const agentParts: string[] = [];
         if (agent.prompt_base) agentParts.push(agent.prompt_base);
         if (agent.persona) agentParts.push(`PERSONA: ${agent.persona}`);
         
-        const agentPromptContent = agentParts.join('\n\n');
-        
-        if (!masterPrompt) {
-          masterPrompt = {
-            id: `agent-${agent.id}`,
-            name: `Agent: ${agent.name}`,
-            content: agentPromptContent,
-            is_active: true,
-          };
-          console.log('Built master prompt from agent base prompt');
-        } else if (agentPromptContent && !masterPrompt.content.includes(agent.prompt_base)) {
-          // Priority: Agent prompt goes FIRST if it's explicitly set via override or conversation
-          masterPrompt = {
-            ...masterPrompt,
-            content: `PERFIL DO AGENTE ATIVO (${agent.name}):\n${agentPromptContent}\n\n---\n\n${masterPrompt.content}`,
-          };
-          console.log('Prepended agent context to existing master prompt');
-        }
+        masterPrompt = {
+          id: `agent-${agent.id}`,
+          name: `Agent: ${agent.name}`,
+          content: agentParts.join('\n\n'),
+          is_active: true,
+        };
       }
     }
 
@@ -1234,23 +1222,27 @@ async function invokeAgentAI(
   const agent = ctx.agents.find((a: any) => a.id === agentId);
   const additionalPrompt = agentNode.data?.additionalPrompt || '';
 
-  // Build agent-specific system prompt
+  // 1. HIGHEST PRIORITY: The specific objective for this step
   let systemPrompt = '';
+  if (additionalPrompt) {
+    systemPrompt += `# SEU OBJETIVO ATUAL NESTA ETAPA:\n${additionalPrompt}\n\n---\n\n`;
+  }
 
-  // Master prompt personality (NOT execution instructions)
-  if (ctx.masterPrompt.content) {
-    systemPrompt += `PERSONALIDADE E REGRAS GERAIS:\n${ctx.masterPrompt.content}\n\n`;
+  // 2. IDENTITY: Who are you?
+  systemPrompt += `# SUA IDENTIDADE:\n`;
+  systemPrompt += `Você é o agente "${agent?.name || 'Assistente'}" neste momento da conversa.\n\n`;
+  if (agent?.prompt_base) {
+    systemPrompt += `${agent.prompt_base}\n\n`;
+  }
+  if (agent?.persona) {
+    systemPrompt += `PERSONA: ${agent.persona}\n\n`;
   }
 
   systemPrompt += `---\n\n`;
-  systemPrompt += `Você é o agente "${agent?.name || 'Assistente'}" neste momento da conversa.\n\n`;
 
-  if (agent?.prompt_base) {
-    systemPrompt += `PROMPT DO AGENTE:\n${agent.prompt_base}\n\n`;
-  }
-
-  if (additionalPrompt) {
-    systemPrompt += `INSTRUÇÕES ESPECÍFICAS PARA ESTE MOMENTO:\n${additionalPrompt}\n\n`;
+  // 3. GENERAL PERSONALITY AND RULES: Lower priority
+  if (ctx.masterPrompt.content) {
+    systemPrompt += `# REGRAS GERAIS E PERSONALIDADE:\n${ctx.masterPrompt.content}\n\n`;
   }
 
   // Inject training rules
@@ -2355,65 +2347,27 @@ function findNextNodeIds(edges: any[], currentNodeId: string): string[] {
 // ==================== LEGACY HELPERS ====================
 
 function buildLegacySystemPrompt(ctx: any): string {
-  let prompt = ctx.masterPrompt.content + '\n\n---\n\n';
-  prompt += 'CONTEXTO ATUAL DO SISTEMA:\n\n';
-
-  if (ctx.agents.length > 0) {
-    prompt += 'AGENTES DISPONÍVEIS:\n';
-    for (const agent of ctx.agents) {
-      const isCurrent = agent.id === ctx.conversation.ai_agent_id ? ' (ATIVO)' : '';
-      prompt += `- @[${agent.name}] → id: "${agent.id}"${isCurrent}\n`;
-    }
-    prompt += '\n';
-  }
-
-  if (ctx.pipelines.length > 0) {
-    prompt += 'PIPELINES:\n';
-    for (const p of ctx.pipelines) {
-      const cols = (p.columns || []).sort((a: any, b: any) => a.order - b.order);
-      for (const col of cols) {
-        const isPos = ctx.pipelinePositions.some((pp: any) => pp.pipeline_id === p.id && pp.column_id === col.id);
-        prompt += `  - "${col.name}" → pipeline_id: "${p.id}", column_id: "${col.id}"${isPos ? ' ← ATUAL' : ''}\n`;
-      }
-    }
-    prompt += '\n';
-  }
-
-  if (ctx.allTags.length > 0) {
-    prompt += 'TAGS: ';
-    prompt += ctx.allTags.map((t: any) => `"${t.name}"(${t.id})`).join(', ') + '\n';
-    const current = ctx.contactTags.map((ct: any) => ct.tag?.name).filter(Boolean);
-    prompt += `Tags do contato: ${current.length > 0 ? current.join(', ') : 'Nenhuma'}\n\n`;
-  }
-
-  if (ctx.flows.length > 0) {
-    prompt += 'FLUXOS: ';
-    prompt += ctx.flows.map((f: any) => `"${f.name}"(${f.id})`).join(', ') + '\n\n';
-  }
-
-  prompt += `Contato: ${ctx.conversation.contact?.name || 'Não informado'} (${ctx.conversation.contact?.phone})\n\n`;
-
-  // Include active agent's prompt if we have one
   const activeAgent = ctx.agents.find((a: any) => a.id === ctx.conversation.ai_agent_id);
+  
+  let prompt = '';
+
+  // 1. IDENTITY: Who are you?
   if (activeAgent) {
-    prompt += `VOCÊ É O AGENTE "${activeAgent.name}" NESTE MOMENTO.\n`;
+    prompt += `# SUA IDENTIDADE:\n`;
+    prompt += `Você é o agente "${activeAgent.name}" neste momento da conversa.\n\n`;
     if (activeAgent.prompt_base) {
-      prompt += `PROMPT DO AGENTE:\n${activeAgent.prompt_base}\n\n`;
+      prompt += `${activeAgent.prompt_base}\n\n`;
     }
+    prompt += `---\n\n`;
   }
 
-  prompt += `INSTRUÇÕES:\n`;
-  prompt += `- Use send_reply para responder. Resposta em português brasileiro.\n`;
-  prompt += `- Execute UMA etapa por vez. Após trigger_flow ou switch_agent, PARE.\n`;
-  prompt += `- Leia TODA a conversa. NUNCA envie mensagens em inglês ou sem sentido.\n`;
-  prompt += `- NUNCA produza texto entre parênteses ou pensamentos internos. Apenas use send_reply.\n`;
-
-  if (ctx.flowExecutionId) {
-    prompt += `\n⚠️ VOCÊ ESTÁ DENTRO DE UM FLUXO AUTOMATIZADO.\n`;
-    prompt += `- Quando sua tarefa nesta etapa estiver COMPLETA, use finalizar_interacao(resultado) para devolver o controle ao fluxo.\n`;
-    prompt += `- NÃO finalize prematuramente. Conclua seu objetivo primeiro.\n`;
-    prompt += `- Exemplos de resultado: "qualificado", "desqualificado", "concluido", "precisa_de_humano".\n`;
+  // 2. GENERAL RULES AND PERSONALITY: Lower priority
+  if (ctx.masterPrompt.content) {
+    prompt += `# REGRAS GERAIS E PERSONALIDADE:\n${ctx.masterPrompt.content}\n\n`;
   }
+
+  prompt += `---\n\n`;
+  prompt += 'CONTEXTO ATUAL DO SISTEMA:\n\n';
 
   // Inject training rules
   const rulesSection = buildTrainingRulesSection(ctx.trainingRules, {
