@@ -25,6 +25,7 @@ interface TimelineEntry {
     tagColor?: string;
     flowStatus?: string;
     nodeType?: string;
+    flowExecutionId?: string;
   };
 }
 
@@ -155,6 +156,7 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
           actorType: 'system',
           meta: {
             flowStatus: flowExec.status,
+            flowExecutionId: flowExec.id,
           },
         });
       }
@@ -344,6 +346,7 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
           actorType: 'system',
           meta: {
             nodeType: nodeLog.node_type,
+            flowExecutionId: nodeLog.flow_execution_id,
           },
         });
       }
@@ -396,9 +399,14 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
                   {dateStr}
                 </div>
               )}
-              <div className="flex items-start gap-2 py-1.5 group">
+              <div className={cn(
+                "flex items-start gap-2 py-1.5 group rounded transition-colors",
+                entry.type === 'flow_step' 
+                  ? "ml-6 pl-3 border-l-2 border-purple-500/30 bg-purple-500/5 my-0.5" 
+                  : ""
+              )}>
                 <div className={cn(
-                  "mt-0.5 shrink-0", 
+                  "mt-0.5 shrink-0 relative", 
                   entry.type === 'flow_step' ? getNodeColor(entry.meta?.nodeType || '') : color
                 )}>
                   {entry.type === 'flow_step' ? (

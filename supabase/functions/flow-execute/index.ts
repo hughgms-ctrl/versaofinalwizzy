@@ -543,16 +543,24 @@ async function executeAIHandoff(
           orchestratorBody.additionalContext = flowContext.additionalContext;
         }
 
-        // Call agent-orchestrator
-        fetch(`${supabaseUrl}/functions/v1/agent-orchestrator`, {
+        // Call agent-orchestrator (background)
+        const orchestratorPromise = fetch(`${supabaseUrl}/functions/v1/agent-orchestrator`, {
           method: 'POST',
           headers: { 
             'Content-Type': 'application/json', 
             'Authorization': `Bearer ${serviceRoleKey}` 
           },
           body: JSON.stringify(orchestratorBody),
-        }).catch(err => console.error('[FLOW EXECUTE] Error invoking orchestrator in handoff:', err));
+        })
+          .then(res => res.text())
+          .then(text => console.log(`[FLOW EXECUTE] Orchestrator background trigger response:`, text))
+          .catch(err => console.error('[FLOW EXECUTE] Error invoking orchestrator in handoff:', err));
         
+        // Prevent Deno Deploy from killing the background fetch
+        if (typeof (globalThis as any).EdgeRuntime !== 'undefined' && (globalThis as any).EdgeRuntime.waitUntil) {
+          (globalThis as any).EdgeRuntime.waitUntil(orchestratorPromise);
+        }
+
         console.log(`[FLOW EXECUTE] AI Handoff: orchestrator invoked successfully in background`);
       } catch (e) {
         console.error('[FLOW EXECUTE] Critical error preparing orchestrator call:', e);
