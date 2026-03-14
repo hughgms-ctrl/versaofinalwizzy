@@ -302,16 +302,20 @@ Deno.serve(async (req) => {
     }
 
     // 6. Send reply (strip any leaked internal annotations)
-    if (result.replyText) {
-      result.replyText = stripInternalAnnotations(result.replyText);
-    }
-    if (result.replyText) {
-      await sendReplyViaZAPI(supabase, conversation, result.replyText, {
-        agent_id: result.active_agent_id || conversation.ai_agent_id,
-        master_prompt_id: masterPrompt.id,
-        node_id: result.current_node_id,
-        flow_id: resolvedFlowId,
-      });
+    // 6. Send replies (as separate bubbles)
+    const replies = result.replies || [];
+    if (replies.length > 0) {
+      for (const reply of replies) {
+        const cleanedReply = stripInternalAnnotations(reply);
+        if (cleanedReply) {
+          await sendReplyViaZAPI(supabase, conversation, cleanedReply, {
+            agent_id: result.active_agent_id || conversation.ai_agent_id,
+            master_prompt_id: masterPrompt.id,
+            node_id: result.current_node_id,
+            flow_id: resolvedFlowId,
+          });
+        }
+      }
     }
 
     // 6. Log execution
@@ -322,7 +326,7 @@ Deno.serve(async (req) => {
       master_prompt_id: masterPrompt.id,
       agent_id: conversation.ai_agent_id,
       input_message: messageContent,
-      ai_response: result.replyText,
+      ai_response: result.replies?.join('\n\n') || '',
       tools_executed: result.toolsExecuted,
       execution_time_ms: executionTimeMs,
     });
@@ -330,7 +334,8 @@ Deno.serve(async (req) => {
     console.log(`=== ORCHESTRATOR COMPLETE (${executionTimeMs}ms, ${result.toolsExecuted.length} tools) ===`);
 
     return new Response(JSON.stringify({
-      success: true, reply: result.replyText,
+      success: true, reply: result.replies?.[0] || null,
+      replies: result.replies,
       toolsExecuted: result.toolsExecuted.length, executionTimeMs,
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
@@ -668,7 +673,7 @@ async function executeFlowOrchestration(
   supabase: any, ctx: any, flowNodes: any[], flowEdges: any[], messageContent: string
 ) {
   const toolsExecuted: any[] = [];
-  let replyText: string | null = null;
+  let result: { replies: string[]; toolsExecuted: any[] } = { replies: [], toolsExecuted: [] };
 
   // Load orchestration state from conversation metadata
   let state = loadOrchestrationState(ctx.conversation, ctx.masterPrompt.id);
@@ -682,11 +687,11 @@ async function executeFlowOrchestration(
       if (agentNode) {
         console.log('Flow complete but agent still active, invoking agent');
         const agentResult = await invokeAgentAI(supabase, ctx, agentNode, state, messageContent, false);
-        return { replyText: agentResult.replyText, toolsExecuted: agentResult.toolsExecuted };
+        return { replies: agentResult.replies || [], toolsExecuted: agentResult.toolsExecuted };
       }
     }
     console.log('Flow complete, no active agent');
-    return { replyText: null, toolsExecuted: [] };
+    return { replies: [], toolsExecuted: [] };
   }
 
   if (state.waiting_for_response) {
@@ -696,8 +701,8 @@ async function executeFlowOrchestration(
     if (currentNode?.type === 'orch-agent') {
       // Agent is handling - invoke AI
       const hasNextNodes = findNextNodeIds(flowEdges, state.current_node_id!).length > 0;
-      const agentResult = await invokeAgentAI(supabase, ctx, currentNode, state, messageContent, hasNextNodes);
-      replyText = agentResult.replyText;
+      const agentResult = await invokeAgentAI(supabase, ctx, currentNode, state, messageContent, hasNextNodes, false);
+      if (agentResult.replies) result.replies.push(...agentResult.replies);
       toolsExecuted.push(...agentResult.toolsExecuted);
 
       if (agentResult.shouldAdvance) {
@@ -706,14 +711,16 @@ async function executeFlowOrchestration(
         state.waiting_for_response = false;
         state.active_agent_id = undefined;
         const walkResult = await walkFlowForward(supabase, ctx, state, flowNodes, flowEdges, messageContent);
-        if (walkResult.replyText) replyText = walkResult.replyText;
-        toolsExecuted.push(...walkResult.toolsExecuted);
+        result.replies.push(...walkResult.replies);
+        result.toolsExecuted.push(...toolsExecuted, ...walkResult.toolsExecuted);
+      } else {
+        result.toolsExecuted.push(...toolsExecuted);
       }
     } else if (currentNode?.type === 'orch-document') {
       // Document collection is active - invoke document agent
       const hasNextNodes = findNextNodeIds(flowEdges, state.current_node_id!).length > 0;
-      const docResult = await invokeDocumentAgentAI(supabase, ctx, currentNode, state, messageContent, hasNextNodes);
-      replyText = docResult.replyText;
+      const docResult = await invokeDocumentAgentAI(supabase, ctx, currentNode, state, messageContent, hasNextNodes, false);
+      if (docResult.replies) result.replies.push(...docResult.replies);
       toolsExecuted.push(...docResult.toolsExecuted);
 
       if (docResult.shouldAdvance) {
@@ -722,16 +729,18 @@ async function executeFlowOrchestration(
         state.waiting_for_response = false;
         state.document_context = undefined;
         const walkResult = await walkFlowForward(supabase, ctx, state, flowNodes, flowEdges, messageContent);
-        if (walkResult.replyText) replyText = walkResult.replyText;
-        toolsExecuted.push(...walkResult.toolsExecuted);
+        result.replies.push(...walkResult.replies);
+        result.toolsExecuted.push(...toolsExecuted, ...walkResult.toolsExecuted);
+      } else {
+        result.toolsExecuted.push(...toolsExecuted);
       }
     } else {
       // Was waiting after flow/delay - advance
       console.log('Response received after flow/delay - walking forward');
       state.waiting_for_response = false;
       const walkResult = await walkFlowForward(supabase, ctx, state, flowNodes, flowEdges, messageContent);
-      replyText = walkResult.replyText;
-      toolsExecuted.push(...walkResult.toolsExecuted);
+      result.replies.push(...walkResult.replies);
+      result.toolsExecuted.push(...toolsExecuted, ...walkResult.toolsExecuted);
     }
   } else {
     // Not waiting - walk forward (first run or continuing)
@@ -745,16 +754,15 @@ async function executeFlowOrchestration(
       }
     }
     const walkResult = await walkFlowForward(supabase, ctx, state, flowNodes, flowEdges, messageContent);
-    replyText = walkResult.replyText;
-    toolsExecuted.push(...walkResult.toolsExecuted);
+    result = { replies: walkResult.replies, toolsExecuted: [...toolsExecuted, ...walkResult.toolsExecuted] };
   }
 
   // Save state
   await saveOrchestrationState(supabase, ctx.conversationId, state);
 
   return { 
-    replyText, 
-    toolsExecuted,
+    replies: result.replies, 
+    toolsExecuted: result.toolsExecuted,
     current_node_id: state.current_node_id,
     active_agent_id: state.active_agent_id
   };
@@ -831,7 +839,7 @@ async function walkFlowForward(
         state.current_node_id = nextNode.id;
         if (nextNode.data?.waitForResponse) { 
           state.waiting_for_response = true; 
-          return { replyText: replies.join('\n\n'), toolsExecuted }; 
+          return { replies, toolsExecuted }; 
         }
         continue;
       }
@@ -866,7 +874,7 @@ async function walkFlowForward(
         state.current_node_id = nextNode.id;
         if (nextNode.data?.waitForResponse) { 
           state.waiting_for_response = true; 
-          return { replyText: replies.join('\n\n'), toolsExecuted }; 
+          return { replies, toolsExecuted }; 
         }
         continue;
       }
@@ -887,7 +895,7 @@ async function walkFlowForward(
         state.current_node_id = nextNode.id;
         if (nextNode.data?.waitForResponse) { 
           state.waiting_for_response = true; 
-          return { replyText: replies.join('\n\n'), toolsExecuted }; 
+          return { replies, toolsExecuted }; 
         }
         continue;
       }
@@ -919,7 +927,7 @@ async function walkFlowForward(
         const shouldWait = nextNode.data?.waitForResponse !== false;
         if (shouldWait) { 
           state.waiting_for_response = true; 
-          return { replyText: replies.join('\n\n'), toolsExecuted }; 
+          return { replies, toolsExecuted }; 
         }
         continue;
       }
@@ -944,7 +952,7 @@ async function walkFlowForward(
 
         const hasNextNodes = findNextNodeIds(edges, nextNode.id).length > 0;
         const agentResult = await invokeAgentAI(supabase, ctx, nextNode, state, messageContent, hasNextNodes, true);
-        if (agentResult.replyText) replies.push(agentResult.replyText);
+        if (agentResult.replies) replies.push(...agentResult.replies);
         toolsExecuted.push(...agentResult.toolsExecuted);
 
         if (agentResult.shouldAdvance) {
@@ -955,7 +963,7 @@ async function walkFlowForward(
         }
 
         state.waiting_for_response = true;
-        return { replyText: replies.join('\n\n'), toolsExecuted };
+        return { replies, toolsExecuted };
       }
 
       case 'orch-document':
@@ -998,7 +1006,7 @@ async function walkFlowForward(
 
         const hasNext = findNextNodeIds(edges, nextNode.id).length > 0;
         const docResult = await invokeDocumentAgentAI(supabase, ctx, nextNode, state, messageContent, hasNext, true);
-        if (docResult.replyText) replies.push(docResult.replyText);
+        if (docResult.replies) replies.push(...docResult.replies);
         toolsExecuted.push(...docResult.toolsExecuted);
 
         if (docResult.shouldAdvance) {
@@ -1009,7 +1017,7 @@ async function walkFlowForward(
         }
 
         state.waiting_for_response = true;
-        return { replyText: replies.join('\n\n'), toolsExecuted };
+        return { replies, toolsExecuted };
       }
 
       case 'orch-human':
@@ -1021,7 +1029,7 @@ async function walkFlowForward(
         state.completed_nodes.push(nextNode.id);
         state.current_node_id = nextNode.id;
         state.flow_completed = true;
-        return { replyText: replies.join('\n\n'), toolsExecuted };
+        return { replies, toolsExecuted };
       }
 
       case 'orch-delay':
@@ -1064,7 +1072,7 @@ async function walkFlowForward(
     }
   }
 
-  return { replyText: replies.join('\n\n'), toolsExecuted };
+  return { replies, toolsExecuted };
 }
 
 // Helper to clean up meta-instructions from user-provided prompts
@@ -1165,13 +1173,13 @@ async function invokeAgentAI(
   if (isFirstActivation) {
     systemPrompt += `\n⚠️ ATENÇÃO: Você ACABOU de ser ativado nesta etapa do fluxo.\n`;
     systemPrompt += `- Esta é sua PRIMEIRA interação. Você DEVE iniciar seu trabalho conforme suas instruções.\n`;
-    systemPrompt += `- NÃO pule sua etapa. Mesmo que o histórico contenha informações relevantes, execute sua tarefa.\n`;
-    systemPrompt += `- Envie sua primeira mensagem ao cliente e aguarde a resposta dele.\n`;
-    systemPrompt += `- Você NÃO pode avançar o fluxo agora. Faça seu trabalho primeiro.\n`;
+    systemPrompt += `- NÃO pule sua etapa. Mesmo que o histórico contenha informações relevantes, siga o protocolo de coleta e validação de dados.\n`;
+    systemPrompt += `- Você só poderá avançar o fluxo quando suas instruções específicas de coleta/qualificação estiverem 100% cumpridas.\n`;
   } else if (hasNextNodes) {
-    systemPrompt += `- Quando sua tarefa nesta etapa estiver COMPLETA, use advance_flow para avançar o fluxo.\n`;
-    systemPrompt += `- NÃO use advance_flow prematuramente. Só avance quando sua tarefa aqui estiver realmente concluída.\n`;
-    systemPrompt += `- Você pode usar send_reply e advance_flow na mesma rodada SOMENTE se sua resposta é a última antes de avançar.\n`;
+    systemPrompt += `- Quando sua tarefa nesta etapa estiver COMPLETA, use (advance_flow ou finalizar_interacao) para avançar o fluxo.\n`;
+    systemPrompt += `- NÃO use estas ferramentas prematuramente. Só avance quando sua tarefa aqui estiver realmente concluída.\n`;
+    systemPrompt += `- Se você for avançar agora, seja BREVE em sua mensagem de texto. Não gaste tempo com agradecimentos longos, pois outra mensagem seguirá imediatamente.\n`;
+    systemPrompt += `- Você pode usar send_reply e (advance_flow ou finalizar_interacao) na mesma rodada SOMENTE se sua resposta é a última antes de avançar.\n`;
   } else {
     systemPrompt += `- Você é o último agente do fluxo. Continue atendendo até que a conversa se encerre naturalmente.\n`;
   }
@@ -1394,7 +1402,7 @@ async function invokeAgentAI(
     if (choice.finish_reason === 'stop') break;
   }
 
-  return { replyText, shouldAdvance, toolsExecuted };
+  return { replies: replyText ? [replyText] : [], shouldAdvance, toolsExecuted };
 }
 
 // ==================== DOCUMENT AGENT AI ====================
@@ -1873,7 +1881,7 @@ async function invokeDocumentAgentAI(
     if (choice.finish_reason === 'stop') break;
   }
 
-  return { replyText, shouldAdvance, toolsExecuted };
+  return { replies: replyText ? [replyText] : [], shouldAdvance, toolsExecuted };
 }
 
 // Helper: Send media (PDF) via Z-API
@@ -2153,7 +2161,7 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
   }
 
   return { 
-    replyText, 
+    replies: replyText ? [replyText] : [], 
     toolsExecuted,
     current_node_id: null,
     active_agent_id: ctx.conversation.ai_agent_id
