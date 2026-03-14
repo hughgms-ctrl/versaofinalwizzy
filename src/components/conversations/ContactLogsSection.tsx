@@ -409,11 +409,13 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
                   "mt-0.5 shrink-0 relative", 
                   entry.type === 'flow_step' ? getNodeColor(entry.meta?.nodeType || '') : color
                 )}>
-                  {entry.type === 'flow_step' ? (
-                    React.createElement(getNodeIcon(entry.meta?.nodeType || ''), { className: "h-3.5 w-3.5" })
-                  ) : (
-                    <Icon className="h-3.5 w-3.5" />
-                  )}
+                  {(() => {
+                    if (entry.type === 'flow_step') {
+                      const NodeIcon = getNodeIcon(entry.meta?.nodeType || '');
+                      return <NodeIcon className="h-3.5 w-3.5" />;
+                    }
+                    return <Icon className="h-3.5 w-3.5" />;
+                  })()}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-baseline justify-between gap-1">
