@@ -382,6 +382,9 @@ async function executeNode(
 ): Promise<NodeResult> {
   const { type, data } = node;
 
+  // Log node entry for timeline visibility
+  await logNodeExecution(supabase, context, node, executionId);
+
   switch (type) {
     case 'start':
       return { success: true };
@@ -533,6 +536,7 @@ async function executeAIHandoff(
           conversationId: context.conversationId,
           messageContent: context.triggerMessage,
           flowExecutionId: executionId,
+          agentIdOverride: agentId, // CRITICAL: Pass the specific agent to avoid database lag issues
         };
 
         if (flowContext.additionalContext) {
@@ -1620,4 +1624,27 @@ function replaceVariables(text: string, variables: Record<string, unknown>): str
   return text.replace(/\{\{(\w+)\}\}/g, (match, varName) => {
     return String(variables[varName] || match);
   });
+}
+async function logNodeExecution(
+  supabase: SupabaseClientType,
+  context: ExecutionContext,
+  node: any,
+  executionId?: string
+) {
+  try {
+    const { id: nodeId, type: nodeType, data } = node;
+    const nodeName = data?.label || data?.name || nodeType;
+
+    await supabase.from('flow_node_logs').insert({
+      organization_id: context.organizationId,
+      conversation_id: context.conversationId,
+      flow_execution_id: executionId,
+      node_id: nodeId,
+      node_name: nodeName,
+      node_type: nodeType,
+      input_data: data,
+    });
+  } catch (err) {
+    console.error('[FLOW EXECUTE] Error logging node execution:', err);
+  }
 }

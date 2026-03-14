@@ -13,13 +13,14 @@ Deno.serve(async (req) => {
         const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
         const supabase = createClient(supabaseUrl, supabaseKey);
 
-        const flowId = 'b20eebad-5b5e-4f1b-af7c-b719a3f07ccb';
-        const { data: flow } = await supabase.from('flows').select('*').eq('id', flowId).maybeSingle();
+        const { data: configs } = await supabase.from('integration_configs').select('*');
+        const { data: recentMessages } = await supabase.from('messages')
+            .select('*, conversation:conversations(*)')
+            .ilike('content', '%prisão%')
+            .order('created_at', { ascending: false })
+            .limit(5);
 
-        const { data: tags } = await supabase.from('tags').select('*');
-        const { data: contactTags } = await supabase.from('contact_tags').select('*, tags(*)').order('created_at', { ascending: false }).limit(20);
-
-        return new Response(JSON.stringify({ flow, tags, contactTags }), {
+        return new Response(JSON.stringify({ configs, recentMessages }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
     } catch (e) {

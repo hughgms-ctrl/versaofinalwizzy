@@ -56,7 +56,14 @@ Deno.serve(async (req) => {
     if (!LOVABLE_API_KEY) throw new Error('LOVABLE_API_KEY is not configured');
 
     const payload = await req.json();
-    const { conversationId, messageContent, masterPromptOverride, additionalContext, flowExecutionId } = payload;
+    const { 
+      conversationId, 
+      messageContent, 
+      masterPromptOverride, 
+      additionalContext, 
+      flowExecutionId, 
+      agentIdOverride 
+    } = payload;
 
     // ===== SIMULATION MODE =====
     // Called by the Flow Builder simulator. Uses exact same prompt-building logic
@@ -127,8 +134,9 @@ Deno.serve(async (req) => {
     }
 
     // Fallback: if no master prompt, try to build one from the agent's own prompt_base + additionalContext
-    if (!masterPrompt && conversation.ai_agent_id) {
-      const { data: agent } = await supabase.from('ai_agents').select('*').eq('id', conversation.ai_agent_id).single();
+    const activeAgentId = agentIdOverride || conversation.ai_agent_id;
+    if (!masterPrompt && activeAgentId) {
+      const { data: agent } = await supabase.from('ai_agents').select('*').eq('id', activeAgentId).single();
       if (agent && (agent.prompt_base || additionalContext)) {
         const parts: string[] = [];
         if (agent.prompt_base) parts.push(agent.prompt_base);

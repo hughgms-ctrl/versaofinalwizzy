@@ -13,7 +13,7 @@ interface ContactLogsSectionProps {
 interface TimelineEntry {
   id: string;
   timestamp: string;
-  type: 'agent_activated' | 'tag_added' | 'tag_removed' | 'pipeline_moved' | 'flow_triggered' | 'agent_switched' | 'human_intervened' | 'status_changed' | 'ai_response' | 'stage_changed' | 'conversation_started' | 'followup_sent';
+  type: 'agent_activated' | 'tag_added' | 'tag_removed' | 'pipeline_moved' | 'flow_triggered' | 'agent_switched' | 'human_intervened' | 'status_changed' | 'ai_response' | 'stage_changed' | 'conversation_started' | 'followup_sent' | 'flow_step';
   description: string;
   actor: string;
   actorType: 'ai' | 'human' | 'system';
@@ -24,6 +24,7 @@ interface TimelineEntry {
     tagName?: string;
     tagColor?: string;
     flowStatus?: string;
+    nodeType?: string;
   };
 }
 
@@ -41,53 +42,19 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
       if (!conv) return [];
 
       // Fetch all data sources in parallel
-      const [execResult, stageResult, tagsResult, flowsResult, agentsResult, columnsResult, flowExecResult, contactTagsResult] = await Promise.all([
-        supabase
-          .from('agent_execution_logs')
-          .select(`
-            id, created_at, input_message, ai_response, tools_executed,
-            agent:ai_agents(name),
-            master_prompt:master_prompts(name)
-          `)
-          .eq('conversation_id', conversationId)
-          .order('created_at', { ascending: true }),
-        (supabase as any)
-          .from('conversation_stage_history')
-          .select(`
-            *,
-            from_column:pipeline_columns!conversation_stage_history_from_column_id_fkey(name, color),
-            to_column:pipeline_columns!conversation_stage_history_to_column_id_fkey(name, color),
-            changed_by_profile:profiles!conversation_stage_history_changed_by_fkey(full_name)
-          `)
-          .eq('conversation_id', conversationId)
-          .order('created_at', { ascending: true })
-          .then((res: any) => {
-            if (res.error) {
-              return (supabase as any)
-                .from('conversation_stage_history')
-                .select('*')
-                .eq('conversation_id', conversationId)
-                .order('created_at', { ascending: true });
-            }
-            return res;
-          }),
-        supabase.from('tags').select('id, name, color'),
-        supabase.from('flows').select('id, name'),
-        supabase.from('ai_agents').select('id, name'),
-        supabase.from('pipeline_columns').select('id, name, color'),
-        // Flow executions for this conversation
-        supabase
-          .from('flow_executions')
-          .select('id, flow_id, started_at, completed_at, status')
-          .eq('conversation_id', conversationId)
-          .order('started_at', { ascending: true }),
-        // Contact tags (added by flow, ai, or manual)
         supabase
           .from('contact_tags')
           .select('id, tag_id, created_at, added_by_type')
           .eq('contact_id', conv.contact_id)
           .order('created_at', { ascending: true }),
+        supabase
+          .from('flow_node_logs')
+          .select('*')
+          .eq('conversation_id', conversationId)
+          .order('created_at', { ascending: true }),
       ]);
+
+      const [execResult, stageResult, tagsResult, flowsResult, agentsResult, columnsResult, flowExecResult, contactTagsResult, nodeLogsResult] = results;
 
       // Build lookup maps
       const tagMap = new Map((tagsResult.data || []).map((t: any) => [t.id, { name: t.name, color: t.color }]));
@@ -322,6 +289,24 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
         });
       }
 
+      // 7. Flow node logs (internal steps)
+      for (const nodeLog of (nodeLogsResult?.data || [])) {
+        // Skip redundant nodes
+        if (['start', 'condition', 'action-transfer'].includes(nodeLog.node_type)) continue;
+
+        timeline.push({
+          id: `node-${nodeLog.id}`,
+          timestamp: nodeLog.created_at,
+          type: 'flow_step',
+          description: nodeLog.node_name || nodeLog.node_type,
+          actor: 'Fluxo',
+          actorType: 'system',
+          meta: {
+            nodeType: nodeLog.node_type,
+          },
+        });
+      }
+
       timeline.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
       return timeline;
     },
@@ -358,6 +343,7 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
       case 'stage_changed':
         return Columns;
       case 'flow_triggered':
+      case 'flow_step':
         return GitBranch;
       case 'human_intervened':
       case 'status_changed':
@@ -368,6 +354,17 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
         return RefreshCw;
       default:
         return ArrowRightLeft;
+    }
+  };
+
+  const getNodeIcon = (nodeType: string) => {
+    switch (nodeType) {
+      case 'ai-handoff': return Bot;
+      case 'action-pipeline': return Columns;
+      case 'action-tag': return Tag;
+      case 'action-delay': return RefreshCw;
+      case 'content-block': return MessageSquare;
+      default: return GitBranch;
     }
   };
 
@@ -394,8 +391,20 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
         return 'text-muted-foreground';
       case 'followup_sent':
         return 'text-orange-500';
+      case 'flow_step':
+        return 'text-purple-500';
       default:
         return 'text-muted-foreground';
+    }
+  };
+
+  const getNodeColor = (nodeType: string) => {
+    switch (nodeType) {
+      case 'ai-handoff': return 'text-purple-500';
+      case 'action-pipeline': return 'text-blue-500';
+      case 'action-tag': return 'text-green-500';
+      case 'action-delay': return 'text-orange-500';
+      default: return 'text-purple-400';
     }
   };
 
@@ -419,8 +428,15 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
               </div>
             )}
             <div className="flex items-start gap-2 py-1.5">
-              <div className={cn("mt-0.5 shrink-0", color)}>
-                <Icon className="h-3.5 w-3.5" />
+              <div className={cn(
+                "mt-0.5 shrink-0", 
+                entry.type === 'flow_step' ? getNodeColor(entry.meta?.nodeType || '') : color
+              )}>
+                {entry.type === 'flow_step' ? (
+                  React.createElement(getNodeIcon(entry.meta?.nodeType || ''), { className: "h-3.5 w-3.5" })
+                ) : (
+                  <Icon className="h-3.5 w-3.5" />
+                )}
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-xs text-foreground leading-tight">{entry.description}</p>
