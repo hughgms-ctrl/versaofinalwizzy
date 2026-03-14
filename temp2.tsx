@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+﻿import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -25,12 +25,11 @@ interface TimelineEntry {
     tagColor?: string;
     flowStatus?: string;
     nodeType?: string;
-    flowExecutionId?: string;
   };
 }
 
 export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) {
-  const { data, isLoading } = useQuery({
+  const { data: entries = [], isLoading } = useQuery({
     queryKey: ['contact-timeline', conversationId],
     queryFn: async () => {
       // First get conversation to know contact_id
@@ -132,8 +131,8 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
           timestamp: entry.created_at,
           type: 'stage_changed',
           description: fromCol 
-            ? `Movido de "${fromCol.name || fromCol}" para "${toCol?.name || 'Estágio'}"`
-            : `Entrou no estágio "${toCol?.name || 'Estágio'}"`,
+            ? `Movido de "${fromCol.name || fromCol}" para "${toCol?.name || 'Est├ígio'}"`
+            : `Entrou no est├ígio "${toCol?.name || 'Est├ígio'}"`,
           actor: actorName,
           actorType: entry.changed_by_type === 'ai' || entry.changed_by_type === 'orchestrator' ? 'ai' : entry.changed_by_type === 'flow' ? 'ai' : 'human',
           meta: {
@@ -156,7 +155,6 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
           actorType: 'system',
           meta: {
             flowStatus: flowExec.status,
-            flowExecutionId: flowExec.id,
           },
         });
       }
@@ -346,59 +344,12 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
           actorType: 'system',
           meta: {
             nodeType: nodeLog.node_type,
-            flowExecutionId: nodeLog.flow_execution_id,
           },
         });
       }
 
-      // 8. FINAL CLEANUP & DEDUPLICATION: Merge descriptive events into flow steps
-      const finalTimeline: TimelineEntry[] = [];
-      const usedEventIds = new Set<string>();
-
-      // First, find all flow steps and try to enrich them
-      const flowSteps = timeline.filter(e => e.type === 'flow_step');
-      const otherEvents = timeline.filter(e => e.type !== 'flow_step');
-
-      for (const step of flowSteps) {
-        // Find a matching descriptive event (pipeline_moved/stage_changed or tag_added)
-        // that happened within 2 seconds of this node log
-        const stepTime = new Date(step.timestamp).getTime();
-        
-        const match = otherEvents.find(event => {
-          if (usedEventIds.has(event.id)) return false;
-          
-          const eventTime = new Date(event.timestamp).getTime();
-          const diff = Math.abs(stepTime - eventTime);
-          if (diff > 2000) return false;
-
-          // Type matching
-          if (step.meta?.nodeType === 'action-pipeline' && (event.type === 'pipeline_moved' || event.type === 'stage_changed')) return true;
-          if (step.meta?.nodeType === 'action-tag' && event.type === 'tag_added') return true;
-          
-          return false;
-        });
-
-        if (match) {
-          // Enrich the step description with the descriptive event text
-          // per user request: "Coloque Entrou no estágio 'Novo' destacou à direita"
-          step.description = match.description;
-          if (match.meta) {
-            step.meta = { ...step.meta, ...match.meta };
-          }
-          usedEventIds.add(match.id);
-        }
-        finalTimeline.push(step);
-      }
-
-      // Add remaining events that weren't merged
-      for (const event of otherEvents) {
-        if (!usedEventIds.has(event.id)) {
-          finalTimeline.push(event);
-        }
-      }
-
-      finalTimeline.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-      return { timeline: finalTimeline, migrationError };
+      timeline.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      return { timeline, migrationError };
     },
   });
 
@@ -417,97 +368,17 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
     return (
       <div className="text-center text-sm text-muted-foreground py-6">
         <Bot className="h-8 w-8 mx-auto mb-2 opacity-30" />
-        <p>Sem histórico para esta conversa</p>
+        <p>Sem hist├│rico para esta conversa</p>
       </div>
     );
   }
-
-  const getIcon = (type: TimelineEntry['type']) => {
-    switch (type) {
-      case 'agent_activated':
-      case 'agent_switched':
-      case 'ai_response':
-        return Bot;
-      case 'tag_added':
-      case 'tag_removed':
-        return Tag;
-      case 'pipeline_moved':
-      case 'stage_changed':
-        return Columns;
-      case 'flow_triggered':
-      case 'flow_step':
-        return GitBranch;
-      case 'human_intervened':
-      case 'status_changed':
-        return User;
-      case 'conversation_started':
-        return MessageSquare;
-      case 'followup_sent':
-        return RefreshCw;
-      default:
-        return ArrowRightLeft;
-    }
-  };
-
-  const getNodeIcon = (nodeType: string) => {
-    switch (nodeType) {
-      case 'ai-handoff': return Bot;
-      case 'action-pipeline': return Columns;
-      case 'action-tag': return Tag;
-      case 'action-delay': return RefreshCw;
-      case 'content-block': return MessageSquare;
-      default: return GitBranch;
-    }
-  };
-
-  const getColor = (type: TimelineEntry['type']) => {
-    switch (type) {
-      case 'agent_activated':
-        return 'text-primary';
-      case 'tag_added':
-        return 'text-green-500';
-      case 'tag_removed':
-        return 'text-red-400';
-      case 'pipeline_moved':
-      case 'stage_changed':
-        return 'text-blue-500';
-      case 'flow_triggered':
-        return 'text-purple-500';
-      case 'agent_switched':
-        return 'text-amber-500';
-      case 'human_intervened':
-        return 'text-orange-500';
-      case 'conversation_started':
-        return 'text-muted-foreground';
-      case 'ai_response':
-        return 'text-muted-foreground';
-      case 'followup_sent':
-        return 'text-orange-500';
-      case 'flow_step':
-        return 'text-purple-500';
-      default:
-        return 'text-muted-foreground';
-    }
-  };
-
-  const getNodeColor = (nodeType: string) => {
-    switch (nodeType) {
-      case 'ai-handoff': return 'text-purple-500';
-      case 'action-pipeline': return 'text-blue-500';
-      case 'action-tag': return 'text-green-500';
-      case 'action-delay': return 'text-orange-500';
-      default: return 'text-purple-400';
-    }
-  };
-
-  let lastDate = '';
 
   return (
     <div className="space-y-4 pr-1">
       {migrationError && (
         <div className="bg-orange-500/10 border border-orange-500/20 rounded p-2 text-[10px] text-orange-500 flex items-center gap-2 mb-2">
           <GitBranch className="h-3 w-3" />
-          <span>A migração `flow_node_logs` ainda não foi aplicada. Detalhes internos do fluxo estão ocultos.</span>
+          <span>A migra├º├úo `flow_node_logs` ainda n├úo foi aplicada. Detalhes internos do fluxo est├úo ocultos.</span>
         </div>
       )}
       <div className="space-y-0.5">
@@ -525,23 +396,16 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
                   {dateStr}
                 </div>
               )}
-              <div className={cn(
-                "flex items-start gap-2 py-1.5 group rounded transition-colors",
-                entry.type === 'flow_step' 
-                  ? "ml-6 pl-3 border-l-2 border-purple-500/30 bg-purple-500/5 my-0.5" 
-                  : ""
-              )}>
+              <div className="flex items-start gap-2 py-1.5 group">
                 <div className={cn(
-                  "mt-0.5 shrink-0 relative", 
+                  "mt-0.5 shrink-0", 
                   entry.type === 'flow_step' ? getNodeColor(entry.meta?.nodeType || '') : color
                 )}>
-                  {(() => {
-                    if (entry.type === 'flow_step') {
-                      const NodeIcon = getNodeIcon(entry.meta?.nodeType || '');
-                      return <NodeIcon className="h-3.5 w-3.5" />;
-                    }
-                    return <Icon className="h-3.5 w-3.5" />;
-                  })()}
+                  {entry.type === 'flow_step' ? (
+                    React.createElement(getNodeIcon(entry.meta?.nodeType || ''), { className: "h-3.5 w-3.5" })
+                  ) : (
+                    <Icon className="h-3.5 w-3.5" />
+                  )}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-baseline justify-between gap-1">
@@ -584,7 +448,7 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
                       variant="secondary" 
                       className="text-[8px] h-3.5 mt-0.5"
                     >
-                      {entry.meta.flowStatus === 'completed' ? 'Concluído' : 
+                      {entry.meta.flowStatus === 'completed' ? 'Conclu├¡do' : 
                        entry.meta.flowStatus === 'failed' ? 'Falhou' : 
                        entry.meta.flowStatus === 'waiting_input' ? 'Aguardando' : 'Executando'}
                     </Badge>

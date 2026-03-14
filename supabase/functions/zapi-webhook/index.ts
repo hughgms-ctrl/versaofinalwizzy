@@ -856,7 +856,11 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
         const flowExecPromise = fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/flow-execute`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
-          body: JSON.stringify({ flowId: campaignFlowId, conversationId: conversation.id }),
+          body: JSON.stringify({ 
+            flowId: campaignFlowId, 
+            conversationId: conversation.id,
+            triggerMessage: triggerText || '[mídia]'
+          }),
         });
         runBackground(flowExecPromise);
 
@@ -1089,7 +1093,10 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
         const agentPromise = fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/agent-orchestrator`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
-          body: JSON.stringify({ conversationId: conversation.id, messageContent: triggerText || '[mídia]' }),
+          body: JSON.stringify({ 
+            conversationId: conversation.id, 
+            messageContent: triggerText || '[mídia]' 
+          }),
         });
         runBackground(agentPromise);
       }

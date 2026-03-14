@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+﻿import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -25,12 +25,11 @@ interface TimelineEntry {
     tagColor?: string;
     flowStatus?: string;
     nodeType?: string;
-    flowExecutionId?: string;
   };
 }
 
 export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) {
-  const { data, isLoading } = useQuery({
+  const { data: entries = [], isLoading } = useQuery({
     queryKey: ['contact-timeline', conversationId],
     queryFn: async () => {
       // First get conversation to know contact_id
@@ -40,7 +39,7 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
         .eq('id', conversationId)
         .single();
 
-      if (!conv) return { timeline: [], migrationError: false };
+      if (!conv) return [];
 
       // Fetch all data sources in parallel
       const results = await Promise.all([
@@ -95,8 +94,6 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
       ]);
 
       const [execResult, stageResult, tagsResult, flowsResult, agentsResult, columnsResult, flowExecResult, contactTagsResult, nodeLogsResult] = results;
-      
-      const migrationError = !!nodeLogsResult?.error;
 
       // Build lookup maps
       const tagMap = new Map((tagsResult.data || []).map((t: any) => [t.id, { name: t.name, color: t.color }]));
@@ -132,8 +129,8 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
           timestamp: entry.created_at,
           type: 'stage_changed',
           description: fromCol 
-            ? `Movido de "${fromCol.name || fromCol}" para "${toCol?.name || 'Estágio'}"`
-            : `Entrou no estágio "${toCol?.name || 'Estágio'}"`,
+            ? `Movido de "${fromCol.name || fromCol}" para "${toCol?.name || 'Est├ígio'}"`
+            : `Entrou no est├ígio "${toCol?.name || 'Est├ígio'}"`,
           actor: actorName,
           actorType: entry.changed_by_type === 'ai' || entry.changed_by_type === 'orchestrator' ? 'ai' : entry.changed_by_type === 'flow' ? 'ai' : 'human',
           meta: {
@@ -156,7 +153,6 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
           actorType: 'system',
           meta: {
             flowStatus: flowExec.status,
-            flowExecutionId: flowExec.id,
           },
         });
       }
@@ -346,64 +342,14 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
           actorType: 'system',
           meta: {
             nodeType: nodeLog.node_type,
-            flowExecutionId: nodeLog.flow_execution_id,
           },
         });
       }
 
-      // 8. FINAL CLEANUP & DEDUPLICATION: Merge descriptive events into flow steps
-      const finalTimeline: TimelineEntry[] = [];
-      const usedEventIds = new Set<string>();
-
-      // First, find all flow steps and try to enrich them
-      const flowSteps = timeline.filter(e => e.type === 'flow_step');
-      const otherEvents = timeline.filter(e => e.type !== 'flow_step');
-
-      for (const step of flowSteps) {
-        // Find a matching descriptive event (pipeline_moved/stage_changed or tag_added)
-        // that happened within 2 seconds of this node log
-        const stepTime = new Date(step.timestamp).getTime();
-        
-        const match = otherEvents.find(event => {
-          if (usedEventIds.has(event.id)) return false;
-          
-          const eventTime = new Date(event.timestamp).getTime();
-          const diff = Math.abs(stepTime - eventTime);
-          if (diff > 2000) return false;
-
-          // Type matching
-          if (step.meta?.nodeType === 'action-pipeline' && (event.type === 'pipeline_moved' || event.type === 'stage_changed')) return true;
-          if (step.meta?.nodeType === 'action-tag' && event.type === 'tag_added') return true;
-          
-          return false;
-        });
-
-        if (match) {
-          // Enrich the step description with the descriptive event text
-          // per user request: "Coloque Entrou no estágio 'Novo' destacou à direita"
-          step.description = match.description;
-          if (match.meta) {
-            step.meta = { ...step.meta, ...match.meta };
-          }
-          usedEventIds.add(match.id);
-        }
-        finalTimeline.push(step);
-      }
-
-      // Add remaining events that weren't merged
-      for (const event of otherEvents) {
-        if (!usedEventIds.has(event.id)) {
-          finalTimeline.push(event);
-        }
-      }
-
-      finalTimeline.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-      return { timeline: finalTimeline, migrationError };
+      timeline.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+      return timeline;
     },
   });
-
-  const timelineEntries = data?.timeline || [];
-  const migrationError = data?.migrationError;
 
   if (isLoading) {
     return (
@@ -413,11 +359,12 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
     );
   }
 
-  if (timelineEntries.length === 0) {
+  if (entries.length === 0) {
     return (
       <div className="text-center text-sm text-muted-foreground py-6">
         <Bot className="h-8 w-8 mx-auto mb-2 opacity-30" />
-        <p>Sem histórico para esta conversa</p>
+        <p>Nenhum evento registrado</p>
+        <p className="text-xs mt-1">A├º├Áes de agentes, fluxos e movimenta├º├Áes aparecer├úo aqui</p>
       </div>
     );
   }
@@ -500,110 +447,83 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
     }
   };
 
+  // Group by date
   let lastDate = '';
 
   return (
-    <div className="space-y-4 pr-1">
-      {migrationError && (
-        <div className="bg-orange-500/10 border border-orange-500/20 rounded p-2 text-[10px] text-orange-500 flex items-center gap-2 mb-2">
-          <GitBranch className="h-3 w-3" />
-          <span>A migração `flow_node_logs` ainda não foi aplicada. Detalhes internos do fluxo estão ocultos.</span>
-        </div>
-      )}
-      <div className="space-y-0.5">
-        {timelineEntries.map((entry) => {
-          const Icon = getIcon(entry.type);
-          const color = getColor(entry.type);
-          const dateStr = format(new Date(entry.timestamp), 'dd/MM/yyyy', { locale: ptBR });
-          const showDate = dateStr !== lastDate;
-          lastDate = dateStr;
+    <div className="space-y-0.5">
+      {entries.map((entry) => {
+        const Icon = getIcon(entry.type);
+        const color = getColor(entry.type);
+        const dateStr = format(new Date(entry.timestamp), 'dd/MM/yyyy', { locale: ptBR });
+        const showDate = dateStr !== lastDate;
+        lastDate = dateStr;
 
-          return (
-            <div key={entry.id}>
-              {showDate && (
-                <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium pt-2 pb-1 border-b border-border/10 mb-2">
-                  {dateStr}
-                </div>
-              )}
-              <div className={cn(
-                "flex items-start gap-2 py-1.5 group rounded transition-colors",
-                entry.type === 'flow_step' 
-                  ? "ml-6 pl-3 border-l-2 border-purple-500/30 bg-purple-500/5 my-0.5" 
-                  : ""
-              )}>
-                <div className={cn(
-                  "mt-0.5 shrink-0 relative", 
-                  entry.type === 'flow_step' ? getNodeColor(entry.meta?.nodeType || '') : color
-                )}>
-                  {(() => {
-                    if (entry.type === 'flow_step') {
-                      const NodeIcon = getNodeIcon(entry.meta?.nodeType || '');
-                      return <NodeIcon className="h-3.5 w-3.5" />;
-                    }
-                    return <Icon className="h-3.5 w-3.5" />;
-                  })()}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-baseline justify-between gap-1">
-                    <p className="text-xs text-foreground leading-tight font-medium truncate">
-                      {entry.description}
-                    </p>
-                    <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                      {format(new Date(entry.timestamp), 'HH:mm', { locale: ptBR })}
-                    </span>
-                  </div>
-                  
-                  {entry.type === 'stage_changed' && entry.meta?.columnName && (
-                    <Badge 
-                      variant="secondary" 
-                      className="text-[8px] h-3.5 mt-0.5"
-                      style={entry.meta.columnColor ? { 
-                        backgroundColor: `${entry.meta.columnColor}20`,
-                        color: entry.meta.columnColor,
-                        borderColor: `${entry.meta.columnColor}40`,
-                      } : undefined}
-                    >
-                      {entry.meta.columnName}
-                    </Badge>
-                  )}
-                  {(entry.type === 'tag_added' || entry.type === 'tag_removed') && entry.meta?.tagName && (
-                    <Badge 
-                      variant="secondary" 
-                      className="text-[8px] h-3.5 mt-0.5"
-                      style={entry.meta.tagColor ? { 
-                        backgroundColor: `${entry.meta.tagColor}20`,
-                        color: entry.meta.tagColor,
-                        borderColor: `${entry.meta.tagColor}40`,
-                      } : undefined}
-                    >
-                      {entry.meta.tagName}
-                    </Badge>
-                  )}
-                  {entry.type === 'flow_triggered' && entry.meta?.flowStatus && (
-                    <Badge 
-                      variant="secondary" 
-                      className="text-[8px] h-3.5 mt-0.5"
-                    >
-                      {entry.meta.flowStatus === 'completed' ? 'Concluído' : 
-                       entry.meta.flowStatus === 'failed' ? 'Falhou' : 
-                       entry.meta.flowStatus === 'waiting_input' ? 'Aguardando' : 'Executando'}
-                    </Badge>
-                  )}
-
-                  <div className="flex items-center gap-1.5 mt-0.5">
-                    <span className="text-[10px] text-muted-foreground/70">{entry.actor}</span>
-                    {entry.actorType === 'ai' && (
-                      <Badge variant="outline" className="text-[8px] h-3 px-1 border-purple-500/30 text-purple-500 bg-purple-500/5">
-                        IA
-                      </Badge>
-                    )}
-                  </div>
-                </div>
+        return (
+          <div key={entry.id}>
+            {showDate && (
+              <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium pt-2 pb-1">
+                {dateStr}
               </div>
+            )}
+            <div className="flex items-start gap-2 py-1.5">
+              <div className={cn(
+                "mt-0.5 shrink-0", 
+                entry.type === 'flow_step' ? getNodeColor(entry.meta?.nodeType || '') : color
+              )}>
+                {entry.type === 'flow_step' ? (
+                  React.createElement(getNodeIcon(entry.meta?.nodeType || ''), { className: "h-3.5 w-3.5" })
+                ) : (
+                  <Icon className="h-3.5 w-3.5" />
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs text-foreground leading-tight">{entry.description}</p>
+                {entry.type === 'stage_changed' && entry.meta?.columnName && (
+                  <Badge 
+                    variant="secondary" 
+                    className="text-[10px] h-4 mt-0.5"
+                    style={entry.meta.columnColor ? { 
+                      backgroundColor: `${entry.meta.columnColor}20`,
+                      color: entry.meta.columnColor,
+                      borderColor: `${entry.meta.columnColor}40`,
+                    } : undefined}
+                  >
+                    {entry.meta.columnName}
+                  </Badge>
+                )}
+                {(entry.type === 'tag_added' || entry.type === 'tag_removed') && entry.meta?.tagName && (
+                  <Badge 
+                    variant="secondary" 
+                    className="text-[10px] h-4 mt-0.5"
+                    style={entry.meta.tagColor ? { 
+                      backgroundColor: `${entry.meta.tagColor}20`,
+                      color: entry.meta.tagColor,
+                      borderColor: `${entry.meta.tagColor}40`,
+                    } : undefined}
+                  >
+                    {entry.meta.tagName}
+                  </Badge>
+                )}
+                {entry.type === 'flow_triggered' && entry.meta?.flowStatus && (
+                  <Badge 
+                    variant="secondary" 
+                    className="text-[10px] h-4 mt-0.5"
+                  >
+                    {entry.meta.flowStatus === 'completed' ? 'Conclu├¡do' : 
+                     entry.meta.flowStatus === 'failed' ? 'Falhou' : 
+                     entry.meta.flowStatus === 'waiting_input' ? 'Aguardando' : 'Executando'}
+                  </Badge>
+                )}
+                <p className="text-[10px] text-muted-foreground">{entry.actor}</p>
+              </div>
+              <span className="text-[10px] text-muted-foreground shrink-0">
+                {format(new Date(entry.timestamp), 'HH:mm', { locale: ptBR })}
+              </span>
             </div>
-          );
-        })}
-      </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

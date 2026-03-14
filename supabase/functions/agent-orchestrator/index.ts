@@ -133,22 +133,35 @@ Deno.serve(async (req) => {
       };
     }
 
-    // Fallback: if no master prompt, try to build one from the agent's own prompt_base + additionalContext
+    // Fallback/Enhancement: if we have an active agent, load its context
     const activeAgentId = agentIdOverride || conversation.ai_agent_id;
-    if (!masterPrompt && activeAgentId) {
+    if (activeAgentId) {
       const { data: agent } = await supabase.from('ai_agents').select('*').eq('id', activeAgentId).single();
-      if (agent && (agent.prompt_base || additionalContext)) {
-        const parts: string[] = [];
-        if (agent.prompt_base) parts.push(agent.prompt_base);
-        if (agent.persona) parts.push(`PERSONA: ${agent.persona}`);
-        if (additionalContext) parts.push(`---\nINSTRUÇÕES ADICIONAIS DO NÓ DO FLUXO:\n${additionalContext}`);
-        masterPrompt = {
-          id: `agent-${agent.id}`,
-          name: `Agent: ${agent.name}`,
-          content: parts.join('\n\n'),
-          is_active: true,
-        };
-        console.log('Using agent prompt_base as master prompt fallback:', agent.name);
+      if (agent) {
+        console.log(`[ORCHESTRATOR] Applying context for agent: ${agent.name} (${agent.id})`);
+        
+        const agentParts: string[] = [];
+        if (agent.prompt_base) agentParts.push(agent.prompt_base);
+        if (agent.persona) agentParts.push(`PERSONA: ${agent.persona}`);
+        
+        const agentPromptContent = agentParts.join('\n\n');
+        
+        if (!masterPrompt) {
+          masterPrompt = {
+            id: `agent-${agent.id}`,
+            name: `Agent: ${agent.name}`,
+            content: agentPromptContent,
+            is_active: true,
+          };
+          console.log('Built master prompt from agent base prompt');
+        } else if (agentPromptContent && !masterPrompt.content.includes(agent.prompt_base)) {
+          // Priority: Agent prompt goes FIRST if it's explicitly set via override or conversation
+          masterPrompt = {
+            ...masterPrompt,
+            content: `PERFIL DO AGENTE ATIVO (${agent.name}):\n${agentPromptContent}\n\n---\n\n${masterPrompt.content}`,
+          };
+          console.log('Prepended agent context to existing master prompt');
+        }
       }
     }
 
@@ -161,6 +174,13 @@ Deno.serve(async (req) => {
         is_active: true,
       };
       console.log('Using additionalContext alone as master prompt');
+    }
+
+    // Load active agent data for model/provider config
+    let activeAgent = null;
+    if (activeAgentId) {
+      const { data } = await supabase.from('ai_agents').select('*').eq('id', activeAgentId).single();
+      activeAgent = data;
     }
 
     if (!masterPrompt) {
@@ -234,12 +254,14 @@ Deno.serve(async (req) => {
     const trainingRules = trainingRulesResult.data || [];
     console.log(`[ORCHESTRATOR] Loaded ${trainingRules.length} active training rules for org ${organizationId}`);
 
-    // Resolve AI config: masterPrompt > integration_configs > workspace_agent_configs > defaults
-    const masterProvider = masterPrompt?.provider || integrationConfig?.ai_provider || 'lovable';
-    const masterModel = masterPrompt?.model || integrationConfig?.default_model || 'google/gemini-1.5-flash';
+    // Resolve AI config: activeAgent > masterPrompt > integration_configs > workspace_agent_configs > defaults
+    const finalProvider = activeAgent?.provider || masterPrompt?.provider || integrationConfig?.ai_provider || 'lovable';
+    const finalModel = activeAgent?.model || masterPrompt?.model || integrationConfig?.default_model || 'google/gemini-1.5-flash';
 
-    const aiConfig = resolveAIConfig(integrationConfig, 'agents', LOVABLE_API_KEY!, masterProvider, masterModel);
+    const aiConfig = resolveAIConfig(integrationConfig, 'agents', LOVABLE_API_KEY!, finalProvider, finalModel);
     const aiModel = aiConfig.model;
+    
+    console.log(`[ORCHESTRATOR] AI Config: Provider=${finalProvider}, Model=${aiModel} (Target=${finalModel})`);
 
     const context = {
       conversationId, contactId, organizationId, conversation,
@@ -2257,7 +2279,8 @@ async function executeToolDirect(supabase: any, toolName: string, args: any, ctx
           body: JSON.stringify({
             flowId: flow_id,
             conversationId: ctx.conversationId,
-            isFromOrchestrator: true // Per user request: IA messages if in orchestrator
+            isFromOrchestrator: true, // Per user request: IA messages if in orchestrator
+            triggerMessage: args.triggerMessage || ctx.messages[ctx.messages.length - 1]?.content || null
           }),
         });
         const result = await resp.json();
