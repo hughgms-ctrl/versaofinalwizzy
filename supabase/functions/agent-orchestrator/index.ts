@@ -2693,16 +2693,22 @@ function resolveAIConfig(
   const featureProvider = integrationConfig[`${feature}_provider`];
   const featureModel = integrationConfig[`${feature}_model`];
   let provider = overrideProvider || featureProvider || integrationConfig.ai_provider || 'lovable';
-  let model = overrideModel || featureModel || integrationConfig.default_model || 'google/gemini-1.5-flash';
+  
+  // Set provider-appropriate default model
+  const defaultModelForProvider = provider === 'openai' 
+    ? 'gpt-4o-mini' 
+    : (provider === 'gemini' ? 'gemini-1.5-flash' : 'google/gemini-1.5-flash');
+
+  let model = overrideModel || featureModel || integrationConfig.default_model || defaultModelForProvider;
 
   // Ensure format is correct depending on provider
   if (provider === 'gemini') {
-    model = model.replace('google/', ''); // Google API doesn't use prefix
+    model = model.replace('google/', '').replace('openai/', '');
   } else if (provider === 'openai') {
-    model = model.replace('openai/', ''); // OpenAI API doesn't use prefix
+    model = model.replace('openai/', '').replace('google/', '');
   } else if (provider === 'lovable') {
     if (!model.startsWith('google/') && !model.startsWith('openai/')) {
-      model = model.includes('gpt') ? `openai/${model}` : `google/${model}`;
+      model = (model.includes('gpt') || model.includes('o1')) ? `openai/${model}` : `google/${model}`;
     }
   }
 
