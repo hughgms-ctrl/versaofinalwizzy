@@ -42,6 +42,45 @@ export function ContactLogsSection({ conversationId }: ContactLogsSectionProps) 
       if (!conv) return [];
 
       // Fetch all data sources in parallel
+      const results = await Promise.all([
+        supabase
+          .from('agent_execution_logs')
+          .select(`
+            id, created_at, input_message, ai_response, tools_executed,
+            agent:ai_agents(name),
+            master_prompt:master_prompts(name)
+          `)
+          .eq('conversation_id', conversationId)
+          .order('created_at', { ascending: true }),
+        (supabase as any)
+          .from('conversation_stage_history')
+          .select(`
+            *,
+            from_column:pipeline_columns!conversation_stage_history_from_column_id_fkey(name, color),
+            to_column:pipeline_columns!conversation_stage_history_to_column_id_fkey(name, color),
+            changed_by_profile:profiles!conversation_stage_history_changed_by_fkey(full_name)
+          `)
+          .eq('conversation_id', conversationId)
+          .order('created_at', { ascending: true })
+          .then((res: any) => {
+            if (res.error) {
+              return (supabase as any)
+                .from('conversation_stage_history')
+                .select('*')
+                .eq('conversation_id', conversationId)
+                .order('created_at', { ascending: true });
+            }
+            return res;
+          }),
+        supabase.from('tags').select('id, name, color'),
+        supabase.from('flows').select('id, name'),
+        supabase.from('ai_agents').select('id, name'),
+        supabase.from('pipeline_columns').select('id, name, color'),
+        supabase
+          .from('flow_executions')
+          .select('id, flow_id, started_at, completed_at, status')
+          .eq('conversation_id', conversationId)
+          .order('started_at', { ascending: true }),
         supabase
           .from('contact_tags')
           .select('id, tag_id, created_at, added_by_type')
