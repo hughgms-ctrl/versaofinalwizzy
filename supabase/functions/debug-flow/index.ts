@@ -17,12 +17,24 @@ Deno.serve(async (req) => {
             .select('id, name, nodes, edges')
             .ilike('name', '%AR%');
 
+        const { data: masterPrompts } = await supabase.from('master_prompts')
+            .select('*')
+            .eq('is_active', true);
+
+        const { data: aiAgents } = await supabase.from('ai_agents')
+            .select('*')
+            .eq('is_active', true);
+
+        const { data: trainingRules } = await supabase.from('agent_training_rules')
+            .select('*')
+            .eq('is_active', true);
+
         const { data: recentExecutions } = await supabase.from('flow_executions')
             .select('*, flow:flows(name)')
             .order('started_at', { ascending: false })
-            .limit(5);
+            .limit(10);
 
-        return new Response(JSON.stringify({ flows, recentExecutions }), {
+        return new Response(JSON.stringify({ flows, masterPrompts, aiAgents, trainingRules, recentExecutions }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
     } catch (e) {

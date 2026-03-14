@@ -269,6 +269,7 @@ Deno.serve(async (req) => {
       aiEndpoint: aiConfig.endpoint, aiApiKey: aiConfig.apiKey,
       integrationConfig, flowExecutionId, trainingRules,
       forceResponse, // PASS TO CONTEXT
+      additionalContext, // NEW: Pass the payload additionalContext
     };
 
     // 4. Resolve flow_id from available sources
@@ -1208,6 +1209,15 @@ async function walkFlowForward(
   return { replyText, toolsExecuted };
 }
 
+// Helper to clean up meta-instructions from user-provided prompts
+function cleanPrompt(prompt: string): string {
+  if (!prompt) return '';
+  return prompt
+    .replace(/^adicione no prompt\s*(abaixo|acima|aqui):?\s*/i, '')
+    .replace(/^Prompt para ser atualizado\.?\s*/mi, '')
+    .trim();
+}
+
 // ==================== AGENT AI INVOCATION ====================
 
 async function invokeAgentAI(
@@ -1220,19 +1230,28 @@ async function invokeAgentAI(
 
   const agentId = agentNode.data?.agentId;
   const agent = ctx.agents.find((a: any) => a.id === agentId);
-  const additionalPrompt = agentNode.data?.additionalPrompt || '';
+  const additionalPrompt = agentNode.data?.aiAssistantPrompt || agentNode.data?.additionalPrompt || ctx.additionalContext || '';
 
   // 1. HIGHEST PRIORITY: The specific objective for this step
   let systemPrompt = '';
   if (additionalPrompt) {
-    systemPrompt += `# SEU OBJETIVO ATUAL NESTA ETAPA:\n${additionalPrompt}\n\n---\n\n`;
+    systemPrompt += `# SEU OBJETIVO ATUAL NESTA ETAPA:\n${cleanPrompt(additionalPrompt)}\n\n---\n\n`;
+  }
+
+  // 1.1. TRAINING RULES (Regras Adicionais): High priority
+  const rulesSection = buildTrainingRulesSection(ctx.trainingRules, {
+    agentId: agent?.id, masterPromptId: ctx.masterPrompt?.id,
+    flowId: ctx.resolvedFlowId || (ctx.masterPrompt as any)?.flow_id, nodeId: agentNode?.id,
+  });
+  if (rulesSection) {
+    systemPrompt += `# REGRAS ADICIONAIS ESPECÍFICAS:\n${rulesSection}\n\n---\n\n`;
   }
 
   // 2. IDENTITY: Who are you?
   systemPrompt += `# SUA IDENTIDADE:\n`;
   systemPrompt += `Você é o agente "${agent?.name || 'Assistente'}" neste momento da conversa.\n\n`;
   if (agent?.prompt_base) {
-    systemPrompt += `${agent.prompt_base}\n\n`;
+    systemPrompt += `${cleanPrompt(agent.prompt_base)}\n\n`;
   }
   if (agent?.persona) {
     systemPrompt += `PERSONA: ${agent.persona}\n\n`;
@@ -1242,15 +1261,8 @@ async function invokeAgentAI(
 
   // 3. GENERAL PERSONALITY AND RULES: Lower priority
   if (ctx.masterPrompt.content) {
-    systemPrompt += `# REGRAS GERAIS E PERSONALIDADE:\n${ctx.masterPrompt.content}\n\n`;
+    systemPrompt += `# REGRAS GERAIS E PERSONALIDADE:\n${cleanPrompt(ctx.masterPrompt.content)}\n\n`;
   }
-
-  // Inject training rules
-  const rulesSection = buildTrainingRulesSection(ctx.trainingRules, {
-    agentId: agent?.id, masterPromptId: ctx.masterPrompt?.id,
-    flowId: ctx.resolvedFlowId || (ctx.masterPrompt as any)?.flow_id, nodeId: agentNode?.id,
-  });
-  if (rulesSection) systemPrompt += rulesSection;
 
   // Contact context
   systemPrompt += `DADOS DO CONTATO:\n`;
