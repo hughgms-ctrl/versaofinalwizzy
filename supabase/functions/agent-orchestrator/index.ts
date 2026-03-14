@@ -1522,27 +1522,51 @@ async function invokeDocumentAgentAI(
   const docAgentId = state.active_agent_id;
   const activeAgentId = docAgentId || ctx.conversation.ai_agent_id;
   const agent = ctx.agents.find((a: any) => a.id === activeAgentId);
+  const additionalInstructions = docCtx.additional_instructions || '';
 
-  // Build system prompt for document collection
+  // NEW UNIFIED HIERARCHY for Documents
   let systemPrompt = '';
 
-  if (ctx.masterPrompt.content) {
-    systemPrompt += `PERSONALIDADE E REGRAS GERAIS:\n${ctx.masterPrompt.content}\n\n---\n\n`;
-  }
-
+  // 1. OBJECTIVE: What are we doing now?
   if (docCtx.is_pack) {
-    systemPrompt += `Você é o agente "${agent?.name || 'Assistente'}" e está na etapa de COLETA DE DADOS para gerar o PACK DE DOCUMENTOS "${docCtx.template_name}" (${docCtx.pack_templates?.length || 0} documentos).\n`;
-    systemPrompt += `Ao concluir, TODOS os documentos do pack serão gerados simultaneamente com os mesmos dados.\n\n`;
+    systemPrompt += `# SEU OBJETIVO ATUAL: COLETA DE DADOS (PACK)\n`;
+    systemPrompt += `Você está coletando dados para gerar o PACK DE DOCUMENTOS "${docCtx.template_name}" (${docCtx.pack_templates?.length || 0} documentos).\n`;
   } else {
-    systemPrompt += `Você é o agente "${agent?.name || 'Assistente'}" e está na etapa de COLETA DE DADOS para gerar o documento "${docCtx.template_name}".\n\n`;
+    systemPrompt += `# SEU OBJETIVO ATUAL: COLETA DE DADOS (DOCUMENTO)\n`;
+    systemPrompt += `Você está coletando dados para gerar o documento "${docCtx.template_name}".\n`;
+  }
+  
+  if (additionalInstructions) {
+    systemPrompt += `INSTRUÇÕES ESPECÍFICAS DO OPERADOR:\n${cleanPrompt(additionalInstructions)}\n`;
+  }
+  systemPrompt += `TAREFA: Coletar todos os dados necessários para preencher o documento/contrato.\n\n---\n\n`;
+
+  // 2. TRAINING RULES (Regras Adicionais): High priority
+  const rulesSection = buildTrainingRulesSection(ctx.trainingRules, {
+    agentId: agent?.id,
+    masterPromptId: ctx.masterPrompt?.id,
+    flowId: ctx.resolvedFlowId || (ctx.masterPrompt as any)?.flow_id,
+    nodeId: docNode?.id,
+  });
+  if (rulesSection) {
+    systemPrompt += `# REGRAS ADICIONAIS ESPECÍFICAS:\n${rulesSection}\n\n---\n\n`;
   }
 
+  // 3. IDENTITY: Who are you?
+  systemPrompt += `# SUA IDENTIDADE:\n`;
+  systemPrompt += `Você é o agente "${agent?.name || 'Assistente'}" neste momento da conversa.\n\n`;
   if (agent?.prompt_base) {
-    systemPrompt += `PROMPT DO AGENTE:\n${agent.prompt_base}\n\n`;
+    systemPrompt += `${cleanPrompt(agent.prompt_base)}\n\n`;
   }
+  if (agent?.persona) {
+    systemPrompt += `PERSONA: ${agent.persona}\n\n`;
+  }
+  systemPrompt += `---\n\n`;
 
-  // Document-specific instructions
-  systemPrompt += `TAREFA: Coletar todos os dados necessários para preencher o documento/contrato.\n\n`;
+  // 4. GENERAL RULES: Master prompt
+  if (ctx.masterPrompt.content) {
+    systemPrompt += `# REGRAS GERAIS E PERSONALIDADE:\n${cleanPrompt(ctx.masterPrompt.content)}\n\n---\n\n`;
+  }
 
   systemPrompt += `CAMPOS DO DOCUMENTO (todos são obrigatórios):\n`;
   for (const field of docCtx.fields) {
@@ -1564,10 +1588,6 @@ async function invokeDocumentAgentAI(
   systemPrompt += `DADOS DO CONTATO:\n`;
   systemPrompt += `- Nome: ${ctx.conversation.contact?.name || 'Não informado'}\n`;
   systemPrompt += `- Telefone: ${ctx.conversation.contact?.phone || 'N/A'}\n\n`;
-
-  if (docCtx.additional_instructions) {
-    systemPrompt += `INSTRUÇÕES ADICIONAIS DO OPERADOR:\n${docCtx.additional_instructions}\n\n`;
-  }
 
   systemPrompt += `REGRAS DE COLETA:\n`;
   systemPrompt += `- Pergunte os dados faltantes de forma natural e conversacional.\n`;
@@ -2360,33 +2380,42 @@ function findNextNodeIds(edges: any[], currentNodeId: string): string[] {
 
 function buildLegacySystemPrompt(ctx: any): string {
   const activeAgent = ctx.agents.find((a: any) => a.id === ctx.conversation.ai_agent_id);
+  const additionalContext = ctx.additionalContext || '';
   
   let prompt = '';
 
-  // 1. IDENTITY: Who are you?
+  // 1. OBJECTIVE / ADDITIONAL CONTEXT: (Optional in legacy)
+  if (additionalContext) {
+    prompt += `# OBJETIVO ADICIONAL:\n${cleanPrompt(additionalContext)}\n\n---\n\n`;
+  }
+
+  // 1.1. TRAINING RULES (Regras Adicionais): High priority
+  const rulesSection = buildTrainingRulesSection(ctx.trainingRules, {
+    agentId: ctx.conversation?.ai_agent_id, 
+    masterPromptId: ctx.masterPrompt?.id,
+    flowId: ctx.resolvedFlowId,
+  });
+  if (rulesSection) {
+    prompt += `# REGRAS ADICIONAIS ESPECÍFICAS:\n${rulesSection}\n\n---\n\n`;
+  }
+
+  // 2. IDENTITY: Who are you?
   if (activeAgent) {
     prompt += `# SUA IDENTIDADE:\n`;
     prompt += `Você é o agente "${activeAgent.name}" neste momento da conversa.\n\n`;
     if (activeAgent.prompt_base) {
-      prompt += `${activeAgent.prompt_base}\n\n`;
+      prompt += `${cleanPrompt(activeAgent.prompt_base)}\n\n`;
+    }
+    if (activeAgent.persona) {
+      prompt += `PERSONA: ${activeAgent.persona}\n\n`;
     }
     prompt += `---\n\n`;
   }
 
-  // 2. GENERAL RULES AND PERSONALITY: Lower priority
+  // 3. GENERAL RULES AND PERSONALITY: Lower priority
   if (ctx.masterPrompt.content) {
-    prompt += `# REGRAS GERAIS E PERSONALIDADE:\n${ctx.masterPrompt.content}\n\n`;
+    prompt += `# REGRAS GERAIS E PERSONALIDADE:\n${cleanPrompt(ctx.masterPrompt.content)}\n\n`;
   }
-
-  prompt += `---\n\n`;
-  prompt += 'CONTEXTO ATUAL DO SISTEMA:\n\n';
-
-  // Inject training rules
-  const rulesSection = buildTrainingRulesSection(ctx.trainingRules, {
-    agentId: ctx.conversation?.ai_agent_id, masterPromptId: ctx.masterPrompt?.id,
-    flowId: ctx.resolvedFlowId,
-  });
-  if (rulesSection) prompt += rulesSection;
 
   return prompt;
 }
