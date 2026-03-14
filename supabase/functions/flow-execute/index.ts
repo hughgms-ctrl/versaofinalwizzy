@@ -600,6 +600,7 @@ async function executeSubFlow(
         flowId,
         conversationId: context.conversationId,
         isFromOrchestrator: context.isFromOrchestrator,
+        triggerMessage: context.triggerMessage, // Propagate the message that resumed the parent flow
       }),
     });
 
