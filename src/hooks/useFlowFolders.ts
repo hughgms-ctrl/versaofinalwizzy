@@ -90,17 +90,74 @@ export function useRenameFlowFolder() {
   return useMutation({
     mutationFn: async ({ folderId, name, workspaceId }: { folderId: string; name: string; workspaceId?: string | null }) => {
       const updateData: Record<string, unknown> = { name };
-      if (workspaceId !== undefined) updateData.workspace_id = workspaceId;
+      let updatingWorkspace = false;
 
+      if (workspaceId !== undefined) {
+        updateData.workspace_id = workspaceId;
+        
+        // Need to check if it's genuinely changing to apply recursively
+        const { data: currentFolder } = await supabase
+          .from('flow_folders')
+          .select('workspace_id')
+          .eq('id', folderId)
+          .single();
+          
+        if (currentFolder && currentFolder.workspace_id !== workspaceId) {
+          updatingWorkspace = true;
+        }
+      }
+
+      // Update the main folder
       const { error } = await (supabase
         .from('flow_folders' as 'contacts')
         .update(updateData as never)
         .eq('id', folderId) as unknown as Promise<{ error: Error | null }>);
 
       if (error) throw error;
+
+      // If workspace was changed, recursively update all contents
+      if (updatingWorkspace && workspaceId !== undefined) {
+        const updateWorkspaceRecursive = async (currentFolderId: string, newWorkspaceId: string | null) => {
+          // Update all flows in this folder
+          const { error: flowsErr } = await (supabase
+            .from('flows' as 'contacts')
+            .update({ workspace_id: newWorkspaceId } as never)
+            .eq('folder_id', currentFolderId) as unknown as Promise<{ error: Error | null }>);
+            
+          if (flowsErr) {
+            console.error('Error updating workspace for flows:', flowsErr);
+          }
+
+          // Fetch all subfolders
+          const { data: subfolders, error: subfErr } = await supabase
+            .from('flow_folders')
+            .select('id')
+            .eq('parent_id', currentFolderId);
+            
+          if (!subfErr && subfolders && subfolders.length > 0) {
+            // Update the subfolders themselves
+            const { error: updErr } = await (supabase
+              .from('flow_folders' as 'contacts')
+              .update({ workspace_id: newWorkspaceId } as never)
+              .in('id', subfolders.map(s => s.id)) as unknown as Promise<{ error: Error | null }>);
+              
+            if (updErr) {
+              console.error('Error updating workspace for subfolders:', updErr);
+            }
+
+            // Recurse into subfolders
+            for (const sub of subfolders) {
+              await updateWorkspaceRecursive(sub.id, newWorkspaceId);
+            }
+          }
+        };
+
+        await updateWorkspaceRecursive(folderId, workspaceId);
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['flow-folders'] });
+      queryClient.invalidateQueries({ queryKey: ['flows'] });
       toast.success('Pasta atualizada');
     },
     onError: (error) => {
