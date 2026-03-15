@@ -344,7 +344,17 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
 
       // Show bot reply
       if (reply) {
-        addMsg({ type: 'bot', content: reply, agentName: agent?.name || simState.activeAgentName, aiMetadata: { agent_id: agent?.id || simState.activeAgentId, flow_id: simState.activeFlowId, node_id: nodeId, master_prompt_id: undefined } });
+        addMsg({ 
+          type: 'bot', 
+          content: reply, 
+          agentName: agent?.name || simState.activeAgentName, 
+          aiMetadata: { 
+            agent_id: agent?.id || simState.activeAgentId, 
+            flow_id: simState.activeFlowId, 
+            node_id: nodeId, 
+            master_prompt_id: simState.activeFlowId // Use flowId as master_prompt_id in simulation
+          } 
+        });
       }
 
       // If AI called advance_flow, advance the flow

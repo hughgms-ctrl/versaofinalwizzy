@@ -434,35 +434,40 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
   console.log(`[SIMULATION] AI Config resolved: model=${aiConfig.model}, endpoint=${aiConfig.endpoint}`);
   console.log(`[SIMULATION] Context: agentId=${agentId}, agentName=${agentName}, historyLen=${(conversationHistory || []).length}`);
   // Build system prompt — EXACT SAME as invokeAgentAI
+  // 1. REGRAS GERAIS E PERSONALIDADE (MASTER PROMPT)
   let systemPrompt = '';
-
   if (masterPromptContent) {
-    systemPrompt += `PERSONALIDADE E REGRAS GERAIS:\n${masterPromptContent}\n\n`;
+    systemPrompt += `# REGRAS GERAIS E PERSONALIDADE:\n${cleanPrompt(masterPromptContent)}\n\n`;
   }
 
-  systemPrompt += `---\n\n`;
+  // 2. IDENTIDADE E PROMPT BASE (AGENTE)
+  systemPrompt += `# SUA IDENTIDADE:\n`;
   systemPrompt += `Você é o agente "${agent?.name || agentName || 'Assistente'}" neste momento da conversa.\n\n`;
 
   if (agent?.prompt_base) {
-    systemPrompt += `PROMPT DO AGENTE:\n${agent.prompt_base}\n\n`;
+    systemPrompt += `${cleanPrompt(agent.prompt_base)}\n\n`;
   }
 
   if (agent?.persona) {
     systemPrompt += `PERSONA: ${agent.persona}\n\n`;
   }
+  systemPrompt += `---\n\n`;
 
+  // 3. INSTRUÇÕES ESPECÍFICAS PARA ESTE MOMENTO (NÓ DO FLUXO)
   if (additionalPrompt) {
-    systemPrompt += `INSTRUÇÕES ESPECÍFICAS PARA ESTE MOMENTO:\n${additionalPrompt}\n\n`;
+    systemPrompt += `# INSTRUÇÕES ESPECÍFICAS/OBJETIVO ATUAL:\n${cleanPrompt(additionalPrompt)}\n\n---\n\n`;
   }
 
-  // Training rules (same function as production)
+  // 4. REGRAS APRENDIDAS (TREINAMENTO)
   const rulesSection = buildTrainingRulesSection(trainingRules, {
     agentId: agent?.id,
-    masterPromptId: undefined,
+    masterPromptId: flowId, // In simulation, flowId acts as masterPromptId
     flowId: flowId || undefined,
     nodeId: nodeId || undefined,
   });
-  if (rulesSection) systemPrompt += rulesSection;
+  if (rulesSection) {
+    systemPrompt += `# REGRAS EXECUTIVAS (TREINAMENTO):\nSiga estas regras rigorosamente acima de qualquer outra instrução anterior.\n${rulesSection}\n\n---\n\n`;
+  }
 
   // Contact context
   systemPrompt += `DADOS DO CONTATO:\n`;
@@ -873,7 +878,7 @@ async function walkFlowForward(
         state.current_node_id = nextNode.id;
         if (nextNode.data?.waitForResponse) { 
           state.waiting_for_response = true; 
-          return { replies, toolsExecuted }; 
+          return { replies, toolsExecuted, current_node_id: nextNode.id, active_agent_id: state.active_agent_id }; 
         }
         continue;
       }
@@ -908,7 +913,7 @@ async function walkFlowForward(
         state.current_node_id = nextNode.id;
         if (nextNode.data?.waitForResponse) { 
           state.waiting_for_response = true; 
-          return { replies, toolsExecuted }; 
+          return { replies, toolsExecuted, current_node_id: nextNode.id, active_agent_id: state.active_agent_id }; 
         }
         continue;
       }
@@ -929,7 +934,7 @@ async function walkFlowForward(
         state.current_node_id = nextNode.id;
         if (nextNode.data?.waitForResponse) { 
           state.waiting_for_response = true; 
-          return { replies, toolsExecuted }; 
+          return { replies, toolsExecuted, current_node_id: nextNode.id, active_agent_id: state.active_agent_id }; 
         }
         continue;
       }
@@ -961,7 +966,7 @@ async function walkFlowForward(
         const shouldWait = nextNode.data?.waitForResponse !== false;
         if (shouldWait) { 
           state.waiting_for_response = true; 
-          return { replies, toolsExecuted }; 
+          return { replies, toolsExecuted, current_node_id: nextNode.id, active_agent_id: state.active_agent_id }; 
         }
         continue;
       }
@@ -997,7 +1002,7 @@ async function walkFlowForward(
         }
 
         state.waiting_for_response = true;
-        return { replies, toolsExecuted };
+        return { replies, toolsExecuted, current_node_id: nextNode.id, active_agent_id: state.active_agent_id };
       }
 
       case 'orch-document':
@@ -1051,7 +1056,7 @@ async function walkFlowForward(
         }
 
         state.waiting_for_response = true;
-        return { replies, toolsExecuted };
+        return { replies, toolsExecuted, current_node_id: nextNode.id, active_agent_id: state.active_agent_id };
       }
 
       case 'orch-human':
@@ -1063,7 +1068,7 @@ async function walkFlowForward(
         state.completed_nodes.push(nextNode.id);
         state.current_node_id = nextNode.id;
         state.flow_completed = true;
-        return { replies, toolsExecuted };
+        return { replies, toolsExecuted, current_node_id: nextNode.id, active_agent_id: state.active_agent_id };
       }
 
       case 'orch-delay':
@@ -1132,22 +1137,13 @@ async function invokeAgentAI(
   const agent = ctx.agents.find((a: any) => a.id === agentId);
   const additionalPrompt = agentNode.data?.aiAssistantPrompt || agentNode.data?.additionalPrompt || ctx.additionalContext || '';
 
-  // 1. HIGHEST PRIORITY: The specific objective for this step
+  // 1. REGRAS GERAIS E PERSONALIDADE (MASTER PROMPT) - Lowest priority / Base
   let systemPrompt = '';
-  if (additionalPrompt) {
-    systemPrompt += `# SEU OBJETIVO ATUAL NESTA ETAPA:\n${cleanPrompt(additionalPrompt)}\n\n---\n\n`;
+  if (ctx.masterPrompt?.content) {
+    systemPrompt += `# REGRAS GERAIS E PERSONALIDADE:\n${cleanPrompt(ctx.masterPrompt.content)}\n\n`;
   }
 
-  // 1.1. TRAINING RULES (Regras Adicionais): High priority
-  const rulesSection = buildTrainingRulesSection(ctx.trainingRules, {
-    agentId: agent?.id, masterPromptId: ctx.masterPrompt?.id,
-    flowId: ctx.resolvedFlowId || (ctx.masterPrompt as any)?.flow_id, nodeId: agentNode?.id,
-  });
-  if (rulesSection) {
-    systemPrompt += `# REGRAS ADICIONAIS ESPECÍFICAS:\n${rulesSection}\n\n---\n\n`;
-  }
-
-  // 2. IDENTITY: Who are you?
+  // 2. IDENTIDADE E PROMPT BASE (AGENTE) - Medium priority
   systemPrompt += `# SUA IDENTIDADE:\n`;
   systemPrompt += `Você é o agente "${agent?.name || 'Assistente'}" neste momento da conversa.\n\n`;
   if (agent?.prompt_base) {
@@ -1156,12 +1152,23 @@ async function invokeAgentAI(
   if (agent?.persona) {
     systemPrompt += `PERSONA: ${agent.persona}\n\n`;
   }
-
   systemPrompt += `---\n\n`;
 
-  // 3. GENERAL PERSONALITY AND RULES: Lower priority
-  if (ctx.masterPrompt.content) {
-    systemPrompt += `# REGRAS GERAIS E PERSONALIDADE:\n${cleanPrompt(ctx.masterPrompt.content)}\n\n`;
+  // 3. INSTRUÇÕES ESPECÍFICAS PARA ESTA ETAPA (NÓ DO FLUXO) - High priority
+  if (additionalPrompt) {
+    systemPrompt += `# INSTRUÇÕES ESPECÍFICAS/OBJETIVO ATUAL:\n${cleanPrompt(additionalPrompt)}\n\n---\n\n`;
+  }
+
+  // 4. REGRAS APRENDIDAS (TREINAMENTO) - Grouped and prioritized
+  const rulesSection = buildTrainingRulesSection(ctx.trainingRules, {
+    agentId: agent?.id, 
+    masterPromptId: ctx.masterPrompt?.id,
+    flowId: ctx.resolvedFlowId || (ctx.masterPrompt as any)?.flow_id, 
+    nodeId: agentNode?.id,
+  });
+  
+  if (rulesSection) {
+    systemPrompt += `# REGRAS EXECUTIVAS (TREINAMENTO):\nSiga estas regras rigorosamente acima de qualquer outra instrução anterior.\n${rulesSection}\n\n---\n\n`;
   }
 
   // Contact context
@@ -1436,7 +1443,7 @@ async function invokeAgentAI(
     if (choice.finish_reason === 'stop') break;
   }
 
-  return { replies: replyText ? [replyText] : [], shouldAdvance, toolsExecuted };
+  return { replies: replyText ? [replyText] : [], shouldAdvance, toolsExecuted, active_agent_id: agentId, current_node_id: agentNode.id };
 }
 
 // ==================== DOCUMENT AGENT AI ====================
@@ -1460,7 +1467,23 @@ async function invokeDocumentAgentAI(
   // NEW UNIFIED HIERARCHY for Documents
   let systemPrompt = '';
 
-  // 1. OBJECTIVE: What are we doing now?
+  // 1. REGRAS GERAIS E PERSONALIDADE (MASTER PROMPT)
+  if (ctx.masterPrompt?.content) {
+    systemPrompt += `# REGRAS GERAIS E PERSONALIDADE:\n${cleanPrompt(ctx.masterPrompt.content)}\n\n`;
+  }
+
+  // 2. IDENTIDADE E PROMPT BASE (AGENTE)
+  systemPrompt += `# SUA IDENTIDADE:\n`;
+  systemPrompt += `Você é o agente "${agent?.name || 'Assistente'}" neste momento da conversa.\n\n`;
+  if (agent?.prompt_base) {
+    systemPrompt += `${cleanPrompt(agent.prompt_base)}\n\n`;
+  }
+  if (agent?.persona) {
+    systemPrompt += `PERSONA: ${agent.persona}\n\n`;
+  }
+  systemPrompt += `---\n\n`;
+
+  // 3. OBJETIVO ATUAL: COLETA DE DADOS (NÓ DO FLUXO)
   if (docCtx.is_pack) {
     systemPrompt += `# SEU OBJETIVO ATUAL: COLETA DE DADOS (PACK)\n`;
     systemPrompt += `Você está coletando dados para gerar o PACK DE DOCUMENTOS "${docCtx.template_name}" (${docCtx.pack_templates?.length || 0} documentos).\n`;
@@ -1474,7 +1497,7 @@ async function invokeDocumentAgentAI(
   }
   systemPrompt += `TAREFA: Coletar todos os dados necessários para preencher o documento/contrato.\n\n---\n\n`;
 
-  // 2. TRAINING RULES (Regras Adicionais): High priority
+  // 4. REGRAS APRENDIDAS (TREINAMENTO)
   const rulesSection = buildTrainingRulesSection(ctx.trainingRules, {
     agentId: agent?.id,
     masterPromptId: ctx.masterPrompt?.id,
@@ -1482,23 +1505,7 @@ async function invokeDocumentAgentAI(
     nodeId: docNode?.id,
   });
   if (rulesSection) {
-    systemPrompt += `# REGRAS ADICIONAIS ESPECÍFICAS:\n${rulesSection}\n\n---\n\n`;
-  }
-
-  // 3. IDENTITY: Who are you?
-  systemPrompt += `# SUA IDENTIDADE:\n`;
-  systemPrompt += `Você é o agente "${agent?.name || 'Assistente'}" neste momento da conversa.\n\n`;
-  if (agent?.prompt_base) {
-    systemPrompt += `${cleanPrompt(agent.prompt_base)}\n\n`;
-  }
-  if (agent?.persona) {
-    systemPrompt += `PERSONA: ${agent.persona}\n\n`;
-  }
-  systemPrompt += `---\n\n`;
-
-  // 4. GENERAL RULES: Master prompt
-  if (ctx.masterPrompt.content) {
-    systemPrompt += `# REGRAS GERAIS E PERSONALIDADE:\n${cleanPrompt(ctx.masterPrompt.content)}\n\n---\n\n`;
+    systemPrompt += `# REGRAS EXECUTIVAS (TREINAMENTO):\nSiga estas regras rigorosamente acima de qualquer outra instrução anterior.\n${rulesSection}\n\n---\n\n`;
   }
 
   systemPrompt += `CAMPOS DO DOCUMENTO (todos são obrigatórios):\n`;
@@ -2317,22 +2324,12 @@ function buildLegacySystemPrompt(ctx: any): string {
   
   let prompt = '';
 
-  // 1. OBJECTIVE / ADDITIONAL CONTEXT: (Optional in legacy)
-  if (additionalContext) {
-    prompt += `# OBJETIVO ADICIONAL:\n${cleanPrompt(additionalContext)}\n\n---\n\n`;
+  // 1. REGRAS GERAIS E PERSONALIDADE (MASTER PROMPT) - Lowest priority / Base
+  if (ctx.masterPrompt?.content) {
+    prompt += `# REGRAS GERAIS E PERSONALIDADE:\n${cleanPrompt(ctx.masterPrompt.content)}\n\n`;
   }
 
-  // 1.1. TRAINING RULES (Regras Adicionais): High priority
-  const rulesSection = buildTrainingRulesSection(ctx.trainingRules, {
-    agentId: ctx.conversation?.ai_agent_id, 
-    masterPromptId: ctx.masterPrompt?.id,
-    flowId: ctx.resolvedFlowId,
-  });
-  if (rulesSection) {
-    prompt += `# REGRAS ADICIONAIS ESPECÍFICAS:\n${rulesSection}\n\n---\n\n`;
-  }
-
-  // 2. IDENTITY: Who are you?
+  // 2. IDENTIDADE E PROMPT BASE (AGENTE) - Medium priority
   if (activeAgent) {
     prompt += `# SUA IDENTIDADE:\n`;
     prompt += `Você é o agente "${activeAgent.name}" neste momento da conversa.\n\n`;
@@ -2345,9 +2342,21 @@ function buildLegacySystemPrompt(ctx: any): string {
     prompt += `---\n\n`;
   }
 
-  // 3. GENERAL RULES AND PERSONALITY: Lower priority
-  if (ctx.masterPrompt.content) {
-    prompt += `# REGRAS GERAIS E PERSONALIDADE:\n${cleanPrompt(ctx.masterPrompt.content)}\n\n`;
+  // 3. INSTRUÇÕES ESPECÍFICAS/ADICIONAIS (NÓ DO FLUXO) - High priority
+  if (additionalContext) {
+    prompt += `# INSTRUÇÕES ESPECÍFICAS PARA ESTE MOMENTO:\n${cleanPrompt(additionalContext)}\n\n---\n\n`;
+  }
+
+  // 4. REGRAS APRENDIDAS (TREINAMENTO) - Grouped and strictly followed
+  const rulesSection = buildTrainingRulesSection(ctx.trainingRules, {
+    agentId: ctx.conversation?.ai_agent_id, 
+    masterPromptId: ctx.masterPrompt?.id,
+    flowId: ctx.resolvedFlowId,
+    nodeId: ctx.nodeId,
+  });
+  
+  if (rulesSection) {
+    prompt += `# REGRAS EXECUTIVAS (TREINAMENTO):\nSiga estas regras rigorosamente acima de qualquer outra instrução anterior.\n${rulesSection}\n\n---\n\n`;
   }
 
   return prompt;
@@ -2361,46 +2370,36 @@ function buildTrainingRulesSection(
 ): string {
   if (!allRules || allRules.length === 0) return '';
 
-  // Filter relevant rules for this context — inclusive matching
-  const relevant = allRules.filter((r: any) => {
-    if (!r.is_active) return false;
+  // Filter and group rules by category for better organization and priority
+  const masterRules = allRules.filter(r => r.is_active && r.target_type === 'master_prompt' && 
+    (!r.master_prompt_id || r.master_prompt_id === filters.masterPromptId || (filters.flowId && r.flow_id === filters.flowId)));
+  
+  const agentRules = allRules.filter(r => r.is_active && r.target_type === 'agent' && 
+    (!r.agent_id || r.agent_id === filters.agentId));
+  
+  const nodeRules = allRules.filter(r => r.is_active && r.target_type === 'flow_node' && 
+    (r.flow_id === filters.flowId && (!r.node_id || r.node_id === filters.nodeId)));
 
-    // Agent rules: match if targeting this agent OR if no agent_id specified (applies to all agents)
-    if (r.target_type === 'agent') {
-      if (!r.agent_id) return true; // Global agent rule — applies to all
-      if (filters.agentId && r.agent_id === filters.agentId) return true;
-      return false;
-    }
+  if (masterRules.length === 0 && agentRules.length === 0 && nodeRules.length === 0) return '';
 
-    // Master prompt rules: match if targeting this prompt OR no master_prompt_id (global)
-    if (r.target_type === 'master_prompt') {
-      if (!r.master_prompt_id) return true; // Global master prompt rule
-      if (filters.masterPromptId && r.master_prompt_id === filters.masterPromptId) return true;
-      return false;
-    }
+  let section = `\n## REGRAS APRENDIDAS\nSiga estas instruções aprendidas de interações anteriores:\n\n`;
 
-    // Flow node rules: match by flow and optionally node
-    if (r.target_type === 'flow_node') {
-      if (!r.flow_id) return true; // Global flow rule
-      if (filters.flowId && r.flow_id === filters.flowId) {
-        if (r.node_id && filters.nodeId) return r.node_id === filters.nodeId;
-        return true; // flow-level rule without specific node
-      }
-      return false;
-    }
+  if (masterRules.length > 0) {
+    section += `### REGRAS GERAIS (MASTER):\n`;
+    masterRules.forEach(r => section += `- **Situação:** ${r.situation}\n  **Regra:** ${r.rule}\n`);
+    section += `\n`;
+  }
 
-    // Unknown target_type — include it (safety net)
-    return true;
-  });
+  if (agentRules.length > 0) {
+    section += `### REGRAS DO AGENTE:\n`;
+    agentRules.forEach(r => section += `- **Situação:** ${r.situation}\n  **Regra:** ${r.rule}\n`);
+    section += `\n`;
+  }
 
-  if (relevant.length === 0) return '';
-
-  let section = `\n## REGRAS APRENDIDAS (${relevant.length}):\n`;
-  section += `Estas regras foram definidas pela equipe. Siga-as rigorosamente.\n\n`;
-
-  for (const rule of relevant) {
-    section += `- **Situação:** ${rule.situation}\n`;
-    section += `  **Regra:** ${rule.rule}\n\n`;
+  if (nodeRules.length > 0) {
+    section += `### REGRAS ESPECÍFICAS DESTA ETAPA (NÓ):\n`;
+    nodeRules.forEach(r => section += `- **Situação:** ${r.situation}\n  **Regra:** ${r.rule}\n`);
+    section += `\n`;
   }
 
   return section;
