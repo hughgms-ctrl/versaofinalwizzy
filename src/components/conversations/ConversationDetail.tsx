@@ -636,6 +636,8 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
                             metadata: {
                               ...aiMeta,
                               agent_id: aiMeta.agent_id || conversation.ai_agent_id,
+                              flow_id: aiMeta.flow_id || (conversation.metadata as any)?.flow_id,
+                              master_prompt_id: aiMeta.master_prompt_id || (conversation.metadata as any)?.master_prompt_id
                             }
                           });
                           setFeedbackDialogOpen(true);

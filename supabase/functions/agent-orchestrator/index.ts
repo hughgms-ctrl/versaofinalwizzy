@@ -1030,7 +1030,12 @@ async function walkFlowForward(
           let linkMessage = (nextNode.data?.publicLinkMessage as string) || `📋 Preencha seus dados aqui: ${publicLink}`;
           linkMessage = linkMessage.replace(/\{\{link\}\}/g, publicLink);
           
-          await sendReplyViaZAPI(supabase, ctx.conversation, linkMessage);
+          await sendReplyViaZAPI(supabase, ctx.conversation, linkMessage, {
+            agent_id: ctx.conversation.ai_agent_id,
+            node_id: nextNode.id,
+            flow_id: ctx.resolvedFlowId,
+            master_prompt_id: ctx.masterPrompt?.id
+          });
           replies.push(linkMessage);
           
           toolsExecuted.push({ name: 'send_public_link', arguments: { link: publicLink }, result: { success: true } });
@@ -1111,7 +1116,12 @@ async function walkFlowForward(
     }
   }
 
-  return { replies, toolsExecuted };
+  return { 
+    replies, 
+    toolsExecuted, 
+    current_node_id: state.current_node_id, 
+    active_agent_id: state.active_agent_id 
+  };
 }
 
 // Helper to clean up meta-instructions from user-provided prompts
