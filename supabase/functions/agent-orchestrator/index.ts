@@ -60,13 +60,47 @@ Deno.serve(async (req) => {
     const payload = await req.json();
     const { 
       conversationId, 
-      messageContent, 
+      messageContent: initialMessageContent, 
+      messageId,
       masterPromptOverride, 
       additionalContext, 
       flowExecutionId, 
       agentIdOverride,
       forceResponse
     } = payload;
+
+    let messageContent = initialMessageContent;
+
+    // ===== HYDRATION: Wait for media transcription if messageId provided =====
+    if (messageId && (messageContent === '[mídia]' || !messageContent)) {
+      console.log(`[HYDRATION] Message ${messageId} identifies as potential media (current content: "${messageContent}")`);
+      
+      // Polling loop: wait up to 5 seconds for transcription
+      let attempts = 0;
+      const MAX_ATTEMPTS = 5;
+      
+      while (attempts < MAX_ATTEMPTS) {
+        const { data: mediaData } = await supabase
+          .from('media_transcriptions')
+          .select('transcription')
+          .eq('message_id', messageId)
+          .maybeSingle();
+        
+        if (mediaData?.transcription) {
+          console.log(`[HYDRATION] Found transcription for ${messageId} after ${attempts}s: "${mediaData.transcription.substring(0, 50)}..."`);
+          messageContent = mediaData.transcription;
+          break;
+        }
+        
+        console.log(`[HYDRATION] Waiting for transcription of message ${messageId}... (attempt ${attempts + 1}/${MAX_ATTEMPTS})`);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        attempts++;
+      }
+      
+      if (attempts >= MAX_ATTEMPTS && messageContent === '[mídia]') {
+        console.warn(`[HYDRATION] Timeout waiting for transcription of message ${messageId}. Proceeding with fallback content.`);
+      }
+    }
 
     // ===== SIMULATION MODE =====
     // Called by the Flow Builder simulator. Uses exact same prompt-building logic

@@ -898,6 +898,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
         const orchestratorBody: Record<string, unknown> = {
           conversationId: conversation.id,
           messageContent: triggerText || '[mídia]',
+          messageId: savedMessage.id, // Pass messageId for hydration/transcription sync
           flowExecutionId: activeFlowExec.id, // So orchestrator can advance the flow
         };
 
@@ -1090,13 +1091,16 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
 
       if (shouldTrigger) {
         console.log(`[WEBHOOK] Triggering agent-orchestrator for conversation ${conversation.id}. Mode: ${conversation.service_mode}, Text: "${triggerText}"`);
+        const orchestratorBody: Record<string, unknown> = { 
+          conversationId: conversation.id, 
+          messageContent: triggerText || '[mídia]',
+          messageId: savedMessage.id // Pass messageId for hydration
+        };
+
         const agentPromise = fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/agent-orchestrator`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
-          body: JSON.stringify({ 
-            conversationId: conversation.id, 
-            messageContent: triggerText || '[mídia]' 
-          }),
+          body: JSON.stringify(orchestratorBody),
         });
         runBackground(agentPromise);
       }
