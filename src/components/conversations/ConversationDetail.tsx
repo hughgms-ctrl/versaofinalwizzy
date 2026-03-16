@@ -10,7 +10,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useSignatureSettings } from '@/hooks/useSignatureSettings';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Bot, User, Send, Loader2, MessageCircle, Mic, Check, CheckCheck, ArrowUp, FileText, MapPin, Play, UserCircle, X, Variable, PenLine, Archive, Search, Reply, Clock } from 'lucide-react';
+import { Bot, User, Send, Loader2, MessageCircle, Mic, Check, CheckCheck, ArrowUp, FileText, MapPin, Play, UserCircle, X, Variable, PenLine, Archive, Search, Reply, Clock, Sparkles } from 'lucide-react';
 import { formatWhatsAppMessage, parseMessageVariables, messageVariables } from '@/lib/whatsappFormatter';
 import {
   DropdownMenu,
@@ -39,7 +39,6 @@ import { supabase } from '@/integrations/supabase/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { AIFeedbackDialog } from './AIFeedbackDialog';
 import { ChatFollowUpDialog } from './ChatFollowUpDialog';
-import { Sparkles } from 'lucide-react';
 import { useFollowUpStatus } from '@/hooks/useFollowUpStatus';
 
 interface ConversationDetailProps {
@@ -422,11 +421,10 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
                 <h3 className="font-semibold text-foreground text-sm md:text-base truncate max-w-[120px] md:max-w-none">{getDisplayName()}</h3>
                 <span className={cn(
                   "status-badge text-[9px] md:text-[10px] hidden xs:inline-flex",
-                  (isTyping || isRecording) ? "bg-green-500/10 text-green-500 animate-pulse" : (
-                    conversation.status === 'open' && "status-open",
-                    conversation.status === 'resolved' && "bg-blue-500/10 text-blue-500",
-                    conversation.status === 'archived' && "bg-muted text-muted-foreground"
-                  )
+                  (isTyping || isRecording) ? "bg-green-500/10 text-green-500 animate-pulse" : 
+                  conversation.status === 'open' ? "status-open" :
+                  conversation.status === 'resolved' ? "bg-blue-500/10 text-blue-500" :
+                  conversation.status === 'archived' ? "bg-muted text-muted-foreground" : ""
                 )}>
                   {isTyping ? 'Digitando...' : isRecording ? 'Gravando áudio...' : statusLabels[conversation.status]}
                 </span>
@@ -1342,8 +1340,8 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
          {!isInbound && isBot && (
           <div className="flex items-center gap-1.5 mb-1 opacity-80">
             <Bot className="h-3 w-3" />
-            <span className="text-xs font-medium">IA • Clique para treinar</span>
-            <Sparkles className="h-3 w-3 ml-auto animate-pulse" />
+            <span className="text-xs font-medium">IA - Clique para treinar</span>
+            <Sparkles className="h-3 w-3 ml-auto opacity-70" />
           </div>
         )}
         {renderMediaContent()}
