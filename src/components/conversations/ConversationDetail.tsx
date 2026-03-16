@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { DbConversation, useMessages, DbMessage } from '@/hooks/useConversations';
 import { useContactPresence } from '@/hooks/useContactPresence';
 import { useSendMessage } from '@/hooks/useSendMessage';
