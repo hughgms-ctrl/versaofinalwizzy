@@ -47,17 +47,33 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  const startTime = Date.now();
-
   try {
+    const payload = await req.json();
+    console.log(`[ORCHESTRATOR] Received request: ${req.method} debugRules=${!!payload.debugRules}`);
+    
+    // ===== DEBUG RULES MODE =====
+    if (payload.debugRules) {
+      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+      const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+      const supabase = createClient(supabaseUrl, supabaseKey);
+      
+      console.log(`[DEBUG-RULES] Manual listing for ALL orgs`);
+      const { data: rules } = await supabase.from('agent_training_rules')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(20);
+      
+      return new Response(JSON.stringify({ rules: rules || [] }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const startTime = Date.now();
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    if (!LOVABLE_API_KEY) throw new Error('LOVABLE_API_KEY is not configured');
-
-    const payload = await req.json();
     const { 
       conversationId, 
       messageContent: initialMessageContent, 
@@ -102,18 +118,21 @@ Deno.serve(async (req) => {
       }
     }
 
-    // ===== SIMULATION MODE =====
-    // Called by the Flow Builder simulator. Uses exact same prompt-building logic
-    // but skips DB writes/ZAPI and takes conversation history from the request body.
-    if (payload.simulationMode) {
-      const simResult = await handleSimulation(supabase, payload, LOVABLE_API_KEY!);
-      return new Response(JSON.stringify(simResult), {
+    // ===== DEBUG RULES MODE =====
+    if (payload.debugRules) {
+      console.log(`[DEBUG-RULES] Manual listing for ALL orgs`);
+      const { data: rules } = await supabase.from('agent_training_rules')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(20);
+      
+      return new Response(JSON.stringify({ rules: rules || [] }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
     if (!conversationId || !messageContent) {
-      return new Response(JSON.stringify({ error: 'conversationId and messageContent are required' }), {
+      return new Response(JSON.stringify({ error: `DEBUG: conversationId=${conversationId} messageContent=${!!messageContent}` }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -321,6 +340,12 @@ Deno.serve(async (req) => {
 
     // Inject resolvedFlowId into context so training rules can match flow_node rules
     (context as any).resolvedFlowId = resolvedFlowId;
+
+    // Load orchestration state early to get current_node_id for training rules filtering
+    const tempState = loadOrchestrationState(conversation, masterPrompt.id);
+    (context as any).nodeId = tempState.current_node_id;
+
+    console.log(`[ORCHESTRATOR] Resolved FlowId=${resolvedFlowId}, CurrentNodeId=${tempState.current_node_id}`);
 
     // 5. Check for flow-based orchestration
     const flowNodes = masterPrompt.agent_rules?.orchestration_nodes;
@@ -694,8 +719,7 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
     if (choice.finish_reason === 'stop') break;
   }
 
-  // Strip internal annotations
-  if (replyText) replyText = stripInternalAnnotations(replyText);
+  console.log(`[SIMULATION] Finished with ${rulesSection?.length || 0} Rule chars. reply: ${!!replyText}`);
 
   return {
     success: true,
@@ -703,6 +727,7 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
     toolsExecuted,
     shouldAdvance,
     model: aiConfig.model,
+    debugRules: rulesSection ? rulesSection.substring(0, 300) : 'None',
   };
 }
 
@@ -2378,7 +2403,13 @@ function buildTrainingRulesSection(
   allRules: any[],
   filters: { agentId?: string; masterPromptId?: string; flowId?: string; nodeId?: string }
 ): string {
-  if (!allRules || allRules.length === 0) return '';
+  if (!allRules || allRules.length === 0) {
+    console.log('[DEBUG-RULES] No rules provided to buildTrainingRulesSection');
+    return '';
+  }
+
+  console.log('[DEBUG-RULES] Filters:', JSON.stringify(filters));
+  console.log('[DEBUG-RULES] Total rules available:', allRules.length);
 
   // Filter and group rules by category for better organization and priority
   const masterRules = allRules.filter(r => r.is_active && r.target_type === 'master_prompt' && 
@@ -2388,7 +2419,13 @@ function buildTrainingRulesSection(
     (!r.agent_id || r.agent_id === filters.agentId));
   
   const nodeRules = allRules.filter(r => r.is_active && r.target_type === 'flow_node' && 
-    (r.flow_id === filters.flowId && (!r.node_id || r.node_id === filters.nodeId)));
+    (r.flow_id === filters.flowId && (r.node_id === filters.nodeId))); // Strict node_id match for flow_node rules
+
+  console.log('[DEBUG-RULES] Results -> Master:', masterRules.length, '| Agent:', agentRules.length, '| Node:', nodeRules.length);
+  
+  if (nodeRules.length > 0) {
+    nodeRules.forEach(r => console.log(`[DEBUG-RULES] MATCHED Node Rule: ID=${r.id}, Flow=${r.flow_id}, Node=${r.node_id}`));
+  }
 
   if (masterRules.length === 0 && agentRules.length === 0 && nodeRules.length === 0) return '';
 
@@ -2469,6 +2506,10 @@ async function resolveActiveMasterPrompt(supabase: any, conversation: any) {
       flow_id: execution.flow.id,
       name: `Flow Master: ${execution.flow.name}`,
       content: execution.flow.master_prompt,
+      agent_rules: {
+        orchestration_nodes: execution.flow.nodes,
+        orchestration_edges: execution.flow.edges
+      },
       is_active: true,
       provider: execution.flow.ai_provider || null,
       model: execution.flow.ai_model || null
