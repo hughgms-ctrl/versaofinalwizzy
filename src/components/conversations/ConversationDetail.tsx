@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, type ReactNode } from 'react';
 import { DbConversation, useMessages, DbMessage } from '@/hooks/useConversations';
 import { useContactPresence } from '@/hooks/useContactPresence';
 import { useSendMessage } from '@/hooks/useSendMessage';
@@ -43,7 +43,7 @@ import { useFollowUpStatus } from '@/hooks/useFollowUpStatus';
 
 interface ConversationDetailProps {
   conversation: DbConversation;
-  headerActions?: React.ReactNode;
+  headerActions?: ReactNode;
 }
 
 // Helper to get initials
@@ -424,7 +424,8 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
                   (isTyping || isRecording) ? "bg-green-500/10 text-green-500 animate-pulse" : 
                   conversation.status === 'open' ? "status-open" :
                   conversation.status === 'resolved' ? "bg-blue-500/10 text-blue-500" :
-                  conversation.status === 'archived' ? "bg-muted text-muted-foreground" : ""
+                  conversation.status === 'archived' ? "bg-muted text-muted-foreground" : 
+                  "bg-muted/50 text-muted-foreground"
                 )}>
                   {isTyping ? 'Digitando...' : isRecording ? 'Gravando áudio...' : statusLabels[conversation.status]}
                 </span>
