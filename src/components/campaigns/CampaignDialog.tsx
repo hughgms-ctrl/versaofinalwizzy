@@ -310,9 +310,13 @@ export function CampaignDialog({
                             </SelectTrigger>
                             <SelectContent>
                                 {(() => {
-                                    const allFlows = flows || [];
+                                    const allFlows = (flows || []).filter(f => 
+                                      !workspaceId || !f.workspace_id || f.workspace_id === workspaceId
+                                    );
                                     const rootFlows = allFlows.filter(f => !f.folder_id);
-                                    const foldersToRender = flowFolders; // Show all folders
+                                    const foldersToRender = flowFolders.filter(folder =>
+                                      allFlows.some(f => f.folder_id === folder.id)
+                                    );
                                     if (allFlows.length === 0 && foldersToRender.length === 0) {
                                         return (
                                             <SelectItem value="none" disabled>

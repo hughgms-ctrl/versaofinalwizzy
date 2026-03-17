@@ -63,7 +63,7 @@ export function TrainingRulesList({
     enabled: !!(
       (targetType === 'agent' && agentId) ||
       (targetType === 'master_prompt' && flowId) ||
-      (targetType === 'flow_node' && flowId && nodeId)
+      (targetType === 'flow_node' && flowId)
     ),
   });
 
