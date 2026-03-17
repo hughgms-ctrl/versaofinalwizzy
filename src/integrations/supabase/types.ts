@@ -3362,6 +3362,7 @@ export type Database = {
           name: string
           organization_id: string
           updated_at: string
+          workspace_id: string | null
         }
         Insert: {
           color?: string
@@ -3371,6 +3372,7 @@ export type Database = {
           name: string
           organization_id: string
           updated_at?: string
+          workspace_id?: string | null
         }
         Update: {
           color?: string
@@ -3380,6 +3382,7 @@ export type Database = {
           name?: string
           organization_id?: string
           updated_at?: string
+          workspace_id?: string | null
         }
         Relationships: [
           {
@@ -3387,6 +3390,13 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tags_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
             referencedColumns: ["id"]
           },
         ]

@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { useTags, useCreateTag, useUpdateTag, useDeleteTag, Tag } from '@/hooks/useTags';
+import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Loader2, Plus, Pencil, Trash2, Tag as TagIcon, X, Check } from 'lucide-react';
 import {
   Dialog,
@@ -43,6 +45,7 @@ export function TagsSettings() {
   const createTag = useCreateTag();
   const updateTag = useUpdateTag();
   const deleteTag = useDeleteTag();
+  const { selectedWorkspaceId, availableWorkspaces } = useWorkspaceContext();
   
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -53,10 +56,11 @@ export function TagsSettings() {
     name: '',
     color: '#6366f1',
     description: '',
+    workspace_id: '' as string,
   });
 
   const resetForm = () => {
-    setFormData({ name: '', color: '#6366f1', description: '' });
+    setFormData({ name: '', color: '#6366f1', description: '', workspace_id: selectedWorkspaceId || '' });
     setEditingTag(null);
   };
 
@@ -71,6 +75,7 @@ export function TagsSettings() {
       name: tag.name,
       color: tag.color,
       description: tag.description || '',
+      workspace_id: tag.workspace_id || '',
     });
     setIsDialogOpen(true);
   };
@@ -81,10 +86,16 @@ export function TagsSettings() {
     if (editingTag) {
       await updateTag.mutateAsync({
         id: editingTag.id,
-        ...formData,
+        name: formData.name,
+        color: formData.color,
+        description: formData.description,
+        workspace_id: formData.workspace_id || null,
       });
     } else {
-      await createTag.mutateAsync(formData);
+      await createTag.mutateAsync({
+        ...formData,
+        workspace_id: formData.workspace_id || null,
+      });
     }
     
     setIsDialogOpen(false);
@@ -137,23 +148,31 @@ export function TagsSettings() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {tags.map((tag) => (
-              <div
-                key={tag.id}
-                className="flex items-center justify-between p-4 rounded-lg border border-border bg-muted/30 hover:bg-muted/50 transition-colors"
-              >
-                <div className="flex items-center gap-3">
-                  <div
-                    className="h-4 w-4 rounded-full"
-                    style={{ backgroundColor: tag.color }}
-                  />
-                  <div>
-                    <p className="font-medium text-foreground">{tag.name}</p>
-                    {tag.description && (
-                      <p className="text-xs text-muted-foreground">{tag.description}</p>
-                    )}
+            {tags.map((tag) => {
+              const ws = availableWorkspaces.find(w => w.id === tag.workspace_id);
+              return (
+                <div
+                  key={tag.id}
+                  className="flex items-center justify-between p-4 rounded-lg border border-border bg-muted/30 hover:bg-muted/50 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <div
+                      className="h-4 w-4 rounded-full shrink-0"
+                      style={{ backgroundColor: tag.color }}
+                    />
+                    <div>
+                      <p className="font-medium text-foreground">{tag.name}</p>
+                      {ws && (
+                        <p className="text-[10px] text-muted-foreground">{ws.name}</p>
+                      )}
+                      {!ws && tag.workspace_id === null && (
+                        <p className="text-[10px] text-muted-foreground">Global</p>
+                      )}
+                      {tag.description && (
+                        <p className="text-xs text-muted-foreground">{tag.description}</p>
+                      )}
+                    </div>
                   </div>
-                </div>
                 <div className="flex items-center gap-1">
                   <Button
                     variant="ghost"
@@ -173,7 +192,8 @@ export function TagsSettings() {
                   </Button>
                 </div>
               </div>
-            ))}
+            );
+            })}
           </div>
         )}
       </CardContent>
@@ -199,6 +219,25 @@ export function TagsSettings() {
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Workspace</Label>
+              <Select
+                value={formData.workspace_id || '_global'}
+                onValueChange={(val) => setFormData({ ...formData, workspace_id: val === '_global' ? '' : val })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione um workspace" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_global">Global (todos os workspaces)</SelectItem>
+                  {availableWorkspaces.map((ws) => (
+                    <SelectItem key={ws.id} value={ws.id}>{ws.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-muted-foreground">Tags vinculadas a um workspace só aparecem naquele workspace.</p>
             </div>
             
             <div className="space-y-2">

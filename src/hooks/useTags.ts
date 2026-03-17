@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 
 export interface Tag {
   id: string;
@@ -8,6 +9,7 @@ export interface Tag {
   color: string;
   description: string | null;
   organization_id: string;
+  workspace_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -23,8 +25,33 @@ export interface ContactTag {
 }
 
 export function useTags() {
+  const { selectedWorkspaceId } = useWorkspaceContext();
+
   return useQuery({
-    queryKey: ['tags'],
+    queryKey: ['tags', selectedWorkspaceId],
+    queryFn: async () => {
+      let query = supabase
+        .from('tags' as any)
+        .select('*')
+        .order('name');
+
+      // Filter by workspace: show tags for this workspace or without workspace
+      if (selectedWorkspaceId) {
+        query = query.or(`workspace_id.eq.${selectedWorkspaceId},workspace_id.is.null`);
+      }
+
+      const { data, error } = await query as { data: Tag[] | null; error: any };
+      
+      if (error) throw error;
+      return (data || []) as Tag[];
+    },
+  });
+}
+
+// All tags without workspace filtering (for internal use like edge functions context)
+export function useAllTags() {
+  return useQuery({
+    queryKey: ['all-tags'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('tags' as any)
@@ -66,7 +93,7 @@ export function useCreateTag() {
   const { toast } = useToast();
 
   return useMutation({
-    mutationFn: async (tag: { name: string; color: string; description?: string }): Promise<Tag> => {
+    mutationFn: async (tag: { name: string; color: string; description?: string; workspace_id?: string | null }): Promise<Tag> => {
       // Get org_id from profile
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Usuário não autenticado');
@@ -82,7 +109,10 @@ export function useCreateTag() {
       const { data, error } = await supabase
         .from('tags' as any)
         .insert({
-          ...tag,
+          name: tag.name,
+          color: tag.color,
+          description: tag.description,
+          workspace_id: tag.workspace_id || null,
           organization_id: profile.organization_id,
         })
         .select()
@@ -114,7 +144,7 @@ export function useUpdateTag() {
   const { toast } = useToast();
 
   return useMutation({
-    mutationFn: async ({ id, ...updates }: { id: string; name?: string; color?: string; description?: string }) => {
+    mutationFn: async ({ id, ...updates }: { id: string; name?: string; color?: string; description?: string; workspace_id?: string | null }) => {
       const { data, error } = await supabase
         .from('tags' as any)
         .update(updates)
