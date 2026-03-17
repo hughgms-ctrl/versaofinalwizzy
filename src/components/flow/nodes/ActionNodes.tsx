@@ -66,10 +66,11 @@ function BaseActionNode({
 }
 
 export function TagActionNode({ data, selected }: NodeProps<ActionNode>) {
+  const hasWarning = !data.tagId && data.tagName?.includes('⚠️');
   return (
     <BaseActionNode selected={!!selected} icon={Tag} color="bg-amber-500" title="Atribuir Tag">
       <div className="flex items-center gap-2">
-        <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+        <span className={`text-xs px-2 py-0.5 rounded-full ${hasWarning ? 'bg-destructive/20 text-destructive' : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'}`}>
           {data.action === 'remove' ? '−' : '+'} {data.tagName || 'tag'}
         </span>
       </div>
