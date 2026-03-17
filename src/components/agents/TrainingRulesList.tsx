@@ -46,8 +46,12 @@ export function TrainingRulesList({
         query = query.eq('agent_id', agentId);
       } else if (targetType === 'master_prompt' && flowId) {
         query = query.eq('flow_id', flowId);
-      } else if (targetType === 'flow_node' && flowId && nodeId) {
-        query = query.eq('flow_id', flowId).eq('node_id', nodeId);
+      } else if (targetType === 'flow_node' && flowId) {
+        query = query.eq('flow_id', flowId);
+        if (nodeId) {
+          // Show rules for this specific node OR rules with no node (global flow_node rules)
+          query = query.or(`node_id.eq.${nodeId},node_id.is.null`);
+        }
       } else {
         return [];
       }
