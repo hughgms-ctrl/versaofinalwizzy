@@ -148,23 +148,31 @@ export function TagsSettings() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {tags.map((tag) => (
-              <div
-                key={tag.id}
-                className="flex items-center justify-between p-4 rounded-lg border border-border bg-muted/30 hover:bg-muted/50 transition-colors"
-              >
-                <div className="flex items-center gap-3">
-                  <div
-                    className="h-4 w-4 rounded-full"
-                    style={{ backgroundColor: tag.color }}
-                  />
-                  <div>
-                    <p className="font-medium text-foreground">{tag.name}</p>
-                    {tag.description && (
-                      <p className="text-xs text-muted-foreground">{tag.description}</p>
-                    )}
+            {tags.map((tag) => {
+              const ws = availableWorkspaces.find(w => w.id === tag.workspace_id);
+              return (
+                <div
+                  key={tag.id}
+                  className="flex items-center justify-between p-4 rounded-lg border border-border bg-muted/30 hover:bg-muted/50 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <div
+                      className="h-4 w-4 rounded-full shrink-0"
+                      style={{ backgroundColor: tag.color }}
+                    />
+                    <div>
+                      <p className="font-medium text-foreground">{tag.name}</p>
+                      {ws && (
+                        <p className="text-[10px] text-muted-foreground">{ws.name}</p>
+                      )}
+                      {!ws && tag.workspace_id === null && (
+                        <p className="text-[10px] text-muted-foreground">Global</p>
+                      )}
+                      {tag.description && (
+                        <p className="text-xs text-muted-foreground">{tag.description}</p>
+                      )}
+                    </div>
                   </div>
-                </div>
                 <div className="flex items-center gap-1">
                   <Button
                     variant="ghost"
