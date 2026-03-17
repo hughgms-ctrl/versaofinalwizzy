@@ -16,7 +16,7 @@ import { cn } from '@/lib/utils';
 import { FlowNodeType, ContentItem, ContentItemType, ConditionRule, ConditionRuleType, RandomizerVariant } from '@/types/flow';
 import { RemarketingStepsEditor } from './RemarketingStepsEditor';
 import { useTeamMembers } from '@/hooks/useTeamMembers';
-import { useTags } from '@/hooks/useTags';
+import { useAllTags } from '@/hooks/useTags';
 import { useAIAgents } from '@/hooks/useAIAgents';
 import { useFlows } from '@/hooks/useFlows';
 import { useFlowFolders } from '@/hooks/useFlowFolders';
