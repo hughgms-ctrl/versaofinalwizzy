@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { toast } from 'sonner';
 
 export interface Campaign {
@@ -14,7 +15,8 @@ export interface Campaign {
     trigger_count: number;
     start_time?: string;
     end_time?: string;
-    pending_count?: number; // Virtual field calculated in query or elsewhere
+    pending_count?: number;
+    workspace_id?: string | null;
     created_at: string;
     updated_at: string;
     flow?: {
@@ -26,13 +28,14 @@ export interface Campaign {
 export function useCampaigns() {
     const { profile } = useAuth();
     const currentOrganizationId = profile?.organization_id;
+    const { selectedWorkspaceId } = useWorkspaceContext();
 
     return useQuery({
-        queryKey: ['campaigns', currentOrganizationId],
+        queryKey: ['campaigns', currentOrganizationId, selectedWorkspaceId],
         queryFn: async () => {
             if (!currentOrganizationId) return [];
 
-            const { data, error } = await supabase
+            let query = supabase
                 .from('campaigns')
                 .select(`
                   *,
@@ -42,9 +45,15 @@ export function useCampaigns() {
                 .eq('organization_id', currentOrganizationId)
                 .order('created_at', { ascending: false });
 
+            // Filter by workspace: show campaigns for this workspace or without workspace
+            if (selectedWorkspaceId) {
+                query = query.or(`workspace_id.eq.${selectedWorkspaceId},workspace_id.is.null`);
+            }
+
+            const { data, error } = await query;
+
             if (error) throw error;
 
-            // Map the pending_count from the joined count query
             const mappedData = (data || []).map((c: any) => ({
                 ...c,
                 pending_count: c.pending_count?.[0]?.count || 0
