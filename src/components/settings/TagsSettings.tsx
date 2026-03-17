@@ -192,7 +192,8 @@ export function TagsSettings() {
                   </Button>
                 </div>
               </div>
-            ))}
+            );
+            })}
           </div>
         )}
       </CardContent>
