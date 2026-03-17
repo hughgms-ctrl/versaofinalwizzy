@@ -144,7 +144,7 @@ export function useUpdateTag() {
   const { toast } = useToast();
 
   return useMutation({
-    mutationFn: async ({ id, ...updates }: { id: string; name?: string; color?: string; description?: string }) => {
+    mutationFn: async ({ id, ...updates }: { id: string; name?: string; color?: string; description?: string; workspace_id?: string | null }) => {
       const { data, error } = await supabase
         .from('tags' as any)
         .update(updates)
