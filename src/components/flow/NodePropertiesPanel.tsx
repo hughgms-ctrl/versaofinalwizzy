@@ -43,6 +43,7 @@ interface NodePropertiesPanelProps {
   hasUnsavedChanges?: boolean;
   organizationId?: string;
   flowId?: string;
+  workspaceId?: string | null;
 }
 
 const nodeIcons: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -462,19 +463,29 @@ function OutcomeColumnSelect({ pipelineId, value, onChange }: { pipelineId: stri
   );
 }
 
-export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave, isSaving, hasUnsavedChanges, organizationId, flowId }: NodePropertiesPanelProps) {
+export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave, isSaving, hasUnsavedChanges, organizationId, flowId, workspaceId }: NodePropertiesPanelProps) {
   const [localData, setLocalData] = useState<Record<string, unknown>>({});
   const [isGenerating, setIsGenerating] = useState(false);
   const [expandedFlowFolders, setExpandedFlowFolders] = useState<Set<string>>(new Set());
   const { data: tags = [] } = useTags();
   const { data: agents = [] } = useAIAgents();
-  const { data: flows = [] } = useFlows();
+  const { data: allFlows = [] } = useFlows();
   const { data: flowFolders = [] } = useFlowFolders();
   const { data: departments = [] } = useDepartments();
   const { data: templates = [] } = useDocumentTemplates();
   const { data: packs = [] } = useDocumentPacks();
-  const { data: pipelines = [] } = usePipelines();
+  const { data: allPipelines = [] } = usePipelines();
   const { data: pipelineColumns = [] } = usePipelineColumns(localData.pipelineId as string || localData._conditionPipelineId as string);
+
+  // Filter pipelines by workspace: show only pipelines linked to this flow's workspace
+  const pipelines = workspaceId
+    ? allPipelines.filter(p => p.workspace_ids?.includes(workspaceId))
+    : allPipelines;
+
+  // Filter flows by workspace: show only flows in the same workspace (or global)
+  const flows = workspaceId
+    ? allFlows.filter(f => f.workspace_id === workspaceId || !f.workspace_id)
+    : allFlows;
   const { data: teamMembers = [] } = useTeamMembers();
   const { data: workspaces = [] } = useWorkspaces();
 
