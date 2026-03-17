@@ -461,12 +461,16 @@ export function useDuplicateFlow() {
         .single() as unknown as Promise<{ data: any | null; error: Error | null }>);
 
       if (insertError) throw insertError;
-      return { flow: newFlow, hasInvalidTags };
+      return { flow: newFlow, hasInvalidTags, hasInvalidPipelines, hasInvalidFlows };
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['flows'] });
-      if (result?.hasInvalidTags) {
-        toast.warning('Fluxo duplicado! Alguns nós de tag precisam ser reconfigurados (tags de outro workspace foram removidas).');
+      const warnings = [];
+      if (result?.hasInvalidTags) warnings.push('tags');
+      if (result?.hasInvalidPipelines) warnings.push('pipelines');
+      if (result?.hasInvalidFlows) warnings.push('fluxos');
+      if (warnings.length > 0) {
+        toast.warning(`Fluxo duplicado! Alguns nós precisam ser reconfigurados (${warnings.join(', ')} de outro workspace foram removidos).`);
       } else {
         toast.success('Fluxo duplicado com sucesso!');
       }

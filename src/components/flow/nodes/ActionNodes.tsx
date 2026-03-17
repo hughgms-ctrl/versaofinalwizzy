@@ -79,10 +79,11 @@ export function TagActionNode({ data, selected }: NodeProps<ActionNode>) {
 }
 
 export function PipelineActionNode({ data, selected }: NodeProps<ActionNode>) {
+  const hasWarning = !data.pipelineId && data.pipelineName?.includes('⚠️');
   return (
     <BaseActionNode selected={!!selected} icon={Kanban} color="bg-blue-500" title="Mover Pipeline">
-      <p className="text-xs text-muted-foreground">
-        Para: <span className="font-medium text-foreground">{data.pipelineColumnName || 'Selecionar...'}</span>
+      <p className={`text-xs ${hasWarning ? 'text-destructive font-medium' : 'text-muted-foreground'}`}>
+        {hasWarning ? data.pipelineName : <>Para: <span className="font-medium text-foreground">{data.pipelineColumnName || 'Selecionar...'}</span></>}
       </p>
     </BaseActionNode>
   );
