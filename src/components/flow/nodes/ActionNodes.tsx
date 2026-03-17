@@ -102,6 +102,7 @@ export function DepartmentActionNode({ data, selected }: NodeProps<ActionNode>) 
 export function FlowActionNode({ data, selected }: NodeProps<ActionNode>) {
   const waitForResponse = !!(data.waitForResponse);
   const steps = (data.remarketingSteps as any[]) || [];
+  const hasWarning = !data.flowId && data.flowName?.includes('⚠️');
 
   return (
     <div
@@ -122,8 +123,8 @@ export function FlowActionNode({ data, selected }: NodeProps<ActionNode>) {
       </div>
 
       <div className="p-3 bg-card rounded-b-[10px] space-y-1">
-        <p className="text-xs text-muted-foreground text-indigo-700/70">
-          Fluxo: <span className="font-medium text-indigo-900 dark:text-indigo-100">{data.flowName || 'Selecionar...'}</span>
+        <p className={`text-xs ${hasWarning ? 'text-destructive font-medium' : 'text-muted-foreground text-indigo-700/70'}`}>
+          {hasWarning ? data.flowName : <>Fluxo: <span className="font-medium text-indigo-900 dark:text-indigo-100">{data.flowName || 'Selecionar...'}</span></>}
         </p>
         {waitForResponse && steps.length > 0 && (
           <div className="flex items-center gap-1 pt-1 border-t border-border/50">
