@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { useTags, useCreateTag, useUpdateTag, useDeleteTag, Tag } from '@/hooks/useTags';
+import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Loader2, Plus, Pencil, Trash2, Tag as TagIcon, X, Check } from 'lucide-react';
 import {
   Dialog,
@@ -43,6 +45,7 @@ export function TagsSettings() {
   const createTag = useCreateTag();
   const updateTag = useUpdateTag();
   const deleteTag = useDeleteTag();
+  const { selectedWorkspaceId, availableWorkspaces } = useWorkspaceContext();
   
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -53,6 +56,7 @@ export function TagsSettings() {
     name: '',
     color: '#6366f1',
     description: '',
+    workspace_id: '' as string,
   });
 
   const resetForm = () => {
