@@ -1918,6 +1918,67 @@ export type Database = {
           },
         ]
       }
+      flow_node_logs: {
+        Row: {
+          conversation_id: string | null
+          created_at: string
+          flow_execution_id: string | null
+          id: string
+          input_data: Json | null
+          node_id: string
+          node_name: string | null
+          node_type: string | null
+          organization_id: string | null
+          output_data: Json | null
+        }
+        Insert: {
+          conversation_id?: string | null
+          created_at?: string
+          flow_execution_id?: string | null
+          id?: string
+          input_data?: Json | null
+          node_id: string
+          node_name?: string | null
+          node_type?: string | null
+          organization_id?: string | null
+          output_data?: Json | null
+        }
+        Update: {
+          conversation_id?: string | null
+          created_at?: string
+          flow_execution_id?: string | null
+          id?: string
+          input_data?: Json | null
+          node_id?: string
+          node_name?: string | null
+          node_type?: string | null
+          organization_id?: string | null
+          output_data?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "flow_node_logs_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "flow_node_logs_flow_execution_id_fkey"
+            columns: ["flow_execution_id"]
+            isOneToOne: false
+            referencedRelation: "flow_executions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "flow_node_logs_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       flows: {
         Row: {
           created_at: string

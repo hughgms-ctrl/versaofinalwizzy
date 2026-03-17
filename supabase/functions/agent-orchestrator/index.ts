@@ -2162,12 +2162,14 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
             const variables = { ...(flowExec.variables || {}), ai_resultado: resultado };
 
             if (nextNodeId) {
-              // Resume flow from the next node
+              // Resume flow from the next node — COMPLETE the old execution first
               console.log(`[ORCHESTRATOR] Advancing flow ${ctx.flowExecutionId} to node ${nextNodeId}`);
+              
+              // Mark the current AI handoff execution as completed
               await supabase.from('flow_executions').update({
-                status: 'running',
-                current_node_id: nextNodeId,
+                status: 'completed',
                 variables,
+                completed_at: new Date().toISOString(),
               }).eq('id', ctx.flowExecutionId);
 
               // Clear the handoff context from conversation metadata
@@ -2176,7 +2178,7 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
               delete metadata.ai_handoff_context;
               await supabase.from('conversations').update({ metadata }).eq('id', ctx.conversationId);
 
-              // Trigger flow-execute to continue from the next node
+              // Trigger flow-execute to continue from the next node (creates a fresh execution starting at nextNodeId)
               const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
               const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
               try {

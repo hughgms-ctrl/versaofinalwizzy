@@ -12,6 +12,7 @@ export interface DbConversation {
   last_message_at: string | null;
   assigned_to: string | null;
   ai_agent_id: string | null;
+  metadata: Record<string, any> | null;
   created_at: string;
   updated_at: string;
   contact: {
