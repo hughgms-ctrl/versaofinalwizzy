@@ -483,6 +483,7 @@ function FlowCanvasInner() {
         hasUnsavedChanges={hasUnsavedChanges}
         organizationId={flow?.organization_id}
         flowId={flowId || undefined}
+        workspaceId={flowWorkspaceId}
       />
 
       {/* Test Panel */}
