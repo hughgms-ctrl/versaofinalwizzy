@@ -421,11 +421,15 @@ export function useDuplicateFlow() {
         .single() as unknown as Promise<{ data: any | null; error: Error | null }>);
 
       if (insertError) throw insertError;
-      return newFlow;
+      return { flow: newFlow, hasInvalidTags };
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['flows'] });
-      toast.success('Fluxo duplicado com sucesso!');
+      if (result?.hasInvalidTags) {
+        toast.warning('Fluxo duplicado! Alguns nós de tag precisam ser reconfigurados (tags de outro workspace foram removidas).');
+      } else {
+        toast.success('Fluxo duplicado com sucesso!');
+      }
     },
     onError: (error) => {
       console.error('Error duplicating flow:', error);
