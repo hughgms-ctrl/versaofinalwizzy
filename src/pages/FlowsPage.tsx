@@ -230,7 +230,7 @@ const FlowsPage = () => {
     return wsId === selectedWorkspaceId; // Strict: only show if matches selected
   };
 
-  const filteredFlows = (flows as Flow[] | undefined)?.filter(f => matchesWorkspace((f as any).workspace_id)) || [];
+  const filteredFlows = (flows as Flow[] | undefined)?.filter(f => matchesWorkspace((f as any).workspace_id) && (f as any).trigger_type !== 'chat_follow_up') || [];
   const filteredFolders = folders?.filter(f => matchesWorkspace(f.workspace_id)) || [];
 
   // Get flows without folder (root level)
