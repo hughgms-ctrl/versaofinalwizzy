@@ -1382,20 +1382,20 @@ async function executePipelineAction(
       .update({ status: 'open' }) // Ensure it's open if moved in pipeline
       .eq('id', context.conversationId);
 
-    // 2. Get old column for history
+    // 2. Get old position for history (unique constraint on conversation_id means only one pipeline at a time)
     let fromColumnId: string | null = null;
     const { data: existingPos } = await supabase
       .from('conversation_pipeline_positions')
-      .select('id, column_id')
+      .select('id, column_id, pipeline_id')
       .eq('conversation_id', context.conversationId)
-      .eq('pipeline_id', pipelineId)
       .maybeSingle();
 
     if (existingPos) {
-      fromColumnId = existingPos.column_id;
+      fromColumnId = existingPos.pipeline_id === pipelineId ? existingPos.column_id : null;
       const { error } = await supabase
         .from('conversation_pipeline_positions')
         .update({
+          pipeline_id: pipelineId,
           column_id: columnId,
           updated_at: new Date().toISOString(),
         })
