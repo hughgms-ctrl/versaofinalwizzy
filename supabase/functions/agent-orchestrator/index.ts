@@ -1254,8 +1254,9 @@ async function invokeAgentAI(
   } else if (hasNextNodes) {
     systemPrompt += `- Quando sua tarefa nesta etapa estiver COMPLETA, use (advance_flow ou finalizar_interacao) para avançar o fluxo.\n`;
     systemPrompt += `- NÃO use estas ferramentas prematuramente. Só avance quando sua tarefa aqui estiver realmente concluída.\n`;
-    systemPrompt += `- Se você for avançar agora, seja BREVE em sua mensagem de texto. Não gaste tempo com agradecimentos longos, pois outra mensagem seguirá imediatamente.\n`;
-    systemPrompt += `- Você pode usar send_reply e (advance_flow ou finalizar_interacao) na mesma rodada SOMENTE se sua resposta é a última antes de avançar.\n`;
+    systemPrompt += `- REGRA CRÍTICA: Quando você concluir sua tarefa, OBRIGATORIAMENTE chame send_reply com sua mensagem final E finalizar_interacao/advance_flow NA MESMA RODADA. NÃO espere o cliente confirmar ou responder "ok". O fluxo DEVE avançar automaticamente.\n`;
+    systemPrompt += `- Seja BREVE na mensagem final. Não faça despedidas longas, pois outra etapa seguirá imediatamente após.\n`;
+    systemPrompt += `- NUNCA envie uma mensagem de encerramento sozinha sem chamar finalizar_interacao junto. Se está se despedindo, é porque terminou — então finalize.\n`;
   } else {
     systemPrompt += `- Você é o último agente do fluxo. Continue atendendo até que a conversa se encerre naturalmente.\n`;
   }
