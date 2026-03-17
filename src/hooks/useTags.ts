@@ -93,7 +93,7 @@ export function useCreateTag() {
   const { toast } = useToast();
 
   return useMutation({
-    mutationFn: async (tag: { name: string; color: string; description?: string }): Promise<Tag> => {
+    mutationFn: async (tag: { name: string; color: string; description?: string; workspace_id?: string | null }): Promise<Tag> => {
       // Get org_id from profile
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Usuário não autenticado');
@@ -109,7 +109,10 @@ export function useCreateTag() {
       const { data, error } = await supabase
         .from('tags' as any)
         .insert({
-          ...tag,
+          name: tag.name,
+          color: tag.color,
+          description: tag.description,
+          workspace_id: tag.workspace_id || null,
           organization_id: profile.organization_id,
         })
         .select()
