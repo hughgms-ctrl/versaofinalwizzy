@@ -119,10 +119,10 @@ export function useRenameFlowFolder() {
       if (updatingWorkspace && workspaceId !== undefined) {
         const updateWorkspaceRecursive = async (currentFolderId: string, newWorkspaceId: string | null) => {
           // Update all flows in this folder
-          const { error: flowsErr } = await (supabase
-            .from('flows' as 'contacts')
-            .update({ workspace_id: newWorkspaceId } as never)
-            .eq('folder_id', currentFolderId) as unknown as Promise<{ error: Error | null }>);
+          const { error: flowsErr } = await (supabase as any)
+            .from('flows')
+            .update({ workspace_id: newWorkspaceId })
+            .eq('folder_id', currentFolderId);
             
           if (flowsErr) {
             console.error('Error updating workspace for flows:', flowsErr);
