@@ -220,6 +220,25 @@ export function TagsSettings() {
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               />
             </div>
+
+            <div className="space-y-2">
+              <Label>Workspace</Label>
+              <Select
+                value={formData.workspace_id || '_global'}
+                onValueChange={(val) => setFormData({ ...formData, workspace_id: val === '_global' ? '' : val })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione um workspace" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_global">Global (todos os workspaces)</SelectItem>
+                  {availableWorkspaces.map((ws) => (
+                    <SelectItem key={ws.id} value={ws.id}>{ws.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-muted-foreground">Tags vinculadas a um workspace só aparecem naquele workspace.</p>
+            </div>
             
             <div className="space-y-2">
               <Label htmlFor="description">Descrição (opcional)</Label>
