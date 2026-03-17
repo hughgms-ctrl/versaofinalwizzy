@@ -60,7 +60,7 @@ export function TagsSettings() {
   });
 
   const resetForm = () => {
-    setFormData({ name: '', color: '#6366f1', description: '' });
+    setFormData({ name: '', color: '#6366f1', description: '', workspace_id: selectedWorkspaceId || '' });
     setEditingTag(null);
   };
 
@@ -75,6 +75,7 @@ export function TagsSettings() {
       name: tag.name,
       color: tag.color,
       description: tag.description || '',
+      workspace_id: tag.workspace_id || '',
     });
     setIsDialogOpen(true);
   };
