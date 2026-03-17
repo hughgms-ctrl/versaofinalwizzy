@@ -802,6 +802,19 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
           console.log(`[CAMPAIGN] Assigning workspace ${campaignFull.workspace_id} from campaign`);
           await supabase.from('contacts').update({ workspace_id: campaignFull.workspace_id }).eq('id', contact.id);
           await supabase.from('conversations').update({ workspace_id: campaignFull.workspace_id }).eq('id', conversation.id);
+
+          // Also add workspace filter tags to the contact so it appears in tag-based workspace filtering
+          const { data: workspace } = await supabase.from('workspaces').select('filter_tag_ids').eq('id', campaignFull.workspace_id).single();
+          if (workspace?.filter_tag_ids && workspace.filter_tag_ids.length > 0) {
+            for (const tagId of workspace.filter_tag_ids) {
+              const { error: tagErr } = await supabase.from('contact_tags').upsert(
+                { contact_id: contact.id, tag_id: tagId, added_by_type: 'campaign' },
+                { onConflict: 'contact_id,tag_id', ignoreDuplicates: true }
+              );
+              if (tagErr) console.log(`[CAMPAIGN] Failed to add tag ${tagId}:`, tagErr.message);
+            }
+            console.log(`[CAMPAIGN] Added ${workspace.filter_tag_ids.length} workspace tags to contact ${contact.id}`);
+          }
         }
 
         // Increment campaign counter
