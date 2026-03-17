@@ -367,15 +367,40 @@ export function useDuplicateFlow() {
         throw new Error(`Failed to fetch original flow: ${fetchError?.message}`);
       }
 
-      // 2. Prepare the duplicated flow data
+      // 2. Prepare the duplicated flow data - clear tags from other workspaces
+      const targetWorkspaceId = originalFlow.workspace_id;
+      let nodes = JSON.parse(JSON.stringify(originalFlow.nodes || []));
+      let hasInvalidTags = false;
+
+      // If flow has a workspace, check all action-tag nodes and clear tags from other workspaces
+      if (targetWorkspaceId) {
+        // Fetch tags for the target workspace
+        const { data: workspaceTags } = await supabase
+          .from('tags' as any)
+          .select('id')
+          .or(`workspace_id.eq.${targetWorkspaceId},workspace_id.is.null`);
+        
+        const validTagIds = new Set((workspaceTags || []).map((t: any) => t.id));
+
+        for (const node of nodes) {
+          if (node.type === 'action-tag' && node.data?.tagId) {
+            if (!validTagIds.has(node.data.tagId)) {
+              node.data.tagId = '';
+              node.data.tagName = '⚠️ Tag não configurada';
+              hasInvalidTags = true;
+            }
+          }
+        }
+      }
+
       const duplicatedData = {
         organization_id: originalFlow.organization_id,
         name: `${originalFlow.name} (Cópia)`,
         description: originalFlow.description,
-        is_active: false, // Always inactive by default
+        is_active: false,
         trigger_type: originalFlow.trigger_type,
         trigger_config: originalFlow.trigger_config || {},
-        nodes: originalFlow.nodes || [],
+        nodes,
         edges: originalFlow.edges || [],
         variables: originalFlow.variables || {},
         created_by: user.id,
