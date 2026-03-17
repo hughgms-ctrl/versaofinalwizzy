@@ -211,11 +211,14 @@ const ConversationsPage = () => {
       }
 
       if (selectedWorkspaceId && selectedWorkspace) {
-        const workspaceTagIds = selectedWorkspace.filter_tag_ids || [];
-        if (workspaceTagIds.length > 0) {
-          const contactTagIds = allContactTags?.filter(ct => ct.contact_id === conv.contact?.id).map(ct => ct.tag_id) || [];
-          const hasWorkspaceTag = workspaceTagIds.some(tagId => contactTagIds.includes(tagId));
-          if (!hasWorkspaceTag) return false;
+        const hasDirectWorkspace = (conv as any).workspace_id === selectedWorkspaceId;
+        if (!hasDirectWorkspace) {
+          const workspaceTagIds = selectedWorkspace.filter_tag_ids || [];
+          if (workspaceTagIds.length > 0) {
+            const contactTagIds = allContactTags?.filter(ct => ct.contact_id === conv.contact?.id).map(ct => ct.tag_id) || [];
+            const hasWorkspaceTag = workspaceTagIds.some(tagId => contactTagIds.includes(tagId));
+            if (!hasWorkspaceTag) return false;
+          }
         }
       }
       return true;
