@@ -367,12 +367,14 @@ export function useDuplicateFlow() {
         throw new Error(`Failed to fetch original flow: ${fetchError?.message}`);
       }
 
-      // 2. Prepare the duplicated flow data - clear tags from other workspaces
+      // 2. Prepare the duplicated flow data - clear tags/pipelines/flows from other workspaces
       const targetWorkspaceId = originalFlow.workspace_id;
       let nodes = JSON.parse(JSON.stringify(originalFlow.nodes || []));
       let hasInvalidTags = false;
+      let hasInvalidPipelines = false;
+      let hasInvalidFlows = false;
 
-      // If flow has a workspace, check all action-tag nodes and clear tags from other workspaces
+      // If flow has a workspace, check all action nodes and clear refs from other workspaces
       if (targetWorkspaceId) {
         // Fetch tags for the target workspace
         const { data: workspaceTags } = await supabase
@@ -382,12 +384,50 @@ export function useDuplicateFlow() {
         
         const validTagIds = new Set((workspaceTags || []).map((t: any) => t.id));
 
+        // Fetch pipelines linked to this workspace
+        const { data: allPipelines } = await (supabase as any)
+          .from('pipelines')
+          .select('id, workspace_ids');
+        
+        const validPipelineIds = new Set(
+          (allPipelines || [])
+            .filter((p: any) => p.workspace_ids?.includes(targetWorkspaceId))
+            .map((p: any) => p.id)
+        );
+
+        // Fetch flows in this workspace (or global)
+        const { data: workspaceFlows } = await (supabase as any)
+          .from('flows')
+          .select('id, workspace_id');
+        
+        const validFlowIds = new Set(
+          (workspaceFlows || [])
+            .filter((f: any) => f.workspace_id === targetWorkspaceId || !f.workspace_id)
+            .map((f: any) => f.id)
+        );
+
         for (const node of nodes) {
           if (node.type === 'action-tag' && node.data?.tagId) {
             if (!validTagIds.has(node.data.tagId)) {
               node.data.tagId = '';
               node.data.tagName = '⚠️ Tag não configurada';
               hasInvalidTags = true;
+            }
+          }
+          if (node.type === 'action-pipeline' && node.data?.pipelineId) {
+            if (!validPipelineIds.has(node.data.pipelineId)) {
+              node.data.pipelineId = '';
+              node.data.pipelineName = '⚠️ Pipeline não configurado';
+              node.data.pipelineColumnId = '';
+              node.data.pipelineColumnName = '';
+              hasInvalidPipelines = true;
+            }
+          }
+          if (node.type === 'action-flow' && node.data?.flowId) {
+            if (!validFlowIds.has(node.data.flowId)) {
+              node.data.flowId = '';
+              node.data.flowName = '⚠️ Fluxo não configurado';
+              hasInvalidFlows = true;
             }
           }
         }
