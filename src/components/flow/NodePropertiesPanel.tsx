@@ -16,7 +16,7 @@ import { cn } from '@/lib/utils';
 import { FlowNodeType, ContentItem, ContentItemType, ConditionRule, ConditionRuleType, RandomizerVariant } from '@/types/flow';
 import { RemarketingStepsEditor } from './RemarketingStepsEditor';
 import { useTeamMembers } from '@/hooks/useTeamMembers';
-import { useTags } from '@/hooks/useTags';
+import { useAllTags } from '@/hooks/useTags';
 import { useAIAgents } from '@/hooks/useAIAgents';
 import { useFlows } from '@/hooks/useFlows';
 import { useFlowFolders } from '@/hooks/useFlowFolders';
@@ -467,7 +467,7 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
   const [localData, setLocalData] = useState<Record<string, unknown>>({});
   const [isGenerating, setIsGenerating] = useState(false);
   const [expandedFlowFolders, setExpandedFlowFolders] = useState<Set<string>>(new Set());
-  const { data: tags = [] } = useTags();
+  const { data: allTags = [] } = useAllTags();
   const { data: agents = [] } = useAIAgents();
   const { data: allFlows = [] } = useFlows();
   const { data: flowFolders = [] } = useFlowFolders();
@@ -476,6 +476,11 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
   const { data: packs = [] } = useDocumentPacks();
   const { data: allPipelines = [] } = usePipelines();
   const { data: pipelineColumns = [] } = usePipelineColumns(localData.pipelineId as string || localData._conditionPipelineId as string);
+
+  // Filter tags by flow's workspace
+  const tags = workspaceId
+    ? allTags.filter(t => t.workspace_id === workspaceId || !t.workspace_id)
+    : allTags;
 
   // Filter pipelines by workspace: show only pipelines linked to this flow's workspace
   const pipelines = workspaceId
