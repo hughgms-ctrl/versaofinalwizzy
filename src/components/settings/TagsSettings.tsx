@@ -86,10 +86,16 @@ export function TagsSettings() {
     if (editingTag) {
       await updateTag.mutateAsync({
         id: editingTag.id,
-        ...formData,
+        name: formData.name,
+        color: formData.color,
+        description: formData.description,
+        workspace_id: formData.workspace_id || null,
       });
     } else {
-      await createTag.mutateAsync(formData);
+      await createTag.mutateAsync({
+        ...formData,
+        workspace_id: formData.workspace_id || null,
+      });
     }
     
     setIsDialogOpen(false);
