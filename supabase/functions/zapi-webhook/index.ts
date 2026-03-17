@@ -808,7 +808,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
           if (workspace?.filter_tag_ids && workspace.filter_tag_ids.length > 0) {
             for (const tagId of workspace.filter_tag_ids) {
               const { error: tagErr } = await supabase.from('contact_tags').upsert(
-                { contact_id: contact.id, tag_id: tagId, added_by_type: 'campaign' },
+                { contact_id: contact.id, tag_id: tagId, added_by_type: 'flow' },
                 { onConflict: 'contact_id,tag_id', ignoreDuplicates: true }
               );
               if (tagErr) console.log(`[CAMPAIGN] Failed to add tag ${tagId}:`, tagErr.message);
