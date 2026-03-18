@@ -314,25 +314,77 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
   const handleToggleAI = async (active: boolean) => {
     setIsAIActive(active);
 
-    // Persist to DB
-    const newMode = active ? 'ia' : 'ativo';
-    await supabase
+    // Get current metadata
+    const { data: currentConv } = await supabase
       .from('conversations')
-      .update({ service_mode: newMode } as any)
-      .eq('id', conversation.id);
-    queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      .select('metadata')
+      .eq('id', conversation.id)
+      .single();
+    const currentMetadata = (currentConv?.metadata as Record<string, unknown>) || {};
 
     if (active) {
+      // Reactivating AI: clear pause and set mode
+      const { ai_paused_until, ...cleanMeta } = currentMetadata as any;
+      await supabase
+        .from('conversations')
+        .update({ service_mode: 'ia', metadata: cleanMeta } as any)
+        .eq('id', conversation.id);
+      setAiPausedUntil(null);
       toast({
         title: "IA Ativada",
         description: "A IA está lendo o contexto da conversa e continuará o atendimento.",
       });
     } else {
+      // Deactivating AI without duration (permanent)
+      await supabase
+        .from('conversations')
+        .update({ 
+          service_mode: 'ativo',
+          metadata: { ...currentMetadata, ai_paused_until: 'permanent' }
+        } as any)
+        .eq('id', conversation.id);
+      setAiPausedUntil('permanent');
       toast({
         title: "IA Desativada",
-        description: "Você assumiu o controle do atendimento.",
+        description: "Você assumiu o controle do atendimento permanentemente.",
       });
     }
+    queryClient.invalidateQueries({ queryKey: ['conversations'] });
+  };
+
+  const handlePauseAI = async (durationMinutes: number | 'permanent') => {
+    setIsAIActive(false);
+
+    const { data: currentConv } = await supabase
+      .from('conversations')
+      .select('metadata')
+      .eq('id', conversation.id)
+      .single();
+    const currentMetadata = (currentConv?.metadata as Record<string, unknown>) || {};
+
+    let pauseValue: string;
+    let description: string;
+    if (durationMinutes === 'permanent') {
+      pauseValue = 'permanent';
+      description = 'A IA foi desativada permanentemente nesta conversa.';
+    } else {
+      const until = new Date(Date.now() + durationMinutes * 60 * 1000).toISOString();
+      pauseValue = until;
+      const labels: Record<number, string> = { 30: '30 minutos', 60: '1 hora', 300: '5 horas', 1440: '1 dia' };
+      description = `A IA ficará inativa por ${labels[durationMinutes] || `${durationMinutes} min`}.`;
+    }
+
+    await supabase
+      .from('conversations')
+      .update({
+        service_mode: 'ativo',
+        metadata: { ...currentMetadata, ai_paused_until: pauseValue }
+      } as any)
+      .eq('id', conversation.id);
+
+    setAiPausedUntil(pauseValue);
+    queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    toast({ title: "IA Pausada", description });
   };
 
   // Handle file selection from MediaUploadButton
