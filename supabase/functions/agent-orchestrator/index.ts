@@ -1486,7 +1486,7 @@ async function invokeAgentAI(
     if (choice.finish_reason === 'stop') break;
   }
 
-  const hasUserVisibleReply = Boolean(replyText && replyText.trim());
+  let hasUserVisibleReply = Boolean(replyText && replyText.trim());
   const handoffCtx = ctx.conversation?.metadata?.ai_handoff_context || {};
   const autoAdvance = handoffCtx.autoAdvance !== false;
   const inferredOutcome = inferOutcomeFromReply(replyText, outcomes);
@@ -1494,10 +1494,15 @@ async function invokeAgentAI(
 
   const shouldFallbackAdvanceWithoutOutcomes =
     !hasConfiguredOutcomes &&
-    replySentViaTool &&
     hasUserVisibleReply &&
     !hasQuestionLikeReply &&
     hasExplicitCompletionCue(replyText);
+
+  if (!hasUserVisibleReply && !shouldAdvance && hasNextNodes) {
+    replyText = 'Entendi. Para continuar, pode me dar mais um detalhe sobre isso?';
+    hasUserVisibleReply = true;
+    console.log('[AGENT] RECOVERY: no visible reply generated, sending follow-up question to avoid deadlock');
+  }
 
   if (!shouldAdvance && hasNextNodes && autoAdvance) {
     if (hasConfiguredOutcomes && inferredOutcome && !hasQuestionLikeReply) {
@@ -2287,9 +2292,15 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
     if (choice.finish_reason === 'stop') break;
   }
 
-  const hasUserVisibleReply = Boolean(replyText && replyText.trim());
+  let hasUserVisibleReply = Boolean(replyText && replyText.trim());
   const handoffCtx = ctx.conversation?.metadata?.ai_handoff_context || {};
   const autoAdvance = handoffCtx.autoAdvance !== false;
+
+  if (!shouldBreak && ctx.flowExecutionId && !hasUserVisibleReply) {
+    replyText = 'Entendi. Para continuar, pode me dar mais um detalhe sobre isso?';
+    hasUserVisibleReply = true;
+    console.log('[LEGACY] RECOVERY: no visible reply generated, sending follow-up question to avoid deadlock');
+  }
 
   if (!shouldBreak && ctx.flowExecutionId && hasUserVisibleReply && autoAdvance) {
     const { data: flowExec } = await supabase
@@ -2309,7 +2320,6 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
       const hasQuestionLikeReply = isLikelyQuestionReply(replyText);
       const shouldAdvanceWithoutOutcomes =
         configuredOutcomes.length === 0 &&
-        replySentViaTool &&
         !hasQuestionLikeReply &&
         hasExplicitCompletionCue(replyText);
 
@@ -2552,6 +2562,22 @@ function inferOutcomeFromReply(reply: string | null, configuredOutcomes: string[
       return outcome;
     }
   }
+
+  const negativeOutcome = outcomesByPriority.find((outcome) => {
+    const normalizedOutcome = normalizeForComparison(outcome);
+    return /(desqual|nao\s*qualificado|reprov|negad|inapto|inviavel)/.test(normalizedOutcome);
+  });
+
+  const positiveOutcome = outcomesByPriority.find((outcome) => {
+    const normalizedOutcome = normalizeForComparison(outcome);
+    return /(qualif|aprov|prosseguir|seguir|continuar|concluido)/.test(normalizedOutcome);
+  });
+
+  const hasNegativeCue = /(infelizmente|nao\s+sera\s+possivel|nao\s+poderemos|nao\s+podemos\s+prosseguir|nao\s+atende|nao\s+cumpre|encerrar\s+o\s+atendimento|encerrar\s+atendimento)/.test(normalizedReply);
+  if (hasNegativeCue && negativeOutcome) return negativeOutcome;
+
+  const hasPositiveCue = /(podemos\s+seguir|vamos\s+seguir|proxima\s+etapa|proximo\s+passo|dar\s+continuidade|encaminhar\s+para\s+proxima\s+etapa|seguiremos\s+com\s+o\s+atendimento)/.test(normalizedReply);
+  if (hasPositiveCue && positiveOutcome) return positiveOutcome;
 
   return null;
 }
