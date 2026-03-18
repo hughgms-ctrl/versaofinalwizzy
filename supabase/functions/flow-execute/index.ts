@@ -519,7 +519,7 @@ async function executeAIHandoff(
     if (additionalPrompt) {
       promptParts.push(`---\nINSTRUÇÕES ESPECÍFICAS DO NÓ:\n${additionalPrompt}`);
     }
-    const autoAdvance = nodeData.autoAdvance !== false; // default true
+    const autoAdvance = data.autoAdvance !== false; // default true
     if (expectedOutcomes) {
       promptParts.push(`---\nRESULTADOS ESPERADOS: ${expectedOutcomes}`);
       promptParts.push(`Ao finalizar a interação, use finalizar_interacao(resultado) com um dos seguintes resultados: ${outcomes.join(', ')}. Se nenhum se aplicar, use "default".`);
