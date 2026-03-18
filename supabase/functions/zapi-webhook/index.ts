@@ -945,6 +945,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
           body: JSON.stringify(orchestratorBody),
         });
         runBackground(agentPromise);
+        } // end else (not paused)
       } else if (isAtActionFlow && activeFlowExec.status === 'waiting_input') {
         // action-flow node waiting for response — user responded! Route via 'responded' handle
         console.log(`[WEBHOOK] action-flow waiting_input — user responded! Routing via 'responded' handle`);
