@@ -79,6 +79,17 @@ function checkWebhookRate(ip: string): boolean {
   return entry.count <= WEBHOOK_RATE_LIMIT
 }
 
+// ── AI PAUSE CHECK ──
+function isAIPaused(metadata: any): boolean {
+  const pausedUntil = metadata?.ai_paused_until;
+  if (!pausedUntil) return false;
+  if (pausedUntil === 'permanent') return true;
+  // Check if the pause time has expired
+  const pauseDate = new Date(pausedUntil);
+  if (isNaN(pauseDate.getTime())) return false;
+  return Date.now() < pauseDate.getTime();
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -903,6 +914,10 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
       const isAtActionFlow = currentNode?.type === 'action-flow' && (currentNode.data?.waitForResponse || (currentNode.data?.remarketingSteps as any[])?.length > 0);
 
       if (isAtAIHandoff && activeFlowExec.status === 'waiting_input') {
+        // Check if AI is paused by the human agent
+        if (isAIPaused(conversation.metadata)) {
+          console.log(`[WEBHOOK] AI is PAUSED for conversation ${conversation.id} — skipping orchestrator`);
+        } else {
         console.log(`[WEBHOOK] Flow paused at ai-handoff node — routing message to agent-orchestrator`);
 
         // Get the ai_handoff_context from conversation metadata
@@ -930,6 +945,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
           body: JSON.stringify(orchestratorBody),
         });
         runBackground(agentPromise);
+        } // end else (not paused)
       } else if (isAtActionFlow && activeFlowExec.status === 'waiting_input') {
         // action-flow node waiting for response — user responded! Route via 'responded' handle
         console.log(`[WEBHOOK] action-flow waiting_input — user responded! Routing via 'responded' handle`);
@@ -1101,6 +1117,12 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
 
       if (!shouldTrigger && triggerText) {
         shouldTrigger = await checkMasterPromptTriggers(supabase, organizationId, contact.id, triggerText, conversation.id);
+      }
+
+      // Check if AI is paused by human agent
+      if (shouldTrigger && isAIPaused(conversation.metadata)) {
+        console.log(`[WEBHOOK] AI is PAUSED for conversation ${conversation.id} — skipping standalone orchestrator trigger`);
+        shouldTrigger = false;
       }
 
       if (shouldTrigger) {

@@ -10,7 +10,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useSignatureSettings } from '@/hooks/useSignatureSettings';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Bot, User, Send, Loader2, MessageCircle, Mic, Check, CheckCheck, ArrowUp, FileText, MapPin, Play, UserCircle, X, Variable, PenLine, Archive, Search, Reply, Clock, Sparkles } from 'lucide-react';
+import { Bot, User, Send, Loader2, MessageCircle, Mic, Check, CheckCheck, ArrowUp, FileText, MapPin, Play, UserCircle, X, Variable, PenLine, Archive, Search, Reply, Clock, Sparkles, Timer, ChevronDown } from 'lucide-react';
 import { formatWhatsAppMessage, parseMessageVariables, messageVariables } from '@/lib/whatsappFormatter';
 import {
   DropdownMenu,
@@ -76,6 +76,11 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
   const [replyingTo, setReplyingTo] = useState<DbMessage | null>(null);
   const [followUpDialogOpen, setFollowUpDialogOpen] = useState(false);
   const [followUpMessage, setFollowUpMessage] = useState<DbMessage | null>(null);
+  const [aiPausedUntil, setAiPausedUntil] = useState<string | null>(() => {
+    const meta = (conversation as any).metadata;
+    return meta?.ai_paused_until || null;
+  });
+  const [showPauseMenu, setShowPauseMenu] = useState(false);
 
   const { data: followUpMap } = useFollowUpStatus();
 
@@ -160,6 +165,8 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
     hasInitialScrolled.current = false;
     setShowScrollButton(false);
     setIsAIActive((conversation as any).service_mode === 'ia');
+    const meta = (conversation as any).metadata;
+    setAiPausedUntil(meta?.ai_paused_until || null);
   }, [conversation.id]);
 
   // Handle scroll for infinite scroll (reverse) and show/hide scroll button
@@ -314,25 +321,77 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
   const handleToggleAI = async (active: boolean) => {
     setIsAIActive(active);
 
-    // Persist to DB
-    const newMode = active ? 'ia' : 'ativo';
-    await supabase
+    // Get current metadata
+    const { data: currentConv } = await supabase
       .from('conversations')
-      .update({ service_mode: newMode } as any)
-      .eq('id', conversation.id);
-    queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      .select('metadata')
+      .eq('id', conversation.id)
+      .single();
+    const currentMetadata = (currentConv?.metadata as Record<string, unknown>) || {};
 
     if (active) {
+      // Reactivating AI: clear pause and set mode
+      const { ai_paused_until, ...cleanMeta } = currentMetadata as any;
+      await supabase
+        .from('conversations')
+        .update({ service_mode: 'ia', metadata: cleanMeta } as any)
+        .eq('id', conversation.id);
+      setAiPausedUntil(null);
       toast({
         title: "IA Ativada",
         description: "A IA está lendo o contexto da conversa e continuará o atendimento.",
       });
     } else {
+      // Deactivating AI without duration (permanent)
+      await supabase
+        .from('conversations')
+        .update({ 
+          service_mode: 'ativo',
+          metadata: { ...currentMetadata, ai_paused_until: 'permanent' }
+        } as any)
+        .eq('id', conversation.id);
+      setAiPausedUntil('permanent');
       toast({
         title: "IA Desativada",
-        description: "Você assumiu o controle do atendimento.",
+        description: "Você assumiu o controle do atendimento permanentemente.",
       });
     }
+    queryClient.invalidateQueries({ queryKey: ['conversations'] });
+  };
+
+  const handlePauseAI = async (durationMinutes: number | 'permanent') => {
+    setIsAIActive(false);
+
+    const { data: currentConv } = await supabase
+      .from('conversations')
+      .select('metadata')
+      .eq('id', conversation.id)
+      .single();
+    const currentMetadata = (currentConv?.metadata as Record<string, unknown>) || {};
+
+    let pauseValue: string;
+    let description: string;
+    if (durationMinutes === 'permanent') {
+      pauseValue = 'permanent';
+      description = 'A IA foi desativada permanentemente nesta conversa.';
+    } else {
+      const until = new Date(Date.now() + durationMinutes * 60 * 1000).toISOString();
+      pauseValue = until;
+      const labels: Record<number, string> = { 30: '30 minutos', 60: '1 hora', 300: '5 horas', 1440: '1 dia' };
+      description = `A IA ficará inativa por ${labels[durationMinutes] || `${durationMinutes} min`}.`;
+    }
+
+    await supabase
+      .from('conversations')
+      .update({
+        service_mode: 'ativo',
+        metadata: { ...currentMetadata, ai_paused_until: pauseValue }
+      } as any)
+      .eq('id', conversation.id);
+
+    setAiPausedUntil(pauseValue);
+    queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    toast({ title: "IA Pausada", description });
   };
 
   // Handle file selection from MediaUploadButton
@@ -503,27 +562,65 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
               <TooltipContent>Arquivar conversa</TooltipContent>
             </Tooltip>
 
-            {/* AI Toggle - Compact on mobile */}
-            <div className={cn(
-              "flex items-center gap-1 md:gap-2 px-2 md:px-3 py-1 md:py-1.5 rounded-full border transition-colors",
-              isAIActive
-                ? "bg-primary/10 border-primary/30"
-                : "bg-muted border-border"
-            )}>
-              {isAIActive ? (
-                <Bot className="h-3.5 w-3.5 md:h-4 md:w-4 text-primary" />
-              ) : (
-                <User className="h-3.5 w-3.5 md:h-4 md:w-4 text-muted-foreground" />
-              )}
-              <span className="text-[10px] md:text-xs font-medium hidden sm:inline">
-                {isAIActive ? 'IA Ativa' : 'Manual'}
-              </span>
-              <Switch
-                checked={isAIActive}
-                onCheckedChange={handleToggleAI}
-                className="data-[state=checked]:bg-primary scale-90 md:scale-100"
-              />
-            </div>
+            {/* AI Toggle with Pause Duration */}
+            <DropdownMenu open={showPauseMenu} onOpenChange={setShowPauseMenu}>
+              <DropdownMenuTrigger asChild>
+                <button className={cn(
+                  "flex items-center gap-1 md:gap-2 px-2 md:px-3 py-1 md:py-1.5 rounded-full border transition-colors cursor-pointer hover:opacity-80",
+                  isAIActive
+                    ? "bg-primary/10 border-primary/30"
+                    : aiPausedUntil
+                    ? "bg-amber-500/10 border-amber-500/30"
+                    : "bg-muted border-border"
+                )}>
+                  {isAIActive ? (
+                    <Bot className="h-3.5 w-3.5 md:h-4 md:w-4 text-primary" />
+                  ) : aiPausedUntil ? (
+                    <Timer className="h-3.5 w-3.5 md:h-4 md:w-4 text-amber-500" />
+                  ) : (
+                    <User className="h-3.5 w-3.5 md:h-4 md:w-4 text-muted-foreground" />
+                  )}
+                  <span className="text-[10px] md:text-xs font-medium hidden sm:inline">
+                    {isAIActive ? 'IA Ativa' : aiPausedUntil === 'permanent' ? 'IA Off' : aiPausedUntil ? 'IA Pausada' : 'Manual'}
+                  </span>
+                  <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                {!isAIActive ? (
+                  <DropdownMenuItem onClick={() => handleToggleAI(true)}>
+                    <Bot className="h-4 w-4 mr-2 text-primary" />
+                    Reativar IA
+                  </DropdownMenuItem>
+                ) : (
+                  <>
+                    <DropdownMenuItem className="text-xs text-muted-foreground font-semibold" disabled>
+                      Pausar IA por:
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handlePauseAI(30)}>
+                      <Timer className="h-4 w-4 mr-2 text-amber-500" />
+                      30 minutos
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handlePauseAI(60)}>
+                      <Timer className="h-4 w-4 mr-2 text-amber-500" />
+                      1 hora
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handlePauseAI(300)}>
+                      <Timer className="h-4 w-4 mr-2 text-amber-500" />
+                      5 horas
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handlePauseAI(1440)}>
+                      <Timer className="h-4 w-4 mr-2 text-amber-500" />
+                      1 dia
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handlePauseAI('permanent')}>
+                      <X className="h-4 w-4 mr-2 text-destructive" />
+                      Desativar permanentemente
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
 
             {/* Flow Trigger Dropdown - Hidden on small screens */}
             <FlowTriggerDropdown key={conversation.id} conversationId={conversation.id} />
