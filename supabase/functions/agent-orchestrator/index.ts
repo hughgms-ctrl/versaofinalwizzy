@@ -2563,6 +2563,22 @@ function inferOutcomeFromReply(reply: string | null, configuredOutcomes: string[
     }
   }
 
+  const negativeOutcome = outcomesByPriority.find((outcome) => {
+    const normalizedOutcome = normalizeForComparison(outcome);
+    return /(desqual|nao\s*qualificado|reprov|negad|inapto|inviavel)/.test(normalizedOutcome);
+  });
+
+  const positiveOutcome = outcomesByPriority.find((outcome) => {
+    const normalizedOutcome = normalizeForComparison(outcome);
+    return /(qualif|aprov|prosseguir|seguir|continuar|concluido)/.test(normalizedOutcome);
+  });
+
+  const hasNegativeCue = /(infelizmente|nao\s+sera\s+possivel|nao\s+poderemos|nao\s+podemos\s+prosseguir|nao\s+atende|nao\s+cumpre|encerrar\s+o\s+atendimento|encerrar\s+atendimento)/.test(normalizedReply);
+  if (hasNegativeCue && negativeOutcome) return negativeOutcome;
+
+  const hasPositiveCue = /(podemos\s+seguir|vamos\s+seguir|proxima\s+etapa|proximo\s+passo|dar\s+continuidade|encaminhar\s+para\s+proxima\s+etapa|seguiremos\s+com\s+o\s+atendimento)/.test(normalizedReply);
+  if (hasPositiveCue && positiveOutcome) return positiveOutcome;
+
   return null;
 }
 
