@@ -914,6 +914,10 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
       const isAtActionFlow = currentNode?.type === 'action-flow' && (currentNode.data?.waitForResponse || (currentNode.data?.remarketingSteps as any[])?.length > 0);
 
       if (isAtAIHandoff && activeFlowExec.status === 'waiting_input') {
+        // Check if AI is paused by the human agent
+        if (isAIPaused(conversation.metadata)) {
+          console.log(`[WEBHOOK] AI is PAUSED for conversation ${conversation.id} — skipping orchestrator`);
+        } else {
         console.log(`[WEBHOOK] Flow paused at ai-handoff node — routing message to agent-orchestrator`);
 
         // Get the ai_handoff_context from conversation metadata
