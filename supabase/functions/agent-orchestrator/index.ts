@@ -1252,11 +1252,19 @@ async function invokeAgentAI(
     systemPrompt += `- NÃO pule sua etapa. Mesmo que o histórico contenha informações relevantes, siga o protocolo de coleta e validação de dados.\n`;
     systemPrompt += `- Você só poderá avançar o fluxo quando suas instruções específicas de coleta/qualificação estiverem 100% cumpridas.\n`;
   } else if (hasNextNodes) {
+    // Check autoAdvance from handoff context
+    const handoffCtx = ctx.conversation?.metadata?.ai_handoff_context || {};
+    const autoAdvance = handoffCtx.autoAdvance !== false; // default true
+    
     systemPrompt += `- Quando sua tarefa nesta etapa estiver COMPLETA, use (advance_flow ou finalizar_interacao) para avançar o fluxo.\n`;
     systemPrompt += `- NÃO use estas ferramentas prematuramente. Só avance quando sua tarefa aqui estiver realmente concluída.\n`;
-    systemPrompt += `- REGRA CRÍTICA: Quando você concluir sua tarefa, OBRIGATORIAMENTE chame send_reply com sua mensagem final E finalizar_interacao/advance_flow NA MESMA RODADA. NÃO espere o cliente confirmar ou responder "ok". O fluxo DEVE avançar automaticamente.\n`;
-    systemPrompt += `- Seja BREVE na mensagem final. Não faça despedidas longas, pois outra etapa seguirá imediatamente após.\n`;
-    systemPrompt += `- NUNCA envie uma mensagem de encerramento sozinha sem chamar finalizar_interacao junto. Se está se despedindo, é porque terminou — então finalize.\n`;
+    if (autoAdvance) {
+      systemPrompt += `- REGRA CRÍTICA: Quando você concluir sua tarefa, OBRIGATORIAMENTE chame send_reply com sua mensagem final E finalizar_interacao/advance_flow NA MESMA RODADA. NÃO espere o cliente confirmar ou responder "ok". O fluxo DEVE avançar automaticamente.\n`;
+      systemPrompt += `- Seja BREVE na mensagem final. Não faça despedidas longas, pois outra etapa seguirá imediatamente após.\n`;
+      systemPrompt += `- NUNCA envie uma mensagem de encerramento sozinha sem chamar finalizar_interacao junto. Se está se despedindo, é porque terminou — então finalize.\n`;
+    } else {
+      systemPrompt += `- Após concluir sua tarefa, envie sua mensagem final com send_reply. O fluxo só avançará quando o cliente enviar uma nova mensagem.\n`;
+    }
   } else {
     systemPrompt += `- Você é o último agente do fluxo. Continue atendendo até que a conversa se encerre naturalmente.\n`;
   }
