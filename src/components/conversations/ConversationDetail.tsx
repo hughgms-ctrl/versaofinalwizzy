@@ -562,27 +562,65 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
               <TooltipContent>Arquivar conversa</TooltipContent>
             </Tooltip>
 
-            {/* AI Toggle - Compact on mobile */}
-            <div className={cn(
-              "flex items-center gap-1 md:gap-2 px-2 md:px-3 py-1 md:py-1.5 rounded-full border transition-colors",
-              isAIActive
-                ? "bg-primary/10 border-primary/30"
-                : "bg-muted border-border"
-            )}>
-              {isAIActive ? (
-                <Bot className="h-3.5 w-3.5 md:h-4 md:w-4 text-primary" />
-              ) : (
-                <User className="h-3.5 w-3.5 md:h-4 md:w-4 text-muted-foreground" />
-              )}
-              <span className="text-[10px] md:text-xs font-medium hidden sm:inline">
-                {isAIActive ? 'IA Ativa' : 'Manual'}
-              </span>
-              <Switch
-                checked={isAIActive}
-                onCheckedChange={handleToggleAI}
-                className="data-[state=checked]:bg-primary scale-90 md:scale-100"
-              />
-            </div>
+            {/* AI Toggle with Pause Duration */}
+            <DropdownMenu open={showPauseMenu} onOpenChange={setShowPauseMenu}>
+              <DropdownMenuTrigger asChild>
+                <button className={cn(
+                  "flex items-center gap-1 md:gap-2 px-2 md:px-3 py-1 md:py-1.5 rounded-full border transition-colors cursor-pointer hover:opacity-80",
+                  isAIActive
+                    ? "bg-primary/10 border-primary/30"
+                    : aiPausedUntil
+                    ? "bg-amber-500/10 border-amber-500/30"
+                    : "bg-muted border-border"
+                )}>
+                  {isAIActive ? (
+                    <Bot className="h-3.5 w-3.5 md:h-4 md:w-4 text-primary" />
+                  ) : aiPausedUntil ? (
+                    <Timer className="h-3.5 w-3.5 md:h-4 md:w-4 text-amber-500" />
+                  ) : (
+                    <User className="h-3.5 w-3.5 md:h-4 md:w-4 text-muted-foreground" />
+                  )}
+                  <span className="text-[10px] md:text-xs font-medium hidden sm:inline">
+                    {isAIActive ? 'IA Ativa' : aiPausedUntil === 'permanent' ? 'IA Off' : aiPausedUntil ? 'IA Pausada' : 'Manual'}
+                  </span>
+                  <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-52">
+                {!isAIActive ? (
+                  <DropdownMenuItem onClick={() => handleToggleAI(true)}>
+                    <Bot className="h-4 w-4 mr-2 text-primary" />
+                    Reativar IA
+                  </DropdownMenuItem>
+                ) : (
+                  <>
+                    <DropdownMenuItem className="text-xs text-muted-foreground font-semibold" disabled>
+                      Pausar IA por:
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handlePauseAI(30)}>
+                      <Timer className="h-4 w-4 mr-2 text-amber-500" />
+                      30 minutos
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handlePauseAI(60)}>
+                      <Timer className="h-4 w-4 mr-2 text-amber-500" />
+                      1 hora
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handlePauseAI(300)}>
+                      <Timer className="h-4 w-4 mr-2 text-amber-500" />
+                      5 horas
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handlePauseAI(1440)}>
+                      <Timer className="h-4 w-4 mr-2 text-amber-500" />
+                      1 dia
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handlePauseAI('permanent')}>
+                      <X className="h-4 w-4 mr-2 text-destructive" />
+                      Desativar permanentemente
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
 
             {/* Flow Trigger Dropdown - Hidden on small screens */}
             <FlowTriggerDropdown key={conversation.id} conversationId={conversation.id} />
