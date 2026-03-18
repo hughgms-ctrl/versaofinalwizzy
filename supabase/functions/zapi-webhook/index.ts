@@ -828,16 +828,27 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
         if (isOutsideHours) {
           console.log(`[CAMPAIGN QUEUED] Outside hours (${bzTimeStr} vs ${startT}-${endT}). Adding to queue.`);
           
-          // Calculate when the queue should run (next start time)
+          // Calculate when the queue should run (next start time) in UTC
           const [sHour, sMin] = startT.split(':').map(Number);
           const [cHour] = bzTimeStr.split(':').map(Number);
           
-          let scheduledDate = new Date(now.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+          // Get São Paulo offset in minutes by comparing UTC and local representations
+          const spNow = new Date(now.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
+          const offsetMs = spNow.getTime() - now.getTime();
+          // offsetMs is positive when SP is behind UTC (SP = UTC-3, so spNow interprets SP time as UTC which is ahead)
+          
+          // Build the target date in SP time, then convert to UTC
+          const spDate = new Date(spNow);
           if (cHour >= sHour) {
               // It's after start hour but outside hours (means it's after end time), schedule for tomorrow
-              scheduledDate.setDate(scheduledDate.getDate() + 1);
+              spDate.setDate(spDate.getDate() + 1);
           }
-          scheduledDate.setHours(sHour, sMin, 0, 0);
+          spDate.setHours(sHour, sMin, 0, 0);
+          
+          // Convert SP local time back to real UTC by subtracting the offset
+          const scheduledUTC = new Date(spDate.getTime() - offsetMs);
+          
+          console.log(`[CAMPAIGN QUEUED] Scheduled for ${scheduledUTC.toISOString()} (${startT} São Paulo time)`);
 
           await supabase.from('campaign_queue').insert({
             organization_id: organizationId,
@@ -845,7 +856,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
             conversation_id: conversation.id,
             contact_id: contact.id,
             message_content: triggerText,
-            scheduled_for: scheduledDate.toISOString(),
+            scheduled_for: scheduledUTC.toISOString(),
             status: 'pending'
           });
           return respond({ success: true, messageId: savedMessage.id, queued: true });
