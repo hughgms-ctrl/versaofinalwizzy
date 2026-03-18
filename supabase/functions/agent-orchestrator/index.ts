@@ -2096,6 +2096,7 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
 
   const tools = buildLegacyTools(ctx);
   let round = 0;
+  let shouldBreak = false;
 
   while (round < MAX_TOOL_ROUNDS) {
     round++;
