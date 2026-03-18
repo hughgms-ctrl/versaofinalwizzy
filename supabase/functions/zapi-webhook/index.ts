@@ -807,10 +807,14 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
         // Increment campaign counter
         await supabase.rpc('increment_campaign_count', { campaign_id: campaignId });
 
-        // Check if within business hours
+        // Get organization timezone
+        const { data: orgData } = await supabase.from('organizations').select('timezone').eq('id', organizationId).single();
+        const orgTimezone = orgData?.timezone || 'America/Sao_Paulo';
+
+        // Check if within business hours using org timezone
         const now = new Date();
         const bzTimeStr = new Intl.DateTimeFormat('pt-BR', {
-            timeZone: 'America/Sao_Paulo',
+            timeZone: orgTimezone,
             hour: '2-digit', minute: '2-digit', hour12: false
         }).format(now);
 
