@@ -2947,7 +2947,7 @@ function resolveAIConfig(
   // Set provider-appropriate default model
   const defaultModelForProvider = provider === 'openai' 
     ? 'gpt-4o-mini' 
-    : (provider === 'gemini' ? 'gemini-1.5-flash' : 'google/gemini-1.5-flash');
+    : (provider === 'gemini' ? 'gemini-2.5-flash' : 'google/gemini-2.5-flash');
 
   let model = overrideModel || featureModel || integrationConfig.default_model || defaultModelForProvider;
 
