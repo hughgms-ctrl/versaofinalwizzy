@@ -23,6 +23,7 @@ export default function AuthPage() {
     password: '',
     fullName: '',
     companyName: '',
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Sao_Paulo',
   });
 
   useEffect(() => {
