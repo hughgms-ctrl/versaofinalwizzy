@@ -1487,6 +1487,20 @@ async function invokeAgentAI(
     if (choice.finish_reason === 'stop') break;
   }
 
+  // FALLBACK: If autoAdvance is on and AI sent a reply but forgot to call finalizar_interacao,
+  // force-advance the flow so the client doesn't have to send an extra message
+  if (!shouldAdvance && replySentViaTool && hasNextNodes) {
+    const handoffCtx = ctx.conversation?.metadata?.ai_handoff_context || {};
+    const autoAdvance = handoffCtx.autoAdvance !== false;
+    if (autoAdvance) {
+      console.log('[AGENT] FALLBACK: AI sent reply but did not call finalizar_interacao with autoAdvance=true — force advancing');
+      state.last_outcome = state.last_outcome || 'concluido';
+      state.variables = { ...(state.variables || {}), ai_resultado: state.last_outcome };
+      shouldAdvance = true;
+      toolsExecuted.push({ name: 'finalizar_interacao', arguments: { resultado: state.last_outcome }, result: { success: true, fallback: true } });
+    }
+  }
+
   return { replies: replyText ? [replyText] : [], shouldAdvance, toolsExecuted, active_agent_id: agentId, current_node_id: agentNode.id };
 }
 
@@ -2245,6 +2259,70 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
     aiMessages.push(...toolResults);
     if (shouldBreak) break;
     if (choice.finish_reason === 'stop') break;
+  }
+
+  // FALLBACK: If autoAdvance is on and AI sent a reply but forgot to call finalizar_interacao,
+  // auto-advance the flow so the client doesn't need to send an extra message
+  if (!shouldBreak && replySentViaTool && ctx.flowExecutionId) {
+    const handoffCtx = ctx.conversation?.metadata?.ai_handoff_context || {};
+    const autoAdvance = handoffCtx.autoAdvance !== false;
+    if (autoAdvance) {
+      console.log('[LEGACY] FALLBACK: AI sent reply but did not call finalizar_interacao with autoAdvance=true — force advancing');
+      const resultado = 'concluido';
+      // Trigger the same flow advancement logic as finalizar_interacao
+      const { data: flowExec } = await supabase
+        .from('flow_executions')
+        .select('*, flow:flows(nodes, edges)')
+        .eq('id', ctx.flowExecutionId)
+        .single();
+
+      if (flowExec) {
+        const nodes = flowExec.flow?.nodes || [];
+        const edges = flowExec.flow?.edges || [];
+        const currentNodeId = flowExec.current_node_id;
+        const configuredOutcomes = nodes.find((n: any) => n.id === currentNodeId)?.data?.expectedOutcomes
+          ? String(nodes.find((n: any) => n.id === currentNodeId).data.expectedOutcomes).split(',').map((s: string) => s.trim()).filter(Boolean)
+          : [];
+
+        let nextEdge: any = null;
+        if (configuredOutcomes.length > 0) {
+          nextEdge = edges.find((e: any) => e.source === currentNodeId && e.sourceHandle === `outcome-${resultado}`);
+          if (!nextEdge) nextEdge = edges.find((e: any) => e.source === currentNodeId && e.sourceHandle === 'outcome-default');
+          if (!nextEdge) nextEdge = edges.find((e: any) => e.source === currentNodeId);
+        } else {
+          nextEdge = edges.find((e: any) => e.source === currentNodeId);
+        }
+        const nextNodeId = nextEdge?.target || null;
+        const variables = { ...(flowExec.variables || {}), ai_resultado: resultado };
+
+        if (nextNodeId) {
+          await supabase.from('flow_executions').update({
+            status: 'completed', variables, completed_at: new Date().toISOString(),
+          }).eq('id', ctx.flowExecutionId);
+
+          const { data: convData } = await supabase.from('conversations').select('metadata').eq('id', ctx.conversationId).single();
+          const metadata = { ...(convData?.metadata || {}) };
+          delete metadata.ai_handoff_context;
+          await supabase.from('conversations').update({ metadata }).eq('id', ctx.conversationId);
+
+          const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+          const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+          try {
+            await fetch(`${supabaseUrl}/functions/v1/flow-execute`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseKey}` },
+              body: JSON.stringify({ flowId: flowExec.flow_id, conversationId: ctx.conversationId, startNodeId: nextNodeId }),
+            });
+          } catch (e) { console.error('[LEGACY FALLBACK] Error resuming flow:', e); }
+        } else {
+          await supabase.from('flow_executions').update({
+            status: 'completed', variables, completed_at: new Date().toISOString(),
+          }).eq('id', ctx.flowExecutionId);
+          await supabase.from('conversations').update({ service_mode: 'humano' }).eq('id', ctx.conversationId);
+        }
+      }
+      toolsExecuted.push({ name: 'finalizar_interacao', arguments: { resultado }, result: { success: true, fallback: true } });
+    }
   }
 
   return { 
