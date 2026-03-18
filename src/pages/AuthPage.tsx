@@ -6,8 +6,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, Building, User, Mail, Lock } from 'lucide-react';
+import { Loader2, Building, User, Mail, Lock, Globe } from 'lucide-react';
 import wizzyLogo from '@/assets/wizzy-logo.png';
 
 export default function AuthPage() {
@@ -22,6 +23,7 @@ export default function AuthPage() {
     password: '',
     fullName: '',
     companyName: '',
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Sao_Paulo',
   });
 
   useEffect(() => {
@@ -73,7 +75,8 @@ export default function AuthPage() {
       registerData.email,
       registerData.password,
       registerData.fullName,
-      registerData.companyName
+      registerData.companyName,
+      registerData.timezone
     );
 
     if (error) {
@@ -205,6 +208,35 @@ export default function AuthPage() {
                         onChange={(e) => setRegisterData(prev => ({ ...prev, companyName: e.target.value }))}
                         required
                       />
+                    </div>
+                   </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="register-timezone">Fuso Horário</Label>
+                    <div className="relative">
+                      <Globe className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground z-10" />
+                      <Select
+                        value={registerData.timezone}
+                        onValueChange={(value) => setRegisterData(prev => ({ ...prev, timezone: value }))}
+                      >
+                        <SelectTrigger className="pl-10">
+                          <SelectValue placeholder="Selecione o fuso horário" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="America/Sao_Paulo">São Paulo (GMT-3)</SelectItem>
+                          <SelectItem value="America/Fortaleza">Fortaleza (GMT-3)</SelectItem>
+                          <SelectItem value="America/Manaus">Manaus (GMT-4)</SelectItem>
+                          <SelectItem value="America/Rio_Branco">Rio Branco (GMT-5)</SelectItem>
+                          <SelectItem value="America/Noronha">Fernando de Noronha (GMT-2)</SelectItem>
+                          <SelectItem value="America/New_York">New York (GMT-5)</SelectItem>
+                          <SelectItem value="America/Chicago">Chicago (GMT-6)</SelectItem>
+                          <SelectItem value="America/Los_Angeles">Los Angeles (GMT-8)</SelectItem>
+                          <SelectItem value="Europe/London">Londres (GMT+0)</SelectItem>
+                          <SelectItem value="Europe/Lisbon">Lisboa (GMT+0)</SelectItem>
+                          <SelectItem value="Europe/Madrid">Madrid (GMT+1)</SelectItem>
+                          <SelectItem value="Asia/Tokyo">Tóquio (GMT+9)</SelectItem>
+                        </SelectContent>
+                      </Select>
                     </div>
                   </div>
 

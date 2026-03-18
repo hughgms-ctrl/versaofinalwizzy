@@ -16,7 +16,7 @@ interface AuthContextType {
   session: Session | null;
   profile: Profile | null;
   loading: boolean;
-  signUp: (email: string, password: string, fullName: string, companyName: string) => Promise<{ error: Error | null }>;
+  signUp: (email: string, password: string, fullName: string, companyName: string, timezone?: string) => Promise<{ error: Error | null }>;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
 }
@@ -70,7 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  const signUp = async (email: string, password: string, fullName: string, companyName: string) => {
+  const signUp = async (email: string, password: string, fullName: string, companyName: string, timezone?: string) => {
     try {
       const { error } = await supabase.auth.signUp({
         email,
@@ -80,6 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           data: {
             full_name: fullName,
             company_name: companyName,
+            timezone: timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Sao_Paulo',
           },
         },
       });

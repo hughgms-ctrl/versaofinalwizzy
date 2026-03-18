@@ -807,10 +807,14 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
         // Increment campaign counter
         await supabase.rpc('increment_campaign_count', { campaign_id: campaignId });
 
-        // Check if within business hours
+        // Get organization timezone
+        const { data: orgData } = await supabase.from('organizations').select('timezone').eq('id', organizationId).single();
+        const orgTimezone = orgData?.timezone || 'America/Sao_Paulo';
+
+        // Check if within business hours using org timezone
         const now = new Date();
         const bzTimeStr = new Intl.DateTimeFormat('pt-BR', {
-            timeZone: 'America/Sao_Paulo',
+            timeZone: orgTimezone,
             hour: '2-digit', minute: '2-digit', hour12: false
         }).format(now);
 
@@ -832,23 +836,22 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
           const [sHour, sMin] = startT.split(':').map(Number);
           const [cHour] = bzTimeStr.split(':').map(Number);
           
-          // Get São Paulo offset in minutes by comparing UTC and local representations
-          const spNow = new Date(now.toLocaleString("en-US", { timeZone: "America/Sao_Paulo" }));
-          const offsetMs = spNow.getTime() - now.getTime();
-          // offsetMs is positive when SP is behind UTC (SP = UTC-3, so spNow interprets SP time as UTC which is ahead)
+          // Get org timezone offset by comparing UTC and local representations
+          const localNow = new Date(now.toLocaleString("en-US", { timeZone: orgTimezone }));
+          const offsetMs = localNow.getTime() - now.getTime();
           
-          // Build the target date in SP time, then convert to UTC
-          const spDate = new Date(spNow);
+          // Build the target date in org local time, then convert to UTC
+          const localDate = new Date(localNow);
           if (cHour >= sHour) {
               // It's after start hour but outside hours (means it's after end time), schedule for tomorrow
-              spDate.setDate(spDate.getDate() + 1);
+              localDate.setDate(localDate.getDate() + 1);
           }
-          spDate.setHours(sHour, sMin, 0, 0);
+          localDate.setHours(sHour, sMin, 0, 0);
           
-          // Convert SP local time back to real UTC by subtracting the offset
-          const scheduledUTC = new Date(spDate.getTime() - offsetMs);
+          // Convert local time back to real UTC by subtracting the offset
+          const scheduledUTC = new Date(localDate.getTime() - offsetMs);
           
-          console.log(`[CAMPAIGN QUEUED] Scheduled for ${scheduledUTC.toISOString()} (${startT} São Paulo time)`);
+          console.log(`[CAMPAIGN QUEUED] Scheduled for ${scheduledUTC.toISOString()} (${startT} ${orgTimezone})`);
 
           await supabase.from('campaign_queue').insert({
             organization_id: organizationId,

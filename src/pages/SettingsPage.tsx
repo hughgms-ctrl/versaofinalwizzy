@@ -92,6 +92,54 @@ export default function SettingsPage() {
     language: 'pt-BR',
     darkMode: true,
   });
+  const [isSavingGeneral, setIsSavingGeneral] = useState(false);
+
+  // Load organization settings
+  useEffect(() => {
+    const loadOrgSettings = async () => {
+      if (!profile?.organization_id) return;
+      const { data } = await supabase
+        .from('organizations')
+        .select('name, timezone')
+        .eq('id', profile.organization_id)
+        .single();
+      if (data) {
+        setGeneralSettings(prev => ({
+          ...prev,
+          companyName: data.name || prev.companyName,
+          timezone: (data as any).timezone || prev.timezone,
+        }));
+      }
+    };
+    loadOrgSettings();
+  }, [profile?.organization_id]);
+
+  const handleSaveGeneralSettings = async () => {
+    if (!profile?.organization_id) return;
+    setIsSavingGeneral(true);
+    try {
+      const { error } = await supabase
+        .from('organizations')
+        .update({ 
+          name: generalSettings.companyName,
+          timezone: generalSettings.timezone,
+        } as any)
+        .eq('id', profile.organization_id);
+      if (error) throw error;
+      toast({
+        title: 'Configurações salvas!',
+        description: 'O fuso horário e informações da empresa foram atualizados.',
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Erro ao salvar',
+        description: error.message || 'Não foi possível salvar as configurações.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSavingGeneral(false);
+    }
+  };
 
   const getWebhookUrl = () => {
     const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
@@ -574,6 +622,7 @@ export default function SettingsPage() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="timezone">Fuso Horário</Label>
+                  <p className="text-xs text-muted-foreground">Este fuso é usado em campanhas, agendamentos e todo o sistema.</p>
                   <Select
                     value={generalSettings.timezone}
                     onValueChange={(value) => setGeneralSettings(prev => ({ ...prev, timezone: value }))}
@@ -586,6 +635,14 @@ export default function SettingsPage() {
                       <SelectItem value="America/Fortaleza">Fortaleza (GMT-3)</SelectItem>
                       <SelectItem value="America/Manaus">Manaus (GMT-4)</SelectItem>
                       <SelectItem value="America/Rio_Branco">Rio Branco (GMT-5)</SelectItem>
+                      <SelectItem value="America/Noronha">Fernando de Noronha (GMT-2)</SelectItem>
+                      <SelectItem value="America/New_York">New York (GMT-5)</SelectItem>
+                      <SelectItem value="America/Chicago">Chicago (GMT-6)</SelectItem>
+                      <SelectItem value="America/Los_Angeles">Los Angeles (GMT-8)</SelectItem>
+                      <SelectItem value="Europe/London">Londres (GMT+0)</SelectItem>
+                      <SelectItem value="Europe/Lisbon">Lisboa (GMT+0)</SelectItem>
+                      <SelectItem value="Europe/Madrid">Madrid (GMT+1)</SelectItem>
+                      <SelectItem value="Asia/Tokyo">Tóquio (GMT+9)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -662,7 +719,16 @@ export default function SettingsPage() {
                 </p>
               </div>
 
-              <Button className="mt-4">Salvar Alterações</Button>
+              <Button className="mt-4" onClick={handleSaveGeneralSettings} disabled={isSavingGeneral}>
+                {isSavingGeneral ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Salvando...
+                  </>
+                ) : (
+                  'Salvar Alterações'
+                )}
+              </Button>
             </CardContent>
           </Card>
         </TabsContent>
