@@ -309,7 +309,7 @@ Deno.serve(async (req) => {
 
     // Resolve AI config: activeAgent > masterPrompt > integration_configs > workspace_agent_configs > defaults
     const finalProvider = activeAgent?.provider || masterPrompt?.provider || integrationConfig?.ai_provider || 'lovable';
-    const finalModel = activeAgent?.model || masterPrompt?.model || integrationConfig?.default_model || 'google/gemini-1.5-flash';
+    const finalModel = activeAgent?.model || masterPrompt?.model || integrationConfig?.default_model || 'google/gemini-2.5-flash';
 
     // Enrich messageContent if it's just '[mídia]' — use the last inbound message's enriched content
     let enrichedMessageContent = messageContent;
