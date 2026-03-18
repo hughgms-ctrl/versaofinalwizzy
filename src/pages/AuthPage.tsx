@@ -75,7 +75,8 @@ export default function AuthPage() {
       registerData.email,
       registerData.password,
       registerData.fullName,
-      registerData.companyName
+      registerData.companyName,
+      registerData.timezone
     );
 
     if (error) {

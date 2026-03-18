@@ -70,7 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  const signUp = async (email: string, password: string, fullName: string, companyName: string) => {
+  const signUp = async (email: string, password: string, fullName: string, companyName: string, timezone?: string) => {
     try {
       const { error } = await supabase.auth.signUp({
         email,
@@ -80,6 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           data: {
             full_name: fullName,
             company_name: companyName,
+            timezone: timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Sao_Paulo',
           },
         },
       });
