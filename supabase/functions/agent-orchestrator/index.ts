@@ -1486,7 +1486,7 @@ async function invokeAgentAI(
     if (choice.finish_reason === 'stop') break;
   }
 
-  const hasUserVisibleReply = Boolean(replyText && replyText.trim());
+  let hasUserVisibleReply = Boolean(replyText && replyText.trim());
   const handoffCtx = ctx.conversation?.metadata?.ai_handoff_context || {};
   const autoAdvance = handoffCtx.autoAdvance !== false;
   const inferredOutcome = inferOutcomeFromReply(replyText, outcomes);
@@ -1494,10 +1494,15 @@ async function invokeAgentAI(
 
   const shouldFallbackAdvanceWithoutOutcomes =
     !hasConfiguredOutcomes &&
-    replySentViaTool &&
     hasUserVisibleReply &&
     !hasQuestionLikeReply &&
     hasExplicitCompletionCue(replyText);
+
+  if (!hasUserVisibleReply && !shouldAdvance && hasNextNodes) {
+    replyText = 'Entendi. Para continuar, pode me dar mais um detalhe sobre isso?';
+    hasUserVisibleReply = true;
+    console.log('[AGENT] RECOVERY: no visible reply generated, sending follow-up question to avoid deadlock');
+  }
 
   if (!shouldAdvance && hasNextNodes && autoAdvance) {
     if (hasConfiguredOutcomes && inferredOutcome && !hasQuestionLikeReply) {
