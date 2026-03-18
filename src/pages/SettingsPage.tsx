@@ -622,6 +622,7 @@ export default function SettingsPage() {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="timezone">Fuso Horário</Label>
+                  <p className="text-xs text-muted-foreground">Este fuso é usado em campanhas, agendamentos e todo o sistema.</p>
                   <Select
                     value={generalSettings.timezone}
                     onValueChange={(value) => setGeneralSettings(prev => ({ ...prev, timezone: value }))}
@@ -634,6 +635,14 @@ export default function SettingsPage() {
                       <SelectItem value="America/Fortaleza">Fortaleza (GMT-3)</SelectItem>
                       <SelectItem value="America/Manaus">Manaus (GMT-4)</SelectItem>
                       <SelectItem value="America/Rio_Branco">Rio Branco (GMT-5)</SelectItem>
+                      <SelectItem value="America/Noronha">Fernando de Noronha (GMT-2)</SelectItem>
+                      <SelectItem value="America/New_York">New York (GMT-5)</SelectItem>
+                      <SelectItem value="America/Chicago">Chicago (GMT-6)</SelectItem>
+                      <SelectItem value="America/Los_Angeles">Los Angeles (GMT-8)</SelectItem>
+                      <SelectItem value="Europe/London">Londres (GMT+0)</SelectItem>
+                      <SelectItem value="Europe/Lisbon">Lisboa (GMT+0)</SelectItem>
+                      <SelectItem value="Europe/Madrid">Madrid (GMT+1)</SelectItem>
+                      <SelectItem value="Asia/Tokyo">Tóquio (GMT+9)</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
