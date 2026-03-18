@@ -1344,32 +1344,31 @@ async function invokeAgentAI(
   ];
 
   // Logic for outcome-based tools or advance_flow
-  const expectedOutcomes = agentNode.data?.expectedOutcomes as string;
-  if (expectedOutcomes) {
-    const outcomes = expectedOutcomes.split(',').map(s => s.trim()).filter(Boolean);
-    if (outcomes.length > 0) {
-      tools.push({
-        type: 'function',
-        function: {
-          name: 'finalizar_interacao',
-          description: `Finalizar esta etapa com um resultado. Resultados possíveis: ${outcomes.join(', ')}.`,
-          parameters: {
-            type: 'object',
-            properties: {
-              resultado: { 
-                type: 'string', 
-                enum: outcomes,
-                description: 'O resultado da sua interação/qualificação.' 
-              }
-            },
-            required: ['resultado'],
+  const outcomes = parseExpectedOutcomes(agentNode.data?.expectedOutcomes);
+  const hasConfiguredOutcomes = outcomes.length > 0;
+
+  if (hasConfiguredOutcomes) {
+    tools.push({
+      type: 'function',
+      function: {
+        name: 'finalizar_interacao',
+        description: `Finalizar esta etapa com um resultado. Resultados possíveis: ${outcomes.join(', ')}.`,
+        parameters: {
+          type: 'object',
+          properties: {
+            resultado: {
+              type: 'string',
+              enum: outcomes,
+              description: 'O resultado da sua interação/qualificação.'
+            }
           },
+          required: ['resultado'],
         },
-      });
-    }
+      },
+    });
   }
 
-  if (hasNextNodes && !expectedOutcomes) {
+  if (hasNextNodes && !hasConfiguredOutcomes) {
     tools.push({
       type: 'function',
       function: {
@@ -1488,18 +1487,39 @@ async function invokeAgentAI(
   }
 
   const hasUserVisibleReply = Boolean(replyText && replyText.trim());
+  const handoffCtx = ctx.conversation?.metadata?.ai_handoff_context || {};
+  const autoAdvance = handoffCtx.autoAdvance !== false;
+  const inferredOutcome = inferOutcomeFromReply(replyText, outcomes);
+  const hasQuestionLikeReply = isLikelyQuestionReply(replyText);
 
-  // FALLBACK: If autoAdvance is on and AI produced a client-visible reply but forgot to call finalizar_interacao,
-  // force-advance the flow so the client doesn't have to send an extra message
-  if (!shouldAdvance && hasNextNodes && (replySentViaTool || hasUserVisibleReply)) {
-    const handoffCtx = ctx.conversation?.metadata?.ai_handoff_context || {};
-    const autoAdvance = handoffCtx.autoAdvance !== false;
-    if (autoAdvance) {
-      console.log('[AGENT] FALLBACK: AI replied but did not call finalizar_interacao with autoAdvance=true — force advancing');
-      state.last_outcome = state.last_outcome || 'concluido';
-      state.variables = { ...(state.variables || {}), ai_resultado: state.last_outcome };
+  const shouldFallbackAdvanceWithoutOutcomes =
+    !hasConfiguredOutcomes &&
+    replySentViaTool &&
+    hasUserVisibleReply &&
+    !hasQuestionLikeReply &&
+    hasExplicitCompletionCue(replyText);
+
+  if (!shouldAdvance && hasNextNodes && autoAdvance) {
+    if (hasConfiguredOutcomes && inferredOutcome && !hasQuestionLikeReply) {
+      console.log(`[AGENT] FALLBACK: inferred outcome "${inferredOutcome}" from reply — advancing`);
+      state.last_outcome = inferredOutcome;
+      state.variables = { ...(state.variables || {}), ai_resultado: inferredOutcome };
       shouldAdvance = true;
-      toolsExecuted.push({ name: 'finalizar_interacao', arguments: { resultado: state.last_outcome }, result: { success: true, fallback: true } });
+      toolsExecuted.push({
+        name: 'finalizar_interacao',
+        arguments: { resultado: inferredOutcome },
+        result: { success: true, fallback: true, inferred_from_reply: true },
+      });
+    } else if (shouldFallbackAdvanceWithoutOutcomes) {
+      console.log('[AGENT] FALLBACK: inferred completion cue on final reply — advancing');
+      shouldAdvance = true;
+      toolsExecuted.push({
+        name: 'advance_flow',
+        arguments: {},
+        result: { success: true, fallback: true, inferred_from_reply: true },
+      });
+    } else if (hasUserVisibleReply) {
+      console.log('[AGENT] Fallback skipped: reply does not indicate completion, keeping AI node active');
     }
   }
 
@@ -2165,9 +2185,7 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
 
             // Find next node after the ai-handoff, using outcome-based routing
             const currentNodeObj = nodes.find((n: any) => n.id === currentNodeId);
-            const configuredOutcomes = currentNodeObj?.data?.expectedOutcomes 
-              ? String(currentNodeObj.data.expectedOutcomes).split(',').map((s: string) => s.trim()).filter(Boolean)
-              : [];
+            const configuredOutcomes = parseExpectedOutcomes(currentNodeObj?.data?.expectedOutcomes);
 
             let nextEdge: any = null;
             if (configuredOutcomes.length > 0) {
@@ -2270,29 +2288,34 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
   }
 
   const hasUserVisibleReply = Boolean(replyText && replyText.trim());
+  const handoffCtx = ctx.conversation?.metadata?.ai_handoff_context || {};
+  const autoAdvance = handoffCtx.autoAdvance !== false;
 
-  // FALLBACK: If autoAdvance is on and AI produced a client-visible reply but forgot to call finalizar_interacao,
-  // auto-advance the flow so the client doesn't need to send an extra message
-  if (!shouldBreak && ctx.flowExecutionId && (replySentViaTool || hasUserVisibleReply)) {
-    const handoffCtx = ctx.conversation?.metadata?.ai_handoff_context || {};
-    const autoAdvance = handoffCtx.autoAdvance !== false;
-    if (autoAdvance) {
-      console.log('[LEGACY] FALLBACK: AI replied but did not call finalizar_interacao with autoAdvance=true — force advancing');
-      const resultado = 'concluido';
-      // Trigger the same flow advancement logic as finalizar_interacao
-      const { data: flowExec } = await supabase
-        .from('flow_executions')
-        .select('*, flow:flows(nodes, edges)')
-        .eq('id', ctx.flowExecutionId)
-        .single();
+  if (!shouldBreak && ctx.flowExecutionId && hasUserVisibleReply && autoAdvance) {
+    const { data: flowExec } = await supabase
+      .from('flow_executions')
+      .select('*, flow:flows(nodes, edges)')
+      .eq('id', ctx.flowExecutionId)
+      .single();
 
-      if (flowExec) {
-        const nodes = flowExec.flow?.nodes || [];
-        const edges = flowExec.flow?.edges || [];
-        const currentNodeId = flowExec.current_node_id;
-        const configuredOutcomes = nodes.find((n: any) => n.id === currentNodeId)?.data?.expectedOutcomes
-          ? String(nodes.find((n: any) => n.id === currentNodeId).data.expectedOutcomes).split(',').map((s: string) => s.trim()).filter(Boolean)
-          : [];
+    if (flowExec) {
+      const nodes = flowExec.flow?.nodes || [];
+      const edges = flowExec.flow?.edges || [];
+      const currentNodeId = flowExec.current_node_id;
+      const currentNode = nodes.find((n: any) => n.id === currentNodeId);
+      const configuredOutcomes = parseExpectedOutcomes(currentNode?.data?.expectedOutcomes);
+
+      const inferredOutcome = inferOutcomeFromReply(replyText, configuredOutcomes);
+      const hasQuestionLikeReply = isLikelyQuestionReply(replyText);
+      const shouldAdvanceWithoutOutcomes =
+        configuredOutcomes.length === 0 &&
+        replySentViaTool &&
+        !hasQuestionLikeReply &&
+        hasExplicitCompletionCue(replyText);
+
+      if ((configuredOutcomes.length > 0 && inferredOutcome && !hasQuestionLikeReply) || shouldAdvanceWithoutOutcomes) {
+        const resultado = inferredOutcome || 'concluido';
+        console.log(`[LEGACY] FALLBACK: inferred completion with resultado="${resultado}" — force advancing`);
 
         let nextEdge: any = null;
         if (configuredOutcomes.length > 0) {
@@ -2302,6 +2325,7 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
         } else {
           nextEdge = edges.find((e: any) => e.source === currentNodeId);
         }
+
         const nextNodeId = nextEdge?.target || null;
         const variables = { ...(flowExec.variables || {}), ai_resultado: resultado };
 
@@ -2323,15 +2347,24 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
               headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseKey}` },
               body: JSON.stringify({ flowId: flowExec.flow_id, conversationId: ctx.conversationId, startNodeId: nextNodeId }),
             });
-          } catch (e) { console.error('[LEGACY FALLBACK] Error resuming flow:', e); }
+          } catch (e) {
+            console.error('[LEGACY FALLBACK] Error resuming flow:', e);
+          }
         } else {
           await supabase.from('flow_executions').update({
             status: 'completed', variables, completed_at: new Date().toISOString(),
           }).eq('id', ctx.flowExecutionId);
           await supabase.from('conversations').update({ service_mode: 'humano' }).eq('id', ctx.conversationId);
         }
+
+        toolsExecuted.push({
+          name: 'finalizar_interacao',
+          arguments: { resultado },
+          result: { success: true, fallback: true, inferred_from_reply: true },
+        });
+      } else {
+        console.log('[LEGACY] Fallback skipped: reply does not indicate conclusão, keeping AI node active');
       }
-      toolsExecuted.push({ name: 'finalizar_interacao', arguments: { resultado }, result: { success: true, fallback: true } });
     }
   }
 
@@ -2448,6 +2481,78 @@ function findNextNodeIds(edges: any[], currentNodeId: string): string[] {
   return edges
     .filter((e: any) => e.source === currentNodeId)
     .map((e: any) => e.target);
+}
+
+function parseExpectedOutcomes(rawOutcomes: unknown): string[] {
+  if (Array.isArray(rawOutcomes)) {
+    return rawOutcomes.map((value) => String(value).trim()).filter(Boolean);
+  }
+
+  if (typeof rawOutcomes !== 'string') return [];
+
+  return rawOutcomes.split(',').map((value) => value.trim()).filter(Boolean);
+}
+
+function normalizeForComparison(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .trim();
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\]/g, '\$&');
+}
+
+function isLikelyQuestionReply(reply: string | null): boolean {
+  if (!reply) return false;
+
+  const trimmed = reply.trim();
+  if (trimmed.endsWith('?')) return true;
+
+  const normalized = normalizeForComparison(trimmed);
+  return /^(qual|quais|quando|onde|como|por que|porque|pode|poderia|consegue|me informe|me informa|me diga|voce consegue|voces conseguem)/.test(normalized);
+}
+
+function hasExplicitCompletionCue(reply: string | null): boolean {
+  if (!reply) return false;
+  if (/\[\s*resultado\s*:/i.test(reply)) return true;
+
+  const normalized = normalizeForComparison(reply);
+  return /(concluido|concluida|conclui|concluimos|encerrado|encerrada|encerramos|finalizado|finalizada|finalizei|encaminhando|proxima etapa|proximo passo)/.test(normalized);
+}
+
+function inferOutcomeFromReply(reply: string | null, configuredOutcomes: string[]): string | null {
+  if (!reply || configuredOutcomes.length === 0) return null;
+
+  const normalizedMap = new Map(
+    configuredOutcomes.map((outcome) => [normalizeForComparison(outcome), outcome]),
+  );
+
+  const outcomeTagMatch = reply.match(/\[\s*resultado\s*:\s*([^\]]+)\]/i);
+  if (outcomeTagMatch?.[1]) {
+    const normalizedFromTag = normalizeForComparison(outcomeTagMatch[1]);
+    const outcomeFromTag = normalizedMap.get(normalizedFromTag);
+    if (outcomeFromTag) return outcomeFromTag;
+  }
+
+  const normalizedReply = normalizeForComparison(reply);
+  const outcomesByPriority = [...configuredOutcomes].sort((a, b) => b.length - a.length);
+
+  for (const outcome of outcomesByPriority) {
+    const normalizedOutcome = normalizeForComparison(outcome);
+    const outcomePattern = new RegExp(
+      `(^|[^a-z0-9_])${escapeRegex(normalizedOutcome).replace(/\s+/g, '\\s+')}(?=$|[^a-z0-9_])`,
+      'i',
+    );
+
+    if (outcomePattern.test(normalizedReply)) {
+      return outcome;
+    }
+  }
+
+  return null;
 }
 
 // ==================== LEGACY HELPERS ====================
