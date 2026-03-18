@@ -92,6 +92,54 @@ export default function SettingsPage() {
     language: 'pt-BR',
     darkMode: true,
   });
+  const [isSavingGeneral, setIsSavingGeneral] = useState(false);
+
+  // Load organization settings
+  useEffect(() => {
+    const loadOrgSettings = async () => {
+      if (!profile?.organization_id) return;
+      const { data } = await supabase
+        .from('organizations')
+        .select('name, timezone')
+        .eq('id', profile.organization_id)
+        .single();
+      if (data) {
+        setGeneralSettings(prev => ({
+          ...prev,
+          companyName: data.name || prev.companyName,
+          timezone: (data as any).timezone || prev.timezone,
+        }));
+      }
+    };
+    loadOrgSettings();
+  }, [profile?.organization_id]);
+
+  const handleSaveGeneralSettings = async () => {
+    if (!profile?.organization_id) return;
+    setIsSavingGeneral(true);
+    try {
+      const { error } = await supabase
+        .from('organizations')
+        .update({ 
+          name: generalSettings.companyName,
+          timezone: generalSettings.timezone,
+        } as any)
+        .eq('id', profile.organization_id);
+      if (error) throw error;
+      toast({
+        title: 'Configurações salvas!',
+        description: 'O fuso horário e informações da empresa foram atualizados.',
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Erro ao salvar',
+        description: error.message || 'Não foi possível salvar as configurações.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSavingGeneral(false);
+    }
+  };
 
   const getWebhookUrl = () => {
     const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
