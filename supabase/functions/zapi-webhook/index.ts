@@ -79,6 +79,17 @@ function checkWebhookRate(ip: string): boolean {
   return entry.count <= WEBHOOK_RATE_LIMIT
 }
 
+// ── AI PAUSE CHECK ──
+function isAIPaused(metadata: any): boolean {
+  const pausedUntil = metadata?.ai_paused_until;
+  if (!pausedUntil) return false;
+  if (pausedUntil === 'permanent') return true;
+  // Check if the pause time has expired
+  const pauseDate = new Date(pausedUntil);
+  if (isNaN(pauseDate.getTime())) return false;
+  return Date.now() < pauseDate.getTime();
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
