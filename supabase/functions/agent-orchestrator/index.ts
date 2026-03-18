@@ -2502,7 +2502,7 @@ function normalizeForComparison(value: string): string {
 }
 
 function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\]/g, '\$&');
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 function isLikelyQuestionReply(reply: string | null): boolean {
@@ -2512,7 +2512,7 @@ function isLikelyQuestionReply(reply: string | null): boolean {
   if (trimmed.endsWith('?')) return true;
 
   const normalized = normalizeForComparison(trimmed);
-  return /^(qual|quais|quando|onde|como|por que|porque|pode|poderia|consegue|me informe|me informa|me diga|voce consegue|voces conseguem)/.test(normalized);
+  return /^(qual|quais|quando|onde|como|por que|porque|pode|poderia|consegue|me informe|me informa|me diga|voce consegue|voces conseguem)\b/.test(normalized);
 }
 
 function hasExplicitCompletionCue(reply: string | null): boolean {
@@ -2520,10 +2520,11 @@ function hasExplicitCompletionCue(reply: string | null): boolean {
   if (/\[\s*resultado\s*:/i.test(reply)) return true;
 
   const normalized = normalizeForComparison(reply);
-  return /(concluido|concluida|conclui|concluimos|encerrado|encerrada|encerramos|finalizado|finalizada|finalizei|encaminhando|proxima etapa|proximo passo)/.test(normalized);
+  return /\b(concluido|concluida|conclui|concluimos|encerrado|encerrada|encerramos|finalizado|finalizada|finalizei|encaminhando|proxima etapa|proximo passo)\b/.test(normalized);
 }
 
 function inferOutcomeFromReply(reply: string | null, configuredOutcomes: string[]): string | null {
+
   if (!reply || configuredOutcomes.length === 0) return null;
 
   const normalizedMap = new Map(
