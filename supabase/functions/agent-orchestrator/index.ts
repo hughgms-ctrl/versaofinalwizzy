@@ -2936,7 +2936,7 @@ function resolveAIConfig(
   const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
 
   if (!integrationConfig) {
-    return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model: 'google/gemini-1.5-flash' };
+    return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model: 'google/gemini-2.5-flash' };
   }
 
   // Check feature-specific override first
