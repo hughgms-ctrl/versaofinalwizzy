@@ -2127,13 +2127,18 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
 
     if (!choice.message?.tool_calls || choice.message.tool_calls.length === 0) {
       if (!replySentViaTool && !replyText && choice.message?.content) {
-        replyText = choice.message.content.trim();
+        const candidateReply = choice.message.content.trim();
+        if (!isInternalThought(candidateReply)) {
+          replyText = candidateReply;
+        } else {
+          console.log('Filtered internal thought from legacy content reply:', candidateReply);
+        }
       }
       break;
     }
 
     const toolResults: any[] = [];
-    let shouldBreak = false;
+    shouldBreak = false;
 
     for (const toolCall of choice.message.tool_calls) {
       const fnName = toolCall.function.name;
