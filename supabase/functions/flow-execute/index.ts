@@ -519,11 +519,17 @@ async function executeAIHandoff(
     if (additionalPrompt) {
       promptParts.push(`---\nINSTRUÇÕES ESPECÍFICAS DO NÓ:\n${additionalPrompt}`);
     }
+    const autoAdvance = nodeData.autoAdvance !== false; // default true
     if (expectedOutcomes) {
       promptParts.push(`---\nRESULTADOS ESPERADOS: ${expectedOutcomes}`);
       promptParts.push(`Ao finalizar a interação, use finalizar_interacao(resultado) com um dos seguintes resultados: ${outcomes.join(', ')}. Se nenhum se aplicar, use "default".`);
-      promptParts.push(`REGRA OBRIGATÓRIA: Quando concluir sua tarefa, chame send_reply com sua mensagem final E finalizar_interacao NA MESMA RODADA. NÃO espere o cliente confirmar, dizer "ok" ou responder. O fluxo deve avançar automaticamente assim que você terminar.`);
+      if (autoAdvance) {
+        promptParts.push(`REGRA OBRIGATÓRIA: Quando concluir sua tarefa, chame send_reply com sua mensagem final E finalizar_interacao NA MESMA RODADA. NÃO espere o cliente confirmar, dizer "ok" ou responder. O fluxo deve avançar automaticamente assim que você terminar.`);
+      } else {
+        promptParts.push(`Após concluir sua tarefa, envie sua mensagem final com send_reply. O fluxo só avançará quando o cliente enviar uma nova mensagem.`);
+      }
     }
+    flowContext.autoAdvance = autoAdvance;
     
     if (promptParts.length > 0) {
       flowContext.additionalContext = promptParts.join('\n\n');

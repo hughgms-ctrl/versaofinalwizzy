@@ -1476,6 +1476,19 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
               />
             </div>
 
+            <div className="flex items-center justify-between p-3 rounded-xl border border-border/50 bg-muted/30">
+              <div className="space-y-0.5">
+                <Label className="text-xs font-semibold">Avançar automaticamente</Label>
+                <p className="text-[10px] text-muted-foreground leading-tight">
+                  Após o agente finalizar, avança para o próximo nó sem aguardar nova mensagem do cliente.
+                </p>
+              </div>
+              <Switch
+                checked={localData.autoAdvance !== false}
+                onCheckedChange={(checked) => handleChange('autoAdvance', checked)}
+              />
+            </div>
+
             {/* Per-outcome pipeline mapping */}
             {(() => {
               const outcomesStr = (localData.expectedOutcomes as string) || '';
