@@ -2292,9 +2292,15 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
     if (choice.finish_reason === 'stop') break;
   }
 
-  const hasUserVisibleReply = Boolean(replyText && replyText.trim());
+  let hasUserVisibleReply = Boolean(replyText && replyText.trim());
   const handoffCtx = ctx.conversation?.metadata?.ai_handoff_context || {};
   const autoAdvance = handoffCtx.autoAdvance !== false;
+
+  if (!shouldBreak && ctx.flowExecutionId && !hasUserVisibleReply) {
+    replyText = 'Entendi. Para continuar, pode me dar mais um detalhe sobre isso?';
+    hasUserVisibleReply = true;
+    console.log('[LEGACY] RECOVERY: no visible reply generated, sending follow-up question to avoid deadlock');
+  }
 
   if (!shouldBreak && ctx.flowExecutionId && hasUserVisibleReply && autoAdvance) {
     const { data: flowExec } = await supabase
@@ -2314,7 +2320,6 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
       const hasQuestionLikeReply = isLikelyQuestionReply(replyText);
       const shouldAdvanceWithoutOutcomes =
         configuredOutcomes.length === 0 &&
-        replySentViaTool &&
         !hasQuestionLikeReply &&
         hasExplicitCompletionCue(replyText);
 
