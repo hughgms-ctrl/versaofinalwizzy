@@ -2885,6 +2885,7 @@ export type Database = {
           slug: string
           storage_limit_bytes: number | null
           storage_used_bytes: number | null
+          timezone: string
           updated_at: string
         }
         Insert: {
@@ -2895,6 +2896,7 @@ export type Database = {
           slug: string
           storage_limit_bytes?: number | null
           storage_used_bytes?: number | null
+          timezone?: string
           updated_at?: string
         }
         Update: {
@@ -2905,6 +2907,7 @@ export type Database = {
           slug?: string
           storage_limit_bytes?: number | null
           storage_used_bytes?: number | null
+          timezone?: string
           updated_at?: string
         }
         Relationships: []
