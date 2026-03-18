@@ -165,6 +165,8 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
     hasInitialScrolled.current = false;
     setShowScrollButton(false);
     setIsAIActive((conversation as any).service_mode === 'ia');
+    const meta = (conversation as any).metadata;
+    setAiPausedUntil(meta?.ai_paused_until || null);
   }, [conversation.id]);
 
   // Handle scroll for infinite scroll (reverse) and show/hide scroll button
