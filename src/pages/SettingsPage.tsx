@@ -719,7 +719,16 @@ export default function SettingsPage() {
                 </p>
               </div>
 
-              <Button className="mt-4">Salvar Alterações</Button>
+              <Button className="mt-4" onClick={handleSaveGeneralSettings} disabled={isSavingGeneral}>
+                {isSavingGeneral ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Salvando...
+                  </>
+                ) : (
+                  'Salvar Alterações'
+                )}
+              </Button>
             </CardContent>
           </Card>
         </TabsContent>
