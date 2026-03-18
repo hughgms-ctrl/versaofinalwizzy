@@ -1487,6 +1487,20 @@ async function invokeAgentAI(
     if (choice.finish_reason === 'stop') break;
   }
 
+  // FALLBACK: If autoAdvance is on and AI sent a reply but forgot to call finalizar_interacao,
+  // force-advance the flow so the client doesn't have to send an extra message
+  if (!shouldAdvance && replySentViaTool && hasNextNodes) {
+    const handoffCtx = ctx.conversation?.metadata?.ai_handoff_context || {};
+    const autoAdvance = handoffCtx.autoAdvance !== false;
+    if (autoAdvance) {
+      console.log('[AGENT] FALLBACK: AI sent reply but did not call finalizar_interacao with autoAdvance=true — force advancing');
+      state.last_outcome = state.last_outcome || 'concluido';
+      state.variables = { ...(state.variables || {}), ai_resultado: state.last_outcome };
+      shouldAdvance = true;
+      toolsExecuted.push({ name: 'finalizar_interacao', arguments: { resultado: state.last_outcome }, result: { success: true, fallback: true } });
+    }
+  }
+
   return { replies: replyText ? [replyText] : [], shouldAdvance, toolsExecuted, active_agent_id: agentId, current_node_id: agentNode.id };
 }
 
