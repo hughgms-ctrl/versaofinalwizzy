@@ -76,6 +76,11 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
   const [replyingTo, setReplyingTo] = useState<DbMessage | null>(null);
   const [followUpDialogOpen, setFollowUpDialogOpen] = useState(false);
   const [followUpMessage, setFollowUpMessage] = useState<DbMessage | null>(null);
+  const [aiPausedUntil, setAiPausedUntil] = useState<string | null>(() => {
+    const meta = (conversation as any).metadata;
+    return meta?.ai_paused_until || null;
+  });
+  const [showPauseMenu, setShowPauseMenu] = useState(false);
 
   const { data: followUpMap } = useFollowUpStatus();
 
