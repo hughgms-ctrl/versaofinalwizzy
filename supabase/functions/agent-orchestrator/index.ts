@@ -131,6 +131,15 @@ Deno.serve(async (req) => {
       });
     }
 
+    // ===== SIMULATION MODE =====
+    if (payload.simulationMode) {
+      console.log('[ORCHESTRATOR] Entering SIMULATION mode');
+      const simResult = await handleSimulation(supabase, payload, LOVABLE_API_KEY || '');
+      return new Response(JSON.stringify(simResult), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     if (!conversationId || !messageContent) {
       return new Response(JSON.stringify({ error: `DEBUG: conversationId=${conversationId} messageContent=${!!messageContent}` }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
