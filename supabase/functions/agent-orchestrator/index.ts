@@ -2269,13 +2269,15 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
     if (choice.finish_reason === 'stop') break;
   }
 
-  // FALLBACK: If autoAdvance is on and AI sent a reply but forgot to call finalizar_interacao,
+  const hasUserVisibleReply = Boolean(replyText && replyText.trim());
+
+  // FALLBACK: If autoAdvance is on and AI produced a client-visible reply but forgot to call finalizar_interacao,
   // auto-advance the flow so the client doesn't need to send an extra message
-  if (!shouldBreak && replySentViaTool && ctx.flowExecutionId) {
+  if (!shouldBreak && ctx.flowExecutionId && (replySentViaTool || hasUserVisibleReply)) {
     const handoffCtx = ctx.conversation?.metadata?.ai_handoff_context || {};
     const autoAdvance = handoffCtx.autoAdvance !== false;
     if (autoAdvance) {
-      console.log('[LEGACY] FALLBACK: AI sent reply but did not call finalizar_interacao with autoAdvance=true — force advancing');
+      console.log('[LEGACY] FALLBACK: AI replied but did not call finalizar_interacao with autoAdvance=true — force advancing');
       const resultado = 'concluido';
       // Trigger the same flow advancement logic as finalizar_interacao
       const { data: flowExec } = await supabase
