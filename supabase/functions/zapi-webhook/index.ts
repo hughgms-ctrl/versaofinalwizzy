@@ -1119,6 +1119,12 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
         shouldTrigger = await checkMasterPromptTriggers(supabase, organizationId, contact.id, triggerText, conversation.id);
       }
 
+      // Check if AI is paused by human agent
+      if (shouldTrigger && isAIPaused(conversation.metadata)) {
+        console.log(`[WEBHOOK] AI is PAUSED for conversation ${conversation.id} — skipping standalone orchestrator trigger`);
+        shouldTrigger = false;
+      }
+
       if (shouldTrigger) {
         console.log(`[WEBHOOK] Triggering agent-orchestrator for conversation ${conversation.id}. Mode: ${conversation.service_mode}, Text: "${triggerText}"`);
         const orchestratorBody: Record<string, unknown> = { 
