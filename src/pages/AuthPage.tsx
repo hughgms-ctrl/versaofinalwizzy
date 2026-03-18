@@ -209,9 +209,37 @@ export default function AuthPage() {
                         required
                       />
                     </div>
-                  </div>
+                   </div>
 
                   <div className="space-y-2">
+                    <Label htmlFor="register-timezone">Fuso Horário</Label>
+                    <div className="relative">
+                      <Globe className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground z-10" />
+                      <Select
+                        value={registerData.timezone}
+                        onValueChange={(value) => setRegisterData(prev => ({ ...prev, timezone: value }))}
+                      >
+                        <SelectTrigger className="pl-10">
+                          <SelectValue placeholder="Selecione o fuso horário" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="America/Sao_Paulo">São Paulo (GMT-3)</SelectItem>
+                          <SelectItem value="America/Fortaleza">Fortaleza (GMT-3)</SelectItem>
+                          <SelectItem value="America/Manaus">Manaus (GMT-4)</SelectItem>
+                          <SelectItem value="America/Rio_Branco">Rio Branco (GMT-5)</SelectItem>
+                          <SelectItem value="America/Noronha">Fernando de Noronha (GMT-2)</SelectItem>
+                          <SelectItem value="America/New_York">New York (GMT-5)</SelectItem>
+                          <SelectItem value="America/Chicago">Chicago (GMT-6)</SelectItem>
+                          <SelectItem value="America/Los_Angeles">Los Angeles (GMT-8)</SelectItem>
+                          <SelectItem value="Europe/London">Londres (GMT+0)</SelectItem>
+                          <SelectItem value="Europe/Lisbon">Lisboa (GMT+0)</SelectItem>
+                          <SelectItem value="Europe/Madrid">Madrid (GMT+1)</SelectItem>
+                          <SelectItem value="Asia/Tokyo">Tóquio (GMT+9)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
                     <Label htmlFor="register-email">Email</Label>
                     <div className="relative">
                       <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
