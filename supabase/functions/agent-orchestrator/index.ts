@@ -2901,7 +2901,7 @@ function stripInternalAnnotations(text: string): string {
 function resolveAgentConfig(ctx: any, agent: any, integrationConfig: any): AIConfigResult {
   if (agent?.provider || agent?.model) {
     const provider = agent.provider || integrationConfig?.ai_provider || 'lovable';
-    const model = agent.model || integrationConfig?.default_model || 'google/gemini-1.5-flash';
+    const model = agent.model || integrationConfig?.default_model || 'google/gemini-2.5-flash';
     return resolveAIConfig(integrationConfig, 'agents', ctx.LOVABLE_API_KEY, provider, model);
   }
   return { endpoint: ctx.aiEndpoint, apiKey: ctx.aiApiKey, model: ctx.aiModel };
