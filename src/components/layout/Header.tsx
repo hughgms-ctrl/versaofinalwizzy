@@ -27,6 +27,7 @@ export function Header({
 }: HeaderProps) {
   const { theme, setTheme } = useTheme();
   const { settings, updateSettings } = useNotificationSettings();
+  const { privacyMode, togglePrivacy } = usePrivacy();
   
   return (
     <header className="sticky top-0 z-30 flex h-14 md:h-16 items-center justify-between border-b border-border bg-background/80 backdrop-blur-xl px-3 md:px-6">
