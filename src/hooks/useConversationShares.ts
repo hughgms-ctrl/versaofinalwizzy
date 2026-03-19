@@ -98,6 +98,7 @@ export function useUnshareConversation() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['conversation-shares'] });
       queryClient.invalidateQueries({ queryKey: ['conversation-shares-by-member'] });
+      queryClient.invalidateQueries({ queryKey: ['conversation-shares-for'] });
     },
   });
 }
