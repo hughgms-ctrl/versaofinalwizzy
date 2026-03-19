@@ -142,3 +142,15 @@ verify_jwt = false
 
 [functions.admin-governance]
 verify_jwt = false
+
+[functions.signature-send-otp]
+verify_jwt = false
+
+[functions.signature-verify-otp]
+verify_jwt = false
+
+[functions.signature-complete]
+verify_jwt = false
+
+[functions.signature-receipt]
+verify_jwt = false
