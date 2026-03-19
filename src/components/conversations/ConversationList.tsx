@@ -210,7 +210,7 @@ export function ConversationList({ conversations, selectedId, onSelect, onSpyVie
                           </div>
                         ) : (
                           <div className="flex items-center justify-between gap-2 min-w-0">
-                            <p className={cn(
+                            <p data-sensitive className={cn(
                               "text-sm truncate flex-1 min-w-0",
                               hasUnread ? "font-bold text-foreground" : "font-medium text-foreground"
                             )}>
