@@ -477,7 +477,7 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1 md:gap-2 flex-wrap">
-                <h3 className="font-semibold text-foreground text-sm md:text-base truncate max-w-[120px] md:max-w-none">{getDisplayName()}</h3>
+                <h3 data-sensitive className="font-semibold text-foreground text-sm md:text-base truncate max-w-[120px] md:max-w-none">{getDisplayName()}</h3>
                 <span className={cn(
                   "status-badge text-[9px] md:text-[10px] hidden xs:inline-flex",
                   (isTyping || isRecording) ? "bg-green-500/10 text-green-500 animate-pulse" : 
