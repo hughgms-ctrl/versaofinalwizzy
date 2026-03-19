@@ -914,16 +914,28 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
         }
 
         console.log(`[WEBHOOK] Invoking flow-execute for campaign ${campaignId}, flow ${campaignFlowId}`);
-        // Call flow execution engine
-        const flowExecPromise = fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/flow-execute`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
-          body: JSON.stringify({ 
-            flowId: campaignFlowId, 
-            conversationId: conversation.id,
-            triggerMessage: triggerText || '[mídia]'
-          }),
-        });
+        // Call flow execution engine — await to ensure it starts (don't fire-and-forget)
+        const flowExecPromise = (async () => {
+          try {
+            const resp = await fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/flow-execute`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
+              body: JSON.stringify({ 
+                flowId: campaignFlowId, 
+                conversationId: conversation.id,
+                triggerMessage: triggerText || '[mídia]'
+              }),
+            });
+            if (!resp.ok) {
+              const errText = await resp.text();
+              console.error(`[WEBHOOK] flow-execute failed for campaign ${campaignId}: ${resp.status} ${errText}`);
+            } else {
+              console.log(`[WEBHOOK] flow-execute started successfully for campaign ${campaignId}`);
+            }
+          } catch (err) {
+            console.error(`[WEBHOOK] flow-execute fetch error for campaign ${campaignId}:`, err);
+          }
+        })();
         runBackground(flowExecPromise);
 
         return respond({ success: true, messageId: savedMessage.id, triggeredCampaign: true });
