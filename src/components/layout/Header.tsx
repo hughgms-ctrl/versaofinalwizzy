@@ -73,6 +73,22 @@ export function Header({
             <Button
               variant="ghost"
               size="icon"
+              className={`h-8 w-8 ${privacyMode ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+              onClick={togglePrivacy}
+            >
+              {privacyMode ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            {privacyMode ? 'Desativar modo privacidade' : 'Ativar modo privacidade (borrar dados)'}
+          </TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
               className="h-8 w-8 text-muted-foreground hover:text-foreground"
               onClick={() => updateSettings({ soundEnabled: !settings.soundEnabled })}
             >
