@@ -3298,6 +3298,100 @@ export type Database = {
           },
         ]
       }
+      signature_evidence: {
+        Row: {
+          created_at: string
+          document_hash: string
+          id: string
+          metadata: Json | null
+          otp_verified_at: string | null
+          receipt_pdf_url: string | null
+          selfie_url: string | null
+          signature_id: string
+          signed_at: string
+          signer_device: string | null
+          signer_ip: string | null
+          signer_location: string | null
+        }
+        Insert: {
+          created_at?: string
+          document_hash: string
+          id?: string
+          metadata?: Json | null
+          otp_verified_at?: string | null
+          receipt_pdf_url?: string | null
+          selfie_url?: string | null
+          signature_id: string
+          signed_at?: string
+          signer_device?: string | null
+          signer_ip?: string | null
+          signer_location?: string | null
+        }
+        Update: {
+          created_at?: string
+          document_hash?: string
+          id?: string
+          metadata?: Json | null
+          otp_verified_at?: string | null
+          receipt_pdf_url?: string | null
+          selfie_url?: string | null
+          signature_id?: string
+          signed_at?: string
+          signer_device?: string | null
+          signer_ip?: string | null
+          signer_location?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "signature_evidence_signature_id_fkey"
+            columns: ["signature_id"]
+            isOneToOne: false
+            referencedRelation: "document_signatures"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      signature_otp_codes: {
+        Row: {
+          code: string
+          created_at: string
+          email: string
+          expires_at: string
+          id: string
+          phone: string | null
+          signature_id: string
+          verified: boolean | null
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          email: string
+          expires_at: string
+          id?: string
+          phone?: string | null
+          signature_id: string
+          verified?: boolean | null
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          email?: string
+          expires_at?: string
+          id?: string
+          phone?: string | null
+          signature_id?: string
+          verified?: boolean | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "signature_otp_codes_signature_id_fkey"
+            columns: ["signature_id"]
+            isOneToOne: false
+            referencedRelation: "document_signatures"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       stage_notifications: {
         Row: {
           column_id: string
