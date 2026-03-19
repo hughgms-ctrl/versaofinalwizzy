@@ -282,6 +282,7 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
               </div>
             ) : (
               <button
+                data-sensitive
                 className="font-semibold text-lg text-foreground hover:text-primary transition-colors"
                 onClick={() => {
                   setEditedName(contact?.name || '');
