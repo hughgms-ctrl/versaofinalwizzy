@@ -1,10 +1,11 @@
-import { Search, Plus, Moon, Sun, Volume2, VolumeOff } from 'lucide-react';
+import { Search, Plus, Moon, Sun, Volume2, VolumeOff, Eye, EyeOff } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { NotificationDropdown } from './NotificationDropdown';
 import { MobileNav } from './MobileNav';
 import { useNotificationSettings } from '@/hooks/useNotificationSettings';
+import { usePrivacy } from '@/contexts/PrivacyContext';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface HeaderProps {
@@ -26,6 +27,7 @@ export function Header({
 }: HeaderProps) {
   const { theme, setTheme } = useTheme();
   const { settings, updateSettings } = useNotificationSettings();
+  const { privacyMode, togglePrivacy } = usePrivacy();
   
   return (
     <header className="sticky top-0 z-30 flex h-14 md:h-16 items-center justify-between border-b border-border bg-background/80 backdrop-blur-xl px-3 md:px-6">
@@ -65,6 +67,22 @@ export function Header({
         >
           {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
         </Button>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className={`h-8 w-8 ${privacyMode ? 'text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+              onClick={togglePrivacy}
+            >
+              {privacyMode ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            {privacyMode ? 'Desativar modo privacidade' : 'Ativar modo privacidade (borrar dados)'}
+          </TooltipContent>
+        </Tooltip>
 
         <Tooltip>
           <TooltipTrigger asChild>

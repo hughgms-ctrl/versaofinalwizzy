@@ -8,6 +8,7 @@ import { ThemeProvider } from "next-themes";
 import { AuthProvider } from "@/hooks/useAuth";
 import { SidebarProvider } from "@/contexts/SidebarContext";
 import { WorkspaceProvider } from "@/contexts/WorkspaceContext";
+import { PrivacyProvider } from "@/contexts/PrivacyContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { NotificationProvider } from "@/components/NotificationProvider";
 import Index from "./pages/Index";
@@ -58,6 +59,7 @@ const App = () => (
         <SidebarProvider>
           <WorkspaceProvider>
             <TooltipProvider>
+              <PrivacyProvider>
               <NotificationProvider>
                 <Toaster />
                 <Sonner />
@@ -104,6 +106,7 @@ const App = () => (
                   </Routes>
                 </BrowserRouter>
               </NotificationProvider>
+              </PrivacyProvider>
             </TooltipProvider>
           </WorkspaceProvider>
         </SidebarProvider>

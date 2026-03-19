@@ -282,6 +282,7 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
               </div>
             ) : (
               <button
+                data-sensitive
                 className="font-semibold text-lg text-foreground hover:text-primary transition-colors"
                 onClick={() => {
                   setEditedName(contact?.name || '');
@@ -504,14 +505,14 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
           <div className="space-y-2">
             <div className="flex items-center gap-3 p-2 rounded-lg bg-muted/50">
               <Phone className="h-4 w-4 text-muted-foreground shrink-0" />
-              <span className="text-sm text-foreground truncate">
+              <span data-sensitive className="text-sm text-foreground truncate">
                 {contact?.phone ? formatPhone(contact.phone) : 'Sem telefone'}
               </span>
             </div>
             {contact?.email && (
               <div className="flex items-center gap-3 p-2 rounded-lg bg-muted/50">
                 <Mail className="h-4 w-4 text-muted-foreground shrink-0" />
-                <span className="text-sm text-foreground truncate">{contact.email}</span>
+                <span data-sensitive className="text-sm text-foreground truncate">{contact.email}</span>
               </div>
             )}
             <div className="flex items-center gap-3 p-2 rounded-lg bg-muted/50">

@@ -196,21 +196,21 @@ export function ConversationList({ conversations, selectedId, onSelect, onSpyVie
                         {/* Row 2: Name + Phone */}
                         {note ? (
                           <div className="flex items-center gap-1.5 min-w-0">
-                            <p className={cn(
+                            <p data-sensitive className={cn(
                               "text-[11px] truncate flex-1 min-w-0",
                               hasUnread ? "font-bold text-foreground" : "font-medium text-muted-foreground"
                             )}>
                               {hasName ? contactName : formattedPhone}
                             </p>
                             {hasName && (
-                              <p className="text-[10px] text-muted-foreground/70 truncate flex-shrink-0">
+                              <p data-sensitive className="text-[10px] text-muted-foreground/70 truncate flex-shrink-0">
                                 • {formattedPhone}
                               </p>
                             )}
                           </div>
                         ) : (
                           <div className="flex items-center justify-between gap-2 min-w-0">
-                            <p className={cn(
+                            <p data-sensitive className={cn(
                               "text-sm truncate flex-1 min-w-0",
                               hasUnread ? "font-bold text-foreground" : "font-medium text-foreground"
                             )}>
@@ -219,7 +219,7 @@ export function ConversationList({ conversations, selectedId, onSelect, onSpyVie
                           </div>
                         )}
                         {!note && hasName && (
-                          <p className="text-[10px] text-muted-foreground truncate">
+                          <p data-sensitive className="text-[10px] text-muted-foreground truncate">
                             {formattedPhone}
                           </p>
                         )}
