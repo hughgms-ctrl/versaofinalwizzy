@@ -1,113 +1,239 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
-import { FileText, RotateCcw, Check, Loader2, AlertCircle } from 'lucide-react';
+import { 
+  FileText, RotateCcw, Check, Loader2, AlertCircle, Camera, 
+  Shield, Mail, KeyRound, ChevronRight, Eye, Download, User
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+
+type Step = 'loading' | 'error' | 'review' | 'otp_send' | 'otp_verify' | 'selfie' | 'signature' | 'submitting' | 'done';
 
 export default function PublicSignaturePage() {
   const { token } = useParams<{ token: string }>();
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [isDrawing, setIsDrawing] = useState(false);
-  const [signature, setSignature] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [step, setStep] = useState<Step>('loading');
   const [documentData, setDocumentData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
+
+  // OTP state
+  const [otpEmail, setOtpEmail] = useState('');
+  const [otpCode, setOtpCode] = useState('');
+  const [otpSending, setOtpSending] = useState(false);
+  const [otpVerifying, setOtpVerifying] = useState(false);
+  const [otpSent, setOtpSent] = useState(false);
+
+  // Selfie state
+  const [selfieImage, setSelfieImage] = useState<string | null>(null);
+  const [cameraActive, setCameraActive] = useState(false);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+
+  // Signature state
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [signatureImage, setSignatureImage] = useState<string | null>(null);
+
+  // Result state
+  const [result, setResult] = useState<any>(null);
 
   useEffect(() => {
     loadDocument();
+    return () => {
+      if (cameraStream) {
+        cameraStream.getTracks().forEach(t => t.stop());
+      }
+    };
   }, [token]);
 
   const loadDocument = async () => {
     if (!token) {
       setError('Token inválido');
-      setIsLoading(false);
+      setStep('error');
       return;
     }
 
     try {
       const { data, error: fetchError } = await (supabase as any)
         .from('document_signatures')
-        .select(`
-          *,
-          generated_document:generated_documents(*)
-        `)
+        .select('*, generated_document:generated_documents(*)')
         .eq('signature_token', token)
         .single();
 
       if (fetchError || !data) {
         setError('Documento não encontrado ou link expirado');
+        setStep('error');
         return;
       }
 
       if (data.status === 'signed') {
         setError('Este documento já foi assinado');
+        setStep('error');
         return;
       }
 
       setDocumentData(data);
+      
+      // For internal method, start with review. Otherwise, fallback to old flow.
+      if (data.signing_method === 'internal') {
+        setOtpEmail(data.signer_email || '');
+        setStep('review');
+      } else {
+        // Legacy flow - keep existing behavior
+        setStep('review');
+      }
     } catch (err) {
       console.error('Error loading document:', err);
       setError('Erro ao carregar documento');
-    } finally {
-      setIsLoading(false);
+      setStep('error');
     }
   };
 
-  const initCanvas = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
+  // ==================== OTP ====================
+  const handleSendOtp = async () => {
+    if (!otpEmail) {
+      toast.error('Informe seu e-mail');
+      return;
+    }
+    setOtpSending(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('signature-send-otp', {
+        body: { signatureToken: token, email: otpEmail },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      
+      setOtpSent(true);
+      toast.success('Código enviado para seu e-mail!');
+      
+      // In dev mode, auto-fill the code if returned
+      if (data?._dev_code) {
+        setOtpCode(data._dev_code);
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao enviar código');
+    } finally {
+      setOtpSending(false);
+    }
+  };
 
+  const handleVerifyOtp = async () => {
+    if (!otpCode || otpCode.length !== 6) {
+      toast.error('Informe o código de 6 dígitos');
+      return;
+    }
+    setOtpVerifying(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('signature-verify-otp', {
+        body: { signatureToken: token, code: otpCode },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      
+      if (data?.verified) {
+        toast.success('E-mail verificado!');
+        setStep('selfie');
+      } else {
+        toast.error('Código inválido');
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Código inválido ou expirado');
+    } finally {
+      setOtpVerifying(false);
+    }
+  };
+
+  // ==================== Selfie ====================
+  const startCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } } 
+      });
+      setCameraStream(stream);
+      setCameraActive(true);
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+    } catch (err) {
+      toast.error('Não foi possível acessar a câmera. Verifique as permissões.');
+    }
+  };
+
+  const captureSelfie = () => {
+    if (!videoRef.current) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = videoRef.current.videoWidth;
+    canvas.height = videoRef.current.videoHeight;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+    ctx.drawImage(videoRef.current, 0, 0);
+    const dataUrl = canvas.toDataURL('image/png');
+    setSelfieImage(dataUrl);
+    
+    // Stop camera
+    if (cameraStream) {
+      cameraStream.getTracks().forEach(t => t.stop());
+      setCameraStream(null);
+    }
+    setCameraActive(false);
+  };
 
-    // Set canvas size
+  const handleSelfieFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      setSelfieImage(reader.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const retakeSelfie = () => {
+    setSelfieImage(null);
+    startCamera();
+  };
+
+  // ==================== Signature Pad ====================
+  const initCanvas = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
     const rect = canvas.getBoundingClientRect();
     canvas.width = rect.width * window.devicePixelRatio;
     canvas.height = rect.height * window.devicePixelRatio;
     ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
-
-    // Style
     ctx.strokeStyle = '#000';
     ctx.lineWidth = 2;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-  };
+  }, []);
 
   useEffect(() => {
-    initCanvas();
-    window.addEventListener('resize', initCanvas);
-    return () => window.removeEventListener('resize', initCanvas);
-  }, []);
+    if (step === 'signature') {
+      setTimeout(initCanvas, 100);
+      window.addEventListener('resize', initCanvas);
+      return () => window.removeEventListener('resize', initCanvas);
+    }
+  }, [step, initCanvas]);
 
   const getCoordinates = (e: React.MouseEvent | React.TouchEvent) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
-
     const rect = canvas.getBoundingClientRect();
-    
     if ('touches' in e) {
-      return {
-        x: e.touches[0].clientX - rect.left,
-        y: e.touches[0].clientY - rect.top,
-      };
+      return { x: e.touches[0].clientX - rect.left, y: e.touches[0].clientY - rect.top };
     }
-    
-    return {
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
-    };
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   };
 
   const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
     e.preventDefault();
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext('2d');
+    const ctx = canvasRef.current?.getContext('2d');
     if (!ctx) return;
-
     setIsDrawing(true);
     const { x, y } = getCoordinates(e);
     ctx.beginPath();
@@ -117,11 +243,8 @@ export default function PublicSignaturePage() {
   const draw = (e: React.MouseEvent | React.TouchEvent) => {
     e.preventDefault();
     if (!isDrawing) return;
-
-    const canvas = canvasRef.current;
-    const ctx = canvas?.getContext('2d');
+    const ctx = canvasRef.current?.getContext('2d');
     if (!ctx) return;
-
     const { x, y } = getCoordinates(e);
     ctx.lineTo(x, y);
     ctx.stroke();
@@ -129,9 +252,8 @@ export default function PublicSignaturePage() {
 
   const stopDrawing = () => {
     setIsDrawing(false);
-    const canvas = canvasRef.current;
-    if (canvas) {
-      setSignature(canvas.toDataURL('image/png'));
+    if (canvasRef.current) {
+      setSignatureImage(canvasRef.current.toDataURL('image/png'));
     }
   };
 
@@ -139,44 +261,65 @@ export default function PublicSignaturePage() {
     const canvas = canvasRef.current;
     const ctx = canvas?.getContext('2d');
     if (!ctx || !canvas) return;
-
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    setSignature(null);
+    setSignatureImage(null);
   };
 
-  const submitSignature = async () => {
-    if (!signature || !documentData) return;
+  // ==================== Submit ====================
+  const handleSubmit = async () => {
+    if (!signatureImage || !selfieImage) return;
+    setStep('submitting');
 
-    setIsSubmitting(true);
     try {
-      const { error: updateError } = await supabase.functions.invoke('capture-signature', {
+      const { data, error } = await supabase.functions.invoke('signature-complete', {
         body: {
           signatureToken: token,
-          signatureImage: signature,
+          selfieImage,
+          signatureImage,
+          signerDevice: navigator.userAgent,
         },
       });
 
-      if (updateError) throw updateError;
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
 
-      setSuccess(true);
+      setResult(data);
+      setStep('done');
       toast.success('Documento assinado com sucesso!');
-    } catch (err) {
-      console.error('Error submitting signature:', err);
-      toast.error('Erro ao enviar assinatura');
-    } finally {
-      setIsSubmitting(false);
+    } catch (err: any) {
+      console.error('Error submitting:', err);
+      toast.error(err.message || 'Erro ao finalizar assinatura');
+      setStep('signature');
     }
   };
 
-  if (isLoading) {
+  // ==================== Progress ====================
+  const steps = [
+    { key: 'review', label: 'Documento', icon: FileText },
+    { key: 'otp', label: 'Verificação', icon: KeyRound },
+    { key: 'selfie', label: 'Selfie', icon: Camera },
+    { key: 'signature', label: 'Assinatura', icon: User },
+  ];
+
+  const currentStepIndex = step === 'review' ? 0 
+    : (step === 'otp_send' || step === 'otp_verify') ? 1 
+    : step === 'selfie' ? 2 
+    : (step === 'signature' || step === 'submitting') ? 3 
+    : 4;
+
+  // ==================== Render ====================
+  if (step === 'loading') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-3" />
+          <p className="text-sm text-muted-foreground">Carregando documento...</p>
+        </div>
       </div>
     );
   }
 
-  if (error) {
+  if (step === 'error') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background p-4">
         <Card className="p-8 max-w-md text-center">
@@ -188,98 +331,327 @@ export default function PublicSignaturePage() {
     );
   }
 
-  if (success) {
+  if (step === 'done') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background p-4">
         <Card className="p-8 max-w-md text-center">
           <div className="h-16 w-16 mx-auto bg-green-500/10 rounded-full flex items-center justify-center mb-4">
-            <Check className="h-8 w-8 text-green-600 dark:text-green-400" />
+            <Check className="h-8 w-8 text-green-600" />
           </div>
-          <h1 className="text-xl font-semibold mb-2">Assinatura recebida!</h1>
-          <p className="text-muted-foreground">
-            Seu documento foi assinado com sucesso. Você pode fechar esta página.
+          <h1 className="text-xl font-semibold mb-2">Assinatura Concluída!</h1>
+          <p className="text-muted-foreground mb-4">
+            Seu documento foi assinado com sucesso conforme Lei 14.063/2020.
           </p>
+          
+          <div className="text-left bg-muted/50 rounded-lg p-4 text-xs space-y-1 mb-4">
+            <p><strong>Hash SHA-256:</strong></p>
+            <p className="font-mono break-all">{result?.documentHash || 'N/A'}</p>
+            <p className="mt-2"><strong>Assinado em:</strong> {result?.signedAt ? new Date(result.signedAt).toLocaleString('pt-BR') : 'N/A'}</p>
+          </div>
+
+          <div className="flex gap-2 justify-center">
+            {result?.receiptPdfUrl && (
+              <Button variant="outline" size="sm" className="gap-2" asChild>
+                <a href={result.receiptPdfUrl} target="_blank" rel="noopener noreferrer">
+                  <Download className="h-4 w-4" /> Comprovante
+                </a>
+              </Button>
+            )}
+          </div>
+
+          <Badge variant="default" className="mt-4 gap-1">
+            <Shield className="h-3 w-3" /> Assinatura Eletrônica Avançada
+          </Badge>
         </Card>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-background p-4">
-      <div className="max-w-lg mx-auto space-y-6">
-        {/* Header */}
-        <Card className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-              <FileText className="h-5 w-5 text-primary" />
-            </div>
-            <div>
-              <h1 className="font-semibold">{documentData?.generated_document?.name || 'Documento'}</h1>
-              <p className="text-xs text-muted-foreground">
-                Assine abaixo para confirmar
-              </p>
-            </div>
+    <div className="min-h-screen bg-background">
+      {/* Header */}
+      <header className="border-b bg-card/80 backdrop-blur-sm sticky top-0 z-10">
+        <div className="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Shield className="h-5 w-5 text-primary" />
+            <span className="font-semibold text-sm">Assinatura Eletrônica Avançada</span>
           </div>
-        </Card>
+          <Badge variant="secondary" className="text-[10px]">Lei 14.063/2020</Badge>
+        </div>
+      </header>
 
-        {/* PDF Preview (if available) */}
-        {documentData?.generated_document?.pdf_url && (
-          <Card className="overflow-hidden">
-            <div className="aspect-[3/4] bg-muted flex items-center justify-center">
-              <iframe
-                src={documentData.generated_document.pdf_url}
-                className="w-full h-full"
-                title="Preview do documento"
-              />
-            </div>
-          </Card>
-        )}
-
-        {/* Signature Pad */}
-        <Card className="p-4">
-          <h2 className="font-medium mb-3">Sua assinatura</h2>
-          <div className="border-2 border-dashed border-muted-foreground/30 rounded-lg bg-white">
-            <canvas
-              ref={canvasRef}
-              className="w-full h-40 cursor-crosshair touch-none"
-              onMouseDown={startDrawing}
-              onMouseMove={draw}
-              onMouseUp={stopDrawing}
-              onMouseLeave={stopDrawing}
-              onTouchStart={startDrawing}
-              onTouchMove={draw}
-              onTouchEnd={stopDrawing}
-            />
-          </div>
-          <p className="text-xs text-muted-foreground mt-2 text-center">
-            Use o mouse ou dedo para assinar
-          </p>
-        </Card>
-
-        {/* Actions */}
-        <div className="flex gap-3">
-          <Button variant="outline" onClick={clearCanvas} className="flex-1">
-            <RotateCcw className="h-4 w-4 mr-2" />
-            Limpar
-          </Button>
-          <Button 
-            onClick={submitSignature} 
-            disabled={!signature || isSubmitting}
-            className="flex-1"
-          >
-            {isSubmitting ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            ) : (
-              <Check className="h-4 w-4 mr-2" />
-            )}
-            Confirmar Assinatura
-          </Button>
+      {/* Progress Steps */}
+      <div className="max-w-lg mx-auto px-4 py-4">
+        <div className="flex items-center justify-between mb-6">
+          {steps.map((s, i) => {
+            const Icon = s.icon;
+            const isActive = i === currentStepIndex;
+            const isDone = i < currentStepIndex;
+            return (
+              <div key={s.key} className="flex items-center flex-1">
+                <div className={`flex items-center gap-1.5 ${isActive ? 'text-primary' : isDone ? 'text-green-600' : 'text-muted-foreground'}`}>
+                  <div className={`h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold ${
+                    isActive ? 'bg-primary text-primary-foreground' : isDone ? 'bg-green-100 text-green-700' : 'bg-muted'
+                  }`}>
+                    {isDone ? <Check className="h-4 w-4" /> : <Icon className="h-4 w-4" />}
+                  </div>
+                  <span className="text-[11px] font-medium hidden sm:inline">{s.label}</span>
+                </div>
+                {i < steps.length - 1 && (
+                  <div className={`flex-1 h-0.5 mx-2 ${i < currentStepIndex ? 'bg-green-400' : 'bg-muted'}`} />
+                )}
+              </div>
+            );
+          })}
         </div>
 
-        {/* Legal notice */}
-        <p className="text-xs text-muted-foreground text-center">
-          Ao assinar, você concorda com os termos do documento e declara que todas as informações são verdadeiras.
-        </p>
+        {/* Step 1: Review Document */}
+        {step === 'review' && (
+          <div className="space-y-4">
+            <Card className="p-4">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <FileText className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <h2 className="font-semibold text-sm">{documentData?.generated_document?.name || 'Documento'}</h2>
+                  <p className="text-xs text-muted-foreground">Revise o documento antes de prosseguir</p>
+                </div>
+              </div>
+              {documentData?.generated_document?.pdf_url && (
+                <div className="border rounded-lg overflow-hidden">
+                  <iframe
+                    src={documentData.generated_document.pdf_url}
+                    className="w-full h-[400px]"
+                    title="Documento"
+                  />
+                </div>
+              )}
+            </Card>
+
+            {documentData?.signer_name && (
+              <Card className="p-3">
+                <p className="text-xs text-muted-foreground">Signatário</p>
+                <p className="font-medium text-sm">{documentData.signer_name}</p>
+                {documentData.signer_email && <p className="text-xs text-muted-foreground">{documentData.signer_email}</p>}
+              </Card>
+            )}
+
+            <Button 
+              onClick={() => setStep(documentData?.signing_method === 'internal' ? 'otp_send' : 'signature')} 
+              className="w-full gap-2"
+            >
+              Li e concordo com o documento
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
+
+        {/* Step 2: OTP Verification */}
+        {(step === 'otp_send' || step === 'otp_verify') && (
+          <div className="space-y-4">
+            <Card className="p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
+                  <Mail className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <h2 className="font-semibold">Verificação de Identidade</h2>
+                  <p className="text-xs text-muted-foreground">Enviaremos um código para seu e-mail</p>
+                </div>
+              </div>
+
+              {!otpSent ? (
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-sm font-medium">E-mail</label>
+                    <Input
+                      type="email"
+                      value={otpEmail}
+                      onChange={e => setOtpEmail(e.target.value)}
+                      placeholder="seu@email.com"
+                      className="mt-1"
+                      disabled={!!documentData?.signer_email}
+                    />
+                    {documentData?.signer_email && (
+                      <p className="text-[10px] text-muted-foreground mt-1">E-mail pré-definido pelo remetente</p>
+                    )}
+                  </div>
+                  <Button onClick={handleSendOtp} disabled={otpSending || !otpEmail} className="w-full gap-2">
+                    {otpSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
+                    Enviar Código
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <p className="text-sm text-muted-foreground">
+                    Código enviado para <strong>{otpEmail.replace(/(.{2}).*(@.*)/, "$1***$2")}</strong>
+                  </p>
+                  <div>
+                    <label className="text-sm font-medium">Código de 6 dígitos</label>
+                    <Input
+                      type="text"
+                      maxLength={6}
+                      value={otpCode}
+                      onChange={e => setOtpCode(e.target.value.replace(/\D/g, ''))}
+                      placeholder="000000"
+                      className="mt-1 text-center text-2xl tracking-[0.5em] font-mono"
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={() => { setOtpSent(false); setOtpCode(''); }} className="flex-1">
+                      Reenviar
+                    </Button>
+                    <Button onClick={handleVerifyOtp} disabled={otpVerifying || otpCode.length !== 6} className="flex-1 gap-2">
+                      {otpVerifying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                      Verificar
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </Card>
+          </div>
+        )}
+
+        {/* Step 3: Selfie */}
+        {step === 'selfie' && (
+          <div className="space-y-4">
+            <Card className="p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
+                  <Camera className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <h2 className="font-semibold">Registro de Selfie</h2>
+                  <p className="text-xs text-muted-foreground">Tire uma foto para comprovar sua identidade</p>
+                </div>
+              </div>
+
+              {!selfieImage ? (
+                <div className="space-y-3">
+                  {cameraActive ? (
+                    <div className="relative">
+                      <video
+                        ref={videoRef}
+                        autoPlay
+                        playsInline
+                        muted
+                        className="w-full rounded-lg border"
+                      />
+                      <Button
+                        onClick={captureSelfie}
+                        className="absolute bottom-4 left-1/2 -translate-x-1/2 gap-2"
+                      >
+                        <Camera className="h-4 w-4" /> Capturar
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <Button onClick={startCamera} className="w-full gap-2" variant="outline">
+                        <Camera className="h-4 w-4" /> Abrir Câmera
+                      </Button>
+                      <div className="relative">
+                        <div className="text-center text-xs text-muted-foreground py-2">ou</div>
+                        <label className="block">
+                          <Button variant="outline" className="w-full gap-2" asChild>
+                            <span>
+                              <Eye className="h-4 w-4" /> Enviar foto da galeria
+                              <input
+                                type="file"
+                                accept="image/*"
+                                capture="user"
+                                className="sr-only"
+                                onChange={handleSelfieFileUpload}
+                              />
+                            </span>
+                          </Button>
+                        </label>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="relative">
+                    <img src={selfieImage} alt="Selfie" className="w-full rounded-lg border" />
+                    <Badge className="absolute top-2 right-2 gap-1" variant="secondary">
+                      <Check className="h-3 w-3" /> Capturada
+                    </Badge>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={retakeSelfie} className="flex-1 gap-2">
+                      <RotateCcw className="h-4 w-4" /> Nova foto
+                    </Button>
+                    <Button onClick={() => setStep('signature')} className="flex-1 gap-2">
+                      Continuar <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </Card>
+          </div>
+        )}
+
+        {/* Step 4: Signature */}
+        {(step === 'signature' || step === 'submitting') && (
+          <div className="space-y-4">
+            <Card className="p-4">
+              <h2 className="font-medium mb-3">Sua assinatura</h2>
+              <div className="border-2 border-dashed border-muted-foreground/30 rounded-lg bg-white">
+                <canvas
+                  ref={canvasRef}
+                  className="w-full h-40 cursor-crosshair touch-none"
+                  onMouseDown={startDrawing}
+                  onMouseMove={draw}
+                  onMouseUp={stopDrawing}
+                  onMouseLeave={stopDrawing}
+                  onTouchStart={startDrawing}
+                  onTouchMove={draw}
+                  onTouchEnd={stopDrawing}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground mt-2 text-center">
+                Use o mouse ou dedo para assinar
+              </p>
+            </Card>
+
+            {/* Summary */}
+            <Card className="p-4 bg-muted/30">
+              <h3 className="text-xs font-semibold text-muted-foreground mb-2">RESUMO DA ASSINATURA</h3>
+              <div className="space-y-1 text-xs">
+                <p><strong>Documento:</strong> {documentData?.generated_document?.name}</p>
+                <p><strong>Signatário:</strong> {documentData?.signer_name || 'N/A'}</p>
+                <p><strong>E-mail verificado:</strong> {otpEmail || documentData?.signer_email}</p>
+                <p><strong>Selfie:</strong> {selfieImage ? '✅ Capturada' : '⏳ Pendente'}</p>
+                <p><strong>Método:</strong> Assinatura Eletrônica Avançada (Lei 14.063/2020)</p>
+              </div>
+            </Card>
+
+            <div className="flex gap-3">
+              <Button variant="outline" onClick={clearCanvas} className="flex-1">
+                <RotateCcw className="h-4 w-4 mr-2" /> Limpar
+              </Button>
+              <Button 
+                onClick={handleSubmit} 
+                disabled={!signatureImage || step === 'submitting'}
+                className="flex-1"
+              >
+                {step === 'submitting' ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Check className="h-4 w-4 mr-2" />
+                )}
+                Assinar Documento
+              </Button>
+            </div>
+
+            <p className="text-[10px] text-muted-foreground text-center leading-relaxed">
+              Ao assinar, você declara que leu e concorda com o documento. Esta assinatura eletrônica é válida 
+              conforme MP 2.200-2/2001 e Lei 14.063/2020. Serão registrados: hash SHA-256 do documento, 
+              selfie, IP, data/hora e dispositivo.
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );

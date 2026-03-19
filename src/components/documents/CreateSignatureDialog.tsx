@@ -17,7 +17,7 @@ interface CreateSignatureDialogProps {
 export function CreateSignatureDialog({ open, onOpenChange, documents }: CreateSignatureDialogProps) {
   const createSignature = useCreateSignatureRequest();
   const [selectedDocId, setSelectedDocId] = useState('');
-  const [method, setMethod] = useState('govbr');
+  const [method, setMethod] = useState('internal');
   const [signerName, setSignerName] = useState('');
   const [signerEmail, setSignerEmail] = useState('');
   const [signerPhone, setSignerPhone] = useState('');
@@ -42,7 +42,7 @@ export function CreateSignatureDialog({ open, onOpenChange, documents }: CreateS
 
   const resetForm = () => {
     setSelectedDocId('');
-    setMethod('govbr');
+    setMethod('internal');
     setSignerName('');
     setSignerEmail('');
     setSignerPhone('');
@@ -86,6 +86,9 @@ export function CreateSignatureDialog({ open, onOpenChange, documents }: CreateS
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="internal">
+                  <span className="flex items-center gap-2">🔐 Assinatura Interna (OTP + Selfie)</span>
+                </SelectItem>
                 <SelectItem value="manual">
                   <span className="flex items-center gap-2">📝 Manual</span>
                 </SelectItem>
@@ -121,10 +124,18 @@ export function CreateSignatureDialog({ open, onOpenChange, documents }: CreateS
             </div>
           </div>
 
+          {method === 'internal' && (
+            <div className="bg-primary/5 border border-primary/20 rounded-lg p-3">
+              <p className="text-xs text-primary/80">
+                🔐 Assinatura Eletrônica Avançada conforme Lei 14.063/2020. O signatário receberá um link e passará por: verificação OTP por e-mail, registro de selfie, assinatura manuscrita digital e hash SHA-256 do documento. <strong>E-mail do signatário é obrigatório.</strong>
+              </p>
+            </div>
+          )}
+
           {method === 'govbr' && (
             <div className="bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded-lg p-3">
               <p className="text-xs text-green-700 dark:text-green-300">
-                🏛️ Será gerado um link público para assinatura via Gov.br. O signatário acessará a página, visualizará o documento e será direcionado ao portal de assinatura digital.
+                🏛️ Será gerado um link público para assinatura via Gov.br.
               </p>
             </div>
           )}
@@ -132,7 +143,7 @@ export function CreateSignatureDialog({ open, onOpenChange, documents }: CreateS
           {method === 'zapsign' && (
             <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
               <p className="text-xs text-blue-700 dark:text-blue-300">
-                ✍️ A integração com ZapSign gerará um link de assinatura automático. Configure sua API key nas configurações para ativar.
+                ✍️ A integração com ZapSign gerará um link de assinatura automático.
               </p>
             </div>
           )}

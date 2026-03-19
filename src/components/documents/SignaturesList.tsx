@@ -21,6 +21,7 @@ const STATUS_MAP: Record<string, { label: string; variant: 'default' | 'secondar
 };
 
 const METHOD_MAP: Record<string, { label: string; color: string }> = {
+  internal: { label: 'Interna (Avançada)', color: 'bg-purple-100 text-purple-700' },
   manual: { label: 'Manual', color: 'bg-slate-100 text-slate-700' },
   govbr: { label: 'Gov.br', color: 'bg-green-100 text-green-700' },
   zapsign: { label: 'ZapSign', color: 'bg-blue-100 text-blue-700' },
