@@ -502,7 +502,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
                         {hasName ? contactName : formattedPhone}
                       </p>
                       {hasName && (
-                        <p className="text-[10px] text-muted-foreground/70 truncate flex-shrink-0">
+                        <p className="text-[10px] text-muted-foreground/70 truncate flex-shrink-0" data-sensitive>
                           • {formattedPhone}
                         </p>
                       )}
