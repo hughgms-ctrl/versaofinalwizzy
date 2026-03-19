@@ -219,7 +219,7 @@ export function ConversationList({ conversations, selectedId, onSelect, onSpyVie
                           </div>
                         )}
                         {!note && hasName && (
-                          <p className="text-[10px] text-muted-foreground truncate">
+                          <p data-sensitive className="text-[10px] text-muted-foreground truncate">
                             {formattedPhone}
                           </p>
                         )}
