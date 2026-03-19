@@ -677,11 +677,32 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
   }
 
   // Determine final is_from_bot status
-  // If it's from me AND specifically marked as a bot/flow response
+  // If it's from me, check if this message was already sent by a human user via zapi-send-message.
+  // The zapi-send-message function saves the message with is_from_bot=false and a zapi_message_id.
+  // If we find a matching message with sent_by set, it was sent by a human — do NOT override.
+  // Only mark as bot if conversation is in IA mode AND no human sent it.
   let finalIsFromBot = false;
-  if (fromMe) {
-    // If conversation is in IA mode, we assume outbound messages from the instance ARE from the IA
-    // UNLESS we find evidence it was a manual user response (which we can't easily do without more context)
+  if (fromMe && msgId) {
+    // Check if this message was sent by a human user (zapi-send-message saves it first with sent_by)
+    const { data: existingSentByHuman } = await supabase
+      .from('messages')
+      .select('id, sent_by, is_from_bot')
+      .eq('zapi_message_id', msgId)
+      .not('sent_by', 'is', null)
+      .maybeSingle();
+    
+    if (existingSentByHuman) {
+      // Already saved by zapi-send-message as a human message — skip entirely (dedup)
+      console.log(`[WEBHOOK] Message ${msgId} was sent by human user (sent_by=${existingSentByHuman.sent_by}). Skipping.`);
+      return respond({ success: true, duplicate: true, human_sent: true });
+    }
+    
+    // No human sent it — if conversation is in IA mode, it's from the bot
+    if (conversation.service_mode === 'ia') {
+      finalIsFromBot = true;
+    }
+  } else if (fromMe && !msgId) {
+    // No msgId to check — fallback to service_mode heuristic
     if (conversation.service_mode === 'ia') {
       finalIsFromBot = true;
     }
