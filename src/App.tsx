@@ -59,6 +59,7 @@ const App = () => (
         <SidebarProvider>
           <WorkspaceProvider>
             <TooltipProvider>
+              <PrivacyProvider>
               <NotificationProvider>
                 <Toaster />
                 <Sonner />
