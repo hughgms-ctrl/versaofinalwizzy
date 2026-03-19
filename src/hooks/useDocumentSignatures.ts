@@ -70,11 +70,13 @@ export function useCreateSignatureRequest() {
     }) => {
       const orgId = profile!.organization_id;
       
-      // Generate signature URL for gov.br
+      // Generate signature URL
       let signatureUrl: string | null = null;
-      if (params.signing_method === 'govbr') {
+      const signatureToken = crypto.randomUUID();
+      
+      if (params.signing_method === 'internal' || params.signing_method === 'govbr') {
         const baseUrl = window.location.origin;
-        signatureUrl = `${baseUrl}/signature/${params.generated_document_id}`;
+        signatureUrl = `${baseUrl}/sign/${signatureToken}`;
       }
 
       const { data, error } = await (supabase as any)
