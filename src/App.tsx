@@ -106,6 +106,7 @@ const App = () => (
                   </Routes>
                 </BrowserRouter>
               </NotificationProvider>
+              </PrivacyProvider>
             </TooltipProvider>
           </WorkspaceProvider>
         </SidebarProvider>
