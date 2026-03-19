@@ -200,7 +200,7 @@ export function PipelineBoard({ onConversationClick }: PipelineBoardProps) {
                                     >
                                       {note}
                                     </span>
-                                    <p className="text-[11px] font-medium text-muted-foreground truncate max-w-[140px]">
+                                    <p className="text-[11px] font-medium text-muted-foreground truncate max-w-[140px]" data-sensitive>
                                       {getDisplayName(conversation)}
                                     </p>
                                   </div>
@@ -209,7 +209,7 @@ export function PipelineBoard({ onConversationClick }: PipelineBoardProps) {
 
                               return (
                                 <>
-                                  <p className="text-sm font-medium text-foreground truncate max-w-[140px]">
+                                  <p className="text-sm font-medium text-foreground truncate max-w-[140px]" data-sensitive>
                                     {getDisplayName(conversation)}
                                   </p>
                                   {conversation.last_message_at && (

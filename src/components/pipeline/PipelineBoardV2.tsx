@@ -498,11 +498,11 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
                       <p className={cn(
                         "text-[11px] truncate flex-1 min-w-0",
                         hasUnread ? "font-bold text-foreground" : "font-medium text-muted-foreground"
-                      )}>
+                      )} data-sensitive>
                         {hasName ? contactName : formattedPhone}
                       </p>
                       {hasName && (
-                        <p className="text-[10px] text-muted-foreground/70 truncate flex-shrink-0">
+                        <p className="text-[10px] text-muted-foreground/70 truncate flex-shrink-0" data-sensitive>
                           • {formattedPhone}
                         </p>
                       )}
@@ -512,13 +512,13 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
                       <p className={cn(
                         "text-sm truncate flex-1 min-w-0",
                         hasUnread ? "font-bold text-foreground" : "font-medium text-foreground"
-                      )}>
+                      )} data-sensitive>
                         {hasName ? contactName : formattedPhone}
                       </p>
                     </div>
                   )}
                   {!note && hasName && (
-                    <p className="text-[10px] text-muted-foreground truncate">
+                    <p className="text-[10px] text-muted-foreground truncate" data-sensitive>
                       {formattedPhone}
                     </p>
                   )}
