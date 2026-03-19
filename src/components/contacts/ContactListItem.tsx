@@ -166,7 +166,7 @@ export function ContactListItem({ contact, onSelect }: ContactListItemProps) {
           {/* Phone (if has name) + Tags inline */}
           <div className="flex items-center gap-1.5 mt-0.5">
             {hasName && (
-              <span className="text-[10px] text-muted-foreground truncate">
+              <span data-sensitive className="text-[10px] text-muted-foreground truncate">
                 {formattedPhone}
               </span>
             )}
