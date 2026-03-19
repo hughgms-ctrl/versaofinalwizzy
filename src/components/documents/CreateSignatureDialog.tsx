@@ -42,7 +42,7 @@ export function CreateSignatureDialog({ open, onOpenChange, documents }: CreateS
 
   const resetForm = () => {
     setSelectedDocId('');
-    setMethod('govbr');
+    setMethod('internal');
     setSignerName('');
     setSignerEmail('');
     setSignerPhone('');
