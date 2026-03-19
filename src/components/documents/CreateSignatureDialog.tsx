@@ -17,7 +17,7 @@ interface CreateSignatureDialogProps {
 export function CreateSignatureDialog({ open, onOpenChange, documents }: CreateSignatureDialogProps) {
   const createSignature = useCreateSignatureRequest();
   const [selectedDocId, setSelectedDocId] = useState('');
-  const [method, setMethod] = useState('govbr');
+  const [method, setMethod] = useState('internal');
   const [signerName, setSignerName] = useState('');
   const [signerEmail, setSignerEmail] = useState('');
   const [signerPhone, setSignerPhone] = useState('');
