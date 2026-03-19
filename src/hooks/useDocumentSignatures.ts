@@ -92,6 +92,7 @@ export function useCreateSignatureRequest() {
           contact_id: params.contact_id,
           conversation_id: params.conversation_id,
           signature_url: signatureUrl,
+          signature_token: signatureToken,
           status: 'pending',
           created_by: profile!.id,
         })
