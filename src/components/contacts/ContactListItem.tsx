@@ -149,7 +149,7 @@ export function ContactListItem({ contact, onSelect }: ContactListItemProps) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
             {/* Name or Phone as primary */}
-            <span className="font-medium text-sm text-foreground truncate">
+            <span data-sensitive className="font-medium text-sm text-foreground truncate">
               {contact.name || formattedPhone}
             </span>
             {/* Quick Note Badge */}
