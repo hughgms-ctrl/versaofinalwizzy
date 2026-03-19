@@ -512,7 +512,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
                       <p className={cn(
                         "text-sm truncate flex-1 min-w-0",
                         hasUnread ? "font-bold text-foreground" : "font-medium text-foreground"
-                      )}>
+                      )} data-sensitive>
                         {hasName ? contactName : formattedPhone}
                       </p>
                     </div>
