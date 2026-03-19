@@ -677,34 +677,50 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
   }
 
   // Determine final is_from_bot status
-  // If it's from me, check if this message was already sent by a human user via zapi-send-message.
-  // The zapi-send-message function saves the message with is_from_bot=false and a zapi_message_id.
-  // If we find a matching message with sent_by set, it was sent by a human — do NOT override.
-  // Only mark as bot if conversation is in IA mode AND no human sent it.
+  // For outbound (fromMe) messages:
+  //   - If conversation is in IA mode, the orchestrator/flow-execute already saves the message
+  //     to the DB with is_from_bot=true. The webhook echo arrives later (race condition).
+  //     We must SKIP to avoid duplicates. Wait briefly and re-check dedup.
+  //   - If conversation is NOT in IA mode, the message was sent by a human via zapi-send-message
+  //     which saves synchronously before the echo. Dedup above should catch it, but as safety:
   let finalIsFromBot = false;
-  if (fromMe && msgId) {
-    // Check if this message was sent by a human user (zapi-send-message saves it first with sent_by)
-    const { data: existingSentByHuman } = await supabase
-      .from('messages')
-      .select('id, sent_by, is_from_bot')
-      .eq('zapi_message_id', msgId)
-      .not('sent_by', 'is', null)
-      .maybeSingle();
-    
-    if (existingSentByHuman) {
-      // Already saved by zapi-send-message as a human message — skip entirely (dedup)
-      console.log(`[WEBHOOK] Message ${msgId} was sent by human user (sent_by=${existingSentByHuman.sent_by}). Skipping.`);
-      return respond({ success: true, duplicate: true, human_sent: true });
-    }
-    
-    // No human sent it — if conversation is in IA mode, it's from the bot
+  if (fromMe) {
     if (conversation.service_mode === 'ia') {
+      // In IA mode, the AI system (orchestrator/flow-execute) saves its own messages.
+      // The webhook echo is just a confirmation — skip it to avoid duplicates.
+      // Wait a moment for the orchestrator to finish saving, then re-check dedup.
+      await new Promise(r => setTimeout(r, 2000));
+      if (msgId) {
+        const { data: nowExists } = await supabase
+          .from('messages').select('id')
+          .eq('zapi_message_id', msgId).maybeSingle();
+        if (nowExists) {
+          console.log(`[WEBHOOK] IA mode echo dedup (after wait): msgId=${msgId} already saved by orchestrator.`);
+          return respond({ success: true, duplicate: true, ia_echo: true });
+        }
+      }
+      // If still not found after wait, it might be a system message not tracked — save as bot
       finalIsFromBot = true;
-    }
-  } else if (fromMe && !msgId) {
-    // No msgId to check — fallback to service_mode heuristic
-    if (conversation.service_mode === 'ia') {
-      finalIsFromBot = true;
+      console.log(`[WEBHOOK] IA mode outbound not found after wait — saving as bot message.`);
+    } else {
+      // Not in IA mode — this echo is from a human-sent message.
+      // zapi-send-message saves synchronously, so dedup above should have caught it.
+      // If we reach here, it means the message wasn't found by zapi_message_id dedup.
+      // Check by sent_by as extra safety.
+      if (msgId) {
+        const { data: existingSentByHuman } = await supabase
+          .from('messages')
+          .select('id, sent_by')
+          .eq('zapi_message_id', msgId)
+          .not('sent_by', 'is', null)
+          .maybeSingle();
+        if (existingSentByHuman) {
+          console.log(`[WEBHOOK] Human echo dedup: msgId=${msgId}, sent_by=${existingSentByHuman.sent_by}`);
+          return respond({ success: true, duplicate: true, human_sent: true });
+        }
+      }
+      // Not found — save as human outbound (is_from_bot=false)
+      finalIsFromBot = false;
     }
   }
 
