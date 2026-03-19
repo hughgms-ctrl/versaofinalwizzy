@@ -518,7 +518,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
                     </div>
                   )}
                   {!note && hasName && (
-                    <p className="text-[10px] text-muted-foreground truncate">
+                    <p className="text-[10px] text-muted-foreground truncate" data-sensitive>
                       {formattedPhone}
                     </p>
                   )}
