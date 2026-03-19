@@ -86,6 +86,9 @@ export function CreateSignatureDialog({ open, onOpenChange, documents }: CreateS
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value="internal">
+                  <span className="flex items-center gap-2">🔐 Assinatura Interna (OTP + Selfie)</span>
+                </SelectItem>
                 <SelectItem value="manual">
                   <span className="flex items-center gap-2">📝 Manual</span>
                 </SelectItem>
