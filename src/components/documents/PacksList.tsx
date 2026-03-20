@@ -59,7 +59,7 @@ import { toast } from 'sonner';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { cn } from '@/lib/utils';
 
-export function PacksList() {
+export function PacksList({ onGeneratedForSignature }: { onGeneratedForSignature?: (docId: string) => void } = {}) {
   const { data: packs, isLoading } = useDocumentPacks();
   const { data: templates } = useDocumentTemplates();
   const { data: folders = [] } = useDocumentFolders();
@@ -168,7 +168,7 @@ export function PacksList() {
     );
   };
 
-  if (fillingPack) return <PackFillForm pack={fillingPack} onBack={() => setFillingPack(null)} />;
+  if (fillingPack) return <PackFillForm pack={fillingPack} onBack={() => setFillingPack(null)} onGeneratedForSignature={onGeneratedForSignature} />;
   if (editingPack || showNew) return <PackEditor pack={editingPack} onBack={() => { setEditingPack(null); setShowNew(false); }} />;
 
   const PackRow = ({ pack, nested = false }: { pack: DocumentPack; nested?: boolean }) => (

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowLeft, Loader2, FileDown, Image as ImageIcon, X } from 'lucide-react';
+import { ArrowLeft, Loader2, FileDown, Image as ImageIcon, X, FileSignature } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -14,9 +14,10 @@ import { useQueryClient } from '@tanstack/react-query';
 interface TemplateFillFormProps {
   template: DocumentTemplate;
   onBack: () => void;
+  onGeneratedForSignature?: (documentId: string) => void;
 }
 
-export function TemplateFillForm({ template, onBack }: TemplateFillFormProps) {
+export function TemplateFillForm({ template, onBack, onGeneratedForSignature }: TemplateFillFormProps) {
   const { profile } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -47,7 +48,7 @@ export function TemplateFillForm({ template, onBack }: TemplateFillFormProps) {
     setLogoPreview(null);
   };
 
-  const handleGenerate = async () => {
+  const handleGenerate = async (advanceToSignature = false) => {
     if (!profile) return;
 
     // Validate required fields
@@ -101,7 +102,7 @@ export function TemplateFillForm({ template, onBack }: TemplateFillFormProps) {
       }
 
       // Save generated document to database
-      const { error: dbError } = await (supabase as any)
+      const { data: docData, error: dbError } = await (supabase as any)
         .from('generated_documents')
         .insert({
           organization_id: profile.organization_id,
@@ -111,14 +112,21 @@ export function TemplateFillForm({ template, onBack }: TemplateFillFormProps) {
           pdf_url: data.pdf_url,
           status: 'generated',
           created_by: profile.id,
-        });
+        })
+        .select('id')
+        .single();
 
       if (dbError) throw dbError;
 
       queryClient.invalidateQueries({ queryKey: ['generated-documents'] });
 
-      toast({ title: 'Documento gerado com sucesso!' });
-      onBack();
+      if (advanceToSignature && docData?.id && onGeneratedForSignature) {
+        toast({ title: 'Documento gerado! Configure a assinatura.' });
+        onGeneratedForSignature(docData.id);
+      } else {
+        toast({ title: 'Documento gerado com sucesso!' });
+        onBack();
+      }
     } catch (error: any) {
       toast({
         title: 'Erro ao gerar documento',
@@ -247,24 +255,39 @@ export function TemplateFillForm({ template, onBack }: TemplateFillFormProps) {
             </CardContent>
           </Card>
 
-          <Button
-            onClick={handleGenerate}
-            disabled={generating || !documentName.trim()}
-            className="w-full"
-            size="lg"
-          >
-            {generating ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Gerando PDF...
-              </>
-            ) : (
-              <>
-                <FileDown className="h-4 w-4 mr-2" />
-                Gerar documento PDF
-              </>
+          <div className="space-y-2">
+            <Button
+              onClick={() => handleGenerate(false)}
+              disabled={generating || !documentName.trim()}
+              className="w-full"
+              size="lg"
+            >
+              {generating ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Gerando PDF...
+                </>
+              ) : (
+                <>
+                  <FileDown className="h-4 w-4 mr-2" />
+                  Gerar documento PDF
+                </>
+              )}
+            </Button>
+
+            {onGeneratedForSignature && (
+              <Button
+                onClick={() => handleGenerate(true)}
+                disabled={generating || !documentName.trim()}
+                variant="outline"
+                className="w-full gap-2"
+                size="lg"
+              >
+                <FileSignature className="h-4 w-4" />
+                Gerar e Solicitar Assinatura
+              </Button>
             )}
-          </Button>
+          </div>
         </div>
 
         {/* Preview Section */}

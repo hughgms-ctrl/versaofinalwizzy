@@ -48,7 +48,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { cn } from '@/lib/utils';
 
-export function TemplatesList() {
+export function TemplatesList({ onGeneratedForSignature }: { onGeneratedForSignature?: (docId: string) => void } = {}) {
   const { data: templates, isLoading } = useDocumentTemplates();
   const { data: folders = [] } = useDocumentFolders();
   const deleteTemplate = useDeleteDocumentTemplate();
@@ -156,7 +156,7 @@ export function TemplatesList() {
   };
 
   if (editingTemplate) return <TemplateEditor template={editingTemplate} onBack={() => setEditingTemplate(null)} />;
-  if (fillingTemplate) return <TemplateFillForm template={fillingTemplate} onBack={() => setFillingTemplate(null)} />;
+  if (fillingTemplate) return <TemplateFillForm template={fillingTemplate} onBack={() => setFillingTemplate(null)} onGeneratedForSignature={onGeneratedForSignature} />;
   if (showNewEditor) return <TemplateEditor template={null} onBack={() => setShowNewEditor(false)} />;
 
   const TemplateRow = ({ template, nested = false }: { template: DocumentTemplate; nested?: boolean }) => (

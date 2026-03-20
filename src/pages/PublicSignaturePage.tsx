@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { 
   FileText, RotateCcw, Check, Loader2, AlertCircle, Camera, 
-  Shield, Mail, KeyRound, ChevronRight, Eye, Download, User
+  Shield, Mail, KeyRound, ChevronRight, Eye, Download, User, MessageSquare
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -20,6 +20,10 @@ export default function PublicSignaturePage() {
   const [step, setStep] = useState<Step>('loading');
   const [documentData, setDocumentData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Config from metadata
+  const [requireSelfie, setRequireSelfie] = useState(true);
+  const [otpChannel, setOtpChannel] = useState<'email' | 'whatsapp'>('email');
 
   // OTP state
   const [otpEmail, setOtpEmail] = useState('');
@@ -77,12 +81,17 @@ export default function PublicSignaturePage() {
 
       setDocumentData(data);
       
-      // For internal method, start with review. Otherwise, fallback to old flow.
+      // Read config from metadata
+      const meta = data.metadata || {};
+      const selfieRequired = meta.require_selfie !== false; // default true
+      const channel = meta.otp_channel || 'email';
+      setRequireSelfie(selfieRequired);
+      setOtpChannel(channel);
+
       if (data.signing_method === 'internal') {
         setOtpEmail(data.signer_email || '');
         setStep('review');
       } else {
-        // Legacy flow - keep existing behavior
         setStep('review');
       }
     } catch (err) {
@@ -94,25 +103,21 @@ export default function PublicSignaturePage() {
 
   // ==================== OTP ====================
   const handleSendOtp = async () => {
-    if (!otpEmail) {
+    if (otpChannel === 'email' && !otpEmail) {
       toast.error('Informe seu e-mail');
       return;
     }
     setOtpSending(true);
     try {
-      const { data, error } = await supabase.functions.invoke('signature-send-otp', {
-        body: { signatureToken: token, email: otpEmail },
-      });
+      const body: any = { signatureToken: token, channel: otpChannel };
+      if (otpChannel === 'email') body.email = otpEmail;
+
+      const { data, error } = await supabase.functions.invoke('signature-send-otp', { body });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
       
       setOtpSent(true);
-      toast.success('Código enviado para seu e-mail!');
-      
-      // In dev mode, auto-fill the code if returned
-      if (data?._dev_code) {
-        setOtpCode(data._dev_code);
-      }
+      toast.success(data?.message || 'Código enviado!');
     } catch (err: any) {
       toast.error(err.message || 'Erro ao enviar código');
     } finally {
@@ -134,8 +139,9 @@ export default function PublicSignaturePage() {
       if (data?.error) throw new Error(data.error);
       
       if (data?.verified) {
-        toast.success('E-mail verificado!');
-        setStep('selfie');
+        toast.success('Identidade verificada!');
+        // Skip selfie if not required
+        setStep(requireSelfie ? 'selfie' : 'signature');
       } else {
         toast.error('Código inválido');
       }
@@ -173,7 +179,6 @@ export default function PublicSignaturePage() {
     const dataUrl = canvas.toDataURL('image/png');
     setSelfieImage(dataUrl);
     
-    // Stop camera
     if (cameraStream) {
       cameraStream.getTracks().forEach(t => t.stop());
       setCameraStream(null);
@@ -267,16 +272,18 @@ export default function PublicSignaturePage() {
 
   // ==================== Submit ====================
   const handleSubmit = async () => {
-    if (!signatureImage || !selfieImage) return;
+    if (!signatureImage) return;
+    if (requireSelfie && !selfieImage) return;
     setStep('submitting');
 
     try {
       const { data, error } = await supabase.functions.invoke('signature-complete', {
         body: {
           signatureToken: token,
-          selfieImage,
+          selfieImage: selfieImage || null,
           signatureImage,
           signerDevice: navigator.userAgent,
+          requireSelfie,
         },
       });
 
@@ -294,18 +301,18 @@ export default function PublicSignaturePage() {
   };
 
   // ==================== Progress ====================
-  const steps = [
+  const activeSteps = [
     { key: 'review', label: 'Documento', icon: FileText },
     { key: 'otp', label: 'Verificação', icon: KeyRound },
-    { key: 'selfie', label: 'Selfie', icon: Camera },
+    ...(requireSelfie ? [{ key: 'selfie', label: 'Selfie', icon: Camera }] : []),
     { key: 'signature', label: 'Assinatura', icon: User },
   ];
 
   const currentStepIndex = step === 'review' ? 0 
     : (step === 'otp_send' || step === 'otp_verify') ? 1 
     : step === 'selfie' ? 2 
-    : (step === 'signature' || step === 'submitting') ? 3 
-    : 4;
+    : (step === 'signature' || step === 'submitting') ? (requireSelfie ? 3 : 2) 
+    : activeSteps.length;
 
   // ==================== Render ====================
   if (step === 'loading') {
@@ -383,7 +390,7 @@ export default function PublicSignaturePage() {
       {/* Progress Steps */}
       <div className="max-w-lg mx-auto px-4 py-4">
         <div className="flex items-center justify-between mb-6">
-          {steps.map((s, i) => {
+          {activeSteps.map((s, i) => {
             const Icon = s.icon;
             const isActive = i === currentStepIndex;
             const isDone = i < currentStepIndex;
@@ -397,7 +404,7 @@ export default function PublicSignaturePage() {
                   </div>
                   <span className="text-[11px] font-medium hidden sm:inline">{s.label}</span>
                 </div>
-                {i < steps.length - 1 && (
+                {i < activeSteps.length - 1 && (
                   <div className={`flex-1 h-0.5 mx-2 ${i < currentStepIndex ? 'bg-green-400' : 'bg-muted'}`} />
                 )}
               </div>
@@ -453,39 +460,67 @@ export default function PublicSignaturePage() {
             <Card className="p-6">
               <div className="flex items-center gap-3 mb-4">
                 <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
-                  <Mail className="h-5 w-5 text-primary" />
+                  {otpChannel === 'whatsapp' ? (
+                    <MessageSquare className="h-5 w-5 text-primary" />
+                  ) : (
+                    <Mail className="h-5 w-5 text-primary" />
+                  )}
                 </div>
                 <div>
                   <h2 className="font-semibold">Verificação de Identidade</h2>
-                  <p className="text-xs text-muted-foreground">Enviaremos um código para seu e-mail</p>
+                  <p className="text-xs text-muted-foreground">
+                    {otpChannel === 'whatsapp' 
+                      ? 'Enviaremos um código para seu WhatsApp' 
+                      : 'Enviaremos um código para seu e-mail'}
+                  </p>
                 </div>
               </div>
 
               {!otpSent ? (
                 <div className="space-y-3">
-                  <div>
-                    <label className="text-sm font-medium">E-mail</label>
-                    <Input
-                      type="email"
-                      value={otpEmail}
-                      onChange={e => setOtpEmail(e.target.value)}
-                      placeholder="seu@email.com"
-                      className="mt-1"
-                      disabled={!!documentData?.signer_email}
-                    />
-                    {documentData?.signer_email && (
-                      <p className="text-[10px] text-muted-foreground mt-1">E-mail pré-definido pelo remetente</p>
+                  {otpChannel === 'email' ? (
+                    <div>
+                      <label className="text-sm font-medium">E-mail</label>
+                      <Input
+                        type="email"
+                        value={otpEmail}
+                        onChange={e => setOtpEmail(e.target.value)}
+                        placeholder="seu@email.com"
+                        className="mt-1"
+                        disabled={!!documentData?.signer_email}
+                      />
+                      {documentData?.signer_email && (
+                        <p className="text-[10px] text-muted-foreground mt-1">E-mail pré-definido pelo remetente</p>
+                      )}
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="text-sm font-medium">WhatsApp</label>
+                      <Input
+                        type="tel"
+                        value={documentData?.signer_phone || ''}
+                        disabled
+                        className="mt-1"
+                      />
+                      <p className="text-[10px] text-muted-foreground mt-1">Número pré-definido pelo remetente</p>
+                    </div>
+                  )}
+                  <Button 
+                    onClick={handleSendOtp} 
+                    disabled={otpSending || (otpChannel === 'email' && !otpEmail)} 
+                    className="w-full gap-2"
+                  >
+                    {otpSending ? <Loader2 className="h-4 w-4 animate-spin" /> : (
+                      otpChannel === 'whatsapp' ? <MessageSquare className="h-4 w-4" /> : <Mail className="h-4 w-4" />
                     )}
-                  </div>
-                  <Button onClick={handleSendOtp} disabled={otpSending || !otpEmail} className="w-full gap-2">
-                    {otpSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
-                    Enviar Código
+                    Enviar Código {otpChannel === 'whatsapp' ? 'via WhatsApp' : 'por E-mail'}
                   </Button>
                 </div>
               ) : (
                 <div className="space-y-3">
                   <p className="text-sm text-muted-foreground">
-                    Código enviado para <strong>{otpEmail.replace(/(.{2}).*(@.*)/, "$1***$2")}</strong>
+                    Código enviado {otpChannel === 'whatsapp' ? 'via WhatsApp' : 'para '}
+                    {otpChannel === 'email' && <strong>{otpEmail.replace(/(.{2}).*(@.*)/, "$1***$2")}</strong>}
                   </p>
                   <div>
                     <label className="text-sm font-medium">Código de 6 dígitos</label>
@@ -513,8 +548,8 @@ export default function PublicSignaturePage() {
           </div>
         )}
 
-        {/* Step 3: Selfie */}
-        {step === 'selfie' && (
+        {/* Step 3: Selfie (only if required) */}
+        {step === 'selfie' && requireSelfie && (
           <div className="space-y-4">
             <Card className="p-6">
               <div className="flex items-center gap-3 mb-4">
@@ -621,8 +656,8 @@ export default function PublicSignaturePage() {
               <div className="space-y-1 text-xs">
                 <p><strong>Documento:</strong> {documentData?.generated_document?.name}</p>
                 <p><strong>Signatário:</strong> {documentData?.signer_name || 'N/A'}</p>
-                <p><strong>E-mail verificado:</strong> {otpEmail || documentData?.signer_email}</p>
-                <p><strong>Selfie:</strong> {selfieImage ? '✅ Capturada' : '⏳ Pendente'}</p>
+                <p><strong>Verificação:</strong> OTP por {otpChannel === 'whatsapp' ? 'WhatsApp' : 'e-mail'} ✅</p>
+                {requireSelfie && <p><strong>Selfie:</strong> {selfieImage ? '✅ Capturada' : '⏳ Pendente'}</p>}
                 <p><strong>Método:</strong> Assinatura Eletrônica Avançada (Lei 14.063/2020)</p>
               </div>
             </Card>
@@ -633,7 +668,7 @@ export default function PublicSignaturePage() {
               </Button>
               <Button 
                 onClick={handleSubmit} 
-                disabled={!signatureImage || step === 'submitting'}
+                disabled={!signatureImage || step === 'submitting' || (requireSelfie && !selfieImage)}
                 className="flex-1"
               >
                 {step === 'submitting' ? (
@@ -648,7 +683,7 @@ export default function PublicSignaturePage() {
             <p className="text-[10px] text-muted-foreground text-center leading-relaxed">
               Ao assinar, você declara que leu e concorda com o documento. Esta assinatura eletrônica é válida 
               conforme MP 2.200-2/2001 e Lei 14.063/2020. Serão registrados: hash SHA-256 do documento, 
-              selfie, IP, data/hora e dispositivo.
+              {requireSelfie ? ' selfie,' : ''} IP, data/hora e dispositivo.
             </p>
           </div>
         )}

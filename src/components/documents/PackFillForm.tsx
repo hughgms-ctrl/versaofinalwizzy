@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { ArrowLeft, FileText, Send, Loader2 } from 'lucide-react';
+import { ArrowLeft, FileText, Send, Loader2, FileSignature } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -17,6 +17,7 @@ interface PackFillFormProps {
   pack: DocumentPack;
   onBack: () => void;
   onSuccess?: () => void;
+  onGeneratedForSignature?: (documentId: string) => void;
 }
 
 interface FieldInfo {
@@ -25,7 +26,7 @@ interface FieldInfo {
   templateNames: string[];
 }
 
-export function PackFillForm({ pack, onBack, onSuccess }: PackFillFormProps) {
+export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature }: PackFillFormProps) {
   const { data: allTemplates } = useDocumentTemplates();
   const { profile } = useAuth();
   const [values, setValues] = useState<Record<string, string>>({});
@@ -73,11 +74,13 @@ export function PackFillForm({ pack, onBack, onSuccess }: PackFillFormProps) {
     return { sharedFields: shared, uniqueFields: unique };
   }, [templates]);
 
-  const handleGenerate = async () => {
+  const handleGenerate = async (advanceToSignature = false) => {
     if (!profile?.organization_id) return;
 
     setIsGenerating(true);
     try {
+      let firstDocId: string | null = null;
+
       // Generate a document for each template in the pack
       for (const template of templates) {
         const templateFields = (template.fields as any[]) || [];
@@ -88,7 +91,7 @@ export function PackFillForm({ pack, onBack, onSuccess }: PackFillFormProps) {
           filledData[name] = values[name] || '';
         });
 
-        const { error } = await (supabase as any)
+        const { data: docData, error } = await (supabase as any)
           .from('generated_documents')
           .insert({
             organization_id: profile.organization_id,
@@ -99,14 +102,22 @@ export function PackFillForm({ pack, onBack, onSuccess }: PackFillFormProps) {
             status: 'generated',
             signing_method: signingMethod,
             created_by: profile.id,
-          });
+          })
+          .select('id')
+          .single();
 
         if (error) throw error;
+        if (!firstDocId && docData?.id) firstDocId = docData.id;
       }
 
-      toast.success(`${templates.length} documentos gerados com sucesso!`);
-      onSuccess?.();
-      onBack();
+      if (advanceToSignature && firstDocId && onGeneratedForSignature) {
+        toast.success(`${templates.length} documentos gerados! Configure a assinatura.`);
+        onGeneratedForSignature(firstDocId);
+      } else {
+        toast.success(`${templates.length} documentos gerados com sucesso!`);
+        onSuccess?.();
+        onBack();
+      }
     } catch (error: any) {
       console.error('Error generating documents:', error);
       toast.error('Erro ao gerar documentos');
@@ -122,18 +133,26 @@ export function PackFillForm({ pack, onBack, onSuccess }: PackFillFormProps) {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <Button variant="ghost" onClick={onBack}>
           <ArrowLeft className="h-4 w-4 mr-2" /> Voltar
         </Button>
-        <Button onClick={handleGenerate} disabled={!allFieldsFilled || isGenerating}>
-          {isGenerating ? (
-            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-          ) : (
-            <Send className="h-4 w-4 mr-2" />
+        <div className="flex gap-2">
+          {onGeneratedForSignature && (
+            <Button variant="outline" onClick={() => handleGenerate(true)} disabled={!allFieldsFilled || isGenerating} className="gap-2">
+              <FileSignature className="h-4 w-4" />
+              Gerar e Assinar
+            </Button>
           )}
-          Gerar {templates.length} documento{templates.length > 1 ? 's' : ''}
-        </Button>
+          <Button onClick={() => handleGenerate(false)} disabled={!allFieldsFilled || isGenerating}>
+            {isGenerating ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Send className="h-4 w-4 mr-2" />
+            )}
+            Gerar {templates.length} documento{templates.length > 1 ? 's' : ''}
+          </Button>
+        </div>
       </div>
 
       <div>
