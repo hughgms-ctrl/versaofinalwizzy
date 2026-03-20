@@ -1,15 +1,28 @@
+import { useState } from 'react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { TemplatesList } from '@/components/documents/TemplatesList';
 import { PacksList } from '@/components/documents/PacksList';
 import { GeneratedDocumentsList } from '@/components/documents/GeneratedDocumentsList';
 import { SignaturesList } from '@/components/documents/SignaturesList';
+import { CreateSignatureDialog } from '@/components/documents/CreateSignatureDialog';
+import { useGeneratedDocuments } from '@/hooks/useGeneratedDocuments';
 import { FileText, Package, History, FileSignature } from 'lucide-react';
 
 export default function DocumentsPage() {
+  const [activeTab, setActiveTab] = useState('templates');
+  const [signatureDocId, setSignatureDocId] = useState<string | null>(null);
+  const { data: documents } = useGeneratedDocuments();
+
+  const handleGeneratedForSignature = (documentId: string) => {
+    setSignatureDocId(documentId);
+  };
+
+  const availableDocuments = documents?.filter(d => d.pdf_url && d.status !== 'draft') || [];
+
   return (
     <MainLayout title="Documentos" subtitle="Gerencie templates, packs, documentos e assinaturas">
-      <Tabs defaultValue="templates" className="space-y-4">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <TabsList>
           <TabsTrigger value="templates" className="gap-2">
             <FileText className="h-4 w-4" /> Templates
@@ -25,10 +38,10 @@ export default function DocumentsPage() {
           </TabsTrigger>
         </TabsList>
         <TabsContent value="templates">
-          <TemplatesList />
+          <TemplatesList onGeneratedForSignature={handleGeneratedForSignature} />
         </TabsContent>
         <TabsContent value="packs">
-          <PacksList />
+          <PacksList onGeneratedForSignature={handleGeneratedForSignature} />
         </TabsContent>
         <TabsContent value="generated">
           <GeneratedDocumentsList />
@@ -37,6 +50,13 @@ export default function DocumentsPage() {
           <SignaturesList />
         </TabsContent>
       </Tabs>
+
+      <CreateSignatureDialog
+        open={!!signatureDocId}
+        onOpenChange={(open) => { if (!open) setSignatureDocId(null); }}
+        documents={availableDocuments}
+        preSelectedDocId={signatureDocId || undefined}
+      />
     </MainLayout>
   );
 }
