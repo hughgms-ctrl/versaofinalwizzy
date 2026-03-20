@@ -25,6 +25,7 @@ export interface DocumentSignature {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+  signature_token?: string | null;
   // joined
   generated_document?: {
     id: string;
@@ -67,6 +68,8 @@ export function useCreateSignatureRequest() {
       signer_cpf?: string;
       contact_id?: string;
       conversation_id?: string;
+      require_selfie?: boolean;
+      otp_channel?: 'email' | 'whatsapp';
     }) => {
       const orgId = profile!.organization_id;
       
@@ -75,7 +78,7 @@ export function useCreateSignatureRequest() {
       const signatureToken = crypto.randomUUID();
       
       if (params.signing_method === 'internal' || params.signing_method === 'govbr') {
-        const baseUrl = window.location.origin;
+        const baseUrl = 'https://wizzyai.lovable.app';
         signatureUrl = `${baseUrl}/sign/${signatureToken}`;
       }
 
@@ -95,6 +98,10 @@ export function useCreateSignatureRequest() {
           signature_token: signatureToken,
           status: 'pending',
           created_by: profile!.id,
+          metadata: {
+            require_selfie: params.require_selfie ?? true,
+            otp_channel: params.otp_channel ?? 'email',
+          },
         })
         .select()
         .single();

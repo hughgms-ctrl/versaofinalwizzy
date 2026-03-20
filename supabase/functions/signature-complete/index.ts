@@ -12,15 +12,17 @@ serve(async (req) => {
       selfieImage,
       signatureImage,
       signerDevice,
+      requireSelfie,
     } = await parseJsonBody<{
       signatureToken: string;
-      selfieImage: string;
+      selfieImage: string | null;
       signatureImage: string;
       signerDevice: string;
+      requireSelfie?: boolean;
     }>(req);
 
-    if (!signatureToken || !selfieImage || !signatureImage) {
-      return errorResponse("signatureToken, selfieImage and signatureImage are required", 400);
+    if (!signatureToken || !signatureImage) {
+      return errorResponse("signatureToken and signatureImage are required", 400);
     }
 
     const supabase = createServiceClient();
@@ -41,6 +43,14 @@ serve(async (req) => {
 
     if (signature.status === "signed") {
       return errorResponse("Documento já foi assinado", 400);
+    }
+
+    // Check if selfie is required from metadata
+    const meta = (signature.metadata || {}) as Record<string, any>;
+    const selfieRequired = requireSelfie ?? (meta.require_selfie !== false);
+
+    if (selfieRequired && !selfieImage) {
+      return errorResponse("Selfie é obrigatória para esta assinatura", 400);
     }
 
     // Verify OTP was completed
@@ -69,7 +79,6 @@ serve(async (req) => {
           .join("");
       } catch (e) {
         console.error("Error hashing PDF:", e);
-        // Fallback: hash the filled_data JSON
         const encoder = new TextEncoder();
         const data = encoder.encode(JSON.stringify(signature.generated_document.filled_data || {}));
         const hashBuffer = await crypto.subtle.digest("SHA-256", data);
@@ -79,23 +88,27 @@ serve(async (req) => {
       }
     }
 
-    // Upload selfie to storage
-    const selfieFileName = `signatures/${signature.id}/selfie_${Date.now()}.png`;
-    const selfieBase64 = selfieImage.replace(/^data:image\/\w+;base64,/, "");
-    const selfieBuffer = Uint8Array.from(atob(selfieBase64), (c) => c.charCodeAt(0));
+    // Upload selfie if provided
+    let selfieUrl: string | null = null;
+    if (selfieImage) {
+      const selfieFileName = `signatures/${signature.id}/selfie_${Date.now()}.png`;
+      const selfieBase64 = selfieImage.replace(/^data:image\/\w+;base64,/, "");
+      const selfieBuffer = Uint8Array.from(atob(selfieBase64), (c) => c.charCodeAt(0));
 
-    const { error: selfieUploadError } = await supabase.storage
-      .from("contact-files")
-      .upload(selfieFileName, selfieBuffer, { contentType: "image/png", upsert: true });
+      const { error: selfieUploadError } = await supabase.storage
+        .from("contact-files")
+        .upload(selfieFileName, selfieBuffer, { contentType: "image/png", upsert: true });
 
-    if (selfieUploadError) {
-      console.error("Error uploading selfie:", selfieUploadError);
-      return errorResponse("Erro ao salvar selfie", 500);
+      if (selfieUploadError) {
+        console.error("Error uploading selfie:", selfieUploadError);
+        return errorResponse("Erro ao salvar selfie", 500);
+      }
+
+      const { data: { publicUrl } } = supabase.storage
+        .from("contact-files")
+        .getPublicUrl(selfieFileName);
+      selfieUrl = publicUrl;
     }
-
-    const { data: { publicUrl: selfieUrl } } = supabase.storage
-      .from("contact-files")
-      .getPublicUrl(selfieFileName);
 
     // Upload signature image
     const sigFileName = `signatures/${signature.id}/signature_${Date.now()}.png`;
@@ -130,8 +143,10 @@ serve(async (req) => {
         signed_at: signedAt,
         metadata: {
           user_agent: req.headers.get("user-agent"),
-          signature_method: "internal_advanced",
+          signature_method: selfieRequired ? "internal_advanced" : "internal_otp_only",
           law_reference: "Lei 14.063/2020",
+          require_selfie: selfieRequired,
+          otp_channel: meta.otp_channel || "email",
         },
       });
 
@@ -148,12 +163,12 @@ serve(async (req) => {
         signed_at: signedAt,
         signature_url: signatureUrl,
         metadata: {
-          ...(signature.metadata || {}),
+          ...meta,
           document_hash: documentHash,
           selfie_url: selfieUrl,
           signer_ip: signerIp,
           signer_device: signerDevice,
-          signing_method_detail: "internal_advanced_otp_selfie",
+          signing_method_detail: selfieRequired ? "internal_advanced_otp_selfie" : "internal_otp_only",
         },
       })
       .eq("id", signature.id);
