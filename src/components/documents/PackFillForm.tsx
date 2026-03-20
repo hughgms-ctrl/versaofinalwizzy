@@ -133,18 +133,26 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature 
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <Button variant="ghost" onClick={onBack}>
           <ArrowLeft className="h-4 w-4 mr-2" /> Voltar
         </Button>
-        <Button onClick={handleGenerate} disabled={!allFieldsFilled || isGenerating}>
-          {isGenerating ? (
-            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-          ) : (
-            <Send className="h-4 w-4 mr-2" />
+        <div className="flex gap-2">
+          {onGeneratedForSignature && (
+            <Button variant="outline" onClick={() => handleGenerate(true)} disabled={!allFieldsFilled || isGenerating} className="gap-2">
+              <FileSignature className="h-4 w-4" />
+              Gerar e Assinar
+            </Button>
           )}
-          Gerar {templates.length} documento{templates.length > 1 ? 's' : ''}
-        </Button>
+          <Button onClick={() => handleGenerate(false)} disabled={!allFieldsFilled || isGenerating}>
+            {isGenerating ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Send className="h-4 w-4 mr-2" />
+            )}
+            Gerar {templates.length} documento{templates.length > 1 ? 's' : ''}
+          </Button>
+        </div>
       </div>
 
       <div>
