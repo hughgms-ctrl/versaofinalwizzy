@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowLeft, Loader2, FileDown, Image as ImageIcon, X } from 'lucide-react';
+import { ArrowLeft, Loader2, FileDown, Image as ImageIcon, X, FileSignature } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -14,6 +14,7 @@ import { useQueryClient } from '@tanstack/react-query';
 interface TemplateFillFormProps {
   template: DocumentTemplate;
   onBack: () => void;
+  onGeneratedForSignature?: (documentId: string) => void;
 }
 
 export function TemplateFillForm({ template, onBack }: TemplateFillFormProps) {
