@@ -255,24 +255,39 @@ export function TemplateFillForm({ template, onBack, onGeneratedForSignature }: 
             </CardContent>
           </Card>
 
-          <Button
-            onClick={handleGenerate}
-            disabled={generating || !documentName.trim()}
-            className="w-full"
-            size="lg"
-          >
-            {generating ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Gerando PDF...
-              </>
-            ) : (
-              <>
-                <FileDown className="h-4 w-4 mr-2" />
-                Gerar documento PDF
-              </>
+          <div className="space-y-2">
+            <Button
+              onClick={() => handleGenerate(false)}
+              disabled={generating || !documentName.trim()}
+              className="w-full"
+              size="lg"
+            >
+              {generating ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Gerando PDF...
+                </>
+              ) : (
+                <>
+                  <FileDown className="h-4 w-4 mr-2" />
+                  Gerar documento PDF
+                </>
+              )}
+            </Button>
+
+            {onGeneratedForSignature && (
+              <Button
+                onClick={() => handleGenerate(true)}
+                disabled={generating || !documentName.trim()}
+                variant="outline"
+                className="w-full gap-2"
+                size="lg"
+              >
+                <FileSignature className="h-4 w-4" />
+                Gerar e Solicitar Assinatura
+              </Button>
             )}
-          </Button>
+          </div>
         </div>
 
         {/* Preview Section */}
