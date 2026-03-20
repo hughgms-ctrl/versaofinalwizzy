@@ -59,7 +59,7 @@ import { toast } from 'sonner';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { cn } from '@/lib/utils';
 
-export function PacksList() {
+export function PacksList({ onGeneratedForSignature }: { onGeneratedForSignature?: (docId: string) => void } = {}) {
   const { data: packs, isLoading } = useDocumentPacks();
   const { data: templates } = useDocumentTemplates();
   const { data: folders = [] } = useDocumentFolders();
