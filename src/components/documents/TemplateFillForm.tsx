@@ -48,7 +48,7 @@ export function TemplateFillForm({ template, onBack, onGeneratedForSignature }: 
     setLogoPreview(null);
   };
 
-  const handleGenerate = async () => {
+  const handleGenerate = async (advanceToSignature = false) => {
     if (!profile) return;
 
     // Validate required fields
@@ -102,7 +102,7 @@ export function TemplateFillForm({ template, onBack, onGeneratedForSignature }: 
       }
 
       // Save generated document to database
-      const { error: dbError } = await (supabase as any)
+      const { data: docData, error: dbError } = await (supabase as any)
         .from('generated_documents')
         .insert({
           organization_id: profile.organization_id,
@@ -112,14 +112,21 @@ export function TemplateFillForm({ template, onBack, onGeneratedForSignature }: 
           pdf_url: data.pdf_url,
           status: 'generated',
           created_by: profile.id,
-        });
+        })
+        .select('id')
+        .single();
 
       if (dbError) throw dbError;
 
       queryClient.invalidateQueries({ queryKey: ['generated-documents'] });
 
-      toast({ title: 'Documento gerado com sucesso!' });
-      onBack();
+      if (advanceToSignature && docData?.id && onGeneratedForSignature) {
+        toast({ title: 'Documento gerado! Configure a assinatura.' });
+        onGeneratedForSignature(docData.id);
+      } else {
+        toast({ title: 'Documento gerado com sucesso!' });
+        onBack();
+      }
     } catch (error: any) {
       toast({
         title: 'Erro ao gerar documento',
