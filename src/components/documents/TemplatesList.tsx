@@ -48,7 +48,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { cn } from '@/lib/utils';
 
-export function TemplatesList() {
+export function TemplatesList({ onGeneratedForSignature }: { onGeneratedForSignature?: (docId: string) => void } = {}) {
   const { data: templates, isLoading } = useDocumentTemplates();
   const { data: folders = [] } = useDocumentFolders();
   const deleteTemplate = useDeleteDocumentTemplate();
