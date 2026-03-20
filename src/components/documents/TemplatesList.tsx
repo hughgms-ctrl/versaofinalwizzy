@@ -156,7 +156,7 @@ export function TemplatesList({ onGeneratedForSignature }: { onGeneratedForSigna
   };
 
   if (editingTemplate) return <TemplateEditor template={editingTemplate} onBack={() => setEditingTemplate(null)} />;
-  if (fillingTemplate) return <TemplateFillForm template={fillingTemplate} onBack={() => setFillingTemplate(null)} />;
+  if (fillingTemplate) return <TemplateFillForm template={fillingTemplate} onBack={() => setFillingTemplate(null)} onGeneratedForSignature={onGeneratedForSignature} />;
   if (showNewEditor) return <TemplateEditor template={null} onBack={() => setShowNewEditor(false)} />;
 
   const TemplateRow = ({ template, nested = false }: { template: DocumentTemplate; nested?: boolean }) => (

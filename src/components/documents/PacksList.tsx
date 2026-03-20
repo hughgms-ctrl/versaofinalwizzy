@@ -168,7 +168,7 @@ export function PacksList({ onGeneratedForSignature }: { onGeneratedForSignature
     );
   };
 
-  if (fillingPack) return <PackFillForm pack={fillingPack} onBack={() => setFillingPack(null)} />;
+  if (fillingPack) return <PackFillForm pack={fillingPack} onBack={() => setFillingPack(null)} onGeneratedForSignature={onGeneratedForSignature} />;
   if (editingPack || showNew) return <PackEditor pack={editingPack} onBack={() => { setEditingPack(null); setShowNew(false); }} />;
 
   const PackRow = ({ pack, nested = false }: { pack: DocumentPack; nested?: boolean }) => (
