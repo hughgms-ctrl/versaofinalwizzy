@@ -17,7 +17,7 @@ interface TemplateFillFormProps {
   onGeneratedForSignature?: (documentId: string) => void;
 }
 
-export function TemplateFillForm({ template, onBack }: TemplateFillFormProps) {
+export function TemplateFillForm({ template, onBack, onGeneratedForSignature }: TemplateFillFormProps) {
   const { profile } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
