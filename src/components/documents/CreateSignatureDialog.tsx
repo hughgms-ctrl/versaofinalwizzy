@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { FileSignature, FileText } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -27,10 +27,9 @@ export function CreateSignatureDialog({ open, onOpenChange, documents, preSelect
   const [requireSelfie, setRequireSelfie] = useState(true);
   const [otpChannel, setOtpChannel] = useState<'email' | 'whatsapp'>('email');
 
-  // Update selectedDocId when preSelectedDocId changes
-  useState(() => {
+  useEffect(() => {
     if (preSelectedDocId) setSelectedDocId(preSelectedDocId);
-  });
+  }, [preSelectedDocId]);
 
   const handleSubmit = () => {
     if (!selectedDocId || !method) return;
