@@ -26,7 +26,7 @@ interface FieldInfo {
   templateNames: string[];
 }
 
-export function PackFillForm({ pack, onBack, onSuccess }: PackFillFormProps) {
+export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature }: PackFillFormProps) {
   const { data: allTemplates } = useDocumentTemplates();
   const { profile } = useAuth();
   const [values, setValues] = useState<Record<string, string>>({});
