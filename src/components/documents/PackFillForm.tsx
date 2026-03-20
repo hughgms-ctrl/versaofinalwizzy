@@ -17,6 +17,7 @@ interface PackFillFormProps {
   pack: DocumentPack;
   onBack: () => void;
   onSuccess?: () => void;
+  onGeneratedForSignature?: (documentId: string) => void;
 }
 
 interface FieldInfo {
