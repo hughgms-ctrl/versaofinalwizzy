@@ -74,11 +74,13 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature 
     return { sharedFields: shared, uniqueFields: unique };
   }, [templates]);
 
-  const handleGenerate = async () => {
+  const handleGenerate = async (advanceToSignature = false) => {
     if (!profile?.organization_id) return;
 
     setIsGenerating(true);
     try {
+      let firstDocId: string | null = null;
+
       // Generate a document for each template in the pack
       for (const template of templates) {
         const templateFields = (template.fields as any[]) || [];
@@ -89,7 +91,7 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature 
           filledData[name] = values[name] || '';
         });
 
-        const { error } = await (supabase as any)
+        const { data: docData, error } = await (supabase as any)
           .from('generated_documents')
           .insert({
             organization_id: profile.organization_id,
@@ -100,14 +102,22 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature 
             status: 'generated',
             signing_method: signingMethod,
             created_by: profile.id,
-          });
+          })
+          .select('id')
+          .single();
 
         if (error) throw error;
+        if (!firstDocId && docData?.id) firstDocId = docData.id;
       }
 
-      toast.success(`${templates.length} documentos gerados com sucesso!`);
-      onSuccess?.();
-      onBack();
+      if (advanceToSignature && firstDocId && onGeneratedForSignature) {
+        toast.success(`${templates.length} documentos gerados! Configure a assinatura.`);
+        onGeneratedForSignature(firstDocId);
+      } else {
+        toast.success(`${templates.length} documentos gerados com sucesso!`);
+        onSuccess?.();
+        onBack();
+      }
     } catch (error: any) {
       console.error('Error generating documents:', error);
       toast.error('Erro ao gerar documentos');
