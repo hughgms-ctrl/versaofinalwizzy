@@ -13,6 +13,36 @@ import { toast } from 'sonner';
 
 type Step = 'loading' | 'error' | 'review' | 'otp_send' | 'otp_verify' | 'selfie' | 'signature' | 'submitting' | 'done';
 
+async function extractEdgeFunctionError(error: any): Promise<string> {
+  const fallback = error?.message || 'Erro inesperado';
+
+  try {
+    const context = error?.context;
+
+    if (context && typeof context.json === 'function') {
+      const payload = await context.json();
+      if (payload?.error) return payload.error;
+      if (payload?.message) return payload.message;
+    }
+
+    if (context && typeof context.text === 'function') {
+      const raw = await context.text();
+      if (!raw) return fallback;
+
+      try {
+        const parsed = JSON.parse(raw);
+        return parsed?.error || parsed?.message || fallback;
+      } catch {
+        return raw;
+      }
+    }
+  } catch {
+    // ignore parse errors and keep fallback
+  }
+
+  return fallback;
+}
+
 export default function PublicSignaturePage() {
   const { token } = useParams<{ token: string }>();
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -36,6 +66,7 @@ export default function PublicSignaturePage() {
   const [selfieImage, setSelfieImage] = useState<string | null>(null);
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const [cameraError, setCameraError] = useState<string | null>(null);
 
   // Signature state
   const [isDrawing, setIsDrawing] = useState(false);
@@ -46,12 +77,15 @@ export default function PublicSignaturePage() {
 
   useEffect(() => {
     loadDocument();
+  }, [token]);
+
+  useEffect(() => {
     return () => {
       if (cameraStream) {
-        cameraStream.getTracks().forEach(t => t.stop());
+        cameraStream.getTracks().forEach((t) => t.stop());
       }
     };
-  }, [token]);
+  }, [cameraStream]);
 
   const loadDocument = async () => {
     if (!token) {
@@ -61,35 +95,43 @@ export default function PublicSignaturePage() {
     }
 
     try {
-      const { data, error: fetchError } = await (supabase as any)
-        .from('document_signatures')
-        .select('*, generated_document:generated_documents(*)')
-        .eq('signature_token', token)
-        .single();
+      const { data, error: fetchError } = await supabase.functions.invoke('signature-load-document', {
+        body: { signatureToken: token },
+      });
 
-      if (fetchError || !data) {
+      if (fetchError) {
+        throw new Error(await extractEdgeFunctionError(fetchError));
+      }
+
+      if (data?.error) {
+        throw new Error(data.error);
+      }
+
+      const signatureData = data?.signature;
+
+      if (!signatureData) {
         setError('Documento não encontrado ou link expirado');
         setStep('error');
         return;
       }
 
-      if (data.status === 'signed') {
+      if (signatureData.status === 'signed') {
         setError('Este documento já foi assinado');
         setStep('error');
         return;
       }
 
-      setDocumentData(data);
+      setDocumentData(signatureData);
       
       // Read config from metadata
-      const meta = data.metadata || {};
+      const meta = signatureData.metadata || {};
       const selfieRequired = meta.require_selfie !== false; // default true
       const channel = meta.otp_channel || 'email';
       setRequireSelfie(selfieRequired);
       setOtpChannel(channel);
 
-      if (data.signing_method === 'internal') {
-        setOtpEmail(data.signer_email || '');
+      if (signatureData.signing_method === 'internal') {
+        setOtpEmail(signatureData.signer_email || '');
         setStep('review');
       } else {
         setStep('review');
@@ -113,10 +155,11 @@ export default function PublicSignaturePage() {
       if (otpChannel === 'email') body.email = otpEmail;
 
       const { data, error } = await supabase.functions.invoke('signature-send-otp', { body });
-      if (error) throw error;
+      if (error) throw new Error(await extractEdgeFunctionError(error));
       if (data?.error) throw new Error(data.error);
       
       setOtpSent(true);
+      setStep('otp_verify');
       toast.success(data?.message || 'Código enviado!');
     } catch (err: any) {
       toast.error(err.message || 'Erro ao enviar código');
@@ -135,13 +178,20 @@ export default function PublicSignaturePage() {
       const { data, error } = await supabase.functions.invoke('signature-verify-otp', {
         body: { signatureToken: token, code: otpCode },
       });
-      if (error) throw error;
+      if (error) throw new Error(await extractEdgeFunctionError(error));
       if (data?.error) throw new Error(data.error);
       
       if (data?.verified) {
         toast.success('Identidade verificada!');
         // Skip selfie if not required
-        setStep(requireSelfie ? 'selfie' : 'signature');
+        if (requireSelfie) {
+          setStep('selfie');
+          setTimeout(() => {
+            void startCamera();
+          }, 150);
+        } else {
+          setStep('signature');
+        }
       } else {
         toast.error('Código inválido');
       }
@@ -154,7 +204,18 @@ export default function PublicSignaturePage() {
 
   // ==================== Selfie ====================
   const startCamera = async () => {
+    setCameraError(null);
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraError('Seu navegador não suporta captura de câmera. Use o envio pela galeria.');
+      return;
+    }
+
     try {
+      if (cameraStream) {
+        cameraStream.getTracks().forEach((t) => t.stop());
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({ 
         video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } } 
       });
@@ -162,8 +223,10 @@ export default function PublicSignaturePage() {
       setCameraActive(true);
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
+        await videoRef.current.play().catch(() => null);
       }
     } catch (err) {
+      setCameraError('Não foi possível abrir a câmera. Você pode continuar enviando uma foto da galeria.');
       toast.error('Não foi possível acessar a câmera. Verifique as permissões.');
     }
   };
@@ -287,7 +350,7 @@ export default function PublicSignaturePage() {
         },
       });
 
-      if (error) throw error;
+      if (error) throw new Error(await extractEdgeFunctionError(error));
       if (data?.error) throw new Error(data.error);
 
       setResult(data);
@@ -585,6 +648,9 @@ export default function PublicSignaturePage() {
                       <Button onClick={startCamera} className="w-full gap-2" variant="outline">
                         <Camera className="h-4 w-4" /> Abrir Câmera
                       </Button>
+                      {cameraError && (
+                        <p className="text-xs text-muted-foreground text-center">{cameraError}</p>
+                      )}
                       <div className="relative">
                         <div className="text-center text-xs text-muted-foreground py-2">ou</div>
                         <label className="block">
