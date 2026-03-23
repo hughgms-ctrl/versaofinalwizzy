@@ -22,7 +22,7 @@ serve(async (req) => {
     // Find signature by token
     const { data: signature, error: sigError } = await supabase
       .from("document_signatures")
-      .select("id, status, signer_email, signer_phone, metadata")
+      .select("id, status, signer_email, signer_phone, metadata, organization_id")
       .eq("signature_token", signatureToken)
       .single();
 
@@ -33,6 +33,13 @@ serve(async (req) => {
     if (signature.status === "signed") {
       return errorResponse("Documento já foi assinado", 400);
     }
+
+    const cleanupOtp = async () => {
+      await supabase
+        .from("signature_otp_codes")
+        .delete()
+        .eq("signature_id", signature.id);
+    };
 
     const otpChannel = channel || (signature.metadata as any)?.otp_channel || 'email';
     const targetEmail = email || signature.signer_email;
@@ -86,29 +93,20 @@ serve(async (req) => {
 
       if (!UAZAPI_BASE_URL || !UAZAPI_ADMIN_TOKEN) {
         console.error("UAZAPI not configured");
+        await cleanupOtp();
         return errorResponse("Serviço WhatsApp não configurado", 500);
-      }
-
-      // Get org's active instance
-      const { data: orgData } = await supabase
-        .from("document_signatures")
-        .select("organization_id")
-        .eq("id", signature.id)
-        .single();
-
-      if (!orgData) {
-        return errorResponse("Organização não encontrada", 500);
       }
 
       const { data: instance } = await supabase
         .from("whatsapp_instances")
         .select("instance_name, api_token")
-        .eq("organization_id", orgData.organization_id)
+        .eq("organization_id", signature.organization_id)
         .eq("is_active", true)
         .limit(1)
         .single();
 
       if (!instance) {
+        await cleanupOtp();
         return errorResponse("Nenhuma instância WhatsApp ativa encontrada", 500);
       }
 
@@ -131,6 +129,7 @@ serve(async (req) => {
       if (!waResponse.ok) {
         const errBody = await waResponse.text();
         console.error(`UAZAPI error [${waResponse.status}]:`, errBody);
+        await cleanupOtp();
         return errorResponse("Erro ao enviar código via WhatsApp", 500);
       }
 
@@ -176,6 +175,16 @@ serve(async (req) => {
       if (!emailResponse.ok) {
         const errBody = await emailResponse.text();
         console.error(`Resend error [${emailResponse.status}]:`, errBody);
+
+        await cleanupOtp();
+
+        if (emailResponse.status === 403 && /verify a domain/i.test(errBody)) {
+          return errorResponse(
+            "Envio por e-mail indisponível: domínio do Resend ainda não verificado. Verifique seu domínio no Resend ou use o canal WhatsApp.",
+            400,
+          );
+        }
+
         return errorResponse("Erro ao enviar e-mail com código", 500);
       }
 

@@ -23,7 +23,11 @@ serve(async (req) => {
       signedAt,
       signerIp,
       signerDevice,
-    } = await parseJsonBody<Record<string, string>>(req);
+      signerBrowser,
+      signerOs,
+      deviceType,
+      otpChannel,
+    } = await parseJsonBody<Record<string, string | null>>(req);
 
     if (!signatureId) {
       return errorResponse("signatureId is required", 400);
@@ -32,6 +36,7 @@ serve(async (req) => {
     const supabase = createServiceClient();
 
     const signedDate = new Date(signedAt);
+    const verificationChannel = otpChannel === "whatsapp" ? "WhatsApp" : "E-mail";
     const dateStr = signedDate.toLocaleDateString("pt-BR", {
       day: "2-digit",
       month: "long",
@@ -65,8 +70,11 @@ serve(async (req) => {
         <h2 style="font-size: 16px; color: #333; margin-top: 24px;">Pontos de Autenticação</h2>
         <p style="margin: 4px 0;"><strong>Data e hora:</strong> ${dateStr} (UTC-0300)</p>
         <p style="margin: 4px 0;"><strong>IP:</strong> ${signerIp || "N/A"}</p>
-        <p style="margin: 4px 0;"><strong>Dispositivo:</strong> ${signerDevice || "N/A"}</p>
-        <p style="margin: 4px 0;"><strong>Verificação:</strong> Código OTP validado por e-mail</p>
+        <p style="margin: 4px 0;"><strong>Navegador:</strong> ${signerBrowser || "N/A"}</p>
+        <p style="margin: 4px 0;"><strong>Sistema operacional:</strong> ${signerOs || "N/A"}</p>
+        <p style="margin: 4px 0;"><strong>Tipo de dispositivo:</strong> ${deviceType || "N/A"}</p>
+        <p style="margin: 4px 0;"><strong>Dispositivo (UA):</strong> ${signerDevice || "N/A"}</p>
+        <p style="margin: 4px 0;"><strong>Verificação:</strong> Código OTP validado por ${verificationChannel}</p>
 
         <h2 style="font-size: 16px; color: #333; margin-top: 24px;">Evidências</h2>
         
