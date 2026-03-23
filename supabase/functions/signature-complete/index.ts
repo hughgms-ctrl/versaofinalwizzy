@@ -1,6 +1,54 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, jsonResponse, errorResponse, createServiceClient, parseJsonBody } from "../_shared/middleware.ts";
 
+function getClientIp(req: Request): string {
+  const forwarded = req.headers.get("x-forwarded-for");
+  const cloudflareIp = req.headers.get("cf-connecting-ip");
+  const realIp = req.headers.get("x-real-ip");
+
+  if (forwarded) {
+    return forwarded.split(",")[0].trim();
+  }
+
+  return cloudflareIp || realIp || "unknown";
+}
+
+function parseUserAgent(userAgent: string) {
+  const ua = userAgent || "";
+
+  const browser = /edg\//i.test(ua)
+    ? "Edge"
+    : /opr\//i.test(ua)
+    ? "Opera"
+    : /chrome\//i.test(ua)
+    ? "Chrome"
+    : /firefox\//i.test(ua)
+    ? "Firefox"
+    : /safari\//i.test(ua) && !/chrome\//i.test(ua)
+    ? "Safari"
+    : "Desconhecido";
+
+  const os = /windows nt/i.test(ua)
+    ? "Windows"
+    : /android/i.test(ua)
+    ? "Android"
+    : /iphone|ipad|ipod/i.test(ua)
+    ? "iOS"
+    : /mac os x/i.test(ua)
+    ? "macOS"
+    : /linux/i.test(ua)
+    ? "Linux"
+    : "Desconhecido";
+
+  const deviceType = /mobile|iphone|android/i.test(ua)
+    ? "mobile"
+    : /ipad|tablet/i.test(ua)
+    ? "tablet"
+    : "desktop";
+
+  return { browser, os, deviceType };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -27,8 +75,10 @@ serve(async (req) => {
 
     const supabase = createServiceClient();
 
-    // Get signer IP from request
-    const signerIp = req.headers.get("x-forwarded-for") || req.headers.get("cf-connecting-ip") || "unknown";
+    // Get signer IP and UA details from request
+    const signerIp = getClientIp(req);
+    const signerUserAgent = signerDevice || req.headers.get("user-agent") || "unknown";
+    const uaInfo = parseUserAgent(signerUserAgent);
 
     // Find signature with document
     const { data: signature, error: sigError } = await supabase
@@ -137,12 +187,15 @@ serve(async (req) => {
         signature_id: signature.id,
         document_hash: documentHash,
         signer_ip: signerIp,
-        signer_device: signerDevice || "unknown",
+        signer_device: signerUserAgent,
         selfie_url: selfieUrl,
         otp_verified_at: otpVerified.otp_verified_at,
         signed_at: signedAt,
         metadata: {
-          user_agent: req.headers.get("user-agent"),
+          user_agent: signerUserAgent,
+          browser: uaInfo.browser,
+          os: uaInfo.os,
+          device_type: uaInfo.deviceType,
           signature_method: selfieRequired ? "internal_advanced" : "internal_otp_only",
           law_reference: "Lei 14.063/2020",
           require_selfie: selfieRequired,
@@ -167,7 +220,10 @@ serve(async (req) => {
           document_hash: documentHash,
           selfie_url: selfieUrl,
           signer_ip: signerIp,
-          signer_device: signerDevice,
+          signer_device: signerUserAgent,
+          signer_browser: uaInfo.browser,
+          signer_os: uaInfo.os,
+          signer_device_type: uaInfo.deviceType,
           signing_method_detail: selfieRequired ? "internal_advanced_otp_selfie" : "internal_otp_only",
         },
       })
@@ -205,7 +261,11 @@ serve(async (req) => {
           signatureUrl,
           signedAt,
           signerIp,
-          signerDevice,
+          signerDevice: signerUserAgent,
+          signerBrowser: uaInfo.browser,
+          signerOs: uaInfo.os,
+          deviceType: uaInfo.deviceType,
+          otpChannel: meta.otp_channel || "email",
         }),
       });
 
