@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Plus, Trash2, Sparkles, Loader2, Clock, Moon } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { Plus, Trash2, Sparkles, Loader2, Clock, Moon, Image, Video, FileText, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -18,11 +18,60 @@ interface RemarketingStepsEditorProps {
 
 export function RemarketingStepsEditor({ localData, handleChange }: RemarketingStepsEditorProps) {
   const [isGenerating, setIsGenerating] = useState(false);
+  const [uploadingStepId, setUploadingStepId] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const activeStepRef = useRef<string | null>(null);
   const steps = (localData.remarketingSteps as any[]) || [];
 
   const quietHoursEnabled = (localData.remarketingQuietHours as boolean) || false;
   const quietStart = (localData.remarketingQuietStart as string) || '22:00';
   const quietEnd = (localData.remarketingQuietEnd as string) || '08:00';
+
+  const handleMediaUpload = async (stepId: string, file: File) => {
+    setUploadingStepId(stepId);
+    try {
+      const ext = file.name.split('.').pop() || 'bin';
+      const timestamp = Date.now();
+      const randomId = Math.random().toString(36).substring(2, 8);
+      const fileName = `followup-media/${timestamp}-${randomId}.${ext}`;
+
+      const { data, error } = await supabase.storage
+        .from('flow-media')
+        .upload(fileName, file, { cacheControl: '3600', upsert: false });
+
+      if (error) throw error;
+
+      const { data: urlData } = supabase.storage
+        .from('flow-media')
+        .getPublicUrl(data.path);
+
+      const mediaType = file.type.startsWith('image/') ? 'image'
+        : file.type.startsWith('video/') ? 'video'
+        : 'document';
+
+      const newSteps = steps.map((s: any) =>
+        s.id === stepId
+          ? { ...s, mediaUrl: urlData.publicUrl, mediaType, mediaName: file.name }
+          : s
+      );
+      handleChange('remarketingSteps', newSteps);
+      toast.success('Mídia anexada!');
+    } catch (err) {
+      console.error('Upload error:', err);
+      toast.error('Erro ao enviar mídia.');
+    } finally {
+      setUploadingStepId(null);
+    }
+  };
+
+  const removeMedia = (stepId: string) => {
+    const newSteps = steps.map((s: any) =>
+      s.id === stepId
+        ? { ...s, mediaUrl: undefined, mediaType: undefined, mediaName: undefined }
+        : s
+    );
+    handleChange('remarketingSteps', newSteps);
+  };
 
   return (
     <div className="space-y-2 pt-2 border-t border-border/50">
@@ -30,6 +79,24 @@ export function RemarketingStepsEditor({ localData, handleChange }: RemarketingS
       <p className="text-[10px] text-muted-foreground">
         Cada tentativa aguarda o tempo configurado após a anterior. Se o usuário não responder, segue pela saída vermelha.
       </p>
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*,video/*,.pdf,.doc,.docx"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file && activeStepRef.current) {
+            if (file.size > 16 * 1024 * 1024) {
+              toast.error('Arquivo deve ter no máximo 16MB.');
+              return;
+            }
+            handleMediaUpload(activeStepRef.current, file);
+          }
+          e.target.value = '';
+        }}
+      />
 
       {steps.map((step: any, idx: number) => (
         <div key={step.id} className="border border-border rounded-lg p-2 space-y-2 bg-muted/30">
@@ -79,6 +146,52 @@ export function RemarketingStepsEditor({ localData, handleChange }: RemarketingS
             placeholder="Mensagem de follow-up..."
             className="min-h-[50px] text-xs"
           />
+
+          {/* Media attachment */}
+          {step.mediaUrl ? (
+            <div className="flex items-center gap-2 p-2 rounded-md bg-background border border-border">
+              {step.mediaType === 'image' ? (
+                <img src={step.mediaUrl} alt="" className="h-10 w-10 rounded object-cover" />
+              ) : step.mediaType === 'video' ? (
+                <div className="h-10 w-10 rounded bg-primary/10 flex items-center justify-center">
+                  <Video className="h-5 w-5 text-primary" />
+                </div>
+              ) : (
+                <div className="h-10 w-10 rounded bg-primary/10 flex items-center justify-center">
+                  <FileText className="h-5 w-5 text-primary" />
+                </div>
+              )}
+              <span className="text-[10px] text-muted-foreground truncate flex-1">
+                {step.mediaName || 'Mídia anexada'}
+              </span>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-5 w-5 text-destructive shrink-0"
+                onClick={() => removeMedia(step.id)}
+              >
+                <X className="h-3 w-3" />
+              </Button>
+            </div>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-[10px] gap-1.5 w-full border-dashed"
+              disabled={uploadingStepId === step.id}
+              onClick={() => {
+                activeStepRef.current = step.id;
+                fileInputRef.current?.click();
+              }}
+            >
+              {uploadingStepId === step.id ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Image className="h-3 w-3" />
+              )}
+              {uploadingStepId === step.id ? 'Enviando...' : 'Anexar mídia (foto, vídeo, doc)'}
+            </Button>
+          )}
         </div>
       ))}
 
@@ -168,7 +281,14 @@ export function RemarketingStepsEditor({ localData, handleChange }: RemarketingS
                 });
                 if (error) throw error;
                 if (data?.steps) {
-                  handleChange('remarketingSteps', data.steps);
+                  // Preserve media attachments when AI regenerates text
+                  const mergedSteps = data.steps.map((newStep: any) => {
+                    const existing = steps.find((s: any) => s.id === newStep.id);
+                    return existing
+                      ? { ...newStep, mediaUrl: existing.mediaUrl, mediaType: existing.mediaType, mediaName: existing.mediaName }
+                      : newStep;
+                  });
+                  handleChange('remarketingSteps', mergedSteps);
                   toast.success('Mensagens geradas com sucesso!');
                 }
               } catch (err) {
