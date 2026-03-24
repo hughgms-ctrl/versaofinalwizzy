@@ -164,7 +164,8 @@ Deno.serve(async (req) => {
         break;
       case 'image':
         endpoint = uazapiUrl(uazapiBaseUrl, '/send/media');
-        body = { number: normalizedPhone, file: mediaUrl, caption: content, type: 'image' };
+        body = { number: normalizedPhone, file: mediaUrl, type: 'image' };
+        if (content) body.caption = content;
         if (zapiQuotedMsgId) body.quotedMessageId = zapiQuotedMsgId;
         break;
       case 'audio':

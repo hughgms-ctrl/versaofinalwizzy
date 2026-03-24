@@ -243,9 +243,10 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
           return;
         }
 
+        const caption = newMessage.trim();
         await sendMessage.mutateAsync({
           conversationId: conversation.id,
-          content: newMessage.trim() || attachedMedia.file.name,
+          content: caption || (attachedMedia.type === 'document' ? attachedMedia.file.name : ''),
           type: attachedMedia.type,
           mediaUrl: result.url,
         });

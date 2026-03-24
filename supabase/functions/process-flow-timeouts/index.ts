@@ -327,7 +327,7 @@ Deno.serve(async (req) => {
           const step = remarketingSteps[currentStep];
           console.log(`[FLOW TIMEOUTS] Exec ${exec.id}: sending remarketing step ${currentStep + 1}/${remarketingSteps.length}`);
 
-          if (step.message) {
+          if (step.message || step.mediaUrl) {
             const { data: conv } = await supabase
               .from('conversations')
               .select('contact_id, organization_id, whatsapp_instance_id')
@@ -351,44 +351,91 @@ Deno.serve(async (req) => {
 
               if (contact?.phone && instance?.zapi_token) {
                 const variables = exec.variables || {};
-                let messageText = step.message;
+                let messageText = step.message || '';
                 for (const [key, val] of Object.entries(variables as Record<string, any>)) {
                   messageText = messageText.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), String(val));
                 }
 
                 const normalizedPhone = contact.phone.replace(/\D/g, '');
+                const hasMedia = !!step.mediaUrl;
+                const mediaType = step.mediaType || 'image';
 
                 try {
-                  console.log(`[FLOW TIMEOUTS] Sending via UAZAPI: phone=${normalizedPhone}, step=${currentStep + 1}, message=${messageText.substring(0, 50)}...`);
-                  
-                  const uazapiResp = await fetch(`${uazapiBaseUrl}/send/text`, {
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json',
-                      'token': instance.zapi_token,
-                    },
-                    body: JSON.stringify({
+                  // Send media first if attached, then text (or caption with media)
+                  let zapiMessageId: string | null = null;
+                  let msgType: string = 'text';
+
+                  if (hasMedia) {
+                    console.log(`[FLOW TIMEOUTS] Sending media via UAZAPI: phone=${normalizedPhone}, step=${currentStep + 1}, type=${mediaType}`);
+                    
+                    const mediaBody: Record<string, any> = {
                       number: normalizedPhone,
-                      text: messageText,
-                    }),
-                  });
+                      file: step.mediaUrl,
+                      type: mediaType === 'video' ? 'video' : mediaType === 'document' ? 'document' : 'image',
+                    };
+                    // Add caption for image/video
+                    if (messageText && (mediaType === 'image' || mediaType === 'video')) {
+                      mediaBody.caption = messageText;
+                    }
 
-                  if (!uazapiResp.ok) {
-                    const errText = await uazapiResp.text();
-                    console.error(`[FLOW TIMEOUTS] UAZAPI send failed: ${uazapiResp.status} ${errText}`);
+                    const mediaResp = await fetch(`${uazapiBaseUrl}/send/media`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json', 'token': instance.zapi_token },
+                      body: JSON.stringify(mediaBody),
+                    });
+
+                    if (!mediaResp.ok) {
+                      const errText = await mediaResp.text();
+                      console.error(`[FLOW TIMEOUTS] UAZAPI media send failed: ${mediaResp.status} ${errText}`);
+                    } else {
+                      try {
+                        const result = await mediaResp.json();
+                        zapiMessageId = result?.messageId || result?.id || result?.ID || result?.key?.id || null;
+                      } catch { /* ignore */ }
+                      msgType = mediaType;
+                    }
+
+                    // For documents, send the text message separately if there's a caption
+                    if (messageText && mediaType === 'document') {
+                      const textResp = await fetch(`${uazapiBaseUrl}/send/text`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'token': instance.zapi_token },
+                        body: JSON.stringify({ number: normalizedPhone, text: messageText }),
+                      });
+                      if (!textResp.ok) {
+                        console.error(`[FLOW TIMEOUTS] UAZAPI text after doc failed`);
+                      }
+                    }
                   } else {
-                    let zapiMessageId: string | null = null;
-                    try {
-                      const result = await uazapiResp.json();
-                      zapiMessageId = result?.messageId || result?.id || result?.ID || result?.key?.id || null;
-                    } catch { /* ignore */ }
+                    // Text-only message
+                    console.log(`[FLOW TIMEOUTS] Sending text via UAZAPI: phone=${normalizedPhone}, step=${currentStep + 1}, message=${messageText.substring(0, 50)}...`);
+                    
+                    const uazapiResp = await fetch(`${uazapiBaseUrl}/send/text`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json', 'token': instance.zapi_token },
+                      body: JSON.stringify({ number: normalizedPhone, text: messageText }),
+                    });
 
+                    if (!uazapiResp.ok) {
+                      const errText = await uazapiResp.text();
+                      console.error(`[FLOW TIMEOUTS] UAZAPI send failed: ${uazapiResp.status} ${errText}`);
+                    } else {
+                      try {
+                        const result = await uazapiResp.json();
+                        zapiMessageId = result?.messageId || result?.id || result?.ID || result?.key?.id || null;
+                      } catch { /* ignore */ }
+                    }
+                  }
+
+                  // Save to messages table
+                  if (zapiMessageId || messageText || hasMedia) {
                     await supabase.from('messages').insert({
                       conversation_id: exec.conversation_id,
-                      content: messageText,
-                      type: 'text',
+                      content: messageText || '',
+                      type: msgType,
                       direction: 'outbound',
                       is_from_bot: true,
+                      media_url: hasMedia ? step.mediaUrl : null,
                       zapi_message_id: zapiMessageId,
                       metadata: { 
                         source: 'remarketing_followup',
