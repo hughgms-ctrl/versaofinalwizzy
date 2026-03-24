@@ -58,7 +58,7 @@ export function ChatFollowUpDialog({
   };
 
   const steps = (localData.remarketingSteps as any[]) || [];
-  const hasValidSteps = steps.length > 0 && steps.every((s: any) => s.message?.trim());
+  const hasValidSteps = steps.length > 0 && steps.every((s: any) => s.message?.trim() || s.mediaUrl);
 
   const loadTemplate = (tpl: any) => {
     setLocalData(prev => ({
