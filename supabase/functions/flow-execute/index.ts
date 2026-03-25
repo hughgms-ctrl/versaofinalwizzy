@@ -1188,8 +1188,8 @@ async function sendButtonsMessage(data: Record<string, unknown>, context: Execut
       console.error('[FLOW EXECUTE] Failed to save buttons message to DB:', dbError);
     }
 
-    console.log('[FLOW EXECUTE] Buttons message sent successfully');
-    return { success: true };
+    console.log('[FLOW EXECUTE] Buttons message sent — waiting for user choice');
+    return { success: true, waitForInput: true };
   } catch (error) {
     return { success: false, error: String(error) };
   }
