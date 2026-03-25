@@ -1,5 +1,5 @@
 import { Handle, Position, NodeProps, Node } from '@xyflow/react';
-import { MousePointerClick, List } from 'lucide-react';
+import { MousePointerClick, List, ImageIcon, Video, FileText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface MessageNodeData extends Record<string, unknown> {
@@ -8,6 +8,7 @@ interface MessageNodeData extends Record<string, unknown> {
   text?: string;
   mediaType?: string;
   buttons?: Array<{ id: string; label: string }>;
+  sections?: Array<{ title: string; rows: Array<{ id: string; title: string; description?: string }> }>;
   remarketingSteps?: Array<{ id: string; delayMinutes: number; message: string }>;
 }
 
@@ -33,7 +34,7 @@ function BaseMessageNode({
   return (
     <div 
       className={cn(
-        "group relative min-w-[200px] max-w-[280px] rounded-xl bg-card shadow-lg border-2 transition-all overflow-visible",
+        "group relative min-w-[220px] max-w-[300px] rounded-xl bg-card shadow-lg border-2 transition-all overflow-visible",
         selected ? 'border-primary ring-2 ring-primary/30' : 'border-border'
       )}
     >
@@ -58,45 +59,14 @@ function BaseMessageNode({
           </div>
         ) : null}
       </div>
-      
-      {/* Always show dual handles for interactive messages (they always wait for response) */}
-      <>
-        <Handle
-          type="source"
-          position={Position.Right}
-          id="responded"
-          className="!w-3 !h-3 !bg-green-500 !border-2 !border-background !-right-1.5"
-          style={{ top: '40%' }}
-          title="Respondeu"
-        />
-        <Handle
-          type="source"
-          position={Position.Right}
-          id="timeout"
-          className="!w-3 !h-3 !bg-red-500 !border-2 !border-background !-right-1.5"
-          style={{ top: '70%' }}
-          title="Não respondeu (timeout)"
-        />
-        <span
-          className="absolute text-[9px] text-green-600 dark:text-green-400 font-medium whitespace-nowrap pointer-events-none"
-          style={{ right: '-8px', top: '40%', transform: 'translate(100%, -50%)', paddingLeft: '4px' }}
-        >
-          ✓ Respondeu
-        </span>
-        <span
-          className="absolute text-[9px] text-red-500 font-medium whitespace-nowrap pointer-events-none"
-          style={{ right: '-8px', top: '70%', transform: 'translate(100%, -50%)', paddingLeft: '4px' }}
-        >
-          ✗ Timeout
-        </span>
-      </>
     </div>
   );
 }
 
 export function ButtonsMessageNode({ data, selected }: NodeProps<MessageNode>) {
-  const buttons = data.buttons as Array<{ id: string; label: string }> | undefined;
+  const buttons = (data.buttons as Array<{ id: string; label: string }>) || [];
   const steps = (data.remarketingSteps as any[]) || [];
+  const validButtons = buttons.filter(b => b.label);
   
   return (
     <BaseMessageNode
@@ -111,13 +81,19 @@ export function ButtonsMessageNode({ data, selected }: NodeProps<MessageNode>) {
         <p className="text-xs text-muted-foreground mb-2">
           {data.text || data.content || 'Mensagem com botões...'}
         </p>
-        {(buttons?.length ?? 0) > 0 ? (
-          buttons?.map((btn) => (
-            <div 
-              key={btn.id} 
-              className="text-xs px-2 py-1 rounded-md bg-muted text-center text-foreground"
-            >
-              {btn.label}
+        
+        {validButtons.length > 0 ? (
+          validButtons.map((btn, index) => (
+            <div key={btn.id} className="relative">
+              <div className="text-xs px-2 py-1.5 rounded-md bg-muted text-center text-foreground pr-5">
+                {btn.label}
+              </div>
+              <Handle
+                type="source"
+                position={Position.Right}
+                id={`btn_${index}`}
+                className="!w-2.5 !h-2.5 !bg-indigo-400 !border-2 !border-background !-right-[18px]"
+              />
             </div>
           ))
         ) : (
@@ -125,6 +101,20 @@ export function ButtonsMessageNode({ data, selected }: NodeProps<MessageNode>) {
             + Adicionar botão
           </div>
         )}
+
+        {/* Timeout separator */}
+        <div className="relative pt-2 mt-1 border-t border-dashed border-border/60">
+          <div className="flex items-center gap-1.5">
+            <div className="h-1.5 w-1.5 rounded-full bg-red-500/80" />
+            <span className="text-[10px] text-red-500/80 font-medium">Não respondeu</span>
+          </div>
+          <Handle
+            type="source"
+            position={Position.Right}
+            id="timeout"
+            className="!w-2.5 !h-2.5 !bg-red-500 !border-2 !border-background !-right-[18px]"
+          />
+        </div>
       </div>
     </BaseMessageNode>
   );
@@ -132,7 +122,16 @@ export function ButtonsMessageNode({ data, selected }: NodeProps<MessageNode>) {
 
 export function ListMessageNode({ data, selected }: NodeProps<MessageNode>) {
   const steps = (data.remarketingSteps as any[]) || [];
+  const sections = (data.sections as Array<{ title: string; rows: Array<{ id: string; title: string; description?: string }> }>) || [];
   
+  // Flatten all rows for handle rendering
+  const allRows: Array<{ id: string; title: string; sectionTitle?: string }> = [];
+  sections.forEach(section => {
+    section.rows?.forEach(row => {
+      allRows.push({ ...row, sectionTitle: section.title });
+    });
+  });
+
   return (
     <BaseMessageNode
       selected={!!selected}
@@ -142,12 +141,46 @@ export function ListMessageNode({ data, selected }: NodeProps<MessageNode>) {
       hasFollowUps={steps.length > 0}
       followUpCount={steps.length}
     >
-      <div className="space-y-1">
+      <div className="space-y-1.5">
         <p className="text-xs text-muted-foreground">
           {data.content || 'Lista interativa de opções...'}
         </p>
-        <div className="text-xs px-2 py-1.5 rounded-md bg-muted text-center text-foreground border border-dashed border-border">
-          📋 Ver opções
+
+        {allRows.length > 0 ? (
+          <div className="space-y-1 mt-1">
+            {allRows.map((row, index) => (
+              <div key={row.id} className="relative">
+                <div className="text-[11px] px-2 py-1.5 rounded-md bg-muted/70 text-foreground flex items-center gap-1.5 pr-5">
+                  <span className="text-cyan-500 text-[10px]">◆</span>
+                  <span className="truncate">{row.title}</span>
+                </div>
+                <Handle
+                  type="source"
+                  position={Position.Right}
+                  id={`row_${index}`}
+                  className="!w-2.5 !h-2.5 !bg-cyan-400 !border-2 !border-background !-right-[18px]"
+                />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-xs px-2 py-1.5 rounded-md bg-muted text-center text-foreground border border-dashed border-border">
+            📋 Ver opções
+          </div>
+        )}
+
+        {/* Timeout separator */}
+        <div className="relative pt-2 mt-1 border-t border-dashed border-border/60">
+          <div className="flex items-center gap-1.5">
+            <div className="h-1.5 w-1.5 rounded-full bg-red-500/80" />
+            <span className="text-[10px] text-red-500/80 font-medium">Não respondeu</span>
+          </div>
+          <Handle
+            type="source"
+            position={Position.Right}
+            id="timeout"
+            className="!w-2.5 !h-2.5 !bg-red-500 !border-2 !border-background !-right-[18px]"
+          />
         </div>
       </div>
     </BaseMessageNode>
