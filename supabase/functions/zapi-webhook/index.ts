@@ -961,6 +961,8 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
       const isAtAIHandoff = currentNode?.type === 'ai-handoff';
       const isAtContentBlockWaiting = currentNode?.type === 'content-block' && currentNode.data?.waitForResponse;
       const isAtActionFlow = currentNode?.type === 'action-flow' && (currentNode.data?.waitForResponse || (currentNode.data?.remarketingSteps as any[])?.length > 0);
+      const isAtMessageButtons = currentNode?.type === 'message-buttons';
+      const isAtMessageList = currentNode?.type === 'message-list';
 
       if (isAtAIHandoff && activeFlowExec.status === 'waiting_input') {
         // Check if AI is paused by the human agent
