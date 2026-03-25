@@ -1257,8 +1257,8 @@ async function sendListMessage(data: Record<string, unknown>, context: Execution
       console.error('[FLOW EXECUTE] Failed to save list message to DB:', dbError);
     }
 
-    console.log('[FLOW EXECUTE] List message sent successfully');
-    return { success: true };
+    console.log('[FLOW EXECUTE] List message sent — waiting for user choice');
+    return { success: true, waitForInput: true };
   } catch (error) {
     return { success: false, error: String(error) };
   }
