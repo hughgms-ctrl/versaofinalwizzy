@@ -2143,6 +2143,7 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
       // Condition is handled above via renderAdvancedConditionEditor
 
       case 'message-list':
+        const listSections = (localData.sections as Array<{ title: string; rows: Array<{ id: string; title: string; description?: string }> }>) || [];
         return (
           <div className="space-y-4">
             <div className="space-y-2">
@@ -2163,6 +2164,82 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
                 onChange={(e) => handleChange('buttonText', e.target.value)}
                 placeholder="Ver opções"
               />
+            </div>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label>Opções da Lista</Label>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs gap-1"
+                  onClick={() => {
+                    const newSections = [...listSections];
+                    if (newSections.length === 0) {
+                      newSections.push({ title: '', rows: [{ id: generateId(), title: '', description: '' }] });
+                    } else {
+                      newSections[0].rows.push({ id: generateId(), title: '', description: '' });
+                    }
+                    handleChange('sections', newSections);
+                  }}
+                >
+                  <Plus className="h-3 w-3" />
+                  Adicionar opção
+                </Button>
+              </div>
+              {listSections.length > 0 && listSections.map((section, si) => (
+                <div key={si} className="space-y-2">
+                  {listSections.length > 1 && (
+                    <Input
+                      value={section.title}
+                      onChange={(e) => {
+                        const newSections = [...listSections];
+                        newSections[si] = { ...newSections[si], title: e.target.value };
+                        handleChange('sections', newSections);
+                      }}
+                      placeholder={`Seção ${si + 1}`}
+                      className="h-8 text-xs font-medium"
+                    />
+                  )}
+                  {section.rows.map((row, ri) => (
+                    <div key={row.id} className="flex items-center gap-2">
+                      <div className="flex-1 space-y-1">
+                        <Input
+                          value={row.title}
+                          onChange={(e) => {
+                            const newSections = [...listSections];
+                            newSections[si].rows[ri] = { ...row, title: e.target.value };
+                            handleChange('sections', newSections);
+                          }}
+                          placeholder={`Opção ${ri + 1}`}
+                          className="h-8 text-xs"
+                        />
+                      </div>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+                        onClick={() => {
+                          const newSections = [...listSections];
+                          newSections[si].rows = newSections[si].rows.filter((_, i) => i !== ri);
+                          if (newSections[si].rows.length === 0) {
+                            newSections.splice(si, 1);
+                          }
+                          handleChange('sections', newSections);
+                        }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              ))}
+              {listSections.length === 0 && (
+                <p className="text-xs text-muted-foreground text-center py-2">
+                  Adicione opções para criar rotas individuais
+                </p>
+              )}
             </div>
             <RemarketingStepsEditor localData={localData} handleChange={handleChange} />
           </div>

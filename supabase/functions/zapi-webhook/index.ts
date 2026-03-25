@@ -961,6 +961,8 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
       const isAtAIHandoff = currentNode?.type === 'ai-handoff';
       const isAtContentBlockWaiting = currentNode?.type === 'content-block' && currentNode.data?.waitForResponse;
       const isAtActionFlow = currentNode?.type === 'action-flow' && (currentNode.data?.waitForResponse || (currentNode.data?.remarketingSteps as any[])?.length > 0);
+      const isAtMessageButtons = currentNode?.type === 'message-buttons';
+      const isAtMessageList = currentNode?.type === 'message-list';
 
       if (isAtAIHandoff && activeFlowExec.status === 'waiting_input') {
         // Check if AI is paused by the human agent
@@ -1099,6 +1101,98 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
           cleanMeta2.flow_ended_at = new Date().toISOString();
           await supabase.from('conversations').update({
             service_mode: 'humano', ai_agent_id: null, metadata: cleanMeta2,
+          }).eq('id', conversation.id);
+        }
+      } else if ((isAtMessageButtons || isAtMessageList) && activeFlowExec.status === 'waiting_input') {
+        // Message buttons/list waiting for user choice — match response to specific option handle
+        console.log(`[WEBHOOK] ${currentNode.type} waiting_input — matching user response to option`);
+        
+        const flowEdges = (activeFlowExec.flow?.edges || []) as any[];
+        const userResponse = (triggerText || '').trim().toLowerCase();
+        let matchedHandle: string | null = null;
+
+        if (isAtMessageButtons) {
+          const buttons = (currentNode.data?.buttons || []) as Array<{ id: string; label: string }>;
+          // Match by: exact label, button number (1, 2, 3), or partial match
+          for (let i = 0; i < buttons.length; i++) {
+            const btnLabel = buttons[i].label.toLowerCase();
+            const btnNumber = String(i + 1);
+            if (userResponse === btnLabel || userResponse === btnNumber || userResponse.includes(btnLabel) || btnLabel.includes(userResponse)) {
+              matchedHandle = `btn_${i}`;
+              console.log(`[WEBHOOK] Matched button ${i}: "${buttons[i].label}" (handle: ${matchedHandle})`);
+              break;
+            }
+          }
+        } else {
+          // List: match rows
+          const sections = (currentNode.data?.sections || []) as Array<{ title: string; rows: Array<{ id: string; title: string }> }>;
+          let rowIndex = 0;
+          for (const section of sections) {
+            for (const row of section.rows || []) {
+              const rowTitle = row.title.toLowerCase();
+              if (userResponse === rowTitle || userResponse.includes(rowTitle) || rowTitle.includes(userResponse)) {
+                matchedHandle = `row_${rowIndex}`;
+                console.log(`[WEBHOOK] Matched list row ${rowIndex}: "${row.title}" (handle: ${matchedHandle})`);
+                break;
+              }
+              rowIndex++;
+            }
+            if (matchedHandle) break;
+          }
+        }
+
+        // Find the target edge: specific handle match > 'responded' fallback > any edge
+        let targetEdge = matchedHandle ? flowEdges.find((e: any) => e.source === activeFlowExec.current_node_id && e.sourceHandle === matchedHandle) : null;
+        if (!targetEdge) {
+          // Fallback: try 'responded' handle or any edge without specific handle
+          targetEdge = flowEdges.find((e: any) => e.source === activeFlowExec.current_node_id && e.sourceHandle === 'responded');
+        }
+        if (!targetEdge) {
+          targetEdge = flowEdges.find((e: any) => e.source === activeFlowExec.current_node_id && !e.sourceHandle);
+        }
+        const nextNodeId = targetEdge?.target || null;
+
+        console.log(`[WEBHOOK] ${currentNode.type}: matchedHandle=${matchedHandle}, nextNodeId=${nextNodeId}`);
+
+        if (nextNodeId) {
+          const existingVars = (activeFlowExec as any).variables || {};
+          existingVars._lastChoice = triggerText || '';
+          existingVars._lastChoiceHandle = matchedHandle || 'none';
+
+          await supabase.from('flow_executions').update({
+            status: 'running',
+            current_node_id: nextNodeId,
+            variables: existingVars,
+            timeout_at: null,
+            remarketing_step: 0,
+          }).eq('id', activeFlowExec.id);
+
+          const resumePromise = fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/flow-execute`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
+            body: JSON.stringify({
+              flowId: activeFlowExec.flow_id,
+              conversationId: conversation.id,
+              startNodeId: nextNodeId,
+              triggerMessage: triggerText || '[mídia]',
+            }),
+          });
+          runBackground(resumePromise);
+        } else {
+          // No matching edge — flow STOPS
+          console.log(`[WEBHOOK] ${currentNode.type} has NO matching edge — flow STOPS`);
+          await supabase.from('flow_executions').update({
+            status: 'completed',
+            timeout_at: null,
+            completed_at: new Date().toISOString(),
+          }).eq('id', activeFlowExec.id);
+
+          const { data: convMetaBtn } = await supabase.from('conversations').select('metadata').eq('id', conversation.id).single();
+          const cleanMetaBtn = { ...(convMetaBtn?.metadata || {}) };
+          delete cleanMetaBtn.ai_handoff_context;
+          cleanMetaBtn.flow_ended_at = new Date().toISOString();
+          await supabase.from('conversations').update({
+            service_mode: 'humano', ai_agent_id: null, metadata: cleanMetaBtn,
           }).eq('id', conversation.id);
         }
       } else if (activeFlowExec.status === 'waiting_input') {
