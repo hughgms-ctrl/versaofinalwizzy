@@ -494,8 +494,10 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
   const { data: teamMembers = [] } = useTeamMembers();
   const { data: workspaces = [] } = useWorkspaces();
 
+  const prevNodeIdRef = useRef<string | null>(null);
   useEffect(() => {
-    if (node) {
+    if (node && node.id !== prevNodeIdRef.current) {
+      prevNodeIdRef.current = node.id;
       setLocalData(node.data as Record<string, unknown>);
     }
   }, [node]);
