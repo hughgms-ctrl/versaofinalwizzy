@@ -146,3 +146,23 @@ export function useDeleteOrgUser() {
     onError: (err: Error) => toast.error(err.message),
   });
 }
+
+export function useAdminSettings() {
+  return useQuery({
+    queryKey: ['admin', 'settings'],
+    queryFn: () => adminFetch('get_settings'),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useToggleSignups() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (allow: boolean) => adminFetch('toggle_signups', { allow }),
+    onSuccess: (_, allow) => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'settings'] });
+      toast.success(allow ? 'Cadastros automáticos habilitados' : 'Cadastros automáticos desabilitados');
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+}

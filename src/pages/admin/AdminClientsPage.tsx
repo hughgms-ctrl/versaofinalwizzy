@@ -6,12 +6,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useAdminClients, useAdminPlans, useAssignPlan, useAdminOrgUsers, useBlockUser, useDeleteOrgUser } from '@/hooks/useAdminDashboard';
-import { Building2, Search, Users, Phone, HardDrive, ChevronDown, ChevronUp, Ban, Trash2, ShieldCheck, ShieldOff } from 'lucide-react';
+import { useAdminClients, useAdminPlans, useAssignPlan, useAdminOrgUsers, useBlockUser, useDeleteOrgUser, useAdminSettings, useToggleSignups } from '@/hooks/useAdminDashboard';
+import { Building2, Search, Users, Phone, HardDrive, ChevronDown, ChevronUp, Ban, Trash2, ShieldCheck, ShieldOff, UserPlus } from 'lucide-react';
 import { useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Switch } from '@/components/ui/switch';
 
 function OrgUsersRow({ orgId }: { orgId: string }) {
   const { data, isLoading } = useAdminOrgUsers(orgId);
@@ -68,17 +69,15 @@ function OrgUsersRow({ orgId }: { orgId: string }) {
                         {u.is_blocked ? <ShieldCheck className="h-4 w-4 mr-1" /> : <ShieldOff className="h-4 w-4 mr-1" />}
                         {u.is_blocked ? 'Desbloquear' : 'Bloquear'}
                       </Button>
-                      {u.role !== 'owner' && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-destructive hover:text-destructive"
-                          onClick={() => setDeleteTarget({ id: u.user_id, name: u.name || u.email })}
-                        >
-                          <Trash2 className="h-4 w-4 mr-1" />
-                          Excluir
-                        </Button>
-                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-destructive hover:text-destructive"
+                        onClick={() => setDeleteTarget({ id: u.user_id, name: u.name || u.email })}
+                      >
+                        <Trash2 className="h-4 w-4 mr-1" />
+                        Excluir
+                      </Button>
                     </div>
                   )}
                 </div>
@@ -122,11 +121,15 @@ function OrgUsersRow({ orgId }: { orgId: string }) {
 export default function AdminClientsPage() {
   const { data, isLoading } = useAdminClients();
   const { data: plansData } = useAdminPlans();
+  const { data: settingsData } = useAdminSettings();
   const assignPlan = useAssignPlan();
+  const toggleSignups = useToggleSignups();
   const [search, setSearch] = useState('');
   const [assignDialog, setAssignDialog] = useState<{ orgId: string; orgName: string } | null>(null);
   const [selectedPlanId, setSelectedPlanId] = useState('');
   const [expandedOrg, setExpandedOrg] = useState<string | null>(null);
+
+  const allowSignups = settingsData?.settings?.allow_signups ?? true;
 
   const orgs = (data?.organizations || []).filter((org: any) =>
     !search || org.name?.toLowerCase().includes(search.toLowerCase()) || org.slug?.toLowerCase().includes(search.toLowerCase())
@@ -148,6 +151,18 @@ export default function AdminClientsPage() {
             <p className="text-muted-foreground mt-1">
               {isLoading ? '...' : `${orgs.length} organizações cadastradas`}
             </p>
+          </div>
+          <div className="flex items-center gap-3 bg-card border rounded-lg px-4 py-3">
+            <UserPlus className="h-4 w-4 text-muted-foreground" />
+            <div className="text-sm">
+              <p className="font-medium">Cadastros automáticos</p>
+              <p className="text-xs text-muted-foreground">{allowSignups ? 'Novos usuários podem se cadastrar' : 'Apenas você libera novos usuários'}</p>
+            </div>
+            <Switch
+              checked={allowSignups}
+              onCheckedChange={(checked) => toggleSignups.mutate(checked)}
+              disabled={toggleSignups.isPending}
+            />
           </div>
         </div>
 
