@@ -1,15 +1,123 @@
 import { AdminLayout } from '@/components/admin/AdminLayout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useAdminClients, useAdminPlans, useAssignPlan } from '@/hooks/useAdminDashboard';
-import { Building2, Search, Users, Phone, HardDrive } from 'lucide-react';
+import { useAdminClients, useAdminPlans, useAssignPlan, useAdminOrgUsers, useBlockUser, useDeleteOrgUser } from '@/hooks/useAdminDashboard';
+import { Building2, Search, Users, Phone, HardDrive, ChevronDown, ChevronUp, Ban, Trash2, ShieldCheck, ShieldOff } from 'lucide-react';
 import { useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+
+function OrgUsersRow({ orgId }: { orgId: string }) {
+  const { data, isLoading } = useAdminOrgUsers(orgId);
+  const blockUser = useBlockUser();
+  const deleteUser = useDeleteOrgUser();
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
+
+  if (isLoading) return (
+    <TableRow>
+      <TableCell colSpan={8} className="bg-muted/30 p-4">
+        <Skeleton className="h-8 w-full" />
+      </TableCell>
+    </TableRow>
+  );
+
+  const users = data?.users || [];
+
+  return (
+    <>
+      <TableRow>
+        <TableCell colSpan={8} className="bg-muted/30 p-0">
+          <div className="px-6 py-3">
+            <p className="text-xs font-semibold text-muted-foreground uppercase mb-2">Usuários da organização ({users.length})</p>
+            <div className="space-y-1">
+              {users.map((u: any) => (
+                <div key={u.user_id} className="flex items-center justify-between py-2 px-3 rounded-md hover:bg-muted/50 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <Avatar className="h-8 w-8">
+                      <AvatarImage src={u.avatar_url || ''} />
+                      <AvatarFallback className="text-xs">{(u.name || '?')[0]}</AvatarFallback>
+                    </Avatar>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-sm">{u.name || 'Sem nome'}</span>
+                        <Badge variant={u.role === 'owner' ? 'default' : 'secondary'} className="text-[10px] px-1.5 py-0">
+                          {u.role}
+                        </Badge>
+                        {u.is_blocked && (
+                          <Badge variant="destructive" className="text-[10px] px-1.5 py-0">Bloqueado</Badge>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground">{u.email}</p>
+                    </div>
+                  </div>
+                  {u.role !== 'platform_admin' && (
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className={u.is_blocked ? 'text-green-600 hover:text-green-700' : 'text-orange-600 hover:text-orange-700'}
+                        onClick={() => blockUser.mutate({ user_id: u.user_id, block: !u.is_blocked })}
+                        disabled={blockUser.isPending}
+                      >
+                        {u.is_blocked ? <ShieldCheck className="h-4 w-4 mr-1" /> : <ShieldOff className="h-4 w-4 mr-1" />}
+                        {u.is_blocked ? 'Desbloquear' : 'Bloquear'}
+                      </Button>
+                      {u.role !== 'owner' && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-destructive hover:text-destructive"
+                          onClick={() => setDeleteTarget({ id: u.user_id, name: u.name || u.email })}
+                        >
+                          <Trash2 className="h-4 w-4 mr-1" />
+                          Excluir
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+              {users.length === 0 && (
+                <p className="text-sm text-muted-foreground text-center py-2">Nenhum usuário encontrado.</p>
+              )}
+            </div>
+          </div>
+        </TableCell>
+      </TableRow>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir usuário</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir <strong>{deleteTarget?.name}</strong>? Esta ação é irreversível e removerá o usuário, suas permissões e dados de acesso.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (deleteTarget) {
+                  deleteUser.mutate({ user_id: deleteTarget.id });
+                  setDeleteTarget(null);
+                }
+              }}
+            >
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
 
 export default function AdminClientsPage() {
   const { data, isLoading } = useAdminClients();
@@ -18,6 +126,7 @@ export default function AdminClientsPage() {
   const [search, setSearch] = useState('');
   const [assignDialog, setAssignDialog] = useState<{ orgId: string; orgName: string } | null>(null);
   const [selectedPlanId, setSelectedPlanId] = useState('');
+  const [expandedOrg, setExpandedOrg] = useState<string | null>(null);
 
   const orgs = (data?.organizations || []).filter((org: any) =>
     !search || org.name?.toLowerCase().includes(search.toLowerCase()) || org.slug?.toLowerCase().includes(search.toLowerCase())
@@ -76,55 +185,64 @@ export default function AdminClientsPage() {
                 </TableHeader>
                 <TableBody>
                   {orgs.map((org: any) => (
-                    <TableRow key={org.id}>
-                      <TableCell>
-                        <div>
-                          <p className="font-medium">{org.name}</p>
-                          <p className="text-xs text-muted-foreground">{org.slug}</p>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {org.plan ? (
-                          <Badge variant="secondary">{org.plan.name}</Badge>
-                        ) : (
-                          <Badge variant="outline" className="text-muted-foreground">Sem plano</Badge>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          <Users className="h-3.5 w-3.5 text-muted-foreground" />
-                          {org.user_count}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          <Phone className="h-3.5 w-3.5 text-muted-foreground" />
-                          {org.active_instances}/{org.instance_count}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-center">{org.conversation_count}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          <HardDrive className="h-3.5 w-3.5 text-muted-foreground" />
-                          {formatBytes(org.storage_used_bytes || 0)}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {new Date(org.created_at).toLocaleDateString('pt-BR')}
-                      </TableCell>
-                      <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setAssignDialog({ orgId: org.id, orgName: org.name });
-                            setSelectedPlanId(org.plan?.slug || '');
-                          }}
-                        >
-                          Plano
-                        </Button>
-                      </TableCell>
-                    </TableRow>
+                    <>
+                      <TableRow key={org.id} className="cursor-pointer" onClick={() => setExpandedOrg(expandedOrg === org.id ? null : org.id)}>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            {expandedOrg === org.id ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
+                            <div>
+                              <p className="font-medium">{org.name}</p>
+                              <p className="text-xs text-muted-foreground">{org.slug}</p>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {org.plan ? (
+                            <Badge variant="secondary">{org.plan.name}</Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-muted-foreground">Sem plano</Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            <Users className="h-3.5 w-3.5 text-muted-foreground" />
+                            {org.user_count}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            <Phone className="h-3.5 w-3.5 text-muted-foreground" />
+                            {org.active_instances}/{org.instance_count}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-center">{org.conversation_count}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            <HardDrive className="h-3.5 w-3.5 text-muted-foreground" />
+                            {formatBytes(org.storage_used_bytes || 0)}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {new Date(org.created_at).toLocaleDateString('pt-BR')}
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setAssignDialog({ orgId: org.id, orgName: org.name });
+                              setSelectedPlanId(org.plan?.slug || '');
+                            }}
+                          >
+                            Plano
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                      {expandedOrg === org.id && (
+                        <OrgUsersRow key={`users-${org.id}`} orgId={org.id} />
+                      )}
+                    </>
                   ))}
                   {orgs.length === 0 && (
                     <TableRow>
