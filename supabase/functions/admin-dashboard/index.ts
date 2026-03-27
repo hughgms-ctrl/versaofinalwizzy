@@ -235,6 +235,103 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ result: data }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
+    if (action === 'org_users') {
+      const orgId = url.searchParams.get('org_id')
+      if (!orgId) throw new Error('Missing org_id')
+
+      const { data: profiles } = await adminClient
+        .from('profiles')
+        .select('id, user_id, full_name, avatar_url, phone, created_at')
+        .eq('organization_id', orgId)
+
+      const userIds = (profiles || []).map((p: any) => p.user_id)
+      
+      // Get roles
+      const { data: roles } = await adminClient
+        .from('user_roles')
+        .select('user_id, role')
+        .in('user_id', userIds.length > 0 ? userIds : ['00000000-0000-0000-0000-000000000000'])
+
+      // Get auth user info (email, banned)
+      const usersInfo: Record<string, any> = {}
+      for (const uid of userIds) {
+        try {
+          const { data: { user: authUser } } = await adminClient.auth.admin.getUserById(uid)
+          if (authUser) {
+            usersInfo[uid] = { email: authUser.email, banned: !!(authUser as any).banned_until }
+          }
+        } catch (_) {}
+      }
+
+      const roleMap = new Map<string, string>()
+      ;(roles || []).forEach((r: any) => roleMap.set(r.user_id, r.role))
+
+      const users = (profiles || []).map((p: any) => ({
+        id: p.id,
+        user_id: p.user_id,
+        name: p.full_name,
+        email: usersInfo[p.user_id]?.email || '',
+        phone: p.phone,
+        role: roleMap.get(p.user_id) || 'agent',
+        avatar_url: p.avatar_url,
+        created_at: p.created_at,
+        is_blocked: usersInfo[p.user_id]?.banned || false,
+      }))
+
+      return new Response(JSON.stringify({ users }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    if (action === 'block_user') {
+      const body = await req.json()
+      const { user_id, block } = body
+      if (!user_id) throw new Error('Missing user_id')
+
+      if (block) {
+        const { error } = await adminClient.auth.admin.updateUserById(user_id, { ban_duration: '876000h' }) // ~100 years
+        if (error) throw error
+      } else {
+        const { error } = await adminClient.auth.admin.updateUserById(user_id, { ban_duration: 'none' })
+        if (error) throw error
+      }
+
+      // Audit log
+      await adminClient.from('admin_audit_logs').insert({
+        action: block ? 'block_user' : 'unblock_user',
+        entity_type: 'user',
+        entity_id: user_id,
+        performed_by: user.id,
+        details: { user_id },
+      })
+
+      return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    if (action === 'delete_org_user') {
+      const body = await req.json()
+      const { user_id: targetUserId } = body
+      if (!targetUserId) throw new Error('Missing user_id')
+
+      // Delete permissions, roles, profile, then auth user
+      await adminClient.from('user_permissions').delete().eq('user_id', targetUserId)
+      await adminClient.from('workspace_members').delete().eq('user_id', targetUserId)
+      await adminClient.from('user_roles').delete().eq('user_id', targetUserId)
+      await adminClient.from('profiles').delete().eq('user_id', targetUserId)
+
+      const { error: delErr } = await adminClient.auth.admin.deleteUser(targetUserId)
+      if (delErr) throw delErr
+
+      // Audit log
+      await adminClient.from('admin_audit_logs').insert({
+        action: 'delete_user',
+        entity_type: 'user',
+        entity_id: targetUserId,
+        performed_by: user.id,
+        details: { user_id: targetUserId },
+      })
+
+      return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
     return new Response(JSON.stringify({ error: 'Unknown action' }), { status: 400, headers: corsHeaders })
 
   } catch (err) {

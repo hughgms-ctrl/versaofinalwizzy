@@ -99,3 +99,50 @@ export function useAssignPlan() {
     onError: (err: Error) => toast.error(err.message),
   });
 }
+
+export function useAdminOrgUsers(orgId: string | null) {
+  return useQuery({
+    queryKey: ['admin', 'org-users', orgId],
+    queryFn: async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Not authenticated');
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-dashboard?action=org_users&org_id=${orgId}`;
+      const res = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+          'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+        },
+      });
+      if (!res.ok) throw new Error('Failed to fetch users');
+      return res.json();
+    },
+    enabled: !!orgId,
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useBlockUser() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { user_id: string; block: boolean }) => adminFetch('block_user', data),
+    onSuccess: (_, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'org-users'] });
+      toast.success(vars.block ? 'Usuário bloqueado' : 'Usuário desbloqueado');
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+}
+
+export function useDeleteOrgUser() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { user_id: string }) => adminFetch('delete_org_user', data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'org-users'] });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'clients'] });
+      toast.success('Usuário excluído com sucesso');
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+}
