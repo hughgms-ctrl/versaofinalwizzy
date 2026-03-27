@@ -332,6 +332,47 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
+    if (action === 'get_settings') {
+      const { data: settings } = await adminClient
+        .from('platform_settings')
+        .select('key, value')
+
+      const settingsMap: Record<string, any> = {}
+      ;(settings || []).forEach((s: any) => { settingsMap[s.key] = s.value })
+
+      return new Response(JSON.stringify({ settings: settingsMap }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    if (action === 'toggle_signups') {
+      const body = await req.json()
+      const { allow } = body
+
+      const { error } = await adminClient
+        .from('platform_settings')
+        .upsert({ key: 'allow_signups', value: allow, updated_at: new Date().toISOString(), updated_by: user.id }, { onConflict: 'key' })
+
+      if (error) throw error
+
+      // If disabling signups, ban all users with pending_approval metadata
+      if (!allow) {
+        // Get all users that have pending_approval
+        const { data: { users: allUsers } } = await adminClient.auth.admin.listUsers({ perPage: 1000 })
+        const pendingUsers = (allUsers || []).filter((u: any) => u.user_metadata?.pending_approval === true)
+        for (const pu of pendingUsers) {
+          await adminClient.auth.admin.updateUserById(pu.id, { ban_duration: '876000h' })
+        }
+      }
+
+      await adminClient.from('admin_audit_logs').insert({
+        action: allow ? 'enable_signups' : 'disable_signups',
+        entity_type: 'platform',
+        performed_by: user.id,
+        details: { allow_signups: allow },
+      })
+
+      return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
     return new Response(JSON.stringify({ error: 'Unknown action' }), { status: 400, headers: corsHeaders })
 
   } catch (err) {
