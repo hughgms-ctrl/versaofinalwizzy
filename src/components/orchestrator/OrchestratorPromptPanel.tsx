@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
+import { TrainingRulesList } from '@/components/agents/TrainingRulesList';
 
 interface OrchestratorPromptPanelProps {
   content: string;
@@ -19,6 +20,7 @@ interface OrchestratorPromptPanelProps {
   onApplyToFlow?: (prompt: string) => void;
   isApplyingToFlow?: boolean;
   organizationId?: string;
+  masterPromptId?: string;
 }
 
 export function OrchestratorPromptPanel({
@@ -32,6 +34,7 @@ export function OrchestratorPromptPanel({
   onApplyToFlow,
   isApplyingToFlow,
   organizationId,
+  masterPromptId,
 }: OrchestratorPromptPanelProps) {
   const [aiInput, setAiInput] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
@@ -133,6 +136,16 @@ export function OrchestratorPromptPanel({
           </Button>
         </div>
       )}
+
+      {/* Learned Rules */}
+      <div className="px-3 pt-3">
+        <TrainingRulesList
+          targetType="master_prompt"
+          masterPromptId={masterPromptId}
+          flowId={masterPromptId} // In our system, flow_id often matches master_prompt_id for master rules
+          organizationId={organizationId}
+        />
+      </div>
 
       {/* Prompt Editor */}
       <div className="flex-1 p-3 overflow-y-auto">

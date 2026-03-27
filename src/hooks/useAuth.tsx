@@ -38,6 +38,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     
     if (!error && data) {
       setProfile(data as Profile);
+      // Track fingerprint after profile is loaded (so we have org context)
+      trackFingerprint();
+    }
+  };
+
+  const trackFingerprint = async () => {
+    try {
+      const browserData = {
+        screen_resolution: `${window.screen.width}x${window.screen.height}`,
+        language: navigator.language,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        platform: (navigator as any).platform,
+        hardware_concurrency: navigator.hardwareConcurrency,
+      };
+
+      await supabase.functions.invoke('track-fingerprint', {
+        body: { browser_data: browserData }
+      });
+    } catch (err) {
+      console.error('Error tracking fingerprint:', err);
     }
   };
 

@@ -1,3 +1,4 @@
+import React from 'react';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -6,13 +7,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useAdminClients, useAdminPlans, useAssignPlan, useAdminOrgUsers, useBlockUser, useDeleteOrgUser, useAdminSettings, useToggleSignups } from '@/hooks/useAdminDashboard';
+import { useAdminClients, useAdminPlans, useAssignPlan, useAdminOrgUsers, useBlockUser, useDeleteOrgUser, useAdminSettings, useToggleSignups, useDeleteOrganization } from '@/hooks/useAdminDashboard';
 import { Building2, Search, Users, Phone, HardDrive, ChevronDown, ChevronUp, Ban, Trash2, ShieldCheck, ShieldOff, UserPlus } from 'lucide-react';
 import { useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Switch } from '@/components/ui/switch';
+import { supabase } from '@/integrations/supabase/client';
 
 function OrgUsersRow({ orgId }: { orgId: string }) {
   const { data, isLoading } = useAdminOrgUsers(orgId);
@@ -63,7 +65,10 @@ function OrgUsersRow({ orgId }: { orgId: string }) {
                         variant="ghost"
                         size="sm"
                         className={u.is_blocked ? 'text-green-600 hover:text-green-700' : 'text-orange-600 hover:text-orange-700'}
-                        onClick={() => blockUser.mutate({ user_id: u.user_id, block: !u.is_blocked })}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          blockUser.mutate({ user_id: u.user_id, block: !u.is_blocked });
+                        }}
                         disabled={blockUser.isPending}
                       >
                         {u.is_blocked ? <ShieldCheck className="h-4 w-4 mr-1" /> : <ShieldOff className="h-4 w-4 mr-1" />}
@@ -73,7 +78,10 @@ function OrgUsersRow({ orgId }: { orgId: string }) {
                         variant="ghost"
                         size="sm"
                         className="text-destructive hover:text-destructive"
-                        onClick={() => setDeleteTarget({ id: u.user_id, name: u.name || u.email })}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeleteTarget({ id: u.user_id, name: u.name || u.email });
+                        }}
                       >
                         <Trash2 className="h-4 w-4 mr-1" />
                         Excluir
@@ -91,7 +99,7 @@ function OrgUsersRow({ orgId }: { orgId: string }) {
       </TableRow>
 
       <AlertDialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
-        <AlertDialogContent>
+        <AlertDialogContent onClick={(e) => e.stopPropagation()}>
           <AlertDialogHeader>
             <AlertDialogTitle>Excluir usuário</AlertDialogTitle>
             <AlertDialogDescription>
@@ -124,8 +132,10 @@ export default function AdminClientsPage() {
   const { data: settingsData } = useAdminSettings();
   const assignPlan = useAssignPlan();
   const toggleSignups = useToggleSignups();
+  const deleteOrg = useDeleteOrganization();
   const [search, setSearch] = useState('');
   const [assignDialog, setAssignDialog] = useState<{ orgId: string; orgName: string } | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ orgId: string; orgName: string } | null>(null);
   const [selectedPlanId, setSelectedPlanId] = useState('');
   const [expandedOrg, setExpandedOrg] = useState<string | null>(null);
 
@@ -200,8 +210,8 @@ export default function AdminClientsPage() {
                 </TableHeader>
                 <TableBody>
                   {orgs.map((org: any) => (
-                    <>
-                      <TableRow key={org.id} className="cursor-pointer" onClick={() => setExpandedOrg(expandedOrg === org.id ? null : org.id)}>
+                    <React.Fragment key={org.id}>
+                      <TableRow className="cursor-pointer hover:bg-muted/30" onClick={() => setExpandedOrg(expandedOrg === org.id ? null : org.id)}>
                         <TableCell>
                           <div className="flex items-center gap-2">
                             {expandedOrg === org.id ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
@@ -241,23 +251,33 @@ export default function AdminClientsPage() {
                           {new Date(org.created_at).toLocaleDateString('pt-BR')}
                         </TableCell>
                         <TableCell>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setAssignDialog({ orgId: org.id, orgName: org.name });
-                              setSelectedPlanId(org.plan?.slug || '');
-                            }}
-                          >
-                            Plano
-                          </Button>
+                          <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setAssignDialog({ orgId: org.id, orgName: org.name });
+                                setSelectedPlanId(org.plan?.id || '');
+                              }}
+                            >
+                              Plano
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                              onClick={() => setDeleteConfirm({ orgId: org.id, orgName: org.name })}
+                              disabled={deleteOrg.isPending}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                       {expandedOrg === org.id && (
-                        <OrgUsersRow key={`users-${org.id}`} orgId={org.id} />
+                        <OrgUsersRow orgId={org.id} />
                       )}
-                    </>
+                    </React.Fragment>
                   ))}
                   {orgs.length === 0 && (
                     <TableRow>
@@ -302,13 +322,40 @@ export default function AdminClientsPage() {
                   setAssignDialog(null);
                 }
               }}
-              disabled={!selectedPlanId}
+              disabled={!selectedPlanId || assignPlan.isPending}
             >
               Salvar
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Confirmation */}
+      <AlertDialog open={!!deleteConfirm} onOpenChange={() => setDeleteConfirm(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir Organização permanentemente?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta ação é **irreversível**. Todos os dados da organização "{deleteConfirm?.orgName}",
+              incluindo mensagens, contatos e **contas de usuários**, serão excluídos permanentemente.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (deleteConfirm) {
+                  deleteOrg.mutate(deleteConfirm.orgId);
+                  setDeleteConfirm(null);
+                }
+              }}
+            >
+              Sim, excluir tudo
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AdminLayout>
   );
 }

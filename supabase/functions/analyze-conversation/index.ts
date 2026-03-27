@@ -221,14 +221,21 @@ Deno.serve(async (req) => {
     }
 
     const token = authHeader.replace(/^Bearer\s+/i, '');
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-
-    if (authError || !user) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    const isServiceRole = token === supabaseKey;
+    
+    let user = null;
+    if (!isServiceRole) {
+      const { data: { user: authUser }, error: authError } = await supabase.auth.getUser(token);
+      if (authError || !authUser) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      user = authUser;
     }
+
+    console.log(`[analyze-conversation] Auth verified (isServiceRole: ${isServiceRole})`);
 
     const { conversationId, analyzeMedia: shouldAnalyzeMedia = true } = await req.json();
 
@@ -483,6 +490,27 @@ Responda no formato JSON:
         fullSummary: summary.fullSummary || 'Resumo não disponível',
         mediaAnalysis,
       };
+
+      // PERSIST the analysis to the conversation metadata
+      try {
+        console.log(`[analyze-conversation] Persisting summary to conversation ${conversationId}...`);
+        const { data: currentConv } = await supabase.from('conversations').select('metadata').eq('id', conversationId).single();
+        const updatedMetadata = {
+          ...(currentConv?.metadata || {}),
+          ai_analysis: {
+            briefContext: result.briefContext,
+            fullSummary: result.fullSummary,
+            analyzed_at: new Date().toISOString(),
+          }
+        };
+
+        await supabase.from('conversations').update({
+          metadata: updatedMetadata
+        }).eq('id', conversationId);
+        console.log(`[analyze-conversation] Successfully persisted summary.`);
+      } catch (persistErr) {
+        console.warn(`[analyze-conversation] Failed to persist summary (this is non-critical):`, persistErr);
+      }
 
       return new Response(JSON.stringify(result), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

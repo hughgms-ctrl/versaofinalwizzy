@@ -1477,14 +1477,16 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
         for (const kw of mp.trigger_keywords) {
           if (!kw.value) continue;
           let matched = false;
+          const msgNormalized = normalizeText(msgLower);
+          const kwNormalized = normalizeText(kw.value);
           switch (kw.match_type) {
-            case 'exact': matched = msgLower === kw.value.toLowerCase().trim(); break;
+            case 'exact': matched = msgNormalized === kwNormalized; break;
             case 'contains': {
-              const words = kw.value.split(',').map((w: string) => w.trim().toLowerCase()).filter(Boolean);
-              matched = words.some((w: string) => msgLower.includes(w));
+              const words = kwNormalized.split(',').map((w: string) => w.trim()).filter(Boolean);
+              matched = words.some((w: string) => msgNormalized.includes(w));
               break;
             }
-            case 'starts_with': matched = msgLower.startsWith(kw.value.toLowerCase().trim()); break;
+            case 'starts_with': matched = msgNormalized.startsWith(kwNormalized); break;
           }
           if (matched) {
             await supabase.from('conversations').update({ service_mode: 'ia' }).eq('id', conversationId);
@@ -1523,20 +1525,22 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
       const keywords = campaign.trigger_keyword.split(',').map((k: string) => k.trim().toLowerCase()).filter(Boolean);
       console.log(`Campaign ${campaign.id} keywords:`, keywords, `Match type: ${campaign.match_type}`);
 
+      const msgNormalized = normalizeText(msgLower);
       for (const kw of keywords) {
         let matched = false;
+        const kwNormalized = normalizeText(kw);
         switch (campaign.match_type) {
           case 'exact':
-            matched = msgLower === kw;
+            matched = msgNormalized === kwNormalized;
             break;
           case 'contains':
-            matched = msgLower.includes(kw);
+            matched = msgNormalized.includes(kwNormalized);
             break;
           case 'starts_with':
-            matched = msgLower.startsWith(kw);
+            matched = msgNormalized.startsWith(kwNormalized);
             break;
           default:
-            matched = msgLower === kw;
+            matched = msgNormalized === kwNormalized;
         }
 
         if (matched) {
@@ -1548,4 +1552,12 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
 
     console.log('[WEBHOOK] No campaign match found for message:', msgLower);
     return null;
+  }
+
+  function normalizeText(text: string): string {
+    return text
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .trim();
   }

@@ -984,7 +984,11 @@ async function walkFlowForward(
             const resp = await fetch(`${supabaseUrl}/functions/v1/flow-execute`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseKey}` },
-              body: JSON.stringify({ flowId, conversationId: ctx.conversationId }),
+              body: JSON.stringify({ 
+                flowId, 
+                conversationId: ctx.conversationId,
+                triggerMessage: messageContent // Fixes stalling by triggering next flow immediately
+              }),
             });
             const flowResult = await resp.json();
             console.log('Flow result:', flowResult.success ? 'success' : 'failed');
@@ -2252,6 +2256,7 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
                     flowId: flowExec.flow_id,
                     conversationId: ctx.conversationId,
                     startNodeId: nextNodeId,
+                    triggerMessage: messageContent, // PASS MESSAGE TO TRIGGER NEXT AUTO-NODE
                   }),
                 });
               } catch (e) {
@@ -2267,6 +2272,15 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
               }).eq('id', ctx.flowExecutionId);
               // Reset service_mode so AI stops responding
               await supabase.from('conversations').update({ service_mode: 'humano' }).eq('id', ctx.conversationId);
+
+              // 4. TRIGGER AI ANALYSIS / SUMMARY on flow completion
+              const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+              const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+              fetch(`${supabaseUrl}/functions/v1/analyze-conversation`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseKey}` },
+                body: JSON.stringify({ conversationId: ctx.conversationId })
+              }).catch(e => console.error('[ORCHESTRATOR] Error triggering analysis:', e));
             }
           }
         }
@@ -2797,10 +2811,24 @@ async function sendReplyViaZAPI(supabase: any, conversation: any, message: strin
   if (!instance) {
     const { data } = await supabase.from('whatsapp_instances').select('*')
       .eq('organization_id', conversation.organization_id).eq('status', 'connected')
+      .order('is_active', { descending: true })
       .order('created_at', { ascending: true }).limit(1).maybeSingle();
     instance = data;
   }
-  if (!instance || !instance.zapi_token) return;
+  
+  // FINAL FALLBACK: Any instance at all if none are "connected" 
+  // (better to try sending than to definitely fail)
+  if (!instance) {
+    const { data } = await supabase.from('whatsapp_instances').select('*')
+      .eq('organization_id', conversation.organization_id)
+      .order('updated_at', { descending: false }).limit(1).maybeSingle();
+    instance = data;
+  }
+
+  if (!instance || !instance.zapi_token) {
+    console.error('[ORCHESTRATOR] No WhatsApp instance found for organization:', conversation.organization_id);
+    return;
+  }
 
   const normalizedPhone = contactPhone.replace(/\D/g, '');
   const uazapiBaseUrl = Deno.env.get('UAZAPI_BASE_URL')!;

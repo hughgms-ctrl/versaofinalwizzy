@@ -38,6 +38,7 @@ interface ExecutionContext {
   zapiToken: string;
   isFromOrchestrator?: boolean;
   triggerMessage?: string;
+  flowId: string;
 }
 
 // deno-lint-ignore no-explicit-any
@@ -135,6 +136,7 @@ Deno.serve(async (req) => {
           zapiToken: instance.zapi_token!,
           isFromOrchestrator: !!isFromOrchestrator,
           triggerMessage: triggerMessage,
+          flowId: flowId,
         };
 
         await runFlowExecution(execution.id, flow, nodes, edges, context, supabase);
@@ -408,10 +410,10 @@ async function executeNode(
       return await executeContentBlock(data, context, supabase, node);
 
     case 'message-buttons':
-      return await sendButtonsMessage(data, context);
+      return await sendButtonsMessage(data, context, node.id);
 
     case 'message-list':
-      return await sendListMessage(data, context);
+      return await sendListMessage(data, context, node.id);
 
     case 'action-delay':
       return await executeDelay(data);
@@ -917,7 +919,7 @@ async function executeContentBlock(data: Record<string, unknown>, context: Execu
             // Send typing presence before text
             await sendPresence('typing', context);
             await new Promise(resolve => setTimeout(resolve, 1500));
-            await sendTextMessage(item.content, context, supabase);
+            await sendTextMessage(item.content, context, supabase, node?.id);
           }
           break;
 
@@ -925,7 +927,7 @@ async function executeContentBlock(data: Record<string, unknown>, context: Execu
           if (item.mediaUrl) {
             await sendPresence('typing', context);
             await new Promise(resolve => setTimeout(resolve, 1500));
-            await sendMediaItem('image', item.mediaUrl, item.caption, context, supabase);
+            await sendMediaItem('image', item.mediaUrl, item.caption, context, supabase, node?.id);
           }
           break;
 
@@ -933,7 +935,7 @@ async function executeContentBlock(data: Record<string, unknown>, context: Execu
           if (item.mediaUrl) {
             await sendPresence('typing', context);
             await new Promise(resolve => setTimeout(resolve, 1500));
-            await sendMediaItem('video', item.mediaUrl, item.caption, context, supabase);
+            await sendMediaItem('video', item.mediaUrl, item.caption, context, supabase, node?.id);
           }
           break;
 
@@ -942,7 +944,7 @@ async function executeContentBlock(data: Record<string, unknown>, context: Execu
             // Send RECORDING presence before audio to simulate recording
             await sendPresence('recording', context);
             await new Promise(resolve => setTimeout(resolve, 2000));
-            await sendMediaItem('audio', item.mediaUrl, undefined, context, supabase);
+            await sendMediaItem('audio', item.mediaUrl, undefined, context, supabase, node?.id);
           }
           break;
 
@@ -950,7 +952,7 @@ async function executeContentBlock(data: Record<string, unknown>, context: Execu
           if (item.mediaUrl) {
             await sendPresence('typing', context);
             await new Promise(resolve => setTimeout(resolve, 1500));
-            await sendMediaItem('document', item.mediaUrl, item.caption, context, supabase);
+            await sendMediaItem('document', item.mediaUrl, item.caption, context, supabase, node?.id);
           }
           break;
 
@@ -1004,7 +1006,7 @@ async function waitForDelayWithPresence(seconds: number, type: 'typing' | 'recor
   }
 }
 
-async function sendTextMessage(content: string, context: ExecutionContext, supabase: SupabaseClientType): Promise<void> {
+async function sendTextMessage(content: string, context: ExecutionContext, supabase: SupabaseClientType, nodeId?: string): Promise<void> {
   const message = replaceVariables(content, context.variables);
   if (!message) return;
 
@@ -1050,7 +1052,12 @@ async function sendTextMessage(content: string, context: ExecutionContext, supab
       direction: 'outbound',
       is_from_bot: !!context.isFromOrchestrator,
       zapi_message_id: zapiMessageId,
-      metadata: { source: 'flow_execute', is_from_orchestrator: !!context.isFromOrchestrator },
+      metadata: { 
+        source: 'flow_execute', 
+        is_from_orchestrator: !!context.isFromOrchestrator,
+        node_id: nodeId,
+        flow_id: context.flowId
+      },
     });
     console.log('[FLOW EXECUTE] Text message saved to DB');
   } catch (dbError) {
@@ -1066,7 +1073,8 @@ async function sendMediaItem(
   mediaUrl: string,
   caption: string | undefined,
   context: ExecutionContext,
-  supabase: SupabaseClientType
+  supabase: SupabaseClientType,
+  nodeId?: string
 ): Promise<void> {
   const uazapiBaseUrl = Deno.env.get('UAZAPI_BASE_URL')!;
   const normalizedPhone = context.contactPhone.replace(/\D/g, '');
@@ -1118,7 +1126,13 @@ async function sendMediaItem(
       is_from_bot: !!context.isFromOrchestrator,
       media_url: mediaUrl,
       zapi_message_id: zapiMessageId,
-      metadata: { source: 'flow_execute', is_from_orchestrator: !!context.isFromOrchestrator },
+      metadata: { 
+        source: 'flow_execute', 
+        type: mediaType, 
+        is_from_orchestrator: !!context.isFromOrchestrator,
+        node_id: nodeId,
+        flow_id: context.flowId
+      },
     });
     console.log(`[FLOW EXECUTE] ${mediaType} message saved to DB`);
   } catch (dbError) {
@@ -1129,7 +1143,7 @@ async function sendMediaItem(
   await supabase.from('conversations').update({ last_message_at: new Date().toISOString() }).eq('id', context.conversationId);
 }
 
-async function sendButtonsMessage(data: Record<string, unknown>, context: ExecutionContext): Promise<NodeResult> {
+async function sendButtonsMessage(data: Record<string, unknown>, context: ExecutionContext, nodeId?: string): Promise<NodeResult> {
   try {
     const content = replaceVariables(String(data.text || data.content || ''), context.variables);
     const buttons = data.buttons as Array<{ id: string; label: string }> || [];
@@ -1181,7 +1195,13 @@ async function sendButtonsMessage(data: Record<string, unknown>, context: Execut
         direction: 'outbound',
         is_from_bot: !!context.isFromOrchestrator,
         zapi_message_id: zapiMessageId,
-        metadata: { source: 'flow_execute', type: 'buttons', is_from_orchestrator: !!context.isFromOrchestrator },
+        metadata: { 
+          source: 'flow_execute', 
+          type: 'buttons', 
+          is_from_orchestrator: !!context.isFromOrchestrator,
+          node_id: nodeId,
+          flow_id: context.flowId
+        },
       });
       await supabase.from('conversations').update({ last_message_at: new Date().toISOString() }).eq('id', context.conversationId);
     } catch (dbError) {
@@ -1195,7 +1215,7 @@ async function sendButtonsMessage(data: Record<string, unknown>, context: Execut
   }
 }
 
-async function sendListMessage(data: Record<string, unknown>, context: ExecutionContext): Promise<NodeResult> {
+async function sendListMessage(data: Record<string, unknown>, context: ExecutionContext, nodeId?: string): Promise<NodeResult> {
   try {
     const content = replaceVariables(String(data.content || ''), context.variables);
 
@@ -1250,7 +1270,13 @@ async function sendListMessage(data: Record<string, unknown>, context: Execution
         direction: 'outbound',
         is_from_bot: !!context.isFromOrchestrator,
         zapi_message_id: zapiMessageId,
-        metadata: { source: 'flow_execute', type: 'list', is_from_orchestrator: !!context.isFromOrchestrator },
+        metadata: { 
+          source: 'flow_execute', 
+          type: 'list', 
+          is_from_orchestrator: !!context.isFromOrchestrator,
+          node_id: nodeId,
+          flow_id: context.flowId
+        },
       });
       await supabase.from('conversations').update({ last_message_at: new Date().toISOString() }).eq('id', context.conversationId);
     } catch (dbError) {

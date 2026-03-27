@@ -306,6 +306,51 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
+    if (action === 'delete_organization') {
+      const { organization_id } = await req.json()
+      if (!organization_id) throw new Error('Missing organization_id')
+
+      // 1. Get all users in this organization
+      const { data: profiles } = await adminClient
+        .from('profiles')
+        .select('user_id')
+        .eq('organization_id', organization_id)
+
+      const userIds = (profiles || []).map(p => p.user_id)
+
+      // 2. Fetch fingerprints to blacklist them before deleting
+      const { data: fingerprints } = await adminClient
+        .from('user_fingerprints')
+        .select('ip_address, user_agent')
+        .eq('organization_id', organization_id)
+
+      if (fingerprints && fingerprints.length > 0) {
+        const uniqueIps = [...new Set(fingerprints.map(f => f.ip_address))]
+        await adminClient.from('blocked_fingerprints').insert(
+          uniqueIps.map(ip => ({
+            ip_address: ip,
+            reason: `Organização excluída pelo administrador (Org: ${organization_id})`,
+          }))
+        )
+      }
+
+      // 3. Delete users from Auth
+      for (const userId of userIds) {
+        console.log(`Deleting user from Auth: ${userId}`)
+        await adminClient.auth.admin.deleteUser(userId)
+      }
+
+      // 4. Delete organization (Cascade will handle profiles, roles, instances, etc.)
+      const { error: deleteError } = await adminClient
+        .from('organizations')
+        .delete()
+        .eq('id', organization_id)
+
+      if (deleteError) throw deleteError
+
+      return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
     if (action === 'delete_org_user') {
       const body = await req.json()
       const { user_id: targetUserId } = body
@@ -373,9 +418,18 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
+    if (action === 'security_alerts') {
+      const { data: alerts, error } = await adminClient.rpc('check_suspicious_activity')
+      if (error) throw error
+
+      return new Response(JSON.stringify({ alerts: alerts || [] }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
     return new Response(JSON.stringify({ error: 'Unknown action' }), { status: 400, headers: corsHeaders })
 
-  } catch (err) {
+  } catch (err: any) {
     return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: corsHeaders })
   }
 })

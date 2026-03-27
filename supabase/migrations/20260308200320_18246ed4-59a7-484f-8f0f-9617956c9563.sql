@@ -10,6 +10,16 @@ DECLARE
   _workspace_id uuid;
   _org_id uuid;
 BEGIN
+  -- Skip if contact has any conversation in IA mode (meaning campaign/flow is handling it)
+  IF EXISTS (
+    SELECT 1 FROM public.conversations
+    WHERE contact_id = NEW.contact_id
+      AND service_mode = 'ia'
+      AND status = 'open'
+  ) THEN
+    RETURN NEW;
+  END IF;
+
   -- Get the contact's organization
   SELECT organization_id INTO _org_id FROM contacts WHERE id = NEW.contact_id;
 

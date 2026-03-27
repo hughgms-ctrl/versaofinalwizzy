@@ -154,3 +154,6 @@ verify_jwt = false
 
 [functions.signature-receipt]
 verify_jwt = false
+
+[functions.track-fingerprint]
+verify_jwt = false

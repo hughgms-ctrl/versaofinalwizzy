@@ -147,6 +147,18 @@ export function useDeleteOrgUser() {
   });
 }
 
+export function useDeleteOrganization() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (organization_id: string) => adminFetch('delete_organization', { organization_id }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'clients'] });
+      toast.success('Organização excluída com sucesso');
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+}
+
 export function useAdminSettings() {
   return useQuery({
     queryKey: ['admin', 'settings'],
@@ -164,5 +176,13 @@ export function useToggleSignups() {
       toast.success(allow ? 'Cadastros automáticos habilitados' : 'Cadastros automáticos desabilitados');
     },
     onError: (err: Error) => toast.error(err.message),
+  });
+}
+
+export function useSecurityAlerts() {
+  return useQuery({
+    queryKey: ['admin', 'security-alerts'],
+    queryFn: () => adminFetch('security_alerts'),
+    staleTime: 30 * 1000, // Frequent updates for security
   });
 }

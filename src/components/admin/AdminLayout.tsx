@@ -12,6 +12,7 @@ import { Separator } from '@/components/ui/separator';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import wizzyLogo from '@/assets/wizzy-logo.png';
 import { useState } from 'react';
+import { SecurityAlerts } from './SecurityAlerts';
 
 interface AdminLayoutProps {
   children: ReactNode;
@@ -168,11 +169,26 @@ export function AdminLayout({ children }: AdminLayoutProps) {
 
       {/* Main Content */}
       <div className={cn(
-        "transition-all duration-300",
+        "transition-all duration-300 min-h-screen flex flex-col",
         collapsed ? "ml-20" : "ml-20 lg:ml-64"
       )}>
+        <header className="h-16 border-b flex items-center justify-between px-6 bg-background/50 backdrop-blur-sm sticky top-0 z-30">
+          <div className="flex items-center gap-4">
+            <h2 className="text-sm font-medium text-muted-foreground">
+              {adminNav.find(n => n.href === location.pathname)?.name || 'Dashboard'}
+            </h2>
+          </div>
+          <div className="flex items-center gap-4">
+            <SecurityAlerts />
+            <Separator orientation="vertical" className="h-4" />
+            <div className="text-xs text-muted-foreground hidden sm:block">
+              {new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}
+            </div>
+          </div>
+        </header>
+
         <WhatsAppDisconnectedBanner />
-        <main className="p-3 md:p-6">
+        <main className="flex-1 p-3 md:p-6">
           {children}
         </main>
       </div>

@@ -422,6 +422,7 @@ function OrchestratorCanvasInner({
         onApplyToFlow={handleApplyToFlow}
         isApplyingToFlow={isApplyingToFlow}
         organizationId={organizationId}
+        masterPromptId={promptId}
       />
     </div>
   );

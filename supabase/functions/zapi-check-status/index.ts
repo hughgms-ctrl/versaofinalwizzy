@@ -492,9 +492,12 @@ async function checkSingleInstance(
 
   if (instance.status === 'connected') {
     // Only mark as disconnected IF it's explicitly disconnected or loggedout
+    // AND the connected flag is false.
     const isExplicitlyDisconnected = ['disconnected', 'loggedout', 'close', 'closed', 'refused'].includes(probeState);
+    const isExplicitlyFalse = statusData?.connected === false || statusData?.instance?.connected === false;
 
-    if (isExplicitlyDisconnected) {
+    if (isExplicitlyDisconnected && isExplicitlyFalse) {
+      console.log(`[DEBUG] Marking instance ${instance.id} as disconnected. State: ${probeState}, ConnectedFlag: false`);
       await supabase
         .from('whatsapp_instances')
         .update({
@@ -508,7 +511,7 @@ async function checkSingleInstance(
         phoneNumber: instance.phone_number, hasCredentials: true,
       };
     } else {
-      console.log(`[DEBUG] State '${probeState}' is not explicitly disconnected. Keeping 'connected' status.`);
+      console.log(`[DEBUG] State '${probeState}' is transient or not explicitly false. Preserving 'connected' status for instance ${instance.id}.`);
       return {
         status: 'connected', connected: true,
         phoneNumber: instance.phone_number, hasCredentials: true,
