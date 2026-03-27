@@ -12,6 +12,7 @@ import { useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Switch } from '@/components/ui/switch';
 
 function OrgUsersRow({ orgId }: { orgId: string }) {
   const { data, isLoading } = useAdminOrgUsers(orgId);
@@ -120,11 +121,15 @@ function OrgUsersRow({ orgId }: { orgId: string }) {
 export default function AdminClientsPage() {
   const { data, isLoading } = useAdminClients();
   const { data: plansData } = useAdminPlans();
+  const { data: settingsData } = useAdminSettings();
   const assignPlan = useAssignPlan();
+  const toggleSignups = useToggleSignups();
   const [search, setSearch] = useState('');
   const [assignDialog, setAssignDialog] = useState<{ orgId: string; orgName: string } | null>(null);
   const [selectedPlanId, setSelectedPlanId] = useState('');
   const [expandedOrg, setExpandedOrg] = useState<string | null>(null);
+
+  const allowSignups = settingsData?.settings?.allow_signups ?? true;
 
   const orgs = (data?.organizations || []).filter((org: any) =>
     !search || org.name?.toLowerCase().includes(search.toLowerCase()) || org.slug?.toLowerCase().includes(search.toLowerCase())
@@ -146,6 +151,18 @@ export default function AdminClientsPage() {
             <p className="text-muted-foreground mt-1">
               {isLoading ? '...' : `${orgs.length} organizações cadastradas`}
             </p>
+          </div>
+          <div className="flex items-center gap-3 bg-card border rounded-lg px-4 py-3">
+            <UserPlus className="h-4 w-4 text-muted-foreground" />
+            <div className="text-sm">
+              <p className="font-medium">Cadastros automáticos</p>
+              <p className="text-xs text-muted-foreground">{allowSignups ? 'Novos usuários podem se cadastrar' : 'Apenas você libera novos usuários'}</p>
+            </div>
+            <Switch
+              checked={allowSignups}
+              onCheckedChange={(checked) => toggleSignups.mutate(checked)}
+              disabled={toggleSignups.isPending}
+            />
           </div>
         </div>
 
