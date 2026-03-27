@@ -6,8 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useAdminClients, useAdminPlans, useAssignPlan, useAdminOrgUsers, useBlockUser, useDeleteOrgUser } from '@/hooks/useAdminDashboard';
-import { Building2, Search, Users, Phone, HardDrive, ChevronDown, ChevronUp, Ban, Trash2, ShieldCheck, ShieldOff } from 'lucide-react';
+import { useAdminClients, useAdminPlans, useAssignPlan, useAdminOrgUsers, useBlockUser, useDeleteOrgUser, useAdminSettings, useToggleSignups } from '@/hooks/useAdminDashboard';
+import { Building2, Search, Users, Phone, HardDrive, ChevronDown, ChevronUp, Ban, Trash2, ShieldCheck, ShieldOff, UserPlus } from 'lucide-react';
 import { useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
@@ -68,17 +68,15 @@ function OrgUsersRow({ orgId }: { orgId: string }) {
                         {u.is_blocked ? <ShieldCheck className="h-4 w-4 mr-1" /> : <ShieldOff className="h-4 w-4 mr-1" />}
                         {u.is_blocked ? 'Desbloquear' : 'Bloquear'}
                       </Button>
-                      {u.role !== 'owner' && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-destructive hover:text-destructive"
-                          onClick={() => setDeleteTarget({ id: u.user_id, name: u.name || u.email })}
-                        >
-                          <Trash2 className="h-4 w-4 mr-1" />
-                          Excluir
-                        </Button>
-                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-destructive hover:text-destructive"
+                        onClick={() => setDeleteTarget({ id: u.user_id, name: u.name || u.email })}
+                      >
+                        <Trash2 className="h-4 w-4 mr-1" />
+                        Excluir
+                      </Button>
                     </div>
                   )}
                 </div>
