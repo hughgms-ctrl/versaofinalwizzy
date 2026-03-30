@@ -72,6 +72,7 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
   const [editedNote, setEditedNote] = useState((contact?.metadata as { note?: string } | null)?.note || '');
   const [isSavingNote, setIsSavingNote] = useState(false);
   const [isScheduleOpen, setIsScheduleOpen] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Get conversation stats
   const { data: conversationStats } = useQuery({
