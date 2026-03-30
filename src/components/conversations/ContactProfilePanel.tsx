@@ -18,6 +18,8 @@ import {
   Save,
   Pencil,
   Clock,
+  Expand,
+  ArrowLeft,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -70,6 +72,7 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
   const [editedNote, setEditedNote] = useState((contact?.metadata as { note?: string } | null)?.note || '');
   const [isSavingNote, setIsSavingNote] = useState(false);
   const [isScheduleOpen, setIsScheduleOpen] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Get conversation stats
   const { data: conversationStats } = useQuery({
@@ -220,17 +223,33 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
   return (
     <div className={cn(
       "bg-card flex min-h-0 flex-col",
-      embedded
-        ? "w-full h-full"
-        : "fixed inset-0 z-50 h-[100dvh] w-screen border-l border-border sm:static sm:z-auto sm:h-full sm:w-[min(22rem,42vw)] sm:min-w-[18rem] sm:max-w-[22rem] sm:flex-shrink-0"
+      isFullscreen
+        ? "fixed inset-0 z-[60] h-[100dvh] w-screen"
+        : embedded
+          ? "w-full h-full"
+          : "fixed inset-0 z-50 h-[100dvh] w-screen border-l border-border sm:static sm:z-auto sm:h-full sm:w-[min(22rem,42vw)] sm:min-w-[18rem] sm:max-w-[22rem] sm:flex-shrink-0"
     )}>
       {/* Header */}
       {!embedded && (
         <div className="p-4 border-b border-border flex items-center justify-between">
-          <h3 className="font-semibold text-foreground">Perfil do Contato</h3>
-          <Button variant="ghost" size="icon" onClick={onClose}>
-            <X className="h-4 w-4" />
-          </Button>
+          <div className="flex items-center gap-2">
+            {isFullscreen && (
+              <Button variant="ghost" size="icon" onClick={() => setIsFullscreen(false)} title="Voltar">
+                <ArrowLeft className="h-4 w-4" />
+              </Button>
+            )}
+            <h3 className="font-semibold text-foreground">Perfil do Contato</h3>
+          </div>
+          <div className="flex items-center gap-1">
+            {!isFullscreen && (
+              <Button variant="ghost" size="icon" onClick={() => setIsFullscreen(true)} title="Tela cheia">
+                <Expand className="h-4 w-4" />
+              </Button>
+            )}
+            <Button variant="ghost" size="icon" onClick={() => { setIsFullscreen(false); onClose(); }}>
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       )}
 

@@ -364,6 +364,33 @@ export type Database = {
           },
         ]
       }
+      blocked_fingerprints: {
+        Row: {
+          blocked_at: string | null
+          created_at: string
+          id: string
+          ip_address: string | null
+          reason: string | null
+          user_agent_hash: string | null
+        }
+        Insert: {
+          blocked_at?: string | null
+          created_at?: string
+          id?: string
+          ip_address?: string | null
+          reason?: string | null
+          user_agent_hash?: string | null
+        }
+        Update: {
+          blocked_at?: string | null
+          created_at?: string
+          id?: string
+          ip_address?: string | null
+          reason?: string | null
+          user_agent_hash?: string | null
+        }
+        Relationships: []
+      }
       calendar_bookings: {
         Row: {
           assigned_user_id: string | null
@@ -3519,6 +3546,47 @@ export type Database = {
           },
         ]
       }
+      user_fingerprints: {
+        Row: {
+          browser_data: Json | null
+          created_at: string
+          id: string
+          ip_address: string | null
+          location_data: Json | null
+          organization_id: string | null
+          user_agent: string | null
+          user_id: string | null
+        }
+        Insert: {
+          browser_data?: Json | null
+          created_at?: string
+          id?: string
+          ip_address?: string | null
+          location_data?: Json | null
+          organization_id?: string | null
+          user_agent?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          browser_data?: Json | null
+          created_at?: string
+          id?: string
+          ip_address?: string | null
+          location_data?: Json | null
+          organization_id?: string | null
+          user_agent?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_fingerprints_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_permissions: {
         Row: {
           allowed_pipeline_ids: string[] | null
@@ -4252,6 +4320,16 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      check_suspicious_activity: {
+        Args: never
+        Returns: {
+          fingerprint_id: string
+          ip_address: string
+          organization_id: string
+          organization_name: string
+          reason: string
+        }[]
+      }
       deactivate_org_instances: {
         Args: { _org_id: string }
         Returns: undefined
