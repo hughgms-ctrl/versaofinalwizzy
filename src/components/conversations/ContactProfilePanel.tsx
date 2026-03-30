@@ -34,6 +34,7 @@ import {
 } from '@/components/ui/popover';
 import { useToast } from '@/hooks/use-toast';
 import { ContactNotesSection } from './ContactNotesSection';
+import { ContactLogsSection } from './ContactLogsSection';
 import { ContactFilesSection } from './ContactFilesSection';
 import { CreateScheduledMessageDialog } from '@/components/scheduled/CreateScheduledMessageDialog';
 import { ConversationAttributesPanel } from './ConversationAttributesPanel';
