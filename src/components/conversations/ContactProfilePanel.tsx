@@ -239,7 +239,7 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
     enabled: !!contact?.id && isFullscreen,
   });
 
-  // Fetch favorited/starred messages for this conversation
+  // Fetch favorited/starred messages for this conversation (stored in metadata)
   const { data: favoritedMessages } = useQuery({
     queryKey: ['favorited-messages', conversation.id],
     queryFn: async () => {
@@ -247,7 +247,7 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
         .from('messages')
         .select('*')
         .eq('conversation_id', conversation.id)
-        .eq('is_starred', true)
+        .not('metadata->starred', 'is', null)
         .order('created_at', { ascending: false });
       if (error) throw error;
       return (data || []) as any[];
