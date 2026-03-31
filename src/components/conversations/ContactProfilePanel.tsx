@@ -294,6 +294,8 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
               { key: 'timeline' as const, label: 'Timeline' },
               { key: 'notes' as const, label: 'Notas' },
               { key: 'files' as const, label: 'Arquivos' },
+              { key: 'scheduled' as const, label: 'Agendamentos' },
+              { key: 'favorites' as const, label: 'Favoritas' },
             ]).map((tab) => (
               <button
                 key={tab.key}
