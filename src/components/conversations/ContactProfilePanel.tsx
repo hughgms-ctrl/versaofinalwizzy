@@ -20,6 +20,7 @@ import {
   Clock,
   Expand,
   ArrowLeft,
+  MessageCircle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -221,7 +222,39 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
     ai: 'IA',
   };
 
-  const [fullscreenTab, setFullscreenTab] = useState<'info' | 'notes' | 'files' | 'timeline'>('info');
+  const [fullscreenTab, setFullscreenTab] = useState<'info' | 'notes' | 'files' | 'timeline' | 'scheduled' | 'favorites'>('info');
+
+  // Fetch scheduled messages for this contact
+  const { data: contactScheduledMessages } = useQuery({
+    queryKey: ['contact-scheduled-messages', contact?.id],
+    queryFn: async () => {
+      if (!contact?.id) return [];
+      const { data, error } = await supabase
+        .from('scheduled_messages')
+        .select('*')
+        .eq('contact_id', contact.id)
+        .order('scheduled_at', { ascending: true });
+      if (error) throw error;
+      return (data || []) as any[];
+    },
+    enabled: !!contact?.id && isFullscreen,
+  });
+
+  // Fetch favorited/starred messages for this conversation (stored in metadata)
+  const { data: favoritedMessages } = useQuery({
+    queryKey: ['favorited-messages', conversation.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('conversation_id', conversation.id)
+        .not('metadata->starred', 'is', null)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return (data || []) as any[];
+    },
+    enabled: isFullscreen,
+  });
 
   // Fullscreen modal with tabs (Notion-style)
   if (isFullscreen) {
@@ -262,6 +295,8 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
               { key: 'timeline' as const, label: 'Timeline' },
               { key: 'notes' as const, label: 'Notas' },
               { key: 'files' as const, label: 'Arquivos' },
+              { key: 'scheduled' as const, label: 'Agendamentos' },
+              { key: 'favorites' as const, label: 'Favoritas' },
             ]).map((tab) => (
               <button
                 key={tab.key}
@@ -432,6 +467,65 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
 
             {fullscreenTab === 'files' && contact?.id && (
               <ContactFilesSection contactId={contact.id} />
+            )}
+
+            {fullscreenTab === 'scheduled' && (
+              <div className="space-y-3">
+                {contactScheduledMessages && contactScheduledMessages.length > 0 ? (
+                  contactScheduledMessages.map((msg: any) => (
+                    <div key={msg.id} className="p-3 rounded-lg border border-border bg-muted/30 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <Badge variant={msg.status === 'pending' ? 'default' : msg.status === 'sent' ? 'secondary' : 'destructive'}>
+                          {msg.status === 'pending' ? 'Pendente' : msg.status === 'sent' ? 'Enviado' : msg.status === 'cancelled' ? 'Cancelado' : msg.status}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">
+                          {format(new Date(msg.scheduled_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}
+                        </span>
+                      </div>
+                      {msg.message_content && (
+                        <p className="text-sm text-foreground line-clamp-2">{msg.message_content}</p>
+                      )}
+                      {msg.name && (
+                        <p className="text-xs text-muted-foreground">{msg.name}</p>
+                      )}
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-8">
+                    <Clock className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                    <p className="text-sm text-muted-foreground">Nenhum agendamento para este contato</p>
+                    <Button variant="outline" size="sm" className="mt-3" onClick={() => setIsScheduleOpen(true)}>
+                      <Plus className="h-4 w-4 mr-1" /> Agendar mensagem
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {fullscreenTab === 'favorites' && (
+              <div className="space-y-3">
+                {favoritedMessages && favoritedMessages.length > 0 ? (
+                  favoritedMessages.map((msg: any) => (
+                    <div key={msg.id} className="p-3 rounded-lg border border-border bg-muted/30 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <Badge variant={msg.direction === 'inbound' ? 'outline' : 'secondary'}>
+                          {msg.direction === 'inbound' ? 'Recebida' : 'Enviada'}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">
+                          {format(new Date(msg.created_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}
+                        </span>
+                      </div>
+                      <p className="text-sm text-foreground line-clamp-3">{msg.content}</p>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-8">
+                    <MessageCircle className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                    <p className="text-sm text-muted-foreground">Nenhuma mensagem favoritada</p>
+                    <p className="text-xs text-muted-foreground mt-1">Marque mensagens com ⭐ no chat para vê-las aqui</p>
+                  </div>
+                )}
+              </div>
             )}
           </div>
         </div>
