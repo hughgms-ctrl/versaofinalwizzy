@@ -221,7 +221,39 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
     ai: 'IA',
   };
 
-  const [fullscreenTab, setFullscreenTab] = useState<'info' | 'notes' | 'files' | 'timeline'>('info');
+  const [fullscreenTab, setFullscreenTab] = useState<'info' | 'notes' | 'files' | 'timeline' | 'scheduled' | 'favorites'>('info');
+
+  // Fetch scheduled messages for this contact
+  const { data: contactScheduledMessages } = useQuery({
+    queryKey: ['contact-scheduled-messages', contact?.id],
+    queryFn: async () => {
+      if (!contact?.id) return [];
+      const { data, error } = await supabase
+        .from('scheduled_messages')
+        .select('*')
+        .eq('contact_id', contact.id)
+        .order('scheduled_at', { ascending: true });
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!contact?.id && isFullscreen,
+  });
+
+  // Fetch favorited/starred messages for this conversation
+  const { data: favoritedMessages } = useQuery({
+    queryKey: ['favorited-messages', conversation.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('conversation_id', conversation.id)
+        .eq('is_starred', true)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: isFullscreen,
+  });
 
   // Fullscreen modal with tabs (Notion-style)
   if (isFullscreen) {
