@@ -221,240 +221,218 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
     ai: 'IA',
   };
 
-  // Fullscreen Trello-like view
+  const [fullscreenTab, setFullscreenTab] = useState<'info' | 'notes' | 'files' | 'timeline'>('info');
+
+  // Fullscreen modal with tabs (Notion-style)
   if (isFullscreen) {
     return (
-      <div className="fixed inset-0 z-[60] bg-background/80 backdrop-blur-sm flex items-start justify-center overflow-y-auto py-8">
-        <div className="bg-card rounded-xl shadow-2xl border border-border w-full max-w-4xl mx-4 relative">
+      <div className="fixed inset-0 z-[60] bg-background/80 backdrop-blur-sm flex items-center justify-center" onClick={() => setIsFullscreen(false)}>
+        <div className="bg-card rounded-xl shadow-2xl border border-border w-full max-w-2xl mx-4 max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
           {/* Header */}
-          <div className="p-4 border-b border-border flex items-center justify-between sticky top-0 bg-card rounded-t-xl z-10">
-            <div className="flex items-center gap-3">
-              <Button variant="ghost" size="icon" onClick={() => setIsFullscreen(false)} title="Voltar">
-                <ArrowLeft className="h-4 w-4" />
-              </Button>
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-full bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center">
-                  {contact?.avatar_url ? (
-                    <img src={contact.avatar_url} alt={contact?.name || ''} className="h-10 w-10 rounded-full object-cover" />
-                  ) : (
-                    <span className="text-sm font-bold text-primary">{getInitials()}</span>
-                  )}
-                </div>
-                <div>
-                  <h2 data-sensitive className="font-semibold text-foreground text-lg">{contact?.name || 'Sem nome'}</h2>
-                  <p data-sensitive className="text-sm text-muted-foreground">{contact?.phone ? formatPhone(contact.phone) : ''}</p>
-                </div>
+          <div className="p-5 border-b border-border flex items-center gap-4">
+            <Button variant="ghost" size="icon" className="shrink-0" onClick={() => setIsFullscreen(false)}>
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+            <div className="h-12 w-12 rounded-full bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center shrink-0">
+              {contact?.avatar_url ? (
+                <img src={contact.avatar_url} alt={contact?.name || ''} className="h-12 w-12 rounded-full object-cover" />
+              ) : (
+                <span className="text-lg font-bold text-primary">{getInitials()}</span>
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <h2 data-sensitive className="font-semibold text-foreground text-lg truncate">{contact?.name || 'Sem nome'}</h2>
+              <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                <span data-sensitive>{contact?.phone ? formatPhone(contact.phone) : ''}</span>
+                {contact?.email && <span data-sensitive>• {contact.email}</span>}
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <Badge variant="secondary">
-                {conversation.status === 'open' && 'Aberto'}
-                {conversation.status === 'resolved' && 'Resolvido'}
-                {conversation.status === 'archived' && 'Arquivado'}
-              </Badge>
-              <Button variant="ghost" size="icon" onClick={() => { setIsFullscreen(false); onClose(); }}>
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
+            <Badge variant="secondary" className="shrink-0">
+              {conversation.status === 'open' ? 'Aberto' : conversation.status === 'resolved' ? 'Resolvido' : 'Arquivado'}
+            </Badge>
+            <Button variant="ghost" size="icon" className="shrink-0" onClick={() => { setIsFullscreen(false); onClose(); }}>
+              <X className="h-4 w-4" />
+            </Button>
           </div>
 
-          {/* Two-column body */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-6">
-            {/* Left column */}
-            <div className="space-y-6">
-              {/* Observação */}
-              <div className="space-y-2">
-                <Label className="text-xs text-muted-foreground uppercase tracking-wider">Observação</Label>
-                <div className="flex items-start gap-2">
-                  {isEditingNote ? (
-                    <>
-                      <Input
-                        value={editedNote}
-                        onChange={(e) => setEditedNote(e.target.value)}
-                        placeholder="Ex: Cliente VIP, ligar às 14h..."
-                        className="text-sm flex-1"
-                        autoFocus
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') handleSaveNote();
-                          else if (e.key === 'Escape') {
-                            setIsEditingNote(false);
-                            setEditedNote((contact?.metadata as { note?: string } | null)?.note || '');
-                          }
-                        }}
-                      />
-                      <Button size="icon" className="h-9 w-9 shrink-0" onClick={handleSaveNote} disabled={isSavingNote}>
-                        {isSavingNote ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                      </Button>
-                    </>
+          {/* Tab Navigation */}
+          <div className="border-b border-border px-5 flex gap-1">
+            {([
+              { key: 'info' as const, label: 'Dados' },
+              { key: 'timeline' as const, label: 'Timeline' },
+              { key: 'notes' as const, label: 'Notas' },
+              { key: 'files' as const, label: 'Arquivos' },
+            ]).map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setFullscreenTab(tab.key)}
+                className={cn(
+                  "px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px",
+                  fullscreenTab === tab.key
+                    ? "border-primary text-primary"
+                    : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"
+                )}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Tab Content */}
+          <div className="flex-1 overflow-y-auto p-5">
+            {fullscreenTab === 'info' && (
+              <div className="space-y-5">
+                {/* Observação */}
+                <div className="space-y-2">
+                  <Label className="text-xs text-muted-foreground uppercase tracking-wider">Observação</Label>
+                  <div className="flex items-start gap-2">
+                    {isEditingNote ? (
+                      <>
+                        <Input value={editedNote} onChange={(e) => setEditedNote(e.target.value)} placeholder="Ex: Cliente VIP, ligar às 14h..." className="text-sm flex-1" autoFocus onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNote(); else if (e.key === 'Escape') { setIsEditingNote(false); setEditedNote((contact?.metadata as { note?: string } | null)?.note || ''); } }} />
+                        <Button size="icon" className="h-9 w-9 shrink-0" onClick={handleSaveNote} disabled={isSavingNote}>
+                          {isSavingNote ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                        </Button>
+                      </>
+                    ) : (
+                      <button onClick={() => setIsEditingNote(true)} className="w-full text-left p-2.5 rounded-lg bg-muted/50 hover:bg-muted transition-colors group flex items-center gap-2">
+                        {editedNote ? <span className="text-sm text-amber-600 dark:text-amber-400 flex-1">{editedNote}</span> : <span className="text-sm text-muted-foreground flex-1">Adicionar observação...</span>}
+                        <Pencil className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <Separator />
+
+                {/* Attributes */}
+                <ConversationAttributesPanel conversation={conversation} compact />
+
+                <Separator />
+
+                {/* Tags */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs text-muted-foreground uppercase tracking-wider">Tags</Label>
+                    <Popover open={isAddingTag} onOpenChange={(open) => { setIsAddingTag(open); if (!open) { setIsCreatingTag(false); setNewTagName(''); } }}>
+                      <PopoverTrigger asChild>
+                        <Button variant="ghost" size="sm" className="h-6 px-2"><Plus className="h-3 w-3 mr-1" /> Adicionar</Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-64 p-0" align="end">
+                        <div className="p-3 space-y-3">
+                          {isCreatingTag ? (
+                            <>
+                              <p className="text-xs font-medium text-foreground">Nova Tag</p>
+                              <Input placeholder="Nome da tag" value={newTagName} onChange={(e) => setNewTagName(e.target.value)} autoFocus />
+                              <div className="flex flex-wrap gap-1.5">
+                                {PRESET_COLORS.map((color) => (
+                                  <button key={color} type="button" className="h-6 w-6 rounded-full flex items-center justify-center transition-transform hover:scale-110" style={{ backgroundColor: color }} onClick={() => setNewTagColor(color)}>
+                                    {newTagColor === color && <Check className="h-3 w-3 text-white" />}
+                                  </button>
+                                ))}
+                              </div>
+                              <div className="flex gap-2">
+                                <Button size="sm" variant="ghost" className="flex-1" onClick={() => { setIsCreatingTag(false); setNewTagName(''); }}>Cancelar</Button>
+                                <Button size="sm" className="flex-1" onClick={handleCreateTag} disabled={!newTagName.trim() || createTag.isPending}>{createTag.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Criar'}</Button>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              <p className="text-xs text-muted-foreground">Selecione uma tag</p>
+                              {availableTags.length === 0 && !tags?.length ? (
+                                <div className="text-center py-2"><p className="text-xs text-muted-foreground mb-2">Nenhuma tag criada</p><Button size="sm" variant="outline" className="w-full" onClick={() => setIsCreatingTag(true)}><Plus className="h-3 w-3 mr-1" /> Criar primeira tag</Button></div>
+                              ) : availableTags.length === 0 ? (
+                                <div className="text-center py-2"><p className="text-xs text-muted-foreground mb-2">Todas as tags já foram atribuídas</p><Button size="sm" variant="outline" className="w-full" onClick={() => setIsCreatingTag(true)}><Plus className="h-3 w-3 mr-1" /> Criar nova tag</Button></div>
+                              ) : (
+                                <>
+                                  <div className="space-y-1 max-h-40 overflow-y-auto">
+                                    {availableTags.map((tag) => (
+                                      <button key={tag.id} className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted transition-colors text-left" onClick={() => handleAddTag(tag)} disabled={addTagToContact.isPending}>
+                                        <div className="h-3 w-3 rounded-full flex-shrink-0" style={{ backgroundColor: tag.color }} />
+                                        <span className="text-sm truncate">{tag.name}</span>
+                                      </button>
+                                    ))}
+                                  </div>
+                                  <Separator />
+                                  <Button size="sm" variant="ghost" className="w-full" onClick={() => setIsCreatingTag(true)}><Plus className="h-3 w-3 mr-1" /> Criar nova tag</Button>
+                                </>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                  {loadingContactTags ? (
+                    <div className="flex justify-center py-2"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
+                  ) : contactTags && contactTags.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {contactTags.map((ct) => (
+                        <Badge key={ct.id} style={{ backgroundColor: `${ct.tag.color}20`, color: ct.tag.color, borderColor: `${ct.tag.color}40` }} className="border group pr-1">
+                          {ct.tag.name}
+                          <button className="ml-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => handleRemoveTag(ct.tag_id)}><X className="h-3 w-3" /></button>
+                        </Badge>
+                      ))}
+                    </div>
                   ) : (
-                    <button onClick={() => setIsEditingNote(true)} className="w-full text-left p-2 rounded-lg bg-muted/50 hover:bg-muted transition-colors group flex items-center gap-2">
-                      {editedNote ? (
-                        <span className="text-sm text-amber-600 dark:text-amber-400 flex-1">{editedNote}</span>
-                      ) : (
-                        <span className="text-sm text-muted-foreground flex-1">Adicionar observação...</span>
-                      )}
-                      <Pencil className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
-                    </button>
+                    <p className="text-xs text-muted-foreground">Nenhuma tag atribuída</p>
                   )}
                 </div>
-              </div>
 
-              {/* Attributes */}
-              <ConversationAttributesPanel conversation={conversation} compact />
+                <Separator />
 
-              {/* Tags */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs text-muted-foreground uppercase tracking-wider">Tags</Label>
-                  <Popover open={isAddingTag} onOpenChange={(open) => { setIsAddingTag(open); if (!open) { setIsCreatingTag(false); setNewTagName(''); } }}>
-                    <PopoverTrigger asChild>
-                      <Button variant="ghost" size="sm" className="h-6 px-2">
-                        <Plus className="h-3 w-3 mr-1" /> Adicionar
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-64 p-0" align="end">
-                      <div className="p-3 space-y-3">
-                        {isCreatingTag ? (
-                          <>
-                            <p className="text-xs font-medium text-foreground">Nova Tag</p>
-                            <Input placeholder="Nome da tag" value={newTagName} onChange={(e) => setNewTagName(e.target.value)} autoFocus />
-                            <div className="flex flex-wrap gap-1.5">
-                              {PRESET_COLORS.map((color) => (
-                                <button key={color} type="button" className="h-6 w-6 rounded-full flex items-center justify-center transition-transform hover:scale-110" style={{ backgroundColor: color }} onClick={() => setNewTagColor(color)}>
-                                  {newTagColor === color && <Check className="h-3 w-3 text-white" />}
-                                </button>
-                              ))}
-                            </div>
-                            <div className="flex gap-2">
-                              <Button size="sm" variant="ghost" className="flex-1" onClick={() => { setIsCreatingTag(false); setNewTagName(''); }}>Cancelar</Button>
-                              <Button size="sm" className="flex-1" onClick={handleCreateTag} disabled={!newTagName.trim() || createTag.isPending}>
-                                {createTag.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Criar'}
-                              </Button>
-                            </div>
-                          </>
-                        ) : (
-                          <>
-                            <p className="text-xs text-muted-foreground">Selecione uma tag</p>
-                            {availableTags.length === 0 && !tags?.length ? (
-                              <div className="text-center py-2">
-                                <p className="text-xs text-muted-foreground mb-2">Nenhuma tag criada</p>
-                                <Button size="sm" variant="outline" className="w-full" onClick={() => setIsCreatingTag(true)}>
-                                  <Plus className="h-3 w-3 mr-1" /> Criar primeira tag
-                                </Button>
-                              </div>
-                            ) : availableTags.length === 0 ? (
-                              <div className="text-center py-2">
-                                <p className="text-xs text-muted-foreground mb-2">Todas as tags já foram atribuídas</p>
-                                <Button size="sm" variant="outline" className="w-full" onClick={() => setIsCreatingTag(true)}>
-                                  <Plus className="h-3 w-3 mr-1" /> Criar nova tag
-                                </Button>
-                              </div>
-                            ) : (
-                              <>
-                                <div className="space-y-1 max-h-40 overflow-y-auto">
-                                  {availableTags.map((tag) => (
-                                    <button key={tag.id} className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted transition-colors text-left" onClick={() => handleAddTag(tag)} disabled={addTagToContact.isPending}>
-                                      <div className="h-3 w-3 rounded-full flex-shrink-0" style={{ backgroundColor: tag.color }} />
-                                      <span className="text-sm truncate">{tag.name}</span>
-                                    </button>
-                                  ))}
-                                </div>
-                                <Separator />
-                                <Button size="sm" variant="ghost" className="w-full" onClick={() => setIsCreatingTag(true)}>
-                                  <Plus className="h-3 w-3 mr-1" /> Criar nova tag
-                                </Button>
-                              </>
-                            )}
-                          </>
-                        )}
+                {/* Contact Info */}
+                <div className="space-y-2">
+                  <Label className="text-xs text-muted-foreground uppercase tracking-wider">Informações</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/50">
+                      <Phone className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <span data-sensitive className="text-sm text-foreground truncate">{contact?.phone ? formatPhone(contact.phone) : 'Sem telefone'}</span>
+                    </div>
+                    <div className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/50">
+                      <Calendar className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <span className="text-sm text-foreground">Desde {format(new Date(contact?.created_at || conversation.created_at), "dd/MM/yyyy", { locale: ptBR })}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Stats */}
+                {conversationStats && (
+                  <>
+                    <Separator />
+                    <div className="grid grid-cols-4 gap-2">
+                      <div className="p-3 bg-muted/50 rounded-lg text-center">
+                        <p className="text-xl font-semibold text-foreground">{conversationStats.totalMessages}</p>
+                        <p className="text-[10px] text-muted-foreground">Total</p>
                       </div>
-                    </PopoverContent>
-                  </Popover>
-                </div>
-                {loadingContactTags ? (
-                  <div className="flex justify-center py-2"><Loader2 className="h-4 w-4 animate-spin text-muted-foreground" /></div>
-                ) : contactTags && contactTags.length > 0 ? (
-                  <div className="flex flex-wrap gap-2">
-                    {contactTags.map((ct) => (
-                      <Badge key={ct.id} style={{ backgroundColor: `${ct.tag.color}20`, color: ct.tag.color, borderColor: `${ct.tag.color}40` }} className="border group pr-1">
-                        {ct.tag.name}
-                        <button className="ml-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => handleRemoveTag(ct.tag_id)}>
-                          <X className="h-3 w-3" />
-                        </button>
-                      </Badge>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-xs text-muted-foreground">Nenhuma tag atribuída</p>
+                      <div className="p-3 bg-muted/50 rounded-lg text-center">
+                        <p className="text-xl font-semibold text-foreground">{conversationStats.inbound}</p>
+                        <p className="text-[10px] text-muted-foreground">Recebidas</p>
+                      </div>
+                      <div className="p-3 bg-muted/50 rounded-lg text-center">
+                        <p className="text-xl font-semibold text-foreground">{conversationStats.outbound}</p>
+                        <p className="text-[10px] text-muted-foreground">Enviadas</p>
+                      </div>
+                      <div className="p-3 bg-muted/50 rounded-lg text-center">
+                        <p className="text-xl font-semibold text-foreground">{conversationStats.aiMessages}</p>
+                        <p className="text-[10px] text-muted-foreground">IA</p>
+                      </div>
+                    </div>
+                  </>
                 )}
               </div>
+            )}
 
-              {/* Contact Info */}
-              <div className="space-y-2">
-                <Label className="text-xs text-muted-foreground uppercase tracking-wider">Informações</Label>
-                <div className="flex items-center gap-3 p-2 rounded-lg bg-muted/50">
-                  <Phone className="h-4 w-4 text-muted-foreground shrink-0" />
-                  <span data-sensitive className="text-sm text-foreground truncate">{contact?.phone ? formatPhone(contact.phone) : 'Sem telefone'}</span>
-                </div>
-                {contact?.email && (
-                  <div className="flex items-center gap-3 p-2 rounded-lg bg-muted/50">
-                    <Mail className="h-4 w-4 text-muted-foreground shrink-0" />
-                    <span data-sensitive className="text-sm text-foreground truncate">{contact.email}</span>
-                  </div>
-                )}
-                <div className="flex items-center gap-3 p-2 rounded-lg bg-muted/50">
-                  <Calendar className="h-4 w-4 text-muted-foreground shrink-0" />
-                  <span className="text-sm text-foreground">Desde {format(new Date(contact?.created_at || conversation.created_at), "dd/MM/yyyy", { locale: ptBR })}</span>
-                </div>
-              </div>
+            {fullscreenTab === 'timeline' && contact?.id && (
+              <ContactLogsSection conversationId={conversation.id} />
+            )}
 
-              {/* Stats */}
-              {conversationStats && (
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="p-3 bg-muted/50 rounded-lg text-center">
-                    <p className="text-xl font-semibold text-foreground">{conversationStats.totalMessages}</p>
-                    <p className="text-xs text-muted-foreground">Mensagens</p>
-                  </div>
-                  <div className="p-3 bg-muted/50 rounded-lg text-center">
-                    <p className="text-xl font-semibold text-foreground">{conversationStats.aiMessages}</p>
-                    <p className="text-xs text-muted-foreground">IA</p>
-                  </div>
-                </div>
-              )}
-            </div>
+            {fullscreenTab === 'notes' && contact?.id && (
+              <ContactNotesSection contactId={contact.id} />
+            )}
 
-            {/* Right column */}
-            <div className="space-y-6">
-              {/* Timeline */}
-              {contact?.id && (
-                <div className="space-y-2">
-                  <Label className="text-xs text-muted-foreground uppercase tracking-wider">Timeline</Label>
-                  <div className="bg-muted/30 rounded-lg p-3 max-h-[300px] overflow-y-auto">
-                    <ContactLogsSection conversationId={conversation.id} />
-                  </div>
-                </div>
-              )}
-
-              {/* Notes */}
-              {contact?.id && (
-                <div className="space-y-2">
-                  <Label className="text-xs text-muted-foreground uppercase tracking-wider">Notas</Label>
-                  <div className="bg-muted/30 rounded-lg p-3 max-h-[250px] overflow-y-auto">
-                    <ContactNotesSection contactId={contact.id} />
-                  </div>
-                </div>
-              )}
-
-              {/* Files */}
-              {contact?.id && (
-                <div className="space-y-2">
-                  <Label className="text-xs text-muted-foreground uppercase tracking-wider">Arquivos</Label>
-                  <div className="bg-muted/30 rounded-lg p-3 max-h-[250px] overflow-y-auto">
-                    <ContactFilesSection contactId={contact.id} />
-                  </div>
-                </div>
-              )}
-            </div>
+            {fullscreenTab === 'files' && contact?.id && (
+              <ContactFilesSection contactId={contact.id} />
+            )}
           </div>
         </div>
 
