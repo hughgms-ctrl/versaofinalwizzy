@@ -467,6 +467,65 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
             {fullscreenTab === 'files' && contact?.id && (
               <ContactFilesSection contactId={contact.id} />
             )}
+
+            {fullscreenTab === 'scheduled' && (
+              <div className="space-y-3">
+                {contactScheduledMessages && contactScheduledMessages.length > 0 ? (
+                  contactScheduledMessages.map((msg: any) => (
+                    <div key={msg.id} className="p-3 rounded-lg border border-border bg-muted/30 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <Badge variant={msg.status === 'pending' ? 'default' : msg.status === 'sent' ? 'secondary' : 'destructive'}>
+                          {msg.status === 'pending' ? 'Pendente' : msg.status === 'sent' ? 'Enviado' : msg.status === 'cancelled' ? 'Cancelado' : msg.status}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">
+                          {format(new Date(msg.scheduled_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}
+                        </span>
+                      </div>
+                      {msg.message_content && (
+                        <p className="text-sm text-foreground line-clamp-2">{msg.message_content}</p>
+                      )}
+                      {msg.name && (
+                        <p className="text-xs text-muted-foreground">{msg.name}</p>
+                      )}
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-8">
+                    <Clock className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                    <p className="text-sm text-muted-foreground">Nenhum agendamento para este contato</p>
+                    <Button variant="outline" size="sm" className="mt-3" onClick={() => setIsScheduleOpen(true)}>
+                      <Plus className="h-4 w-4 mr-1" /> Agendar mensagem
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {fullscreenTab === 'favorites' && (
+              <div className="space-y-3">
+                {favoritedMessages && favoritedMessages.length > 0 ? (
+                  favoritedMessages.map((msg: any) => (
+                    <div key={msg.id} className="p-3 rounded-lg border border-border bg-muted/30 space-y-1">
+                      <div className="flex items-center justify-between">
+                        <Badge variant={msg.direction === 'inbound' ? 'outline' : 'secondary'}>
+                          {msg.direction === 'inbound' ? 'Recebida' : 'Enviada'}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">
+                          {format(new Date(msg.created_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}
+                        </span>
+                      </div>
+                      <p className="text-sm text-foreground line-clamp-3">{msg.content}</p>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-8">
+                    <MessageCircle className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                    <p className="text-sm text-muted-foreground">Nenhuma mensagem favoritada</p>
+                    <p className="text-xs text-muted-foreground mt-1">Marque mensagens com ⭐ no chat para vê-las aqui</p>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
