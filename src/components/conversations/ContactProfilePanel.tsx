@@ -234,7 +234,7 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
         .eq('contact_id', contact.id)
         .order('scheduled_at', { ascending: true });
       if (error) throw error;
-      return data || [];
+      return (data || []) as any[];
     },
     enabled: !!contact?.id && isFullscreen,
   });
@@ -250,7 +250,7 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
         .eq('is_starred', true)
         .order('created_at', { ascending: false });
       if (error) throw error;
-      return data || [];
+      return (data || []) as any[];
     },
     enabled: isFullscreen,
   });
