@@ -162,8 +162,8 @@ Deno.serve(async (req) => {
         .select('zapi_message_id')
         .eq('id', quotedMessageId)
         .maybeSingle();
-      zapiQuotedMsgId = quotedMsg?.zapi_message_id || null;
-      console.log(`Quoted message lookup: id=${quotedMessageId}, zapi_id=${zapiQuotedMsgId}`);
+      zapiQuotedMsgId = normalizeReplyMessageId(quotedMsg?.zapi_message_id);
+      console.log(`Quoted message lookup: id=${quotedMessageId}, raw_zapi_id=${quotedMsg?.zapi_message_id || null}, reply_id=${zapiQuotedMsgId}`);
     }
 
     let endpoint: string;
