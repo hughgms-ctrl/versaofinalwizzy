@@ -160,23 +160,23 @@ Deno.serve(async (req) => {
       case 'text':
         endpoint = uazapiUrl(uazapiBaseUrl, '/send/text');
         body = { number: normalizedPhone, text: content };
-        if (zapiQuotedMsgId) body.reply = zapiQuotedMsgId;
+        if (zapiQuotedMsgId) body.replyid = zapiQuotedMsgId;
         break;
       case 'image':
         endpoint = uazapiUrl(uazapiBaseUrl, '/send/media');
         body = { number: normalizedPhone, file: mediaUrl, type: 'image' };
         if (content) body.caption = content;
-        if (zapiQuotedMsgId) body.reply = zapiQuotedMsgId;
+        if (zapiQuotedMsgId) body.replyid = zapiQuotedMsgId;
         break;
       case 'audio':
         endpoint = uazapiUrl(uazapiBaseUrl, '/send/media');
         body = { number: normalizedPhone, file: mediaUrl, type: 'audio' };
-        if (zapiQuotedMsgId) body.reply = zapiQuotedMsgId;
+        if (zapiQuotedMsgId) body.replyid = zapiQuotedMsgId;
         break;
       case 'document':
         endpoint = uazapiUrl(uazapiBaseUrl, '/send/media');
         body = { number: normalizedPhone, file: mediaUrl, caption: content, type: 'document' };
-        if (zapiQuotedMsgId) body.reply = zapiQuotedMsgId;
+        if (zapiQuotedMsgId) body.replyid = zapiQuotedMsgId;
         break;
       default:
         return new Response(JSON.stringify({ error: 'Invalid message type' }), {

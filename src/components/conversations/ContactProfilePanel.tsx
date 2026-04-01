@@ -260,7 +260,7 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
   if (isFullscreen) {
     return (
       <div className="fixed inset-0 z-[60] bg-background/80 backdrop-blur-sm flex items-center justify-center" onClick={() => setIsFullscreen(false)}>
-        <div className="bg-card rounded-xl shadow-2xl border border-border w-full max-w-2xl mx-4 max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="bg-card rounded-xl shadow-2xl border border-border w-full max-w-2xl mx-4 h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
           {/* Header */}
           <div className="p-5 border-b border-border flex items-center gap-4">
             <Button variant="ghost" size="icon" className="shrink-0" onClick={() => setIsFullscreen(false)}>
