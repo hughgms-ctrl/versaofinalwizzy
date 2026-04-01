@@ -21,6 +21,19 @@ function uazapiUrl(baseUrl: string, path: string): string {
   return `${base}${path}`;
 }
 
+function normalizeReplyMessageId(messageId: string | null | undefined): string | null {
+  if (!messageId) return null;
+  const trimmed = messageId.trim();
+  if (!trimmed) return null;
+
+  const parts = trimmed.split(':');
+  if (parts.length > 1) {
+    return parts[parts.length - 1] || trimmed;
+  }
+
+  return trimmed;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -149,8 +162,8 @@ Deno.serve(async (req) => {
         .select('zapi_message_id')
         .eq('id', quotedMessageId)
         .maybeSingle();
-      zapiQuotedMsgId = quotedMsg?.zapi_message_id || null;
-      console.log(`Quoted message lookup: id=${quotedMessageId}, zapi_id=${zapiQuotedMsgId}`);
+      zapiQuotedMsgId = normalizeReplyMessageId(quotedMsg?.zapi_message_id);
+      console.log(`Quoted message lookup: id=${quotedMessageId}, raw_zapi_id=${quotedMsg?.zapi_message_id || null}, reply_id=${zapiQuotedMsgId}`);
     }
 
     let endpoint: string;
