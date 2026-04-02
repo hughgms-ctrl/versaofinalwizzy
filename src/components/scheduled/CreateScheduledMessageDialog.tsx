@@ -142,6 +142,7 @@ export function CreateScheduledMessageDialog({
     setRecurrenceEndDate('');
     setName('');
     setContactSearch('');
+    setDelayBetweenContacts(10);
   };
 
   // Set defaultContactId when dialog opens
