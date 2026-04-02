@@ -146,7 +146,7 @@ export function CreateScheduledMessageDialog({
   };
 
   // Always sync contactId with defaultContactId when dialog opens or prop changes
-  React.useEffect(() => {
+  useEffect(() => {
     if (open && defaultContactId) {
       setContactId(defaultContactId);
       setTargetType('single');
