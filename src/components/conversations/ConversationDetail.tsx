@@ -118,8 +118,21 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
           setShowHistoryLimitMessage(true);
         }
       });
+
+      // Auto-fetch contact profile picture from UAZAPI
+      const contactId = conversation.contact?.id;
+      if (contactId && session?.access_token) {
+        supabase.functions.invoke('zapi-contact-profile', {
+          body: { contactId, instanceId: (conversation as any).whatsapp_instance_id },
+          headers: { Authorization: `Bearer ${session.access_token}` }
+        }).then(({ data }) => {
+          if (data?.avatarUrl && data.avatarUrl !== conversation.contact?.avatar_url) {
+            queryClient.invalidateQueries({ queryKey: ['conversations'] });
+          }
+        }).catch(() => { /* silent */ });
+      }
     }
-  }, [conversation.id, syncMessages, resetPagination]);
+  }, [conversation.id, syncMessages, resetPagination, session?.access_token, queryClient]);
 
   const getDisplayName = () => {
     if (conversation.contact?.name) return conversation.contact.name;
