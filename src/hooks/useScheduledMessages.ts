@@ -106,7 +106,7 @@ export function useCreateScheduledMessage() {
 
       if (!profile) throw new Error('Perfil não encontrado');
 
-      const { contact_ids, workspace_id, ...messageData } = input;
+      const { contact_ids, workspace_id, delay_between_contacts, ...messageData } = input;
 
       // Create scheduled message
       const { data: scheduled, error } = await supabase
@@ -117,7 +117,8 @@ export function useCreateScheduledMessage() {
           created_by: session!.user.id,
           next_execution_at: input.scheduled_at,
           workspace_id: workspace_id || null,
-        })
+          delay_between_contacts: delay_between_contacts || null,
+        } as any)
         .select()
         .single();
 
