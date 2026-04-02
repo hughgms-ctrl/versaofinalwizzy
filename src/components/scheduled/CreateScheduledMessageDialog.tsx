@@ -74,6 +74,7 @@ export function CreateScheduledMessageDialog({
   const [recurrenceEndDate, setRecurrenceEndDate] = useState('');
   const [name, setName] = useState('');
   const [contactSearch, setContactSearch] = useState('');
+  const [delayBetweenContacts, setDelayBetweenContacts] = useState<number>(10);
 
   // Get unique contacts from conversations
   const contacts = useMemo(() => {
