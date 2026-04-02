@@ -561,6 +561,13 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
                           Abrir
                         </a>
                       </DropdownMenuItem>
+
+                      {file.file_type === 'image' && (
+                        <DropdownMenuItem onClick={() => handleSaveAsPdf(file)}>
+                          <FileDown className="h-3.5 w-3.5 mr-2" />
+                          Salvar como PDF
+                        </DropdownMenuItem>
+                      )}
                       
                       {folders && folders.length > 0 && (
                         <DropdownMenuSub>
