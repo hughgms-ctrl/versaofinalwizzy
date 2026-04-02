@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Archive, Loader2, FolderPlus, Folder, Check } from 'lucide-react';
+import { Paperclip, Loader2, FolderPlus, Folder, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -98,7 +98,7 @@ export function ArchiveMediaButton({
     return (
       <div className="flex items-center gap-1 text-[10px] opacity-60">
         <Check className="h-3 w-3" />
-        <span>Arquivado</span>
+        <span>Salvo</span>
       </div>
     );
   }
@@ -117,8 +117,8 @@ export function ArchiveMediaButton({
               <Loader2 className="h-3 w-3 animate-spin" />
             ) : (
               <>
-                <Archive className="h-3 w-3 mr-1" />
-                Arquivar
+                <Paperclip className="h-3 w-3 mr-1" />
+                Salvar
               </>
             )}
           </Button>
@@ -158,7 +158,7 @@ export function ArchiveMediaButton({
           <DialogHeader>
             <DialogTitle>Nova pasta</DialogTitle>
             <DialogDescription>
-              Crie uma pasta e arquive o arquivo nela.
+              Crie uma pasta e salve o arquivo nela.
             </DialogDescription>
           </DialogHeader>
           <Input
@@ -187,7 +187,7 @@ export function ArchiveMediaButton({
               {(createFolder.isPending || addFile.isPending) ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
-                'Criar e arquivar'
+                'Criar e salvar'
               )}
             </Button>
           </DialogFooter>

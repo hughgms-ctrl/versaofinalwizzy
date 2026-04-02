@@ -15,10 +15,12 @@ import {
   Upload,
   ChevronDown,
   ChevronUp,
+  ChevronRight,
   MoreVertical,
   ArrowRight,
   ExternalLink,
-  Archive
+  Paperclip,
+  FileDown
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -94,6 +96,7 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
   const deleteFile = useDeleteContactFile();
 
   const [isExpanded, setIsExpanded] = useState(true);
+  const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
@@ -203,6 +206,71 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
     });
   };
 
+  const handleSaveAsPdf = async (file: ContactFile) => {
+    try {
+      const img = new window.Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        ctx.drawImage(img, 0, 0);
+
+        // Create PDF with image dimensions
+        const pdfWidth = img.naturalWidth;
+        const pdfHeight = img.naturalHeight;
+        const A4_W = 595.28;
+        const A4_H = 841.89;
+        const scale = Math.min(A4_W / pdfWidth, A4_H / pdfHeight, 1);
+        const scaledW = pdfWidth * scale;
+        const scaledH = pdfHeight * scale;
+
+        // Simple PDF generation
+        const imgData = canvas.toDataURL('image/jpeg', 0.95);
+        
+        // Use a simple approach: open in new tab for print/save as PDF
+        const printWindow = window.open('', '_blank');
+        if (printWindow) {
+          printWindow.document.write(`
+            <!DOCTYPE html>
+            <html>
+            <head><title>${file.name}</title>
+            <style>
+              @page { size: auto; margin: 10mm; }
+              body { margin: 0; display: flex; justify-content: center; align-items: flex-start; }
+              img { max-width: 100%; height: auto; }
+            </style>
+            </head>
+            <body>
+              <img src="${imgData}" />
+              <script>
+                setTimeout(function() { window.print(); }, 500);
+              </script>
+            </body>
+            </html>
+          `);
+          printWindow.document.close();
+        }
+      };
+      img.onerror = () => {
+        toast({
+          title: 'Erro',
+          description: 'Não foi possível carregar a imagem para gerar o PDF.',
+          variant: 'destructive',
+        });
+      };
+      img.src = file.file_url;
+    } catch (error) {
+      toast({
+        title: 'Erro',
+        description: 'Erro ao gerar PDF.',
+        variant: 'destructive',
+      });
+    }
+  };
+
   const formatFileSize = (bytes: number | null) => {
     if (!bytes) return '';
     if (bytes < 1024) return `${bytes} B`;
@@ -219,8 +287,8 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
           className="flex items-center gap-2 text-xs text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors"
           onClick={() => setIsExpanded(!isExpanded)}
         >
-          <Archive className="h-3.5 w-3.5" />
-          <span>Arquivos</span>
+          <Paperclip className="h-3.5 w-3.5" />
+          <span>Mídias e Docs</span>
           {totalFiles > 0 && (
             <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded-full">
               {totalFiles}
@@ -334,35 +402,110 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
               {folders.map((folder) => {
                 const folderFileCount = files?.filter(f => f.folder_id === folder.id).length || 0;
                 const isSelected = selectedFolderId === folder.id;
+                const isFolderExpanded = expandedFolders[folder.id] ?? false;
+                const folderFiles = files?.filter(f => f.folder_id === folder.id) || [];
                 
                 return (
-                  <div key={folder.id} className="flex items-center gap-1">
-                    <button
-                      className={`flex-1 flex items-center gap-2 px-2 py-1.5 rounded-md text-left text-sm transition-colors ${
-                        isSelected 
-                          ? 'bg-primary/10 text-primary' 
-                          : 'hover:bg-muted'
-                      }`}
-                      onClick={() => setSelectedFolderId(isSelected ? null : folder.id)}
-                    >
-                      {isSelected ? (
-                        <FolderOpen className="h-4 w-4" />
-                      ) : (
-                        <Folder className="h-4 w-4" />
-                      )}
-                      <span className="truncate">{folder.name}</span>
-                      <span className="text-[10px] text-muted-foreground ml-auto">
-                        {folderFileCount}
-                      </span>
-                    </button>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-6 w-6 opacity-0 group-hover:opacity-100"
-                      onClick={() => setDeleteFolderId(folder.id)}
-                    >
-                      <Trash2 className="h-3 w-3 text-destructive" />
-                    </Button>
+                  <div key={folder.id} className="space-y-0.5">
+                    <div className="flex items-center gap-1 group">
+                      <button
+                        className={`flex-1 flex items-center gap-2 px-2 py-1.5 rounded-md text-left text-sm transition-colors ${
+                          isSelected 
+                            ? 'bg-primary/10 text-primary' 
+                            : 'hover:bg-muted'
+                        }`}
+                        onClick={() => {
+                          setSelectedFolderId(isSelected ? null : folder.id);
+                          setExpandedFolders(prev => ({ ...prev, [folder.id]: !isFolderExpanded }));
+                        }}
+                      >
+                        {isFolderExpanded ? (
+                          <ChevronDown className="h-3 w-3 flex-shrink-0" />
+                        ) : (
+                          <ChevronRight className="h-3 w-3 flex-shrink-0" />
+                        )}
+                        {isFolderExpanded ? (
+                          <FolderOpen className="h-4 w-4 flex-shrink-0" />
+                        ) : (
+                          <Folder className="h-4 w-4 flex-shrink-0" />
+                        )}
+                        <span className="truncate">{folder.name}</span>
+                        <span className="text-[10px] text-muted-foreground ml-auto">
+                          {folderFileCount}
+                        </span>
+                      </button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-6 w-6 opacity-0 group-hover:opacity-100"
+                        onClick={() => setDeleteFolderId(folder.id)}
+                      >
+                        <Trash2 className="h-3 w-3 text-destructive" />
+                      </Button>
+                    </div>
+                    
+                    {/* Inline folder files when expanded */}
+                    {isFolderExpanded && folderFiles.length > 0 && (
+                      <div className="ml-6 space-y-1">
+                        {folderFiles.map((file) => (
+                          <div 
+                            key={file.id} 
+                            className="flex items-center gap-2 p-1.5 rounded-md bg-muted/30 border border-border/50 group"
+                          >
+                            {file.file_type === 'image' ? (
+                              <img 
+                                src={file.file_url} 
+                                alt={file.name}
+                                className="h-7 w-7 rounded object-cover flex-shrink-0"
+                              />
+                            ) : (
+                              <div className="h-7 w-7 rounded bg-muted flex items-center justify-center flex-shrink-0">
+                                <FileIcon type={file.file_type} />
+                              </div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[11px] font-medium truncate">{file.name}</p>
+                              <p className="text-[10px] text-muted-foreground">
+                                {formatFileSize(file.file_size)}
+                              </p>
+                            </div>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button size="icon" variant="ghost" className="h-5 w-5 opacity-0 group-hover:opacity-100">
+                                  <MoreVertical className="h-3 w-3" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem asChild>
+                                  <a href={file.file_url} target="_blank" rel="noopener noreferrer">
+                                    <ExternalLink className="h-3.5 w-3.5 mr-2" />
+                                    Abrir
+                                  </a>
+                                </DropdownMenuItem>
+                                
+                                {file.file_type === 'image' && (
+                                  <DropdownMenuItem onClick={() => handleSaveAsPdf(file)}>
+                                    <FileDown className="h-3.5 w-3.5 mr-2" />
+                                    Salvar como PDF
+                                  </DropdownMenuItem>
+                                )}
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem 
+                                  className="text-destructive"
+                                  onClick={() => {
+                                    setDeleteFileId(file.id);
+                                    setDeleteFilePath(file.storage_path);
+                                  }}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5 mr-2" />
+                                  Remover
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -418,6 +561,13 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
                           Abrir
                         </a>
                       </DropdownMenuItem>
+
+                      {file.file_type === 'image' && (
+                        <DropdownMenuItem onClick={() => handleSaveAsPdf(file)}>
+                          <FileDown className="h-3.5 w-3.5 mr-2" />
+                          Salvar como PDF
+                        </DropdownMenuItem>
+                      )}
                       
                       {folders && folders.length > 0 && (
                         <DropdownMenuSub>
@@ -469,7 +619,7 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
               <p className="text-xs text-muted-foreground mb-2">
                 {selectedFolderId 
                   ? 'Nenhum arquivo nesta pasta' 
-                  : 'Nenhum arquivo arquivado'}
+                  : 'Nenhuma mídia ou documento salvo'}
               </p>
               <Button
                 size="sm"
