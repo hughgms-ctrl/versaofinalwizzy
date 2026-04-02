@@ -48,6 +48,23 @@ export interface CreateScheduledMessageInput {
   contact_ids?: string[]; // For manual selection
   name?: string | null;
   workspace_id?: string | null;
+  delay_between_contacts?: number | null; // seconds between each contact
+}
+
+export interface UpdateScheduledMessageInput {
+  id: string;
+  scheduled_at?: string;
+  recurrence_type?: 'once' | 'daily' | 'weekly' | 'monthly';
+  recurrence_end_at?: string | null;
+  content_type?: 'message' | 'flow';
+  message_content?: string | null;
+  flow_id?: string | null;
+  target_type?: 'single' | 'tag' | 'manual';
+  contact_id?: string | null;
+  tag_id?: string | null;
+  contact_ids?: string[];
+  name?: string | null;
+  delay_between_contacts?: number | null;
 }
 
 export function useScheduledMessages() {
