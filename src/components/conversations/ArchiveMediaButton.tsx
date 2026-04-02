@@ -98,7 +98,7 @@ export function ArchiveMediaButton({
     return (
       <div className="flex items-center gap-1 text-[10px] opacity-60">
         <Check className="h-3 w-3" />
-        <span>Arquivado</span>
+        <span>Salvo</span>
       </div>
     );
   }
