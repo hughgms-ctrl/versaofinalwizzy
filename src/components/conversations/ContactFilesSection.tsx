@@ -206,6 +206,71 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
     });
   };
 
+  const handleSaveAsPdf = async (file: ContactFile) => {
+    try {
+      const img = new window.Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        ctx.drawImage(img, 0, 0);
+
+        // Create PDF with image dimensions
+        const pdfWidth = img.naturalWidth;
+        const pdfHeight = img.naturalHeight;
+        const A4_W = 595.28;
+        const A4_H = 841.89;
+        const scale = Math.min(A4_W / pdfWidth, A4_H / pdfHeight, 1);
+        const scaledW = pdfWidth * scale;
+        const scaledH = pdfHeight * scale;
+
+        // Simple PDF generation
+        const imgData = canvas.toDataURL('image/jpeg', 0.95);
+        
+        // Use a simple approach: open in new tab for print/save as PDF
+        const printWindow = window.open('', '_blank');
+        if (printWindow) {
+          printWindow.document.write(`
+            <!DOCTYPE html>
+            <html>
+            <head><title>${file.name}</title>
+            <style>
+              @page { size: auto; margin: 10mm; }
+              body { margin: 0; display: flex; justify-content: center; align-items: flex-start; }
+              img { max-width: 100%; height: auto; }
+            </style>
+            </head>
+            <body>
+              <img src="${imgData}" />
+              <script>
+                setTimeout(function() { window.print(); }, 500);
+              </script>
+            </body>
+            </html>
+          `);
+          printWindow.document.close();
+        }
+      };
+      img.onerror = () => {
+        toast({
+          title: 'Erro',
+          description: 'Não foi possível carregar a imagem para gerar o PDF.',
+          variant: 'destructive',
+        });
+      };
+      img.src = file.file_url;
+    } catch (error) {
+      toast({
+        title: 'Erro',
+        description: 'Erro ao gerar PDF.',
+        variant: 'destructive',
+      });
+    }
+  };
+
   const formatFileSize = (bytes: number | null) => {
     if (!bytes) return '';
     if (bytes < 1024) return `${bytes} B`;
