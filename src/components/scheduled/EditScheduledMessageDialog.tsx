@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { 
@@ -86,6 +87,11 @@ export function EditScheduledMessageDialog({
       setRecurrenceType(message.recurrence_type);
       setDelayBetweenContacts((message as any).delay_between_contacts || 10);
 
+      // Load selected contact IDs for manual target type
+      if (message.target_type === 'manual' && (message as any).contact_ids) {
+        setSelectedContactIds((message as any).contact_ids);
+      }
+
       const dt = new Date(message.next_execution_at || message.scheduled_at);
       setScheduledDate(format(dt, 'yyyy-MM-dd'));
       setScheduledTime(format(dt, 'HH:mm'));
@@ -107,6 +113,18 @@ export function EditScheduledMessageDialog({
     });
     return Array.from(contactMap.values());
   }, [conversations]);
+
+  // Fetch the selected contact directly if not in conversations list
+  const [directContact, setDirectContact] = useState<any>(null);
+  useEffect(() => {
+    if (contactId && contacts.length > 0 && !contacts.find((c: any) => c.id === contactId)) {
+      supabase.from('contacts').select('id, name, phone').eq('id', contactId).single().then(({ data }) => {
+        if (data) setDirectContact(data);
+      });
+    } else {
+      setDirectContact(null);
+    }
+  }, [contactId, contacts]);
 
   const filteredContacts = useMemo(() => {
     if (!contactSearch.trim()) return contacts;
@@ -291,6 +309,11 @@ export function EditScheduledMessageDialog({
                     <SelectValue placeholder="Escolha um contato" />
                   </SelectTrigger>
                   <SelectContent>
+                    {directContact && !contacts.find((c: any) => c.id === directContact.id) && (
+                      <SelectItem key={directContact.id} value={directContact.id}>
+                        <span className="font-medium">{directContact.name || directContact.phone}</span>
+                      </SelectItem>
+                    )}
                     {contacts.map((contact: any) => (
                       <SelectItem key={contact.id} value={contact.id}>
                         {contact.name || contact.phone}
