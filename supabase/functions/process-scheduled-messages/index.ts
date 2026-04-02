@@ -88,12 +88,12 @@ Deno.serve(async (req) => {
         // Get WhatsApp instance for this organization
         const { data: instance } = await supabase
           .from('whatsapp_instances')
-          .select('zapi_instance_id, zapi_token')
+          .select('id, zapi_instance_id, zapi_token')
           .eq('organization_id', scheduled.organization_id)
           .eq('status', 'connected')
           .single();
 
-        if (!instance?.zapi_instance_id || !instance?.zapi_token) {
+        if (!instance?.zapi_token) {
           await supabase
             .from('scheduled_messages')
             .update({ 
