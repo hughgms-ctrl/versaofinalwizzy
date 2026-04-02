@@ -437,6 +437,27 @@ export function CreateScheduledMessageDialog({
               </div>
             </div>
 
+            {/* Delay between contacts */}
+            {(targetType === 'tag' || targetType === 'manual') && (
+              <div className="space-y-2">
+                <Label className="flex items-center gap-2">
+                  <Timer className="h-4 w-4" />
+                  Intervalo entre contatos (segundos)
+                </Label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={300}
+                  value={delayBetweenContacts}
+                  onChange={(e) => setDelayBetweenContacts(Number(e.target.value))}
+                  placeholder="10"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Tempo de espera entre o envio para cada contato. Recomendado: 10-30 segundos para evitar bloqueios.
+                </p>
+              </div>
+            )}
+
             {/* Recurrence */}
             <div className="space-y-3">
               <Label className="flex items-center gap-2">
