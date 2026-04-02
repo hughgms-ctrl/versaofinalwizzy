@@ -337,35 +337,109 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
               {folders.map((folder) => {
                 const folderFileCount = files?.filter(f => f.folder_id === folder.id).length || 0;
                 const isSelected = selectedFolderId === folder.id;
+                const isFolderExpanded = expandedFolders[folder.id] ?? false;
+                const folderFiles = files?.filter(f => f.folder_id === folder.id) || [];
                 
                 return (
-                  <div key={folder.id} className="flex items-center gap-1">
-                    <button
-                      className={`flex-1 flex items-center gap-2 px-2 py-1.5 rounded-md text-left text-sm transition-colors ${
-                        isSelected 
-                          ? 'bg-primary/10 text-primary' 
-                          : 'hover:bg-muted'
-                      }`}
-                      onClick={() => setSelectedFolderId(isSelected ? null : folder.id)}
-                    >
-                      {isSelected ? (
-                        <FolderOpen className="h-4 w-4" />
-                      ) : (
-                        <Folder className="h-4 w-4" />
-                      )}
-                      <span className="truncate">{folder.name}</span>
-                      <span className="text-[10px] text-muted-foreground ml-auto">
-                        {folderFileCount}
-                      </span>
-                    </button>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="h-6 w-6 opacity-0 group-hover:opacity-100"
-                      onClick={() => setDeleteFolderId(folder.id)}
-                    >
-                      <Trash2 className="h-3 w-3 text-destructive" />
-                    </Button>
+                  <div key={folder.id} className="space-y-0.5">
+                    <div className="flex items-center gap-1 group">
+                      <button
+                        className={`flex-1 flex items-center gap-2 px-2 py-1.5 rounded-md text-left text-sm transition-colors ${
+                          isSelected 
+                            ? 'bg-primary/10 text-primary' 
+                            : 'hover:bg-muted'
+                        }`}
+                        onClick={() => {
+                          setSelectedFolderId(isSelected ? null : folder.id);
+                          setExpandedFolders(prev => ({ ...prev, [folder.id]: !isFolderExpanded }));
+                        }}
+                      >
+                        {isFolderExpanded ? (
+                          <ChevronDown className="h-3 w-3 flex-shrink-0" />
+                        ) : (
+                          <ChevronRight className="h-3 w-3 flex-shrink-0" />
+                        )}
+                        {isFolderExpanded ? (
+                          <FolderOpen className="h-4 w-4 flex-shrink-0" />
+                        ) : (
+                          <Folder className="h-4 w-4 flex-shrink-0" />
+                        )}
+                        <span className="truncate">{folder.name}</span>
+                        <span className="text-[10px] text-muted-foreground ml-auto">
+                          {folderFileCount}
+                        </span>
+                      </button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-6 w-6 opacity-0 group-hover:opacity-100"
+                        onClick={() => setDeleteFolderId(folder.id)}
+                      >
+                        <Trash2 className="h-3 w-3 text-destructive" />
+                      </Button>
+                    </div>
+                    
+                    {/* Inline folder files when expanded */}
+                    {isFolderExpanded && folderFiles.length > 0 && (
+                      <div className="ml-6 space-y-1">
+                        {folderFiles.map((file) => (
+                          <div 
+                            key={file.id} 
+                            className="flex items-center gap-2 p-1.5 rounded-md bg-muted/30 border border-border/50 group"
+                          >
+                            {file.file_type === 'image' ? (
+                              <img 
+                                src={file.file_url} 
+                                alt={file.name}
+                                className="h-7 w-7 rounded object-cover flex-shrink-0"
+                              />
+                            ) : (
+                              <div className="h-7 w-7 rounded bg-muted flex items-center justify-center flex-shrink-0">
+                                <FileIcon type={file.file_type} />
+                              </div>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-[11px] font-medium truncate">{file.name}</p>
+                              <p className="text-[10px] text-muted-foreground">
+                                {formatFileSize(file.file_size)}
+                              </p>
+                            </div>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button size="icon" variant="ghost" className="h-5 w-5 opacity-0 group-hover:opacity-100">
+                                  <MoreVertical className="h-3 w-3" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem asChild>
+                                  <a href={file.file_url} target="_blank" rel="noopener noreferrer">
+                                    <ExternalLink className="h-3.5 w-3.5 mr-2" />
+                                    Abrir
+                                  </a>
+                                </DropdownMenuItem>
+                                {file.file_type === 'image' && (
+                                  <DropdownMenuItem onClick={() => handleSaveAsPdf(file)}>
+                                    <FileDown className="h-3.5 w-3.5 mr-2" />
+                                    Salvar como PDF
+                                  </DropdownMenuItem>
+                                )}
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem 
+                                  className="text-destructive"
+                                  onClick={() => {
+                                    setDeleteFileId(file.id);
+                                    setDeleteFilePath(file.storage_path);
+                                  }}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5 mr-2" />
+                                  Remover
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 );
               })}
