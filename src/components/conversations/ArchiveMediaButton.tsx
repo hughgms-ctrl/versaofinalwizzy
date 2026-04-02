@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Archive, Loader2, FolderPlus, Folder, Check } from 'lucide-react';
+import { Paperclip, Loader2, FolderPlus, Folder, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,

@@ -15,10 +15,12 @@ import {
   Upload,
   ChevronDown,
   ChevronUp,
+  ChevronRight,
   MoreVertical,
   ArrowRight,
   ExternalLink,
-  Archive
+  Paperclip,
+  FileDown
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
