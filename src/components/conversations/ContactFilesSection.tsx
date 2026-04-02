@@ -619,7 +619,7 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
               <p className="text-xs text-muted-foreground mb-2">
                 {selectedFolderId 
                   ? 'Nenhum arquivo nesta pasta' 
-                  : 'Nenhum arquivo arquivado'}
+                  : 'Nenhuma mídia ou documento salvo'}
               </p>
               <Button
                 size="sm"

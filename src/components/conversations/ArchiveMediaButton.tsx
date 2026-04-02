@@ -188,7 +188,7 @@ export function ArchiveMediaButton({
               {(createFolder.isPending || addFile.isPending) ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
-                'Criar e arquivar'
+                'Criar e salvar'
               )}
             </Button>
           </DialogFooter>
