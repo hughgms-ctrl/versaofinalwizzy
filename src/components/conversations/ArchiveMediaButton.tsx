@@ -161,7 +161,6 @@ export function ArchiveMediaButton({
               Crie uma pasta e salve o arquivo nela.
             </DialogDescription>
           </DialogHeader>
-          </DialogHeader>
           <Input
             placeholder="Nome da pasta"
             value={newFolderName}
