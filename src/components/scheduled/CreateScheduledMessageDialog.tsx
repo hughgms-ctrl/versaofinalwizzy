@@ -145,12 +145,15 @@ export function CreateScheduledMessageDialog({
     setDelayBetweenContacts(10);
   };
 
-  // Set defaultContactId when dialog opens
-  const handleOpenChange = (isOpen: boolean) => {
-    if (isOpen && defaultContactId) {
+  // Always sync contactId with defaultContactId when dialog opens or prop changes
+  React.useEffect(() => {
+    if (open && defaultContactId) {
       setContactId(defaultContactId);
       setTargetType('single');
     }
+  }, [open, defaultContactId]);
+
+  const handleOpenChange = (isOpen: boolean) => {
     if (!isOpen) {
       resetForm();
     }
