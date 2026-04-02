@@ -38,7 +38,8 @@ import {
   Repeat,
   Search,
   X,
-  Loader2
+  Loader2,
+  Timer
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
