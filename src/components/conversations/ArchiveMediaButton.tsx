@@ -158,8 +158,9 @@ export function ArchiveMediaButton({
           <DialogHeader>
             <DialogTitle>Nova pasta</DialogTitle>
             <DialogDescription>
-              Crie uma pasta e arquive o arquivo nela.
+              Crie uma pasta e salve o arquivo nela.
             </DialogDescription>
+          </DialogHeader>
           </DialogHeader>
           <Input
             placeholder="Nome da pasta"
