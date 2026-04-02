@@ -120,6 +120,7 @@ export function CreateScheduledMessageDialog({
       contact_ids: targetType === 'manual' ? selectedContactIds : undefined,
       name: name || null,
       workspace_id: selectedWorkspaceId || null,
+      delay_between_contacts: delayBetweenContacts > 0 ? delayBetweenContacts : null,
     });
 
     // Reset form
