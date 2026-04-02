@@ -96,25 +96,42 @@ Deno.serve(async (req) => {
 
         console.log(`Fetching profile for ${formattedPhone} (isLid: ${isLid})...`);
 
+        const phoneBody = isLid ? { phone: formattedPhone } : { number: formattedPhone };
+
+        // Try /contact/info first
         const response = await fetch(`${uazapiBaseUrl}/contact/info`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'token': instance.zapi_token },
-            body: JSON.stringify(isLid ? { phone: formattedPhone } : { number: formattedPhone }),
+            body: JSON.stringify(phoneBody),
         });
 
-        if (!response.ok) {
-            const err = await response.text();
-            console.error('UAZAPI error:', err);
-            return new Response(JSON.stringify({ error: 'UAZAPI failed', details: err }), {
-                status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            });
+        let profileData: any = {};
+        if (response.ok) {
+            profileData = await response.json();
+            console.log('Profile info data:', JSON.stringify(profileData));
+        } else {
+            console.warn('contact/info failed:', await response.text());
         }
 
-        const profileData = await response.json();
-        console.log('Profile data:', profileData);
+        // Also try /contact/profile-picture for avatar
+        let avatarFromPicEndpoint: string | null = null;
+        try {
+            const picResponse = await fetch(`${uazapiBaseUrl}/contact/profile-picture`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'token': instance.zapi_token },
+                body: JSON.stringify(phoneBody),
+            });
+            if (picResponse.ok) {
+                const picData = await picResponse.json();
+                console.log('Profile picture data:', JSON.stringify(picData));
+                avatarFromPicEndpoint = picData.profilePictureUrl || picData.profilePicture || picData.imgUrl || picData.url || null;
+            }
+        } catch (e) {
+            console.warn('profile-picture endpoint failed:', e);
+        }
 
         const name = profileData.name || profileData.pushname || profileData.verifiedName || null;
-        const avatarUrl = profileData.profilePicture || profileData.profileThumbnail || profileData.imgUrl || null;
+        const avatarUrl = avatarFromPicEndpoint || profileData.profilePicture || profileData.profileThumbnail || profileData.imgUrl || null;
 
         if (contactId && (name || avatarUrl)) {
             const updateData: any = {};
