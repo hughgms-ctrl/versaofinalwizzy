@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { 
@@ -145,12 +145,15 @@ export function CreateScheduledMessageDialog({
     setDelayBetweenContacts(10);
   };
 
-  // Set defaultContactId when dialog opens
-  const handleOpenChange = (isOpen: boolean) => {
-    if (isOpen && defaultContactId) {
+  // Always sync contactId with defaultContactId when dialog opens or prop changes
+  useEffect(() => {
+    if (open && defaultContactId) {
       setContactId(defaultContactId);
       setTargetType('single');
     }
+  }, [open, defaultContactId]);
+
+  const handleOpenChange = (isOpen: boolean) => {
     if (!isOpen) {
       resetForm();
     }
