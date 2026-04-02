@@ -96,6 +96,7 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
   const deleteFile = useDeleteContactFile();
 
   const [isExpanded, setIsExpanded] = useState(true);
+  const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
