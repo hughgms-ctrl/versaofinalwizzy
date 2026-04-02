@@ -117,8 +117,8 @@ export function ArchiveMediaButton({
               <Loader2 className="h-3 w-3 animate-spin" />
             ) : (
               <>
-                <Archive className="h-3 w-3 mr-1" />
-                Arquivar
+                <Paperclip className="h-3 w-3 mr-1" />
+                Salvar
               </>
             )}
           </Button>

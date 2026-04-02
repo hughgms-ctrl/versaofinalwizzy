@@ -222,8 +222,8 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
           className="flex items-center gap-2 text-xs text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors"
           onClick={() => setIsExpanded(!isExpanded)}
         >
-          <Archive className="h-3.5 w-3.5" />
-          <span>Arquivos</span>
+          <Paperclip className="h-3.5 w-3.5" />
+          <span>Mídias e Docs</span>
           {totalFiles > 0 && (
             <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded-full">
               {totalFiles}
