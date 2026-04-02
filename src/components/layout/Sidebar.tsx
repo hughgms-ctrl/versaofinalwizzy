@@ -47,7 +47,7 @@ const navigation: NavItem[] = [
   { name: 'Campanhas', href: '/campaigns', icon: Megaphone, module: 'flows' },
   { name: 'Widgets', href: '/widgets', icon: MousePointerClick, module: 'flows' },
   { name: 'Documentos', href: '/documents', icon: FileText, module: 'flows' },
-  { name: 'Envios em Massa', href: '/scheduled', icon: CalendarClock, module: 'scheduled' },
+  { name: 'Agendamentos', href: '/scheduled', icon: CalendarClock, module: 'scheduled' },
   { name: 'Agentes IA', href: '/agents', icon: Bot, module: 'agents' },
   { name: 'Equipe', href: '/team', icon: Users, module: 'team' },
   { name: 'Relatórios', href: '/reports', icon: BarChart3, module: 'reports' },

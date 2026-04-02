@@ -8,8 +8,8 @@ const ScheduledMessagesPage = () => {
 
   return (
     <MainLayout 
-      title="Envios em Massa" 
-      subtitle="Gerencie suas mensagens e fluxos agendados"
+      title="Agendamento de Mensagens" 
+      subtitle="Gerencie seus agendamentos de mensagens e fluxos"
       showSearch={false}
       showNewButton
       newButtonLabel="Novo Envio"

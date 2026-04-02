@@ -25,6 +25,7 @@ export interface ScheduledMessage {
   tag_id: string | null;
   name: string | null;
   error_message: string | null;
+  delay_between_contacts: number | null;
   created_at: string;
   updated_at: string;
   // Relations
@@ -48,6 +49,23 @@ export interface CreateScheduledMessageInput {
   contact_ids?: string[]; // For manual selection
   name?: string | null;
   workspace_id?: string | null;
+  delay_between_contacts?: number | null; // seconds between each contact
+}
+
+export interface UpdateScheduledMessageInput {
+  id: string;
+  scheduled_at?: string;
+  recurrence_type?: 'once' | 'daily' | 'weekly' | 'monthly';
+  recurrence_end_at?: string | null;
+  content_type?: 'message' | 'flow';
+  message_content?: string | null;
+  flow_id?: string | null;
+  target_type?: 'single' | 'tag' | 'manual';
+  contact_id?: string | null;
+  tag_id?: string | null;
+  contact_ids?: string[];
+  name?: string | null;
+  delay_between_contacts?: number | null;
 }
 
 export function useScheduledMessages() {
@@ -88,7 +106,7 @@ export function useCreateScheduledMessage() {
 
       if (!profile) throw new Error('Perfil não encontrado');
 
-      const { contact_ids, workspace_id, ...messageData } = input;
+      const { contact_ids, workspace_id, delay_between_contacts, ...messageData } = input;
 
       // Create scheduled message
       const { data: scheduled, error } = await supabase
@@ -99,7 +117,8 @@ export function useCreateScheduledMessage() {
           created_by: session!.user.id,
           next_execution_at: input.scheduled_at,
           workspace_id: workspace_id || null,
-        })
+          delay_between_contacts: delay_between_contacts || null,
+        } as any)
         .select()
         .single();
 
@@ -190,6 +209,66 @@ export function useDeleteScheduledMessage() {
       toast({
         title: 'Erro ao excluir',
         description: error.message || 'Não foi possível excluir o agendamento.',
+        variant: 'destructive',
+      });
+    },
+  });
+}
+
+export function useUpdateScheduledMessage() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: UpdateScheduledMessageInput) => {
+      const { id, contact_ids, ...updateData } = input;
+
+      // Update the scheduled message
+      const updatePayload: any = { ...updateData };
+      if (updateData.scheduled_at) {
+        updatePayload.next_execution_at = updateData.scheduled_at;
+      }
+
+      const { error } = await supabase
+        .from('scheduled_messages')
+        .update(updatePayload)
+        .eq('id', id);
+
+      if (error) throw error;
+
+      // If manual contacts changed, replace them
+      if (contact_ids !== undefined) {
+        // Delete existing
+        await supabase
+          .from('scheduled_message_contacts')
+          .delete()
+          .eq('scheduled_message_id', id);
+
+        // Insert new
+        if (contact_ids.length > 0) {
+          const contactInserts = contact_ids.map(contactId => ({
+            scheduled_message_id: id,
+            contact_id: contactId,
+          }));
+
+          const { error: contactError } = await supabase
+            .from('scheduled_message_contacts')
+            .insert(contactInserts);
+
+          if (contactError) throw contactError;
+        }
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['scheduled-messages'] });
+      toast({
+        title: 'Agendamento atualizado',
+        description: 'O agendamento foi atualizado com sucesso.',
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Erro ao atualizar',
+        description: error.message || 'Não foi possível atualizar o agendamento.',
         variant: 'destructive',
       });
     },

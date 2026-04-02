@@ -117,7 +117,7 @@ export function ScheduledMessagesList() {
         <div>
           <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
             <Clock className="h-5 w-5 text-blue-500" />
-            Envios em Massa Pendentes ({pendingMessages.length})
+            Agendamentos Pendentes ({pendingMessages.length})
           </h2>
           <div className="space-y-3">
             {pendingMessages.map(message => (
