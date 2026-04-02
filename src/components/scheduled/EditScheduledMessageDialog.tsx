@@ -309,6 +309,11 @@ export function EditScheduledMessageDialog({
                     <SelectValue placeholder="Escolha um contato" />
                   </SelectTrigger>
                   <SelectContent>
+                    {directContact && !contacts.find((c: any) => c.id === directContact.id) && (
+                      <SelectItem key={directContact.id} value={directContact.id}>
+                        <span className="font-medium">{directContact.name || directContact.phone}</span>
+                      </SelectItem>
+                    )}
                     {contacts.map((contact: any) => (
                       <SelectItem key={contact.id} value={contact.id}>
                         {contact.name || contact.phone}
