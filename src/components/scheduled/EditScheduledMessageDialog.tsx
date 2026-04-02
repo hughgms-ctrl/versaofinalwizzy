@@ -104,6 +104,16 @@ export function EditScheduledMessageDialog({
     }
   }, [message, open]);
 
+  const contacts = useMemo(() => {
+    const contactMap = new Map();
+    conversations.forEach(conv => {
+      if (conv.contact) {
+        contactMap.set(conv.contact.id, conv.contact);
+      }
+    });
+    return Array.from(contactMap.values());
+  }, [conversations]);
+
   // Fetch the selected contact directly if not in conversations list
   const [directContact, setDirectContact] = useState<any>(null);
   useEffect(() => {
@@ -115,16 +125,6 @@ export function EditScheduledMessageDialog({
       setDirectContact(null);
     }
   }, [contactId, contacts]);
-
-  const contacts = useMemo(() => {
-    const contactMap = new Map();
-    conversations.forEach(conv => {
-      if (conv.contact) {
-        contactMap.set(conv.contact.id, conv.contact);
-      }
-    });
-    return Array.from(contactMap.values());
-  }, [conversations]);
 
   const filteredContacts = useMemo(() => {
     if (!contactSearch.trim()) return contacts;
