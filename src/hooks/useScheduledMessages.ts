@@ -25,6 +25,7 @@ export interface ScheduledMessage {
   tag_id: string | null;
   name: string | null;
   error_message: string | null;
+  delay_between_contacts: number | null;
   created_at: string;
   updated_at: string;
   // Relations
