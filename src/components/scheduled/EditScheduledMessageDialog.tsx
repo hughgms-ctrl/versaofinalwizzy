@@ -86,6 +86,11 @@ export function EditScheduledMessageDialog({
       setRecurrenceType(message.recurrence_type);
       setDelayBetweenContacts((message as any).delay_between_contacts || 10);
 
+      // Load selected contact IDs for manual target type
+      if (message.target_type === 'manual' && (message as any).contact_ids) {
+        setSelectedContactIds((message as any).contact_ids);
+      }
+
       const dt = new Date(message.next_execution_at || message.scheduled_at);
       setScheduledDate(format(dt, 'yyyy-MM-dd'));
       setScheduledTime(format(dt, 'HH:mm'));
@@ -97,6 +102,18 @@ export function EditScheduledMessageDialog({
       }
     }
   }, [message, open]);
+
+  // Fetch the selected contact directly if not in conversations list
+  const [directContact, setDirectContact] = useState<any>(null);
+  useEffect(() => {
+    if (contactId && contacts.length > 0 && !contacts.find((c: any) => c.id === contactId)) {
+      supabase.from('contacts').select('id, name, phone').eq('id', contactId).single().then(({ data }) => {
+        if (data) setDirectContact(data);
+      });
+    } else {
+      setDirectContact(null);
+    }
+  }, [contactId, contacts]);
 
   const contacts = useMemo(() => {
     const contactMap = new Map();

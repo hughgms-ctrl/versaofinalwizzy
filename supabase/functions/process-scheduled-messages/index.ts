@@ -197,12 +197,19 @@ async function sendMessageToContacts(
   supabase: any,
   scheduled: ScheduledMessage,
   contacts: Contact[],
-  instance: { zapi_instance_id: string; zapi_token: string }
+  instance: { id: string; zapi_instance_id: string; zapi_token: string }
 ) {
-  const clientToken = Deno.env.get('ZAPI_CLIENT_TOKEN');
+  const uazapiBaseUrl = Deno.env.get('UAZAPI_BASE_URL')!;
+  const delayMs = ((scheduled as any).delay_between_contacts || 0) * 1000;
   
-  for (const contact of contacts) {
+  for (let i = 0; i < contacts.length; i++) {
+    const contact = contacts[i];
     try {
+      // Delay between contacts (skip first)
+      if (i > 0 && delayMs > 0) {
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
+
       // Get or create conversation
       let { data: conversation } = await supabase
         .from('conversations')
@@ -225,7 +232,7 @@ async function sendMessageToContacts(
 
       if (!conversation) continue;
 
-      // Send via Z-API
+      // Send via UAZAPI
       const phone = contact.phone.replace(/\D/g, '');
       let endpoint = 'send-text';
       let body: any = { phone, message: scheduled.message_content };
@@ -246,20 +253,21 @@ async function sendMessageToContacts(
         }
       }
 
-      const zapiResponse = await fetch(
-        `https://api.z-api.io/instances/${instance.zapi_instance_id}/token/${instance.zapi_token}/${endpoint}`,
+      const response = await fetch(
+        `${uazapiBaseUrl}/${endpoint}`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Client-Token': clientToken || '',
+            'token': instance.zapi_token,
           },
           body: JSON.stringify(body),
         }
       );
 
-      if (!zapiResponse.ok) {
-        throw new Error(`Z-API error: ${zapiResponse.status}`);
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`UAZAPI error: ${response.status} - ${errText}`);
       }
 
       // Save message to database
