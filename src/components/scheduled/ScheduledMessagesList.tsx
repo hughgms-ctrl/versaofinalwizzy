@@ -23,7 +23,9 @@ import {
   AlertCircle,
   Pause,
   Trash2,
-  Ban
+  Ban,
+  Pencil,
+  Timer
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -46,6 +48,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { cn } from '@/lib/utils';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
+import { EditScheduledMessageDialog } from './EditScheduledMessageDialog';
 
 const statusConfig = {
   pending: { label: 'Pendente', icon: Clock, color: 'bg-blue-500/10 text-blue-500' },
@@ -69,6 +72,7 @@ export function ScheduledMessagesList() {
   const { selectedWorkspaceId } = useWorkspaceContext();
   
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [editMessage, setEditMessage] = useState<ScheduledMessage | null>(null);
 
   const filteredMessages = useMemo(() => {
     if (!selectedWorkspaceId) return scheduledMessages;
@@ -106,13 +110,11 @@ export function ScheduledMessagesList() {
     );
   }
 
-  // Group by status
   const pendingMessages = filteredMessages.filter(m => m.status === 'pending');
   const completedMessages = filteredMessages.filter(m => ['sent', 'failed', 'cancelled'].includes(m.status));
 
   return (
     <div className="space-y-8">
-      {/* Pending */}
       {pendingMessages.length > 0 && (
         <div>
           <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
@@ -126,13 +128,13 @@ export function ScheduledMessagesList() {
                 message={message}
                 onCancel={handleCancel}
                 onDelete={setDeleteId}
+                onEdit={setEditMessage}
               />
             ))}
           </div>
         </div>
       )}
 
-      {/* Completed */}
       {completedMessages.length > 0 && (
         <div>
           <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
@@ -146,11 +148,19 @@ export function ScheduledMessagesList() {
                 message={message}
                 onCancel={handleCancel}
                 onDelete={setDeleteId}
+                onEdit={setEditMessage}
               />
             ))}
           </div>
         </div>
       )}
+
+      {/* Edit dialog */}
+      <EditScheduledMessageDialog
+        open={!!editMessage}
+        onOpenChange={(open) => !open && setEditMessage(null)}
+        message={editMessage}
+      />
 
       {/* Delete confirmation */}
       <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
@@ -174,11 +184,13 @@ export function ScheduledMessagesList() {
 function ScheduledMessageCard({ 
   message, 
   onCancel, 
-  onDelete 
+  onDelete,
+  onEdit
 }: { 
   message: ScheduledMessage;
   onCancel: (id: string) => void;
   onDelete: (id: string) => void;
+  onEdit: (message: ScheduledMessage) => void;
 }) {
   const status = statusConfig[message.status];
   const StatusIcon = status.icon;
@@ -200,12 +212,12 @@ function ScheduledMessageCard({
   };
 
   const TargetIcon = getTargetIcon();
+  const delay = (message as any).delay_between_contacts;
 
   return (
     <div className="p-4 rounded-lg border bg-card hover:bg-accent/50 transition-colors">
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
-          {/* Header */}
           <div className="flex items-center gap-3 mb-2">
             <div className={cn("p-2 rounded-lg", message.content_type === 'message' ? 'bg-blue-500/10' : 'bg-purple-500/10')}>
               {message.content_type === 'message' ? (
@@ -225,15 +237,13 @@ function ScheduledMessageCard({
             </div>
           </div>
 
-          {/* Content preview */}
           {message.content_type === 'message' && message.message_content && (
             <p className="text-sm text-muted-foreground truncate mb-2 pl-11">
               {message.message_content}
             </p>
           )}
 
-          {/* Meta info */}
-          <div className="flex items-center gap-4 pl-11">
+          <div className="flex items-center gap-4 pl-11 flex-wrap">
             <div className="flex items-center gap-1 text-xs text-muted-foreground">
               <Calendar className="h-3 w-3" />
               <span>{format(new Date(message.next_execution_at || message.scheduled_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}</span>
@@ -244,6 +254,12 @@ function ScheduledMessageCard({
                 <span>{recurrenceLabels[message.recurrence_type]}</span>
               </div>
             )}
+            {delay && delay > 0 && (
+              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                <Timer className="h-3 w-3" />
+                <span>{delay}s entre contatos</span>
+              </div>
+            )}
             {message.execution_count > 0 && (
               <span className="text-xs text-muted-foreground">
                 {message.execution_count}x executado
@@ -252,7 +268,6 @@ function ScheduledMessageCard({
           </div>
         </div>
 
-        {/* Status and actions */}
         <div className="flex items-center gap-2">
           <Badge variant="secondary" className={cn("text-xs", status.color)}>
             <StatusIcon className={cn("h-3 w-3 mr-1", message.status === 'processing' && 'animate-spin')} />
@@ -267,12 +282,18 @@ function ScheduledMessageCard({
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               {message.status === 'pending' && (
-                <DropdownMenuItem onClick={() => onCancel(message.id)}>
-                  <Pause className="h-4 w-4 mr-2" />
-                  Cancelar
-                </DropdownMenuItem>
+                <>
+                  <DropdownMenuItem onClick={() => onEdit(message)}>
+                    <Pencil className="h-4 w-4 mr-2" />
+                    Editar
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onCancel(message.id)}>
+                    <Pause className="h-4 w-4 mr-2" />
+                    Cancelar
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                </>
               )}
-              <DropdownMenuSeparator />
               <DropdownMenuItem 
                 className="text-destructive"
                 onClick={() => onDelete(message.id)}
@@ -285,7 +306,6 @@ function ScheduledMessageCard({
         </div>
       </div>
 
-      {/* Error message */}
       {message.status === 'failed' && message.error_message && (
         <div className="mt-3 p-2 rounded bg-red-500/10 text-red-500 text-xs flex items-center gap-2">
           <AlertCircle className="h-3 w-3 flex-shrink-0" />

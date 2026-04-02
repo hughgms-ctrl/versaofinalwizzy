@@ -3238,6 +3238,7 @@ export type Database = {
           content_type: string
           created_at: string
           created_by: string | null
+          delay_between_contacts: number | null
           error_message: string | null
           execution_count: number | null
           flow_id: string | null
@@ -3263,6 +3264,7 @@ export type Database = {
           content_type: string
           created_at?: string
           created_by?: string | null
+          delay_between_contacts?: number | null
           error_message?: string | null
           execution_count?: number | null
           flow_id?: string | null
@@ -3288,6 +3290,7 @@ export type Database = {
           content_type?: string
           created_at?: string
           created_by?: string | null
+          delay_between_contacts?: number | null
           error_message?: string | null
           execution_count?: number | null
           flow_id?: string | null

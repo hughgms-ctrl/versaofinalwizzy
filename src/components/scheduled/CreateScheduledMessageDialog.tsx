@@ -38,7 +38,8 @@ import {
   Repeat,
   Search,
   X,
-  Loader2
+  Loader2,
+  Timer
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -73,6 +74,7 @@ export function CreateScheduledMessageDialog({
   const [recurrenceEndDate, setRecurrenceEndDate] = useState('');
   const [name, setName] = useState('');
   const [contactSearch, setContactSearch] = useState('');
+  const [delayBetweenContacts, setDelayBetweenContacts] = useState<number>(10);
 
   // Get unique contacts from conversations
   const contacts = useMemo(() => {
@@ -118,6 +120,7 @@ export function CreateScheduledMessageDialog({
       contact_ids: targetType === 'manual' ? selectedContactIds : undefined,
       name: name || null,
       workspace_id: selectedWorkspaceId || null,
+      delay_between_contacts: delayBetweenContacts > 0 ? delayBetweenContacts : null,
     });
 
     // Reset form
@@ -139,6 +142,7 @@ export function CreateScheduledMessageDialog({
     setRecurrenceEndDate('');
     setName('');
     setContactSearch('');
+    setDelayBetweenContacts(10);
   };
 
   // Set defaultContactId when dialog opens
@@ -432,6 +436,27 @@ export function CreateScheduledMessageDialog({
                 />
               </div>
             </div>
+
+            {/* Delay between contacts */}
+            {(targetType === 'tag' || targetType === 'manual') && (
+              <div className="space-y-2">
+                <Label className="flex items-center gap-2">
+                  <Timer className="h-4 w-4" />
+                  Intervalo entre contatos (segundos)
+                </Label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={300}
+                  value={delayBetweenContacts}
+                  onChange={(e) => setDelayBetweenContacts(Number(e.target.value))}
+                  placeholder="10"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Tempo de espera entre o envio para cada contato. Recomendado: 10-30 segundos para evitar bloqueios.
+                </p>
+              </div>
+            )}
 
             {/* Recurrence */}
             <div className="space-y-3">

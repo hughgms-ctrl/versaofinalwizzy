@@ -12,7 +12,7 @@ const ScheduledMessagesPage = () => {
       subtitle="Gerencie seus agendamentos de mensagens e fluxos"
       showSearch={false}
       showNewButton
-      newButtonLabel="Novo Envio"
+      newButtonLabel="Novo Agendamento"
       onNewClick={() => setCreateDialogOpen(true)}
     >
       <ScheduledMessagesList />
