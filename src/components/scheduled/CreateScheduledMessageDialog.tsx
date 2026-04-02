@@ -312,7 +312,24 @@ export function CreateScheduledMessageDialog({
                     <SelectValue placeholder="Escolha um contato" />
                   </SelectTrigger>
                   <SelectContent>
-                    {contacts.map(contact => (
+                    {defaultContactId && (() => {
+                      const currentContact = contacts.find(c => c.id === defaultContactId);
+                      return currentContact ? (
+                        <SelectItem key={`current-${currentContact.id}`} value={currentContact.id}>
+                          <div className="flex items-center gap-2">
+                            <User className="h-3.5 w-3.5 text-primary" />
+                            <span className="font-medium">Contato atual</span>
+                            <span className="text-muted-foreground">— {currentContact.name || currentContact.phone}</span>
+                          </div>
+                        </SelectItem>
+                      ) : null;
+                    })()}
+                    {defaultContactId && contacts.length > 1 && (
+                      <div className="px-2 py-1.5">
+                        <div className="h-px bg-border" />
+                      </div>
+                    )}
+                    {contacts.filter(c => c.id !== defaultContactId).map(contact => (
                       <SelectItem key={contact.id} value={contact.id}>
                         {contact.name || contact.phone}
                       </SelectItem>
