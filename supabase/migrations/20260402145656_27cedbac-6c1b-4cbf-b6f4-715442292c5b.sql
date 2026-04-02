@@ -1,0 +1,1 @@
+ALTER TABLE scheduled_messages ADD COLUMN IF NOT EXISTS delay_between_contacts integer DEFAULT 10;
