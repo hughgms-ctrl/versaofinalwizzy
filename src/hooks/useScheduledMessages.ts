@@ -214,3 +214,63 @@ export function useDeleteScheduledMessage() {
     },
   });
 }
+
+export function useUpdateScheduledMessage() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: UpdateScheduledMessageInput) => {
+      const { id, contact_ids, ...updateData } = input;
+
+      // Update the scheduled message
+      const updatePayload: any = { ...updateData };
+      if (updateData.scheduled_at) {
+        updatePayload.next_execution_at = updateData.scheduled_at;
+      }
+
+      const { error } = await supabase
+        .from('scheduled_messages')
+        .update(updatePayload)
+        .eq('id', id);
+
+      if (error) throw error;
+
+      // If manual contacts changed, replace them
+      if (contact_ids !== undefined) {
+        // Delete existing
+        await supabase
+          .from('scheduled_message_contacts')
+          .delete()
+          .eq('scheduled_message_id', id);
+
+        // Insert new
+        if (contact_ids.length > 0) {
+          const contactInserts = contact_ids.map(contactId => ({
+            scheduled_message_id: id,
+            contact_id: contactId,
+          }));
+
+          const { error: contactError } = await supabase
+            .from('scheduled_message_contacts')
+            .insert(contactInserts);
+
+          if (contactError) throw contactError;
+        }
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['scheduled-messages'] });
+      toast({
+        title: 'Agendamento atualizado',
+        description: 'O agendamento foi atualizado com sucesso.',
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Erro ao atualizar',
+        description: error.message || 'Não foi possível atualizar o agendamento.',
+        variant: 'destructive',
+      });
+    },
+  });
+}
