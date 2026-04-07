@@ -1,152 +1,104 @@
 
-# Plano de Implementacao - Fase 2: Modulo de Documentos e Templates
 
-Seguindo a ordem solicitada: Fase 2 -> Fase 3 -> Fase 1 -> Fase 4. Vamos comecar pelo modulo de documentos.
+# Sistema de Assinaturas com Asaas
 
----
+## Resumo
 
-## O que sera construido nesta fase
-
-Uma pagina `/documents` com 3 abas: **Templates**, **Documentos Gerados** e **Packs**. O usuario podera fazer upload de um contrato modelo, a IA vai analisar e extrair os campos variaveis (nome, endereco, CPF, etc.), criando um template reutilizavel com marcadores `{{campo}}`. Tambem sera possivel agrupar templates em packs para gerar multiplos documentos de uma vez.
+Construir o sistema completo de assinaturas integrado com Asaas (gateway de pagamento brasileiro), incluindo Landing Page pública, painel de upgrade dentro do app, e gerenciamento admin. Funcionalidades bloqueadas aparecerão "cinza" com CTA de upgrade.
 
 ---
 
-## Funcionalidades
-
-### 1. Aba Templates
-- Lista de templates salvos (nome, categoria, quantidade de campos, data)
-- Botao "Novo Template" com duas opcoes:
-  - **Upload de modelo**: envia PDF/DOCX, IA analisa e gera template com `{{campos}}`
-  - **Criar manualmente**: editor de texto com insercao de campos variaveis
-- Ao clicar em um template: abre editor para visualizar/editar o texto e os campos
-- Opcoes: editar, duplicar, excluir
-
-### 2. Aba Packs
-- Agrupar multiplos templates (ex: "Pack Auxilio Reclusao" = Procuracao + Contrato + Declaracao)
-- Criar pack: selecionar templates existentes, dar nome
-- Ao gerar documentos de um pack, os mesmos dados preenchem todos os templates
-
-### 3. Aba Documentos Gerados
-- Historico de documentos gerados a partir de templates/packs
-- Status: gerado, enviado, assinado
-- Link para download do PDF
-- Vinculo com contato (quando gerado via agente)
-
----
-
-## Detalhes Tecnicos
-
-### Novas tabelas (migracao SQL)
+## Estrutura dos 3 Planos (proposta)
 
 ```text
-document_templates
-  - id (uuid, PK)
-  - organization_id (uuid, FK)
-  - name (text)
-  - description (text, nullable)
-  - category (text, nullable) -- ex: "contrato", "procuracao", "declaracao"
-  - content (text) -- texto com marcadores {{campo}}
-  - fields (jsonb) -- lista de campos detectados: [{name, label, type, required}]
-  - original_file_url (text, nullable) -- URL do arquivo modelo original
-  - workspace_id (uuid, nullable)
-  - created_by (uuid, nullable)
-  - created_at, updated_at (timestamps)
-
-document_packs
-  - id (uuid, PK)
-  - organization_id (uuid, FK)
-  - name (text)
-  - description (text, nullable)
-  - template_ids (uuid[]) -- array de IDs de templates
-  - workspace_id (uuid, nullable)
-  - created_by (uuid, nullable)
-  - created_at, updated_at (timestamps)
-
-generated_documents
-  - id (uuid, PK)
-  - organization_id (uuid, FK)
-  - template_id (uuid, nullable)
-  - pack_id (uuid, nullable)
-  - contact_id (uuid, nullable)
-  - conversation_id (uuid, nullable)
-  - name (text)
-  - filled_data (jsonb) -- dados preenchidos nos campos
-  - pdf_url (text, nullable) -- URL do PDF gerado no storage
-  - status (text) -- 'draft', 'generated', 'sent', 'signed'
-  - signing_method (text, nullable) -- 'manual', 'govbr', 'zapsign' (para Fase 3)
-  - signing_status (text, nullable)
-  - created_by (uuid, nullable)
-  - created_at, updated_at (timestamps)
+┌──────────────┬──────────────┬──────────────┐
+│   STARTER    │     PRO      │  ENTERPRISE  │
+├──────────────┼──────────────┼──────────────┤
+│ Conversas    │ Conversas    │ Conversas    │
+│ Pipeline     │ Pipeline     │ Pipeline     │
+│ Contatos     │ Contatos     │ Contatos     │
+│ Fluxos       │ Fluxos       │ Fluxos       │
+│ Documentos   │ Documentos   │ Documentos   │
+│ 3 membros    │ 10 membros   │ 50 membros   │
+│ 1 GB storage │ 10 GB        │ 50 GB        │
+│              │              │              │
+│ ✗ IA         │ ✓ IA         │ ✓ IA         │
+│ ✗ Agentes    │ ✓ Agentes    │ ✓ Agentes    │
+│ ✗ Orquestr.  │ ✗ Orquestr.  │ ✓ Orquestr.  │
+│ ✗ Relatórios │ ✓ Relatórios │ ✓ Relatórios │
+│ ✗ Campanhas  │ ✓ Campanhas  │ ✓ Campanhas  │
+│ ✗ Agenda     │ ✓ Agenda     │ ✓ Agenda     │
+│              │              │              │
+│ R$ 97/mês    │ R$ 197/mês   │ R$ 497/mês   │
+│ R$ 970/ano   │ R$ 1.970/ano │ R$ 4.970/ano │
+└──────────────┴──────────────┴──────────────┘
 ```
 
-RLS: todas as tabelas com politicas baseadas em `organization_id = get_user_org_id(auth.uid())`.
-
-### Nova edge function
-
-**`process-document-template`**: recebe arquivo (via URL do storage), usa IA para:
-1. Ler e interpretar o conteudo do documento
-2. Identificar campos variaveis (nomes, enderecos, CPFs, datas, etc.)
-3. Retornar texto reestruturado com `{{campo}}` e lista de campos detectados
-
-**`generate-document-pdf`**: recebe template + dados preenchidos, gera PDF e salva no storage bucket `contact-files`.
-
-### Novos arquivos frontend
-
-```text
-src/pages/DocumentsPage.tsx -- pagina principal com abas
-src/components/documents/TemplatesList.tsx -- lista de templates
-src/components/documents/TemplateEditor.tsx -- editor de template
-src/components/documents/PacksList.tsx -- lista de packs
-src/components/documents/PackEditor.tsx -- criar/editar pack
-src/components/documents/GeneratedDocumentsList.tsx -- historico
-src/components/documents/UploadTemplateDialog.tsx -- dialog de upload + processamento IA
-src/hooks/useDocumentTemplates.ts -- CRUD templates
-src/hooks/useDocumentPacks.ts -- CRUD packs
-src/hooks/useGeneratedDocuments.ts -- consulta documentos gerados
-```
-
-### Alteracoes em arquivos existentes
-
-- **App.tsx**: adicionar rotas `/documents`
-- **Sidebar.tsx**: adicionar item "Documentos" com icone FileText, abaixo de Widgets
-- **Sidebar.tsx**: adicionar permissao `module: 'flows'` (mesmo grupo de automacoes)
+> Esses valores e módulos são ajustáveis. Confirme se essa distribuição faz sentido antes de implementar.
 
 ---
 
-## Fluxo de uso principal
+## O que será construído
 
-```text
-1. Usuario acessa /documents
-2. Clica em "Novo Template"
-3. Faz upload de um PDF de contrato
-4. Sistema envia para edge function que usa IA para analisar
-5. IA retorna texto com {{nome_responsavel}}, {{cpf}}, {{endereco}}, etc.
-6. Usuario revisa e salva o template
-7. Pode criar um Pack agrupando templates
-8. Documentos gerados ficam no historico (aba "Gerados")
-```
+### 1. Banco de Dados - Ajustes
 
-A geracao automatica via agente e assinatura serao implementados na Fase 3.
+- Adicionar colunas `price_yearly` e `allowed_modules` (jsonb com lista de módulos permitidos) na tabela `platform_plans`
+- Adicionar colunas `asaas_customer_id`, `asaas_subscription_id` e `billing_cycle` (mensal/anual) na tabela `organization_plans`
+- Criar tabela `billing_events` para registrar webhook events do Asaas (auditoria)
+
+### 2. Edge Functions - Asaas
+
+- **asaas-create-customer**: Cria cliente no Asaas ao registrar organização
+- **asaas-create-subscription**: Cria assinatura PIX recorrente ou cartão
+- **asaas-webhook**: Recebe notificações do Asaas (pagamento confirmado, falha, cancelamento) e atualiza `organization_plans`
+- **asaas-change-plan**: Upgrade/downgrade de plano
+
+### 3. Landing Page (`/landing`)
+
+- Rota pública (sem login)
+- Hero section com proposta de valor
+- Seções de funcionalidades
+- Tabela comparativa de planos com toggle Mensal/Anual
+- Botão "Começar agora" que redireciona para `/auth` (cadastro)
+- Design responsivo e profissional
+
+### 4. Painel de Assinatura no App (`/settings` ou rota dedicada)
+
+- Card com plano atual, status do pagamento e próximo vencimento
+- Tabela comparativa com botão de upgrade
+- Toggle Mensal/Anual
+- Ao clicar "Assinar" ou "Upgrade", abre checkout do Asaas (link de pagamento)
+
+### 5. Bloqueio de Módulos por Plano
+
+- Hook `useCanAccessModule` já existe - será estendido para verificar os módulos permitidos no plano da organização
+- Módulos bloqueados aparecem no menu em cinza com ícone de cadeado
+- Ao clicar em módulo bloqueado, exibe modal "Faça upgrade para acessar" com link direto para a página de planos
+
+### 6. Admin - Gerenciamento de Assinaturas
+
+- Expandir AdminPlansPage para incluir `price_yearly` e `allowed_modules`
+- Nova aba/seção de assinaturas ativas no painel admin com status de pagamento
 
 ---
 
-## Ordem de implementacao
+## Ordem de Implementação
 
-1. Migracoes SQL (tabelas + RLS)
-2. Edge function `process-document-template`
-3. Hooks de dados (useDocumentTemplates, useDocumentPacks, useGeneratedDocuments)
-4. Pagina DocumentsPage com abas
-5. Componentes de templates (lista, editor, upload)
-6. Componentes de packs
-7. Sidebar + rotas
-8. Edge function `generate-document-pdf` (geracao de PDF basica)
+1. Ajustar banco (migrations para `platform_plans`, `organization_plans`, `billing_events`)
+2. Landing Page pública
+3. Edge Functions do Asaas (criar quando tiver API key)
+4. Painel de upgrade no app
+5. Bloqueio de módulos por plano
+6. Admin - gerenciamento de assinaturas
 
 ---
 
-## Feature implementada: Compartilhamento Granular de Leads
+## Pré-requisito
 
-### Tabela `conversation_shares`
-- Permite compartilhar leads específicos com membros da equipe
-- Membros restritos veem leads compartilhados independente das restrições de pipeline/tag
-- UI: botão "Compartilhar com membro" no menu de ações da conversa e do pipeline
-- Seção de leads compartilhados no EditPermissionsDialog para revogar acesso
+Antes de implementar a integração com Asaas, você precisará:
+1. Criar conta no Asaas (https://www.asaas.com)
+2. Gerar a API Key (sandbox para testes, produção depois)
+3. Me fornecer a chave para eu salvar como secret do projeto
+
+Posso começar pelos itens 1-2 (banco + landing page) enquanto você cria a conta no Asaas.
+
