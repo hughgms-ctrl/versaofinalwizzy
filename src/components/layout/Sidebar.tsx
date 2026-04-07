@@ -68,14 +68,14 @@ export function Sidebar() {
   const { data: userRole } = useCurrentUserRole();
   const { data: permissions } = useUserPermissions();
   const { signOut } = useAuth();
+  const { canAccessModule: canAccessPlanModule } = useOrganizationPlan();
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
+  const [blockedModule, setBlockedModule] = useState<string | undefined>();
 
-  // Check if user can access a module
+  // Check if user can access a module (permission-based)
   const canAccessModule = (module?: string) => {
-    // No module specified = always visible (Dashboard, Equipe)
     if (!module) return true;
-    // Owners and admins have full access
     if (userRole === 'owner' || userRole === 'admin') return true;
-    // Check permissions
     if (!permissions) return false;
 
     const moduleMap: Record<string, keyof typeof permissions> = {
@@ -99,6 +99,14 @@ export function Sidebar() {
 
   const handleLogout = async () => {
     await signOut();
+  };
+
+  const handleNavClick = (e: React.MouseEvent, item: NavItem) => {
+    if (item.planModule && !canAccessPlanModule(item.planModule)) {
+      e.preventDefault();
+      setBlockedModule(item.name);
+      setUpgradeOpen(true);
+    }
   };
 
   return (
@@ -134,29 +142,58 @@ export function Sidebar() {
         <nav className="flex-1 space-y-1 px-3 py-4 overflow-y-auto">
           {visibleNavigation.map((item) => {
             const isActive = location.pathname === item.href;
+            const isLocked = item.planModule ? !canAccessPlanModule(item.planModule) : false;
             return (
               <Link
                 key={item.name}
-                to={item.href}
+                to={isLocked ? '#' : item.href}
+                onClick={(e) => handleNavClick(e, item)}
                 className={cn(
                   "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
-                  isActive
-                    ? "bg-sidebar-accent text-sidebar-primary shadow-sm"
-                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
+                  isLocked
+                    ? "text-sidebar-foreground/30 cursor-pointer"
+                    : isActive
+                      ? "bg-sidebar-accent text-sidebar-primary shadow-sm"
+                      : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
                   collapsed && "justify-center px-2"
                 )}
               >
                 <item.icon className={cn(
                   "h-5 w-5 flex-shrink-0 transition-colors",
-                  isActive ? "text-sidebar-primary" : "text-sidebar-foreground/60 group-hover:text-sidebar-foreground"
+                  isLocked
+                    ? "text-sidebar-foreground/30"
+                    : isActive ? "text-sidebar-primary" : "text-sidebar-foreground/60 group-hover:text-sidebar-foreground"
                 )} />
-                {!collapsed && <span>{item.name}</span>}
+                {!collapsed && (
+                  <span className="flex-1">{item.name}</span>
+                )}
+                {!collapsed && isLocked && (
+                  <Lock className="h-3.5 w-3.5 text-sidebar-foreground/30" />
+                )}
               </Link>
             );
           })}
 
+          {/* Plans link */}
+          <Separator className="my-2 bg-sidebar-border" />
+          <Link
+            to="/plans"
+            className={cn(
+              "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
+              location.pathname === '/plans'
+                ? "bg-sidebar-accent text-sidebar-primary shadow-sm"
+                : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
+              collapsed && "justify-center px-2"
+            )}
+          >
+            <Crown className={cn(
+              "h-5 w-5 flex-shrink-0 transition-colors",
+              location.pathname === '/plans' ? "text-sidebar-primary" : "text-sidebar-foreground/60 group-hover:text-sidebar-foreground"
+            )} />
+            {!collapsed && <span>Planos</span>}
+          </Link>
 
-          {/* Logout below settings */}
+          {/* Logout */}
           <Separator className="my-2 bg-sidebar-border" />
           <button
             onClick={handleLogout}
