@@ -233,6 +233,7 @@ export function Sidebar() {
         {/* User Profile - Bottom (clickable to go to profile page) */}
         <UserProfileSection collapsed={collapsed} />
       </div>
+      <UpgradeModal open={upgradeOpen} onOpenChange={setUpgradeOpen} moduleName={blockedModule} />
     </aside>
   );
 }
