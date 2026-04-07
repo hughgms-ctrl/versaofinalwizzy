@@ -38,6 +38,8 @@ import PublicBookingPage from "./pages/PublicBookingPage";
 import NotFound from "./pages/NotFound";
 import CampaignsPage from "./pages/CampaignsPage";
 import CalendarPage from "./pages/CalendarPage";
+import LandingPage from "./pages/LandingPage";
+import PlansPage from "./pages/PlansPage";
 import AdminPage from "./pages/AdminPage";
 import AdminLoginPage from "./pages/AdminLoginPage";
 import AdminClientsPage from "./pages/admin/AdminClientsPage";
@@ -65,6 +67,7 @@ const App = () => (
                 <Sonner />
                 <BrowserRouter>
                   <Routes>
+                    <Route path="/landing" element={<LandingPage />} />
                     <Route path="/auth" element={<AuthPage />} />
                     <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
                     <Route path="/conversations" element={<ProtectedRoute><ConversationsPage /></ProtectedRoute>} />
@@ -91,6 +94,7 @@ const App = () => (
                     <Route path="/agendar/:slug" element={<PublicBookingPage />} />
                     <Route path="/campaigns" element={<ProtectedRoute><CampaignsPage /></ProtectedRoute>} />
                     <Route path="/calendar" element={<ProtectedRoute><CalendarPage /></ProtectedRoute>} />
+                    <Route path="/plans" element={<ProtectedRoute><PlansPage /></ProtectedRoute>} />
                     <Route path="/admin/login" element={<AdminLoginPage />} />
                     <Route path="/admin" element={<AdminProtectedRoute><AdminPage /></AdminProtectedRoute>} />
                     <Route path="/admin/clients" element={<AdminProtectedRoute><AdminClientsPage /></AdminProtectedRoute>} />
