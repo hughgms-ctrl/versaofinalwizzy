@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -18,41 +19,46 @@ import {
   FileText,
   Plug,
   Megaphone,
-  Calendar
+  Calendar,
+  Lock,
+  Crown
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { useSidebarContext } from '@/contexts/SidebarContext';
 import { useAuth } from '@/hooks/useAuth';
 import { useUserPermissions, useCurrentUserRole } from '@/hooks/useUserPermissions';
+import { useOrganizationPlan } from '@/hooks/useOrganizationPlan';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import wizzyLogo from '@/assets/wizzy-logo.png';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
+import UpgradeModal from '@/components/billing/UpgradeModal';
 
 interface NavItem {
   name: string;
   href: string;
   icon: React.ElementType;
   module?: string; // Module key for permission check
+  planModule?: string; // Module key for plan check
 }
 
 const navigation: NavItem[] = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard, module: 'dashboard' },
-  { name: 'Conversas', href: '/conversations', icon: MessageSquare, module: 'conversations' },
-  { name: 'Contatos', href: '/contacts', icon: BookUser, module: 'conversations' },
-  { name: 'Agenda', href: '/calendar', icon: Calendar, module: 'calendar' },
-  { name: 'Pipeline', href: '/pipeline', icon: Kanban, module: 'pipeline' },
-  { name: 'Fluxos', href: '/flows', icon: Workflow, module: 'flows' },
-  { name: 'Campanhas', href: '/campaigns', icon: Megaphone, module: 'flows' },
-  { name: 'Widgets', href: '/widgets', icon: MousePointerClick, module: 'flows' },
-  { name: 'Documentos', href: '/documents', icon: FileText, module: 'flows' },
-  { name: 'Agendamentos', href: '/scheduled', icon: CalendarClock, module: 'scheduled' },
-  { name: 'Agentes IA', href: '/agents', icon: Bot, module: 'agents' },
-  { name: 'Equipe', href: '/team', icon: Users, module: 'team' },
-  { name: 'Relatórios', href: '/reports', icon: BarChart3, module: 'reports' },
-  { name: 'Integrações', href: '/integrations', icon: Plug, module: 'settings' },
-  { name: 'Configurações', href: '/settings', icon: Settings, module: 'settings' },
+  { name: 'Conversas', href: '/conversations', icon: MessageSquare, module: 'conversations', planModule: 'conversations' },
+  { name: 'Contatos', href: '/contacts', icon: BookUser, module: 'conversations', planModule: 'contacts' },
+  { name: 'Agenda', href: '/calendar', icon: Calendar, module: 'calendar', planModule: 'calendar' },
+  { name: 'Pipeline', href: '/pipeline', icon: Kanban, module: 'pipeline', planModule: 'pipeline' },
+  { name: 'Fluxos', href: '/flows', icon: Workflow, module: 'flows', planModule: 'flows' },
+  { name: 'Campanhas', href: '/campaigns', icon: Megaphone, module: 'flows', planModule: 'campaigns' },
+  { name: 'Widgets', href: '/widgets', icon: MousePointerClick, module: 'flows', planModule: 'widgets' },
+  { name: 'Documentos', href: '/documents', icon: FileText, module: 'flows', planModule: 'documents' },
+  { name: 'Agendamentos', href: '/scheduled', icon: CalendarClock, module: 'scheduled', planModule: 'scheduled' },
+  { name: 'Agentes IA', href: '/agents', icon: Bot, module: 'agents', planModule: 'agents' },
+  { name: 'Equipe', href: '/team', icon: Users, module: 'team', planModule: 'team' },
+  { name: 'Relatórios', href: '/reports', icon: BarChart3, module: 'reports', planModule: 'reports' },
+  { name: 'Integrações', href: '/integrations', icon: Plug, module: 'settings', planModule: 'integrations' },
+  { name: 'Configurações', href: '/settings', icon: Settings, module: 'settings', planModule: 'settings' },
 ];
 
 export function Sidebar() {
@@ -62,14 +68,14 @@ export function Sidebar() {
   const { data: userRole } = useCurrentUserRole();
   const { data: permissions } = useUserPermissions();
   const { signOut } = useAuth();
+  const { canAccessModule: canAccessPlanModule } = useOrganizationPlan();
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
+  const [blockedModule, setBlockedModule] = useState<string | undefined>();
 
-  // Check if user can access a module
+  // Check if user can access a module (permission-based)
   const canAccessModule = (module?: string) => {
-    // No module specified = always visible (Dashboard, Equipe)
     if (!module) return true;
-    // Owners and admins have full access
     if (userRole === 'owner' || userRole === 'admin') return true;
-    // Check permissions
     if (!permissions) return false;
 
     const moduleMap: Record<string, keyof typeof permissions> = {
@@ -93,6 +99,14 @@ export function Sidebar() {
 
   const handleLogout = async () => {
     await signOut();
+  };
+
+  const handleNavClick = (e: React.MouseEvent, item: NavItem) => {
+    if (item.planModule && !canAccessPlanModule(item.planModule)) {
+      e.preventDefault();
+      setBlockedModule(item.name);
+      setUpgradeOpen(true);
+    }
   };
 
   return (
@@ -128,29 +142,58 @@ export function Sidebar() {
         <nav className="flex-1 space-y-1 px-3 py-4 overflow-y-auto">
           {visibleNavigation.map((item) => {
             const isActive = location.pathname === item.href;
+            const isLocked = item.planModule ? !canAccessPlanModule(item.planModule) : false;
             return (
               <Link
                 key={item.name}
-                to={item.href}
+                to={isLocked ? '#' : item.href}
+                onClick={(e) => handleNavClick(e, item)}
                 className={cn(
                   "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
-                  isActive
-                    ? "bg-sidebar-accent text-sidebar-primary shadow-sm"
-                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
+                  isLocked
+                    ? "text-sidebar-foreground/30 cursor-pointer"
+                    : isActive
+                      ? "bg-sidebar-accent text-sidebar-primary shadow-sm"
+                      : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
                   collapsed && "justify-center px-2"
                 )}
               >
                 <item.icon className={cn(
                   "h-5 w-5 flex-shrink-0 transition-colors",
-                  isActive ? "text-sidebar-primary" : "text-sidebar-foreground/60 group-hover:text-sidebar-foreground"
+                  isLocked
+                    ? "text-sidebar-foreground/30"
+                    : isActive ? "text-sidebar-primary" : "text-sidebar-foreground/60 group-hover:text-sidebar-foreground"
                 )} />
-                {!collapsed && <span>{item.name}</span>}
+                {!collapsed && (
+                  <span className="flex-1">{item.name}</span>
+                )}
+                {!collapsed && isLocked && (
+                  <Lock className="h-3.5 w-3.5 text-sidebar-foreground/30" />
+                )}
               </Link>
             );
           })}
 
+          {/* Plans link */}
+          <Separator className="my-2 bg-sidebar-border" />
+          <Link
+            to="/plans"
+            className={cn(
+              "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
+              location.pathname === '/plans'
+                ? "bg-sidebar-accent text-sidebar-primary shadow-sm"
+                : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
+              collapsed && "justify-center px-2"
+            )}
+          >
+            <Crown className={cn(
+              "h-5 w-5 flex-shrink-0 transition-colors",
+              location.pathname === '/plans' ? "text-sidebar-primary" : "text-sidebar-foreground/60 group-hover:text-sidebar-foreground"
+            )} />
+            {!collapsed && <span>Planos</span>}
+          </Link>
 
-          {/* Logout below settings */}
+          {/* Logout */}
           <Separator className="my-2 bg-sidebar-border" />
           <button
             onClick={handleLogout}
@@ -190,6 +233,7 @@ export function Sidebar() {
         {/* User Profile - Bottom (clickable to go to profile page) */}
         <UserProfileSection collapsed={collapsed} />
       </div>
+      <UpgradeModal open={upgradeOpen} onOpenChange={setUpgradeOpen} moduleName={blockedModule} />
     </aside>
   );
 }
