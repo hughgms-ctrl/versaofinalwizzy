@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -18,41 +19,46 @@ import {
   FileText,
   Plug,
   Megaphone,
-  Calendar
+  Calendar,
+  Lock,
+  Crown
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { useSidebarContext } from '@/contexts/SidebarContext';
 import { useAuth } from '@/hooks/useAuth';
 import { useUserPermissions, useCurrentUserRole } from '@/hooks/useUserPermissions';
+import { useOrganizationPlan } from '@/hooks/useOrganizationPlan';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import wizzyLogo from '@/assets/wizzy-logo.png';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
+import UpgradeModal from '@/components/billing/UpgradeModal';
 
 interface NavItem {
   name: string;
   href: string;
   icon: React.ElementType;
   module?: string; // Module key for permission check
+  planModule?: string; // Module key for plan check
 }
 
 const navigation: NavItem[] = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard, module: 'dashboard' },
-  { name: 'Conversas', href: '/conversations', icon: MessageSquare, module: 'conversations' },
-  { name: 'Contatos', href: '/contacts', icon: BookUser, module: 'conversations' },
-  { name: 'Agenda', href: '/calendar', icon: Calendar, module: 'calendar' },
-  { name: 'Pipeline', href: '/pipeline', icon: Kanban, module: 'pipeline' },
-  { name: 'Fluxos', href: '/flows', icon: Workflow, module: 'flows' },
-  { name: 'Campanhas', href: '/campaigns', icon: Megaphone, module: 'flows' },
-  { name: 'Widgets', href: '/widgets', icon: MousePointerClick, module: 'flows' },
-  { name: 'Documentos', href: '/documents', icon: FileText, module: 'flows' },
-  { name: 'Agendamentos', href: '/scheduled', icon: CalendarClock, module: 'scheduled' },
-  { name: 'Agentes IA', href: '/agents', icon: Bot, module: 'agents' },
-  { name: 'Equipe', href: '/team', icon: Users, module: 'team' },
-  { name: 'Relatórios', href: '/reports', icon: BarChart3, module: 'reports' },
-  { name: 'Integrações', href: '/integrations', icon: Plug, module: 'settings' },
-  { name: 'Configurações', href: '/settings', icon: Settings, module: 'settings' },
+  { name: 'Conversas', href: '/conversations', icon: MessageSquare, module: 'conversations', planModule: 'conversations' },
+  { name: 'Contatos', href: '/contacts', icon: BookUser, module: 'conversations', planModule: 'contacts' },
+  { name: 'Agenda', href: '/calendar', icon: Calendar, module: 'calendar', planModule: 'calendar' },
+  { name: 'Pipeline', href: '/pipeline', icon: Kanban, module: 'pipeline', planModule: 'pipeline' },
+  { name: 'Fluxos', href: '/flows', icon: Workflow, module: 'flows', planModule: 'flows' },
+  { name: 'Campanhas', href: '/campaigns', icon: Megaphone, module: 'flows', planModule: 'campaigns' },
+  { name: 'Widgets', href: '/widgets', icon: MousePointerClick, module: 'flows', planModule: 'widgets' },
+  { name: 'Documentos', href: '/documents', icon: FileText, module: 'flows', planModule: 'documents' },
+  { name: 'Agendamentos', href: '/scheduled', icon: CalendarClock, module: 'scheduled', planModule: 'scheduled' },
+  { name: 'Agentes IA', href: '/agents', icon: Bot, module: 'agents', planModule: 'agents' },
+  { name: 'Equipe', href: '/team', icon: Users, module: 'team', planModule: 'team' },
+  { name: 'Relatórios', href: '/reports', icon: BarChart3, module: 'reports', planModule: 'reports' },
+  { name: 'Integrações', href: '/integrations', icon: Plug, module: 'settings', planModule: 'integrations' },
+  { name: 'Configurações', href: '/settings', icon: Settings, module: 'settings', planModule: 'settings' },
 ];
 
 export function Sidebar() {
