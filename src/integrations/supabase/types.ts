@@ -364,6 +364,44 @@ export type Database = {
           },
         ]
       }
+      billing_events: {
+        Row: {
+          asaas_event_id: string | null
+          created_at: string | null
+          event_type: string
+          id: string
+          organization_id: string
+          payload: Json | null
+          processed_at: string | null
+        }
+        Insert: {
+          asaas_event_id?: string | null
+          created_at?: string | null
+          event_type: string
+          id?: string
+          organization_id: string
+          payload?: Json | null
+          processed_at?: string | null
+        }
+        Update: {
+          asaas_event_id?: string | null
+          created_at?: string | null
+          event_type?: string
+          id?: string
+          organization_id?: string
+          payload?: Json | null
+          processed_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "billing_events_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       blocked_fingerprints: {
         Row: {
           blocked_at: string | null
@@ -2795,6 +2833,9 @@ export type Database = {
       }
       organization_plans: {
         Row: {
+          asaas_customer_id: string | null
+          asaas_subscription_id: string | null
+          billing_cycle: string | null
           created_at: string
           current_period_end: string | null
           current_period_start: string | null
@@ -2809,6 +2850,9 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          asaas_customer_id?: string | null
+          asaas_subscription_id?: string | null
+          billing_cycle?: string | null
           created_at?: string
           current_period_end?: string | null
           current_period_start?: string | null
@@ -2823,6 +2867,9 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          asaas_customer_id?: string | null
+          asaas_subscription_id?: string | null
+          billing_cycle?: string | null
           created_at?: string
           current_period_end?: string | null
           current_period_start?: string | null
@@ -3080,6 +3127,7 @@ export type Database = {
       platform_plans: {
         Row: {
           ai_mode: string
+          allowed_modules: Json | null
           created_at: string
           features: Json
           id: string
@@ -3089,12 +3137,14 @@ export type Database = {
           max_team_members: number
           name: string
           price_monthly: number
+          price_yearly: number | null
           slug: string
           storage_limit_bytes: number
           updated_at: string
         }
         Insert: {
           ai_mode?: string
+          allowed_modules?: Json | null
           created_at?: string
           features?: Json
           id?: string
@@ -3104,12 +3154,14 @@ export type Database = {
           max_team_members?: number
           name: string
           price_monthly?: number
+          price_yearly?: number | null
           slug: string
           storage_limit_bytes?: number
           updated_at?: string
         }
         Update: {
           ai_mode?: string
+          allowed_modules?: Json | null
           created_at?: string
           features?: Json
           id?: string
@@ -3119,6 +3171,7 @@ export type Database = {
           max_team_members?: number
           name?: string
           price_monthly?: number
+          price_yearly?: number | null
           slug?: string
           storage_limit_bytes?: number
           updated_at?: string
