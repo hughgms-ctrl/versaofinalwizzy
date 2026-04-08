@@ -57,7 +57,7 @@ export function QuizNodeProperties({ node, selectedBlockIdx, onClose, onUpdateNo
           <div className="p-4 border-t">
             <Button className="w-full" onClick={onSave} disabled={isSaving}>
               <Save className="h-4 w-4 mr-2" />
-              {isSaving ? 'Salvando...' : 'Salvar Quiz'}
+              {isSaving ? 'Salvando...' : 'Salvar Quizz'}
             </Button>
           </div>
         )}

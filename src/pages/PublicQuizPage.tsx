@@ -82,7 +82,7 @@ export default function PublicQuizPage() {
     try {
       const { data: q, error: e1 } = await supabase
         .from('quizzes').select('*').eq('public_token', token).eq('is_active', true).single();
-      if (e1 || !q) throw new Error('Quiz não encontrado');
+      if (e1 || !q) throw new Error('Quizz não encontrado');
       const quizData = q as any;
       setQuiz(quizData);
 
@@ -353,8 +353,8 @@ export default function PublicQuizPage() {
   if (loading) return <FullScreenCenter><Loader2 className="h-8 w-8 animate-spin text-primary" /></FullScreenCenter>;
   if (error || !quiz) return (
     <FullScreenCenter>
-      <h2 className="text-xl font-bold">Quiz não encontrado</h2>
-      <p className="text-muted-foreground mt-2">Este quiz não existe ou não está ativo.</p>
+      <h2 className="text-xl font-bold">Quizz não encontrado</h2>
+      <p className="text-muted-foreground mt-2">Este quizz não existe ou não está ativo.</p>
     </FullScreenCenter>
   );
 
