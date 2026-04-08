@@ -502,7 +502,27 @@ function OptionsEditor({ options, onChange, showUrl, showImage }: {
       <div className="space-y-2">
         {options.map((opt: any, i: number) => (
           <div key={i} className="space-y-1">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
+              <div className="flex flex-col flex-shrink-0">
+                <Button variant="ghost" size="icon" className="h-4 w-4 p-0"
+                  disabled={i === 0}
+                  onClick={() => {
+                    const n = [...options];
+                    [n[i - 1], n[i]] = [n[i], n[i - 1]];
+                    onChange(n);
+                  }}>
+                  <ArrowUp className="h-3 w-3" />
+                </Button>
+                <Button variant="ghost" size="icon" className="h-4 w-4 p-0"
+                  disabled={i === options.length - 1}
+                  onClick={() => {
+                    const n = [...options];
+                    [n[i], n[i + 1]] = [n[i + 1], n[i]];
+                    onChange(n);
+                  }}>
+                  <ArrowDown className="h-3 w-3" />
+                </Button>
+              </div>
               <Input value={opt.label} onChange={(e) => {
                 const n = [...options];
                 n[i] = { ...opt, label: e.target.value };
