@@ -75,25 +75,28 @@ function getBlockColor(type: string) {
 
 function getBlockLabel(block: { type: string; data: Record<string, any> }) {
   const d = block.data;
+  // For input blocks, show the question/prompt if configured
+  const prompt = d.prompt as string | undefined;
+  
   switch (block.type) {
     case 'quiz-bubble-text': return d.content?.slice(0, 40) || 'Clique para editar...';
     case 'quiz-bubble-image': return d.url ? 'Imagem' : '📷 Clique para editar...';
     case 'quiz-bubble-video': return d.url ? 'Vídeo' : '🎬 Clique para editar...';
     case 'quiz-bubble-embed': return d.url || 'Embed';
     case 'quiz-bubble-audio': return d.url ? 'Áudio' : '🎧 Clique para editar...';
-    case 'quiz-input-text': return d.placeholder || 'Digite sua resposta...';
-    case 'quiz-input-number': return d.placeholder || 'Digite um número...';
-    case 'quiz-input-email': return d.placeholder || 'Digite seu email...';
-    case 'quiz-input-website': return d.placeholder || 'Digite uma URL...';
-    case 'quiz-input-date': return 'Escolha uma data...';
-    case 'quiz-input-time': return 'Escolha um horário...';
-    case 'quiz-input-phone': return d.placeholder || 'Digite seu telefone...';
-    case 'quiz-input-file': return 'Enviar arquivo...';
-    case 'quiz-input-rating': return `Avaliação (1-${d.maxRating || 5})`;
+    case 'quiz-input-text': return prompt?.slice(0, 50) || d.placeholder || 'Digite sua resposta...';
+    case 'quiz-input-number': return prompt?.slice(0, 50) || d.placeholder || 'Digite um número...';
+    case 'quiz-input-email': return prompt?.slice(0, 50) || d.placeholder || 'Digite seu email...';
+    case 'quiz-input-website': return prompt?.slice(0, 50) || d.placeholder || 'Digite uma URL...';
+    case 'quiz-input-date': return prompt?.slice(0, 50) || 'Escolha uma data...';
+    case 'quiz-input-time': return prompt?.slice(0, 50) || 'Escolha um horário...';
+    case 'quiz-input-phone': return prompt?.slice(0, 50) || d.placeholder || 'Digite seu telefone...';
+    case 'quiz-input-file': return prompt?.slice(0, 50) || 'Enviar arquivo...';
+    case 'quiz-input-rating': return prompt?.slice(0, 50) || `Avaliação (1-${d.maxRating || 5})`;
     case 'quiz-input-buttons':
-      return (d.options as any[])?.map((o: any) => o.label).join(', ') || 'Adicionar botões...';
+      return prompt?.slice(0, 50) || (d.options as any[])?.map((o: any) => o.label).join(', ') || 'Adicionar botões...';
     case 'quiz-input-pic-choice':
-      return (d.options as any[])?.length ? `${(d.options as any[]).length} escolhas` : 'Adicionar escolhas...';
+      return prompt?.slice(0, 50) || ((d.options as any[])?.length ? `${(d.options as any[]).length} escolhas` : 'Adicionar escolhas...');
     case 'quiz-logic-condition': return 'Condição';
     case 'quiz-logic-redirect': return d.url || 'Redirecionar';
     case 'quiz-logic-wait': return `Esperar ${d.seconds || 3}s`;
