@@ -933,23 +933,37 @@ function DateBlockRenderer({ block, answer, variables, onAnswer, onNext }: {
       {/* Date input field with calendar toggle */}
       {!showFlexible && (
         <div className="space-y-3">
-          <div className="relative">
-            <Input
-              type="text"
-              readOnly
-              value={selectedDate ? format(selectedDate, "dd/MM/yyyy", { locale: ptBR }) : ''}
-              placeholder="Selecione uma data..."
-              className="h-14 text-lg pr-12 cursor-pointer"
-              onClick={() => setShowCalendar(!showCalendar)}
-            />
-            <button
-              type="button"
-              onClick={() => setShowCalendar(!showCalendar)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <CalendarIcon className="h-5 w-5" />
-            </button>
-          </div>
+          {/* Typeable date input */}
+          <Input
+            type="text"
+            value={selectedDate ? format(selectedDate, "dd/MM/yyyy", { locale: ptBR }) : (answer?.typedValue || '')}
+            placeholder="Digite a data (dd/mm/aaaa)..."
+            className="h-14 text-lg"
+            onChange={(e) => {
+              const raw = e.target.value;
+              onAnswer({ ...currentAnswer, typedValue: raw }, d.variable);
+              // Try parse dd/mm/yyyy
+              const parts = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+              if (parts) {
+                const parsed = new Date(`${parts[3]}-${parts[2]}-${parts[1]}T00:00:00`);
+                if (!isNaN(parsed.getTime())) {
+                  const val = format(parsed, 'yyyy-MM-dd');
+                  const finalValue = withTime && timeValue ? `${val}T${timeValue}` : val;
+                  onAnswer({ precision: 'exact', value: finalValue }, d.variable);
+                }
+              }
+            }}
+          />
+
+          {/* Calendar toggle button */}
+          <Button
+            variant="outline"
+            className="w-full h-12 gap-2"
+            onClick={() => setShowCalendar(!showCalendar)}
+          >
+            <CalendarIcon className="h-5 w-5" />
+            {showCalendar ? 'Fechar calendário' : 'Abrir calendário'}
+          </Button>
 
           {showCalendar && (
             <div className="flex justify-center animate-in fade-in slide-in-from-top-2 duration-200">
