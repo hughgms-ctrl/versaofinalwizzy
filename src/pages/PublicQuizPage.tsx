@@ -835,19 +835,17 @@ function DateBlockRenderer({ block, answer, variables, onAnswer, onNext }: {
   const minDate = d.minDate ? new Date(d.minDate + 'T00:00:00') : undefined;
   const maxDate = d.maxDate ? new Date(d.maxDate + 'T00:00:00') : undefined;
 
-  const [precision, setPrecision] = useState<'exact' | 'month_year' | 'year' | null>(
-    allowFlexible ? null : 'exact'
-  );
+  const [showFlexible, setShowFlexible] = useState(false);
+  const [flexMode, setFlexMode] = useState<'month_year' | 'year' | null>(null);
   const [timeValue, setTimeValue] = useState('');
   const [rangeFrom, setRangeFrom] = useState<Date | undefined>();
   const [rangeTo, setRangeTo] = useState<Date | undefined>();
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [flexMonth, setFlexMonth] = useState('');
+  const [flexYear, setFlexYear] = useState('');
+  const [flexYearOnly, setFlexYearOnly] = useState('');
 
   const currentAnswer = typeof answer === 'object' ? answer : { precision: 'exact', value: answer || '' };
-
-  const handleChange = (value: string, prec: string) => {
-    const finalValue = withTime && timeValue && prec === 'exact' ? `${value}T${timeValue}` : value;
-    onAnswer({ precision: prec, value: finalValue }, d.variable);
-  };
 
   const currentYear = new Date().getFullYear();
   const months = [
@@ -860,35 +858,28 @@ function DateBlockRenderer({ block, answer, variables, onAnswer, onNext }: {
     ? new Date((currentAnswer.value as string).split('T')[0] + 'T00:00:00')
     : undefined;
 
-  // Simple mode: no flexible, no unknown — just calendar
-  if (!allowFlexible && !allowUnknown && !isRange) {
-    return (
-      <InputWrapper onNext={onNext}>
-        {d.question && <h2 className="text-2xl font-bold">{interpolate(d.question, variables)}</h2>}
-        <div className="flex justify-center">
-          <Calendar
-            mode="single"
-            selected={selectedDate}
-            onSelect={(date) => {
-              if (date) onAnswer(format(date, 'yyyy-MM-dd'), d.variable);
-            }}
-            locale={ptBR}
-            fromDate={minDate}
-            toDate={maxDate}
-            className="rounded-md border pointer-events-auto"
-          />
-        </div>
-        {withTime && (
-          <Input type="time" value={timeValue} onChange={e => setTimeValue(e.target.value)} className="h-12 text-lg" placeholder="Horário" />
-        )}
-        {selectedDate && (
-          <p className="text-center text-sm text-muted-foreground">
-            Selecionado: {format(selectedDate, "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
-          </p>
-        )}
-      </InputWrapper>
-    );
-  }
+  const handleExactSelect = (date: Date | undefined) => {
+    if (date) {
+      const val = format(date, 'yyyy-MM-dd');
+      const finalValue = withTime && timeValue ? `${val}T${timeValue}` : val;
+      onAnswer({ precision: 'exact', value: finalValue }, d.variable);
+    }
+    setShowCalendar(false);
+  };
+
+  const handleFlexSubmit = () => {
+    if (flexMode === 'month_year' && flexMonth && flexYear) {
+      onAnswer({ precision: 'month_year', value: `${flexYear}-${flexMonth}` }, d.variable);
+      onNext('date-answered');
+    } else if (flexMode === 'year' && flexYearOnly) {
+      onAnswer({ precision: 'year', value: flexYearOnly }, d.variable);
+      onNext('date-answered');
+    } else if (flexYear && !flexMonth) {
+      // If only year filled in month_year mode, treat as year
+      onAnswer({ precision: 'year', value: flexYear }, d.variable);
+      onNext('date-answered');
+    }
+  };
 
   // Range mode
   if (isRange) {
@@ -934,122 +925,172 @@ function DateBlockRenderer({ block, answer, variables, onAnswer, onNext }: {
     );
   }
 
-  // Flexible mode with precision selector
-  const precisionOptions: { key: 'exact' | 'month_year' | 'year'; label: string }[] = [
-    { key: 'exact', label: 'Data exata' },
-    { key: 'month_year', label: 'Mês / Ano' },
-    { key: 'year', label: 'Apenas ano' },
-  ];
-
+  // Default mode: Calendar first, then "Não sei data exata" reveals flexible options
   return (
     <div className="space-y-6">
       {d.question && <h2 className="text-2xl font-bold">{interpolate(d.question, variables)}</h2>}
 
-      {/* Precision selector */}
-      {allowFlexible && (
-        <div className="grid grid-cols-3 gap-2">
-          {precisionOptions.map(opt => (
-            <Button
-              key={opt.key}
-              variant={precision === opt.key ? 'default' : 'outline'}
-              className="h-12 text-sm"
-              onClick={() => setPrecision(opt.key)}
-            >
-              {opt.label}
-            </Button>
-          ))}
-        </div>
-      )}
-
-      {/* Exact: Calendar */}
-      {precision === 'exact' && (
-        <div className="space-y-2">
-          <div className="flex justify-center">
-            <Calendar
-              mode="single"
-              selected={selectedDate}
-              onSelect={(date) => {
-                if (date) handleChange(format(date, 'yyyy-MM-dd'), 'exact');
-              }}
-              locale={ptBR}
-              fromDate={minDate}
-              toDate={maxDate}
-              className="rounded-md border pointer-events-auto"
+      {/* Date input field with calendar toggle */}
+      {!showFlexible && (
+        <div className="space-y-3">
+          <div className="relative">
+            <Input
+              type="text"
+              readOnly
+              value={selectedDate ? format(selectedDate, "dd/MM/yyyy", { locale: ptBR }) : ''}
+              placeholder="Selecione uma data..."
+              className="h-14 text-lg pr-12 cursor-pointer"
+              onClick={() => setShowCalendar(!showCalendar)}
             />
+            <button
+              type="button"
+              onClick={() => setShowCalendar(!showCalendar)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <CalendarIcon className="h-5 w-5" />
+            </button>
           </div>
+
+          {showCalendar && (
+            <div className="flex justify-center animate-in fade-in slide-in-from-top-2 duration-200">
+              <Calendar
+                mode="single"
+                selected={selectedDate}
+                onSelect={handleExactSelect}
+                locale={ptBR}
+                fromDate={minDate}
+                toDate={maxDate}
+                className="rounded-md border pointer-events-auto"
+              />
+            </div>
+          )}
+
           {withTime && (
             <Input type="time" value={timeValue} onChange={e => setTimeValue(e.target.value)} className="h-12 text-lg" placeholder="Horário" />
           )}
+
           {selectedDate && (
             <p className="text-center text-sm text-muted-foreground">
-              {format(selectedDate, "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
+              Selecionado: {format(selectedDate, "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
             </p>
+          )}
+
+          {/* Submit exact date */}
+          {selectedDate && (
+            <Button size="lg" className="w-full h-14 text-lg" onClick={() => onNext('date-answered')}>
+              {buttonLabel} <ArrowRight className="h-5 w-5 ml-2" />
+            </Button>
+          )}
+
+          {/* "Não sei data exata" button */}
+          {allowFlexible && (
+            <Button
+              variant="outline"
+              size="lg"
+              className="w-full h-12 text-muted-foreground"
+              onClick={() => { setShowFlexible(true); setShowCalendar(false); }}
+            >
+              Não sei a data exata
+            </Button>
+          )}
+
+          {/* "Não sei" (unknown) button — only if no flexible */}
+          {!allowFlexible && allowUnknown && (
+            <Button variant="ghost" size="lg" className="w-full h-12 text-muted-foreground" onClick={() => {
+              onAnswer({ precision: 'unknown', value: 'Não sei' }, d.variable);
+              onNext('date-unknown');
+            }}>
+              Não sei
+            </Button>
           )}
         </div>
       )}
 
-      {/* Month/Year: two selects */}
-      {precision === 'month_year' && (
-        <div className="flex gap-3">
-          <Select
-            value={currentAnswer.precision === 'month_year' && currentAnswer.value ? currentAnswer.value.split('-')[1] : ''}
-            onValueChange={(m) => {
-              const y = currentAnswer.precision === 'month_year' && currentAnswer.value ? currentAnswer.value.split('-')[0] : String(currentYear);
-              handleChange(`${y}-${m}`, 'month_year');
-            }}
+      {/* Flexible precision: Month/Year or Year only */}
+      {showFlexible && (
+        <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-300">
+          <p className="text-sm text-muted-foreground">Selecione o que lembrar:</p>
+
+          <div className="grid grid-cols-2 gap-2">
+            <Button
+              variant={flexMode === 'month_year' ? 'default' : 'outline'}
+              className="h-12"
+              onClick={() => setFlexMode('month_year')}
+            >
+              Mês e Ano
+            </Button>
+            <Button
+              variant={flexMode === 'year' ? 'default' : 'outline'}
+              className="h-12"
+              onClick={() => setFlexMode('year')}
+            >
+              Apenas Ano
+            </Button>
+          </div>
+
+          {/* Month + Year selects */}
+          {flexMode === 'month_year' && (
+            <div className="flex gap-3 animate-in fade-in duration-200">
+              <Select value={flexMonth} onValueChange={setFlexMonth}>
+                <SelectTrigger className="h-14 text-base flex-1"><SelectValue placeholder="Mês" /></SelectTrigger>
+                <SelectContent>
+                  {months.map((label, i) => (
+                    <SelectItem key={i} value={String(i + 1).padStart(2, '0')}>{label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={flexYear} onValueChange={setFlexYear}>
+                <SelectTrigger className="h-14 text-base w-28"><SelectValue placeholder="Ano" /></SelectTrigger>
+                <SelectContent>
+                  {years.map(y => (
+                    <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {/* Year only select */}
+          {flexMode === 'year' && (
+            <div className="animate-in fade-in duration-200">
+              <Select value={flexYearOnly} onValueChange={setFlexYearOnly}>
+                <SelectTrigger className="h-14 text-lg"><SelectValue placeholder="Selecione o ano" /></SelectTrigger>
+                <SelectContent>
+                  {years.map(y => (
+                    <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {/* Submit flexible */}
+          {flexMode && (
+            <Button size="lg" className="w-full h-14 text-lg" onClick={handleFlexSubmit}>
+              {buttonLabel} <ArrowRight className="h-5 w-5 ml-2" />
+            </Button>
+          )}
+
+          {/* Back to exact date */}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full text-muted-foreground"
+            onClick={() => { setShowFlexible(false); setFlexMode(null); }}
           >
-            <SelectTrigger className="h-14 text-base flex-1"><SelectValue placeholder="Mês" /></SelectTrigger>
-            <SelectContent>
-              {months.map((label, i) => (
-                <SelectItem key={i} value={String(i + 1).padStart(2, '0')}>{label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select
-            value={currentAnswer.precision === 'month_year' && currentAnswer.value ? currentAnswer.value.split('-')[0] : ''}
-            onValueChange={(y) => {
-              const m = currentAnswer.precision === 'month_year' && currentAnswer.value ? currentAnswer.value.split('-')[1] : '01';
-              handleChange(`${y}-${m}`, 'month_year');
-            }}
-          >
-            <SelectTrigger className="h-14 text-base w-28"><SelectValue placeholder="Ano" /></SelectTrigger>
-            <SelectContent>
-              {years.map(y => (
-                <SelectItem key={y} value={String(y)}>{y}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            <ArrowLeft className="h-4 w-4 mr-1" /> Voltar para data exata
+          </Button>
+
+          {/* "Não sei" (unknown) */}
+          {allowUnknown && (
+            <Button variant="ghost" size="lg" className="w-full h-12 text-muted-foreground" onClick={() => {
+              onAnswer({ precision: 'unknown', value: 'Não sei' }, d.variable);
+              onNext('date-unknown');
+            }}>
+              Não sei
+            </Button>
+          )}
         </div>
-      )}
-
-      {/* Year only: select */}
-      {precision === 'year' && (
-        <Select
-          value={currentAnswer.precision === 'year' ? currentAnswer.value : ''}
-          onValueChange={(y) => handleChange(y, 'year')}
-        >
-          <SelectTrigger className="h-14 text-lg"><SelectValue placeholder="Selecione o ano" /></SelectTrigger>
-          <SelectContent>
-            {years.map(y => (
-              <SelectItem key={y} value={String(y)}>{y}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      )}
-
-      {precision && (
-        <Button size="lg" className="w-full h-14 text-lg" onClick={() => onNext('date-answered')}>
-          {buttonLabel} <ArrowRight className="h-5 w-5 ml-2" />
-        </Button>
-      )}
-
-      {allowUnknown && (
-        <Button variant="ghost" size="lg" className="w-full h-12 text-muted-foreground" onClick={() => {
-          onAnswer({ precision: 'unknown', value: 'Não sei' }, d.variable);
-          onNext('date-unknown');
-        }}>
-          Não sei
-        </Button>
       )}
     </div>
   );
