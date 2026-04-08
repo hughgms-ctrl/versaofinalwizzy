@@ -330,7 +330,7 @@ function QuizBuilderInner() {
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
         <DialogContent className="max-w-sm h-[600px] p-0 overflow-hidden">
           <DialogHeader className="p-4 pb-0">
-            <DialogTitle className="text-sm">Visualização do Quiz</DialogTitle>
+            <DialogTitle className="text-sm">Visualização do Quizz</DialogTitle>
           </DialogHeader>
           <div className="flex-1 overflow-hidden">
             {previewOpen && publicUrl && (
