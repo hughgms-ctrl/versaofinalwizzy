@@ -314,7 +314,19 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate }: {
       {block.type === 'quiz-logic-condition' && (
         <>
           <div><Label className="text-xs">Variável</Label>
-            <Input value={d.variable || ''} onChange={(e) => updateBlockData({ variable: e.target.value })} placeholder="Ex: email" /></div>
+            <Input value={d.variable || ''} onChange={(e) => updateBlockData({ variable: e.target.value })} placeholder="Ex: data_nascimento" /></div>
+          
+          <div><Label className="text-xs">Tipo de comparação</Label>
+            <Select value={d.compareType || 'text'} onValueChange={(v) => updateBlockData({ compareType: v })}>
+              <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="text">Texto</SelectItem>
+                <SelectItem value="number">Número</SelectItem>
+                <SelectItem value="date">Data</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
           <div><Label className="text-xs">Operador</Label>
             <Select value={d.operator || 'equals'} onValueChange={(v) => updateBlockData({ operator: v })}>
               <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
@@ -322,15 +334,33 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate }: {
                 <SelectItem value="equals">Igual a</SelectItem>
                 <SelectItem value="not_equals">Diferente de</SelectItem>
                 <SelectItem value="contains">Contém</SelectItem>
-                <SelectItem value="greater_than">Maior que</SelectItem>
-                <SelectItem value="less_than">Menor que</SelectItem>
+                <SelectItem value="greater_than">{d.compareType === 'date' ? 'Depois de' : 'Maior que'}</SelectItem>
+                <SelectItem value="less_than">{d.compareType === 'date' ? 'Antes de' : 'Menor que'}</SelectItem>
+                <SelectItem value="greater_equal">{d.compareType === 'date' ? 'A partir de' : 'Maior ou igual'}</SelectItem>
+                <SelectItem value="less_equal">{d.compareType === 'date' ? 'Até' : 'Menor ou igual'}</SelectItem>
                 <SelectItem value="is_set">Está preenchido</SelectItem>
                 <SelectItem value="is_empty">Está vazio</SelectItem>
               </SelectContent>
             </Select>
           </div>
-          <div><Label className="text-xs">Valor</Label>
-            <Input value={d.value || ''} onChange={(e) => updateBlockData({ value: e.target.value })} /></div>
+
+          {!['is_set', 'is_empty'].includes(d.operator || '') && (
+            <div>
+              <Label className="text-xs">Valor</Label>
+              {d.compareType === 'date' ? (
+                <Input type="date" value={d.value || ''} onChange={(e) => updateBlockData({ value: e.target.value })} />
+              ) : (
+                <Input value={d.value || ''} onChange={(e) => updateBlockData({ value: e.target.value })} 
+                  placeholder={d.compareType === 'number' ? 'Ex: 2018' : 'Ex: sim'} />
+              )}
+            </div>
+          )}
+
+          {d.compareType === 'date' && (
+            <p className="text-[10px] text-muted-foreground">
+              Para datas com precisão flexível (mês/ano ou apenas ano), a comparação usa o valor armazenado na variável.
+            </p>
+          )}
         </>
       )}
 

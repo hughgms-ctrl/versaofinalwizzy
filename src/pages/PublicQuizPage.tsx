@@ -221,22 +221,64 @@ export default function PublicQuizPage() {
 
   // ---- Logic block handlers ----
   const handleConditionBlock = useCallback((block: FlowBlock) => {
-    const { variable, operator, value } = block.data;
-    const varValue = variables[variable] ?? '';
+    const { variable, operator, value, compareType } = block.data;
+    let rawValue = variables[variable] ?? '';
     let result = false;
 
-    switch (operator) {
-      case 'equals': result = String(varValue) === String(value); break;
-      case 'not_equals': result = String(varValue) !== String(value); break;
-      case 'contains': result = String(varValue).toLowerCase().includes(String(value).toLowerCase()); break;
-      case 'greater_than': result = Number(varValue) > Number(value); break;
-      case 'less_than': result = Number(varValue) < Number(value); break;
-      case 'is_set': result = varValue !== '' && varValue !== null && varValue !== undefined; break;
-      case 'is_empty': result = varValue === '' || varValue === null || varValue === undefined; break;
-      default: result = false;
+    // Extract comparable value from date objects (flexible precision)
+    const extractDateValue = (v: any): string => {
+      if (typeof v === 'object' && v?.value) return String(v.value);
+      return String(v);
+    };
+
+    const resolvedVar = extractDateValue(rawValue);
+    const resolvedVal = String(value);
+
+    if (compareType === 'date') {
+      // Normalize to comparable date strings (YYYY-MM-DD, YYYY-MM, or YYYY)
+      const dVar = resolvedVar.replace(/T.*/, '');
+      const dVal = resolvedVal.replace(/T.*/, '');
+      switch (operator) {
+        case 'equals': result = dVar === dVal; break;
+        case 'not_equals': result = dVar !== dVal; break;
+        case 'greater_than': result = dVar > dVal; break;
+        case 'less_than': result = dVar < dVal; break;
+        case 'greater_equal': result = dVar >= dVal; break;
+        case 'less_equal': result = dVar <= dVal; break;
+        case 'is_set': result = dVar !== '' && dVar !== 'Não sei'; break;
+        case 'is_empty': result = dVar === '' || dVar === 'Não sei'; break;
+        default: result = false;
+      }
+    } else if (compareType === 'number') {
+      const nVar = Number(resolvedVar);
+      const nVal = Number(resolvedVal);
+      switch (operator) {
+        case 'equals': result = nVar === nVal; break;
+        case 'not_equals': result = nVar !== nVal; break;
+        case 'greater_than': result = nVar > nVal; break;
+        case 'less_than': result = nVar < nVal; break;
+        case 'greater_equal': result = nVar >= nVal; break;
+        case 'less_equal': result = nVar <= nVal; break;
+        case 'is_set': result = resolvedVar !== '' && !isNaN(nVar); break;
+        case 'is_empty': result = resolvedVar === '' || isNaN(nVar); break;
+        default: result = false;
+      }
+    } else {
+      // Text comparison (default)
+      switch (operator) {
+        case 'equals': result = resolvedVar === resolvedVal; break;
+        case 'not_equals': result = resolvedVar !== resolvedVal; break;
+        case 'contains': result = resolvedVar.toLowerCase().includes(resolvedVal.toLowerCase()); break;
+        case 'greater_than': result = resolvedVar > resolvedVal; break;
+        case 'less_than': result = resolvedVar < resolvedVal; break;
+        case 'greater_equal': result = resolvedVar >= resolvedVal; break;
+        case 'less_equal': result = resolvedVar <= resolvedVal; break;
+        case 'is_set': result = resolvedVar !== '' && resolvedVar !== null && resolvedVar !== undefined; break;
+        case 'is_empty': result = resolvedVar === '' || resolvedVar === null || resolvedVar === undefined; break;
+        default: result = false;
+      }
     }
 
-    // Follow true/false handle
     goToNextBlock(result ? 'true' : 'false');
   }, [variables, goToNextBlock]);
 
