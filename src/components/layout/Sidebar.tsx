@@ -16,7 +16,7 @@ import {
   User,
   BookUser,
   MousePointerClick,
-  FileText,
+  MousePointerClick,
   Plug,
   Megaphone,
   Calendar,
