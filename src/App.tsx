@@ -31,7 +31,6 @@ import WidgetEditorPage from "./pages/WidgetEditorPage";
 import DocumentsPage from "./pages/DocumentsPage";
 import ToolsPage from "./pages/ToolsPage";
 import QuizListPage from "./pages/QuizListPage";
-import DocumentsPage from "./pages/DocumentsPage";
 import IntegrationsPage from "./pages/IntegrationsPage";
 import PublicFormPage from "./pages/PublicFormPage";
 import PublicPackFormPage from "./pages/PublicPackFormPage";
