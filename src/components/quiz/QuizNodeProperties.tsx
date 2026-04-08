@@ -22,10 +22,21 @@ interface QuizNodePropertiesProps {
   onDeleteNode: (nodeId: string) => void;
   onSave?: () => void;
   isSaving?: boolean;
+  allNodes?: Node[];
 }
 
-export function QuizNodeProperties({ node, selectedBlockIdx, onClose, onUpdateNode, onDeleteNode, onSave, isSaving }: QuizNodePropertiesProps) {
+export function QuizNodeProperties({ node, selectedBlockIdx, onClose, onUpdateNode, onDeleteNode, onSave, isSaving, allNodes }: QuizNodePropertiesProps) {
   if (!node) return null;
+
+  // Collect all user-defined fields from all blocks across all nodes
+  const userFields: string[] = [];
+  (allNodes || []).forEach(n => {
+    const blocks = (n.data?.blocks as any[]) || [];
+    blocks.forEach(b => {
+      const v = b.data?.variable;
+      if (v && !userFields.includes(v)) userFields.push(v);
+    });
+  });
 
   const blocks = (node.data.blocks as any[]) || [];
   const block = selectedBlockIdx !== null ? blocks[selectedBlockIdx] : null;
@@ -46,6 +57,7 @@ export function QuizNodeProperties({ node, selectedBlockIdx, onClose, onUpdateNo
               allBlocks={blocks}
               nodeId={node.id}
               onUpdate={(updatedBlocks) => onUpdateNode(node.id, { blocks: updatedBlocks })}
+              userFields={userFields}
             />
           ) : (
             <GroupEditor
@@ -86,12 +98,13 @@ function GroupEditor({ node, onUpdate, onDelete }: { node: Node; onUpdate: (data
   );
 }
 
-function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate }: {
+function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate, userFields }: {
   block: any;
   blockIdx: number;
   allBlocks: any[];
   nodeId: string;
   onUpdate: (blocks: any[]) => void;
+  userFields: string[];
 }) {
   const d = block.data || {};
 
@@ -284,7 +297,7 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate }: {
 
       {/* Condition */}
       {block.type === 'quiz-logic-condition' && (
-        <ConditionEditor data={d} onUpdate={updateBlockData} />
+        <ConditionEditor data={d} onUpdate={updateBlockData} userFields={userFields} />
       )}
 
       {/* Redirect */}
@@ -340,7 +353,7 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate }: {
   );
 }
 
-function ConditionEditor({ data, onUpdate }: { data: Record<string, any>; onUpdate: (d: Record<string, any>) => void }) {
+function ConditionEditor({ data, onUpdate, userFields }: { data: Record<string, any>; onUpdate: (d: Record<string, any>) => void; userFields: string[] }) {
   const rules: any[] = data.rules || [{ source: 'variable', variable: '', compareType: 'text', operator: 'equals', value: '' }];
   const matchType = data.matchType || 'all';
 
@@ -403,8 +416,8 @@ function ConditionEditor({ data, onUpdate }: { data: Record<string, any>; onUpda
               <div className="flex items-center justify-between">
                 <Select value={rule.source || 'variable'} onValueChange={(v) => updateRule(idx, { source: v })}>
                   <SelectTrigger className="h-8 text-xs w-auto gap-1"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="variable">📋 Variável</SelectItem>
+                   <SelectContent>
+                    <SelectItem value="variable">📋 Campo do usuário</SelectItem>
                     <SelectItem value="contact_field">👤 Campo do contato</SelectItem>
                   </SelectContent>
                 </Select>
@@ -415,8 +428,18 @@ function ConditionEditor({ data, onUpdate }: { data: Record<string, any>; onUpda
 
               {rule.source === 'variable' && (
                 <div>
-                  <Label className="text-[10px] text-muted-foreground">Nome da variável</Label>
-                  <Input value={rule.variable || ''} onChange={(e) => updateRule(idx, { variable: e.target.value })} className="h-8 text-xs" placeholder="Ex: data_nascimento" />
+                  <Label className="text-[10px] text-muted-foreground">Campo do usuário</Label>
+                  <Select value={rule.variable || ''} onValueChange={(v) => updateRule(idx, { variable: v })}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Selecione um campo..." /></SelectTrigger>
+                    <SelectContent>
+                      {userFields.length > 0 && userFields.map(f => (
+                        <SelectItem key={f} value={f}>{f}</SelectItem>
+                      ))}
+                      {userFields.length === 0 && (
+                        <SelectItem value="_none" disabled>Nenhum campo criado</SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
                 </div>
               )}
 
