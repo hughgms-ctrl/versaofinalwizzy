@@ -16,7 +16,7 @@ export function QuizStartNode({ selected }: NodeProps) {
     )}>
       <div className="flex items-center gap-2 text-white">
         <Play className="h-4 w-4" />
-        <span className="font-semibold text-sm">Start</span>
+        <span className="font-semibold text-sm">Início</span>
       </div>
       <Handle type="source" position={Position.Right}
         className="!w-3 !h-3 !bg-white !border-2 !border-green-500 opacity-0 group-hover:opacity-100 transition-opacity !-right-1.5" />
@@ -76,37 +76,37 @@ function getBlockColor(type: string) {
 function getBlockLabel(block: { type: string; data: Record<string, any> }) {
   const d = block.data;
   switch (block.type) {
-    case 'quiz-bubble-text': return d.content?.slice(0, 40) || 'Click to edit...';
-    case 'quiz-bubble-image': return d.url ? 'Image' : '📷 Click to edit...';
-    case 'quiz-bubble-video': return d.url ? 'Video' : '🎬 Click to edit...';
+    case 'quiz-bubble-text': return d.content?.slice(0, 40) || 'Clique para editar...';
+    case 'quiz-bubble-image': return d.url ? 'Imagem' : '📷 Clique para editar...';
+    case 'quiz-bubble-video': return d.url ? 'Vídeo' : '🎬 Clique para editar...';
     case 'quiz-bubble-embed': return d.url || 'Embed';
-    case 'quiz-bubble-audio': return d.url ? 'Audio' : '🎧 Click to edit...';
-    case 'quiz-input-text': return d.placeholder || 'Type your answer...';
-    case 'quiz-input-number': return d.placeholder || 'Type a number...';
-    case 'quiz-input-email': return d.placeholder || 'Type your email...';
-    case 'quiz-input-website': return d.placeholder || 'Type a URL...';
-    case 'quiz-input-date': return 'Pick a date...';
-    case 'quiz-input-time': return 'Pick a time...';
-    case 'quiz-input-phone': return d.placeholder || 'Type your phone...';
-    case 'quiz-input-file': return 'Upload file...';
-    case 'quiz-input-rating': return `Rating (1-${d.maxRating || 5})`;
+    case 'quiz-bubble-audio': return d.url ? 'Áudio' : '🎧 Clique para editar...';
+    case 'quiz-input-text': return d.placeholder || 'Digite sua resposta...';
+    case 'quiz-input-number': return d.placeholder || 'Digite um número...';
+    case 'quiz-input-email': return d.placeholder || 'Digite seu email...';
+    case 'quiz-input-website': return d.placeholder || 'Digite uma URL...';
+    case 'quiz-input-date': return 'Escolha uma data...';
+    case 'quiz-input-time': return 'Escolha um horário...';
+    case 'quiz-input-phone': return d.placeholder || 'Digite seu telefone...';
+    case 'quiz-input-file': return 'Enviar arquivo...';
+    case 'quiz-input-rating': return `Avaliação (1-${d.maxRating || 5})`;
     case 'quiz-input-buttons':
-      return (d.options as any[])?.map((o: any) => o.label).join(', ') || 'Add buttons...';
+      return (d.options as any[])?.map((o: any) => o.label).join(', ') || 'Adicionar botões...';
     case 'quiz-input-pic-choice':
-      return (d.options as any[])?.length ? `${(d.options as any[]).length} choices` : 'Add choices...';
-    case 'quiz-logic-condition': return 'Condition';
-    case 'quiz-logic-redirect': return d.url || 'Redirect';
-    case 'quiz-logic-wait': return `Wait ${d.seconds || 3}s`;
-    case 'quiz-logic-ab-test': return 'A/B Test';
-    case 'quiz-logic-jump': return d.targetGroup || 'Jump';
-    case 'quiz-event-pixel': return d.platform ? `${d.platform} - ${d.eventName || 'PageView'}` : 'Configure pixel...';
+      return (d.options as any[])?.length ? `${(d.options as any[]).length} escolhas` : 'Adicionar escolhas...';
+    case 'quiz-logic-condition': return 'Condição';
+    case 'quiz-logic-redirect': return d.url || 'Redirecionar';
+    case 'quiz-logic-wait': return `Esperar ${d.seconds || 3}s`;
+    case 'quiz-logic-ab-test': return 'Teste A/B';
+    case 'quiz-logic-jump': return d.targetGroup || 'Pular';
+    case 'quiz-event-pixel': return d.platform ? `${d.platform} - ${d.eventName || 'PageView'}` : 'Configurar pixel...';
     default: return block.type;
   }
 }
 
 export function QuizGroupNode({ data, selected, id }: NodeProps<GroupNode>) {
   const blocks = (data.blocks as GroupNodeData['blocks']) || [];
-  const label = (data.label as string) || 'Group';
+  const label = (data.label as string) || 'Grupo';
 
   // Check if last block is a buttons/choice type for per-option handles
   const lastBlock = blocks[blocks.length - 1];
@@ -138,7 +138,7 @@ export function QuizGroupNode({ data, selected, id }: NodeProps<GroupNode>) {
       <div className="p-2 space-y-1">
         {blocks.length === 0 ? (
           <p className="text-xs text-muted-foreground text-center py-4">
-            Drop blocks here...
+            Solte blocos aqui...
           </p>
         ) : (
           blocks.map((block, idx) => {
@@ -202,7 +202,7 @@ export function QuizGroupNode({ data, selected, id }: NodeProps<GroupNode>) {
             style={{ top: '40%' }} />
           <span className="absolute text-[9px] text-green-500 font-medium whitespace-nowrap pointer-events-none"
             style={{ right: '-8px', top: '40%', transform: 'translate(100%, -50%)', paddingLeft: '4px' }}>
-            True
+             True
           </span>
           <Handle type="source" position={Position.Right} id="false"
             className="!w-3 !h-3 !bg-red-500 !border-2 !border-background !-right-1.5"

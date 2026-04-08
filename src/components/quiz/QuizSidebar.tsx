@@ -42,7 +42,7 @@ interface QuizCategory {
 export const quizCategories: QuizCategory[] = [
   {
     id: 'bubbles',
-    label: 'Bubbles',
+    label: 'Balões',
     color: 'text-blue-500',
     components: [
       { type: 'quiz-bubble-text', label: 'Texto', icon: MessageSquare, color: 'bg-blue-500' },
@@ -54,37 +54,37 @@ export const quizCategories: QuizCategory[] = [
   },
   {
     id: 'inputs',
-    label: 'Inputs',
+    label: 'Entradas',
     color: 'text-orange-500',
     components: [
-      { type: 'quiz-input-text', label: 'Text', icon: Type, color: 'bg-orange-500' },
-      { type: 'quiz-input-number', label: 'Number', icon: Hash, color: 'bg-orange-500' },
+      { type: 'quiz-input-text', label: 'Texto', icon: Type, color: 'bg-orange-500' },
+      { type: 'quiz-input-number', label: 'Número', icon: Hash, color: 'bg-orange-500' },
       { type: 'quiz-input-email', label: 'Email', icon: Mail, color: 'bg-orange-500' },
       { type: 'quiz-input-website', label: 'Website', icon: Globe, color: 'bg-orange-500' },
-      { type: 'quiz-input-date', label: 'Date', icon: Calendar, color: 'bg-orange-500' },
-      { type: 'quiz-input-time', label: 'Time', icon: Clock, color: 'bg-orange-500' },
-      { type: 'quiz-input-phone', label: 'Phone', icon: Phone, color: 'bg-orange-500' },
-      { type: 'quiz-input-buttons', label: 'Buttons', icon: MousePointerClick, color: 'bg-orange-500' },
-      { type: 'quiz-input-pic-choice', label: 'Pic choice', icon: ImageIcon, color: 'bg-orange-500' },
-      { type: 'quiz-input-rating', label: 'Rating', icon: Star, color: 'bg-orange-500' },
-      { type: 'quiz-input-file', label: 'File', icon: Link2, color: 'bg-orange-500' },
+      { type: 'quiz-input-date', label: 'Data', icon: Calendar, color: 'bg-orange-500' },
+      { type: 'quiz-input-time', label: 'Hora', icon: Clock, color: 'bg-orange-500' },
+      { type: 'quiz-input-phone', label: 'Telefone', icon: Phone, color: 'bg-orange-500' },
+      { type: 'quiz-input-buttons', label: 'Botões', icon: MousePointerClick, color: 'bg-orange-500' },
+      { type: 'quiz-input-pic-choice', label: 'Escolha com imagem', icon: ImageIcon, color: 'bg-orange-500' },
+      { type: 'quiz-input-rating', label: 'Avaliação', icon: Star, color: 'bg-orange-500' },
+      { type: 'quiz-input-file', label: 'Arquivo', icon: Link2, color: 'bg-orange-500' },
     ],
   },
   {
     id: 'logic',
-    label: 'Logic',
+    label: 'Lógica',
     color: 'text-purple-500',
     components: [
-      { type: 'quiz-logic-condition', label: 'Condition', icon: GitBranch, color: 'bg-purple-500' },
-      { type: 'quiz-logic-redirect', label: 'Redirect', icon: ArrowRight, color: 'bg-purple-500' },
-      { type: 'quiz-logic-wait', label: 'Wait', icon: Timer, color: 'bg-purple-500' },
-      { type: 'quiz-logic-ab-test', label: 'AB Test', icon: Shuffle, color: 'bg-purple-500' },
-      { type: 'quiz-logic-jump', label: 'Jump', icon: CornerDownLeft, color: 'bg-purple-500' },
+      { type: 'quiz-logic-condition', label: 'Condição', icon: GitBranch, color: 'bg-purple-500' },
+      { type: 'quiz-logic-redirect', label: 'Redirecionar', icon: ArrowRight, color: 'bg-purple-500' },
+      { type: 'quiz-logic-wait', label: 'Esperar', icon: Timer, color: 'bg-purple-500' },
+      { type: 'quiz-logic-ab-test', label: 'Teste AB', icon: Shuffle, color: 'bg-purple-500' },
+      { type: 'quiz-logic-jump', label: 'Pular', icon: CornerDownLeft, color: 'bg-purple-500' },
     ],
   },
   {
     id: 'events',
-    label: 'Events',
+    label: 'Eventos',
     color: 'text-green-500',
     components: [
       { type: 'quiz-event-pixel', label: 'Pixel', icon: BarChart3, color: 'bg-green-500' },
@@ -133,7 +133,7 @@ export function QuizSidebar({ onDragStart, isCollapsed, onToggleCollapse }: Quiz
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search"
+            placeholder="Buscar"
             className="h-8 pl-8 text-sm"
           />
         </div>

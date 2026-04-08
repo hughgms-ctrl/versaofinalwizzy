@@ -45,7 +45,7 @@ function QuizBuilderInner() {
 
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([
-    { id: 'start-1', type: 'quiz-start', position: { x: 100, y: 200 }, data: { label: 'Start' } } as Node,
+    { id: 'start-1', type: 'quiz-start', position: { x: 100, y: 200 }, data: { label: 'Início' } } as Node,
   ]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
@@ -132,7 +132,7 @@ function QuizBuilderInner() {
         type: 'quiz-group',
         position,
         data: {
-          label: `Group #${groupCounter - 1}`,
+          label: `Grupo #${groupCounter - 1}`,
           blocks: [newBlock],
         },
       };
@@ -230,7 +230,7 @@ function QuizBuilderInner() {
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => setPreviewOpen(true)}>
-            <Eye className="h-3.5 w-3.5 mr-1.5" /> Preview
+            <Eye className="h-3.5 w-3.5 mr-1.5" /> Visualizar
           </Button>
           {publicUrl && (
             <Button variant="outline" size="sm" onClick={() => { navigator.clipboard.writeText(publicUrl); toast.success('Link copiado!'); }}>
@@ -314,7 +314,7 @@ function QuizBuilderInner() {
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
         <DialogContent className="max-w-sm h-[600px] p-0 overflow-hidden">
           <DialogHeader className="p-4 pb-0">
-            <DialogTitle className="text-sm">Preview do Quiz</DialogTitle>
+            <DialogTitle className="text-sm">Visualização do Quiz</DialogTitle>
           </DialogHeader>
           <div className="flex-1 overflow-hidden">
             {previewOpen && publicUrl && (
@@ -340,17 +340,17 @@ function getDefaultBlockData(type: QuizNodeType): Record<string, any> {
     case 'quiz-bubble-video': return { url: '', autoplay: true };
     case 'quiz-bubble-embed': return { url: '' };
     case 'quiz-bubble-audio': return { url: '' };
-    case 'quiz-input-text': return { placeholder: 'Type your answer...', variable: '', required: true };
-    case 'quiz-input-number': return { placeholder: 'Type a number...', variable: '', required: true };
-    case 'quiz-input-email': return { placeholder: 'Type your email...', variable: 'email', required: true };
-    case 'quiz-input-website': return { placeholder: 'Type a URL...', variable: '', required: true };
+    case 'quiz-input-text': return { placeholder: 'Digite sua resposta...', variable: '', required: true };
+    case 'quiz-input-number': return { placeholder: 'Digite um número...', variable: '', required: true };
+    case 'quiz-input-email': return { placeholder: 'Digite seu email...', variable: 'email', required: true };
+    case 'quiz-input-website': return { placeholder: 'Digite uma URL...', variable: '', required: true };
     case 'quiz-input-date': return { variable: '', required: true };
     case 'quiz-input-time': return { variable: '', required: true };
-    case 'quiz-input-phone': return { placeholder: 'Type your phone...', variable: 'phone', required: true };
+    case 'quiz-input-phone': return { placeholder: 'Digite seu telefone...', variable: 'phone', required: true };
     case 'quiz-input-buttons':
-      return { options: [{ label: 'Option 1', value: 'opt_1' }, { label: 'Option 2', value: 'opt_2' }], variable: '' };
+      return { options: [{ label: 'Opção 1', value: 'opt_1' }, { label: 'Opção 2', value: 'opt_2' }], variable: '' };
     case 'quiz-input-pic-choice':
-      return { options: [{ label: 'Choice 1', imageUrl: '' }, { label: 'Choice 2', imageUrl: '' }], variable: '' };
+      return { options: [{ label: 'Escolha 1', imageUrl: '' }, { label: 'Escolha 2', imageUrl: '' }], variable: '' };
     case 'quiz-input-rating': return { maxRating: 5, variable: '' };
     case 'quiz-input-file': return { accept: '', variable: '' };
     case 'quiz-logic-condition': return { variable: '', operator: 'equals', value: '' };
