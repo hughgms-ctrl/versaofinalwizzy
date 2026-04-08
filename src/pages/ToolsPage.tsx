@@ -23,7 +23,7 @@ const tools = [
     planModule: 'documents',
   },
   {
-    name: 'Quiz',
+    name: 'Quizz',
     description: 'Crie questionários interativos estilo Typebot. Capture dados, qualifique leads e dispare conversas.',
     icon: HelpCircle,
     href: '/tools/quiz',
