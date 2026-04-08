@@ -98,12 +98,13 @@ function GroupEditor({ node, onUpdate, onDelete }: { node: Node; onUpdate: (data
   );
 }
 
-function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate }: {
+function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate, userFields }: {
   block: any;
   blockIdx: number;
   allBlocks: any[];
   nodeId: string;
   onUpdate: (blocks: any[]) => void;
+  userFields: string[];
 }) {
   const d = block.data || {};
 
