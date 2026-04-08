@@ -148,7 +148,7 @@ function QuizBuilderInner() {
         id: quizId,
         theme: { nodes, edges } as any,
       });
-      toast.success('Quiz salvo!');
+      toast.success('Quizz salvo!');
     } catch (e: any) {
       toast.error(e.message);
     } finally {
