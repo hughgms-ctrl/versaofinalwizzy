@@ -416,8 +416,8 @@ function ConditionEditor({ data, onUpdate, userFields }: { data: Record<string, 
               <div className="flex items-center justify-between">
                 <Select value={rule.source || 'variable'} onValueChange={(v) => updateRule(idx, { source: v })}>
                   <SelectTrigger className="h-8 text-xs w-auto gap-1"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="variable">📋 Variável</SelectItem>
+                   <SelectContent>
+                    <SelectItem value="variable">📋 Campo do usuário</SelectItem>
                     <SelectItem value="contact_field">👤 Campo do contato</SelectItem>
                   </SelectContent>
                 </Select>
