@@ -123,6 +123,8 @@ export function QuizGroupNode({ data, selected, id }: NodeProps<GroupNode>) {
   const isCondition = lastBlock?.type === 'quiz-logic-condition';
   // Check if last block is AB test
   const isABTest = lastBlock?.type === 'quiz-logic-ab-test';
+  // Check if last block is date with "Não sei" enabled
+  const isDateWithUnknown = lastBlock?.type === 'quiz-input-date' && lastBlock.data.allowUnknown !== false;
 
   return (
     <div className={cn(
@@ -233,6 +235,23 @@ export function QuizGroupNode({ data, selected, id }: NodeProps<GroupNode>) {
             style={{ top: '70%' }} />
           <span className="absolute text-[9px] text-purple-500 font-medium whitespace-nowrap pointer-events-none"
             style={{ right: '-8px', top: '70%', transform: 'translate(100%, -50%)', paddingLeft: '4px' }}>B</span>
+        </>
+      ) : isDateWithUnknown ? (
+        <>
+          <Handle type="source" position={Position.Right} id="date-answered"
+            className="!w-3 !h-3 !bg-orange-500 !border-2 !border-background !-right-1.5"
+            style={{ top: '40%' }} />
+          <span className="absolute text-[9px] text-orange-500 font-medium whitespace-nowrap pointer-events-none"
+            style={{ right: '-8px', top: '40%', transform: 'translate(100%, -50%)', paddingLeft: '4px' }}>
+            Data
+          </span>
+          <Handle type="source" position={Position.Right} id="date-unknown"
+            className="!w-3 !h-3 !bg-muted-foreground !border-2 !border-background !-right-1.5"
+            style={{ top: '70%' }} />
+          <span className="absolute text-[9px] text-muted-foreground font-medium whitespace-nowrap pointer-events-none"
+            style={{ right: '-8px', top: '70%', transform: 'translate(100%, -50%)', paddingLeft: '4px' }}>
+            Não sei
+          </span>
         </>
       ) : (
         <Handle type="source" position={Position.Right}
