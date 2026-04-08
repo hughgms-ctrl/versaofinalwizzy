@@ -139,7 +139,7 @@ export function Sidebar() {
         {/* Navigation */}
         <nav className="flex-1 space-y-1 px-3 py-4 overflow-y-auto">
           {visibleNavigation.map((item) => {
-            const isActive = location.pathname === item.href;
+            const isActive = item.href === '/' ? location.pathname === '/' : location.pathname.startsWith(item.href);
             const isLocked = item.planModule ? !canAccessPlanModule(item.planModule) : false;
             return (
               <Link
