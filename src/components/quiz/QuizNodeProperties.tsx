@@ -9,8 +9,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Calendar } from '@/components/ui/calendar';
 import { Trash2, Plus, GripVertical, Save } from 'lucide-react';
 import { getQuizComponentInfo } from './QuizSidebar';
+import { ptBR } from 'date-fns/locale';
 
 interface QuizNodePropertiesProps {
   node: Node | null;
@@ -177,14 +179,31 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate }: {
             <Textarea value={d.question || ''} onChange={(e) => updateBlockData({ question: e.target.value })} rows={2} placeholder="Ex: Informe a data da prisão" /></div>
           <div><Label className="text-xs">Variável</Label>
             <Input value={d.variable || ''} onChange={(e) => updateBlockData({ variable: e.target.value })} /></div>
+          
+          <div>
+            <Label className="text-xs mb-2 block">Pré-visualização do calendário</Label>
+            <Calendar
+              mode="single"
+              locale={ptBR}
+              className="rounded-md border pointer-events-auto mx-auto"
+            />
+          </div>
+
           <div className="flex items-center justify-between">
             <Label className="text-xs">Permitir precisão flexível</Label>
             <Switch checked={d.allowFlexible === true} onCheckedChange={(v) => updateBlockData({ allowFlexible: v })} />
           </div>
           {d.allowFlexible && (
-            <p className="text-[10px] text-muted-foreground">
-              O respondente poderá escolher: Data exata, Mês/Ano, Apenas ano ou Não sei.
-            </p>
+            <div className="space-y-2">
+              <p className="text-[10px] text-muted-foreground">
+                O respondente poderá escolher: Data exata, Mês/Ano, Apenas ano ou Não sei.
+              </p>
+              <div className="text-[10px] text-muted-foreground space-y-1 border rounded-md p-2">
+                <p><strong>Mês/Ano:</strong> Seletor de mês e ano</p>
+                <p><strong>Apenas ano:</strong> Seletor de ano</p>
+                <p><strong>Não sei:</strong> Registra como desconhecido</p>
+              </div>
+            </div>
           )}
           <div className="flex items-center justify-between">
             <Label className="text-xs">Obrigatório</Label>
