@@ -635,15 +635,13 @@ function BlockRenderer({ block, answer, variables, onAnswer, onNext, isLast }: {
 
   if (block.type === 'quiz-input-date') {
     return (
-      <InputWrapper onNext={onNext}>
-        {d.question && <h2 className="text-2xl font-bold">{interpolate(d.question, variables)}</h2>}
-        <Input
-          type="date"
-          value={answer || ''}
-          onChange={e => onAnswer(e.target.value, d.variable)}
-          className="h-14 text-lg"
-        />
-      </InputWrapper>
+      <DateBlockRenderer
+        block={block}
+        answer={answer}
+        variables={variables}
+        onAnswer={onAnswer}
+        onNext={onNext}
+      />
     );
   }
 
