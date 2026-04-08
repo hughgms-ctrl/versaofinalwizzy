@@ -933,37 +933,34 @@ function DateBlockRenderer({ block, answer, variables, onAnswer, onNext }: {
       {/* Date input field with calendar toggle */}
       {!showFlexible && (
         <div className="space-y-3">
-          {/* Typeable date input */}
-          <Input
-            type="text"
-            value={selectedDate ? format(selectedDate, "dd/MM/yyyy", { locale: ptBR }) : (answer?.typedValue || '')}
-            placeholder="Digite a data (dd/mm/aaaa)..."
-            className="h-14 text-lg"
-            onChange={(e) => {
-              const raw = e.target.value;
-              onAnswer({ ...currentAnswer, typedValue: raw }, d.variable);
-              // Try parse dd/mm/yyyy
-              const parts = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-              if (parts) {
-                const parsed = new Date(`${parts[3]}-${parts[2]}-${parts[1]}T00:00:00`);
-                if (!isNaN(parsed.getTime())) {
-                  const val = format(parsed, 'yyyy-MM-dd');
-                  const finalValue = withTime && timeValue ? `${val}T${timeValue}` : val;
-                  onAnswer({ precision: 'exact', value: finalValue }, d.variable);
+          {/* Typeable date input with inline calendar icon */}
+          <div className="relative">
+            <Input
+              type="text"
+              value={selectedDate ? format(selectedDate, "dd/MM/yyyy", { locale: ptBR }) : (answer?.typedValue || '')}
+              placeholder="Digite a data (dd/mm/aaaa)..."
+              className="h-14 text-lg pr-12"
+              onChange={(e) => {
+                const raw = e.target.value;
+                onAnswer({ ...currentAnswer, typedValue: raw }, d.variable);
+                const parts = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+                if (parts) {
+                  const parsed = new Date(`${parts[3]}-${parts[2]}-${parts[1]}T00:00:00`);
+                  if (!isNaN(parsed.getTime())) {
+                    const val = format(parsed, 'yyyy-MM-dd');
+                    onAnswer({ precision: 'exact', value: val }, d.variable);
+                  }
                 }
-              }
-            }}
-          />
-
-          {/* Calendar toggle button */}
-          <Button
-            variant="outline"
-            className="w-full h-12 gap-2"
-            onClick={() => setShowCalendar(!showCalendar)}
-          >
-            <CalendarIcon className="h-5 w-5" />
-            {showCalendar ? 'Fechar calendário' : 'Abrir calendário'}
-          </Button>
+              }}
+            />
+            <button
+              type="button"
+              className="absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-muted transition-colors"
+              onClick={() => setShowCalendar(!showCalendar)}
+            >
+              <CalendarIcon className="h-5 w-5 text-muted-foreground" />
+            </button>
+          </div>
 
           {showCalendar && (
             <div className="flex justify-center animate-in fade-in slide-in-from-top-2 duration-200">
@@ -972,15 +969,9 @@ function DateBlockRenderer({ block, answer, variables, onAnswer, onNext }: {
                 selected={selectedDate}
                 onSelect={handleExactSelect}
                 locale={ptBR}
-                fromDate={minDate}
-                toDate={maxDate}
                 className="rounded-md border pointer-events-auto"
               />
             </div>
-          )}
-
-          {withTime && (
-            <Input type="time" value={timeValue} onChange={e => setTimeValue(e.target.value)} className="h-12 text-lg" placeholder="Horário" />
           )}
 
           {selectedDate && (
