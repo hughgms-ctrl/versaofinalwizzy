@@ -23,7 +23,8 @@ export type QuizNodeType =
   | 'quiz-logic-condition' | 'quiz-logic-redirect' | 'quiz-logic-wait'
   | 'quiz-logic-ab-test' | 'quiz-logic-jump'
   // Events
-  | 'quiz-event-pixel';
+  | 'quiz-event-pixel'
+  | 'quiz-event-whatsapp-trigger';
 
 interface QuizComponent {
   type: QuizNodeType;
@@ -88,6 +89,7 @@ export const quizCategories: QuizCategory[] = [
     color: 'text-green-500',
     components: [
       { type: 'quiz-event-pixel', label: 'Pixel', icon: BarChart3, color: 'bg-green-500' },
+      { type: 'quiz-event-whatsapp-trigger', label: 'Disparo WhatsApp', icon: MessageSquare, color: 'bg-green-500' },
     ],
   },
 ];
