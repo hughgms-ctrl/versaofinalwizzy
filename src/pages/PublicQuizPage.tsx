@@ -556,7 +556,8 @@ function BlockRenderer({ block, answer, variables, onAnswer, onNext, isLast }: {
   // ---- INPUTS ----
   if (block.type === 'quiz-input-text') {
     return (
-      <InputWrapper placeholder={d.placeholder || 'Digite sua resposta...'} onNext={onNext}>
+      <InputWrapper onNext={onNext}>
+        {d.question && <h2 className="text-2xl font-bold">{interpolate(d.question, variables)}</h2>}
         <Input
           value={answer || ''}
           onChange={e => onAnswer(e.target.value, d.variable)}
@@ -571,6 +572,7 @@ function BlockRenderer({ block, answer, variables, onAnswer, onNext, isLast }: {
   if (block.type === 'quiz-input-number') {
     return (
       <InputWrapper onNext={onNext}>
+        {d.question && <h2 className="text-2xl font-bold">{interpolate(d.question, variables)}</h2>}
         <Input
           type="number"
           value={answer || ''}
@@ -586,6 +588,7 @@ function BlockRenderer({ block, answer, variables, onAnswer, onNext, isLast }: {
   if (block.type === 'quiz-input-email') {
     return (
       <InputWrapper onNext={onNext}>
+        {d.question && <h2 className="text-2xl font-bold">{interpolate(d.question, variables)}</h2>}
         <Input
           type="email"
           value={answer || ''}
@@ -601,6 +604,7 @@ function BlockRenderer({ block, answer, variables, onAnswer, onNext, isLast }: {
   if (block.type === 'quiz-input-website') {
     return (
       <InputWrapper onNext={onNext}>
+        {d.question && <h2 className="text-2xl font-bold">{interpolate(d.question, variables)}</h2>}
         <Input
           type="url"
           value={answer || ''}
@@ -616,6 +620,7 @@ function BlockRenderer({ block, answer, variables, onAnswer, onNext, isLast }: {
   if (block.type === 'quiz-input-phone') {
     return (
       <InputWrapper onNext={onNext}>
+        {d.question && <h2 className="text-2xl font-bold">{interpolate(d.question, variables)}</h2>}
         <Input
           type="tel"
           value={answer || ''}
@@ -631,6 +636,7 @@ function BlockRenderer({ block, answer, variables, onAnswer, onNext, isLast }: {
   if (block.type === 'quiz-input-date') {
     return (
       <InputWrapper onNext={onNext}>
+        {d.question && <h2 className="text-2xl font-bold">{interpolate(d.question, variables)}</h2>}
         <Input
           type="date"
           value={answer || ''}
@@ -644,6 +650,7 @@ function BlockRenderer({ block, answer, variables, onAnswer, onNext, isLast }: {
   if (block.type === 'quiz-input-time') {
     return (
       <InputWrapper onNext={onNext}>
+        {d.question && <h2 className="text-2xl font-bold">{interpolate(d.question, variables)}</h2>}
         <Input
           type="time"
           value={answer || ''}
@@ -657,6 +664,7 @@ function BlockRenderer({ block, answer, variables, onAnswer, onNext, isLast }: {
   if (block.type === 'quiz-input-file') {
     return (
       <InputWrapper onNext={onNext}>
+        {d.question && <h2 className="text-2xl font-bold">{interpolate(d.question, variables)}</h2>}
         <label className="flex flex-col items-center justify-center border-2 border-dashed border-border rounded-xl p-8 cursor-pointer hover:bg-accent/50 transition-colors">
           <Upload className="h-8 w-8 text-muted-foreground mb-2" />
           <span className="text-sm text-muted-foreground">{answer ? (answer as File)?.name || 'Arquivo selecionado' : 'Clique para enviar arquivo'}</span>
@@ -678,24 +686,26 @@ function BlockRenderer({ block, answer, variables, onAnswer, onNext, isLast }: {
   if (block.type === 'quiz-input-buttons') {
     const options = (d.options as any[]) || [];
     return (
-      <div className="space-y-3">
-        {options.map((opt: any, idx: number) => (
-          <Button
-            key={idx}
-            variant={answer === opt.label ? 'default' : 'outline'}
-            className="w-full h-14 text-lg justify-start"
-            onClick={() => {
-              onAnswer(opt.label, d.variable);
-              if (opt.url) {
-                window.open(opt.url, '_blank');
-              }
-              // Use option handle for branching
-              setTimeout(() => onNext(`option-${idx}`), 150);
-            }}
-          >
-            {opt.label}
-          </Button>
-        ))}
+      <div className="space-y-4">
+        {d.question && <h2 className="text-2xl font-bold">{interpolate(d.question, variables)}</h2>}
+        <div className="space-y-3">
+          {options.map((opt: any, idx: number) => (
+            <Button
+              key={idx}
+              variant={answer === opt.label ? 'default' : 'outline'}
+              className="w-full h-14 text-lg justify-start"
+              onClick={() => {
+                onAnswer(opt.label, d.variable);
+                if (opt.url) {
+                  window.open(opt.url, '_blank');
+                }
+                setTimeout(() => onNext(`option-${idx}`), 150);
+              }}
+            >
+              {opt.label}
+            </Button>
+          ))}
+        </div>
       </div>
     );
   }
@@ -703,7 +713,8 @@ function BlockRenderer({ block, answer, variables, onAnswer, onNext, isLast }: {
   if (block.type === 'quiz-input-pic-choice') {
     const options = (d.options as any[]) || [];
     return (
-      <div className="space-y-3">
+      <div className="space-y-4">
+        {d.question && <h2 className="text-2xl font-bold">{interpolate(d.question, variables)}</h2>}
         <div className="grid grid-cols-2 gap-3">
           {options.map((opt: any, idx: number) => (
             <button
@@ -734,6 +745,7 @@ function BlockRenderer({ block, answer, variables, onAnswer, onNext, isLast }: {
     const max = d.maxRating || 5;
     return (
       <div className="space-y-6">
+        {d.question && <h2 className="text-2xl font-bold">{interpolate(d.question, variables)}</h2>}
         <div className="flex gap-3 justify-center py-4">
           {Array.from({ length: max }, (_, i) => (
             <button
