@@ -162,6 +162,20 @@ function QuizBuilderInner() {
     setSelectedBlockIdx(null);
   }, []);
 
+  // Listen for block clicks from inside group nodes
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const { nodeId, blockIdx } = (e as CustomEvent).detail;
+      const node = nodes.find(n => n.id === nodeId);
+      if (node) {
+        setSelectedNode(node);
+        setSelectedBlockIdx(blockIdx);
+      }
+    };
+    window.addEventListener('quiz-block-click', handler);
+    return () => window.removeEventListener('quiz-block-click', handler);
+  }, [nodes]);
+
   const handleNodeDoubleClick = useCallback((_: React.MouseEvent, node: Node) => {
     if (node.type !== 'quiz-group') return;
     const blocks = (node.data.blocks as any[]) || [];
