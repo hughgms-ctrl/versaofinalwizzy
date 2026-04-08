@@ -213,14 +213,14 @@ export function QuizGroupNode({ data, selected, id }: NodeProps<GroupNode>) {
             style={{ top: '40%' }} />
           <span className="absolute text-[9px] text-green-500 font-medium whitespace-nowrap pointer-events-none"
             style={{ right: '-8px', top: '40%', transform: 'translate(100%, -50%)', paddingLeft: '4px' }}>
-             True
+             Verdadeiro
           </span>
           <Handle type="source" position={Position.Right} id="false"
             className="!w-3 !h-3 !bg-red-500 !border-2 !border-background !-right-1.5"
             style={{ top: '70%' }} />
           <span className="absolute text-[9px] text-red-500 font-medium whitespace-nowrap pointer-events-none"
             style={{ right: '-8px', top: '70%', transform: 'translate(100%, -50%)', paddingLeft: '4px' }}>
-            False
+            Falso
           </span>
         </>
       ) : isABTest ? (
