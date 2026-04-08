@@ -368,6 +368,152 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate }: {
   );
 }
 
+function ConditionEditor({ data, onUpdate }: { data: Record<string, any>; onUpdate: (d: Record<string, any>) => void }) {
+  const rules: any[] = data.rules || [{ source: 'variable', variable: '', compareType: 'text', operator: 'equals', value: '' }];
+  const matchType = data.matchType || 'all';
+
+  const updateRule = (idx: number, patch: Record<string, any>) => {
+    const updated = [...rules];
+    updated[idx] = { ...updated[idx], ...patch };
+    onUpdate({ rules: updated });
+  };
+
+  const addRule = () => {
+    onUpdate({ rules: [...rules, { source: 'variable', variable: '', compareType: 'text', operator: 'equals', value: '' }] });
+  };
+
+  const removeRule = (idx: number) => {
+    onUpdate({ rules: rules.filter((_, i) => i !== idx) });
+  };
+
+  const getOperators = (compareType: string) => {
+    const base = [
+      { value: 'equals', label: 'Igual a' },
+      { value: 'not_equals', label: 'Diferente de' },
+      { value: 'is_set', label: 'Está preenchido' },
+      { value: 'is_empty', label: 'Está vazio' },
+    ];
+    if (compareType === 'text') {
+      return [...base.slice(0, 2), { value: 'contains', label: 'Contém' }, { value: 'not_contains', label: 'Não contém' }, ...base.slice(2)];
+    }
+    if (compareType === 'number') {
+      return [...base.slice(0, 2), { value: 'greater_than', label: 'Maior que' }, { value: 'less_than', label: 'Menor que' }, { value: 'greater_equal', label: 'Maior ou igual' }, { value: 'less_equal', label: 'Menor ou igual' }, ...base.slice(2)];
+    }
+    if (compareType === 'date') {
+      return [...base.slice(0, 2), { value: 'greater_than', label: 'Depois de' }, { value: 'less_than', label: 'Antes de' }, { value: 'greater_equal', label: 'A partir de' }, { value: 'less_equal', label: 'Até' }, ...base.slice(2)];
+    }
+    return base;
+  };
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <Label className="text-xs">Descrição</Label>
+        <Input value={data.description || ''} onChange={(e) => onUpdate({ description: e.target.value })} placeholder="Ex: Verificar se tem tag VIP" />
+      </div>
+
+      <div>
+        <Label className="text-xs">Corresponder a</Label>
+        <Select value={matchType} onValueChange={(v) => onUpdate({ matchType: v })}>
+          <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todas as regras (E)</SelectItem>
+            <SelectItem value="any">Qualquer regra (OU)</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      <div>
+        <Label className="text-xs mb-2 block">Regras ({rules.length})</Label>
+        <div className="space-y-3">
+          {rules.map((rule, idx) => (
+            <div key={idx} className="p-3 rounded-lg border border-border bg-muted/30 space-y-2">
+              <div className="flex items-center justify-between">
+                <Select value={rule.source || 'variable'} onValueChange={(v) => updateRule(idx, { source: v })}>
+                  <SelectTrigger className="h-8 text-xs w-auto gap-1"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="variable">📋 Variável</SelectItem>
+                    <SelectItem value="contact_field">👤 Campo do contato</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => removeRule(idx)}>
+                  <Trash2 className="h-3 w-3" />
+                </Button>
+              </div>
+
+              {rule.source === 'variable' && (
+                <div>
+                  <Label className="text-[10px] text-muted-foreground">Nome da variável</Label>
+                  <Input value={rule.variable || ''} onChange={(e) => updateRule(idx, { variable: e.target.value })} className="h-8 text-xs" placeholder="Ex: data_nascimento" />
+                </div>
+              )}
+
+              {rule.source === 'contact_field' && (
+                <div>
+                  <Label className="text-[10px] text-muted-foreground">Campo</Label>
+                  <Select value={rule.contactField || 'name'} onValueChange={(v) => updateRule(idx, { contactField: v })}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="name">Nome</SelectItem>
+                      <SelectItem value="email">E-mail</SelectItem>
+                      <SelectItem value="phone">Telefone</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              <div>
+                <Label className="text-[10px] text-muted-foreground">Tipo de comparação</Label>
+                <Select value={rule.compareType || 'text'} onValueChange={(v) => updateRule(idx, { compareType: v, operator: 'equals' })}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="text">Texto</SelectItem>
+                    <SelectItem value="number">Número</SelectItem>
+                    <SelectItem value="date">Data</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label className="text-[10px] text-muted-foreground">Operador</Label>
+                <Select value={rule.operator || 'equals'} onValueChange={(v) => updateRule(idx, { operator: v })}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {getOperators(rule.compareType || 'text').map(op => (
+                      <SelectItem key={op.value} value={op.value}>{op.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {!['is_set', 'is_empty'].includes(rule.operator || '') && (
+                <div>
+                  <Label className="text-[10px] text-muted-foreground">Valor</Label>
+                  {rule.compareType === 'date' ? (
+                    <Input type="date" value={rule.value || ''} onChange={(e) => updateRule(idx, { value: e.target.value })} className="h-8 text-xs" />
+                  ) : (
+                    <Input value={rule.value || ''} onChange={(e) => updateRule(idx, { value: e.target.value })} className="h-8 text-xs"
+                      placeholder={rule.compareType === 'number' ? 'Ex: 2018' : 'Ex: sim'} />
+                  )}
+                </div>
+              )}
+
+              {rule.compareType === 'date' && (
+                <p className="text-[10px] text-muted-foreground">
+                  Para datas flexíveis (mês/ano ou ano), a comparação usa o valor armazenado.
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+        <Button variant="outline" size="sm" className="w-full h-8 text-xs mt-2" onClick={addRule}>
+          <Plus className="h-3 w-3 mr-1" /> Adicionar regra
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function OptionsEditor({ options, onChange, showUrl, showImage }: {
   options: any[];
   onChange: (opts: any[]) => void;
