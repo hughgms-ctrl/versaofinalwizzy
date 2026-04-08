@@ -353,7 +353,7 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate, userFields 
   );
 }
 
-function ConditionEditor({ data, onUpdate }: { data: Record<string, any>; onUpdate: (d: Record<string, any>) => void }) {
+function ConditionEditor({ data, onUpdate, userFields }: { data: Record<string, any>; onUpdate: (d: Record<string, any>) => void; userFields: string[] }) {
   const rules: any[] = data.rules || [{ source: 'variable', variable: '', compareType: 'text', operator: 'equals', value: '' }];
   const matchType = data.matchType || 'all';
 
