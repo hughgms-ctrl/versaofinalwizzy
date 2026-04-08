@@ -22,10 +22,21 @@ interface QuizNodePropertiesProps {
   onDeleteNode: (nodeId: string) => void;
   onSave?: () => void;
   isSaving?: boolean;
+  allNodes?: Node[];
 }
 
-export function QuizNodeProperties({ node, selectedBlockIdx, onClose, onUpdateNode, onDeleteNode, onSave, isSaving }: QuizNodePropertiesProps) {
+export function QuizNodeProperties({ node, selectedBlockIdx, onClose, onUpdateNode, onDeleteNode, onSave, isSaving, allNodes }: QuizNodePropertiesProps) {
   if (!node) return null;
+
+  // Collect all user-defined fields from all blocks across all nodes
+  const userFields: string[] = [];
+  (allNodes || []).forEach(n => {
+    const blocks = (n.data?.blocks as any[]) || [];
+    blocks.forEach(b => {
+      const v = b.data?.variable;
+      if (v && !userFields.includes(v)) userFields.push(v);
+    });
+  });
 
   const blocks = (node.data.blocks as any[]) || [];
   const block = selectedBlockIdx !== null ? blocks[selectedBlockIdx] : null;
