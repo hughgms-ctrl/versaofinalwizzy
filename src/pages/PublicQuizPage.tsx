@@ -785,13 +785,26 @@ function DateBlockRenderer({ block, answer, variables, onAnswer, onNext }: {
   onAnswer: (val: any, varName?: string) => void; onNext: (h?: string) => void;
 }) {
   const d = block.data || {};
-  const allowFlexible = d.allowFlexible === true;
-  const [precision, setPrecision] = useState<'exact' | 'month_year' | 'year' | 'unknown' | null>(allowFlexible ? null : 'exact');
+  const allowFlexible = d.allowFlexible !== false;
+  const allowUnknown = d.allowUnknown !== false;
+  const isRange = d.isRange === true;
+  const withTime = d.withTime === true;
+  const buttonLabel = d.buttonLabel || 'Enviar';
+  const minDate = d.minDate ? new Date(d.minDate + 'T00:00:00') : undefined;
+  const maxDate = d.maxDate ? new Date(d.maxDate + 'T00:00:00') : undefined;
+
+  const [precision, setPrecision] = useState<'exact' | 'month_year' | 'year' | null>(
+    allowFlexible ? null : 'exact'
+  );
+  const [timeValue, setTimeValue] = useState('');
+  const [rangeFrom, setRangeFrom] = useState<Date | undefined>();
+  const [rangeTo, setRangeTo] = useState<Date | undefined>();
 
   const currentAnswer = typeof answer === 'object' ? answer : { precision: 'exact', value: answer || '' };
 
   const handleChange = (value: string, prec: string) => {
-    onAnswer({ precision: prec, value }, d.variable);
+    const finalValue = withTime && timeValue && prec === 'exact' ? `${value}T${timeValue}` : value;
+    onAnswer({ precision: prec, value: finalValue }, d.variable);
   };
 
   const currentYear = new Date().getFullYear();
@@ -802,11 +815,11 @@ function DateBlockRenderer({ block, answer, variables, onAnswer, onNext }: {
   const years = Array.from({ length: 126 }, (_, i) => currentYear - i);
 
   const selectedDate = currentAnswer.precision === 'exact' && currentAnswer.value
-    ? new Date(currentAnswer.value + 'T00:00:00')
+    ? new Date((currentAnswer.value as string).split('T')[0] + 'T00:00:00')
     : undefined;
 
-  // If no flexible options, show simple calendar
-  if (!allowFlexible) {
+  // Simple mode: no flexible, no unknown — just calendar
+  if (!allowFlexible && !allowUnknown && !isRange) {
     return (
       <InputWrapper onNext={onNext}>
         {d.question && <h2 className="text-2xl font-bold">{interpolate(d.question, variables)}</h2>}
@@ -818,9 +831,14 @@ function DateBlockRenderer({ block, answer, variables, onAnswer, onNext }: {
               if (date) onAnswer(format(date, 'yyyy-MM-dd'), d.variable);
             }}
             locale={ptBR}
+            fromDate={minDate}
+            toDate={maxDate}
             className="rounded-md border pointer-events-auto"
           />
         </div>
+        {withTime && (
+          <Input type="time" value={timeValue} onChange={e => setTimeValue(e.target.value)} className="h-12 text-lg" placeholder="Horário" />
+        )}
         {selectedDate && (
           <p className="text-center text-sm text-muted-foreground">
             Selecionado: {format(selectedDate, "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
@@ -830,11 +848,55 @@ function DateBlockRenderer({ block, answer, variables, onAnswer, onNext }: {
     );
   }
 
-  const precisionOptions = [
-    { key: 'exact' as const, label: 'Data exata' },
-    { key: 'month_year' as const, label: 'Mês / Ano' },
-    { key: 'year' as const, label: 'Apenas ano' },
-    { key: 'unknown' as const, label: 'Não sei' },
+  // Range mode
+  if (isRange) {
+    return (
+      <div className="space-y-6">
+        {d.question && <h2 className="text-2xl font-bold">{interpolate(d.question, variables)}</h2>}
+        <div className="space-y-4">
+          <div>
+            <Label className="text-sm font-medium mb-1 block">{d.fromLabel || 'De:'}</Label>
+            <div className="flex justify-center">
+              <Calendar mode="single" selected={rangeFrom} onSelect={setRangeFrom} locale={ptBR}
+                fromDate={minDate} toDate={maxDate} className="rounded-md border pointer-events-auto" />
+            </div>
+          </div>
+          <div>
+            <Label className="text-sm font-medium mb-1 block">{d.toLabel || 'Até:'}</Label>
+            <div className="flex justify-center">
+              <Calendar mode="single" selected={rangeTo} onSelect={setRangeTo} locale={ptBR}
+                fromDate={minDate} toDate={maxDate} className="rounded-md border pointer-events-auto" />
+            </div>
+          </div>
+        </div>
+        {withTime && (
+          <Input type="time" value={timeValue} onChange={e => setTimeValue(e.target.value)} className="h-12 text-lg" placeholder="Horário" />
+        )}
+        <Button size="lg" className="w-full h-14 text-lg" onClick={() => {
+          const from = rangeFrom ? format(rangeFrom, 'yyyy-MM-dd') : '';
+          const to = rangeTo ? format(rangeTo, 'yyyy-MM-dd') : '';
+          onAnswer({ precision: 'range', value: `${from} ~ ${to}` }, d.variable);
+          onNext('date-answered');
+        }}>
+          {buttonLabel}
+        </Button>
+        {allowUnknown && (
+          <Button variant="ghost" size="lg" className="w-full h-12 text-muted-foreground" onClick={() => {
+            onAnswer({ precision: 'unknown', value: 'Não sei' }, d.variable);
+            onNext('date-unknown');
+          }}>
+            Não sei
+          </Button>
+        )}
+      </div>
+    );
+  }
+
+  // Flexible mode with precision selector
+  const precisionOptions: { key: 'exact' | 'month_year' | 'year'; label: string }[] = [
+    { key: 'exact', label: 'Data exata' },
+    { key: 'month_year', label: 'Mês / Ano' },
+    { key: 'year', label: 'Apenas ano' },
   ];
 
   return (
@@ -842,23 +904,20 @@ function DateBlockRenderer({ block, answer, variables, onAnswer, onNext }: {
       {d.question && <h2 className="text-2xl font-bold">{interpolate(d.question, variables)}</h2>}
 
       {/* Precision selector */}
-      <div className="grid grid-cols-2 gap-2">
-        {precisionOptions.map(opt => (
-          <Button
-            key={opt.key}
-            variant={precision === opt.key ? 'default' : 'outline'}
-            className="h-12 text-sm"
-            onClick={() => {
-              setPrecision(opt.key);
-              if (opt.key === 'unknown') {
-                handleChange('Não sei', 'unknown');
-              }
-            }}
-          >
-            {opt.label}
-          </Button>
-        ))}
-      </div>
+      {allowFlexible && (
+        <div className="grid grid-cols-3 gap-2">
+          {precisionOptions.map(opt => (
+            <Button
+              key={opt.key}
+              variant={precision === opt.key ? 'default' : 'outline'}
+              className="h-12 text-sm"
+              onClick={() => setPrecision(opt.key)}
+            >
+              {opt.label}
+            </Button>
+          ))}
+        </div>
+      )}
 
       {/* Exact: Calendar */}
       {precision === 'exact' && (
@@ -871,9 +930,14 @@ function DateBlockRenderer({ block, answer, variables, onAnswer, onNext }: {
                 if (date) handleChange(format(date, 'yyyy-MM-dd'), 'exact');
               }}
               locale={ptBR}
+              fromDate={minDate}
+              toDate={maxDate}
               className="rounded-md border pointer-events-auto"
             />
           </div>
+          {withTime && (
+            <Input type="time" value={timeValue} onChange={e => setTimeValue(e.target.value)} className="h-12 text-lg" placeholder="Horário" />
+          )}
           {selectedDate && (
             <p className="text-center text-sm text-muted-foreground">
               {format(selectedDate, "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
@@ -931,13 +995,18 @@ function DateBlockRenderer({ block, answer, variables, onAnswer, onNext }: {
         </Select>
       )}
 
-      {precision === 'unknown' && (
-        <p className="text-muted-foreground text-center py-2">Será registrado como "Não sei"</p>
+      {precision && (
+        <Button size="lg" className="w-full h-14 text-lg" onClick={() => onNext('date-answered')}>
+          {buttonLabel} <ArrowRight className="h-5 w-5 ml-2" />
+        </Button>
       )}
 
-      {precision && (
-        <Button size="lg" className="w-full h-14 text-lg" onClick={() => onNext()}>
-          OK <ArrowRight className="h-5 w-5 ml-2" />
+      {allowUnknown && (
+        <Button variant="ghost" size="lg" className="w-full h-12 text-muted-foreground" onClick={() => {
+          onAnswer({ precision: 'unknown', value: 'Não sei' }, d.variable);
+          onNext('date-unknown');
+        }}>
+          Não sei
         </Button>
       )}
     </div>
