@@ -496,8 +496,8 @@ function OptionsEditor({ options, onChange, showUrl, showImage }: {
   showUrl?: boolean;
   showImage?: boolean;
 }) {
-  const dragItem = React.useRef<number | null>(null);
-  const dragOverItem = React.useRef<number | null>(null);
+  const dragItem = useRef<number | null>(null);
+  const dragOverItem = useRef<number | null>(null);
 
   const handleDragStart = (index: number) => {
     dragItem.current = index;
