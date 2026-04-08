@@ -207,6 +207,27 @@ function QuizBuilderInner() {
     toast.success('Grupo excluído');
   }, [setNodes, setEdges]);
 
+  const handleDuplicateNode = useCallback((nodeId: string) => {
+    const original = nodes.find(n => n.id === nodeId);
+    if (!original) return;
+    const newGroupId = getGroupId();
+    const clonedBlocks = ((original.data.blocks as any[]) || []).map((b: any) => ({
+      ...b,
+      id: `block_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      data: { ...b.data },
+    }));
+    const newNode: Node = {
+      id: newGroupId,
+      type: original.type,
+      position: { x: original.position.x + 50, y: original.position.y + 80 },
+      data: { ...original.data, label: `${original.data.label} (cópia)`, blocks: clonedBlocks },
+    };
+    setNodes((nds) => [...nds, newNode]);
+    setSelectedNodeId(newGroupId);
+    setSelectedBlockIdx(null);
+    toast.success('Grupo duplicado');
+  }, [nodes, setNodes]);
+
   const handleToggleActive = async () => {
     if (!quiz) return;
     await updateQuiz.mutateAsync({ id: quizId!, is_active: !quiz.is_active });
