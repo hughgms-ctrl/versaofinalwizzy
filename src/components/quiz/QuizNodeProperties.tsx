@@ -176,38 +176,74 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate }: {
       {block.type === 'quiz-input-date' && (
         <>
           <div><Label className="text-xs">Pergunta</Label>
-            <Textarea value={d.question || ''} onChange={(e) => updateBlockData({ question: e.target.value })} rows={2} placeholder="Ex: Informe a data da prisão" /></div>
-          <div><Label className="text-xs">Variável</Label>
-            <Input value={d.variable || ''} onChange={(e) => updateBlockData({ variable: e.target.value })} /></div>
+            <Textarea value={d.question || ''} onChange={(e) => updateBlockData({ question: e.target.value })} rows={2} placeholder="Ex: Informe a data de nascimento" /></div>
           
+          <Separator />
+
+          <div className="flex items-center justify-between">
+            <Label className="text-xs">É intervalo (de/até)</Label>
+            <Switch checked={d.isRange === true} onCheckedChange={(v) => updateBlockData({ isRange: v })} />
+          </div>
+          {d.isRange && (
+            <>
+              <div><Label className="text-xs">Label "De"</Label>
+                <Input value={d.fromLabel || 'De:'} onChange={(e) => updateBlockData({ fromLabel: e.target.value })} /></div>
+              <div><Label className="text-xs">Label "Até"</Label>
+                <Input value={d.toLabel || 'Até:'} onChange={(e) => updateBlockData({ toLabel: e.target.value })} /></div>
+            </>
+          )}
+
+          <div className="flex items-center justify-between">
+            <Label className="text-xs">Com horário</Label>
+            <Switch checked={d.withTime === true} onCheckedChange={(v) => updateBlockData({ withTime: v })} />
+          </div>
+
+          <div><Label className="text-xs">Texto do botão</Label>
+            <Input value={d.buttonLabel || 'Enviar'} onChange={(e) => updateBlockData({ buttonLabel: e.target.value })} /></div>
+
+          <div><Label className="text-xs">Data mínima</Label>
+            <Input type="date" value={d.minDate || ''} onChange={(e) => updateBlockData({ minDate: e.target.value })} /></div>
+          <div><Label className="text-xs">Data máxima</Label>
+            <Input type="date" value={d.maxDate || ''} onChange={(e) => updateBlockData({ maxDate: e.target.value })} /></div>
+
+          <div><Label className="text-xs">Formato</Label>
+            <Input value={d.format || 'dd/MM/yyyy'} onChange={(e) => updateBlockData({ format: e.target.value })} placeholder="dd/MM/yyyy" /></div>
+
+          <Separator />
+
+          <div className="flex items-center justify-between">
+            <Label className="text-xs">Permitir precisão flexível</Label>
+            <Switch checked={d.allowFlexible !== false} onCheckedChange={(v) => updateBlockData({ allowFlexible: v })} />
+          </div>
+          <p className="text-[10px] text-muted-foreground">
+            Permite selecionar: Data exata, Mês/Ano ou Apenas ano.
+          </p>
+
+          <div className="flex items-center justify-between">
+            <Label className="text-xs">Opção "Não sei"</Label>
+            <Switch checked={d.allowUnknown !== false} onCheckedChange={(v) => updateBlockData({ allowUnknown: v })} />
+          </div>
+          <p className="text-[10px] text-muted-foreground">
+            Adiciona botão "Não sei" com saída separada para ramificação no fluxo.
+          </p>
+
+          <Separator />
+
+          <div><Label className="text-xs">Variável</Label>
+            <Input value={d.variable || ''} onChange={(e) => updateBlockData({ variable: e.target.value })} placeholder="Ex: data_nascimento" /></div>
+
+          <div className="flex items-center justify-between">
+            <Label className="text-xs">Obrigatório</Label>
+            <Switch checked={d.required !== false} onCheckedChange={(v) => updateBlockData({ required: v })} />
+          </div>
+
           <div>
-            <Label className="text-xs mb-2 block">Pré-visualização do calendário</Label>
+            <Label className="text-xs mb-2 block">Pré-visualização</Label>
             <Calendar
               mode="single"
               locale={ptBR}
               className="rounded-md border pointer-events-auto mx-auto"
             />
-          </div>
-
-          <div className="flex items-center justify-between">
-            <Label className="text-xs">Permitir precisão flexível</Label>
-            <Switch checked={d.allowFlexible === true} onCheckedChange={(v) => updateBlockData({ allowFlexible: v })} />
-          </div>
-          {d.allowFlexible && (
-            <div className="space-y-2">
-              <p className="text-[10px] text-muted-foreground">
-                O respondente poderá escolher: Data exata, Mês/Ano, Apenas ano ou Não sei.
-              </p>
-              <div className="text-[10px] text-muted-foreground space-y-1 border rounded-md p-2">
-                <p><strong>Mês/Ano:</strong> Seletor de mês e ano</p>
-                <p><strong>Apenas ano:</strong> Seletor de ano</p>
-                <p><strong>Não sei:</strong> Registra como desconhecido</p>
-              </div>
-            </div>
-          )}
-          <div className="flex items-center justify-between">
-            <Label className="text-xs">Obrigatório</Label>
-            <Switch checked={d.required !== false} onCheckedChange={(v) => updateBlockData({ required: v })} />
           </div>
         </>
       )}
