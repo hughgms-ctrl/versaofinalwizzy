@@ -10,7 +10,7 @@ import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Calendar } from '@/components/ui/calendar';
-import { Trash2, Plus, GripVertical, Save, ArrowUp, ArrowDown } from 'lucide-react';
+import { Trash2, Plus, GripVertical, Save, ArrowUp, ArrowDown, Copy } from 'lucide-react';
 import { getQuizComponentInfo } from './QuizSidebar';
 import { ptBR } from 'date-fns/locale';
 
@@ -20,12 +20,13 @@ interface QuizNodePropertiesProps {
   onClose: () => void;
   onUpdateNode: (nodeId: string, data: Record<string, unknown>) => void;
   onDeleteNode: (nodeId: string) => void;
+  onDuplicateNode?: (nodeId: string) => void;
   onSave?: () => void;
   isSaving?: boolean;
   allNodes?: Node[];
 }
 
-export function QuizNodeProperties({ node, selectedBlockIdx, onClose, onUpdateNode, onDeleteNode, onSave, isSaving, allNodes }: QuizNodePropertiesProps) {
+export function QuizNodeProperties({ node, selectedBlockIdx, onClose, onUpdateNode, onDeleteNode, onDuplicateNode, onSave, isSaving, allNodes }: QuizNodePropertiesProps) {
   if (!node) return null;
 
   // Collect all user-defined fields from all blocks across all nodes
@@ -64,6 +65,7 @@ export function QuizNodeProperties({ node, selectedBlockIdx, onClose, onUpdateNo
               node={node}
               onUpdate={(data) => onUpdateNode(node.id, data)}
               onDelete={() => onDeleteNode(node.id)}
+              onDuplicate={onDuplicateNode ? () => onDuplicateNode(node.id) : undefined}
             />
           )}
         </ScrollArea>
@@ -80,7 +82,7 @@ export function QuizNodeProperties({ node, selectedBlockIdx, onClose, onUpdateNo
   );
 }
 
-function GroupEditor({ node, onUpdate, onDelete }: { node: Node; onUpdate: (data: Record<string, unknown>) => void; onDelete: () => void }) {
+function GroupEditor({ node, onUpdate, onDelete, onDuplicate }: { node: Node; onUpdate: (data: Record<string, unknown>) => void; onDelete: () => void; onDuplicate?: () => void }) {
   const label = (node.data.label as string) || '';
 
   return (
@@ -90,6 +92,12 @@ function GroupEditor({ node, onUpdate, onDelete }: { node: Node; onUpdate: (data
         <Input value={label} onChange={(e) => onUpdate({ label: e.target.value })} />
       </div>
       <Separator />
+      {onDuplicate && (
+        <Button variant="outline" size="sm" className="w-full" onClick={onDuplicate}>
+          <Copy className="h-3.5 w-3.5 mr-2" />
+          Duplicar grupo
+        </Button>
+      )}
       <Button variant="destructive" size="sm" className="w-full" onClick={onDelete}>
         <Trash2 className="h-3.5 w-3.5 mr-2" />
         Excluir grupo
