@@ -417,8 +417,7 @@ function ConditionEditor({ data, onUpdate, userFields }: { data: Record<string, 
                 <Select value={rule.source || 'variable'} onValueChange={(v) => updateRule(idx, { source: v })}>
                   <SelectTrigger className="h-8 text-xs w-auto gap-1"><SelectValue /></SelectTrigger>
                    <SelectContent>
-                    <SelectItem value="variable">📋 Campo do usuário</SelectItem>
-                    <SelectItem value="contact_field">👤 Campo do contato</SelectItem>
+                    <SelectItem value="variable">📋 Campo do contato</SelectItem>
                   </SelectContent>
                 </Select>
                 <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => removeRule(idx)}>
