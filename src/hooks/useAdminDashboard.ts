@@ -183,6 +183,60 @@ export function useSecurityAlerts() {
   return useQuery({
     queryKey: ['admin', 'security-alerts'],
     queryFn: () => adminFetch('security_alerts'),
-    staleTime: 30 * 1000, // Frequent updates for security
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useAdminOrgDetails(orgId: string | null) {
+  return useQuery({
+    queryKey: ['admin', 'org-details', orgId],
+    queryFn: async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Not authenticated');
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-dashboard?action=org_details&org_id=${orgId}`;
+      const res = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+          'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+        },
+      });
+      if (!res.ok) throw new Error('Failed to fetch org details');
+      return res.json();
+    },
+    enabled: !!orgId,
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useBlockIp() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { ip_address: string; reason?: string }) => adminFetch('block_ip', data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin'] });
+      toast.success('IP bloqueado com sucesso');
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+}
+
+export function useApproveUser() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { user_id: string }) => adminFetch('approve_user', data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin'] });
+      toast.success('Usuário aprovado com sucesso');
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+}
+
+export function usePendingApprovals() {
+  return useQuery({
+    queryKey: ['admin', 'pending-approvals'],
+    queryFn: () => adminFetch('pending_approvals'),
+    staleTime: 30 * 1000,
   });
 }
