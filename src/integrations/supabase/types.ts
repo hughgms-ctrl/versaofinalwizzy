@@ -4379,6 +4379,7 @@ export type Database = {
       check_suspicious_activity: {
         Args: never
         Returns: {
+          created_at: string
           fingerprint_id: string
           ip_address: string
           organization_id: string

@@ -40,7 +40,6 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: corsHeaders })
     }
 
-    // Parse action from URL
     const url = new URL(req.url)
     const action = url.searchParams.get('action') || 'overview'
 
@@ -71,33 +70,27 @@ Deno.serve(async (req) => {
     }
 
     if (action === 'clients') {
-      // Get all orgs with their user counts, instance counts, plan info
       const { data: orgs } = await adminClient
         .from('organizations')
         .select('id, name, slug, storage_used_bytes, storage_limit_bytes, created_at')
         .order('created_at', { ascending: false })
 
-      // Get profiles per org
       const { data: profiles } = await adminClient
         .from('profiles')
         .select('id, organization_id, full_name, user_id')
 
-      // Get instances per org
       const { data: instances } = await adminClient
         .from('whatsapp_instances')
         .select('id, organization_id, is_active, phone_number, label, status')
 
-      // Get conversations count per org
       const { data: convCounts } = await adminClient
         .from('conversations')
         .select('organization_id')
 
-      // Get org plans
       const { data: orgPlans } = await adminClient
         .from('organization_plans')
-        .select('organization_id, plan_id, status, payment_status, trial_ends_at, current_period_end, platform_plans(name, slug, price_monthly)')
+        .select('organization_id, plan_id, status, payment_status, trial_ends_at, current_period_end, platform_plans(id, name, slug, price_monthly)')
 
-      // Build enriched org list
       const enrichedOrgs = (orgs || []).map((org: any) => {
         const orgProfiles = (profiles || []).filter((p: any) => p.organization_id === org.id)
         const orgInstances = (instances || []).filter((i: any) => i.organization_id === org.id)
@@ -112,6 +105,7 @@ Deno.serve(async (req) => {
           conversation_count: orgConvs.length,
           instances: orgInstances,
           plan: orgPlan ? {
+            id: orgPlan.platform_plans?.id,
             name: orgPlan.platform_plans?.name,
             slug: orgPlan.platform_plans?.slug,
             price: orgPlan.platform_plans?.price_monthly,
@@ -126,6 +120,89 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ organizations: enrichedOrgs }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
+    }
+
+    if (action === 'org_details') {
+      const orgId = url.searchParams.get('org_id')
+      if (!orgId) throw new Error('Missing org_id')
+
+      // Get fingerprints for this org
+      const { data: fingerprints } = await adminClient
+        .from('user_fingerprints')
+        .select('*')
+        .eq('organization_id', orgId)
+        .order('created_at', { ascending: false })
+        .limit(20)
+
+      // Get org info
+      const { data: org } = await adminClient
+        .from('organizations')
+        .select('*')
+        .eq('id', orgId)
+        .single()
+
+      // Get profiles
+      const { data: profiles } = await adminClient
+        .from('profiles')
+        .select('id, user_id, full_name, avatar_url, phone, created_at')
+        .eq('organization_id', orgId)
+
+      // Get auth user details (email, last sign in, etc)
+      const userDetails: any[] = []
+      for (const p of (profiles || [])) {
+        try {
+          const { data: { user: authUser } } = await adminClient.auth.admin.getUserById(p.user_id)
+          if (authUser) {
+            userDetails.push({
+              ...p,
+              email: authUser.email,
+              last_sign_in_at: authUser.last_sign_in_at,
+              created_at_auth: authUser.created_at,
+              is_banned: !!(authUser as any).banned_until,
+              pending_approval: authUser.user_metadata?.pending_approval || false,
+            })
+          }
+        } catch (_) {
+          userDetails.push(p)
+        }
+      }
+
+      // Check if any fingerprint IP is shared with other orgs
+      const ips = [...new Set((fingerprints || []).map((f: any) => f.ip_address).filter(Boolean))]
+      let sharedIpOrgs: any[] = []
+      if (ips.length > 0) {
+        const { data: sharedFingerprints } = await adminClient
+          .from('user_fingerprints')
+          .select('ip_address, organization_id')
+          .in('ip_address', ips)
+          .neq('organization_id', orgId)
+
+        if (sharedFingerprints && sharedFingerprints.length > 0) {
+          const sharedOrgIds = [...new Set(sharedFingerprints.map((f: any) => f.organization_id))]
+          const { data: sharedOrgs } = await adminClient
+            .from('organizations')
+            .select('id, name, slug, created_at')
+            .in('id', sharedOrgIds)
+          sharedIpOrgs = (sharedOrgs || []).map((o: any) => ({
+            ...o,
+            shared_ips: sharedFingerprints.filter((f: any) => f.organization_id === o.id).map((f: any) => f.ip_address),
+          }))
+        }
+      }
+
+      // Check blocked fingerprints
+      const { data: blocked } = await adminClient
+        .from('blocked_fingerprints')
+        .select('*')
+        .in('ip_address', ips.length > 0 ? ips : ['none'])
+
+      return new Response(JSON.stringify({
+        organization: org,
+        users: userDetails,
+        fingerprints: fingerprints || [],
+        shared_ip_organizations: sharedIpOrgs,
+        blocked_ips: blocked || [],
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
     if (action === 'plans') {
@@ -168,20 +245,17 @@ Deno.serve(async (req) => {
     }
 
     if (action === 'api') {
-      // Get agent execution logs for cost estimation
       const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString()
       const { data: execLogs, count: execCount } = await adminClient
         .from('agent_execution_logs')
         .select('id, organization_id, execution_time_ms, created_at', { count: 'exact' })
         .gte('created_at', thirtyDaysAgo)
 
-      // Group by org
       const orgUsage: Record<string, number> = {}
       for (const log of execLogs || []) {
         orgUsage[log.organization_id] = (orgUsage[log.organization_id] || 0) + 1
       }
 
-      // Get org names
       const orgIds = Object.keys(orgUsage)
       const { data: orgNames } = await adminClient
         .from('organizations')
@@ -246,13 +320,11 @@ Deno.serve(async (req) => {
 
       const userIds = (profiles || []).map((p: any) => p.user_id)
       
-      // Get roles
       const { data: roles } = await adminClient
         .from('user_roles')
         .select('user_id, role')
         .in('user_id', userIds.length > 0 ? userIds : ['00000000-0000-0000-0000-000000000000'])
 
-      // Get auth user info (email, banned)
       const usersInfo: Record<string, any> = {}
       for (const uid of userIds) {
         try {
@@ -287,14 +359,13 @@ Deno.serve(async (req) => {
       if (!user_id) throw new Error('Missing user_id')
 
       if (block) {
-        const { error } = await adminClient.auth.admin.updateUserById(user_id, { ban_duration: '876000h' }) // ~100 years
+        const { error } = await adminClient.auth.admin.updateUserById(user_id, { ban_duration: '876000h' })
         if (error) throw error
       } else {
         const { error } = await adminClient.auth.admin.updateUserById(user_id, { ban_duration: 'none' })
         if (error) throw error
       }
 
-      // Audit log
       await adminClient.from('admin_audit_logs').insert({
         action: block ? 'block_user' : 'unblock_user',
         entity_type: 'user',
@@ -306,11 +377,104 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
+    if (action === 'block_ip') {
+      const body = await req.json()
+      const { ip_address, reason } = body
+      if (!ip_address) throw new Error('Missing ip_address')
+
+      const { error } = await adminClient.from('blocked_fingerprints').insert({
+        ip_address,
+        reason: reason || 'Bloqueado manualmente pelo administrador',
+      })
+      if (error) throw error
+
+      await adminClient.from('admin_audit_logs').insert({
+        action: 'block_ip',
+        entity_type: 'fingerprint',
+        performed_by: user.id,
+        details: { ip_address, reason },
+      })
+
+      return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    if (action === 'approve_user') {
+      const body = await req.json()
+      const { user_id } = body
+      if (!user_id) throw new Error('Missing user_id')
+
+      // Unban the user and remove pending_approval
+      const { error } = await adminClient.auth.admin.updateUserById(user_id, {
+        ban_duration: 'none',
+        user_metadata: { pending_approval: false },
+      })
+      if (error) throw error
+
+      await adminClient.from('admin_audit_logs').insert({
+        action: 'approve_user',
+        entity_type: 'user',
+        entity_id: user_id,
+        performed_by: user.id,
+        details: { user_id },
+      })
+
+      return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    if (action === 'pending_approvals') {
+      // Get all users with pending_approval metadata
+      const { data: { users: allUsers } } = await adminClient.auth.admin.listUsers({ perPage: 1000 })
+      const pendingUsers = (allUsers || []).filter((u: any) => u.user_metadata?.pending_approval === true)
+
+      // Enrich with org info
+      const enriched = []
+      for (const pu of pendingUsers) {
+        const { data: profile } = await adminClient
+          .from('profiles')
+          .select('organization_id, full_name')
+          .eq('user_id', pu.id)
+          .maybeSingle()
+        
+        let orgName = ''
+        if (profile?.organization_id) {
+          const { data: org } = await adminClient
+            .from('organizations')
+            .select('name')
+            .eq('id', profile.organization_id)
+            .single()
+          orgName = org?.name || ''
+        }
+
+        // Get fingerprint for this user
+        const { data: fp } = await adminClient
+          .from('user_fingerprints')
+          .select('ip_address, browser_data, location_data, user_agent, created_at')
+          .eq('user_id', pu.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+
+        enriched.push({
+          user_id: pu.id,
+          email: pu.email,
+          name: profile?.full_name || '',
+          organization_id: profile?.organization_id,
+          organization_name: orgName,
+          created_at: pu.created_at,
+          is_banned: !!(pu as any).banned_until,
+          fingerprint: fp || null,
+        })
+      }
+
+      return new Response(JSON.stringify({ pending: enriched }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
     if (action === 'delete_organization') {
       const { organization_id } = await req.json()
       if (!organization_id) throw new Error('Missing organization_id')
 
-      // 1. Get all users in this organization
       const { data: profiles } = await adminClient
         .from('profiles')
         .select('user_id')
@@ -318,7 +482,6 @@ Deno.serve(async (req) => {
 
       const userIds = (profiles || []).map(p => p.user_id)
 
-      // 2. Fetch fingerprints to blacklist them before deleting
       const { data: fingerprints } = await adminClient
         .from('user_fingerprints')
         .select('ip_address, user_agent')
@@ -334,13 +497,10 @@ Deno.serve(async (req) => {
         )
       }
 
-      // 3. Delete users from Auth
       for (const userId of userIds) {
-        console.log(`Deleting user from Auth: ${userId}`)
         await adminClient.auth.admin.deleteUser(userId)
       }
 
-      // 4. Delete organization (Cascade will handle profiles, roles, instances, etc.)
       const { error: deleteError } = await adminClient
         .from('organizations')
         .delete()
@@ -356,7 +516,6 @@ Deno.serve(async (req) => {
       const { user_id: targetUserId } = body
       if (!targetUserId) throw new Error('Missing user_id')
 
-      // Delete permissions, roles, profile, then auth user
       await adminClient.from('user_permissions').delete().eq('user_id', targetUserId)
       await adminClient.from('workspace_members').delete().eq('user_id', targetUserId)
       await adminClient.from('user_roles').delete().eq('user_id', targetUserId)
@@ -365,7 +524,6 @@ Deno.serve(async (req) => {
       const { error: delErr } = await adminClient.auth.admin.deleteUser(targetUserId)
       if (delErr) throw delErr
 
-      // Audit log
       await adminClient.from('admin_audit_logs').insert({
         action: 'delete_user',
         entity_type: 'user',
@@ -398,9 +556,7 @@ Deno.serve(async (req) => {
 
       if (error) throw error
 
-      // If disabling signups, ban all users with pending_approval metadata
       if (!allow) {
-        // Get all users that have pending_approval
         const { data: { users: allUsers } } = await adminClient.auth.admin.listUsers({ perPage: 1000 })
         const pendingUsers = (allUsers || []).filter((u: any) => u.user_metadata?.pending_approval === true)
         for (const pu of pendingUsers) {
