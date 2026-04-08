@@ -6,8 +6,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Progress } from '@/components/ui/progress';
-import { Star, ArrowRight, ArrowLeft, Check, Loader2, Upload, Send } from 'lucide-react';
+import { Calendar } from '@/components/ui/calendar';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Star, ArrowRight, ArrowLeft, Check, Loader2, Upload, Send, CalendarIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 
 // ---- Types ----
 interface QuizData {
@@ -790,17 +794,38 @@ function DateBlockRenderer({ block, answer, variables, onAnswer, onNext }: {
     onAnswer({ precision: prec, value }, d.variable);
   };
 
-  // If no flexible options, show simple date input
+  const currentYear = new Date().getFullYear();
+  const months = [
+    'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+    'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+  ];
+  const years = Array.from({ length: 126 }, (_, i) => currentYear - i);
+
+  const selectedDate = currentAnswer.precision === 'exact' && currentAnswer.value
+    ? new Date(currentAnswer.value + 'T00:00:00')
+    : undefined;
+
+  // If no flexible options, show simple calendar
   if (!allowFlexible) {
     return (
       <InputWrapper onNext={onNext}>
         {d.question && <h2 className="text-2xl font-bold">{interpolate(d.question, variables)}</h2>}
-        <Input
-          type="date"
-          value={currentAnswer.value || ''}
-          onChange={e => onAnswer(e.target.value, d.variable)}
-          className="h-14 text-lg"
-        />
+        <div className="flex justify-center">
+          <Calendar
+            mode="single"
+            selected={selectedDate}
+            onSelect={(date) => {
+              if (date) onAnswer(format(date, 'yyyy-MM-dd'), d.variable);
+            }}
+            locale={ptBR}
+            className="rounded-md border pointer-events-auto"
+          />
+        </div>
+        {selectedDate && (
+          <p className="text-center text-sm text-muted-foreground">
+            Selecionado: {format(selectedDate, "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
+          </p>
+        )}
       </InputWrapper>
     );
   }
@@ -835,35 +860,75 @@ function DateBlockRenderer({ block, answer, variables, onAnswer, onNext }: {
         ))}
       </div>
 
-      {/* Input based on precision */}
+      {/* Exact: Calendar */}
       {precision === 'exact' && (
-        <Input
-          type="date"
-          value={currentAnswer.precision === 'exact' ? currentAnswer.value : ''}
-          onChange={e => handleChange(e.target.value, 'exact')}
-          className="h-14 text-lg"
-        />
+        <div className="space-y-2">
+          <div className="flex justify-center">
+            <Calendar
+              mode="single"
+              selected={selectedDate}
+              onSelect={(date) => {
+                if (date) handleChange(format(date, 'yyyy-MM-dd'), 'exact');
+              }}
+              locale={ptBR}
+              className="rounded-md border pointer-events-auto"
+            />
+          </div>
+          {selectedDate && (
+            <p className="text-center text-sm text-muted-foreground">
+              {format(selectedDate, "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
+            </p>
+          )}
+        </div>
       )}
 
+      {/* Month/Year: two selects */}
       {precision === 'month_year' && (
-        <Input
-          type="month"
-          value={currentAnswer.precision === 'month_year' ? currentAnswer.value : ''}
-          onChange={e => handleChange(e.target.value, 'month_year')}
-          className="h-14 text-lg"
-        />
+        <div className="flex gap-3">
+          <Select
+            value={currentAnswer.precision === 'month_year' && currentAnswer.value ? currentAnswer.value.split('-')[1] : ''}
+            onValueChange={(m) => {
+              const y = currentAnswer.precision === 'month_year' && currentAnswer.value ? currentAnswer.value.split('-')[0] : String(currentYear);
+              handleChange(`${y}-${m}`, 'month_year');
+            }}
+          >
+            <SelectTrigger className="h-14 text-base flex-1"><SelectValue placeholder="Mês" /></SelectTrigger>
+            <SelectContent>
+              {months.map((label, i) => (
+                <SelectItem key={i} value={String(i + 1).padStart(2, '0')}>{label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select
+            value={currentAnswer.precision === 'month_year' && currentAnswer.value ? currentAnswer.value.split('-')[0] : ''}
+            onValueChange={(y) => {
+              const m = currentAnswer.precision === 'month_year' && currentAnswer.value ? currentAnswer.value.split('-')[1] : '01';
+              handleChange(`${y}-${m}`, 'month_year');
+            }}
+          >
+            <SelectTrigger className="h-14 text-base w-28"><SelectValue placeholder="Ano" /></SelectTrigger>
+            <SelectContent>
+              {years.map(y => (
+                <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       )}
 
+      {/* Year only: select */}
       {precision === 'year' && (
-        <Input
-          type="number"
-          min={1900}
-          max={2100}
-          placeholder="Ex: 2023"
+        <Select
           value={currentAnswer.precision === 'year' ? currentAnswer.value : ''}
-          onChange={e => handleChange(e.target.value, 'year')}
-          className="h-14 text-lg"
-        />
+          onValueChange={(y) => handleChange(y, 'year')}
+        >
+          <SelectTrigger className="h-14 text-lg"><SelectValue placeholder="Selecione o ano" /></SelectTrigger>
+          <SelectContent>
+            {years.map(y => (
+              <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       )}
 
       {precision === 'unknown' && (
