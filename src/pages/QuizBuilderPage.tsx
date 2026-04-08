@@ -44,8 +44,8 @@ function QuizBuilderInner() {
   const quiz = quizzes?.find(q => q.id === quizId);
 
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
-  const [nodes, setNodes, onNodesChange] = useNodesState([
-    { id: 'start-1', type: 'quiz-start', position: { x: 100, y: 200 }, data: { label: 'Start' } },
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([
+    { id: 'start-1', type: 'quiz-start', position: { x: 100, y: 200 }, data: { label: 'Start' } } as Node,
   ]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
