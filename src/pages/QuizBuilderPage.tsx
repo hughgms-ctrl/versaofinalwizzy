@@ -48,7 +48,7 @@ function QuizBuilderInner() {
     { id: 'start-1', type: 'quiz-start', position: { x: 100, y: 200 }, data: { label: 'Início' } } as Node,
   ]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
-  const [selectedNode, setSelectedNode] = useState<Node | null>(null);
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedBlockIdx, setSelectedBlockIdx] = useState<number | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
@@ -56,6 +56,7 @@ function QuizBuilderInner() {
   const [previewOpen, setPreviewOpen] = useState(false);
 
   const { zoomIn, zoomOut, screenToFlowPosition } = useReactFlow();
+  const selectedNode = selectedNodeId ? nodes.find((node) => node.id === selectedNodeId) ?? null : null;
 
   // Load quiz canvas data
   useEffect(() => {
@@ -158,7 +159,7 @@ function QuizBuilderInner() {
 
   const handleNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
     if (node.type === 'quiz-start') return;
-    setSelectedNode(node);
+    setSelectedNodeId(node.id);
     setSelectedBlockIdx(null);
   }, []);
 
@@ -172,7 +173,7 @@ function QuizBuilderInner() {
       const { nodeId, blockIdx } = (e as CustomEvent).detail;
       const node = nodesRef.current.find(n => n.id === nodeId);
       if (node) {
-        setSelectedNode({ ...node });
+        setSelectedNodeId(node.id);
         setSelectedBlockIdx(blockIdx);
       }
     };
@@ -184,25 +185,25 @@ function QuizBuilderInner() {
     if (node.type !== 'quiz-group') return;
     const blocks = (node.data.blocks as any[]) || [];
     if (blocks.length > 0) {
-      setSelectedNode(node);
+      setSelectedNodeId(node.id);
       setSelectedBlockIdx(0);
     }
   }, []);
 
   const handlePaneClick = useCallback(() => {
-    setSelectedNode(null);
+    setSelectedNodeId(null);
     setSelectedBlockIdx(null);
   }, []);
 
   const handleNodeUpdate = useCallback((nodeId: string, data: Record<string, unknown>) => {
     setNodes((nds) => nds.map(n => n.id === nodeId ? { ...n, data: { ...n.data, ...data } } : n));
-    setSelectedNode(prev => prev?.id === nodeId ? { ...prev, data: { ...prev.data, ...data } } : prev);
   }, [setNodes]);
 
   const handleDeleteNode = useCallback((nodeId: string) => {
     setNodes((nds) => nds.filter(n => n.id !== nodeId));
     setEdges((eds) => eds.filter(e => e.source !== nodeId && e.target !== nodeId));
-    setSelectedNode(null);
+    setSelectedNodeId(null);
+    setSelectedBlockIdx(null);
     toast.success('Grupo excluído');
   }, [setNodes, setEdges]);
 
@@ -324,9 +325,10 @@ function QuizBuilderInner() {
 
       {/* Properties panel */}
       <QuizNodeProperties
+        key={`${selectedNodeId ?? 'none'}-${selectedBlockIdx ?? 'group'}`}
         node={selectedNode}
         selectedBlockIdx={selectedBlockIdx}
-        onClose={() => { setSelectedNode(null); setSelectedBlockIdx(null); }}
+        onClose={() => { setSelectedNodeId(null); setSelectedBlockIdx(null); }}
         onUpdateNode={handleNodeUpdate}
         onDeleteNode={handleDeleteNode}
         onSave={handleSave}
