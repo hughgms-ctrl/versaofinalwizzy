@@ -414,12 +414,7 @@ function ConditionEditor({ data, onUpdate, userFields }: { data: Record<string, 
           {rules.map((rule, idx) => (
             <div key={idx} className="p-3 rounded-lg border border-border bg-muted/30 space-y-2">
               <div className="flex items-center justify-between">
-                <Select value={rule.source || 'variable'} onValueChange={(v) => updateRule(idx, { source: v })}>
-                  <SelectTrigger className="h-8 text-xs w-auto gap-1"><SelectValue /></SelectTrigger>
-                   <SelectContent>
-                    <SelectItem value="variable">📋 Campo do contato</SelectItem>
-                  </SelectContent>
-                </Select>
+                <span className="text-xs text-muted-foreground">📋 Campo do contato</span>
                 <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => removeRule(idx)}>
                   <Trash2 className="h-3 w-3" />
                 </Button>
