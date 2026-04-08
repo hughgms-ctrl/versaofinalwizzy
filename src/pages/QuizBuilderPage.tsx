@@ -333,6 +333,7 @@ function QuizBuilderInner() {
         onDeleteNode={handleDeleteNode}
         onSave={handleSave}
         isSaving={isSaving}
+        allNodes={nodes}
       />
 
       {/* Preview */}
