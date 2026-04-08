@@ -328,13 +328,13 @@ function QuizBuilderInner() {
 
       {/* Preview */}
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-        <DialogContent className="max-w-sm h-[600px] p-0 overflow-hidden">
-          <DialogHeader className="p-4 pb-0">
+        <DialogContent className="max-w-sm p-0 overflow-hidden flex flex-col" style={{ height: '600px' }}>
+          <DialogHeader className="p-4 pb-0 shrink-0">
             <DialogTitle className="text-sm">Visualização do Quizz</DialogTitle>
           </DialogHeader>
-          <div className="flex-1 overflow-hidden">
+          <div className="flex-1 min-h-0">
             {previewOpen && publicUrl && (
-              <iframe src={publicUrl} className="w-full h-full border-0" title="Quiz Preview" />
+              <iframe src={publicUrl} className="w-full h-full border-0" title="Quizz Preview" />
             )}
           </div>
         </DialogContent>
