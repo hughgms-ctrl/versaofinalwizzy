@@ -10,7 +10,7 @@ import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Calendar } from '@/components/ui/calendar';
-import { Trash2, Plus, GripVertical, Save, ArrowUp, ArrowDown } from 'lucide-react';
+import { Trash2, Plus, GripVertical, Save, ArrowUp, ArrowDown, Copy } from 'lucide-react';
 import { getQuizComponentInfo } from './QuizSidebar';
 import { ptBR } from 'date-fns/locale';
 
