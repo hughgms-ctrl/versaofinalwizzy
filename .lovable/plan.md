@@ -1,104 +1,68 @@
 
 
-# Sistema de Assinaturas com Asaas
+## Plano: Melhorias no bloco de Vídeo + Botão WhatsApp + Disparo automático
 
-## Resumo
+### Contexto
+O bloco de vídeo do Quizz Builder atualmente tem apenas URL e Autoplay. O usuário quer: (1) escolher formato vertical/horizontal, (2) botão CTA para WhatsApp, (3) disparo automático ao concluir o quizz.
 
-Construir o sistema completo de assinaturas integrado com Asaas (gateway de pagamento brasileiro), incluindo Landing Page pública, painel de upgrade dentro do app, e gerenciamento admin. Funcionalidades bloqueadas aparecerão "cinza" com CTA de upgrade.
-
----
-
-## Estrutura dos 3 Planos (proposta)
-
-```text
-┌──────────────┬──────────────┬──────────────┐
-│   STARTER    │     PRO      │  ENTERPRISE  │
-├──────────────┼──────────────┼──────────────┤
-│ Conversas    │ Conversas    │ Conversas    │
-│ Pipeline     │ Pipeline     │ Pipeline     │
-│ Contatos     │ Contatos     │ Contatos     │
-│ Fluxos       │ Fluxos       │ Fluxos       │
-│ Documentos   │ Documentos   │ Documentos   │
-│ 3 membros    │ 10 membros   │ 50 membros   │
-│ 1 GB storage │ 10 GB        │ 50 GB        │
-│              │              │              │
-│ ✗ IA         │ ✓ IA         │ ✓ IA         │
-│ ✗ Agentes    │ ✓ Agentes    │ ✓ Agentes    │
-│ ✗ Orquestr.  │ ✗ Orquestr.  │ ✓ Orquestr.  │
-│ ✗ Relatórios │ ✓ Relatórios │ ✓ Relatórios │
-│ ✗ Campanhas  │ ✓ Campanhas  │ ✓ Campanhas  │
-│ ✗ Agenda     │ ✓ Agenda     │ ✓ Agenda     │
-│              │              │              │
-│ R$ 97/mês    │ R$ 197/mês   │ R$ 497/mês   │
-│ R$ 970/ano   │ R$ 1.970/ano │ R$ 4.970/ano │
-└──────────────┴──────────────┴──────────────┘
-```
-
-> Esses valores e módulos são ajustáveis. Confirme se essa distribuição faz sentido antes de implementar.
+### Sobre vídeos verticais no YouTube
+YouTube sempre entrega vídeos no aspect ratio original. Se o vídeo foi enviado em formato vertical (9:16), o iframe mostrará vertical. Não é possível forçar crop via iframe do YouTube. Para vídeos enviados em 16:9, a solução é aplicar CSS `object-fit: cover` com container em aspect ratio 9:16, mas isso só funciona com tag `<video>` (MP4 direto), não com iframes do YouTube. Então ofereceremos:
+- **Horizontal (16:9)** — padrão, funciona com qualquer fonte
+- **Vertical (9:16)** — funciona nativamente com vídeos verticais do YouTube; para MP4 direto, aplica crop via CSS
 
 ---
 
-## O que será construído
+### 1. Configuração de formato no bloco de Vídeo
+**Arquivo**: `src/components/quiz/QuizNodeProperties.tsx`
+- Adicionar Select com opções: **Horizontal (16:9)** e **Vertical (9:16)**
+- Salvar como `d.orientation` (`horizontal` | `vertical`)
 
-### 1. Banco de Dados - Ajustes
+### 2. Renderização do vídeo no formato escolhido
+**Arquivo**: `src/pages/PublicQuizPage.tsx`
+- Se `orientation === 'vertical'`: container com `aspect-[9/16]` e `max-w-[360px] mx-auto`
+- Se horizontal: manter `aspect-video` atual
+- Para iframe (YouTube/Vimeo): aplica o aspect ratio no container
+- Para MP4 direto (se detectado): usar `<video>` com `object-fit: cover` para crop real
 
-- Adicionar colunas `price_yearly` e `allowed_modules` (jsonb com lista de módulos permitidos) na tabela `platform_plans`
-- Adicionar colunas `asaas_customer_id`, `asaas_subscription_id` e `billing_cycle` (mensal/anual) na tabela `organization_plans`
-- Criar tabela `billing_events` para registrar webhook events do Asaas (auditoria)
+### 3. Botão CTA para WhatsApp no bloco de Vídeo
+**Arquivo**: `src/components/quiz/QuizNodeProperties.tsx`
+- Adicionar campos opcionais:
+  - Toggle "Botão WhatsApp"
+  - Input: número do WhatsApp
+  - Input: mensagem pré-preenchida
+  - Input: texto do botão (padrão: "Falar no WhatsApp")
 
-### 2. Edge Functions - Asaas
+**Arquivo**: `src/pages/PublicQuizPage.tsx`
+- Renderizar botão verde com ícone WhatsApp abaixo do vídeo, abrindo `https://wa.me/{numero}?text={mensagem}`
 
-- **asaas-create-customer**: Cria cliente no Asaas ao registrar organização
-- **asaas-create-subscription**: Cria assinatura PIX recorrente ou cartão
-- **asaas-webhook**: Recebe notificações do Asaas (pagamento confirmado, falha, cancelamento) e atualiza `organization_plans`
-- **asaas-change-plan**: Upgrade/downgrade de plano
+### 4. Novo bloco de Evento: "Disparo WhatsApp"
+**Arquivo**: `src/components/quiz/QuizSidebar.tsx`
+- Adicionar na categoria **Eventos**: `quiz-event-whatsapp-trigger` — "Disparo WhatsApp"
+- Ícone: `MessageSquare` ou similar
 
-### 3. Landing Page (`/landing`)
+**Arquivo**: `src/components/quiz/QuizNodeProperties.tsx`
+- Configuração: número WhatsApp, mensagem template (pode usar variáveis/campos do contato)
+- Esse bloco, quando alcançado no fluxo, dispara automaticamente uma mensagem via API
 
-- Rota pública (sem login)
-- Hero section com proposta de valor
-- Seções de funcionalidades
-- Tabela comparativa de planos com toggle Mensal/Anual
-- Botão "Começar agora" que redireciona para `/auth` (cadastro)
-- Design responsivo e profissional
+**Arquivo**: `src/components/quiz/QuizNodes.tsx`
+- Adicionar visual do nó no canvas
 
-### 4. Painel de Assinatura no App (`/settings` ou rota dedicada)
+**Arquivo**: `src/pages/PublicQuizPage.tsx`
+- Ao processar esse bloco, fazer POST para a edge function `zapi-send-message` com os dados coletados
 
-- Card com plano atual, status do pagamento e próximo vencimento
-- Tabela comparativa com botão de upgrade
-- Toggle Mensal/Anual
-- Ao clicar "Assinar" ou "Upgrade", abre checkout do Asaas (link de pagamento)
+**Arquivo**: `src/components/quiz/QuizSidebar.tsx`
+- Adicionar tipo ao `QuizNodeType`
 
-### 5. Bloqueio de Módulos por Plano
-
-- Hook `useCanAccessModule` já existe - será estendido para verificar os módulos permitidos no plano da organização
-- Módulos bloqueados aparecem no menu em cinza com ícone de cadeado
-- Ao clicar em módulo bloqueado, exibe modal "Faça upgrade para acessar" com link direto para a página de planos
-
-### 6. Admin - Gerenciamento de Assinaturas
-
-- Expandir AdminPlansPage para incluir `price_yearly` e `allowed_modules`
-- Nova aba/seção de assinaturas ativas no painel admin com status de pagamento
-
----
-
-## Ordem de Implementação
-
-1. Ajustar banco (migrations para `platform_plans`, `organization_plans`, `billing_events`)
-2. Landing Page pública
-3. Edge Functions do Asaas (criar quando tiver API key)
-4. Painel de upgrade no app
-5. Bloqueio de módulos por plano
-6. Admin - gerenciamento de assinaturas
+### 5. Atualização da memória
+Atualizar a memória do builder para incluir os novos recursos.
 
 ---
 
-## Pré-requisito
-
-Antes de implementar a integração com Asaas, você precisará:
-1. Criar conta no Asaas (https://www.asaas.com)
-2. Gerar a API Key (sandbox para testes, produção depois)
-3. Me fornecer a chave para eu salvar como secret do projeto
-
-Posso começar pelos itens 1-2 (banco + landing page) enquanto você cria a conta no Asaas.
+### Resumo técnico dos arquivos editados
+| Arquivo | Mudança |
+|---|---|
+| `QuizSidebar.tsx` | Novo tipo + componente na sidebar |
+| `QuizNodeProperties.tsx` | Config formato vídeo + CTA WhatsApp + config disparo |
+| `QuizNodes.tsx` | Visual do nó de disparo WhatsApp |
+| `PublicQuizPage.tsx` | Renderização vertical/horizontal + botão WhatsApp + lógica de disparo |
 
