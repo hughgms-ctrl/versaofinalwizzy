@@ -428,8 +428,18 @@ function ConditionEditor({ data, onUpdate, userFields }: { data: Record<string, 
 
               {rule.source === 'variable' && (
                 <div>
-                  <Label className="text-[10px] text-muted-foreground">Nome da variável</Label>
-                  <Input value={rule.variable || ''} onChange={(e) => updateRule(idx, { variable: e.target.value })} className="h-8 text-xs" placeholder="Ex: data_nascimento" />
+                  <Label className="text-[10px] text-muted-foreground">Campo do usuário</Label>
+                  <Select value={rule.variable || ''} onValueChange={(v) => updateRule(idx, { variable: v })}>
+                    <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Selecione um campo..." /></SelectTrigger>
+                    <SelectContent>
+                      {userFields.length > 0 && userFields.map(f => (
+                        <SelectItem key={f} value={f}>{f}</SelectItem>
+                      ))}
+                      {userFields.length === 0 && (
+                        <SelectItem value="_none" disabled>Nenhum campo criado</SelectItem>
+                      )}
+                    </SelectContent>
+                  </Select>
                 </div>
               )}
 
