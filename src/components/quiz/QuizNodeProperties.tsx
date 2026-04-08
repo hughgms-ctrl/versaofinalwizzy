@@ -163,7 +163,7 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate }: {
             <Textarea value={d.question || ''} onChange={(e) => updateBlockData({ question: e.target.value })} rows={2} placeholder="Ex: Qual é o seu nome?" /></div>
           <div><Label className="text-xs">Placeholder</Label>
             <Input value={d.placeholder || ''} onChange={(e) => updateBlockData({ placeholder: e.target.value })} /></div>
-          <div><Label className="text-xs">Variável (salvar como)</Label>
+          <div><Label className="text-xs">Salvar como campo do usuário</Label>
             <Input value={d.variable || ''} onChange={(e) => updateBlockData({ variable: e.target.value })} placeholder="Ex: nome, email..." /></div>
           <div className="flex items-center justify-between">
             <Label className="text-xs">Obrigatório</Label>
@@ -229,7 +229,7 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate }: {
 
           <Separator />
 
-          <div><Label className="text-xs">Variável</Label>
+          <div><Label className="text-xs">Salvar como campo do usuário</Label>
             <Input value={d.variable || ''} onChange={(e) => updateBlockData({ variable: e.target.value })} placeholder="Ex: data_nascimento" /></div>
 
           <div className="flex items-center justify-between">
