@@ -146,12 +146,17 @@ export function QuizGroupNode({ data, selected, id }: NodeProps<GroupNode>) {
             const color = getBlockColor(block.type);
             const blockLabel = getBlockLabel(block);
 
+            const onBlockClick = (e: React.MouseEvent) => {
+              e.stopPropagation();
+              window.dispatchEvent(new CustomEvent('quiz-block-click', { detail: { nodeId: id, blockIdx: idx } }));
+            };
+
             // For buttons, show each option as a row
             if (block.type === 'quiz-input-buttons' && (block.data.options as any[])?.length) {
               return (
-                <div key={block.id} className="space-y-1">
+                <div key={block.id} className="space-y-1 cursor-pointer" onClick={onBlockClick}>
                   {(block.data.options as any[]).map((opt: any, optIdx: number) => (
-                    <div key={optIdx} className="flex items-center gap-2 px-2 py-1.5 rounded-md bg-muted/50 border border-border/50">
+                    <div key={optIdx} className="flex items-center gap-2 px-2 py-1.5 rounded-md bg-muted/50 border border-border/50 hover:bg-accent/50 transition-colors">
                       <MousePointerClick className={cn("h-3.5 w-3.5 flex-shrink-0", color)} />
                       <span className="text-xs text-foreground truncate flex-1">{opt.label}</span>
                     </div>
@@ -161,7 +166,8 @@ export function QuizGroupNode({ data, selected, id }: NodeProps<GroupNode>) {
             }
 
             return (
-              <div key={block.id} className="flex items-center gap-2 px-2 py-1.5 rounded-md bg-muted/50 border border-border/50">
+              <div key={block.id} onClick={onBlockClick}
+                className="flex items-center gap-2 px-2 py-1.5 rounded-md bg-muted/50 border border-border/50 cursor-pointer hover:bg-accent/50 transition-colors">
                 <Icon className={cn("h-3.5 w-3.5 flex-shrink-0", color)} />
                 <span className="text-xs text-foreground truncate flex-1">{blockLabel}</span>
               </div>
