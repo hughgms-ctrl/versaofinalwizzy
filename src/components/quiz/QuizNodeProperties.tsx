@@ -57,6 +57,7 @@ export function QuizNodeProperties({ node, selectedBlockIdx, onClose, onUpdateNo
               allBlocks={blocks}
               nodeId={node.id}
               onUpdate={(updatedBlocks) => onUpdateNode(node.id, { blocks: updatedBlocks })}
+              userFields={userFields}
             />
           ) : (
             <GroupEditor
