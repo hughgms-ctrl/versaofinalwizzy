@@ -282,6 +282,9 @@ function QuizBuilderInner() {
             onNodeClick={handleNodeClick}
             onNodeDoubleClick={handleNodeDoubleClick}
             onPaneClick={handlePaneClick}
+            onEdgeClick={(_: React.MouseEvent, edge: Edge) => {
+              setEdges((eds) => eds.filter(e => e.id !== edge.id));
+            }}
             nodeTypes={quizNodeTypes}
             connectionMode={ConnectionMode.Strict}
             connectionLineType={ConnectionLineType.Bezier}
