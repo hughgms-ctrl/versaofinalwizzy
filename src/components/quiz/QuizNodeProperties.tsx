@@ -442,19 +442,6 @@ function ConditionEditor({ data, onUpdate, userFields }: { data: Record<string, 
                 </div>
               )}
 
-              {rule.source === 'contact_field' && (
-                <div>
-                  <Label className="text-[10px] text-muted-foreground">Campo</Label>
-                  <Select value={rule.contactField || 'name'} onValueChange={(v) => updateRule(idx, { contactField: v })}>
-                    <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="name">Nome</SelectItem>
-                      <SelectItem value="email">E-mail</SelectItem>
-                      <SelectItem value="phone">Telefone</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
 
               <div>
                 <Label className="text-[10px] text-muted-foreground">Tipo de comparação</Label>
