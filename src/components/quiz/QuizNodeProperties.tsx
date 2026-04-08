@@ -160,11 +160,34 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate }: {
         </>
       )}
 
-      {/* Date / Time */}
-      {['quiz-input-date', 'quiz-input-time'].includes(block.type) && (
+      {/* Date */}
+      {block.type === 'quiz-input-date' && (
         <>
           <div><Label className="text-xs">Pergunta</Label>
-            <Textarea value={d.question || ''} onChange={(e) => updateBlockData({ question: e.target.value })} rows={2} placeholder="Ex: Qual a melhor data?" /></div>
+            <Textarea value={d.question || ''} onChange={(e) => updateBlockData({ question: e.target.value })} rows={2} placeholder="Ex: Informe a data da prisão" /></div>
+          <div><Label className="text-xs">Variável</Label>
+            <Input value={d.variable || ''} onChange={(e) => updateBlockData({ variable: e.target.value })} /></div>
+          <div className="flex items-center justify-between">
+            <Label className="text-xs">Permitir precisão flexível</Label>
+            <Switch checked={d.allowFlexible === true} onCheckedChange={(v) => updateBlockData({ allowFlexible: v })} />
+          </div>
+          {d.allowFlexible && (
+            <p className="text-[10px] text-muted-foreground">
+              O respondente poderá escolher: Data exata, Mês/Ano, Apenas ano ou Não sei.
+            </p>
+          )}
+          <div className="flex items-center justify-between">
+            <Label className="text-xs">Obrigatório</Label>
+            <Switch checked={d.required !== false} onCheckedChange={(v) => updateBlockData({ required: v })} />
+          </div>
+        </>
+      )}
+
+      {/* Time */}
+      {block.type === 'quiz-input-time' && (
+        <>
+          <div><Label className="text-xs">Pergunta</Label>
+            <Textarea value={d.question || ''} onChange={(e) => updateBlockData({ question: e.target.value })} rows={2} placeholder="Ex: Qual o melhor horário?" /></div>
           <div><Label className="text-xs">Variável</Label>
             <Input value={d.variable || ''} onChange={(e) => updateBlockData({ variable: e.target.value })} /></div>
           <div className="flex items-center justify-between">
