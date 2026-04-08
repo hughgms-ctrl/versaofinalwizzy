@@ -29,6 +29,8 @@ import ProfilePage from "./pages/ProfilePage";
 import WidgetsPage from "./pages/WidgetsPage";
 import WidgetEditorPage from "./pages/WidgetEditorPage";
 import DocumentsPage from "./pages/DocumentsPage";
+import ToolsPage from "./pages/ToolsPage";
+import QuizListPage from "./pages/QuizListPage";
 import IntegrationsPage from "./pages/IntegrationsPage";
 import PublicFormPage from "./pages/PublicFormPage";
 import PublicPackFormPage from "./pages/PublicPackFormPage";
@@ -83,6 +85,11 @@ const App = () => (
                     <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
                     <Route path="/scheduled" element={<ProtectedRoute><ScheduledMessagesPage /></ProtectedRoute>} />
                     <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
+                    <Route path="/tools" element={<ProtectedRoute><ToolsPage /></ProtectedRoute>} />
+                    <Route path="/tools/buttons" element={<ProtectedRoute><WidgetsPage /></ProtectedRoute>} />
+                    <Route path="/tools/buttons/:widgetId" element={<ProtectedRoute><WidgetEditorPage /></ProtectedRoute>} />
+                    <Route path="/tools/documents" element={<ProtectedRoute><DocumentsPage /></ProtectedRoute>} />
+                    <Route path="/tools/quiz" element={<ProtectedRoute><QuizListPage /></ProtectedRoute>} />
                     <Route path="/widgets" element={<ProtectedRoute><WidgetsPage /></ProtectedRoute>} />
                     <Route path="/widgets/:widgetId" element={<ProtectedRoute><WidgetEditorPage /></ProtectedRoute>} />
                     <Route path="/documents" element={<ProtectedRoute><DocumentsPage /></ProtectedRoute>} />

@@ -16,7 +16,6 @@ import {
   User,
   BookUser,
   MousePointerClick,
-  FileText,
   Plug,
   Megaphone,
   Calendar,
@@ -51,8 +50,7 @@ const navigation: NavItem[] = [
   { name: 'Pipeline', href: '/pipeline', icon: Kanban, module: 'pipeline', planModule: 'pipeline' },
   { name: 'Fluxos', href: '/flows', icon: Workflow, module: 'flows', planModule: 'flows' },
   { name: 'Campanhas', href: '/campaigns', icon: Megaphone, module: 'flows', planModule: 'campaigns' },
-  { name: 'Widgets', href: '/widgets', icon: MousePointerClick, module: 'flows', planModule: 'widgets' },
-  { name: 'Documentos', href: '/documents', icon: FileText, module: 'flows', planModule: 'documents' },
+  { name: 'Ferramentas', href: '/tools', icon: MousePointerClick, module: 'flows', planModule: 'tools' },
   { name: 'Agendamentos', href: '/scheduled', icon: CalendarClock, module: 'scheduled', planModule: 'scheduled' },
   { name: 'Agentes IA', href: '/agents', icon: Bot, module: 'agents', planModule: 'agents' },
   { name: 'Equipe', href: '/team', icon: Users, module: 'team', planModule: 'team' },
@@ -141,7 +139,7 @@ export function Sidebar() {
         {/* Navigation */}
         <nav className="flex-1 space-y-1 px-3 py-4 overflow-y-auto">
           {visibleNavigation.map((item) => {
-            const isActive = location.pathname === item.href;
+            const isActive = item.href === '/' ? location.pathname === '/' : location.pathname.startsWith(item.href);
             const isLocked = item.planModule ? !canAccessPlanModule(item.planModule) : false;
             return (
               <Link
