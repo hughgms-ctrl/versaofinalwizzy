@@ -31,6 +31,8 @@ import WidgetEditorPage from "./pages/WidgetEditorPage";
 import DocumentsPage from "./pages/DocumentsPage";
 import ToolsPage from "./pages/ToolsPage";
 import QuizListPage from "./pages/QuizListPage";
+import QuizBuilderPage from "./pages/QuizBuilderPage";
+import PublicQuizPage from "./pages/PublicQuizPage";
 import IntegrationsPage from "./pages/IntegrationsPage";
 import PublicFormPage from "./pages/PublicFormPage";
 import PublicPackFormPage from "./pages/PublicPackFormPage";
@@ -90,12 +92,14 @@ const App = () => (
                     <Route path="/tools/buttons/:widgetId" element={<ProtectedRoute><WidgetEditorPage /></ProtectedRoute>} />
                     <Route path="/tools/documents" element={<ProtectedRoute><DocumentsPage /></ProtectedRoute>} />
                     <Route path="/tools/quiz" element={<ProtectedRoute><QuizListPage /></ProtectedRoute>} />
+                    <Route path="/tools/quiz/builder" element={<ProtectedRoute><QuizBuilderPage /></ProtectedRoute>} />
                     <Route path="/widgets" element={<ProtectedRoute><WidgetsPage /></ProtectedRoute>} />
                     <Route path="/widgets/:widgetId" element={<ProtectedRoute><WidgetEditorPage /></ProtectedRoute>} />
                     <Route path="/documents" element={<ProtectedRoute><DocumentsPage /></ProtectedRoute>} />
                     <Route path="/integrations" element={<ProtectedRoute><IntegrationsPage /></ProtectedRoute>} />
                     <Route path="/form" element={<PublicFormPage />} />
                     <Route path="/pack-form" element={<PublicPackFormPage />} />
+                    <Route path="/quiz/:token" element={<PublicQuizPage />} />
                     <Route path="/signature/:documentId" element={<SignaturePage />} />
                     <Route path="/sign/:token" element={<PublicSignaturePage />} />
                     <Route path="/agendar/:slug" element={<PublicBookingPage />} />
