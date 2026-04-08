@@ -353,6 +353,22 @@ export default function PublicQuizPage() {
     setTimeout(() => goToNextBlock(), 100);
   }, [goToNextBlock]);
 
+  const handleWhatsAppTrigger = useCallback((block: FlowBlock) => {
+    const { waNumber, waMessage } = block.data;
+    if (waNumber) {
+      const message = interpolate(waMessage || '', variables);
+      // Fire and forget — open WhatsApp link or call API
+      try {
+        const phone = waNumber.replace(/\D/g, '');
+        // Use the Supabase edge function to send message automatically
+        supabase.functions.invoke('zapi-send-message', {
+          body: { phone, message, type: 'text' },
+        }).catch(() => {});
+      } catch {}
+    }
+    setTimeout(() => goToNextBlock(), 100);
+  }, [goToNextBlock, variables]);
+
   // Auto-execute logic blocks when they become current
   useEffect(() => {
     if (phase !== 'flow' || !currentBlock) return;
