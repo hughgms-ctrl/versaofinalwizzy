@@ -297,7 +297,7 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate, userFields 
 
       {/* Condition */}
       {block.type === 'quiz-logic-condition' && (
-        <ConditionEditor data={d} onUpdate={updateBlockData} />
+        <ConditionEditor data={d} onUpdate={updateBlockData} userFields={userFields} />
       )}
 
       {/* Redirect */}
