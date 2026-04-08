@@ -775,6 +775,110 @@ function BlockRenderer({ block, answer, variables, onAnswer, onNext, isLast }: {
 
 // ---- Helpers ----
 
+// Date block with flexible precision (exact, month/year, year only, unknown)
+function DateBlockRenderer({ block, answer, variables, onAnswer, onNext }: {
+  block: FlowBlock; answer: any; variables: Record<string, any>;
+  onAnswer: (val: any, varName?: string) => void; onNext: (h?: string) => void;
+}) {
+  const d = block.data || {};
+  const allowFlexible = d.allowFlexible === true;
+  const [precision, setPrecision] = useState<'exact' | 'month_year' | 'year' | 'unknown' | null>(allowFlexible ? null : 'exact');
+
+  const currentAnswer = typeof answer === 'object' ? answer : { precision: 'exact', value: answer || '' };
+
+  const handleChange = (value: string, prec: string) => {
+    onAnswer({ precision: prec, value }, d.variable);
+  };
+
+  // If no flexible options, show simple date input
+  if (!allowFlexible) {
+    return (
+      <InputWrapper onNext={onNext}>
+        {d.question && <h2 className="text-2xl font-bold">{interpolate(d.question, variables)}</h2>}
+        <Input
+          type="date"
+          value={currentAnswer.value || ''}
+          onChange={e => onAnswer(e.target.value, d.variable)}
+          className="h-14 text-lg"
+        />
+      </InputWrapper>
+    );
+  }
+
+  const precisionOptions = [
+    { key: 'exact' as const, label: 'Data exata' },
+    { key: 'month_year' as const, label: 'Mês / Ano' },
+    { key: 'year' as const, label: 'Apenas ano' },
+    { key: 'unknown' as const, label: 'Não sei' },
+  ];
+
+  return (
+    <div className="space-y-6">
+      {d.question && <h2 className="text-2xl font-bold">{interpolate(d.question, variables)}</h2>}
+
+      {/* Precision selector */}
+      <div className="grid grid-cols-2 gap-2">
+        {precisionOptions.map(opt => (
+          <Button
+            key={opt.key}
+            variant={precision === opt.key ? 'default' : 'outline'}
+            className="h-12 text-sm"
+            onClick={() => {
+              setPrecision(opt.key);
+              if (opt.key === 'unknown') {
+                handleChange('Não sei', 'unknown');
+              }
+            }}
+          >
+            {opt.label}
+          </Button>
+        ))}
+      </div>
+
+      {/* Input based on precision */}
+      {precision === 'exact' && (
+        <Input
+          type="date"
+          value={currentAnswer.precision === 'exact' ? currentAnswer.value : ''}
+          onChange={e => handleChange(e.target.value, 'exact')}
+          className="h-14 text-lg"
+        />
+      )}
+
+      {precision === 'month_year' && (
+        <Input
+          type="month"
+          value={currentAnswer.precision === 'month_year' ? currentAnswer.value : ''}
+          onChange={e => handleChange(e.target.value, 'month_year')}
+          className="h-14 text-lg"
+        />
+      )}
+
+      {precision === 'year' && (
+        <Input
+          type="number"
+          min={1900}
+          max={2100}
+          placeholder="Ex: 2023"
+          value={currentAnswer.precision === 'year' ? currentAnswer.value : ''}
+          onChange={e => handleChange(e.target.value, 'year')}
+          className="h-14 text-lg"
+        />
+      )}
+
+      {precision === 'unknown' && (
+        <p className="text-muted-foreground text-center py-2">Será registrado como "Não sei"</p>
+      )}
+
+      {precision && (
+        <Button size="lg" className="w-full h-14 text-lg" onClick={() => onNext()}>
+          OK <ArrowRight className="h-5 w-5 ml-2" />
+        </Button>
+      )}
+    </div>
+  );
+}
+
 function InputWrapper({ children, onNext, placeholder }: { children: React.ReactNode; onNext: (h?: string) => void; placeholder?: string }) {
   return (
     <div className="space-y-6">
