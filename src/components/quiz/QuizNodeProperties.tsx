@@ -147,6 +147,8 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate }: {
       {/* Text/Number/Email/Website/Phone inputs */}
       {['quiz-input-text', 'quiz-input-number', 'quiz-input-email', 'quiz-input-website', 'quiz-input-phone'].includes(block.type) && (
         <>
+          <div><Label className="text-xs">Pergunta</Label>
+            <Textarea value={d.question || ''} onChange={(e) => updateBlockData({ question: e.target.value })} rows={2} placeholder="Ex: Qual é o seu nome?" /></div>
           <div><Label className="text-xs">Placeholder</Label>
             <Input value={d.placeholder || ''} onChange={(e) => updateBlockData({ placeholder: e.target.value })} /></div>
           <div><Label className="text-xs">Variável (salvar como)</Label>
@@ -161,6 +163,8 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate }: {
       {/* Date / Time */}
       {['quiz-input-date', 'quiz-input-time'].includes(block.type) && (
         <>
+          <div><Label className="text-xs">Pergunta</Label>
+            <Textarea value={d.question || ''} onChange={(e) => updateBlockData({ question: e.target.value })} rows={2} placeholder="Ex: Qual a melhor data?" /></div>
           <div><Label className="text-xs">Variável</Label>
             <Input value={d.variable || ''} onChange={(e) => updateBlockData({ variable: e.target.value })} /></div>
           <div className="flex items-center justify-between">
@@ -173,6 +177,8 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate }: {
       {/* Rating */}
       {block.type === 'quiz-input-rating' && (
         <>
+          <div><Label className="text-xs">Pergunta</Label>
+            <Textarea value={d.question || ''} onChange={(e) => updateBlockData({ question: e.target.value })} rows={2} placeholder="Ex: Como avalia nosso atendimento?" /></div>
           <div><Label className="text-xs">Escala máxima</Label>
             <Select value={String(d.maxRating || 5)} onValueChange={(v) => updateBlockData({ maxRating: parseInt(v) })}>
               <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
@@ -189,6 +195,8 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate }: {
       {/* File */}
       {block.type === 'quiz-input-file' && (
         <>
+          <div><Label className="text-xs">Pergunta</Label>
+            <Textarea value={d.question || ''} onChange={(e) => updateBlockData({ question: e.target.value })} rows={2} placeholder="Ex: Envie seu documento" /></div>
           <div><Label className="text-xs">Tipos aceitos (ex: .pdf,.jpg)</Label>
             <Input value={d.accept || ''} onChange={(e) => updateBlockData({ accept: e.target.value })} /></div>
           <div><Label className="text-xs">Variável</Label>
@@ -198,12 +206,20 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate }: {
 
       {/* Buttons */}
       {block.type === 'quiz-input-buttons' && (
-        <OptionsEditor options={d.options || []} onChange={(opts) => updateBlockData({ options: opts })} showUrl />
+        <>
+          <div><Label className="text-xs">Pergunta</Label>
+            <Textarea value={d.question || ''} onChange={(e) => updateBlockData({ question: e.target.value })} rows={2} placeholder="Ex: Qual opção você prefere?" /></div>
+          <OptionsEditor options={d.options || []} onChange={(opts) => updateBlockData({ options: opts })} showUrl />
+        </>
       )}
 
       {/* Pic choice */}
       {block.type === 'quiz-input-pic-choice' && (
-        <OptionsEditor options={d.options || []} onChange={(opts) => updateBlockData({ options: opts })} showImage />
+        <>
+          <div><Label className="text-xs">Pergunta</Label>
+            <Textarea value={d.question || ''} onChange={(e) => updateBlockData({ question: e.target.value })} rows={2} placeholder="Ex: Escolha uma imagem" /></div>
+          <OptionsEditor options={d.options || []} onChange={(opts) => updateBlockData({ options: opts })} showImage />
+        </>
       )}
 
       {/* Condition */}
