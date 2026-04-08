@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Node } from '@xyflow/react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -496,32 +496,49 @@ function OptionsEditor({ options, onChange, showUrl, showImage }: {
   showUrl?: boolean;
   showImage?: boolean;
 }) {
+  const dragItem = useRef<number | null>(null);
+  const dragOverItem = useRef<number | null>(null);
+
+  const handleDragStart = (index: number) => {
+    dragItem.current = index;
+  };
+
+  const handleDragEnter = (index: number) => {
+    dragOverItem.current = index;
+  };
+
+  const handleDragEnd = () => {
+    if (dragItem.current === null || dragOverItem.current === null) return;
+    if (dragItem.current === dragOverItem.current) {
+      dragItem.current = null;
+      dragOverItem.current = null;
+      return;
+    }
+    const n = [...options];
+    const dragged = n.splice(dragItem.current, 1)[0];
+    n.splice(dragOverItem.current, 0, dragged);
+    onChange(n);
+    dragItem.current = null;
+    dragOverItem.current = null;
+  };
+
   return (
     <div>
       <Label className="text-xs mb-2 block">Opções</Label>
       <div className="space-y-2">
         {options.map((opt: any, i: number) => (
-          <div key={i} className="space-y-1">
+          <div
+            key={i}
+            className="space-y-1"
+            draggable
+            onDragStart={() => handleDragStart(i)}
+            onDragEnter={() => handleDragEnter(i)}
+            onDragEnd={handleDragEnd}
+            onDragOver={(e) => e.preventDefault()}
+          >
             <div className="flex items-center gap-1">
-              <div className="flex flex-col flex-shrink-0">
-                <Button variant="ghost" size="icon" className="h-4 w-4 p-0"
-                  disabled={i === 0}
-                  onClick={() => {
-                    const n = [...options];
-                    [n[i - 1], n[i]] = [n[i], n[i - 1]];
-                    onChange(n);
-                  }}>
-                  <ArrowUp className="h-3 w-3" />
-                </Button>
-                <Button variant="ghost" size="icon" className="h-4 w-4 p-0"
-                  disabled={i === options.length - 1}
-                  onClick={() => {
-                    const n = [...options];
-                    [n[i], n[i + 1]] = [n[i + 1], n[i]];
-                    onChange(n);
-                  }}>
-                  <ArrowDown className="h-3 w-3" />
-                </Button>
+              <div className="cursor-grab active:cursor-grabbing flex-shrink-0 text-muted-foreground hover:text-foreground">
+                <GripVertical className="h-4 w-4" />
               </div>
               <Input value={opt.label} onChange={(e) => {
                 const n = [...options];
@@ -538,14 +555,14 @@ function OptionsEditor({ options, onChange, showUrl, showImage }: {
                 const n = [...options];
                 n[i] = { ...opt, url: e.target.value };
                 onChange(n);
-              }} className="h-7 text-xs" placeholder="URL (opcional)" />
+              }} className="h-7 text-xs ml-5" placeholder="URL (opcional)" />
             )}
             {showImage && (
               <Input value={opt.imageUrl || ''} onChange={(e) => {
                 const n = [...options];
                 n[i] = { ...opt, imageUrl: e.target.value };
                 onChange(n);
-              }} className="h-7 text-xs" placeholder="URL da imagem" />
+              }} className="h-7 text-xs ml-5" placeholder="URL da imagem" />
             )}
           </div>
         ))}
