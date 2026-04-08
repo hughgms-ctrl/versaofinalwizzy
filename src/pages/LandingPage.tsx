@@ -1,5 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
@@ -8,6 +10,7 @@ import {
   Calendar, Send, Shield, Check, X, ArrowRight, Star,
   Sparkles, Globe, Lock
 } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const features = [
   { icon: MessageSquare, title: "Conversas Inteligentes", description: "Gerencie todas as suas conversas do WhatsApp em um só lugar com organização por status e equipe." },
@@ -20,64 +23,42 @@ const features = [
   { icon: BarChart3, title: "Relatórios Avançados", description: "Dashboards com métricas de atendimento, desempenho de agentes e conversões." },
 ];
 
-const plans = [
-  {
-    name: "Starter",
-    slug: "basic",
-    priceMonthly: 97,
-    priceYearly: 970,
-    description: "Para começar a automatizar seu atendimento",
-    members: 3,
-    storage: "1 GB",
-    highlight: false,
-    modules: {
-      conversations: true, pipeline: true, contacts: true, flows: true,
-      documents: true, agents: false, reports: false, campaigns: false,
-      calendar: false, orchestrator: false, ai: false,
-    },
-  },
-  {
-    name: "Pro",
-    slug: "pro",
-    priceMonthly: 197,
-    priceYearly: 1970,
-    description: "Para equipes que precisam de IA e automação avançada",
-    members: 10,
-    storage: "10 GB",
-    highlight: true,
-    modules: {
-      conversations: true, pipeline: true, contacts: true, flows: true,
-      documents: true, agents: true, reports: true, campaigns: true,
-      calendar: true, orchestrator: false, ai: true,
-    },
-  },
-  {
-    name: "Enterprise",
-    slug: "enterprise",
-    priceMonthly: 497,
-    priceYearly: 4970,
-    description: "Para operações de grande escala com orquestração completa",
-    members: 50,
-    storage: "50 GB",
-    highlight: false,
-    modules: {
-      conversations: true, pipeline: true, contacts: true, flows: true,
-      documents: true, agents: true, reports: true, campaigns: true,
-      calendar: true, orchestrator: true, ai: true,
-    },
-  },
-];
-
 const moduleLabels: Record<string, string> = {
   conversations: "Conversas", pipeline: "Pipeline", contacts: "Contatos",
   flows: "Fluxos", documents: "Documentos", agents: "Agentes IA",
   reports: "Relatórios", campaigns: "Campanhas", calendar: "Agenda",
   orchestrator: "Orquestrador", ai: "Inteligência Artificial",
+  widgets: "Widgets", settings: "Configurações", team: "Equipe",
+  scheduled: "Agendamento", integrations: "Integrações",
 };
+
+const visibleModules = [
+  "conversations", "pipeline", "contacts", "flows", "documents",
+  "agents", "reports", "campaigns", "calendar", "orchestrator", "ai"
+];
 
 const LandingPage = () => {
   const [isYearly, setIsYearly] = useState(false);
   const navigate = useNavigate();
+
+  const { data: plans, isLoading: plansLoading } = useQuery({
+    queryKey: ['public-plans'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('platform_plans')
+        .select('*')
+        .eq('is_active', true)
+        .order('price_monthly', { ascending: true });
+      if (error) throw error;
+      return data || [];
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const formatStorage = (bytes: number) => {
+    const gb = bytes / (1024 * 1024 * 1024);
+    return gb >= 1 ? `${gb} GB` : `${Math.round(bytes / (1024 * 1024))} MB`;
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -198,75 +179,90 @@ const LandingPage = () => {
             </div>
           </div>
 
-          {/* Plan cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-6xl mx-auto">
-            {plans.map((plan) => (
-              <div
-                key={plan.slug}
-                className={`relative bg-card rounded-2xl border-2 p-8 flex flex-col ${
-                  plan.highlight
-                    ? 'border-primary shadow-xl shadow-primary/10 scale-[1.02]'
-                    : 'border-border/50'
-                }`}
-              >
-                {plan.highlight && (
-                  <div className="absolute -top-3.5 left-1/2 -translate-x-1/2">
-                    <Badge className="bg-primary text-primary-foreground px-4 py-1">
-                      Mais popular
-                    </Badge>
-                  </div>
-                )}
-                <h3 className="text-2xl font-bold text-foreground">{plan.name}</h3>
-                <p className="text-sm text-muted-foreground mt-1">{plan.description}</p>
-                <div className="mt-6">
-                  <div className="flex items-baseline gap-1">
-                    <span className="text-4xl font-bold text-foreground">
-                      R$ {isYearly
-                        ? Math.round(plan.priceYearly / 12)
-                        : plan.priceMonthly}
-                    </span>
-                    <span className="text-muted-foreground">/mês</span>
-                  </div>
-                  {isYearly && (
-                    <p className="text-sm text-muted-foreground mt-1">
-                      Cobrado R$ {plan.priceYearly.toLocaleString('pt-BR')}/ano
-                    </p>
-                  )}
-                </div>
+          {/* Plan cards - dynamic from DB */}
+          {plansLoading ? (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-6xl mx-auto">
+              {[1, 2, 3].map(i => <Skeleton key={i} className="h-[500px] rounded-2xl" />)}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-6xl mx-auto">
+              {(plans || []).map((plan: any, idx: number) => {
+                const modules: string[] = plan.allowed_modules || [];
+                const isPro = plan.slug === 'pro';
+                const priceYearly = plan.price_yearly || plan.price_monthly * 10;
 
-                <Button
-                  className="mt-6 w-full"
-                  variant={plan.highlight ? "default" : "outline"}
-                  size="lg"
-                  onClick={() => navigate("/auth")}
-                >
-                  Começar agora
-                </Button>
-
-                <div className="mt-8 space-y-1">
-                  <p className="text-sm font-medium text-foreground mb-3">Inclui:</p>
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground py-1.5">
-                    <Check className="w-4 h-4 text-green-500 shrink-0" />
-                    <span>Até {plan.members} membros</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground py-1.5">
-                    <Check className="w-4 h-4 text-green-500 shrink-0" />
-                    <span>{plan.storage} de armazenamento</span>
-                  </div>
-                  {Object.entries(plan.modules).map(([key, enabled]) => (
-                    <div key={key} className={`flex items-center gap-2 text-sm py-1.5 ${enabled ? 'text-muted-foreground' : 'text-muted-foreground/40'}`}>
-                      {enabled ? (
-                        <Check className="w-4 h-4 text-green-500 shrink-0" />
-                      ) : (
-                        <X className="w-4 h-4 text-muted-foreground/40 shrink-0" />
+                return (
+                  <div
+                    key={plan.id}
+                    className={`relative bg-card rounded-2xl border-2 p-8 flex flex-col ${
+                      isPro
+                        ? 'border-primary shadow-xl shadow-primary/10 scale-[1.02]'
+                        : 'border-border/50'
+                    }`}
+                  >
+                    {isPro && (
+                      <div className="absolute -top-3.5 left-1/2 -translate-x-1/2">
+                        <Badge className="bg-primary text-primary-foreground px-4 py-1">
+                          Mais popular
+                        </Badge>
+                      </div>
+                    )}
+                    <h3 className="text-2xl font-bold text-foreground">{plan.name}</h3>
+                    <p className="text-sm text-muted-foreground mt-1">{plan.description || ''}</p>
+                    <div className="mt-6">
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-4xl font-bold text-foreground">
+                          R$ {isYearly
+                            ? Math.round(priceYearly / 12)
+                            : plan.price_monthly}
+                        </span>
+                        <span className="text-muted-foreground">/mês</span>
+                      </div>
+                      {isYearly && (
+                        <p className="text-sm text-muted-foreground mt-1">
+                          Cobrado R$ {priceYearly.toLocaleString('pt-BR')}/ano
+                        </p>
                       )}
-                      <span>{moduleLabels[key]}</span>
                     </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
+
+                    <Button
+                      className="mt-6 w-full"
+                      variant={isPro ? "default" : "outline"}
+                      size="lg"
+                      onClick={() => navigate("/auth")}
+                    >
+                      Começar agora
+                    </Button>
+
+                    <div className="mt-8 space-y-1">
+                      <p className="text-sm font-medium text-foreground mb-3">Inclui:</p>
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground py-1.5">
+                        <Check className="w-4 h-4 text-green-500 shrink-0" />
+                        <span>Até {plan.max_team_members} membros</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground py-1.5">
+                        <Check className="w-4 h-4 text-green-500 shrink-0" />
+                        <span>{formatStorage(plan.storage_limit_bytes)} de armazenamento</span>
+                      </div>
+                      {visibleModules.map((mod) => {
+                        const has = modules.includes(mod);
+                        return (
+                          <div key={mod} className={`flex items-center gap-2 text-sm py-1.5 ${has ? 'text-muted-foreground' : 'text-muted-foreground/40'}`}>
+                            {has ? (
+                              <Check className="w-4 h-4 text-green-500 shrink-0" />
+                            ) : (
+                              <X className="w-4 h-4 text-muted-foreground/40 shrink-0" />
+                            )}
+                            <span>{moduleLabels[mod] || mod}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </section>
 
