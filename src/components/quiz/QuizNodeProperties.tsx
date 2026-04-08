@@ -180,27 +180,6 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate }: {
           
           <Separator />
 
-          <div className="flex items-center justify-between">
-            <Label className="text-xs">É intervalo (de/até)</Label>
-            <Switch checked={d.isRange === true} onCheckedChange={(v) => updateBlockData({ isRange: v })} />
-          </div>
-          {d.isRange && (
-            <>
-              <div><Label className="text-xs">Label "De"</Label>
-                <Input value={d.fromLabel || 'De:'} onChange={(e) => updateBlockData({ fromLabel: e.target.value })} /></div>
-              <div><Label className="text-xs">Label "Até"</Label>
-                <Input value={d.toLabel || 'Até:'} onChange={(e) => updateBlockData({ toLabel: e.target.value })} /></div>
-            </>
-          )}
-
-          <div className="flex items-center justify-between">
-            <Label className="text-xs">Com horário</Label>
-            <Switch checked={d.withTime === true} onCheckedChange={(v) => updateBlockData({ withTime: v })} />
-          </div>
-
-          <div><Label className="text-xs">Texto do botão</Label>
-            <Input value={d.buttonLabel || 'Enviar'} onChange={(e) => updateBlockData({ buttonLabel: e.target.value })} /></div>
-
 
           <Separator />
 
