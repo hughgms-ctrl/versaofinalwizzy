@@ -3240,6 +3240,202 @@ export type Database = {
           },
         ]
       }
+      quiz_questions: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          logic: Json | null
+          options: Json | null
+          position: number
+          quiz_id: string
+          required: boolean
+          settings: Json | null
+          title: string
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          logic?: Json | null
+          options?: Json | null
+          position?: number
+          quiz_id: string
+          required?: boolean
+          settings?: Json | null
+          title?: string
+          type?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          logic?: Json | null
+          options?: Json | null
+          position?: number
+          quiz_id?: string
+          required?: boolean
+          settings?: Json | null
+          title?: string
+          type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quiz_questions_quiz_id_fkey"
+            columns: ["quiz_id"]
+            isOneToOne: false
+            referencedRelation: "quizzes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      quiz_submissions: {
+        Row: {
+          answers: Json
+          completed_at: string | null
+          contact_id: string | null
+          conversation_id: string | null
+          created_at: string
+          id: string
+          metadata: Json | null
+          organization_id: string
+          quiz_id: string
+          respondent_email: string | null
+          respondent_name: string | null
+          respondent_phone: string | null
+          whatsapp_triggered: boolean
+        }
+        Insert: {
+          answers?: Json
+          completed_at?: string | null
+          contact_id?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          organization_id: string
+          quiz_id: string
+          respondent_email?: string | null
+          respondent_name?: string | null
+          respondent_phone?: string | null
+          whatsapp_triggered?: boolean
+        }
+        Update: {
+          answers?: Json
+          completed_at?: string | null
+          contact_id?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          organization_id?: string
+          quiz_id?: string
+          respondent_email?: string | null
+          respondent_name?: string | null
+          respondent_phone?: string | null
+          whatsapp_triggered?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quiz_submissions_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quiz_submissions_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quiz_submissions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quiz_submissions_quiz_id_fkey"
+            columns: ["quiz_id"]
+            isOneToOne: false
+            referencedRelation: "quizzes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      quizzes: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          description: string | null
+          end_screen: Json | null
+          id: string
+          is_active: boolean
+          name: string
+          organization_id: string
+          public_token: string | null
+          settings: Json
+          theme: Json
+          updated_at: string
+          welcome_screen: Json | null
+          workspace_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          end_screen?: Json | null
+          id?: string
+          is_active?: boolean
+          name: string
+          organization_id: string
+          public_token?: string | null
+          settings?: Json
+          theme?: Json
+          updated_at?: string
+          welcome_screen?: Json | null
+          workspace_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          end_screen?: Json | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          organization_id?: string
+          public_token?: string | null
+          settings?: Json
+          theme?: Json
+          updated_at?: string
+          welcome_screen?: Json | null
+          workspace_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quizzes_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quizzes_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       scheduled_message_contacts: {
         Row: {
           contact_id: string
