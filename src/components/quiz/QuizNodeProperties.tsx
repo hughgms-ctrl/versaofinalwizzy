@@ -18,6 +18,8 @@ interface QuizNodePropertiesProps {
   onClose: () => void;
   onUpdateNode: (nodeId: string, data: Record<string, unknown>) => void;
   onDeleteNode: (nodeId: string) => void;
+  onSave?: () => void;
+  isSaving?: boolean;
 }
 
 export function QuizNodeProperties({ node, selectedBlockIdx, onClose, onUpdateNode, onDeleteNode }: QuizNodePropertiesProps) {
