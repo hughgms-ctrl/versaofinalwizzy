@@ -322,6 +322,8 @@ function QuizBuilderInner() {
         onClose={() => { setSelectedNode(null); setSelectedBlockIdx(null); }}
         onUpdateNode={handleNodeUpdate}
         onDeleteNode={handleDeleteNode}
+        onSave={handleSave}
+        isSaving={isSaving}
       />
 
       {/* Preview */}
