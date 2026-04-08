@@ -201,13 +201,6 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate }: {
           <div><Label className="text-xs">Texto do botão</Label>
             <Input value={d.buttonLabel || 'Enviar'} onChange={(e) => updateBlockData({ buttonLabel: e.target.value })} /></div>
 
-          <div><Label className="text-xs">Data mínima</Label>
-            <Input type="date" value={d.minDate || ''} onChange={(e) => updateBlockData({ minDate: e.target.value })} /></div>
-          <div><Label className="text-xs">Data máxima</Label>
-            <Input type="date" value={d.maxDate || ''} onChange={(e) => updateBlockData({ maxDate: e.target.value })} /></div>
-
-          <div><Label className="text-xs">Formato</Label>
-            <Input value={d.format || 'dd/MM/yyyy'} onChange={(e) => updateBlockData({ format: e.target.value })} placeholder="dd/MM/yyyy" /></div>
 
           <Separator />
 
