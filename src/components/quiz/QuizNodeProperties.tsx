@@ -22,7 +22,7 @@ interface QuizNodePropertiesProps {
   isSaving?: boolean;
 }
 
-export function QuizNodeProperties({ node, selectedBlockIdx, onClose, onUpdateNode, onDeleteNode }: QuizNodePropertiesProps) {
+export function QuizNodeProperties({ node, selectedBlockIdx, onClose, onUpdateNode, onDeleteNode, onSave, isSaving }: QuizNodePropertiesProps) {
   if (!node) return null;
 
   const blocks = (node.data.blocks as any[]) || [];
@@ -30,13 +30,13 @@ export function QuizNodeProperties({ node, selectedBlockIdx, onClose, onUpdateNo
 
   return (
     <Sheet open={!!node} onOpenChange={(open) => { if (!open) onClose(); }}>
-      <SheetContent className="w-80 sm:w-96 p-0">
+      <SheetContent className="w-80 sm:w-96 p-0 flex flex-col">
         <SheetHeader className="p-4 border-b">
           <SheetTitle className="text-sm">
             {block ? 'Editar bloco' : 'Grupo'}
           </SheetTitle>
         </SheetHeader>
-        <ScrollArea className="h-[calc(100vh-60px)]">
+        <ScrollArea className="flex-1">
           {block ? (
             <BlockEditor
               block={block}
@@ -53,6 +53,14 @@ export function QuizNodeProperties({ node, selectedBlockIdx, onClose, onUpdateNo
             />
           )}
         </ScrollArea>
+        {onSave && (
+          <div className="p-4 border-t">
+            <Button className="w-full" onClick={onSave} disabled={isSaving}>
+              <Save className="h-4 w-4 mr-2" />
+              {isSaving ? 'Salvando...' : 'Salvar Quiz'}
+            </Button>
+          </div>
+        )}
       </SheetContent>
     </Sheet>
   );
