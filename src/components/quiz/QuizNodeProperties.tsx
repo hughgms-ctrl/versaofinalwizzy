@@ -150,10 +150,35 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate, userFields 
         <>
           <div><Label className="text-xs">URL do vídeo</Label>
             <Input value={d.url || ''} onChange={(e) => updateBlockData({ url: e.target.value })} placeholder="YouTube, Vimeo ou MP4" /></div>
+          <div>
+            <Label className="text-xs">Orientação</Label>
+            <Select value={d.orientation || 'horizontal'} onValueChange={(v) => updateBlockData({ orientation: v })}>
+              <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="horizontal">Horizontal (16:9)</SelectItem>
+                <SelectItem value="vertical">Vertical (9:16)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           <div className="flex items-center justify-between">
             <Label className="text-xs">Autoplay</Label>
             <Switch checked={d.autoplay !== false} onCheckedChange={(v) => updateBlockData({ autoplay: v })} />
           </div>
+          <Separator />
+          <div className="flex items-center justify-between">
+            <Label className="text-xs">Botão WhatsApp</Label>
+            <Switch checked={d.showWhatsapp === true} onCheckedChange={(v) => updateBlockData({ showWhatsapp: v })} />
+          </div>
+          {d.showWhatsapp && (
+            <>
+              <div><Label className="text-xs">Número do WhatsApp</Label>
+                <Input value={d.waNumber || ''} onChange={(e) => updateBlockData({ waNumber: e.target.value })} placeholder="5511999999999" /></div>
+              <div><Label className="text-xs">Mensagem pré-preenchida</Label>
+                <Input value={d.waMessage || ''} onChange={(e) => updateBlockData({ waMessage: e.target.value })} placeholder="Olá, vim pelo quizz!" /></div>
+              <div><Label className="text-xs">Texto do botão</Label>
+                <Input value={d.waButtonText || ''} onChange={(e) => updateBlockData({ waButtonText: e.target.value })} placeholder="Falar no WhatsApp" /></div>
+            </>
+          )}
         </>
       )}
 
@@ -347,6 +372,19 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate, userFields 
             <Input value={d.pixelId || ''} onChange={(e) => updateBlockData({ pixelId: e.target.value })} placeholder="ID do pixel" /></div>
           <div><Label className="text-xs">Evento</Label>
             <Input value={d.eventName || 'PageView'} onChange={(e) => updateBlockData({ eventName: e.target.value })} /></div>
+        </>
+      )}
+
+      {/* WhatsApp Trigger */}
+      {block.type === 'quiz-event-whatsapp-trigger' && (
+        <>
+          <div><Label className="text-xs">Número do WhatsApp</Label>
+            <Input value={d.waNumber || ''} onChange={(e) => updateBlockData({ waNumber: e.target.value })} placeholder="5511999999999" /></div>
+          <div><Label className="text-xs">Mensagem</Label>
+            <Textarea value={d.waMessage || ''} onChange={(e) => updateBlockData({ waMessage: e.target.value })} rows={4}
+              placeholder="Olá {{nome}}, obrigado por responder!" />
+            <p className="text-[10px] text-muted-foreground mt-1">Use {'{{campo}}'} para interpolar campos do contato.</p>
+          </div>
         </>
       )}
     </div>

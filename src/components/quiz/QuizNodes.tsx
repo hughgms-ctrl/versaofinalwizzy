@@ -59,6 +59,7 @@ const blockIcons: Record<string, React.ComponentType<{ className?: string }>> = 
   'quiz-logic-ab-test': Shuffle,
   'quiz-logic-jump': CornerDownLeft,
   'quiz-event-pixel': BarChart3,
+  'quiz-event-whatsapp-trigger': MessageSquare,
 };
 
 const blockColors: Record<string, string> = {
@@ -103,6 +104,7 @@ function getBlockLabel(block: { type: string; data: Record<string, any> }) {
     case 'quiz-logic-ab-test': return 'Teste A/B';
     case 'quiz-logic-jump': return d.targetGroup || 'Pular';
     case 'quiz-event-pixel': return d.platform ? `${d.platform} - ${d.eventName || 'PageView'}` : 'Configurar pixel...';
+    case 'quiz-event-whatsapp-trigger': return d.waNumber ? `Disparo → ${d.waNumber}` : 'Disparo WhatsApp';
     default: return block.type;
   }
 }
