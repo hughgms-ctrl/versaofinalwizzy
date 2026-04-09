@@ -20,7 +20,7 @@ export default function QuizListPage() {
   };
 
   const copyLink = (token: string) => {
-    navigator.clipboard.writeText(`${window.location.origin}/quiz/${token}`);
+    navigator.clipboard.writeText(`${window.location.origin}/q/${token}`);
     toast.success('Link copiado!');
   };
 
@@ -79,7 +79,7 @@ export default function QuizListPage() {
                             </DropdownMenuItem>
                           )}
                           {quiz.public_token && quiz.is_active && (
-                            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); window.open(`/quiz/${quiz.public_token}`, '_blank'); }}>
+                            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); window.open(`/q/${quiz.public_token}`, '_blank'); }}>
                               <ExternalLink className="h-3.5 w-3.5 mr-2" />
                               Abrir quizz
                             </DropdownMenuItem>
