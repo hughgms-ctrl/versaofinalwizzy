@@ -386,8 +386,19 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate, userFields 
       {/* WhatsApp Trigger */}
       {block.type === 'quiz-event-whatsapp-trigger' && (
         <>
-          <div><Label className="text-xs">Número do WhatsApp</Label>
-            <Input value={d.waNumber || ''} onChange={(e) => updateBlockData({ waNumber: e.target.value })} placeholder="5511999999999" /></div>
+          <div className="flex items-center justify-between">
+            <Label className="text-xs">Enviar para o número do contato</Label>
+            <Switch checked={d.useContactPhone === true} onCheckedChange={(v) => updateBlockData({ useContactPhone: v })} />
+          </div>
+          {d.useContactPhone && (
+            <p className="text-[10px] text-muted-foreground">
+              O disparo será enviado para o telefone preenchido pelo contato (campo: phone, telefone ou whatsapp).
+            </p>
+          )}
+          {!d.useContactPhone && (
+            <div><Label className="text-xs">Número do WhatsApp</Label>
+              <Input value={d.waNumber || ''} onChange={(e) => updateBlockData({ waNumber: e.target.value })} placeholder="5511999999999" /></div>
+          )}
           <div><Label className="text-xs">Mensagem</Label>
             <Textarea value={d.waMessage || ''} onChange={(e) => updateBlockData({ waMessage: e.target.value })} rows={4}
               placeholder="Olá {{nome}}, obrigado por responder!" />
