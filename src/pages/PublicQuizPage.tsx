@@ -880,6 +880,71 @@ function BlockRenderer({ block, answer, variables, onAnswer, onNext, isLast }: {
     );
   }
 
+  // Contact info grouped block
+  if (block.type === 'quiz-input-contact-info') {
+    const showName = d.showName !== false;
+    const showPhone = d.showPhone !== false;
+    const showEmail = d.showEmail !== false;
+    const contactData = answer || {};
+    
+    return (
+      <div className="space-y-6">
+        {d.question && <h2 className="text-2xl font-bold">{interpolate(d.question, variables)}</h2>}
+        <div className="space-y-4">
+          {showName && (
+            <div>
+              <Label className="text-sm font-medium">Nome {d.nameRequired !== false && <span className="text-destructive">*</span>}</Label>
+              <Input
+                value={contactData.name || ''}
+                onChange={e => onAnswer({ ...contactData, name: e.target.value }, 'nome')}
+                placeholder="Seu nome"
+                className="h-14 text-lg mt-1"
+                autoFocus
+              />
+            </div>
+          )}
+          {showPhone && (
+            <div>
+              <Label className="text-sm font-medium">WhatsApp {d.phoneRequired !== false && <span className="text-destructive">*</span>}</Label>
+              <Input
+                type="tel"
+                value={contactData.phone || ''}
+                onChange={e => onAnswer({ ...contactData, phone: e.target.value }, 'whatsapp')}
+                placeholder="(11) 99999-9999"
+                className="h-14 text-lg mt-1"
+              />
+            </div>
+          )}
+          {showEmail && (
+            <div>
+              <Label className="text-sm font-medium">Email {d.emailRequired && <span className="text-destructive">*</span>}</Label>
+              <Input
+                type="email"
+                value={contactData.email || ''}
+                onChange={e => onAnswer({ ...contactData, email: e.target.value }, 'email')}
+                placeholder="seu@email.com"
+                className="h-14 text-lg mt-1"
+              />
+            </div>
+          )}
+        </div>
+        <Button size="lg" className="w-full h-14 text-lg" onClick={() => {
+          // Save individual variables
+          if (contactData.name) variables['nome'] = contactData.name;
+          if (contactData.phone) {
+            variables['phone'] = contactData.phone;
+            variables['telefone'] = contactData.phone;
+            variables['whatsapp'] = contactData.phone;
+          }
+          if (contactData.email) variables['email'] = contactData.email;
+          onNext();
+        }}>
+          Continuar <ArrowRight className="h-5 w-5 ml-2" />
+        </Button>
+      </div>
+    );
+  }
+
   // Fallback for unknown blocks
   return (
     <div className="space-y-4">
