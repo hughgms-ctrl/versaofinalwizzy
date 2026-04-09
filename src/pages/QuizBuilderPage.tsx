@@ -44,6 +44,30 @@ import { getPublicAppOrigin } from '@/lib/publicOrigin';
 let groupCounter = 1;
 const getGroupId = () => `group_${groupCounter++}`;
 
+const GROUP_NODE_FALLBACK_WIDTH = 320;
+const GROUP_NODE_HEADER_HEIGHT = 36;
+const GROUP_NODE_BLOCK_HEIGHT = 34;
+const GROUP_NODE_PADDING = 16;
+
+function getEstimatedGroupHeight(node: Node) {
+  const blocks = Array.isArray(node.data?.blocks) ? node.data.blocks : [];
+  const visibleRows = Math.max(blocks.length, 1);
+
+  return GROUP_NODE_HEADER_HEIGHT + GROUP_NODE_PADDING + visibleRows * GROUP_NODE_BLOCK_HEIGHT;
+}
+
+function isPointInsideGroupNode(node: Node, position: { x: number; y: number }) {
+  const width = node.measured?.width ?? node.width ?? GROUP_NODE_FALLBACK_WIDTH;
+  const height = node.measured?.height ?? node.height ?? getEstimatedGroupHeight(node);
+
+  return (
+    position.x >= node.position.x &&
+    position.x <= node.position.x + width &&
+    position.y >= node.position.y &&
+    position.y <= node.position.y + height
+  );
+}
+
 function QuizBuilderInner() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -202,15 +226,9 @@ function QuizBuilderInner() {
     const position = screenToFlowPosition({ x: event.clientX, y: event.clientY });
 
     // Check if dropped on existing group node
-    const targetNode = nodes.find(n => {
-      if (n.type !== 'quiz-group') return false;
-      const nodeWidth = 280;
-      const nodeHeight = 150;
-      return (
-        position.x >= n.position.x && position.x <= n.position.x + nodeWidth &&
-        position.y >= n.position.y && position.y <= n.position.y + nodeHeight
-      );
-    });
+    const targetNode = [...nodes]
+      .reverse()
+      .find((node) => node.type === 'quiz-group' && isPointInsideGroupNode(node, position));
 
     if (targetNode) {
       // Add block to existing group
