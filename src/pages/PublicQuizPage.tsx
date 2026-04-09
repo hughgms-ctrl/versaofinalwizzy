@@ -959,18 +959,34 @@ function DateBlockRenderer({ block, answer, variables, onAnswer, onNext }: {
           <div className="relative">
             <Input
               type="text"
+              inputMode="numeric"
               value={selectedDate ? format(selectedDate, "dd/MM/yyyy", { locale: ptBR }) : (answer?.typedValue || '')}
-              placeholder="Digite a data (dd/mm/aaaa)..."
+              placeholder="dd/mm/aaaa"
               className="h-14 text-lg pr-12"
+              maxLength={10}
               onChange={(e) => {
-                const raw = e.target.value;
-                onAnswer({ ...currentAnswer, typedValue: raw }, d.variable);
-                const parts = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
-                if (parts) {
-                  const parsed = new Date(`${parts[3]}-${parts[2]}-${parts[1]}T00:00:00`);
-                  if (!isNaN(parsed.getTime())) {
-                    const val = format(parsed, 'yyyy-MM-dd');
-                    onAnswer({ precision: 'exact', value: val }, d.variable);
+                const prev = answer?.typedValue || '';
+                let digits = e.target.value.replace(/\D/g, '');
+                if (digits.length > 8) digits = digits.slice(0, 8);
+                let masked = '';
+                if (digits.length > 4) {
+                  masked = digits.slice(0, 2) + '/' + digits.slice(2, 4) + '/' + digits.slice(4);
+                } else if (digits.length > 2) {
+                  masked = digits.slice(0, 2) + '/' + digits.slice(2);
+                } else {
+                  masked = digits;
+                }
+                onAnswer({ ...currentAnswer, typedValue: masked }, d.variable);
+                if (digits.length === 8) {
+                  const dd = parseInt(digits.slice(0, 2), 10);
+                  const mm = parseInt(digits.slice(2, 4), 10);
+                  const yyyy = parseInt(digits.slice(4, 8), 10);
+                  if (dd >= 1 && dd <= 31 && mm >= 1 && mm <= 12 && yyyy >= 1900 && yyyy <= 2100) {
+                    const parsed = new Date(`${yyyy}-${String(mm).padStart(2,'0')}-${String(dd).padStart(2,'0')}T00:00:00`);
+                    if (!isNaN(parsed.getTime()) && parsed.getDate() === dd) {
+                      const val = format(parsed, 'yyyy-MM-dd');
+                      onAnswer({ precision: 'exact', value: val }, d.variable);
+                    }
                   }
                 }
               }}
