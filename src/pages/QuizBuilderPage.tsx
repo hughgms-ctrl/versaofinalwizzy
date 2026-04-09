@@ -61,6 +61,7 @@ function QuizBuilderInner() {
   const [isInitialized, setIsInitialized] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const { zoomIn, zoomOut, screenToFlowPosition } = useReactFlow();
   const selectedNode = selectedNodeId ? nodes.find((node) => node.id === selectedNodeId) ?? null : null;
