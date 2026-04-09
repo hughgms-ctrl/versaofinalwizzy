@@ -193,6 +193,8 @@ function QuizBuilderInner() {
 
   const onDrop = useCallback((event: React.DragEvent) => {
     event.preventDefault();
+    isDroppingRef.current = true;
+    setTimeout(() => { isDroppingRef.current = false; }, 200);
     const blockType = event.dataTransfer.getData('application/quizflow') as QuizNodeType;
     const blockLabel = event.dataTransfer.getData('application/quizflow-label');
     if (!blockType || !reactFlowWrapper.current) return;
