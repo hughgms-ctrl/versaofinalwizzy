@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { getPublicAppOrigin } from '@/lib/publicOrigin';
 
 export default function QuizListPage() {
   const navigate = useNavigate();
@@ -20,7 +21,7 @@ export default function QuizListPage() {
   };
 
   const copyLink = (token: string) => {
-    navigator.clipboard.writeText(`${window.location.origin}/q/${token}`);
+    navigator.clipboard.writeText(`${getPublicAppOrigin()}/q/${token}`);
     toast.success('Link copiado!');
   };
 
@@ -79,7 +80,7 @@ export default function QuizListPage() {
                             </DropdownMenuItem>
                           )}
                           {quiz.public_token && quiz.is_active && (
-                            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); window.open(`/q/${quiz.public_token}`, '_blank'); }}>
+                            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); window.open(`${getPublicAppOrigin()}/q/${quiz.public_token}`, '_blank'); }}>
                               <ExternalLink className="h-3.5 w-3.5 mr-2" />
                               Abrir quizz
                             </DropdownMenuItem>

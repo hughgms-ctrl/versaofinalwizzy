@@ -39,6 +39,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import PublicQuizPage from './PublicQuizPage';
+import { getPublicAppOrigin } from '@/lib/publicOrigin';
 
 let groupCounter = 1;
 const getGroupId = () => `group_${groupCounter++}`;
@@ -242,7 +243,7 @@ function QuizBuilderInner() {
     toast.success(quiz.is_active ? 'Quiz desativado' : 'Quiz ativado');
   };
 
-  const publicUrl = quiz?.public_token ? `${window.location.origin}/q/${quiz.public_token}` : '';
+  const publicUrl = quiz?.public_token ? `${getPublicAppOrigin()}/q/${quiz.public_token}` : '';
 
   // Keyboard delete
   useEffect(() => {
