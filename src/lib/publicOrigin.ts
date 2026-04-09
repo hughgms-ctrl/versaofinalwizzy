@@ -1,13 +1,16 @@
+const PUBLIC_APP_ORIGIN = 'https://wizzybr.com';
+
 export function getPublicAppOrigin() {
   if (typeof window === 'undefined') {
-    return 'https://wizzyai.lovable.app';
+    return PUBLIC_APP_ORIGIN;
   }
 
   const hostname = window.location.hostname;
-  const isPreviewHost =
+  const isInternalHost =
     hostname.includes('preview') ||
     hostname.includes('lovableproject.com') ||
     hostname.includes('lovable.app');
 
-  return isPreviewHost ? 'https://wizzyai.lovable.app' : window.location.origin;
+  return isInternalHost ? PUBLIC_APP_ORIGIN : window.location.origin;
 }
+
