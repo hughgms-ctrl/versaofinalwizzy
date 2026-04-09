@@ -499,7 +499,28 @@ const DEFAULT_CONTACT_FIELDS = [
   { value: 'whatsapp', label: 'WhatsApp' },
 ];
 
-function ContactFieldSelect({ value, onChange, userFields }: { value: string; onChange: (v: string) => void; userFields: string[] }) {
+function CrmFieldsEditor({ data, onUpdate, onUpdateImmediate }: { data: Record<string, any>; onUpdate: (d: Record<string, any>) => void; onUpdateImmediate: (d: Record<string, any>) => void }) {
+  return (
+    <div className="space-y-4">
+      <Label className="text-xs font-semibold">Ações CRM</Label>
+      <p className="text-[10px] text-muted-foreground">
+        Configure tag, workspace, pipeline e coluna para atribuir ao contato quando passar por este nó.
+      </p>
+      <div><Label className="text-xs">Tag IDs (separados por vírgula)</Label>
+        <Input value={d.tagIds?.join(', ') || ''} onChange={(e) => onUpdate({ tagIds: e.target.value.split(',').map((s: string) => s.trim()).filter(Boolean) })} placeholder="ID da tag 1, ID da tag 2..." />
+        <p className="text-[10px] text-muted-foreground mt-1">Cole os IDs das tags do sistema.</p>
+      </div>
+      <div><Label className="text-xs">Workspace ID</Label>
+        <Input value={d.workspaceId || ''} onChange={(e) => onUpdate({ workspaceId: e.target.value })} placeholder="ID do workspace" /></div>
+      <div><Label className="text-xs">Pipeline ID</Label>
+        <Input value={d.pipelineId || ''} onChange={(e) => onUpdate({ pipelineId: e.target.value })} placeholder="ID do pipeline" /></div>
+      <div><Label className="text-xs">Coluna (Stage) ID</Label>
+        <Input value={d.columnId || ''} onChange={(e) => onUpdate({ columnId: e.target.value })} placeholder="ID da coluna do pipeline" /></div>
+    </div>
+  );
+}
+
+
   const [customMode, setCustomMode] = useState(false);
   const allOptions = [...DEFAULT_CONTACT_FIELDS];
   userFields.forEach(f => {
