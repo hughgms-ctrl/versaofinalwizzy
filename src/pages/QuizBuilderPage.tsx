@@ -26,12 +26,19 @@ import { quizNodeTypes } from '@/components/quiz/QuizNodes';
 import { QuizNodeProperties } from '@/components/quiz/QuizNodeProperties';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
-import { useQuizzes } from '@/hooks/useQuizzes';
+import { Separator } from '@/components/ui/separator';
+import { useQuizzes, Quiz } from '@/hooks/useQuizzes';
 import { toast } from 'sonner';
-import { ArrowLeft, Save, Play, Copy, Eye, Loader2, ZoomIn, ZoomOut, Minus, Plus } from 'lucide-react';
+import { ArrowLeft, Save, Play, Copy, Eye, Loader2, ZoomIn, ZoomOut, Minus, Plus, Settings } from 'lucide-react';
 import { ReactFlowProvider } from '@xyflow/react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import PublicQuizPage from './PublicQuizPage';
 
 let groupCounter = 1;
 const getGroupId = () => `group_${groupCounter++}`;
@@ -54,6 +61,7 @@ function QuizBuilderInner() {
   const [isInitialized, setIsInitialized] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   const { zoomIn, zoomOut, screenToFlowPosition } = useReactFlow();
   const selectedNode = selectedNodeId ? nodes.find((node) => node.id === selectedNodeId) ?? null : null;
@@ -269,6 +277,9 @@ function QuizBuilderInner() {
           </Badge>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)}>
+            <Settings className="h-3.5 w-3.5 mr-1.5" /> Configurações
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setPreviewOpen(true)}>
             <Eye className="h-3.5 w-3.5 mr-1.5" /> Visualizar
           </Button>
@@ -358,19 +369,41 @@ function QuizBuilderInner() {
         allNodes={nodes}
       />
 
-      {/* Preview */}
+      {/* Preview — render inline quiz engine */}
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
         <DialogContent className="max-w-sm p-0 overflow-hidden flex flex-col" style={{ height: '600px' }}>
           <DialogHeader className="p-4 pb-0 shrink-0">
             <DialogTitle className="text-sm">Visualização do Quizz</DialogTitle>
           </DialogHeader>
-          <div className="flex-1 min-h-0">
-            {previewOpen && publicUrl && (
-              <iframe src={publicUrl} className="w-full h-full border-0" title="Quizz Preview" />
+          <div className="flex-1 min-h-0 overflow-auto">
+            {previewOpen && (
+              <PublicQuizPage
+                inlineQuiz={{
+                  id: quiz.id,
+                  name: quiz.name,
+                  organization_id: quiz.organization_id,
+                  theme: quiz.theme,
+                  settings: quiz.settings,
+                  welcome_screen: quiz.welcome_screen,
+                  end_screen: quiz.end_screen,
+                }}
+                inlineNodes={nodes as any}
+                inlineEdges={edges as any}
+              />
             )}
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Settings Sheet */}
+      <QuizSettingsSheet
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        quiz={quiz}
+        onUpdate={async (updates) => {
+          await updateQuiz.mutateAsync({ id: quizId!, ...updates });
+        }}
+      />
 
       <style>{`
         .react-flow__handle { transition: opacity 0.2s; }
@@ -409,6 +442,101 @@ function getDefaultBlockData(type: QuizNodeType): Record<string, any> {
     case 'quiz-event-pixel': return { platform: 'facebook', pixelId: '', eventName: 'PageView' };
     default: return {};
   }
+}
+
+function QuizSettingsSheet({ open, onClose, quiz, onUpdate }: {
+  open: boolean;
+  onClose: () => void;
+  quiz: Quiz;
+  onUpdate: (updates: Partial<Quiz>) => Promise<void>;
+}) {
+  const ws = (quiz.welcome_screen || {}) as Record<string, any>;
+  const es = (quiz.end_screen || {}) as Record<string, any>;
+
+  const updateWelcome = (patch: Record<string, any>) => {
+    onUpdate({ welcome_screen: { ...ws, ...patch } } as any);
+  };
+
+  const updateEnd = (patch: Record<string, any>) => {
+    onUpdate({ end_screen: { ...es, ...patch } } as any);
+  };
+
+  return (
+    <Sheet open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <SheetContent className="w-80 sm:w-96 p-0 flex flex-col">
+        <SheetHeader className="p-4 border-b">
+          <SheetTitle className="text-sm">Configurações do Quizz</SheetTitle>
+        </SheetHeader>
+        <ScrollArea className="flex-1">
+          <div className="p-4 space-y-6">
+            {/* Welcome screen */}
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold">Tela de Boas-vindas</h3>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">Mostrar tela de boas-vindas</Label>
+                <Switch checked={ws.showWelcome !== false} onCheckedChange={(v) => updateWelcome({ showWelcome: v })} />
+              </div>
+              <div>
+                <Label className="text-xs">Título</Label>
+                <Input value={ws.title || ''} onChange={(e) => updateWelcome({ title: e.target.value })} placeholder={quiz.name} />
+              </div>
+              <div>
+                <Label className="text-xs">Descrição</Label>
+                <Textarea value={ws.description || ''} onChange={(e) => updateWelcome({ description: e.target.value })} rows={3} placeholder="Descrição opcional..." />
+              </div>
+              <div>
+                <Label className="text-xs">Texto do botão</Label>
+                <Input value={ws.buttonText || ''} onChange={(e) => updateWelcome({ buttonText: e.target.value })} placeholder="Começar" />
+              </div>
+              <div>
+                <Label className="text-xs">URL de mídia (imagem ou vídeo)</Label>
+                <Input value={ws.mediaUrl || ''} onChange={(e) => updateWelcome({ mediaUrl: e.target.value })} placeholder="https://..." />
+              </div>
+            </div>
+
+            <Separator />
+
+            {/* End screen */}
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold">Tela Final</h3>
+              <div>
+                <Label className="text-xs">Título</Label>
+                <Input value={es.title || ''} onChange={(e) => updateEnd({ title: e.target.value })} placeholder="Obrigado!" />
+              </div>
+              <div>
+                <Label className="text-xs">Descrição</Label>
+                <Textarea value={es.description || ''} onChange={(e) => updateEnd({ description: e.target.value })} rows={3} placeholder="Suas respostas foram enviadas." />
+              </div>
+              <div>
+                <Label className="text-xs">URL de redirecionamento</Label>
+                <Input value={es.redirectUrl || ''} onChange={(e) => updateEnd({ redirectUrl: e.target.value })} placeholder="https://..." />
+              </div>
+              {es.redirectUrl && (
+                <div>
+                  <Label className="text-xs">Texto do botão</Label>
+                  <Input value={es.buttonText || ''} onChange={(e) => updateEnd({ buttonText: e.target.value })} placeholder="Continuar" />
+                </div>
+              )}
+            </div>
+
+            <Separator />
+
+            {/* Progress bar */}
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold">Geral</h3>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">Barra de progresso</Label>
+                <Switch
+                  checked={quiz.settings?.showProgressBar !== false}
+                  onCheckedChange={(v) => onUpdate({ settings: { ...quiz.settings, showProgressBar: v } } as any)}
+                />
+              </div>
+            </div>
+          </div>
+        </ScrollArea>
+      </SheetContent>
+    </Sheet>
+  );
 }
 
 export default function QuizBuilderPage() {

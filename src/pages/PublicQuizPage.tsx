@@ -54,7 +54,7 @@ interface Step {
   block: FlowBlock;
 }
 
-export default function PublicQuizPage() {
+export default function PublicQuizPage({ inlineQuiz, inlineNodes, inlineEdges }: { inlineQuiz?: any; inlineNodes?: any[]; inlineEdges?: any[] } = {}) {
   const { token } = useParams<{ token: string }>();
   const [quiz, setQuiz] = useState<QuizData | null>(null);
   const [nodes, setNodes] = useState<FlowNode[]>([]);
@@ -79,8 +79,18 @@ export default function PublicQuizPage() {
   const firedPixels = useRef<Set<string>>(new Set());
 
   useEffect(() => {
+    if (inlineQuiz) {
+      setQuiz(inlineQuiz);
+      setNodes(inlineNodes || []);
+      setEdges(inlineEdges || []);
+      setLoading(false);
+      if (inlineQuiz.welcome_screen?.showWelcome === false) {
+        startFlow(inlineNodes || [], inlineEdges || []);
+      }
+      return;
+    }
     if (token) loadQuiz();
-  }, [token]);
+  }, [token, inlineQuiz]);
 
   const loadQuiz = async () => {
     try {
@@ -155,13 +165,8 @@ export default function PublicQuizPage() {
       setCurrentNodeId(nextEdge.target);
       setCurrentBlockIdx(0);
     } else {
-      // No more edges — go to contact or end
-      const showContact = quiz?.settings?.requirePhone || quiz?.settings?.requireName || quiz?.settings?.requireEmail;
-      if (showContact) {
-        setPhase('contact');
-      } else {
-        handleSubmit();
-      }
+      // No more edges — submit and go to end
+      handleSubmit();
     }
   }, [currentNodeId, currentBlockIdx, currentNode, edges, quiz]);
 
@@ -201,12 +206,13 @@ export default function PublicQuizPage() {
         answer,
       }));
 
+      // Use variables for contact info (name, phone, email come from input blocks now)
       await supabase.from('quiz_submissions').insert({
         quiz_id: quiz.id,
         organization_id: quiz.organization_id,
-        respondent_name: contact.name || null,
-        respondent_phone: contact.phone || null,
-        respondent_email: contact.email || null,
+        respondent_name: variables['nome'] || variables['name'] || null,
+        respondent_phone: variables['phone'] || variables['telefone'] || variables['whatsapp'] || null,
+        respondent_email: variables['email'] || null,
         answers: answersArray,
         metadata: variables,
         completed_at: new Date().toISOString(),
@@ -354,13 +360,13 @@ export default function PublicQuizPage() {
   }, [goToNextBlock]);
 
   const handleWhatsAppTrigger = useCallback((block: FlowBlock) => {
-    const { waNumber, waMessage } = block.data;
-    if (waNumber) {
+    const { waNumber, waMessage, useContactPhone } = block.data;
+    // Use contact's phone from variables if configured, otherwise use fixed number
+    const targetPhone = useContactPhone ? (variables['phone'] || variables['telefone'] || variables['whatsapp'] || '') : (waNumber || '');
+    if (targetPhone) {
       const message = interpolate(waMessage || '', variables);
-      // Fire and forget — open WhatsApp link or call API
       try {
-        const phone = waNumber.replace(/\D/g, '');
-        // Use the Supabase edge function to send message automatically
+        const phone = String(targetPhone).replace(/\D/g, '');
         supabase.functions.invoke('zapi-send-message', {
           body: { phone, message, type: 'text' },
         }).catch(() => {});
@@ -466,35 +472,7 @@ export default function PublicQuizPage() {
     );
   }
 
-  // Contact step
-  if (phase === 'contact') {
-    return (
-      <FullScreenStep progress={progress} showProgress={quiz.settings?.showProgressBar !== false} onPrev={goBack} dir={animDir}>
-        <div className="space-y-6">
-          <h2 className="text-2xl font-bold">Seus dados</h2>
-          <p className="text-muted-foreground">Preencha para finalizarmos.</p>
-          <div className="space-y-4">
-            {quiz.settings?.requireName && (
-              <div><Label>Nome</Label>
-                <Input value={contact.name} onChange={e => setContact(p => ({ ...p, name: e.target.value }))} placeholder="Seu nome" className="h-12 text-lg" /></div>
-            )}
-            {quiz.settings?.requirePhone && (
-              <div><Label>Telefone (WhatsApp)</Label>
-                <Input value={contact.phone} onChange={e => setContact(p => ({ ...p, phone: e.target.value }))} placeholder="(11) 99999-9999" className="h-12 text-lg" /></div>
-            )}
-            {quiz.settings?.requireEmail && (
-              <div><Label>E-mail</Label>
-                <Input value={contact.email} onChange={e => setContact(p => ({ ...p, email: e.target.value }))} placeholder="seu@email.com" type="email" className="h-12 text-lg" /></div>
-            )}
-          </div>
-          <Button size="lg" className="w-full h-14 text-lg" onClick={handleSubmit} disabled={submitting}>
-            {submitting ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : <Send className="h-5 w-5 mr-2" />}
-            {submitting ? 'Enviando...' : 'Enviar respostas'}
-          </Button>
-        </div>
-      </FullScreenStep>
-    );
-  }
+  // Contact step (legacy — kept for backwards compatibility but no longer auto-triggered)
 
   // Flow step — render current block
   if (!currentBlock) return null;
