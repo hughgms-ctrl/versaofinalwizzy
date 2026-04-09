@@ -157,3 +157,6 @@ verify_jwt = false
 
 [functions.track-fingerprint]
 verify_jwt = false
+
+[functions.quiz-actions]
+verify_jwt = false
