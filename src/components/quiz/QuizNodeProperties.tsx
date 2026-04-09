@@ -416,21 +416,7 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate, userFields 
 
       {/* Pixel */}
       {block.type === 'quiz-event-pixel' && (
-        <>
-          <div><Label className="text-xs">Plataforma</Label>
-            <Select value={d.platform || 'facebook'} onValueChange={(v) => updateBlockDataImmediate({ platform: v })}>
-              <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="facebook">Facebook Pixel</SelectItem>
-                <SelectItem value="google">Google Tag</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div><Label className="text-xs">Pixel ID</Label>
-            <Input value={d.pixelId || ''} onChange={(e) => updateBlockData({ pixelId: e.target.value })} placeholder="ID do pixel" /></div>
-          <div><Label className="text-xs">Evento</Label>
-            <Input value={d.eventName || 'PageView'} onChange={(e) => updateBlockData({ eventName: e.target.value })} /></div>
-        </>
+        <PixelEditor data={d} onUpdate={updateBlockData} onUpdateImmediate={updateBlockDataImmediate} />
       )}
 
       {/* WhatsApp Trigger */}
@@ -456,6 +442,78 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate, userFields 
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+
+const META_STANDARD_EVENTS = [
+  { value: 'PageView', label: 'PageView' },
+  { value: 'Lead', label: 'Lead' },
+  { value: 'CompleteRegistration', label: 'CompleteRegistration' },
+  { value: 'Contact', label: 'Contact' },
+  { value: 'ViewContent', label: 'ViewContent' },
+  { value: 'AddToCart', label: 'AddToCart' },
+  { value: 'AddToWishlist', label: 'AddToWishlist' },
+  { value: 'InitiateCheckout', label: 'InitiateCheckout' },
+  { value: 'AddPaymentInfo', label: 'AddPaymentInfo' },
+  { value: 'Purchase', label: 'Purchase' },
+  { value: 'Schedule', label: 'Schedule' },
+  { value: 'Search', label: 'Search' },
+  { value: 'StartTrial', label: 'StartTrial' },
+  { value: 'Subscribe', label: 'Subscribe' },
+  { value: 'SubmitApplication', label: 'SubmitApplication' },
+  { value: 'FindLocation', label: 'FindLocation' },
+  { value: 'CustomizeProduct', label: 'CustomizeProduct' },
+  { value: 'Donate', label: 'Donate' },
+];
+
+function PixelEditor({ data, onUpdate, onUpdateImmediate }: { data: Record<string, any>; onUpdate: (d: Record<string, any>) => void; onUpdateImmediate: (d: Record<string, any>) => void }) {
+  const [customEvent, setCustomEvent] = useState(false);
+  const isCustom = customEvent || !META_STANDARD_EVENTS.some(e => e.value === (data.eventName || 'PageView'));
+
+  return (
+    <div className="space-y-4">
+      <div><Label className="text-xs">Plataforma</Label>
+        <Select value={data.platform || 'facebook'} onValueChange={(v) => onUpdateImmediate({ platform: v })}>
+          <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="facebook">Facebook Pixel</SelectItem>
+            <SelectItem value="google">Google Tag</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <div><Label className="text-xs">Pixel ID</Label>
+        <Input value={data.pixelId || ''} onChange={(e) => onUpdate({ pixelId: e.target.value })} placeholder="Ex: 123456789012345" /></div>
+      
+      <div><Label className="text-xs">Evento</Label>
+        {!isCustom ? (
+          <>
+            <Select value={data.eventName || 'PageView'} onValueChange={(v) => onUpdateImmediate({ eventName: v })}>
+              <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {META_STANDARD_EVENTS.map(ev => (
+                  <SelectItem key={ev.value} value={ev.value}>{ev.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button variant="link" size="sm" className="px-0 h-6 text-[10px]" onClick={() => setCustomEvent(true)}>
+              Usar evento customizado
+            </Button>
+          </>
+        ) : (
+          <>
+            <Input value={data.eventName || ''} onChange={(e) => onUpdate({ eventName: e.target.value })} placeholder="Nome do evento customizado" />
+            <Button variant="link" size="sm" className="px-0 h-6 text-[10px]" onClick={() => { setCustomEvent(false); onUpdateImmediate({ eventName: 'PageView' }); }}>
+              Usar evento padrão
+            </Button>
+          </>
+        )}
+      </div>
+
+      <p className="text-[10px] text-muted-foreground">
+        O pixel será disparado uma única vez quando o fluxo passar por este nó.
+      </p>
     </div>
   );
 }
