@@ -359,13 +359,13 @@ export default function PublicQuizPage({ inlineQuiz, inlineNodes, inlineEdges }:
   }, [goToNextBlock]);
 
   const handleWhatsAppTrigger = useCallback((block: FlowBlock) => {
-    const { waNumber, waMessage } = block.data;
-    if (waNumber) {
+    const { waNumber, waMessage, useContactPhone } = block.data;
+    // Use contact's phone from variables if configured, otherwise use fixed number
+    const targetPhone = useContactPhone ? (variables['phone'] || variables['telefone'] || variables['whatsapp'] || '') : (waNumber || '');
+    if (targetPhone) {
       const message = interpolate(waMessage || '', variables);
-      // Fire and forget — open WhatsApp link or call API
       try {
-        const phone = waNumber.replace(/\D/g, '');
-        // Use the Supabase edge function to send message automatically
+        const phone = String(targetPhone).replace(/\D/g, '');
         supabase.functions.invoke('zapi-send-message', {
           body: { phone, message, type: 'text' },
         }).catch(() => {});
