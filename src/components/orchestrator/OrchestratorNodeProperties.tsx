@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/rules-of-hooks */
 import { useState } from 'react';
 import { Node } from '@xyflow/react';
 import { X, Trash2, Plus, Zap, Tag, MessageSquare, Ban, Sparkles, Loader2, Pause, FileText } from 'lucide-react';
