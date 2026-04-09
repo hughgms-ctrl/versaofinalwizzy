@@ -520,7 +520,7 @@ function CrmFieldsEditor({ data, onUpdate, onUpdateImmediate }: { data: Record<s
   );
 }
 
-
+function ContactFieldSelect({ value, onChange, userFields }: { value: string; onChange: (v: string) => void; userFields: string[] }) {
   const [customMode, setCustomMode] = useState(false);
   const allOptions = [...DEFAULT_CONTACT_FIELDS];
   userFields.forEach(f => {
