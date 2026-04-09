@@ -368,20 +368,67 @@ export default function PublicQuizPage({ inlineQuiz, inlineNodes, inlineEdges }:
   }, [goToNextBlock]);
 
   const handleWhatsAppTrigger = useCallback((block: FlowBlock) => {
-    const { waNumber, waMessage, useContactPhone } = block.data;
-    // Use contact's phone from variables if configured, otherwise use fixed number
+    const { waNumber, waMessage, useContactPhone, tagIds, workspaceId, pipelineId, columnId } = block.data;
     const targetPhone = useContactPhone ? (variables['phone'] || variables['telefone'] || variables['whatsapp'] || '') : (waNumber || '');
-    if (targetPhone) {
+    const contactPhone = variables['phone'] || variables['telefone'] || variables['whatsapp'] || '';
+    
+    if (targetPhone || tagIds?.length || workspaceId || pipelineId) {
       const message = interpolate(waMessage || '', variables);
-      try {
-        const phone = String(targetPhone).replace(/\D/g, '');
-        supabase.functions.invoke('zapi-send-message', {
-          body: { phone, message, type: 'text' },
-        }).catch(() => {});
-      } catch {}
+      const phone = String(targetPhone).replace(/\D/g, '');
+      
+      // Use public quiz-actions edge function (no auth needed)
+      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+      const url = `https://${projectId}.supabase.co/functions/v1/quiz-actions`;
+      
+      fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          organization_id: quiz?.organization_id,
+          quiz_id: quiz?.id,
+          action: phone ? 'send_whatsapp' : 'crm_action',
+          phone,
+          message,
+          contact_name: variables['nome'] || variables['name'] || '',
+          contact_email: variables['email'] || '',
+          contact_phone: contactPhone,
+          tag_ids: tagIds || [],
+          workspace_id: workspaceId || '',
+          pipeline_id: pipelineId || '',
+          column_id: columnId || '',
+        }),
+      }).catch(() => {});
     }
     setTimeout(() => goToNextBlock(), 100);
-  }, [goToNextBlock, variables]);
+  }, [goToNextBlock, variables, quiz]);
+
+  const handleCrmAction = useCallback((block: FlowBlock) => {
+    const { tagIds, workspaceId, pipelineId, columnId } = block.data;
+    const contactPhone = variables['phone'] || variables['telefone'] || variables['whatsapp'] || '';
+    
+    if (contactPhone && (tagIds?.length || workspaceId || pipelineId)) {
+      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+      const url = `https://${projectId}.supabase.co/functions/v1/quiz-actions`;
+      
+      fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          organization_id: quiz?.organization_id,
+          quiz_id: quiz?.id,
+          action: 'crm_action',
+          contact_name: variables['nome'] || variables['name'] || '',
+          contact_email: variables['email'] || '',
+          contact_phone: contactPhone,
+          tag_ids: tagIds || [],
+          workspace_id: workspaceId || '',
+          pipeline_id: pipelineId || '',
+          column_id: columnId || '',
+        }),
+      }).catch(() => {});
+    }
+    setTimeout(() => goToNextBlock(), 100);
+  }, [goToNextBlock, variables, quiz]);
 
   // Auto-execute logic blocks when they become current
   useEffect(() => {
