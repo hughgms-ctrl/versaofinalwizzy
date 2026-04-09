@@ -259,8 +259,7 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate, userFields 
             <Textarea value={d.question || ''} onChange={(e) => updateBlockData({ question: e.target.value })} rows={2} placeholder="Ex: Qual é o seu nome?" /></div>
           <div><Label className="text-xs">Placeholder</Label>
             <Input value={d.placeholder || ''} onChange={(e) => updateBlockData({ placeholder: e.target.value })} /></div>
-          <div><Label className="text-xs">Salvar como campo do contato</Label>
-            <Input value={d.variable || ''} onChange={(e) => updateBlockData({ variable: e.target.value })} placeholder="Ex: nome, email..." /></div>
+          <ContactFieldSelect value={d.variable || ''} onChange={(v) => updateBlockDataImmediate({ variable: v })} userFields={userFields} />
           <div className="flex items-center justify-between">
             <Label className="text-xs">Obrigatório</Label>
             <Switch checked={d.required !== false} onCheckedChange={(v) => updateBlockDataImmediate({ required: v })} />
@@ -297,8 +296,7 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate, userFields 
 
           <Separator />
 
-          <div><Label className="text-xs">Salvar como campo do contato</Label>
-            <Input value={d.variable || ''} onChange={(e) => updateBlockData({ variable: e.target.value })} placeholder="Ex: data_nascimento" /></div>
+          <ContactFieldSelect value={d.variable || ''} onChange={(v) => updateBlockDataImmediate({ variable: v })} userFields={userFields} />
 
           <div className="flex items-center justify-between">
             <Label className="text-xs">Obrigatório</Label>
@@ -343,8 +341,7 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate, userFields 
               </SelectContent>
             </Select>
           </div>
-          <div><Label className="text-xs">Salvar como campo do contato</Label>
-            <Input value={d.variable || ''} onChange={(e) => updateBlockData({ variable: e.target.value })} /></div>
+          <ContactFieldSelect value={d.variable || ''} onChange={(v) => updateBlockDataImmediate({ variable: v })} userFields={userFields} />
         </>
       )}
 
@@ -355,8 +352,7 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate, userFields 
             <Textarea value={d.question || ''} onChange={(e) => updateBlockData({ question: e.target.value })} rows={2} placeholder="Ex: Envie seu documento" /></div>
           <div><Label className="text-xs">Tipos aceitos (ex: .pdf,.jpg)</Label>
             <Input value={d.accept || ''} onChange={(e) => updateBlockData({ accept: e.target.value })} /></div>
-          <div><Label className="text-xs">Salvar como campo do contato</Label>
-            <Input value={d.variable || ''} onChange={(e) => updateBlockData({ variable: e.target.value })} /></div>
+          <ContactFieldSelect value={d.variable || ''} onChange={(v) => updateBlockDataImmediate({ variable: v })} userFields={userFields} />
         </>
       )}
 
@@ -446,6 +442,54 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate, userFields 
   );
 }
 
+
+const DEFAULT_CONTACT_FIELDS = [
+  { value: 'nome', label: 'Nome' },
+  { value: 'email', label: 'E-mail' },
+  { value: 'telefone', label: 'Telefone' },
+  { value: 'whatsapp', label: 'WhatsApp' },
+];
+
+function ContactFieldSelect({ value, onChange, userFields }: { value: string; onChange: (v: string) => void; userFields: string[] }) {
+  const [customMode, setCustomMode] = useState(false);
+  const allOptions = [...DEFAULT_CONTACT_FIELDS];
+  userFields.forEach(f => {
+    if (!allOptions.some(o => o.value === f)) {
+      allOptions.push({ value: f, label: f });
+    }
+  });
+  const isKnown = allOptions.some(o => o.value === value);
+  const showCustom = customMode || (value && !isKnown);
+
+  if (showCustom) {
+    return (
+      <div>
+        <Label className="text-xs">Salvar como campo do contato</Label>
+        <Input value={value} onChange={(e) => onChange(e.target.value)} placeholder="Nome do campo customizado" />
+        <Button variant="link" size="sm" className="px-0 h-6 text-[10px]" onClick={() => setCustomMode(false)}>
+          Escolher campo existente
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <Label className="text-xs">Salvar como campo do contato</Label>
+      <Select value={value || ''} onValueChange={onChange}>
+        <SelectTrigger className="h-9"><SelectValue placeholder="Selecione um campo..." /></SelectTrigger>
+        <SelectContent>
+          {allOptions.map(f => (
+            <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Button variant="link" size="sm" className="px-0 h-6 text-[10px]" onClick={() => setCustomMode(true)}>
+        Criar campo customizado
+      </Button>
+    </div>
+  );
+}
 
 const META_STANDARD_EVENTS = [
   { value: 'PageView', label: 'PageView' },
