@@ -354,6 +354,13 @@ function QuizBuilderInner() {
           </Badge>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" size="icon" className="h-8 w-8" onClick={handleUndo} disabled={!canUndo} title="Desfazer (Ctrl+Z)">
+            <Undo2 className="h-3.5 w-3.5" />
+          </Button>
+          <Button variant="outline" size="icon" className="h-8 w-8" onClick={handleRedo} disabled={!canRedo} title="Refazer (Ctrl+Shift+Z)">
+            <Redo2 className="h-3.5 w-3.5" />
+          </Button>
+          <Separator orientation="vertical" className="h-6" />
           <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)}>
             <Settings className="h-3.5 w-3.5 mr-1.5" /> Configurações
           </Button>
