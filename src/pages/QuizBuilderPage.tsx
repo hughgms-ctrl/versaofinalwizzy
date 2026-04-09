@@ -358,15 +358,15 @@ function QuizBuilderInner() {
         allNodes={nodes}
       />
 
-      {/* Preview */}
+      {/* Preview — render inline instead of iframe so it works even if quiz is not published */}
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
         <DialogContent className="max-w-sm p-0 overflow-hidden flex flex-col" style={{ height: '600px' }}>
           <DialogHeader className="p-4 pb-0 shrink-0">
             <DialogTitle className="text-sm">Visualização do Quizz</DialogTitle>
           </DialogHeader>
-          <div className="flex-1 min-h-0">
-            {previewOpen && publicUrl && (
-              <iframe src={publicUrl} className="w-full h-full border-0" title="Quizz Preview" />
+          <div className="flex-1 min-h-0 overflow-auto">
+            {previewOpen && (
+              <QuizPreviewInline quiz={quiz} nodes={nodes} edges={edges} />
             )}
           </div>
         </DialogContent>
