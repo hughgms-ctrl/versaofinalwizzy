@@ -297,10 +297,18 @@ export default function PublicQuizPage({ inlineQuiz, inlineNodes, inlineEdges }:
   const handleRedirectBlock = useCallback((block: FlowBlock) => {
     const { url, newTab } = block.data;
     if (url) {
-      if (newTab) window.open(url, '_blank');
-      else window.location.href = url;
+      const interpolatedUrl = interpolate(url, variables);
+      if (newTab) {
+        window.open(interpolatedUrl, '_blank');
+        // Continue flow after opening in new tab
+        setTimeout(() => goToNextBlock(), 100);
+      } else {
+        window.location.href = interpolatedUrl;
+      }
+    } else {
+      goToNextBlock();
     }
-  }, []);
+  }, [goToNextBlock, variables]);
 
   const handleWaitBlock = useCallback((block: FlowBlock) => {
     const seconds = block.data.seconds || 3;
