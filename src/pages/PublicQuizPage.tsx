@@ -379,7 +379,7 @@ export default function PublicQuizPage({ inlineQuiz, inlineNodes, inlineEdges }:
   useEffect(() => {
     if (phase !== 'flow' || !currentBlock) return;
 
-    const logicAutoBlocks = ['quiz-logic-condition', 'quiz-logic-ab-test', 'quiz-logic-wait', 'quiz-logic-jump', 'quiz-event-pixel', 'quiz-event-whatsapp-trigger'];
+    const logicAutoBlocks = ['quiz-logic-condition', 'quiz-logic-ab-test', 'quiz-logic-wait', 'quiz-logic-jump', 'quiz-logic-redirect', 'quiz-event-pixel', 'quiz-event-whatsapp-trigger'];
 
     if (logicAutoBlocks.includes(currentBlock.type)) {
       const timer = setTimeout(() => {
@@ -389,7 +389,6 @@ export default function PublicQuizPage({ inlineQuiz, inlineNodes, inlineEdges }:
           case 'quiz-logic-redirect': handleRedirectBlock(currentBlock); break;
           case 'quiz-logic-wait': handleWaitBlock(currentBlock); break;
           case 'quiz-logic-jump': {
-            // Find group by label
             const targetLabel = currentBlock.data.targetGroup;
             const targetNode = nodes.find(n => n.data.label === targetLabel);
             if (targetNode) {
@@ -406,14 +405,6 @@ export default function PublicQuizPage({ inlineQuiz, inlineNodes, inlineEdges }:
         }
       }, 50);
       return () => clearTimeout(timer);
-    }
-  }, [phase, currentBlock, currentNodeId, currentBlockIdx]);
-
-  // Also auto-execute redirect blocks
-  useEffect(() => {
-    if (phase !== 'flow' || !currentBlock) return;
-    if (currentBlock.type === 'quiz-logic-redirect') {
-      handleRedirectBlock(currentBlock);
     }
   }, [phase, currentBlock]);
 
