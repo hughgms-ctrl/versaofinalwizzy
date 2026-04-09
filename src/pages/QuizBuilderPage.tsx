@@ -64,6 +64,44 @@ function QuizBuilderInner() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
+  // Undo/Redo history
+  type Snapshot = { nodes: Node[]; edges: Edge[] };
+  const historyRef = useRef<Snapshot[]>([]);
+  const historyIndexRef = useRef(-1);
+  const isUndoRedoRef = useRef(false);
+
+  const pushHistory = useCallback((n: Node[], e: Edge[]) => {
+    if (isUndoRedoRef.current) return;
+    const snap: Snapshot = { nodes: JSON.parse(JSON.stringify(n)), edges: JSON.parse(JSON.stringify(e)) };
+    const next = historyIndexRef.current + 1;
+    historyRef.current = historyRef.current.slice(0, next);
+    historyRef.current.push(snap);
+    historyIndexRef.current = next;
+  }, []);
+
+  const canUndo = historyIndexRef.current > 0;
+  const canRedo = historyIndexRef.current < historyRef.current.length - 1;
+
+  const handleUndo = useCallback(() => {
+    if (historyIndexRef.current <= 0) return;
+    isUndoRedoRef.current = true;
+    historyIndexRef.current -= 1;
+    const snap = historyRef.current[historyIndexRef.current];
+    setNodes(JSON.parse(JSON.stringify(snap.nodes)));
+    setEdges(JSON.parse(JSON.stringify(snap.edges)));
+    setTimeout(() => { isUndoRedoRef.current = false; }, 50);
+  }, [setNodes, setEdges]);
+
+  const handleRedo = useCallback(() => {
+    if (historyIndexRef.current >= historyRef.current.length - 1) return;
+    isUndoRedoRef.current = true;
+    historyIndexRef.current += 1;
+    const snap = historyRef.current[historyIndexRef.current];
+    setNodes(JSON.parse(JSON.stringify(snap.nodes)));
+    setEdges(JSON.parse(JSON.stringify(snap.edges)));
+    setTimeout(() => { isUndoRedoRef.current = false; }, 50);
+  }, [setNodes, setEdges]);
+
   const { zoomIn, zoomOut, screenToFlowPosition } = useReactFlow();
   const selectedNode = selectedNodeId ? nodes.find((node) => node.id === selectedNodeId) ?? null : null;
 
