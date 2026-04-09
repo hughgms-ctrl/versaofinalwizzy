@@ -33,7 +33,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { useQuizzes, Quiz } from '@/hooks/useQuizzes';
 import { toast } from 'sonner';
-import { ArrowLeft, Save, Play, Copy, Eye, Loader2, ZoomIn, ZoomOut, Minus, Plus, Settings } from 'lucide-react';
+import { ArrowLeft, Save, Play, Copy, Eye, Loader2, ZoomIn, ZoomOut, Minus, Plus, Settings, Undo2, Redo2 } from 'lucide-react';
 import { ReactFlowProvider } from '@xyflow/react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
@@ -64,6 +64,44 @@ function QuizBuilderInner() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
+  // Undo/Redo history
+  type Snapshot = { nodes: Node[]; edges: Edge[] };
+  const historyRef = useRef<Snapshot[]>([]);
+  const historyIndexRef = useRef(-1);
+  const isUndoRedoRef = useRef(false);
+
+  const pushHistory = useCallback((n: Node[], e: Edge[]) => {
+    if (isUndoRedoRef.current) return;
+    const snap: Snapshot = { nodes: JSON.parse(JSON.stringify(n)), edges: JSON.parse(JSON.stringify(e)) };
+    const next = historyIndexRef.current + 1;
+    historyRef.current = historyRef.current.slice(0, next);
+    historyRef.current.push(snap);
+    historyIndexRef.current = next;
+  }, []);
+
+  const canUndo = historyIndexRef.current > 0;
+  const canRedo = historyIndexRef.current < historyRef.current.length - 1;
+
+  const handleUndo = useCallback(() => {
+    if (historyIndexRef.current <= 0) return;
+    isUndoRedoRef.current = true;
+    historyIndexRef.current -= 1;
+    const snap = historyRef.current[historyIndexRef.current];
+    setNodes(JSON.parse(JSON.stringify(snap.nodes)));
+    setEdges(JSON.parse(JSON.stringify(snap.edges)));
+    setTimeout(() => { isUndoRedoRef.current = false; }, 50);
+  }, [setNodes, setEdges]);
+
+  const handleRedo = useCallback(() => {
+    if (historyIndexRef.current >= historyRef.current.length - 1) return;
+    isUndoRedoRef.current = true;
+    historyIndexRef.current += 1;
+    const snap = historyRef.current[historyIndexRef.current];
+    setNodes(JSON.parse(JSON.stringify(snap.nodes)));
+    setEdges(JSON.parse(JSON.stringify(snap.edges)));
+    setTimeout(() => { isUndoRedoRef.current = false; }, 50);
+  }, [setNodes, setEdges]);
+
   const { zoomIn, zoomOut, screenToFlowPosition } = useReactFlow();
   const selectedNode = selectedNodeId ? nodes.find((node) => node.id === selectedNodeId) ?? null : null;
 
@@ -85,6 +123,44 @@ function QuizBuilderInner() {
       setIsInitialized(true);
     }
   }, [quiz, isInitialized, setNodes, setEdges]);
+
+  // Push initial history snapshot after load
+  useEffect(() => {
+    if (isInitialized && historyRef.current.length === 0) {
+      pushHistory(nodes, edges);
+    }
+  }, [isInitialized]);
+
+  // Track changes for undo history (debounced)
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!isInitialized || isUndoRedoRef.current) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      pushHistory(nodes, edges);
+    }, 300);
+    return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
+  }, [nodes, edges, isInitialized, pushHistory]);
+
+  // Keyboard shortcuts Ctrl+Z / Ctrl+Shift+Z
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        handleUndo();
+      }
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'Z' || (e.key === 'z' && e.shiftKey))) {
+        e.preventDefault();
+        handleRedo();
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [handleUndo, handleRedo]);
 
   useEffect(() => {
     if (!quizId) navigate('/tools/quiz');
@@ -278,6 +354,13 @@ function QuizBuilderInner() {
           </Badge>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" size="icon" className="h-8 w-8" onClick={handleUndo} disabled={!canUndo} title="Desfazer (Ctrl+Z)">
+            <Undo2 className="h-3.5 w-3.5" />
+          </Button>
+          <Button variant="outline" size="icon" className="h-8 w-8" onClick={handleRedo} disabled={!canRedo} title="Refazer (Ctrl+Shift+Z)">
+            <Redo2 className="h-3.5 w-3.5" />
+          </Button>
+          <Separator orientation="vertical" className="h-6" />
           <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)}>
             <Settings className="h-3.5 w-3.5 mr-1.5" /> Configurações
           </Button>
