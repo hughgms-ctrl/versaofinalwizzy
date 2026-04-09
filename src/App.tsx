@@ -99,7 +99,7 @@ const App = () => (
                     <Route path="/integrations" element={<ProtectedRoute><IntegrationsPage /></ProtectedRoute>} />
                     <Route path="/form" element={<PublicFormPage />} />
                     <Route path="/pack-form" element={<PublicPackFormPage />} />
-                    <Route path="/quiz/:token" element={<PublicQuizPage />} />
+                    <Route path="/q/:token" element={<PublicQuizPage />} />
                     <Route path="/signature/:documentId" element={<SignaturePage />} />
                     <Route path="/sign/:token" element={<PublicSignaturePage />} />
                     <Route path="/agendar/:slug" element={<PublicBookingPage />} />

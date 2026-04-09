@@ -242,7 +242,7 @@ function QuizBuilderInner() {
     toast.success(quiz.is_active ? 'Quiz desativado' : 'Quiz ativado');
   };
 
-  const publicUrl = quiz?.public_token ? `${window.location.origin}/quiz/${quiz.public_token}` : '';
+  const publicUrl = quiz?.public_token ? `${window.location.origin}/q/${quiz.public_token}` : '';
 
   // Keyboard delete
   useEffect(() => {
