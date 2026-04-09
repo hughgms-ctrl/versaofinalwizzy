@@ -436,7 +436,56 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate, userFields 
               placeholder="Olá {{nome}}, obrigado por responder!" />
             <p className="text-[10px] text-muted-foreground mt-1">Use {'{{campo}}'} para interpolar campos do contato.</p>
           </div>
+          <Separator />
+          <CrmFieldsEditor data={d} onUpdate={updateBlockData} onUpdateImmediate={updateBlockDataImmediate} />
         </>
+      )}
+
+      {/* Contact Info */}
+      {block.type === 'quiz-input-contact-info' && (
+        <>
+          <div><Label className="text-xs">Pergunta / Título</Label>
+            <Textarea value={d.question || ''} onChange={(e) => updateBlockData({ question: e.target.value })} rows={2} placeholder="Ex: Preencha seus dados" /></div>
+          <Separator />
+          <Label className="text-xs font-semibold">Campos visíveis</Label>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs">Nome</Label>
+              <Switch checked={d.showName !== false} onCheckedChange={(v) => updateBlockDataImmediate({ showName: v })} />
+            </div>
+            {d.showName !== false && (
+              <div className="flex items-center justify-between pl-4">
+                <Label className="text-[10px] text-muted-foreground">Obrigatório</Label>
+                <Switch checked={d.nameRequired !== false} onCheckedChange={(v) => updateBlockDataImmediate({ nameRequired: v })} />
+              </div>
+            )}
+            <div className="flex items-center justify-between">
+              <Label className="text-xs">WhatsApp</Label>
+              <Switch checked={d.showPhone !== false} onCheckedChange={(v) => updateBlockDataImmediate({ showPhone: v })} />
+            </div>
+            {d.showPhone !== false && (
+              <div className="flex items-center justify-between pl-4">
+                <Label className="text-[10px] text-muted-foreground">Obrigatório</Label>
+                <Switch checked={d.phoneRequired !== false} onCheckedChange={(v) => updateBlockDataImmediate({ phoneRequired: v })} />
+              </div>
+            )}
+            <div className="flex items-center justify-between">
+              <Label className="text-xs">Email</Label>
+              <Switch checked={d.showEmail !== false} onCheckedChange={(v) => updateBlockDataImmediate({ showEmail: v })} />
+            </div>
+            {d.showEmail !== false && (
+              <div className="flex items-center justify-between pl-4">
+                <Label className="text-[10px] text-muted-foreground">Obrigatório</Label>
+                <Switch checked={d.emailRequired === true} onCheckedChange={(v) => updateBlockDataImmediate({ emailRequired: v })} />
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* CRM Action */}
+      {block.type === 'quiz-event-crm-action' && (
+        <CrmFieldsEditor data={d} onUpdate={updateBlockData} onUpdateImmediate={updateBlockDataImmediate} />
       )}
     </div>
   );
