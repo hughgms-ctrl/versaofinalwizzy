@@ -54,7 +54,7 @@ interface Step {
   block: FlowBlock;
 }
 
-export default function PublicQuizPage() {
+export default function PublicQuizPage({ inlineQuiz, inlineNodes, inlineEdges }: { inlineQuiz?: any; inlineNodes?: any[]; inlineEdges?: any[] } = {}) {
   const { token } = useParams<{ token: string }>();
   const [quiz, setQuiz] = useState<QuizData | null>(null);
   const [nodes, setNodes] = useState<FlowNode[]>([]);
@@ -79,8 +79,18 @@ export default function PublicQuizPage() {
   const firedPixels = useRef<Set<string>>(new Set());
 
   useEffect(() => {
+    if (inlineQuiz) {
+      setQuiz(inlineQuiz);
+      setNodes(inlineNodes || []);
+      setEdges(inlineEdges || []);
+      setLoading(false);
+      if (inlineQuiz.welcome_screen?.showWelcome === false) {
+        startFlow(inlineNodes || [], inlineEdges || []);
+      }
+      return;
+    }
     if (token) loadQuiz();
-  }, [token]);
+  }, [token, inlineQuiz]);
 
   const loadQuiz = async () => {
     try {
