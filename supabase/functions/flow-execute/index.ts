@@ -1152,27 +1152,88 @@ async function sendButtonsMessage(data: Record<string, unknown>, context: Execut
       return { success: true };
     }
 
-    // UAZAPI: send buttons as formatted text since native buttons may not be supported
     const uazapiBaseUrl = Deno.env.get('UAZAPI_BASE_URL')!;
     const normalizedPhone = context.contactPhone.replace(/\D/g, '');
+    
+    // Build fallback text (always included in body for devices that don't render buttons)
     const buttonsText = buttons.map((b, i) => `${i + 1}. ${b.label}`).join('\n');
-    const fullMessage = `${content}\n\n${buttonsText}`;
+    const fallbackMessage = `${content}\n\n${buttonsText}`;
 
-    const response = await fetch(`${uazapiBaseUrl}/send/text`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'token': context.zapiToken
-      },
-      body: JSON.stringify({
-        number: normalizedPhone,
-        text: fullMessage,
-      }),
-    });
+    let response: Response;
+    let sentNativeButtons = false;
+    let displayMessage = fallbackMessage;
 
-    if (!response.ok) {
-      const error = await response.text();
-      console.error(`[FLOW EXECUTE] Failed to send buttons. Status: ${response.status}, Error: ${error}`);
+    // Try native Z-API buttons first (up to 3 buttons supported)
+    if (buttons.length <= 3) {
+      try {
+        const nativeBody = {
+          number: normalizedPhone,
+          title: '',
+          message: content,
+          footer: '',
+          buttons: buttons.map((b, i) => ({
+            id: `btn_${i}`,
+            label: b.label,
+          })),
+        };
+
+        console.log(`[FLOW EXECUTE] Trying native buttons via /send/buttons: ${JSON.stringify(nativeBody)}`);
+        
+        const nativeResponse = await fetch(`${uazapiBaseUrl}/send/buttons`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'token': context.zapiToken,
+          },
+          body: JSON.stringify(nativeBody),
+        });
+
+        if (nativeResponse.ok) {
+          const nativeResult = await nativeResponse.json();
+          // Check if the API actually accepted the request (some instances return 200 but with error in body)
+          if (!nativeResult?.error) {
+            response = nativeResponse;
+            sentNativeButtons = true;
+            displayMessage = content; // Native buttons show the content separately
+            console.log(`[FLOW EXECUTE] Native buttons sent successfully`);
+          } else {
+            console.log(`[FLOW EXECUTE] Native buttons API returned error: ${JSON.stringify(nativeResult)}, falling back to text`);
+            response = await fetch(`${uazapiBaseUrl}/send/text`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'token': context.zapiToken },
+              body: JSON.stringify({ number: normalizedPhone, text: fallbackMessage }),
+            });
+          }
+        } else {
+          const errText = await nativeResponse.text();
+          console.log(`[FLOW EXECUTE] Native buttons failed (${nativeResponse.status}): ${errText}, falling back to text`);
+          response = await fetch(`${uazapiBaseUrl}/send/text`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'token': context.zapiToken },
+            body: JSON.stringify({ number: normalizedPhone, text: fallbackMessage }),
+          });
+        }
+      } catch (nativeErr) {
+        console.log(`[FLOW EXECUTE] Native buttons exception: ${nativeErr}, falling back to text`);
+        response = await fetch(`${uazapiBaseUrl}/send/text`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'token': context.zapiToken },
+          body: JSON.stringify({ number: normalizedPhone, text: fallbackMessage }),
+        });
+      }
+    } else {
+      // More than 3 buttons — always use text fallback
+      console.log(`[FLOW EXECUTE] ${buttons.length} buttons > 3, using text fallback`);
+      response = await fetch(`${uazapiBaseUrl}/send/text`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'token': context.zapiToken },
+        body: JSON.stringify({ number: normalizedPhone, text: fallbackMessage }),
+      });
+    }
+
+    if (!response!.ok) {
+      const error = await response!.text();
+      console.error(`[FLOW EXECUTE] Failed to send buttons. Status: ${response!.status}, Error: ${error}`);
       return { success: false, error: `Failed to send buttons: ${error}` };
     }
 
@@ -1180,7 +1241,7 @@ async function sendButtonsMessage(data: Record<string, unknown>, context: Execut
     try {
       let zapiMessageId: string | null = null;
       try {
-        const result = await response.clone().json();
+        const result = await response!.clone().json();
         zapiMessageId = result?.messageId || result?.id || result?.ID || result?.key?.id || null;
       } catch { }
 
@@ -1190,14 +1251,16 @@ async function sendButtonsMessage(data: Record<string, unknown>, context: Execut
 
       await supabase.from('messages').insert({
         conversation_id: context.conversationId,
-        content: fullMessage,
+        content: sentNativeButtons ? content : fallbackMessage,
         type: 'text',
         direction: 'outbound',
         is_from_bot: !!context.isFromOrchestrator,
         zapi_message_id: zapiMessageId,
         metadata: { 
           source: 'flow_execute', 
-          type: 'buttons', 
+          type: 'buttons',
+          native_buttons: sentNativeButtons,
+          buttons: buttons.map(b => b.label),
           is_from_orchestrator: !!context.isFromOrchestrator,
           node_id: nodeId,
           flow_id: context.flowId
@@ -1208,7 +1271,7 @@ async function sendButtonsMessage(data: Record<string, unknown>, context: Execut
       console.error('[FLOW EXECUTE] Failed to save buttons message to DB:', dbError);
     }
 
-    console.log('[FLOW EXECUTE] Buttons message sent — waiting for user choice');
+    console.log(`[FLOW EXECUTE] Buttons message sent (native=${sentNativeButtons}) — waiting for user choice`);
     return { success: true, waitForInput: true };
   } catch (error) {
     return { success: false, error: String(error) };
