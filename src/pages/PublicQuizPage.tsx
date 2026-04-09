@@ -206,12 +206,13 @@ export default function PublicQuizPage({ inlineQuiz, inlineNodes, inlineEdges }:
         answer,
       }));
 
+      // Use variables for contact info (name, phone, email come from input blocks now)
       await supabase.from('quiz_submissions').insert({
         quiz_id: quiz.id,
         organization_id: quiz.organization_id,
-        respondent_name: contact.name || null,
-        respondent_phone: contact.phone || null,
-        respondent_email: contact.email || null,
+        respondent_name: variables['nome'] || variables['name'] || null,
+        respondent_phone: variables['phone'] || variables['telefone'] || variables['whatsapp'] || null,
+        respondent_email: variables['email'] || null,
         answers: answersArray,
         metadata: variables,
         completed_at: new Date().toISOString(),
@@ -471,35 +472,7 @@ export default function PublicQuizPage({ inlineQuiz, inlineNodes, inlineEdges }:
     );
   }
 
-  // Contact step
-  if (phase === 'contact') {
-    return (
-      <FullScreenStep progress={progress} showProgress={quiz.settings?.showProgressBar !== false} onPrev={goBack} dir={animDir}>
-        <div className="space-y-6">
-          <h2 className="text-2xl font-bold">Seus dados</h2>
-          <p className="text-muted-foreground">Preencha para finalizarmos.</p>
-          <div className="space-y-4">
-            {quiz.settings?.requireName && (
-              <div><Label>Nome</Label>
-                <Input value={contact.name} onChange={e => setContact(p => ({ ...p, name: e.target.value }))} placeholder="Seu nome" className="h-12 text-lg" /></div>
-            )}
-            {quiz.settings?.requirePhone && (
-              <div><Label>Telefone (WhatsApp)</Label>
-                <Input value={contact.phone} onChange={e => setContact(p => ({ ...p, phone: e.target.value }))} placeholder="(11) 99999-9999" className="h-12 text-lg" /></div>
-            )}
-            {quiz.settings?.requireEmail && (
-              <div><Label>E-mail</Label>
-                <Input value={contact.email} onChange={e => setContact(p => ({ ...p, email: e.target.value }))} placeholder="seu@email.com" type="email" className="h-12 text-lg" /></div>
-            )}
-          </div>
-          <Button size="lg" className="w-full h-14 text-lg" onClick={handleSubmit} disabled={submitting}>
-            {submitting ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : <Send className="h-5 w-5 mr-2" />}
-            {submitting ? 'Enviando...' : 'Enviar respostas'}
-          </Button>
-        </div>
-      </FullScreenStep>
-    );
-  }
+  // Contact step (legacy — kept for backwards compatibility but no longer auto-triggered)
 
   // Flow step — render current block
   if (!currentBlock) return null;
