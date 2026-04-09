@@ -124,6 +124,44 @@ function QuizBuilderInner() {
     }
   }, [quiz, isInitialized, setNodes, setEdges]);
 
+  // Push initial history snapshot after load
+  useEffect(() => {
+    if (isInitialized && historyRef.current.length === 0) {
+      pushHistory(nodes, edges);
+    }
+  }, [isInitialized]);
+
+  // Track changes for undo history (debounced)
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!isInitialized || isUndoRedoRef.current) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      pushHistory(nodes, edges);
+    }, 300);
+    return () => { if (saveTimerRef.current) clearTimeout(saveTimerRef.current); };
+  }, [nodes, edges, isInitialized, pushHistory]);
+
+  // Keyboard shortcuts Ctrl+Z / Ctrl+Shift+Z
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        handleUndo();
+      }
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'Z' || (e.key === 'z' && e.shiftKey))) {
+        e.preventDefault();
+        handleRedo();
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [handleUndo, handleRedo]);
+
   useEffect(() => {
     if (!quizId) navigate('/tools/quiz');
   }, [quizId, navigate]);
