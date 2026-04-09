@@ -434,7 +434,7 @@ export default function PublicQuizPage({ inlineQuiz, inlineNodes, inlineEdges }:
   useEffect(() => {
     if (phase !== 'flow' || !currentBlock) return;
 
-    const logicAutoBlocks = ['quiz-logic-condition', 'quiz-logic-ab-test', 'quiz-logic-wait', 'quiz-logic-jump', 'quiz-logic-redirect', 'quiz-event-pixel', 'quiz-event-whatsapp-trigger'];
+    const logicAutoBlocks = ['quiz-logic-condition', 'quiz-logic-ab-test', 'quiz-logic-wait', 'quiz-logic-jump', 'quiz-logic-redirect', 'quiz-event-pixel', 'quiz-event-whatsapp-trigger', 'quiz-event-crm-action'];
 
     if (logicAutoBlocks.includes(currentBlock.type)) {
       const timer = setTimeout(() => {
@@ -457,6 +457,7 @@ export default function PublicQuizPage({ inlineQuiz, inlineNodes, inlineEdges }:
           }
           case 'quiz-event-pixel': handlePixelBlock(currentBlock); break;
           case 'quiz-event-whatsapp-trigger': handleWhatsAppTrigger(currentBlock); break;
+          case 'quiz-event-crm-action': handleCrmAction(currentBlock); break;
         }
       }, 50);
       return () => clearTimeout(timer);
