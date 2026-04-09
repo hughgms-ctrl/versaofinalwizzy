@@ -416,21 +416,7 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate, userFields 
 
       {/* Pixel */}
       {block.type === 'quiz-event-pixel' && (
-        <>
-          <div><Label className="text-xs">Plataforma</Label>
-            <Select value={d.platform || 'facebook'} onValueChange={(v) => updateBlockDataImmediate({ platform: v })}>
-              <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="facebook">Facebook Pixel</SelectItem>
-                <SelectItem value="google">Google Tag</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div><Label className="text-xs">Pixel ID</Label>
-            <Input value={d.pixelId || ''} onChange={(e) => updateBlockData({ pixelId: e.target.value })} placeholder="ID do pixel" /></div>
-          <div><Label className="text-xs">Evento</Label>
-            <Input value={d.eventName || 'PageView'} onChange={(e) => updateBlockData({ eventName: e.target.value })} /></div>
-        </>
+        <PixelEditor data={d} onUpdate={updateBlockData} onUpdateImmediate={updateBlockDataImmediate} />
       )}
 
       {/* WhatsApp Trigger */}
