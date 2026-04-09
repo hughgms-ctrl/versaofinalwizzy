@@ -165,13 +165,8 @@ export default function PublicQuizPage({ inlineQuiz, inlineNodes, inlineEdges }:
       setCurrentNodeId(nextEdge.target);
       setCurrentBlockIdx(0);
     } else {
-      // No more edges — go to contact or end
-      const showContact = quiz?.settings?.requirePhone || quiz?.settings?.requireName || quiz?.settings?.requireEmail;
-      if (showContact) {
-        setPhase('contact');
-      } else {
-        handleSubmit();
-      }
+      // No more edges — submit and go to end
+      handleSubmit();
     }
   }, [currentNodeId, currentBlockIdx, currentNode, edges, quiz]);
 
