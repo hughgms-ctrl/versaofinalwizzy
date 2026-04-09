@@ -114,13 +114,51 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate, userFields 
   onUpdate: (blocks: any[]) => void;
   userFields: string[];
 }) {
-  const d = block.data || {};
+  // Local state for block data to avoid re-rendering entire canvas on every keystroke
+  const [localData, setLocalData] = useState<Record<string, any>>(block.data || {});
+  const flushRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const allBlocksRef = useRef(allBlocks);
+  allBlocksRef.current = allBlocks;
 
-  const updateBlockData = (newData: Record<string, any>) => {
-    const updated = [...allBlocks];
-    updated[blockIdx] = { ...block, data: { ...d, ...newData } };
+  // Sync local data when block changes externally (e.g. switching blocks)
+  useEffect(() => {
+    setLocalData(block.data || {});
+  }, [block.id]);
+
+  const d = localData;
+
+  const flushToParent = useCallback((newData: Record<string, any>) => {
+    const updated = [...allBlocksRef.current];
+    updated[blockIdx] = { ...block, data: newData };
     onUpdate(updated);
-  };
+  }, [block, blockIdx, onUpdate]);
+
+  const updateBlockData = useCallback((newData: Record<string, any>) => {
+    setLocalData(prev => {
+      const merged = { ...prev, ...newData };
+      // Debounce the parent update
+      if (flushRef.current) clearTimeout(flushRef.current);
+      flushRef.current = setTimeout(() => flushToParent(merged), 300);
+      return merged;
+    });
+  }, [flushToParent]);
+
+  // Flush pending changes on unmount
+  useEffect(() => {
+    return () => {
+      if (flushRef.current) clearTimeout(flushRef.current);
+    };
+  }, []);
+
+  // Immediate update (for switches, selects — non-text inputs)
+  const updateBlockDataImmediate = useCallback((newData: Record<string, any>) => {
+    setLocalData(prev => {
+      const merged = { ...prev, ...newData };
+      if (flushRef.current) clearTimeout(flushRef.current);
+      flushToParent(merged);
+      return merged;
+    });
+  }, [flushToParent]);
 
   const deleteBlock = () => {
     onUpdate(allBlocks.filter((_, i) => i !== blockIdx));
