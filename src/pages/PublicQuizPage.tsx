@@ -368,26 +368,73 @@ export default function PublicQuizPage({ inlineQuiz, inlineNodes, inlineEdges }:
   }, [goToNextBlock]);
 
   const handleWhatsAppTrigger = useCallback((block: FlowBlock) => {
-    const { waNumber, waMessage, useContactPhone } = block.data;
-    // Use contact's phone from variables if configured, otherwise use fixed number
+    const { waNumber, waMessage, useContactPhone, tagIds, workspaceId, pipelineId, columnId } = block.data;
     const targetPhone = useContactPhone ? (variables['phone'] || variables['telefone'] || variables['whatsapp'] || '') : (waNumber || '');
-    if (targetPhone) {
+    const contactPhone = variables['phone'] || variables['telefone'] || variables['whatsapp'] || '';
+    
+    if (targetPhone || tagIds?.length || workspaceId || pipelineId) {
       const message = interpolate(waMessage || '', variables);
-      try {
-        const phone = String(targetPhone).replace(/\D/g, '');
-        supabase.functions.invoke('zapi-send-message', {
-          body: { phone, message, type: 'text' },
-        }).catch(() => {});
-      } catch {}
+      const phone = String(targetPhone).replace(/\D/g, '');
+      
+      // Use public quiz-actions edge function (no auth needed)
+      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+      const url = `https://${projectId}.supabase.co/functions/v1/quiz-actions`;
+      
+      fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          organization_id: quiz?.organization_id,
+          quiz_id: quiz?.id,
+          action: phone ? 'send_whatsapp' : 'crm_action',
+          phone,
+          message,
+          contact_name: variables['nome'] || variables['name'] || '',
+          contact_email: variables['email'] || '',
+          contact_phone: contactPhone,
+          tag_ids: tagIds || [],
+          workspace_id: workspaceId || '',
+          pipeline_id: pipelineId || '',
+          column_id: columnId || '',
+        }),
+      }).catch(() => {});
     }
     setTimeout(() => goToNextBlock(), 100);
-  }, [goToNextBlock, variables]);
+  }, [goToNextBlock, variables, quiz]);
+
+  const handleCrmAction = useCallback((block: FlowBlock) => {
+    const { tagIds, workspaceId, pipelineId, columnId } = block.data;
+    const contactPhone = variables['phone'] || variables['telefone'] || variables['whatsapp'] || '';
+    
+    if (contactPhone && (tagIds?.length || workspaceId || pipelineId)) {
+      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+      const url = `https://${projectId}.supabase.co/functions/v1/quiz-actions`;
+      
+      fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          organization_id: quiz?.organization_id,
+          quiz_id: quiz?.id,
+          action: 'crm_action',
+          contact_name: variables['nome'] || variables['name'] || '',
+          contact_email: variables['email'] || '',
+          contact_phone: contactPhone,
+          tag_ids: tagIds || [],
+          workspace_id: workspaceId || '',
+          pipeline_id: pipelineId || '',
+          column_id: columnId || '',
+        }),
+      }).catch(() => {});
+    }
+    setTimeout(() => goToNextBlock(), 100);
+  }, [goToNextBlock, variables, quiz]);
 
   // Auto-execute logic blocks when they become current
   useEffect(() => {
     if (phase !== 'flow' || !currentBlock) return;
 
-    const logicAutoBlocks = ['quiz-logic-condition', 'quiz-logic-ab-test', 'quiz-logic-wait', 'quiz-logic-jump', 'quiz-logic-redirect', 'quiz-event-pixel', 'quiz-event-whatsapp-trigger'];
+    const logicAutoBlocks = ['quiz-logic-condition', 'quiz-logic-ab-test', 'quiz-logic-wait', 'quiz-logic-jump', 'quiz-logic-redirect', 'quiz-event-pixel', 'quiz-event-whatsapp-trigger', 'quiz-event-crm-action'];
 
     if (logicAutoBlocks.includes(currentBlock.type)) {
       const timer = setTimeout(() => {
@@ -410,6 +457,7 @@ export default function PublicQuizPage({ inlineQuiz, inlineNodes, inlineEdges }:
           }
           case 'quiz-event-pixel': handlePixelBlock(currentBlock); break;
           case 'quiz-event-whatsapp-trigger': handleWhatsAppTrigger(currentBlock); break;
+          case 'quiz-event-crm-action': handleCrmAction(currentBlock); break;
         }
       }, 50);
       return () => clearTimeout(timer);
@@ -828,6 +876,71 @@ function BlockRenderer({ block, answer, variables, onAnswer, onNext, isLast }: {
             OK <ArrowRight className="h-5 w-5 ml-2" />
           </Button>
         )}
+      </div>
+    );
+  }
+
+  // Contact info grouped block
+  if (block.type === 'quiz-input-contact-info') {
+    const showName = d.showName !== false;
+    const showPhone = d.showPhone !== false;
+    const showEmail = d.showEmail !== false;
+    const contactData = answer || {};
+    
+    return (
+      <div className="space-y-6">
+        {d.question && <h2 className="text-2xl font-bold">{interpolate(d.question, variables)}</h2>}
+        <div className="space-y-4">
+          {showName && (
+            <div>
+              <Label className="text-sm font-medium">Nome {d.nameRequired !== false && <span className="text-destructive">*</span>}</Label>
+              <Input
+                value={contactData.name || ''}
+                onChange={e => onAnswer({ ...contactData, name: e.target.value }, 'nome')}
+                placeholder="Seu nome"
+                className="h-14 text-lg mt-1"
+                autoFocus
+              />
+            </div>
+          )}
+          {showPhone && (
+            <div>
+              <Label className="text-sm font-medium">WhatsApp {d.phoneRequired !== false && <span className="text-destructive">*</span>}</Label>
+              <Input
+                type="tel"
+                value={contactData.phone || ''}
+                onChange={e => onAnswer({ ...contactData, phone: e.target.value }, 'whatsapp')}
+                placeholder="(11) 99999-9999"
+                className="h-14 text-lg mt-1"
+              />
+            </div>
+          )}
+          {showEmail && (
+            <div>
+              <Label className="text-sm font-medium">Email {d.emailRequired && <span className="text-destructive">*</span>}</Label>
+              <Input
+                type="email"
+                value={contactData.email || ''}
+                onChange={e => onAnswer({ ...contactData, email: e.target.value }, 'email')}
+                placeholder="seu@email.com"
+                className="h-14 text-lg mt-1"
+              />
+            </div>
+          )}
+        </div>
+        <Button size="lg" className="w-full h-14 text-lg" onClick={() => {
+          // Save individual variables
+          if (contactData.name) variables['nome'] = contactData.name;
+          if (contactData.phone) {
+            variables['phone'] = contactData.phone;
+            variables['telefone'] = contactData.phone;
+            variables['whatsapp'] = contactData.phone;
+          }
+          if (contactData.email) variables['email'] = contactData.email;
+          onNext();
+        }}>
+          Continuar <ArrowRight className="h-5 w-5 ml-2" />
+        </Button>
       </div>
     );
   }

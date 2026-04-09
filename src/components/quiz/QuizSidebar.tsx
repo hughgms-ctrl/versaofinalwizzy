@@ -2,7 +2,7 @@ import { useState } from 'react';
 import {
   Type, AlignLeft, Hash, Phone, Mail, Calendar, Clock,
   CircleDot, ListChecks, ChevronDown as DropdownIcon, ToggleLeft, Star, ImageIcon, MousePointerClick,
-  MessageSquare, Video, Image, Link2, Headphones,
+  MessageSquare, Video, Image, Link2, Headphones, UserCircle, Tags,
   Variable, GitBranch, Code2, Timer, Shuffle, Webhook, ArrowRight, CornerDownLeft,
   Facebook, BarChart3,
   ChevronDown, ChevronRight, PanelLeftClose, PanelLeft, GripVertical, Search, Globe
@@ -19,12 +19,14 @@ export type QuizNodeType =
   | 'quiz-input-text' | 'quiz-input-number' | 'quiz-input-email' | 'quiz-input-website'
   | 'quiz-input-date' | 'quiz-input-time' | 'quiz-input-phone' | 'quiz-input-buttons'
   | 'quiz-input-pic-choice' | 'quiz-input-rating' | 'quiz-input-file'
+  | 'quiz-input-contact-info'
   // Logic
   | 'quiz-logic-condition' | 'quiz-logic-redirect' | 'quiz-logic-wait'
   | 'quiz-logic-ab-test' | 'quiz-logic-jump'
   // Events
   | 'quiz-event-pixel'
-  | 'quiz-event-whatsapp-trigger';
+  | 'quiz-event-whatsapp-trigger'
+  | 'quiz-event-crm-action';
 
 interface QuizComponent {
   type: QuizNodeType;
@@ -69,6 +71,7 @@ export const quizCategories: QuizCategory[] = [
       { type: 'quiz-input-pic-choice', label: 'Escolha com imagem', icon: ImageIcon, color: 'bg-orange-500' },
       { type: 'quiz-input-rating', label: 'Avaliação', icon: Star, color: 'bg-orange-500' },
       { type: 'quiz-input-file', label: 'Arquivo', icon: Link2, color: 'bg-orange-500' },
+      { type: 'quiz-input-contact-info', label: 'Dados do Contato', icon: UserCircle, color: 'bg-orange-500' },
     ],
   },
   {
@@ -90,6 +93,7 @@ export const quizCategories: QuizCategory[] = [
     components: [
       { type: 'quiz-event-pixel', label: 'Pixel', icon: BarChart3, color: 'bg-green-500' },
       { type: 'quiz-event-whatsapp-trigger', label: 'Disparo WhatsApp', icon: MessageSquare, color: 'bg-green-500' },
+      { type: 'quiz-event-crm-action', label: 'Ação CRM', icon: Tags, color: 'bg-green-500' },
     ],
   },
 ];

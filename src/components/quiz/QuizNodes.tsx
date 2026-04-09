@@ -4,7 +4,7 @@ import {
   Play, Flag, MessageSquare, ImageIcon, Video, Code2, Headphones,
   Type, Hash, Mail, Globe, Calendar, Clock, Phone, MousePointerClick,
   Star, Link2, GitBranch, ArrowRight, Timer, Shuffle, CornerDownLeft,
-  BarChart3, Trash2
+  BarChart3, Trash2, UserCircle, Tags
 } from 'lucide-react';
 
 // --- Start Node ---
@@ -60,6 +60,8 @@ const blockIcons: Record<string, React.ComponentType<{ className?: string }>> = 
   'quiz-logic-jump': CornerDownLeft,
   'quiz-event-pixel': BarChart3,
   'quiz-event-whatsapp-trigger': MessageSquare,
+  'quiz-input-contact-info': UserCircle,
+  'quiz-event-crm-action': Tags,
 };
 
 const blockColors: Record<string, string> = {
@@ -92,7 +94,14 @@ function getBlockLabel(block: { type: string; data: Record<string, any> }) {
     case 'quiz-input-date': return prompt?.slice(0, 50) || 'Escolha uma data...';
     case 'quiz-input-time': return prompt?.slice(0, 50) || 'Escolha um horário...';
     case 'quiz-input-phone': return prompt?.slice(0, 50) || d.placeholder || 'Digite seu telefone...';
-    case 'quiz-input-file': return prompt?.slice(0, 50) || 'Enviar arquivo...';
+     case 'quiz-input-file': return prompt?.slice(0, 50) || 'Enviar arquivo...';
+    case 'quiz-input-contact-info': {
+      const fields: string[] = [];
+      if (d.showName !== false) fields.push('Nome');
+      if (d.showPhone !== false) fields.push('WhatsApp');
+      if (d.showEmail !== false) fields.push('Email');
+      return prompt?.slice(0, 50) || fields.join(', ') || 'Dados do Contato';
+    }
     case 'quiz-input-rating': return prompt?.slice(0, 50) || `Avaliação (1-${d.maxRating || 5})`;
     case 'quiz-input-buttons':
       return prompt?.slice(0, 50) || (d.options as any[])?.map((o: any) => o.label).join(', ') || 'Adicionar botões...';
@@ -105,6 +114,13 @@ function getBlockLabel(block: { type: string; data: Record<string, any> }) {
     case 'quiz-logic-jump': return d.targetGroup || 'Pular';
     case 'quiz-event-pixel': return d.platform ? `${d.platform} - ${d.eventName || 'PageView'}` : 'Configurar pixel...';
     case 'quiz-event-whatsapp-trigger': return d.waNumber ? `Disparo → ${d.waNumber}` : 'Disparo WhatsApp';
+    case 'quiz-event-crm-action': {
+      const actions: string[] = [];
+      if (d.tagIds?.length) actions.push(`${d.tagIds.length} tag(s)`);
+      if (d.workspaceId) actions.push('Workspace');
+      if (d.pipelineId) actions.push('Pipeline');
+      return actions.length ? `CRM: ${actions.join(', ')}` : 'Ação CRM';
+    }
     default: return block.type;
   }
 }

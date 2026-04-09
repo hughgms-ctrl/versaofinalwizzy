@@ -436,7 +436,56 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate, userFields 
               placeholder="Olá {{nome}}, obrigado por responder!" />
             <p className="text-[10px] text-muted-foreground mt-1">Use {'{{campo}}'} para interpolar campos do contato.</p>
           </div>
+          <Separator />
+          <CrmFieldsEditor data={d} onUpdate={updateBlockData} onUpdateImmediate={updateBlockDataImmediate} />
         </>
+      )}
+
+      {/* Contact Info */}
+      {block.type === 'quiz-input-contact-info' && (
+        <>
+          <div><Label className="text-xs">Pergunta / Título</Label>
+            <Textarea value={d.question || ''} onChange={(e) => updateBlockData({ question: e.target.value })} rows={2} placeholder="Ex: Preencha seus dados" /></div>
+          <Separator />
+          <Label className="text-xs font-semibold">Campos visíveis</Label>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs">Nome</Label>
+              <Switch checked={d.showName !== false} onCheckedChange={(v) => updateBlockDataImmediate({ showName: v })} />
+            </div>
+            {d.showName !== false && (
+              <div className="flex items-center justify-between pl-4">
+                <Label className="text-[10px] text-muted-foreground">Obrigatório</Label>
+                <Switch checked={d.nameRequired !== false} onCheckedChange={(v) => updateBlockDataImmediate({ nameRequired: v })} />
+              </div>
+            )}
+            <div className="flex items-center justify-between">
+              <Label className="text-xs">WhatsApp</Label>
+              <Switch checked={d.showPhone !== false} onCheckedChange={(v) => updateBlockDataImmediate({ showPhone: v })} />
+            </div>
+            {d.showPhone !== false && (
+              <div className="flex items-center justify-between pl-4">
+                <Label className="text-[10px] text-muted-foreground">Obrigatório</Label>
+                <Switch checked={d.phoneRequired !== false} onCheckedChange={(v) => updateBlockDataImmediate({ phoneRequired: v })} />
+              </div>
+            )}
+            <div className="flex items-center justify-between">
+              <Label className="text-xs">Email</Label>
+              <Switch checked={d.showEmail !== false} onCheckedChange={(v) => updateBlockDataImmediate({ showEmail: v })} />
+            </div>
+            {d.showEmail !== false && (
+              <div className="flex items-center justify-between pl-4">
+                <Label className="text-[10px] text-muted-foreground">Obrigatório</Label>
+                <Switch checked={d.emailRequired === true} onCheckedChange={(v) => updateBlockDataImmediate({ emailRequired: v })} />
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* CRM Action */}
+      {block.type === 'quiz-event-crm-action' && (
+        <CrmFieldsEditor data={d} onUpdate={updateBlockData} onUpdateImmediate={updateBlockDataImmediate} />
       )}
     </div>
   );
@@ -449,6 +498,27 @@ const DEFAULT_CONTACT_FIELDS = [
   { value: 'telefone', label: 'Telefone' },
   { value: 'whatsapp', label: 'WhatsApp' },
 ];
+
+function CrmFieldsEditor({ data, onUpdate, onUpdateImmediate }: { data: Record<string, any>; onUpdate: (d: Record<string, any>) => void; onUpdateImmediate: (d: Record<string, any>) => void }) {
+  return (
+    <div className="space-y-4">
+      <Label className="text-xs font-semibold">Ações CRM</Label>
+      <p className="text-[10px] text-muted-foreground">
+        Configure tag, workspace, pipeline e coluna para atribuir ao contato quando passar por este nó.
+      </p>
+      <div><Label className="text-xs">Tag IDs (separados por vírgula)</Label>
+        <Input value={data.tagIds?.join(', ') || ''} onChange={(e) => onUpdate({ tagIds: e.target.value.split(',').map((s: string) => s.trim()).filter(Boolean) })} placeholder="ID da tag 1, ID da tag 2..." />
+        <p className="text-[10px] text-muted-foreground mt-1">Cole os IDs das tags do sistema.</p>
+      </div>
+      <div><Label className="text-xs">Workspace ID</Label>
+        <Input value={data.workspaceId || ''} onChange={(e) => onUpdate({ workspaceId: e.target.value })} placeholder="ID do workspace" /></div>
+      <div><Label className="text-xs">Pipeline ID</Label>
+        <Input value={data.pipelineId || ''} onChange={(e) => onUpdate({ pipelineId: e.target.value })} placeholder="ID do pipeline" /></div>
+      <div><Label className="text-xs">Coluna (Stage) ID</Label>
+        <Input value={data.columnId || ''} onChange={(e) => onUpdate({ columnId: e.target.value })} placeholder="ID da coluna do pipeline" /></div>
+    </div>
+  );
+}
 
 function ContactFieldSelect({ value, onChange, userFields }: { value: string; onChange: (v: string) => void; userFields: string[] }) {
   const [customMode, setCustomMode] = useState(false);
