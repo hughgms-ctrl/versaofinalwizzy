@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Node } from '@xyflow/react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -114,13 +114,51 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate, userFields 
   onUpdate: (blocks: any[]) => void;
   userFields: string[];
 }) {
-  const d = block.data || {};
+  // Local state for block data to avoid re-rendering entire canvas on every keystroke
+  const [localData, setLocalData] = useState<Record<string, any>>(block.data || {});
+  const flushRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const allBlocksRef = useRef(allBlocks);
+  allBlocksRef.current = allBlocks;
 
-  const updateBlockData = (newData: Record<string, any>) => {
-    const updated = [...allBlocks];
-    updated[blockIdx] = { ...block, data: { ...d, ...newData } };
+  // Sync local data when block changes externally (e.g. switching blocks)
+  useEffect(() => {
+    setLocalData(block.data || {});
+  }, [block.id]);
+
+  const d = localData;
+
+  const flushToParent = useCallback((newData: Record<string, any>) => {
+    const updated = [...allBlocksRef.current];
+    updated[blockIdx] = { ...block, data: newData };
     onUpdate(updated);
-  };
+  }, [block, blockIdx, onUpdate]);
+
+  const updateBlockData = useCallback((newData: Record<string, any>) => {
+    setLocalData(prev => {
+      const merged = { ...prev, ...newData };
+      // Debounce the parent update
+      if (flushRef.current) clearTimeout(flushRef.current);
+      flushRef.current = setTimeout(() => flushToParent(merged), 300);
+      return merged;
+    });
+  }, [flushToParent]);
+
+  // Flush pending changes on unmount
+  useEffect(() => {
+    return () => {
+      if (flushRef.current) clearTimeout(flushRef.current);
+    };
+  }, []);
+
+  // Immediate update (for switches, selects — non-text inputs)
+  const updateBlockDataImmediate = useCallback((newData: Record<string, any>) => {
+    setLocalData(prev => {
+      const merged = { ...prev, ...newData };
+      if (flushRef.current) clearTimeout(flushRef.current);
+      flushToParent(merged);
+      return merged;
+    });
+  }, [flushToParent]);
 
   const deleteBlock = () => {
     onUpdate(allBlocks.filter((_, i) => i !== blockIdx));
@@ -160,7 +198,7 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate, userFields 
             <Input value={d.url || ''} onChange={(e) => updateBlockData({ url: e.target.value })} placeholder="YouTube, Vimeo ou MP4" /></div>
           <div>
             <Label className="text-xs">Orientação</Label>
-            <Select value={d.orientation || 'horizontal'} onValueChange={(v) => updateBlockData({ orientation: v })}>
+            <Select value={d.orientation || 'horizontal'} onValueChange={(v) => updateBlockDataImmediate({ orientation: v })}>
               <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="horizontal">Horizontal (16:9)</SelectItem>
@@ -170,12 +208,12 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate, userFields 
           </div>
           <div className="flex items-center justify-between">
             <Label className="text-xs">Autoplay</Label>
-            <Switch checked={d.autoplay !== false} onCheckedChange={(v) => updateBlockData({ autoplay: v })} />
+            <Switch checked={d.autoplay !== false} onCheckedChange={(v) => updateBlockDataImmediate({ autoplay: v })} />
           </div>
           <Separator />
           <div className="flex items-center justify-between">
             <Label className="text-xs">Botão WhatsApp</Label>
-            <Switch checked={d.showWhatsapp === true} onCheckedChange={(v) => updateBlockData({ showWhatsapp: v })} />
+            <Switch checked={d.showWhatsapp === true} onCheckedChange={(v) => updateBlockDataImmediate({ showWhatsapp: v })} />
           </div>
           {d.showWhatsapp && (
             <>
@@ -213,7 +251,7 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate, userFields 
             <Input value={d.variable || ''} onChange={(e) => updateBlockData({ variable: e.target.value })} placeholder="Ex: nome, email..." /></div>
           <div className="flex items-center justify-between">
             <Label className="text-xs">Obrigatório</Label>
-            <Switch checked={d.required !== false} onCheckedChange={(v) => updateBlockData({ required: v })} />
+            <Switch checked={d.required !== false} onCheckedChange={(v) => updateBlockDataImmediate({ required: v })} />
           </div>
         </>
       )}
@@ -231,7 +269,7 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate, userFields 
 
           <div className="flex items-center justify-between">
             <Label className="text-xs">Permitir precisão flexível</Label>
-            <Switch checked={d.allowFlexible !== false} onCheckedChange={(v) => updateBlockData({ allowFlexible: v })} />
+            <Switch checked={d.allowFlexible !== false} onCheckedChange={(v) => updateBlockDataImmediate({ allowFlexible: v })} />
           </div>
           <p className="text-[10px] text-muted-foreground">
             Permite selecionar: Data exata, Mês/Ano ou Apenas ano.
@@ -239,7 +277,7 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate, userFields 
 
           <div className="flex items-center justify-between">
             <Label className="text-xs">Opção "Não sei"</Label>
-            <Switch checked={d.allowUnknown !== false} onCheckedChange={(v) => updateBlockData({ allowUnknown: v })} />
+            <Switch checked={d.allowUnknown !== false} onCheckedChange={(v) => updateBlockDataImmediate({ allowUnknown: v })} />
           </div>
           <p className="text-[10px] text-muted-foreground">
             Adiciona botão "Não sei" com saída separada para ramificação no fluxo.
@@ -252,7 +290,7 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate, userFields 
 
           <div className="flex items-center justify-between">
             <Label className="text-xs">Obrigatório</Label>
-            <Switch checked={d.required !== false} onCheckedChange={(v) => updateBlockData({ required: v })} />
+            <Switch checked={d.required !== false} onCheckedChange={(v) => updateBlockDataImmediate({ required: v })} />
           </div>
 
           <div>
@@ -275,7 +313,7 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate, userFields 
             <Input value={d.variable || ''} onChange={(e) => updateBlockData({ variable: e.target.value })} /></div>
           <div className="flex items-center justify-between">
             <Label className="text-xs">Obrigatório</Label>
-            <Switch checked={d.required !== false} onCheckedChange={(v) => updateBlockData({ required: v })} />
+            <Switch checked={d.required !== false} onCheckedChange={(v) => updateBlockDataImmediate({ required: v })} />
           </div>
         </>
       )}
@@ -286,7 +324,7 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate, userFields 
           <div><Label className="text-xs">Pergunta</Label>
             <Textarea value={d.question || ''} onChange={(e) => updateBlockData({ question: e.target.value })} rows={2} placeholder="Ex: Como avalia nosso atendimento?" /></div>
           <div><Label className="text-xs">Escala máxima</Label>
-            <Select value={String(d.maxRating || 5)} onValueChange={(v) => updateBlockData({ maxRating: parseInt(v) })}>
+            <Select value={String(d.maxRating || 5)} onValueChange={(v) => updateBlockDataImmediate({ maxRating: parseInt(v) })}>
               <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {[3, 5, 7, 10].map(n => <SelectItem key={n} value={String(n)}>{n}</SelectItem>)}
@@ -340,7 +378,7 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate, userFields 
             <Input value={d.url || ''} onChange={(e) => updateBlockData({ url: e.target.value })} placeholder="https://..." /></div>
           <div className="flex items-center justify-between">
             <Label className="text-xs">Nova aba</Label>
-            <Switch checked={d.newTab !== false} onCheckedChange={(v) => updateBlockData({ newTab: v })} />
+            <Switch checked={d.newTab !== false} onCheckedChange={(v) => updateBlockDataImmediate({ newTab: v })} />
           </div>
         </>
       )}
@@ -368,7 +406,7 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate, userFields 
       {block.type === 'quiz-event-pixel' && (
         <>
           <div><Label className="text-xs">Plataforma</Label>
-            <Select value={d.platform || 'facebook'} onValueChange={(v) => updateBlockData({ platform: v })}>
+            <Select value={d.platform || 'facebook'} onValueChange={(v) => updateBlockDataImmediate({ platform: v })}>
               <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="facebook">Facebook Pixel</SelectItem>
@@ -388,7 +426,7 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate, userFields 
         <>
           <div className="flex items-center justify-between">
             <Label className="text-xs">Enviar para o número do contato</Label>
-            <Switch checked={d.useContactPhone === true} onCheckedChange={(v) => updateBlockData({ useContactPhone: v })} />
+            <Switch checked={d.useContactPhone === true} onCheckedChange={(v) => updateBlockDataImmediate({ useContactPhone: v })} />
           </div>
           {d.useContactPhone && (
             <p className="text-[10px] text-muted-foreground">
