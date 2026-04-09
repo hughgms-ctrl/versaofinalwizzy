@@ -369,7 +369,7 @@ function QuizBuilderInner() {
         allNodes={nodes}
       />
 
-      {/* Preview — render inline instead of iframe so it works even if quiz is not published */}
+      {/* Preview — render inline quiz engine */}
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
         <DialogContent className="max-w-sm p-0 overflow-hidden flex flex-col" style={{ height: '600px' }}>
           <DialogHeader className="p-4 pb-0 shrink-0">
@@ -377,11 +377,33 @@ function QuizBuilderInner() {
           </DialogHeader>
           <div className="flex-1 min-h-0 overflow-auto">
             {previewOpen && (
-              <QuizPreviewInline quiz={quiz} nodes={nodes} edges={edges} />
+              <PublicQuizPage
+                inlineQuiz={{
+                  id: quiz.id,
+                  name: quiz.name,
+                  organization_id: quiz.organization_id,
+                  theme: quiz.theme,
+                  settings: quiz.settings,
+                  welcome_screen: quiz.welcome_screen,
+                  end_screen: quiz.end_screen,
+                }}
+                inlineNodes={nodes as any}
+                inlineEdges={edges as any}
+              />
             )}
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Settings Sheet */}
+      <QuizSettingsSheet
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        quiz={quiz}
+        onUpdate={async (updates) => {
+          await updateQuiz.mutateAsync({ id: quizId!, ...updates });
+        }}
+      />
 
       <style>{`
         .react-flow__handle { transition: opacity 0.2s; }
