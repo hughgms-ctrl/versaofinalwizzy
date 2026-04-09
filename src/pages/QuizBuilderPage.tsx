@@ -52,10 +52,20 @@ function QuizBuilderInner() {
   const quiz = quizzes?.find(q => q.id === quizId);
 
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
-  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([
+  const [nodes, setNodes, onNodesChangeRaw] = useNodesState<Node>([
     { id: 'start-1', type: 'quiz-start', position: { x: 100, y: 200 }, data: { label: 'Início' } } as Node,
   ]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+
+  // Prevent React Flow from removing nodes on overlap/drop — only allow explicit deletes
+  const isDroppingRef = useRef(false);
+  const onNodesChange = useCallback((changes: any[]) => {
+    const filtered = changes.filter((c: any) => {
+      if (c.type === 'remove' && isDroppingRef.current) return false;
+      return true;
+    });
+    if (filtered.length > 0) onNodesChangeRaw(filtered);
+  }, [onNodesChangeRaw]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [selectedBlockIdx, setSelectedBlockIdx] = useState<number | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -183,6 +193,8 @@ function QuizBuilderInner() {
 
   const onDrop = useCallback((event: React.DragEvent) => {
     event.preventDefault();
+    isDroppingRef.current = true;
+    setTimeout(() => { isDroppingRef.current = false; }, 200);
     const blockType = event.dataTransfer.getData('application/quizflow') as QuizNodeType;
     const blockLabel = event.dataTransfer.getData('application/quizflow-label');
     if (!blockType || !reactFlowWrapper.current) return;
