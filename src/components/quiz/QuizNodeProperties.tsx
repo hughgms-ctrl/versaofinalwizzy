@@ -119,6 +119,14 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate, userFields 
   const flushRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const allBlocksRef = useRef(allBlocks);
   allBlocksRef.current = allBlocks;
+  const blockRef = useRef(block);
+  blockRef.current = block;
+  const blockIdxRef = useRef(blockIdx);
+  blockIdxRef.current = blockIdx;
+  const onUpdateRef = useRef(onUpdate);
+  onUpdateRef.current = onUpdate;
+  const localDataRef = useRef(localData);
+  localDataRef.current = localData;
 
   // Sync local data when block changes externally (e.g. switching blocks)
   useEffect(() => {
@@ -129,16 +137,16 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate, userFields 
 
   const flushToParent = useCallback((newData: Record<string, any>) => {
     const updated = [...allBlocksRef.current];
-    updated[blockIdx] = { ...block, data: newData };
-    onUpdate(updated);
-  }, [block, blockIdx, onUpdate]);
+    updated[blockIdxRef.current] = { ...blockRef.current, data: newData };
+    onUpdateRef.current(updated);
+  }, []);
 
   const updateBlockData = useCallback((newData: Record<string, any>) => {
     setLocalData(prev => {
       const merged = { ...prev, ...newData };
-      // Debounce the parent update
+      localDataRef.current = merged;
       if (flushRef.current) clearTimeout(flushRef.current);
-      flushRef.current = setTimeout(() => flushToParent(merged), 300);
+      flushRef.current = setTimeout(() => flushToParent(localDataRef.current), 300);
       return merged;
     });
   }, [flushToParent]);
@@ -146,14 +154,18 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate, userFields 
   // Flush pending changes on unmount
   useEffect(() => {
     return () => {
-      if (flushRef.current) clearTimeout(flushRef.current);
+      if (flushRef.current) {
+        clearTimeout(flushRef.current);
+        flushToParent(localDataRef.current);
+      }
     };
-  }, []);
+  }, [flushToParent]);
 
   // Immediate update (for switches, selects — non-text inputs)
   const updateBlockDataImmediate = useCallback((newData: Record<string, any>) => {
     setLocalData(prev => {
       const merged = { ...prev, ...newData };
+      localDataRef.current = merged;
       if (flushRef.current) clearTimeout(flushRef.current);
       flushToParent(merged);
       return merged;
