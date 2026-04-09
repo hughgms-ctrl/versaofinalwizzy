@@ -507,15 +507,15 @@ function CrmFieldsEditor({ data, onUpdate, onUpdateImmediate }: { data: Record<s
         Configure tag, workspace, pipeline e coluna para atribuir ao contato quando passar por este nó.
       </p>
       <div><Label className="text-xs">Tag IDs (separados por vírgula)</Label>
-        <Input value={d.tagIds?.join(', ') || ''} onChange={(e) => onUpdate({ tagIds: e.target.value.split(',').map((s: string) => s.trim()).filter(Boolean) })} placeholder="ID da tag 1, ID da tag 2..." />
+        <Input value={data.tagIds?.join(', ') || ''} onChange={(e) => onUpdate({ tagIds: e.target.value.split(',').map((s: string) => s.trim()).filter(Boolean) })} placeholder="ID da tag 1, ID da tag 2..." />
         <p className="text-[10px] text-muted-foreground mt-1">Cole os IDs das tags do sistema.</p>
       </div>
       <div><Label className="text-xs">Workspace ID</Label>
-        <Input value={d.workspaceId || ''} onChange={(e) => onUpdate({ workspaceId: e.target.value })} placeholder="ID do workspace" /></div>
+        <Input value={data.workspaceId || ''} onChange={(e) => onUpdate({ workspaceId: e.target.value })} placeholder="ID do workspace" /></div>
       <div><Label className="text-xs">Pipeline ID</Label>
-        <Input value={d.pipelineId || ''} onChange={(e) => onUpdate({ pipelineId: e.target.value })} placeholder="ID do pipeline" /></div>
+        <Input value={data.pipelineId || ''} onChange={(e) => onUpdate({ pipelineId: e.target.value })} placeholder="ID do pipeline" /></div>
       <div><Label className="text-xs">Coluna (Stage) ID</Label>
-        <Input value={d.columnId || ''} onChange={(e) => onUpdate({ columnId: e.target.value })} placeholder="ID da coluna do pipeline" /></div>
+        <Input value={data.columnId || ''} onChange={(e) => onUpdate({ columnId: e.target.value })} placeholder="ID da coluna do pipeline" /></div>
     </div>
   );
 }
