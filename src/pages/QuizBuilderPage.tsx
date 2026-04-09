@@ -444,6 +444,101 @@ function getDefaultBlockData(type: QuizNodeType): Record<string, any> {
   }
 }
 
+function QuizSettingsSheet({ open, onClose, quiz, onUpdate }: {
+  open: boolean;
+  onClose: () => void;
+  quiz: Quiz;
+  onUpdate: (updates: Partial<Quiz>) => Promise<void>;
+}) {
+  const ws = (quiz.welcome_screen || {}) as Record<string, any>;
+  const es = (quiz.end_screen || {}) as Record<string, any>;
+
+  const updateWelcome = (patch: Record<string, any>) => {
+    onUpdate({ welcome_screen: { ...ws, ...patch } } as any);
+  };
+
+  const updateEnd = (patch: Record<string, any>) => {
+    onUpdate({ end_screen: { ...es, ...patch } } as any);
+  };
+
+  return (
+    <Sheet open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <SheetContent className="w-80 sm:w-96 p-0 flex flex-col">
+        <SheetHeader className="p-4 border-b">
+          <SheetTitle className="text-sm">Configurações do Quizz</SheetTitle>
+        </SheetHeader>
+        <ScrollArea className="flex-1">
+          <div className="p-4 space-y-6">
+            {/* Welcome screen */}
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold">Tela de Boas-vindas</h3>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">Mostrar tela de boas-vindas</Label>
+                <Switch checked={ws.showWelcome !== false} onCheckedChange={(v) => updateWelcome({ showWelcome: v })} />
+              </div>
+              <div>
+                <Label className="text-xs">Título</Label>
+                <Input value={ws.title || ''} onChange={(e) => updateWelcome({ title: e.target.value })} placeholder={quiz.name} />
+              </div>
+              <div>
+                <Label className="text-xs">Descrição</Label>
+                <Textarea value={ws.description || ''} onChange={(e) => updateWelcome({ description: e.target.value })} rows={3} placeholder="Descrição opcional..." />
+              </div>
+              <div>
+                <Label className="text-xs">Texto do botão</Label>
+                <Input value={ws.buttonText || ''} onChange={(e) => updateWelcome({ buttonText: e.target.value })} placeholder="Começar" />
+              </div>
+              <div>
+                <Label className="text-xs">URL de mídia (imagem ou vídeo)</Label>
+                <Input value={ws.mediaUrl || ''} onChange={(e) => updateWelcome({ mediaUrl: e.target.value })} placeholder="https://..." />
+              </div>
+            </div>
+
+            <Separator />
+
+            {/* End screen */}
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold">Tela Final</h3>
+              <div>
+                <Label className="text-xs">Título</Label>
+                <Input value={es.title || ''} onChange={(e) => updateEnd({ title: e.target.value })} placeholder="Obrigado!" />
+              </div>
+              <div>
+                <Label className="text-xs">Descrição</Label>
+                <Textarea value={es.description || ''} onChange={(e) => updateEnd({ description: e.target.value })} rows={3} placeholder="Suas respostas foram enviadas." />
+              </div>
+              <div>
+                <Label className="text-xs">URL de redirecionamento</Label>
+                <Input value={es.redirectUrl || ''} onChange={(e) => updateEnd({ redirectUrl: e.target.value })} placeholder="https://..." />
+              </div>
+              {es.redirectUrl && (
+                <div>
+                  <Label className="text-xs">Texto do botão</Label>
+                  <Input value={es.buttonText || ''} onChange={(e) => updateEnd({ buttonText: e.target.value })} placeholder="Continuar" />
+                </div>
+              )}
+            </div>
+
+            <Separator />
+
+            {/* Progress bar */}
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold">Geral</h3>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">Barra de progresso</Label>
+                <Switch
+                  checked={quiz.settings?.showProgressBar !== false}
+                  onCheckedChange={(v) => onUpdate({ settings: { ...quiz.settings, showProgressBar: v } } as any)}
+                />
+              </div>
+            </div>
+          </div>
+        </ScrollArea>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
 export default function QuizBuilderPage() {
   return (
     <MainLayout fullWidth showSearch={false}>
