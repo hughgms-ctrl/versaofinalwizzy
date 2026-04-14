@@ -92,6 +92,7 @@ function FlowCanvasInner() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const flowId = searchParams.get('id');
+  const { profile } = useAuth();
 
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
