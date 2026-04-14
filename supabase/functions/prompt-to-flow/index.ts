@@ -69,46 +69,96 @@ serve(async (req) => {
       });
     }
 
-    const systemPrompt = `Você é um especialista em montar fluxos visuais de orquestração de agentes de IA para atendimento via WhatsApp.
+    const systemPrompt = `Você é um especialista em montar fluxos visuais de automação para atendimento via WhatsApp.
 
-O usuário vai descrever em texto como quer que o fluxo de orquestração funcione. Sua tarefa é usar a ferramenta "build_flow" para retornar a estrutura de nodes e edges do fluxo visual.
+O usuário vai descrever em texto como quer que o fluxo funcione. Sua tarefa é usar a ferramenta "build_flow" para retornar a estrutura de nodes e edges do fluxo visual.
 
-Tipos de nodes disponíveis:
-- orch-trigger: Gatilho de entrada (sempre deve existir exatamente 1). Data: { label, triggerType: "disabled"|"tag"|"keyword", triggerTags: string[], triggerKeywords: [{value, match_type}] }
-- orch-agent: Agente de IA. Data: { label, agentId, agentName, additionalPrompt }
-- orch-pipeline: Mover para pipeline. Data: { label, pipelineId, columnId, pipelineName }
-- orch-tag: Gerenciar tag. Data: { label, action: "add"|"remove", tagId, tagName }
-- orch-department: Mudar departamento. Data: { label, departmentName }
-- orch-flow: Disparar fluxo. Data: { label, flowId, flowName }
-- orch-delay: Intervalo. Data: { label, delaySeconds }
-- orch-condition: Condição. Data: { label, conditionLabel, variable, operator: "equals"|"not_equals"|"contains", value }
-- orch-human: Escalação humana. Data: { label }
+TIPOS DE NODES DISPONÍVEIS (use EXATAMENTE estes tipos):
 
-Regras de posicionamento (FLUXO HORIZONTAL, da esquerda para a direita):
-- O trigger node deve ficar em position { x: 50, y: 200 }
-- Nodes subsequentes devem ser posicionados HORIZONTALMENTE com ~250px de espaçamento no eixo X
-- Para branches (condições), separe VERTICALMENTE com ~150px no eixo Y
-- O fluxo segue da ESQUERDA para a DIREITA
-- IDs dos nodes devem seguir o padrão "orch_1", "orch_2", etc. O trigger sempre tem id "trigger-1"
-- Handles de conexão ficam nas LATERAIS (source=right, target=left)
+1. "start" - Início do fluxo (OBRIGATÓRIO, sempre exatamente 1). Data: { label: "Início" }
 
-Recursos disponíveis para referência:`;
+2. "content-block" - Bloco de conteúdo (texto, mídia). Data: { label, items: [{ id, type: "text"|"image"|"video"|"audio"|"document"|"delay", content?, mediaUrl?, caption?, delaySeconds? }] }
+
+3. "message-buttons" - Mensagem com botões de resposta rápida (máx 3 botões). Data: { label, text: "mensagem", buttons: [{ id, label }] }
+   - Cada botão gera uma saída separada via sourceHandle "btn_0", "btn_1", "btn_2"
+   - Também tem saída "timeout" para quando não responde
+
+4. "message-list" - Lista interativa com opções. Data: { label, content: "mensagem", sections: [{ title, rows: [{ id, title, description? }] }] }
+   - Cada row gera saída via sourceHandle "row_0", "row_1", etc.
+   - Também tem saída "timeout"
+
+5. "ai-handoff" - Agente de IA (direciona conversa para IA). Data: { label, agentId, agentName, expectedOutcomes?: "Qualificado,Não Qualificado" }
+   - Se expectedOutcomes for definido, gera saídas via sourceHandle "outcome-Qualificado", "outcome-Não Qualificado", "outcome-default"
+
+6. "action-tag" - Atribuir/remover tag. Data: { label, action: "add"|"remove", tagId, tagName }
+
+7. "action-pipeline" - Mover para pipeline/coluna. Data: { label, pipelineId, columnId, pipelineName, pipelineColumnName }
+
+8. "action-transfer" - Escalação humana. Data: { label }
+
+9. "action-delay" - Pausa simples. Data: { label, delaySeconds: number }
+
+10. "action-webhook" - Webhook externo. Data: { label, webhookUrl }
+
+11. "action-flow" - Iniciar outro fluxo. Data: { label, flowId, flowName }
+
+12. "action-department" - Mudar departamento. Data: { label, departmentName }
+
+13. "action-document" - Gerar documento. Data: { label, templateName, signingMethod: "Manual"|"OTP" }
+
+14. "action-workspace" - Atribuir workspace. Data: { label, workspaceName }
+
+15. "condition" - Condição/ramificação. Data: { label, conditionLabel, rules: [{ id, type: "tag"|"pipeline"|"assigned"|"variable"|"contact_field"|"service_mode", tagId?, pipelineId?, columnId?, variable?, operator?: "equals"|"not_equals"|"contains", value? }], matchType: "all"|"any" }
+    - Saídas: sourceHandle "true" (Sim) e "false" (Não)
+
+16. "user-input" - Pergunta ao usuário. Data: { label, variableName, inputType: "text"|"number"|"email"|"phone"|"cpf" }
+    - Saídas: sourceHandle "responded" e "timeout"
+
+17. "randomizer" - Teste A/B. Data: { label, variants: [{ id: "A", label: "Variante A", weight: 50 }, { id: "B", label: "Variante B", weight: 50 }] }
+    - Saídas: sourceHandle por variant id ("A", "B")
+
+18. "smart-delay" - Atraso inteligente. Data: { label, delayType: "fixed"|"until_time"|"until_business_hours", fixedMinutes?, time? }
+
+REGRAS DE POSICIONAMENTO (FLUXO HORIZONTAL, esquerda → direita):
+- O node "start" deve ficar em position { x: 50, y: 200 }
+- Nodes subsequentes: espaçamento de ~280px no eixo X
+- Para branches (condições, botões), separe verticalmente com ~180px no eixo Y
+- IDs: "start-1" para o início, depois "node_1", "node_2", etc.
+
+REGRAS DE CONEXÃO (edges):
+- source e target são IDs dos nodes
+- Use sourceHandle quando o node tem múltiplas saídas (botões, condições, etc.)
+- O node "start" só tem saída (source), sem entrada
+- Todos os outros nodes têm entrada (target) e saída (source)
+
+IMPORTANTE:
+- Sempre use os IDs reais de agentes, tags, pipelines e fluxos quando disponíveis
+- Se o recurso mencionado não existir na lista, use o nome como referência sem ID
+- O fluxo DEVE começar com um node "start"`;
 
     const contextParts = [];
     if (availableAgents?.length) {
-      contextParts.push(`Agentes: ${availableAgents.map((a: any) => `${a.name} (id: ${a.id})`).join(", ")}`);
+      contextParts.push(`Agentes disponíveis: ${availableAgents.map((a: any) => `${a.name} (id: ${a.id})`).join(", ")}`);
     }
     if (availableTags?.length) {
-      contextParts.push(`Tags: ${availableTags.map((t: any) => `${t.name} (id: ${t.id})`).join(", ")}`);
+      contextParts.push(`Tags disponíveis: ${availableTags.map((t: any) => `${t.name} (id: ${t.id})`).join(", ")}`);
     }
     if (availablePipelines?.length) {
-      contextParts.push(`Pipelines: ${availablePipelines.map((p: any) => `${p.name} (id: ${p.id}, colunas: ${p.columns?.map((c: any) => `${c.name}(${c.id})`).join(", ") || "nenhuma"})`).join("; ")}`);
+      contextParts.push(`Pipelines disponíveis: ${availablePipelines.map((p: any) => `${p.name} (id: ${p.id}, colunas: ${p.columns?.map((c: any) => `${c.name}(${c.id})`).join(", ") || "nenhuma"})`).join("; ")}`);
     }
     if (availableFlows?.length) {
-      contextParts.push(`Fluxos: ${availableFlows.map((f: any) => `${f.name} (id: ${f.id})`).join(", ")}`);
+      contextParts.push(`Fluxos disponíveis: ${availableFlows.map((f: any) => `${f.name} (id: ${f.id})`).join(", ")}`);
     }
 
-    const fullSystem = systemPrompt + "\n" + contextParts.join("\n");
+    const fullSystem = systemPrompt + (contextParts.length ? "\n\nRECURSOS DISPONÍVEIS:\n" + contextParts.join("\n") : "");
+
+    const nodeTypeEnum = [
+      "start", "content-block", "message-buttons", "message-list",
+      "ai-handoff", "action-tag", "action-pipeline", "action-transfer",
+      "action-delay", "action-webhook", "action-flow", "action-department",
+      "action-document", "action-workspace", "condition", "user-input",
+      "randomizer", "smart-delay"
+    ];
 
     const tools = [
       {
@@ -125,7 +175,7 @@ Recursos disponíveis para referência:`;
                   type: "object",
                   properties: {
                     id: { type: "string" },
-                    type: { type: "string", enum: ["orch-trigger", "orch-agent", "orch-pipeline", "orch-tag", "orch-department", "orch-flow", "orch-delay", "orch-condition", "orch-human"] },
+                    type: { type: "string", enum: nodeTypeEnum },
                     position: {
                       type: "object",
                       properties: { x: { type: "number" }, y: { type: "number" } },
