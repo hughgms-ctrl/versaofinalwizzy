@@ -550,9 +550,9 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
     systemPrompt += `- Você é o último agente do fluxo. Continue atendendo até que a conversa se encerre naturalmente.\n`;
   }
 
-  // Build messages (from provided history) — limit to last 20 messages to reduce latency
+  // Build messages (from provided history) — limit to last 50 messages for full context
   const history = (conversationHistory || []);
-  const trimmedHistory = history.length > 20 ? history.slice(-20) : history;
+  const trimmedHistory = history.length > 50 ? history.slice(-50) : history;
   console.log(`[SIMULATION] System prompt length: ${systemPrompt.length} chars, history: ${trimmedHistory.length}/${history.length} messages`);
   
   const aiMessages: any[] = [
