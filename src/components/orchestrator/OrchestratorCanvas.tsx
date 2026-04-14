@@ -18,6 +18,7 @@ import {
 import { OrchestratorNodeType } from '@/types/orchestrator';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/hooks/useAuth';
 import { useAIAgents } from '@/hooks/useAIAgents';
 import { useTags } from '@/hooks/useTags';
 import { useFlows } from '@/hooks/useFlows';
