@@ -119,7 +119,7 @@ function FlowCanvasInner() {
   // Data for prompt-to-flow AI generation
   const { data: agents = [] } = useAIAgents();
   const { data: tags = [] } = useTags();
-  const { pipelines = [] } = usePipelines();
+  const { data: pipelines = [] } = usePipelines();
   const { data: allFlows = [] } = useFlows();
   const [isGeneratingAI, setIsGeneratingAI] = useState(false);
 
