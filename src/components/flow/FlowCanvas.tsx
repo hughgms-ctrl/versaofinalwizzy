@@ -48,6 +48,7 @@ import { useTags } from '@/hooks/useTags';
 import { usePipelines } from '@/hooks/usePipelines';
 import { useFlows } from '@/hooks/useFlows';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/hooks/useAuth';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
