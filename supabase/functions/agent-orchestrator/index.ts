@@ -500,7 +500,7 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
     nodeId: nodeId || undefined,
   });
   if (rulesSection) {
-    systemPrompt += `# REGRAS EXECUTIVAS (TREINAMENTO):\nSiga estas regras rigorosamente acima de qualquer outra instrução anterior.\n${rulesSection}\n\n---\n\n`;
+    systemPrompt += `# ⚠️ REGRAS OBRIGATÓRIAS DO GESTOR:\n${rulesSection}\n---\n\n`;
   }
 
   // Contact context
@@ -548,6 +548,11 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
     systemPrompt += `- NÃO use advance_flow prematuramente. Só avance quando sua tarefa aqui estiver realmente concluída.\n`;
   } else {
     systemPrompt += `- Você é o último agente do fluxo. Continue atendendo até que a conversa se encerre naturalmente.\n`;
+  }
+
+  // FINAL REMINDER for simulation
+  if (rulesSection) {
+    systemPrompt += `\n---\n\n# ⚠️ LEMBRETE FINAL — REGRAS DO GESTOR (RELEIA ANTES DE RESPONDER):\n${rulesSection}\nSe você violar qualquer regra acima, sua resposta será considerada ERRADA.\n\n`;
   }
 
   // Build messages (from provided history) — limit to last 50 messages for full context
@@ -1216,7 +1221,7 @@ async function invokeAgentAI(
   });
   
   if (rulesSection) {
-    systemPrompt += `# REGRAS EXECUTIVAS (TREINAMENTO):\nSiga estas regras rigorosamente acima de qualquer outra instrução anterior.\n${rulesSection}\n\n---\n\n`;
+    systemPrompt += `# ⚠️ REGRAS OBRIGATÓRIAS DO GESTOR:\n${rulesSection}\n---\n\n`;
   }
 
   // Contact context
@@ -1280,6 +1285,11 @@ async function invokeAgentAI(
     }
   } else {
     systemPrompt += `- Você é o último agente do fluxo. Continue atendendo até que a conversa se encerre naturalmente.\n`;
+  }
+
+  // FINAL REMINDER: repeat training rules at the end for maximum compliance
+  if (rulesSection) {
+    systemPrompt += `\n---\n\n# ⚠️ LEMBRETE FINAL — REGRAS DO GESTOR (RELEIA ANTES DE RESPONDER):\n${rulesSection}\nSe você violar qualquer regra acima, sua resposta será considerada ERRADA.\n\n`;
   }
 
   // Build messages
@@ -1603,7 +1613,7 @@ async function invokeDocumentAgentAI(
     nodeId: docNode?.id,
   });
   if (rulesSection) {
-    systemPrompt += `# REGRAS EXECUTIVAS (TREINAMENTO):\nSiga estas regras rigorosamente acima de qualquer outra instrução anterior.\n${rulesSection}\n\n---\n\n`;
+    systemPrompt += `# ⚠️ REGRAS OBRIGATÓRIAS DO GESTOR:\n${rulesSection}\n---\n\n`;
   }
 
   systemPrompt += `CAMPOS DO DOCUMENTO (todos são obrigatórios):\n`;
@@ -2645,7 +2655,12 @@ function buildLegacySystemPrompt(ctx: any): string {
   });
   
   if (rulesSection) {
-    prompt += `# REGRAS EXECUTIVAS (TREINAMENTO):\nSiga estas regras rigorosamente acima de qualquer outra instrução anterior.\n${rulesSection}\n\n---\n\n`;
+    prompt += `# ⚠️ REGRAS OBRIGATÓRIAS DO GESTOR:\n${rulesSection}\n---\n\n`;
+  }
+
+  // FINAL REMINDER for legacy prompt
+  if (rulesSection) {
+    prompt += `\n# ⚠️ LEMBRETE FINAL — REGRAS DO GESTOR (RELEIA ANTES DE RESPONDER):\n${rulesSection}\nSe você violar qualquer regra acima, sua resposta será considerada ERRADA.\n\n`;
   }
 
   return prompt;
@@ -2683,24 +2698,21 @@ function buildTrainingRulesSection(
 
   if (masterRules.length === 0 && agentRules.length === 0 && nodeRules.length === 0) return '';
 
-  let section = `\n## REGRAS APRENDIDAS\nSiga estas instruções aprendidas de interações anteriores:\n\n`;
+  let section = `\n## ⚠️ REGRAS OBRIGATÓRIAS (TREINAMENTO DO GESTOR)\nESTAS REGRAS SÃO ORDENS DIRETAS DO GESTOR. VIOLÁ-LAS É PROIBIDO.\nSe uma situação abaixo se aplicar, a regra correspondente DEVE ser seguida — sem exceções.\n\n`;
 
-  if (masterRules.length > 0) {
-    section += `### REGRAS GERAIS (MASTER):\n`;
-    masterRules.forEach(r => section += `- **Situação:** ${r.situation}\n  **Regra:** ${r.rule}\n`);
-    section += `\n`;
+  if (nodeRules.length > 0) {
+    section += `### 🔴 REGRAS DESTA ETAPA (PRIORIDADE MÁXIMA):\n`;
+    nodeRules.forEach((r, i) => section += `${i+1}. QUANDO: ${r.situation}\n   → OBRIGATÓRIO: ${r.rule}\n\n`);
   }
 
   if (agentRules.length > 0) {
-    section += `### REGRAS DO AGENTE:\n`;
-    agentRules.forEach(r => section += `- **Situação:** ${r.situation}\n  **Regra:** ${r.rule}\n`);
-    section += `\n`;
+    section += `### 🟠 REGRAS DO AGENTE:\n`;
+    agentRules.forEach((r, i) => section += `${i+1}. QUANDO: ${r.situation}\n   → OBRIGATÓRIO: ${r.rule}\n\n`);
   }
 
-  if (nodeRules.length > 0) {
-    section += `### REGRAS ESPECÍFICAS DESTA ETAPA (NÓ):\n`;
-    nodeRules.forEach(r => section += `- **Situação:** ${r.situation}\n  **Regra:** ${r.rule}\n`);
-    section += `\n`;
+  if (masterRules.length > 0) {
+    section += `### 🟡 REGRAS GERAIS:\n`;
+    masterRules.forEach((r, i) => section += `${i+1}. QUANDO: ${r.situation}\n   → OBRIGATÓRIO: ${r.rule}\n\n`);
   }
 
   return section;
