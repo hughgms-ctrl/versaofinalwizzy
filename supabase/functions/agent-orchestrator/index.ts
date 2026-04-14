@@ -252,7 +252,7 @@ Deno.serve(async (req) => {
       trainingRulesResult,
     ] = await Promise.all([
       supabase.from('messages').select('*').eq('conversation_id', conversationId)
-        .order('created_at', { ascending: false }).limit(30),
+        .order('created_at', { ascending: false }).limit(50),
       supabase.from('ai_agents').select('*').eq('organization_id', organizationId).eq('is_active', true),
       supabase.from('tags').select('*').eq('organization_id', organizationId),
       supabase.from('contact_tags').select('*, tag:tags(*)').eq('contact_id', contactId),
