@@ -488,6 +488,8 @@ function FlowCanvasInner() {
               isMasterActive={isMasterActive}
               onMasterActiveChange={setIsMasterActive}
               onOpenMasterPrompt={() => setShowMasterPromptDialog(true)}
+              onGenerateFromPrompt={handleGenerateFromPrompt}
+              isGenerating={isGeneratingAI}
             />
           </Panel>
           <Controls className="!bg-card !border-border !shadow-lg [&>button]:!bg-card [&>button]:!border-border [&>button]:!text-foreground hover:[&>button]:!bg-muted" />
