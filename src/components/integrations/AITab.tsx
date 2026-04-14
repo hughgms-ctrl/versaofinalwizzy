@@ -18,7 +18,9 @@ import {
   useUpsertIntegrationConfig,
   PROVIDER_LABELS,
   MODELS_BY_PROVIDER,
+  FEATURE_LABELS,
   type AIProvider,
+  type AIFeature,
   type IntegrationConfig,
 } from '@/hooks/useIntegrationConfigs';
 import {
@@ -31,8 +33,8 @@ import {
   Loader2,
   Save,
   AlertTriangle,
+  Settings2,
 } from 'lucide-react';
-
 
 const DEFAULT_CONFIG: Partial<IntegrationConfig> = {
   ai_provider: 'lovable',
@@ -50,6 +52,8 @@ const DEFAULT_CONFIG: Partial<IntegrationConfig> = {
   transcription_provider: null,
   transcription_model: null,
 };
+
+const FEATURES: AIFeature[] = ['agents', 'conversation_summary', 'prompt_generation', 'flow_generation', 'transcription'];
 
 export function AITab() {
   const { toast } = useToast();
@@ -69,12 +73,6 @@ export function AITab() {
 
   const handleSave = () => {
     const payload = { ...formData };
-    // Clear per-feature overrides - use default for all
-    const features = ['agents', 'conversation_summary', 'prompt_generation', 'flow_generation', 'transcription'];
-    features.forEach((f) => {
-      (payload as any)[`${f}_provider`] = null;
-      (payload as any)[`${f}_model`] = null;
-    });
 
     if (payload.ai_provider === 'openai' && !payload.openai_api_key) {
       toast({ title: 'API Key obrigatória', description: 'Configure a chave da OpenAI para usar como provedor padrão.', variant: 'destructive' });
@@ -97,6 +95,38 @@ export function AITab() {
     if (provider === 'openai') return { connected: !!formData.openai_api_key, label: formData.openai_api_key ? 'Configurado' : 'Não configurado' };
     if (provider === 'gemini') return { connected: !!formData.gemini_api_key, label: formData.gemini_api_key ? 'Configurado' : 'Não configurado' };
     return { connected: false, label: 'Desconhecido' };
+  };
+
+  const getEffectiveProvider = (feature: AIFeature): AIProvider => {
+    const featureProvider = formData[`${feature}_provider` as keyof IntegrationConfig] as AIProvider | null;
+    return featureProvider || formData.ai_provider || 'lovable';
+  };
+
+  const getEffectiveModel = (feature: AIFeature): string => {
+    const featureModel = formData[`${feature}_model` as keyof IntegrationConfig] as string | null;
+    return featureModel || formData.default_model || '';
+  };
+
+  const handleFeatureProviderChange = (feature: AIFeature, provider: string) => {
+    if (provider === '__default__') {
+      updateField(`${feature}_provider`, null);
+      updateField(`${feature}_model`, null);
+    } else {
+      updateField(`${feature}_provider`, provider);
+      const models = MODELS_BY_PROVIDER[provider as AIProvider];
+      if (models.length > 0) {
+        updateField(`${feature}_model`, models[0].value);
+      }
+    }
+  };
+
+  const handleFeatureModelChange = (feature: AIFeature, model: string) => {
+    const featureProvider = formData[`${feature}_provider` as keyof IntegrationConfig] as AIProvider | null;
+    if (!featureProvider) {
+      // Set provider explicitly when choosing a different model
+      updateField(`${feature}_provider`, formData.ai_provider || 'lovable');
+    }
+    updateField(`${feature}_model`, model);
   };
 
   if (isLoading) {
@@ -192,6 +222,95 @@ export function AITab() {
               </SelectContent>
             </Select>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Per-Feature Model Selection */}
+      <Card className="bg-card border-border">
+        <CardHeader>
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-violet-500/10">
+              <Settings2 className="h-5 w-5 text-violet-500" />
+            </div>
+            <div>
+              <CardTitle className="text-foreground">Modelo por Função</CardTitle>
+              <CardDescription>
+                Escolha modelos específicos para cada função. Se não configurado, usa o modelo padrão.
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          {FEATURES.map((feature) => {
+            const featureMeta = FEATURE_LABELS[feature];
+            const featureProvider = formData[`${feature}_provider` as keyof IntegrationConfig] as AIProvider | null;
+            const isCustom = !!featureProvider;
+            const effectiveProvider = getEffectiveProvider(feature);
+            const effectiveModel = getEffectiveModel(feature);
+
+            return (
+              <div key={feature} className="space-y-3 p-4 rounded-lg border border-border bg-muted/30">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium text-foreground text-sm">{featureMeta.label}</p>
+                    <p className="text-xs text-muted-foreground">{featureMeta.description}</p>
+                  </div>
+                  {isCustom ? (
+                    <Badge variant="outline" className="text-xs bg-violet-500/10 text-violet-600 border-violet-500/30">
+                      Personalizado
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-xs bg-muted text-muted-foreground">
+                      Padrão
+                    </Badge>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">Provedor</Label>
+                    <Select
+                      value={featureProvider || '__default__'}
+                      onValueChange={(v) => handleFeatureProviderChange(feature, v)}
+                    >
+                      <SelectTrigger className="h-9 text-sm">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__default__">
+                          Usar padrão ({PROVIDER_LABELS[formData.ai_provider || 'lovable']})
+                        </SelectItem>
+                        {(['lovable', 'openai', 'gemini'] as AIProvider[]).map((p) => (
+                          <SelectItem key={p} value={p}>
+                            {PROVIDER_LABELS[p]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">Modelo</Label>
+                    <Select
+                      value={effectiveModel}
+                      onValueChange={(v) => handleFeatureModelChange(feature, v)}
+                    >
+                      <SelectTrigger className="h-9 text-sm">
+                        <SelectValue placeholder="Modelo padrão" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {MODELS_BY_PROVIDER[effectiveProvider].map((m) => (
+                          <SelectItem key={m.value} value={m.value}>
+                            {m.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </CardContent>
       </Card>
 
@@ -315,7 +434,6 @@ export function AITab() {
         </CardContent>
         )}
       </Card>
-
 
       {/* Save Button */}
       <div className="flex justify-end">
