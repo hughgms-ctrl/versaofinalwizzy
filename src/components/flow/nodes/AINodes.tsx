@@ -77,57 +77,46 @@ export function AIHandoffNode({ data, selected }: NodeProps<AINode>) {
           className="!w-3 !h-3 !bg-violet-500 !border-2 !border-background opacity-0 group-hover:opacity-100 transition-opacity !-right-1.5"
         />
       ) : (
-        // Multiple outcome handles + default
-        <>
+        // Multiple outcome handles with labels
+        <div className="absolute right-0 top-0 bottom-0" style={{ width: '0px' }}>
           {outcomes.map((outcome, index) => {
             const total = outcomes.length + 1; // +1 for default
             const offset = ((index + 1) / total) * 100;
             return (
-              <Handle
-                key={outcome}
-                type="source"
-                position={Position.Right}
-                id={`outcome-${outcome}`}
-                className="!w-3.5 !h-3.5 !bg-violet-500 !border-2 !border-background !-right-[7px] !z-50"
-                style={{ top: `${offset}%` }}
-                title={outcome}
-              />
+              <div key={outcome} className="absolute flex items-center" style={{ top: `${offset}%`, right: 0, transform: 'translateY(-50%)' }}>
+                <span className="text-[9px] text-violet-600 dark:text-violet-400 font-medium whitespace-nowrap mr-1" style={{ marginRight: '10px' }}>
+                  {outcome}
+                </span>
+                <Handle
+                  type="source"
+                  position={Position.Right}
+                  id={`outcome-${outcome}`}
+                  className="!relative !transform-none !top-auto !right-auto !w-4 !h-4 !bg-violet-500 !border-2 !border-background !cursor-crosshair"
+                  style={{ pointerEvents: 'all' }}
+                  title={outcome}
+                />
+              </div>
             );
           })}
           {/* Default/fallback handle */}
-          <Handle
-            type="source"
-            position={Position.Right}
-            id="outcome-default"
-            className="!w-3.5 !h-3.5 !bg-gray-400 !border-2 !border-background !-right-[7px] !z-50"
-            style={{ top: `${(outcomes.length + 1) / (outcomes.length + 2) * 100}%` }}
-            title="Padrão"
-          />
-        </>
-      )}
-
-      {/* Outcome labels on the right side */}
-      {hasOutcomes && (
-        <div className="absolute -right-2 top-0 bottom-0 flex flex-col pointer-events-none" style={{ width: '0px' }}>
-          {outcomes.map((outcome, index) => {
-            const total = outcomes.length + 1;
-            const offset = ((index + 1) / total) * 100;
+          {(() => {
+            const offset = ((outcomes.length + 1) / (outcomes.length + 2)) * 100;
             return (
-              <span
-                key={outcome}
-                className="absolute text-[9px] text-violet-600 dark:text-violet-400 font-medium whitespace-nowrap"
-                style={{ top: `${offset}%`, left: '10px', transform: 'translateY(-50%)' }}
-              >
-                {outcome}
-              </span>
+              <div className="absolute flex items-center" style={{ top: `${offset}%`, right: 0, transform: 'translateY(-50%)' }}>
+                <span className="text-[9px] text-muted-foreground font-medium whitespace-nowrap mr-1" style={{ marginRight: '10px' }}>
+                  padrão
+                </span>
+                <Handle
+                  type="source"
+                  position={Position.Right}
+                  id="outcome-default"
+                  className="!relative !transform-none !top-auto !right-auto !w-4 !h-4 !bg-gray-400 !border-2 !border-background !cursor-crosshair"
+                  style={{ pointerEvents: 'all' }}
+                  title="Padrão (fallback)"
+                />
+              </div>
             );
-          })}
-          <span
-            className="absolute text-[9px] text-muted-foreground font-medium whitespace-nowrap"
-            style={{ top: `${(outcomes.length + 1) / (outcomes.length + 2) * 100}%`, left: '10px', transform: 'translateY(-50%)' }}
-          >
-            padrão
-          </span>
+          })()}
         </div>
       )}
     </div>
