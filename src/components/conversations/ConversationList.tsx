@@ -115,19 +115,18 @@ export function ConversationList({ conversations, selectedId, onSelect, onSpyVie
               <div className="flex items-start gap-2">
                 {/* Avatar with indicator */}
                 <div className="relative flex-shrink-0">
-                  <div className="h-10 w-10 rounded-full bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center relative">
+                  <div className="h-10 w-10 rounded-full bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center relative overflow-hidden">
                     {conversation.contact?.avatar_url ? (
                       <img
                         src={conversation.contact.avatar_url}
-                        alt={contactName || contactPhone}
-                        className="h-10 w-10 rounded-full object-cover"
+                        alt=""
+                        className="h-10 w-10 rounded-full object-cover absolute inset-0"
                         onError={(e) => {
-                          e.currentTarget.style.display = 'none';
-                          e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                          (e.currentTarget as HTMLImageElement).style.display = 'none';
                         }}
                       />
                     ) : null}
-                    <span className={cn("text-xs font-semibold text-primary", conversation.contact?.avatar_url && "hidden")}>
+                    <span className="text-xs font-semibold text-primary">
                       {getInitials(contactName || null, contactPhone)}
                     </span>
 
