@@ -134,7 +134,7 @@ function FlowCanvasInner() {
       const availableFlows = allFlows.map((f: any) => ({ id: f.id, name: f.name }));
 
       const { data, error } = await supabase.functions.invoke('prompt-to-flow', {
-        body: { prompt, availableAgents, availableTags, availablePipelines, availableFlows },
+        body: { prompt, availableAgents, availableTags, availablePipelines, availableFlows, organizationId: flow?.organization_id || profile?.organization_id },
       });
 
       if (error) throw error;
