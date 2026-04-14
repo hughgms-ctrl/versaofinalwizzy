@@ -43,6 +43,11 @@ import { ConditionNode, UserInputNode, RandomizerNode, SmartDelayNode } from './
 import { AIHandoffNode, AIMasterNode, AIReturnNode } from './nodes/AINodes';
 import { FlowNodeType } from '@/types/flow';
 import { useFlow, useSaveFlow, useCreateFlow } from '@/hooks/useFlows';
+import { useAIAgents } from '@/hooks/useAIAgents';
+import { useTags } from '@/hooks/useTags';
+import { usePipelines } from '@/hooks/usePipelines';
+import { useFlows } from '@/hooks/useFlows';
+import { supabase } from '@/integrations/supabase/client';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
