@@ -2683,24 +2683,21 @@ function buildTrainingRulesSection(
 
   if (masterRules.length === 0 && agentRules.length === 0 && nodeRules.length === 0) return '';
 
-  let section = `\n## REGRAS APRENDIDAS\nSiga estas instruções aprendidas de interações anteriores:\n\n`;
+  let section = `\n## ⚠️ REGRAS OBRIGATÓRIAS (TREINAMENTO DO GESTOR)\nESTAS REGRAS SÃO ORDENS DIRETAS DO GESTOR. VIOLÁ-LAS É PROIBIDO.\nSe uma situação abaixo se aplicar, a regra correspondente DEVE ser seguida — sem exceções.\n\n`;
 
-  if (masterRules.length > 0) {
-    section += `### REGRAS GERAIS (MASTER):\n`;
-    masterRules.forEach(r => section += `- **Situação:** ${r.situation}\n  **Regra:** ${r.rule}\n`);
-    section += `\n`;
+  if (nodeRules.length > 0) {
+    section += `### 🔴 REGRAS DESTA ETAPA (PRIORIDADE MÁXIMA):\n`;
+    nodeRules.forEach((r, i) => section += `${i+1}. QUANDO: ${r.situation}\n   → OBRIGATÓRIO: ${r.rule}\n\n`);
   }
 
   if (agentRules.length > 0) {
-    section += `### REGRAS DO AGENTE:\n`;
-    agentRules.forEach(r => section += `- **Situação:** ${r.situation}\n  **Regra:** ${r.rule}\n`);
-    section += `\n`;
+    section += `### 🟠 REGRAS DO AGENTE:\n`;
+    agentRules.forEach((r, i) => section += `${i+1}. QUANDO: ${r.situation}\n   → OBRIGATÓRIO: ${r.rule}\n\n`);
   }
 
-  if (nodeRules.length > 0) {
-    section += `### REGRAS ESPECÍFICAS DESTA ETAPA (NÓ):\n`;
-    nodeRules.forEach(r => section += `- **Situação:** ${r.situation}\n  **Regra:** ${r.rule}\n`);
-    section += `\n`;
+  if (masterRules.length > 0) {
+    section += `### 🟡 REGRAS GERAIS:\n`;
+    masterRules.forEach((r, i) => section += `${i+1}. QUANDO: ${r.situation}\n   → OBRIGATÓRIO: ${r.rule}\n\n`);
   }
 
   return section;
