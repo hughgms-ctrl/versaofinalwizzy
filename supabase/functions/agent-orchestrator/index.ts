@@ -1282,6 +1282,11 @@ async function invokeAgentAI(
     systemPrompt += `- Você é o último agente do fluxo. Continue atendendo até que a conversa se encerre naturalmente.\n`;
   }
 
+  // FINAL REMINDER: repeat training rules at the end for maximum compliance
+  if (rulesSection) {
+    systemPrompt += `\n---\n\n# ⚠️ LEMBRETE FINAL — REGRAS DO GESTOR (RELEIA ANTES DE RESPONDER):\n${rulesSection}\nSe você violar qualquer regra acima, sua resposta será considerada ERRADA.\n\n`;
+  }
+
   // Build messages
   const aiMessages: any[] = [
     { role: 'system', content: systemPrompt },
