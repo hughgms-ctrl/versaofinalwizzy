@@ -259,7 +259,7 @@ function OrchestratorCanvasInner({
       const availableFlows = flows.map(f => ({ id: f.id, name: f.name }));
 
       const { data, error } = await supabase.functions.invoke('prompt-to-flow', {
-        body: { prompt, availableAgents, availableTags, availablePipelines, availableFlows },
+        body: { prompt, availableAgents, availableTags, availablePipelines, availableFlows, organizationId: profile?.organization_id },
       });
       if (error) throw error;
       if (data?.nodes && data?.edges) {
