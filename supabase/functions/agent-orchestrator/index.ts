@@ -550,6 +550,11 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
     systemPrompt += `- Você é o último agente do fluxo. Continue atendendo até que a conversa se encerre naturalmente.\n`;
   }
 
+  // FINAL REMINDER for simulation
+  if (rulesSection) {
+    systemPrompt += `\n---\n\n# ⚠️ LEMBRETE FINAL — REGRAS DO GESTOR (RELEIA ANTES DE RESPONDER):\n${rulesSection}\nSe você violar qualquer regra acima, sua resposta será considerada ERRADA.\n\n`;
+  }
+
   // Build messages (from provided history) — limit to last 50 messages for full context
   const history = (conversationHistory || []);
   const trimmedHistory = history.length > 50 ? history.slice(-50) : history;
@@ -2651,6 +2656,11 @@ function buildLegacySystemPrompt(ctx: any): string {
   
   if (rulesSection) {
     prompt += `# ⚠️ REGRAS OBRIGATÓRIAS DO GESTOR:\n${rulesSection}\n---\n\n`;
+  }
+
+  // FINAL REMINDER for legacy prompt
+  if (rulesSection) {
+    prompt += `\n# ⚠️ LEMBRETE FINAL — REGRAS DO GESTOR (RELEIA ANTES DE RESPONDER):\n${rulesSection}\nSe você violar qualquer regra acima, sua resposta será considerada ERRADA.\n\n`;
   }
 
   return prompt;
