@@ -43,6 +43,11 @@ import { ConditionNode, UserInputNode, RandomizerNode, SmartDelayNode } from './
 import { AIHandoffNode, AIMasterNode, AIReturnNode } from './nodes/AINodes';
 import { FlowNodeType } from '@/types/flow';
 import { useFlow, useSaveFlow, useCreateFlow } from '@/hooks/useFlows';
+import { useAIAgents } from '@/hooks/useAIAgents';
+import { useTags } from '@/hooks/useTags';
+import { usePipelines } from '@/hooks/usePipelines';
+import { useFlows } from '@/hooks/useFlows';
+import { supabase } from '@/integrations/supabase/client';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -110,6 +115,49 @@ function FlowCanvasInner() {
   const { data: flow, isLoading } = useFlow(flowId);
   const saveFlow = useSaveFlow();
   const createFlow = useCreateFlow();
+
+  // Data for prompt-to-flow AI generation
+  const { data: agents = [] } = useAIAgents();
+  const { data: tags = [] } = useTags();
+  const { data: pipelines = [] } = usePipelines();
+  const { data: allFlows = [] } = useFlows();
+  const [isGeneratingAI, setIsGeneratingAI] = useState(false);
+
+  const handleGenerateFromPrompt = useCallback(async (prompt: string) => {
+    setIsGeneratingAI(true);
+    try {
+      const availableAgents = agents.map((a: any) => ({ id: a.id, name: a.name }));
+      const availableTags = tags.map((t: any) => ({ id: t.id, name: t.name }));
+      const availablePipelines = pipelines.map((p: any) => ({ id: p.id, name: p.name }));
+      const availableFlows = allFlows.map((f: any) => ({ id: f.id, name: f.name }));
+
+      const { data, error } = await supabase.functions.invoke('prompt-to-flow', {
+        body: { prompt, availableAgents, availableTags, availablePipelines, availableFlows },
+      });
+
+      if (error) throw error;
+
+      if (data?.nodes && data?.edges) {
+        setNodes(data.nodes);
+        setEdges(data.edges);
+        // Update nodeId counter
+        const maxId = data.nodes.reduce((max: number, node: any) => {
+          const match = node.id.match(/node_(\d+)/);
+          return match ? Math.max(max, parseInt(match[1])) : max;
+        }, 0);
+        nodeId = maxId + 1;
+        setHasUnsavedChanges(true);
+        toast.success('Fluxo gerado com sucesso pela IA!');
+      } else {
+        toast.error('A IA não retornou um fluxo válido');
+      }
+    } catch (err) {
+      console.error('prompt-to-flow error:', err);
+      toast.error('Erro ao gerar fluxo com IA');
+    } finally {
+      setIsGeneratingAI(false);
+    }
+  }, [agents, tags, pipelines, allFlows, setNodes, setEdges]);
 
   // Load flow data when available
   useEffect(() => {
@@ -440,6 +488,8 @@ function FlowCanvasInner() {
               isMasterActive={isMasterActive}
               onMasterActiveChange={setIsMasterActive}
               onOpenMasterPrompt={() => setShowMasterPromptDialog(true)}
+              onGenerateFromPrompt={handleGenerateFromPrompt}
+              isGenerating={isGeneratingAI}
             />
           </Panel>
           <Controls className="!bg-card !border-border !shadow-lg [&>button]:!bg-card [&>button]:!border-border [&>button]:!text-foreground hover:[&>button]:!bg-muted" />
