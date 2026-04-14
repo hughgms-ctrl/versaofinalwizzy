@@ -48,6 +48,7 @@ import { useTags } from '@/hooks/useTags';
 import { usePipelines } from '@/hooks/usePipelines';
 import { useFlows } from '@/hooks/useFlows';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/hooks/useAuth';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -91,6 +92,7 @@ function FlowCanvasInner() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const flowId = searchParams.get('id');
+  const { profile } = useAuth();
 
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
@@ -132,7 +134,7 @@ function FlowCanvasInner() {
       const availableFlows = allFlows.map((f: any) => ({ id: f.id, name: f.name }));
 
       const { data, error } = await supabase.functions.invoke('prompt-to-flow', {
-        body: { prompt, availableAgents, availableTags, availablePipelines, availableFlows },
+        body: { prompt, availableAgents, availableTags, availablePipelines, availableFlows, organizationId: flow?.organization_id || profile?.organization_id },
       });
 
       if (error) throw error;

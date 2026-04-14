@@ -18,6 +18,7 @@ import {
 import { OrchestratorNodeType } from '@/types/orchestrator';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/hooks/useAuth';
 import { useAIAgents } from '@/hooks/useAIAgents';
 import { useTags } from '@/hooks/useTags';
 import { useFlows } from '@/hooks/useFlows';
@@ -110,6 +111,7 @@ function OrchestratorCanvasInner({
   const [versionHistory, setVersionHistory] = useState<VersionSnapshot[]>(initialHistory || []);
 
   const { zoomIn, zoomOut, screenToFlowPosition } = useReactFlow();
+  const { profile } = useAuth();
 
   // Data for prompt-to-flow context
   const { data: agents = [] } = useAIAgents();
@@ -257,7 +259,7 @@ function OrchestratorCanvasInner({
       const availableFlows = flows.map(f => ({ id: f.id, name: f.name }));
 
       const { data, error } = await supabase.functions.invoke('prompt-to-flow', {
-        body: { prompt, availableAgents, availableTags, availablePipelines, availableFlows },
+        body: { prompt, availableAgents, availableTags, availablePipelines, availableFlows, organizationId: profile?.organization_id },
       });
       if (error) throw error;
       if (data?.nodes && data?.edges) {
