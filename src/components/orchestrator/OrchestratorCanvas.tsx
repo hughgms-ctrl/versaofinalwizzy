@@ -111,6 +111,7 @@ function OrchestratorCanvasInner({
   const [versionHistory, setVersionHistory] = useState<VersionSnapshot[]>(initialHistory || []);
 
   const { zoomIn, zoomOut, screenToFlowPosition } = useReactFlow();
+  const { profile } = useAuth();
 
   // Data for prompt-to-flow context
   const { data: agents = [] } = useAIAgents();
