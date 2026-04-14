@@ -266,12 +266,11 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
             <Button variant="ghost" size="icon" className="shrink-0" onClick={() => setIsFullscreen(false)}>
               <ArrowLeft className="h-4 w-4" />
             </Button>
-            <div className="h-12 w-12 rounded-full bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center shrink-0">
+            <div className="h-12 w-12 rounded-full bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center shrink-0 overflow-hidden relative">
               {contact?.avatar_url ? (
-                <img src={contact.avatar_url} alt={contact?.name || ''} className="h-12 w-12 rounded-full object-cover" />
-              ) : (
-                <span className="text-lg font-bold text-primary">{getInitials()}</span>
-              )}
+                <img src={contact.avatar_url} alt="" className="h-12 w-12 rounded-full object-cover absolute inset-0" />
+              ) : null}
+              <span data-sensitive className="text-lg font-bold text-primary absolute inset-0 flex items-center justify-center">{getInitials()}</span>
             </div>
             <div className="flex-1 min-w-0">
               <h2 data-sensitive className="font-semibold text-foreground text-lg truncate">{contact?.name || 'Sem nome'}</h2>
@@ -575,18 +574,17 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
         <div className="w-full min-w-0 space-y-6 p-4 pb-16">
           {/* Avatar & Name */}
           <div className="flex flex-col items-center text-center">
-            <div className="h-20 w-20 rounded-full bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center mb-3">
+            <div className="h-20 w-20 rounded-full bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center mb-3 overflow-hidden relative">
               {contact?.avatar_url ? (
                 <img
                   src={contact.avatar_url}
-                  alt={contact?.name || 'Contato'}
-                  className="h-20 w-20 rounded-full object-cover"
+                  alt=""
+                  className="h-20 w-20 rounded-full object-cover absolute inset-0"
                 />
-              ) : (
-                <span className="text-2xl font-bold text-primary">
-                  {getInitials()}
-                </span>
-              )}
+              ) : null}
+              <span data-sensitive className="text-2xl font-bold text-primary absolute inset-0 flex items-center justify-center">
+                {getInitials()}
+              </span>
             </div>
 
             {isEditingName ? (

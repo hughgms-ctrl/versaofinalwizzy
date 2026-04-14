@@ -387,14 +387,24 @@
   box-shadow: none !important;
 }
 
-/* Privacy Mode - Blur sensitive contact data */
+/* Privacy Mode - Hide sensitive contact data while preserving layout */
 body.privacy-mode [data-sensitive] {
-  filter: blur(6px);
+  color: transparent !important;
+  text-shadow: 0 0 10px hsl(var(--muted-foreground) / 0.9);
   user-select: none;
   pointer-events: none;
-  transition: filter 0.2s ease;
+  transition: color 0.2s ease, text-shadow 0.2s ease;
+}
+
+body.privacy-mode img[data-sensitive],
+body.privacy-mode [data-sensitive] img {
+  filter: blur(12px);
 }
 
 body:not(.privacy-mode) [data-sensitive] {
-  transition: filter 0.2s ease;
+  transition: color 0.2s ease, text-shadow 0.2s ease;
+}
+
+body:not(.privacy-mode) [data-sensitive] {
+  text-shadow: none;
 }

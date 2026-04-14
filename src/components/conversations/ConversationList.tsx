@@ -126,7 +126,7 @@ export function ConversationList({ conversations, selectedId, onSelect, onSpyVie
                         }}
                       />
                     ) : null}
-                    <span data-sensitive className="text-xs font-semibold text-primary">
+                    <span data-sensitive className="text-xs font-semibold text-primary absolute inset-0 flex items-center justify-center">
                       {getInitials(contactName || null, contactPhone)}
                     </span>
 

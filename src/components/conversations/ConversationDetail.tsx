@@ -475,18 +475,17 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
         <div className="flex items-center justify-between p-3 md:p-4 border-b border-border bg-card gap-2">
           <div className="flex items-center gap-2 md:gap-3 min-w-0 flex-1">
             <div className="relative flex-shrink-0">
-              <div className="h-10 w-10 md:h-12 md:w-12 rounded-full bg-gradient-to-br from-primary/20 to-purple-500/20 flex items-center justify-center">
+              <div className="h-10 w-10 md:h-12 md:w-12 rounded-full bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center overflow-hidden">
                 {conversation.contact?.avatar_url ? (
                   <img
                     src={conversation.contact.avatar_url}
-                    alt={getDisplayName()}
+                    alt=""
                     className="h-10 w-10 md:h-12 md:w-12 rounded-full object-cover"
                   />
-                ) : (
-                  <span className="text-xs md:text-sm font-semibold text-primary">
-                    {getInitials()}
-                  </span>
-                )}
+                ) : null}
+                <span data-sensitive className="text-xs md:text-sm font-semibold text-primary absolute inset-0 flex items-center justify-center">
+                  {getInitials()}
+                </span>
               </div>
             </div>
             <div className="min-w-0 flex-1">
@@ -519,7 +518,7 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
                   return null;
                 })()}
               </div>
-              <p className="text-[10px] md:text-xs text-muted-foreground truncate flex items-center gap-2">
+              <p data-sensitive className="text-[10px] md:text-xs text-muted-foreground truncate flex items-center gap-2">
                 {conversation.contact?.phone || 'Sem número'}
                 {isOnline && !isTyping && !isRecording && (
                   <span className="flex h-1.5 w-1.5 rounded-full bg-green-500" />
@@ -1319,14 +1318,13 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
       )}
     >
       {isInbound && (
-        <div className="h-8 w-8 rounded-full bg-gradient-to-br from-slate-400 to-slate-500 flex items-center justify-center flex-shrink-0 overflow-hidden">
+        <div className="h-8 w-8 rounded-full bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center flex-shrink-0 overflow-hidden relative">
           {contactAvatar ? (
-            <img src={contactAvatar} alt={contactName || 'Contact'} className="h-8 w-8 object-cover" />
-          ) : (
-            <span className="text-xs font-medium text-white">
-              {getInitialsFromName(contactName || null, contactPhone)}
-            </span>
-          )}
+            <img src={contactAvatar} alt="" className="h-8 w-8 object-cover absolute inset-0" />
+          ) : null}
+          <span data-sensitive className="text-xs font-medium text-primary absolute inset-0 flex items-center justify-center">
+            {getInitialsFromName(contactName || null, contactPhone)}
+          </span>
         </div>
       )}
 
@@ -1445,7 +1443,7 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
         )}
         {/* Show contact name for inbound messages */}
         {isInbound && contactName && (
-          <p className="text-xs font-semibold italic text-primary mb-1">
+          <p data-sensitive className="text-xs font-semibold italic text-primary mb-1">
             {contactName}
           </p>
         )}
