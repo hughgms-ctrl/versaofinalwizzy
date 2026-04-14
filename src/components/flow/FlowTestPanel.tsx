@@ -359,9 +359,23 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
 
       // If AI called advance_flow, advance the flow
       if (data?.shouldAdvance && simState.currentNodeId) {
-        addMsg({ type: 'action', content: `Agente finalizou tarefa → Avançando fluxo`, actionIcon: '🎯' });
+        // Extract outcome from finalizar_interacao tool call
+        const finalizarTool = toolsExecuted.find((t: any) => t.name === 'finalizar_interacao');
+        const outcome = finalizarTool?.arguments?.resultado || finalizarTool?.result?.resultado;
+        const outcomeHandle = outcome ? `outcome-${outcome}` : undefined;
+        
+        addMsg({ type: 'action', content: `Agente finalizou tarefa${outcome ? ` → Resultado: ${outcome}` : ''} → Avançando fluxo`, actionIcon: '🎯' });
         await wait(800);
-        const next = findNext(nodeId, nodes, edges);
+        
+        // Try outcome-specific edge first, then fallback to outcome-default, then any edge
+        let next = outcomeHandle ? findNext(nodeId, nodes, edges, outcomeHandle) : null;
+        if (!next && outcomeHandle) {
+          next = findNext(nodeId, nodes, edges, 'outcome-default');
+        }
+        if (!next) {
+          next = findNext(nodeId, nodes, edges);
+        }
+        
         const isSubFlowExecution = simState.parentFlowStack.length > 0;
         if (next) {
           await processNode(next, nodes, edges, isSubFlowExecution);
