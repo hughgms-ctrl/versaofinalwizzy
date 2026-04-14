@@ -66,25 +66,13 @@ export function AIHandoffNode({ data, selected }: NodeProps<AINode>) {
             ))}
           </div>
         )}
-      </div>
 
-      {/* Dynamic output handles based on outcomes */}
-      {!hasOutcomes ? (
-        // Single default output
-        <Handle
-          type="source"
-          position={Position.Right}
-          className="!w-3 !h-3 !bg-violet-500 !border-2 !border-background opacity-0 group-hover:opacity-100 transition-opacity !-right-1.5"
-        />
-      ) : (
-        // Multiple outcome handles with labels
-        <div className="absolute right-0 top-0 bottom-0" style={{ width: '0px' }}>
-          {outcomes.map((outcome, index) => {
-            const total = outcomes.length + 1; // +1 for default
-            const offset = ((index + 1) / total) * 100;
-            return (
-              <div key={outcome} className="absolute flex items-center" style={{ top: `${offset}%`, right: 0, transform: 'translateY(-50%)' }}>
-                <span className="text-[9px] text-violet-600 dark:text-violet-400 font-medium whitespace-nowrap mr-1" style={{ marginRight: '10px' }}>
+        {/* Outcome handles rendered inside content area */}
+        {hasOutcomes && (
+          <div className="flex flex-col gap-2 pt-2 border-t border-border/50">
+            {outcomes.map((outcome) => (
+              <div key={outcome} className="flex items-center justify-end gap-1.5 relative">
+                <span className="text-[9px] text-violet-600 dark:text-violet-400 font-medium">
                   {outcome}
                 </span>
                 <Handle
@@ -96,28 +84,31 @@ export function AIHandoffNode({ data, selected }: NodeProps<AINode>) {
                   title={outcome}
                 />
               </div>
-            );
-          })}
-          {/* Default/fallback handle */}
-          {(() => {
-            const offset = ((outcomes.length + 1) / (outcomes.length + 2)) * 100;
-            return (
-              <div className="absolute flex items-center" style={{ top: `${offset}%`, right: 0, transform: 'translateY(-50%)' }}>
-                <span className="text-[9px] text-muted-foreground font-medium whitespace-nowrap mr-1" style={{ marginRight: '10px' }}>
-                  padrão
-                </span>
-                <Handle
-                  type="source"
-                  position={Position.Right}
-                  id="outcome-default"
-                  className="!relative !transform-none !top-auto !right-auto !w-4 !h-4 !bg-gray-400 !border-2 !border-background !cursor-crosshair"
-                  style={{ pointerEvents: 'all' }}
-                  title="Padrão (fallback)"
-                />
-              </div>
-            );
-          })()}
-        </div>
+            ))}
+            <div className="flex items-center justify-end gap-1.5 relative">
+              <span className="text-[9px] text-muted-foreground font-medium">
+                padrão
+              </span>
+              <Handle
+                type="source"
+                position={Position.Right}
+                id="outcome-default"
+                className="!relative !transform-none !top-auto !right-auto !w-4 !h-4 !bg-gray-400 !border-2 !border-background !cursor-crosshair"
+                style={{ pointerEvents: 'all' }}
+                title="Padrão (fallback)"
+              />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Single handle when no outcomes */}
+      {!hasOutcomes && (
+        <Handle
+          type="source"
+          position={Position.Right}
+          className="!w-3 !h-3 !bg-violet-500 !border-2 !border-background opacity-0 group-hover:opacity-100 transition-opacity !-right-1.5"
+        />
       )}
     </div>
   );
