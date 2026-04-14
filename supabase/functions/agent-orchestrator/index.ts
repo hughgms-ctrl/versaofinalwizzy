@@ -500,7 +500,7 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
     nodeId: nodeId || undefined,
   });
   if (rulesSection) {
-    systemPrompt += `# REGRAS EXECUTIVAS (TREINAMENTO):\nSiga estas regras rigorosamente acima de qualquer outra instrução anterior.\n${rulesSection}\n\n---\n\n`;
+    systemPrompt += `# ⚠️ REGRAS OBRIGATÓRIAS DO GESTOR:\n${rulesSection}\n---\n\n`;
   }
 
   // Contact context
@@ -1216,7 +1216,7 @@ async function invokeAgentAI(
   });
   
   if (rulesSection) {
-    systemPrompt += `# REGRAS EXECUTIVAS (TREINAMENTO):\nSiga estas regras rigorosamente acima de qualquer outra instrução anterior.\n${rulesSection}\n\n---\n\n`;
+    systemPrompt += `# ⚠️ REGRAS OBRIGATÓRIAS DO GESTOR:\n${rulesSection}\n---\n\n`;
   }
 
   // Contact context
@@ -1608,7 +1608,7 @@ async function invokeDocumentAgentAI(
     nodeId: docNode?.id,
   });
   if (rulesSection) {
-    systemPrompt += `# REGRAS EXECUTIVAS (TREINAMENTO):\nSiga estas regras rigorosamente acima de qualquer outra instrução anterior.\n${rulesSection}\n\n---\n\n`;
+    systemPrompt += `# ⚠️ REGRAS OBRIGATÓRIAS DO GESTOR:\n${rulesSection}\n---\n\n`;
   }
 
   systemPrompt += `CAMPOS DO DOCUMENTO (todos são obrigatórios):\n`;
@@ -2650,7 +2650,7 @@ function buildLegacySystemPrompt(ctx: any): string {
   });
   
   if (rulesSection) {
-    prompt += `# REGRAS EXECUTIVAS (TREINAMENTO):\nSiga estas regras rigorosamente acima de qualquer outra instrução anterior.\n${rulesSection}\n\n---\n\n`;
+    prompt += `# ⚠️ REGRAS OBRIGATÓRIAS DO GESTOR:\n${rulesSection}\n---\n\n`;
   }
 
   return prompt;
