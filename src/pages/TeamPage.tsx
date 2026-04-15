@@ -55,7 +55,7 @@ const roleLabels = {
   agent: { label: 'Atendente', color: 'bg-green-500/10 text-green-500' },
 };
 
-export default function TeamPage({ embedded = false }: { embedded?: boolean }) {
+export default function TeamPage() {
   const queryClient = useQueryClient();
   const { data: teamMembers = [], isLoading } = useTeamMembers();
   const [selectedMember, setSelectedMember] = useState<TeamMember | null>(null);
@@ -112,7 +112,7 @@ export default function TeamPage({ embedded = false }: { embedded?: boolean }) {
     }
   };
 
-  const Wrapper = embedded ? ({ children }: { children: React.ReactNode }) => <>{children}</> : ({ children }: { children: React.ReactNode }) => (
+  return (
     <MainLayout 
       title="Equipe" 
       subtitle="Gerencie os membros da sua equipe"
@@ -120,12 +120,6 @@ export default function TeamPage({ embedded = false }: { embedded?: boolean }) {
       newButtonLabel="Novo Membro"
       onNewClick={() => setAddUserOpen(true)}
     >
-      {children}
-    </MainLayout>
-  );
-
-  return (
-    <Wrapper>
       <div className="space-y-4 md:space-y-6">
         {/* Stats Cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
@@ -376,6 +370,6 @@ export default function TeamPage({ embedded = false }: { embedded?: boolean }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </Wrapper>
+    </MainLayout>
   );
 }
