@@ -105,7 +105,7 @@ interface Flow {
   visible_in_chat: boolean;
 }
 
-const FlowsPage = () => {
+const FlowsPage = ({ embedded = false }: { embedded?: boolean }) => {
   const navigate = useNavigate();
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showFolderDialog, setShowFolderDialog] = useState(false);

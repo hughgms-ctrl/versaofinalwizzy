@@ -3,7 +3,7 @@ import { MainLayout } from '@/components/layout/MainLayout';
 import { ScheduledMessagesList } from '@/components/scheduled/ScheduledMessagesList';
 import { CreateScheduledMessageDialog } from '@/components/scheduled/CreateScheduledMessageDialog';
 
-const ScheduledMessagesPage = () => {
+const ScheduledMessagesPage = ({ embedded = false }: { embedded?: boolean }) => {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
   return (

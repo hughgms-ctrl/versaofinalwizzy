@@ -20,7 +20,7 @@ import {
 } from "@/hooks/useCampaigns";
 import { Badge } from "@/components/ui/badge";
 
-const CampaignsPage = () => {
+const CampaignsPage = ({ embedded = false }: { embedded?: boolean }) => {
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null);
 
