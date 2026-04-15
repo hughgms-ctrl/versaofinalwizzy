@@ -17,6 +17,7 @@ import {
   useConversationPositions,
   useMoveConversation
 } from '@/hooks/usePipelines';
+import { usePipelineRealtime } from '@/hooks/usePipelineRealtime';
 import { ConversationFiltersState } from '@/components/shared/ConversationFilters';
 import { useUserPermissions, useCurrentUserRole } from '@/hooks/useUserPermissions';
 import { useTags } from '@/hooks/useTags';
@@ -45,6 +46,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
   const { data: tags = [] } = useTags();
   const { data: followUpMap } = useFollowUpStatus();
   const { data: messageSearchResult } = useMessageSearch(searchQuery);
+  usePipelineRealtime(pipeline?.id || null);
 
   const [draggedCard, setDraggedCard] = useState<string | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
