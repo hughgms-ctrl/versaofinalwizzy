@@ -1,10 +1,7 @@
-import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Workflow, Megaphone, CalendarClock } from 'lucide-react';
-
-// Lazy-load the content from existing pages
 import FlowsPageContent from '@/pages/FlowsPage';
 import CampaignsPageContent from '@/pages/CampaignsPage';
 import ScheduledMessagesPageContent from '@/pages/ScheduledMessagesPage';

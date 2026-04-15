@@ -790,6 +790,16 @@ export default function SettingsPage() {
         <TabsContent value="workspaces">
           <WorkspacesSettings />
         </TabsContent>
+
+        {/* Equipe */}
+        <TabsContent value="team">
+          <TeamPage embedded />
+        </TabsContent>
+
+        {/* Integrações */}
+        <TabsContent value="integrations">
+          <IntegrationsPage embedded />
+        </TabsContent>
       </Tabs>
     </MainLayout>
   );
