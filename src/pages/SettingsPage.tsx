@@ -64,6 +64,7 @@ interface WhatsAppStatus {
 
 export default function SettingsPage() {
   const [searchParams] = useSearchParams();
+  const { toast } = useToast();
   const defaultTab = searchParams.get('tab') || 'whatsapp';
   const { session, profile } = useAuth();
   const { settings: notificationSettings, updateSettings: updateNotificationSettings } = useNotificationSettings();
