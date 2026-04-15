@@ -6,7 +6,7 @@ import { CreateScheduledMessageDialog } from '@/components/scheduled/CreateSched
 const ScheduledMessagesPage = ({ embedded = false }: { embedded?: boolean }) => {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
-  return (
+  const Wrapper = embedded ? ({ children }: { children: React.ReactNode }) => <>{children}</> : ({ children }: { children: React.ReactNode }) => (
     <MainLayout 
       title="Agendamento de Mensagens" 
       subtitle="Gerencie seus agendamentos de mensagens e fluxos"
@@ -15,13 +15,19 @@ const ScheduledMessagesPage = ({ embedded = false }: { embedded?: boolean }) => 
       newButtonLabel="Novo Agendamento"
       onNewClick={() => setCreateDialogOpen(true)}
     >
+      {children}
+    </MainLayout>
+  );
+
+  return (
+    <Wrapper>
       <ScheduledMessagesList />
       
       <CreateScheduledMessageDialog
         open={createDialogOpen}
         onOpenChange={setCreateDialogOpen}
       />
-    </MainLayout>
+    </Wrapper>
   );
 };
 
