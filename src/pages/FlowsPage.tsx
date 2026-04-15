@@ -105,7 +105,7 @@ interface Flow {
   visible_in_chat: boolean;
 }
 
-const FlowsPage = () => {
+const FlowsPage = ({ embedded = false }: { embedded?: boolean }) => {
   const navigate = useNavigate();
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showFolderDialog, setShowFolderDialog] = useState(false);
@@ -683,17 +683,7 @@ const FlowsPage = () => {
     );
   };
 
-  if (isLoading) {
-    return (
-      <MainLayout title="Fluxos" subtitle="Gerencie suas automações de atendimento">
-        <div className="flex items-center justify-center h-64">
-          <Loader2 className="h-8 w-8 animate-spin text-[#ff2d85]" />
-        </div>
-      </MainLayout>
-    );
-  }
-
-  return (
+  const Wrapper = embedded ? ({ children }: { children: React.ReactNode }) => <>{children}</> : ({ children }: { children: React.ReactNode }) => (
     <MainLayout
       title="Fluxos"
       subtitle="Gerencie suas automações de atendimento"
@@ -702,6 +692,22 @@ const FlowsPage = () => {
       newButtonLabel="Novo Fluxo"
       onNewClick={() => setShowCreateDialog(true)}
     >
+      {children}
+    </MainLayout>
+  );
+
+  if (isLoading) {
+    return (
+      <Wrapper>
+        <div className="flex items-center justify-center h-64">
+          <Loader2 className="h-8 w-8 animate-spin text-[#ff2d85]" />
+        </div>
+      </Wrapper>
+    );
+  }
+
+  return (
+    <Wrapper>
       <CreateFlowDialog
         open={showCreateDialog}
         onOpenChange={setShowCreateDialog}
@@ -904,7 +910,7 @@ const FlowsPage = () => {
           </div>
         </div>
       )}
-    </MainLayout>
+    </Wrapper>
   );
 };
 

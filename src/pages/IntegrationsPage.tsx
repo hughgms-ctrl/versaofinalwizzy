@@ -6,9 +6,15 @@ import { DriveTab } from '@/components/integrations/DriveTab';
 import { WhatsAppTab } from '@/components/integrations/WhatsAppTab';
 import { Brain, Calendar, HardDrive, MessageSquare } from 'lucide-react';
 
-export default function IntegrationsPage() {
-  return (
+export default function IntegrationsPage({ embedded = false }: { embedded?: boolean }) {
+  const Wrapper = embedded ? ({ children }: { children: React.ReactNode }) => <>{children}</> : ({ children }: { children: React.ReactNode }) => (
     <MainLayout title="Integrações" subtitle="Gerencie conexões, provedores de IA e backups">
+      {children}
+    </MainLayout>
+  );
+
+  return (
+    <Wrapper>
       <Tabs defaultValue="ai" className="w-full">
         <TabsList className="mb-6 bg-muted/50 p-1 h-auto flex-wrap">
           <TabsTrigger value="ai" className="gap-2 data-[state=active]:bg-background">
@@ -42,6 +48,6 @@ export default function IntegrationsPage() {
           <WhatsAppTab />
         </TabsContent>
       </Tabs>
-    </MainLayout>
+    </Wrapper>
   );
 }

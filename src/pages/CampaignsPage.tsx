@@ -20,7 +20,7 @@ import {
 } from "@/hooks/useCampaigns";
 import { Badge } from "@/components/ui/badge";
 
-const CampaignsPage = () => {
+const CampaignsPage = ({ embedded = false }: { embedded?: boolean }) => {
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [editingCampaign, setEditingCampaign] = useState<Campaign | null>(null);
 
@@ -48,20 +48,7 @@ const CampaignsPage = () => {
         }
     };
 
-    if (isLoading) {
-        return (
-            <MainLayout
-                title="Campanhas"
-                subtitle="Gerencie gatilhos para seus fluxos de atendimento"
-            >
-                <div className="flex h-[50vh] items-center justify-center">
-                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                </div>
-            </MainLayout>
-        );
-    }
-
-    return (
+    const Wrapper = embedded ? ({ children }: { children: React.ReactNode }) => <>{children}</> : ({ children }: { children: React.ReactNode }) => (
         <MainLayout
             title="Campanhas"
             subtitle="Gerencie gatilhos para seus fluxos de atendimento"
@@ -69,6 +56,22 @@ const CampaignsPage = () => {
             newButtonLabel="Nova Campanha"
             onNewClick={handleCreate}
         >
+            {children}
+        </MainLayout>
+    );
+
+    if (isLoading) {
+        return (
+            <Wrapper>
+                <div className="flex h-[50vh] items-center justify-center">
+                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                </div>
+            </Wrapper>
+        );
+    }
+
+    return (
+        <Wrapper>
             <div className="space-y-4">
                 {(!campaigns || campaigns.length === 0) ? (
                     <div className="flex flex-col items-center justify-center h-64 text-center">
@@ -192,7 +195,7 @@ const CampaignsPage = () => {
                     campaignToEdit={editingCampaign}
                 />
             )}
-        </MainLayout>
+        </Wrapper>
     );
 };
 

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -18,6 +19,8 @@ import { ImportHistorySettings } from '@/components/settings/ImportHistorySettin
 import { CrmEntitiesSettings } from '@/components/settings/CrmEntitiesSettings';
 import { WorkspacesSettings } from '@/components/settings/WorkspacesSettings';
 import { WhatsAppInstancesSettings } from '@/components/settings/WhatsAppInstancesSettings';
+import TeamPage from '@/pages/TeamPage';
+import IntegrationsPage from '@/pages/IntegrationsPage';
 import {
   Select,
   SelectContent,
@@ -46,7 +49,9 @@ import {
   VolumeX,
   PenLine,
   ListChecks,
-  Building2
+  Building2,
+  Users,
+  Plug
 } from 'lucide-react';
 
 interface WhatsAppStatus {
@@ -58,7 +63,9 @@ interface WhatsAppStatus {
 }
 
 export default function SettingsPage() {
+  const [searchParams] = useSearchParams();
   const { toast } = useToast();
+  const defaultTab = searchParams.get('tab') || 'whatsapp';
   const { session, profile } = useAuth();
   const { settings: notificationSettings, updateSettings: updateNotificationSettings } = useNotificationSettings();
   const { signatureDefault, updateDefaultSignature } = useSignatureSettings();
@@ -450,7 +457,7 @@ export default function SettingsPage() {
       title="Configurações"
       subtitle="Gerencie as configurações do sistema"
     >
-      <Tabs defaultValue="whatsapp" className="space-y-4 md:space-y-6">
+      <Tabs defaultValue={defaultTab} className="space-y-4 md:space-y-6">
         <TabsList className="bg-muted flex-wrap h-auto p-1 gap-1">
           <TabsTrigger value="whatsapp" className="flex items-center gap-1.5 text-xs md:text-sm px-2 md:px-3">
             <MessageSquare className="h-3.5 w-3.5 md:h-4 md:w-4" />
@@ -483,6 +490,14 @@ export default function SettingsPage() {
           <TabsTrigger value="workspaces" className="flex items-center gap-1.5 text-xs md:text-sm px-2 md:px-3">
             <Building2 className="h-3.5 w-3.5 md:h-4 md:w-4" />
             <span className="hidden sm:inline">Workspaces</span>
+          </TabsTrigger>
+          <TabsTrigger value="team" className="flex items-center gap-1.5 text-xs md:text-sm px-2 md:px-3">
+            <Users className="h-3.5 w-3.5 md:h-4 md:w-4" />
+            <span className="hidden sm:inline">Equipe</span>
+          </TabsTrigger>
+          <TabsTrigger value="integrations" className="flex items-center gap-1.5 text-xs md:text-sm px-2 md:px-3">
+            <Plug className="h-3.5 w-3.5 md:h-4 md:w-4" />
+            <span className="hidden sm:inline">Integrações</span>
           </TabsTrigger>
         </TabsList>
 
@@ -774,6 +789,16 @@ export default function SettingsPage() {
         {/* Workspaces Settings */}
         <TabsContent value="workspaces">
           <WorkspacesSettings />
+        </TabsContent>
+
+        {/* Equipe */}
+        <TabsContent value="team">
+          <TeamPage embedded />
+        </TabsContent>
+
+        {/* Integrações */}
+        <TabsContent value="integrations">
+          <IntegrationsPage embedded />
         </TabsContent>
       </Tabs>
     </MainLayout>
