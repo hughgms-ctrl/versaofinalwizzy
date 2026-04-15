@@ -17,6 +17,7 @@ import {
   useConversationPositions,
   useMoveConversation
 } from '@/hooks/usePipelines';
+import { usePipelineRealtime } from '@/hooks/usePipelineRealtime';
 import { ConversationFiltersState } from '@/components/shared/ConversationFilters';
 import { useUserPermissions, useCurrentUserRole } from '@/hooks/useUserPermissions';
 import { useTags } from '@/hooks/useTags';
