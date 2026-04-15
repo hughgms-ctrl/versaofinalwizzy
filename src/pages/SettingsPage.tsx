@@ -63,7 +63,8 @@ interface WhatsAppStatus {
 }
 
 export default function SettingsPage() {
-  const { toast } = useToast();
+  const [searchParams] = useSearchParams();
+  const defaultTab = searchParams.get('tab') || 'whatsapp';
   const { session, profile } = useAuth();
   const { settings: notificationSettings, updateSettings: updateNotificationSettings } = useNotificationSettings();
   const { signatureDefault, updateDefaultSignature } = useSignatureSettings();
@@ -455,7 +456,7 @@ export default function SettingsPage() {
       title="Configurações"
       subtitle="Gerencie as configurações do sistema"
     >
-      <Tabs defaultValue="whatsapp" className="space-y-4 md:space-y-6">
+      <Tabs defaultValue={defaultTab} className="space-y-4 md:space-y-6">
         <TabsList className="bg-muted flex-wrap h-auto p-1 gap-1">
           <TabsTrigger value="whatsapp" className="flex items-center gap-1.5 text-xs md:text-sm px-2 md:px-3">
             <MessageSquare className="h-3.5 w-3.5 md:h-4 md:w-4" />
