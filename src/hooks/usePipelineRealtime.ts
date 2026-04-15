@@ -5,6 +5,7 @@ import { supabase } from '@/integrations/supabase/client';
 /**
  * Subscribes to real-time changes on pipeline-related tables
  * so the board updates instantly without manual refresh.
+ * Uses refetchQueries (not invalidateQueries) for immediate updates.
  */
 export function usePipelineRealtime(pipelineId: string | null) {
   const queryClient = useQueryClient();
@@ -12,9 +13,22 @@ export function usePipelineRealtime(pipelineId: string | null) {
   useEffect(() => {
     if (!pipelineId) return;
 
+    const refetchPositions = () => {
+      queryClient.refetchQueries({ queryKey: ['conversation-positions', pipelineId], type: 'active' });
+    };
+
+    const refetchConversations = () => {
+      queryClient.refetchQueries({ queryKey: ['conversations'], type: 'active' });
+    };
+
+    const refetchTags = () => {
+      queryClient.refetchQueries({ queryKey: ['all-contact-tags'], type: 'active' });
+      queryClient.refetchQueries({ queryKey: ['contact-tags'], type: 'active' });
+    };
+
     const channel = supabase
-      .channel(`pipeline-realtime-${pipelineId}`)
-      // Card movements
+      .channel(`pipeline-rt-${pipelineId}`)
+      // Card movements (filtered by pipeline)
       .on(
         'postgres_changes',
         {
@@ -23,11 +37,9 @@ export function usePipelineRealtime(pipelineId: string | null) {
           table: 'conversation_pipeline_positions',
           filter: `pipeline_id=eq.${pipelineId}`,
         },
-        () => {
-          queryClient.invalidateQueries({ queryKey: ['conversation-positions', pipelineId] });
-        }
+        refetchPositions
       )
-      // New cards entering pipeline (INSERT without filter, then we check)
+      // New cards entering pipeline (unfiltered INSERT)
       .on(
         'postgres_changes',
         {
@@ -37,7 +49,7 @@ export function usePipelineRealtime(pipelineId: string | null) {
         },
         (payload) => {
           if (payload.new && (payload.new as any).pipeline_id === pipelineId) {
-            queryClient.invalidateQueries({ queryKey: ['conversation-positions', pipelineId] });
+            refetchPositions();
           }
         }
       )
@@ -49,12 +61,9 @@ export function usePipelineRealtime(pipelineId: string | null) {
           schema: 'public',
           table: 'contact_tags',
         },
-        () => {
-          queryClient.invalidateQueries({ queryKey: ['all-contact-tags'] });
-          queryClient.invalidateQueries({ queryKey: ['contact-tags'] });
-        }
+        refetchTags
       )
-      // Conversation updates (assigned_to, status, unread_count, last_message_at, etc.)
+      // Conversation updates
       .on(
         'postgres_changes',
         {
@@ -62,9 +71,7 @@ export function usePipelineRealtime(pipelineId: string | null) {
           schema: 'public',
           table: 'conversations',
         },
-        () => {
-          queryClient.invalidateQueries({ queryKey: ['conversations'] });
-        }
+        refetchConversations
       )
       .subscribe();
 
