@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -18,6 +19,8 @@ import { ImportHistorySettings } from '@/components/settings/ImportHistorySettin
 import { CrmEntitiesSettings } from '@/components/settings/CrmEntitiesSettings';
 import { WorkspacesSettings } from '@/components/settings/WorkspacesSettings';
 import { WhatsAppInstancesSettings } from '@/components/settings/WhatsAppInstancesSettings';
+import TeamPage from '@/pages/TeamPage';
+import IntegrationsPage from '@/pages/IntegrationsPage';
 import {
   Select,
   SelectContent,
@@ -46,7 +49,9 @@ import {
   VolumeX,
   PenLine,
   ListChecks,
-  Building2
+  Building2,
+  Users,
+  Plug
 } from 'lucide-react';
 
 interface WhatsAppStatus {
