@@ -714,6 +714,95 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* File Preview Dialog */}
+      <Dialog open={!!previewFile} onOpenChange={(open) => !open && setPreviewFile(null)}>
+        <DialogContent className="max-w-3xl max-h-[90vh] p-0 gap-0 overflow-hidden [&>button.absolute]:hidden">
+          {previewFile && (
+            <div className="flex flex-col h-full">
+              {/* Header */}
+              <div className="flex items-center justify-between p-3 border-b border-border">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{previewFile.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {formatFileSize(previewFile.file_size)}
+                    {previewFile.folder && ` • ${previewFile.folder.name}`}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1 ml-2">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => handleDownloadFile(previewFile)}
+                    title="Baixar"
+                  >
+                    <Download className="h-4 w-4" />
+                  </Button>
+                  {previewFile.file_type === 'image' && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8"
+                      onClick={() => handleSaveAsPdf(previewFile)}
+                      title="Salvar como PDF"
+                    >
+                      <FileDown className="h-4 w-4" />
+                    </Button>
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    asChild
+                  >
+                    <a href={previewFile.file_url} target="_blank" rel="noopener noreferrer" title="Abrir em nova aba">
+                      <ExternalLink className="h-4 w-4" />
+                    </a>
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 hover:bg-destructive/10 hover:text-destructive"
+                    onClick={() => setPreviewFile(null)}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+              {/* Content */}
+              <div className="flex-1 overflow-auto flex items-center justify-center p-4 bg-background/50 min-h-[300px]">
+                {previewFile.file_type === 'image' ? (
+                  <img 
+                    src={previewFile.file_url} 
+                    alt={previewFile.name}
+                    className="max-w-full max-h-[70vh] object-contain rounded"
+                  />
+                ) : previewFile.file_type === 'video' ? (
+                  <video 
+                    src={previewFile.file_url} 
+                    controls 
+                    className="max-w-full max-h-[70vh] rounded"
+                  />
+                ) : previewFile.file_type === 'audio' ? (
+                  <audio src={previewFile.file_url} controls className="w-full max-w-md" />
+                ) : (
+                  <div className="text-center space-y-3">
+                    <FileText className="h-16 w-16 mx-auto text-muted-foreground" />
+                    <p className="text-sm text-muted-foreground">Pré-visualização não disponível</p>
+                    <Button variant="outline" size="sm" asChild>
+                      <a href={previewFile.file_url} target="_blank" rel="noopener noreferrer">
+                        <ExternalLink className="h-3.5 w-3.5 mr-2" />
+                        Abrir arquivo
+                      </a>
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
