@@ -108,6 +108,7 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
   const [deleteFileId, setDeleteFileId] = useState<string | null>(null);
   const [deleteFilePath, setDeleteFilePath] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [previewFile, setPreviewFile] = useState<ContactFile | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
