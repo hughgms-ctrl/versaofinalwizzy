@@ -417,6 +417,19 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
       } as any)
       .eq('id', conversation.id);
 
+    // Cancel any pending chat follow-ups for this conversation
+    await supabase
+      .from('flow_executions')
+      .update({
+        status: 'completed',
+        timeout_at: null,
+        completed_at: new Date().toISOString(),
+        error_message: 'Cancelled: AI paused by human agent',
+      } as any)
+      .eq('conversation_id', conversation.id)
+      .eq('status', 'waiting_input')
+      .eq('variables->>source', 'chat_follow_up');
+
     setAiPausedUntil(pauseValue);
     queryClient.invalidateQueries({ queryKey: ['conversations'] });
     toast({ title: "IA Pausada", description });
