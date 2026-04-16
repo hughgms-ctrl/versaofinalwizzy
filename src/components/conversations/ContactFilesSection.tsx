@@ -20,7 +20,11 @@ import {
   ArrowRight,
   ExternalLink,
   Paperclip,
-  FileDown
+  FileDown,
+  Download,
+  X,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
