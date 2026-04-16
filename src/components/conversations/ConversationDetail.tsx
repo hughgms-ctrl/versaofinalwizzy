@@ -152,6 +152,7 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
   // Scroll to bottom on initial load (instant) and new messages (smooth)
   const hasInitialScrolled = useRef(false);
   const [showScrollButton, setShowScrollButton] = useState(false);
+  const isNearBottomRef = useRef(true);
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
     messagesEndRef.current?.scrollIntoView({ behavior });
@@ -168,8 +169,11 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
         scrollToBottom('instant');
       }, 50);
     } else if (!isLoadingOlder && hasInitialScrolled.current) {
-      // Subsequent messages: smooth scroll
-      scrollToBottom('smooth');
+      // Subsequent messages: only auto-scroll if user is already near the bottom.
+      // If the user scrolled up to read older messages, don't yank them back.
+      if (isNearBottomRef.current) {
+        scrollToBottom('smooth');
+      }
     }
   }, [messages, isLoadingOlder, loadingMessages, isSyncing, scrollToBottom]);
 
@@ -177,6 +181,7 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
   useEffect(() => {
     hasInitialScrolled.current = false;
     setShowScrollButton(false);
+    isNearBottomRef.current = true;
     setIsAIActive((conversation as any).service_mode === 'ia');
     const meta = (conversation as any).metadata;
     setAiPausedUntil(meta?.ai_paused_until || null);
@@ -193,6 +198,7 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
 
     // Show scroll button when user is not at the bottom
     const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 150;
+    isNearBottomRef.current = isNearBottom;
     setShowScrollButton(!isNearBottom);
   }, [isLoadingOlder, hasMoreMessages, messages, loadOlderMessages]);
 
