@@ -283,6 +283,31 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
+  const handleFileClick = (file: ContactFile) => {
+    if (file.file_type === 'image') {
+      setPreviewFile(file);
+    } else {
+      window.open(file.file_url, '_blank');
+    }
+  };
+
+  const handleDownloadFile = async (file: ContactFile) => {
+    try {
+      const response = await fetch(file.file_url);
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = file.name;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      window.open(file.file_url, '_blank');
+    }
+  };
+
   const totalFiles = files?.length || 0;
 
   return (
