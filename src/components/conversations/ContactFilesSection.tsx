@@ -557,7 +557,8 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
               {filteredFiles.map((file) => (
                 <div 
                   key={file.id} 
-                  className="flex items-center gap-2 p-2 rounded-lg bg-muted/30 border border-border/50 group"
+                  className="flex items-center gap-2 p-2 rounded-lg bg-muted/30 border border-border/50 group cursor-pointer hover:bg-muted/60 transition-colors"
+                  onClick={() => handleFileClick(file)}
                 >
                   {file.file_type === 'image' ? (
                     <img 
@@ -585,6 +586,7 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
                         size="icon"
                         variant="ghost"
                         className="h-6 w-6 opacity-0 group-hover:opacity-100"
+                        onClick={(e) => e.stopPropagation()}
                       >
                         <MoreVertical className="h-3 w-3" />
                       </Button>
@@ -593,8 +595,12 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
                       <DropdownMenuItem asChild>
                         <a href={file.file_url} target="_blank" rel="noopener noreferrer">
                           <ExternalLink className="h-3.5 w-3.5 mr-2" />
-                          Abrir
+                          Abrir em nova aba
                         </a>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleDownloadFile(file)}>
+                        <Download className="h-3.5 w-3.5 mr-2" />
+                        Baixar
                       </DropdownMenuItem>
 
                       {file.file_type === 'image' && (
