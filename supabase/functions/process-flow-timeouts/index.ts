@@ -234,6 +234,39 @@ Deno.serve(async (req) => {
     for (const exec of timedOut) {
       try {
         // ═══════════════════════════════════════════════════════════════
+        // SAFETY CHECK 0: Is the AI paused or disabled for this conversation?
+        // Chat follow-ups are AI-triggered actions — if the user paused/disabled
+        // the AI, we MUST NOT keep sending automated follow-up messages.
+        // ═══════════════════════════════════════════════════════════════
+        const execVarsEarly = (exec.variables || {}) as Record<string, any>;
+        const isChatFollowUpEarly = execVarsEarly.source === 'chat_follow_up';
+
+        if (isChatFollowUpEarly) {
+          const { data: convCheck } = await supabase
+            .from('conversations')
+            .select('service_mode, metadata')
+            .eq('id', exec.conversation_id)
+            .single();
+
+          const pausedUntil = (convCheck?.metadata as any)?.ai_paused_until;
+          const isPaused = pausedUntil === 'permanent' || (pausedUntil && new Date(pausedUntil).getTime() > Date.now());
+          const aiDisabled = convCheck?.service_mode && convCheck.service_mode !== 'ia';
+
+          if (isPaused || aiDisabled) {
+            console.log(`[FLOW TIMEOUTS] Exec ${exec.id}: AI is paused/disabled (service_mode=${convCheck?.service_mode}, paused=${isPaused}) — CANCELING chat follow-up`);
+            await supabase.from('flow_executions').update({
+              status: 'completed',
+              timeout_at: null,
+              remarketing_step: 0,
+              completed_at: new Date().toISOString(),
+              error_message: 'Cancelled: AI was paused or disabled by human agent',
+            }).eq('id', exec.id);
+            processed++;
+            continue;
+          }
+        }
+
+        // ═══════════════════════════════════════════════════════════════
         // SAFETY CHECK: Did the contact respond after the last follow-up?
         // This is the CRITICAL check that prevents sending follow-ups 
         // to contacts who already responded.
