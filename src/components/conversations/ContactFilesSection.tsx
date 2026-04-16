@@ -283,17 +283,45 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
+  const openFileViaBlob = async (file: ContactFile) => {
+    try {
+      const response = await fetch(file.file_url);
+      if (!response.ok) throw new Error('fetch failed');
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const win = window.open(url, '_blank');
+      if (!win) {
+        // popup bloqueado: força download como fallback
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = file.name;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
+      // libera o blob depois de um tempo para a aba conseguir carregar
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch {
+      toast({
+        title: 'Não foi possível abrir o arquivo',
+        description: 'Tente desativar bloqueadores de anúncios (ad-blocker) e recarregar a página.',
+        variant: 'destructive',
+      });
+    }
+  };
+
   const handleFileClick = (file: ContactFile) => {
     if (file.file_type === 'image') {
       setPreviewFile(file);
     } else {
-      window.open(file.file_url, '_blank');
+      openFileViaBlob(file);
     }
   };
 
   const handleDownloadFile = async (file: ContactFile) => {
     try {
       const response = await fetch(file.file_url);
+      if (!response.ok) throw new Error('fetch failed');
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -304,7 +332,11 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch {
-      window.open(file.file_url, '_blank');
+      toast({
+        title: 'Não foi possível baixar o arquivo',
+        description: 'Tente desativar bloqueadores de anúncios (ad-blocker) e recarregar a página.',
+        variant: 'destructive',
+      });
     }
   };
 
