@@ -538,7 +538,7 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
                                   <MoreVertical className="h-3 w-3" />
                                 </Button>
                               </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
+                              <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
                                 <DropdownMenuItem asChild>
                                   <a href={file.file_url} target="_blank" rel="noopener noreferrer">
                                     <ExternalLink className="h-3.5 w-3.5 mr-2" />
@@ -623,7 +623,7 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
                         <MoreVertical className="h-3 w-3" />
                       </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
+                     <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
                       <DropdownMenuItem asChild>
                         <a href={file.file_url} target="_blank" rel="noopener noreferrer">
                           <ExternalLink className="h-3.5 w-3.5 mr-2" />
@@ -648,7 +648,7 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
                             <ArrowRight className="h-3.5 w-3.5 mr-2" />
                             Mover para
                           </DropdownMenuSubTrigger>
-                          <DropdownMenuSubContent>
+                           <DropdownMenuSubContent onClick={(e) => e.stopPropagation()}>
                             {file.folder_id && (
                               <DropdownMenuItem 
                                 onClick={() => handleMoveFile(file.id, null)}
