@@ -23,6 +23,7 @@ import { Label } from '@/components/ui/label';
 import { usePipelines, usePipelineColumns } from '@/hooks/usePipelines';
 import { useFunnelConfig, useSaveFunnelConfig } from '@/hooks/useFunnelConfig';
 import { useFunnelData, type FunnelPeriod } from '@/hooks/useFunnelData';
+import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { toast } from '@/hooks/use-toast';
 
 const PERIOD_OPTIONS: { value: FunnelPeriod; label: string }[] = [
