@@ -4484,6 +4484,68 @@ export type Database = {
           },
         ]
       }
+      workspace_funnel_configs: {
+        Row: {
+          column_ids: string[]
+          created_at: string
+          created_by: string | null
+          id: string
+          organization_id: string
+          pipeline_id: string
+          updated_at: string
+          workspace_id: string | null
+        }
+        Insert: {
+          column_ids?: string[]
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          organization_id: string
+          pipeline_id: string
+          updated_at?: string
+          workspace_id?: string | null
+        }
+        Update: {
+          column_ids?: string[]
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          organization_id?: string
+          pipeline_id?: string
+          updated_at?: string
+          workspace_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workspace_funnel_configs_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "workspace_funnel_configs_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "workspace_funnel_configs_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "pipelines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "workspace_funnel_configs_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       workspace_members: {
         Row: {
           created_at: string
