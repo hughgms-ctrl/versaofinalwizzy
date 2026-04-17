@@ -9,42 +9,42 @@
 
 @layer base {
   :root {
-    /* Background & Surface - Layer 1 (deeper, brand-tinted) */
-    --background: 220 25% 94%;
-    --foreground: 222 47% 11%;
+    /* Background & Surface - Layer 1 (neutral grafite-claro, sem viés azul) */
+    --background: 0 0% 94%;
+    --foreground: 240 10% 10%;
 
-    /* Cards & Elevated Surfaces - Layer 2 (pure white, contrasts with bg) */
+    /* Cards & Elevated Surfaces - Layer 2 (branco puro, contrasta com bg) */
     --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
+    --card-foreground: 240 10% 10%;
 
     /* Popover & Dropdowns */
     --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
+    --popover-foreground: 240 10% 10%;
 
-    /* Primary - Deep Indigo */
-    --primary: 234 89% 54%;
+    /* Primary - mantém identidade da marca (magenta, igual ao dark) */
+    --primary: 340 82% 55%;
     --primary-foreground: 0 0% 100%;
 
-    /* Secondary - Slate (more visible than muted) */
-    --secondary: 220 20% 92%;
-    --secondary-foreground: 222 47% 11%;
+    /* Secondary - cinza neutro mais visível */
+    --secondary: 0 0% 92%;
+    --secondary-foreground: 240 10% 10%;
 
-    /* Muted - subtle areas/text */
-    --muted: 220 16% 96%;
-    --muted-foreground: 220 9% 46%;
+    /* Muted - áreas/texto sutis (cinza neutro) */
+    --muted: 0 0% 96%;
+    --muted-foreground: 240 5% 45%;
 
-    /* Accent - Soft Indigo */
-    --accent: 234 89% 96%;
-    --accent-foreground: 234 89% 54%;
+    /* Accent - cinza claro neutro (hover states sem viés azul) */
+    --accent: 0 0% 95%;
+    --accent-foreground: 340 82% 45%;
 
     /* Destructive - Red */
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
 
-    /* Borders & Inputs - more perceptible separation */
-    --border: 220 15% 86%;
-    --input: 220 15% 88%;
-    --ring: 234 89% 54%;
+    /* Borders & Inputs - cinza neutro perceptível */
+    --border: 0 0% 86%;
+    --input: 0 0% 88%;
+    --ring: 340 82% 55%;
 
     /* Radius */
     --radius: 0.75rem;
