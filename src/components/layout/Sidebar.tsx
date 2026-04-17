@@ -20,7 +20,8 @@ import {
   Megaphone,
   Calendar,
   Lock,
-  Crown
+  Crown,
+  Scale
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -44,6 +45,7 @@ interface NavItem {
 
 const navigation: NavItem[] = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard, module: 'dashboard' },
+  { name: 'Dashboard Jurídico', href: '/legal-dashboard', icon: Scale, module: 'dashboard' },
   { name: 'Conversas', href: '/conversations', icon: MessageSquare, module: 'conversations', planModule: 'conversations' },
   { name: 'Contatos', href: '/contacts', icon: BookUser, module: 'conversations', planModule: 'contacts' },
   { name: 'Agenda', href: '/calendar', icon: Calendar, module: 'calendar', planModule: 'calendar' },
