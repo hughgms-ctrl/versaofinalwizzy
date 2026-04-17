@@ -49,15 +49,15 @@
     /* Radius */
     --radius: 0.75rem;
 
-    /* Sidebar */
-    --sidebar-background: 222 47% 11%;
-    --sidebar-foreground: 220 14% 96%;
-    --sidebar-primary: 234 89% 60%;
+    /* Sidebar - grafite neutro (mesma família do dark) */
+    --sidebar-background: 240 10% 8%;
+    --sidebar-foreground: 0 0% 92%;
+    --sidebar-primary: 340 82% 55%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 222 40% 18%;
-    --sidebar-accent-foreground: 220 14% 96%;
-    --sidebar-border: 222 40% 18%;
-    --sidebar-ring: 234 89% 60%;
+    --sidebar-accent: 240 8% 14%;
+    --sidebar-accent-foreground: 0 0% 96%;
+    --sidebar-border: 240 8% 14%;
+    --sidebar-ring: 340 82% 55%;
 
     /* Status Colors */
     --status-open: 142 71% 45%;
