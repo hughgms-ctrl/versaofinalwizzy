@@ -84,54 +84,70 @@
   }
 
   .dark {
-    /* DGFlow-inspired dark theme - Magenta dominant, Green accents */
-    --background: 240 18% 4%;
-    --foreground: 210 20% 92%;
+    /* Refined dark theme - elegant deep slate-violet (Linear/Vercel inspired) */
+    /* Background levemente azul-violeta profundo, não preto puro */
+    --background: 240 12% 7%;
+    --foreground: 230 20% 94%;
 
-    --card: 240 16% 7%;
-    --card-foreground: 210 20% 92%;
+    /* Card mais elevado, leve sopro de luz */
+    --card: 240 14% 10%;
+    --card-foreground: 230 20% 94%;
 
-    --popover: 240 16% 8%;
-    --popover-foreground: 210 20% 92%;
+    --popover: 240 14% 11%;
+    --popover-foreground: 230 20% 94%;
 
-    /* Primary - Magenta/Pink (DGFlow dominant) */
-    --primary: 340 82% 55%;
+    /* Primary - Magenta/Pink (mantém identidade) */
+    --primary: 340 82% 58%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 240 16% 12%;
-    --secondary-foreground: 210 20% 88%;
+    /* Secondary - superfície intermediária com leve toque violeta */
+    --secondary: 240 12% 15%;
+    --secondary-foreground: 230 20% 90%;
 
-    --muted: 240 14% 11%;
-    --muted-foreground: 220 10% 52%;
+    /* Muted - áreas/textos sutis */
+    --muted: 240 10% 14%;
+    --muted-foreground: 230 10% 60%;
 
-    /* Accent - Vibrant Green (DGFlow secondary detail) */
-    --accent: 152 60% 12%;
-    --accent-foreground: 152 85% 55%;
+    /* Accent - magenta sutil (hover states alinhados à marca) */
+    --accent: 340 40% 16%;
+    --accent-foreground: 340 82% 75%;
 
-    --destructive: 0 70% 50%;
+    --destructive: 0 70% 55%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 340 30% 14%;
-    --input: 240 14% 13%;
-    --ring: 340 82% 55%;
+    /* Bordas suaves com leve viés violeta — visíveis mas elegantes */
+    --border: 240 12% 18%;
+    --input: 240 12% 16%;
+    --ring: 340 82% 58%;
 
-    --sidebar-background: 240 18% 3%;
-    --sidebar-foreground: 210 20% 88%;
-    --sidebar-primary: 340 82% 55%;
+    /* Sidebar - levemente mais escura que o background, com toque magenta */
+    --sidebar-background: 240 14% 6%;
+    --sidebar-foreground: 230 18% 88%;
+    --sidebar-primary: 340 82% 58%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 340 60% 12%;
-    --sidebar-accent-foreground: 340 82% 65%;
-    --sidebar-border: 340 20% 12%;
-    --sidebar-ring: 340 82% 55%;
+    --sidebar-accent: 340 40% 14%;
+    --sidebar-accent-foreground: 340 82% 72%;
+    --sidebar-border: 240 12% 14%;
+    --sidebar-ring: 340 82% 58%;
 
-    /* Dark mode gradients - magenta to orange-coral (DGFlow button style) */
-    --gradient-primary: linear-gradient(135deg, hsl(340 82% 55%) 0%, hsl(20 90% 60%) 100%);
+    /* Dark mode gradients - magenta to coral (mantém identidade) */
+    --gradient-primary: linear-gradient(135deg, hsl(340 82% 58%) 0%, hsl(20 90% 62%) 100%);
     --gradient-success: linear-gradient(135deg, hsl(152 85% 45%) 0%, hsl(166 72% 44%) 100%);
-    --shadow-glow: 0 0 20px -5px hsl(340 82% 55% / 0.4);
+    --gradient-bg: linear-gradient(180deg, hsl(240 12% 7%) 0%, hsl(250 14% 8%) 100%);
+
+    /* Sombras com profundidade real (escuro + leve glow magenta) */
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.4), 0 1px 1px 0 rgb(0 0 0 / 0.3);
+    --shadow-md: 0 4px 8px -2px rgb(0 0 0 / 0.5), 0 2px 4px -2px hsl(340 82% 58% / 0.08);
+    --shadow-lg: 0 12px 20px -4px rgb(0 0 0 / 0.6), 0 4px 8px -4px hsl(340 82% 58% / 0.1);
+    --shadow-card: 0 2px 6px -1px rgb(0 0 0 / 0.4), 0 8px 24px -8px hsl(340 82% 58% / 0.12);
+    --shadow-glow: 0 0 24px -5px hsl(340 82% 58% / 0.4);
 
     /* Status colors adjusted */
     --status-open: 152 85% 50%;
-    --agent-ai: 340 82% 55%;
+    --status-pending: 38 92% 55%;
+    --status-closed: 230 10% 60%;
+    --status-urgent: 0 84% 62%;
+    --agent-ai: 340 82% 58%;
     --agent-human: 152 85% 50%;
   }
 }
