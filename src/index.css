@@ -49,14 +49,14 @@
     /* Radius */
     --radius: 0.75rem;
 
-    /* Sidebar - grafite neutro (mesma família do dark) */
-    --sidebar-background: 240 10% 8%;
-    --sidebar-foreground: 0 0% 92%;
+    /* Sidebar - branco com toque sutil do magenta da marca */
+    --sidebar-background: 340 30% 99%;
+    --sidebar-foreground: 240 10% 20%;
     --sidebar-primary: 340 82% 55%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 8% 14%;
-    --sidebar-accent-foreground: 0 0% 96%;
-    --sidebar-border: 240 8% 14%;
+    --sidebar-accent: 340 60% 96%;
+    --sidebar-accent-foreground: 340 82% 45%;
+    --sidebar-border: 340 25% 92%;
     --sidebar-ring: 340 82% 55%;
 
     /* Status Colors */
