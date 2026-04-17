@@ -6,6 +6,7 @@ import { ConversationsChart } from '@/components/dashboard/ConversationsChart';
 import { ResolutionChart } from '@/components/dashboard/ResolutionChart';
 import { RecentConversations } from '@/components/dashboard/RecentConversations';
 import { AgentPerformance } from '@/components/dashboard/AgentPerformance';
+import { FunnelChart } from '@/components/dashboard/FunnelChart';
 import { useDashboardMetrics } from '@/hooks/useDashboardData';
 import { usePipelines } from '@/hooks/usePipelines';
 import { usePipelineStageDistribution, useTeamPerformanceByPipeline } from '@/hooks/usePipelineStats';
@@ -95,6 +96,11 @@ const Index = () => {
           <ConversationsChart />
         </div>
         <ResolutionChart />
+      </div>
+
+      {/* Funnel */}
+      <div className="mb-4 md:mb-6">
+        <FunnelChart />
       </div>
 
       {/* Pipeline Stats */}
