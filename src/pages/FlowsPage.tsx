@@ -329,10 +329,10 @@ const FlowsPage = () => {
   const FlowRow = ({ flow, nested = false, dragHandleProps }: { flow: Flow, nested?: boolean, dragHandleProps?: any }) => (
     <div className={cn(
       "flex items-center gap-4 px-4 py-4 hover:bg-muted/10 transition-colors border-b border-border/50 last:border-b-0",
-      nested && "bg-[#111114]"
+      nested && "bg-muted/40"
     )}>
       {/* Drag Handle */}
-      <div {...dragHandleProps} className="cursor-grab hover:text-[#ff2d85] transition-colors p-1 -ml-2 text-muted-foreground/30">
+      <div {...dragHandleProps} className="cursor-grab hover:text-primary transition-colors p-1 -ml-2 text-muted-foreground/30">
         <GripVertical className="h-4 w-4" />
       </div>
 
@@ -340,8 +340,8 @@ const FlowsPage = () => {
       <div className={cn(
         "h-9 w-9 rounded-xl flex items-center justify-center shrink-0 shadow-sm",
         flow.is_active
-          ? "bg-[#ff2d85]"
-          : "bg-[#2a2a2e]"
+          ? "bg-primary"
+          : "bg-muted"
       )}>
         <Workflow className={cn(
           "h-5 w-5",
@@ -405,13 +405,13 @@ const FlowsPage = () => {
         <Switch
           checked={flow.is_active}
           onCheckedChange={(checked) => handleToggleActive(flow.id, checked)}
-          className="data-[state=checked]:bg-[#ff2d85]"
+          className="data-[state=checked]:bg-primary"
         />
         <Badge
           className={cn(
             "text-[10px] font-medium px-3 py-1 rounded-full min-w-[70px] justify-center border-none",
             flow.is_active
-              ? "bg-[#ff2d85]/10 text-[#ff2d85]"
+              ? "bg-primary/10 text-primary"
               : "bg-muted text-muted-foreground"
           )}
         >
@@ -446,7 +446,7 @@ const FlowsPage = () => {
               <MoreVertical className="h-5 w-5" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-52 bg-[#0f0f12] border-[#2a2a2e]">
+          <DropdownMenuContent align="end" className="w-52 bg-card border-border">
             <DropdownMenuItem onClick={() => handleEditFlow(flow.id)}>
               <Edit className="h-4 w-4 mr-2" />
               Editar
@@ -470,12 +470,12 @@ const FlowsPage = () => {
                 <FolderInput className="h-4 w-4 mr-2" />
                 Mover para pasta
               </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent className="bg-[#0f0f12] border-[#2a2a2e]">
+              <DropdownMenuSubContent className="bg-card border-border">
                 <DropdownMenuItem onClick={() => handleMoveToFolder(flow.id, null)}>
                   <Folder className="h-4 w-4 mr-2" />
                   Raiz (sem pasta)
                 </DropdownMenuItem>
-                <DropdownMenuSeparator className="bg-[#2a2a2e]" />
+                <DropdownMenuSeparator className="bg-muted" />
                 {folders?.filter(folder =>
                   folder.workspace_id === (flow as any).workspace_id
                 ).map(folder => (
@@ -495,14 +495,14 @@ const FlowsPage = () => {
                 <MapPinned className="h-4 w-4 mr-2" />
                 Workspace
               </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent className="bg-[#0f0f12] border-[#2a2a2e] w-48">
+              <DropdownMenuSubContent className="bg-card border-border w-48">
                 <DropdownMenuItem onClick={() => handleUpdateFlowWorkspace(flow.id, null)}>
                   <div className="flex items-center gap-2">
                     <div className="h-2.5 w-2.5 rounded-full border border-dashed border-muted-foreground shrink-0" />
                     Nenhum (Todos)
                   </div>
                 </DropdownMenuItem>
-                <DropdownMenuSeparator className="bg-[#2a2a2e]" />
+                <DropdownMenuSeparator className="bg-muted" />
                 {availableWorkspaces.map(ws => (
                   <DropdownMenuItem
                     key={ws.id}
@@ -517,7 +517,7 @@ const FlowsPage = () => {
               </DropdownMenuSubContent>
             </DropdownMenuSub>
 
-            <DropdownMenuSeparator className="bg-[#2a2a2e]" />
+            <DropdownMenuSeparator className="bg-muted" />
             <DropdownMenuItem
               className="text-red-500 hover:text-red-400"
               onClick={() => handleDeleteFlow(flow.id)}
@@ -553,7 +553,7 @@ const FlowsPage = () => {
           {/* Drag Handle */}
           <div
             {...dragHandleProps}
-            className="cursor-grab hover:text-[#ff2d85] transition-colors p-1 -ml-2 text-muted-foreground/30"
+            className="cursor-grab hover:text-primary transition-colors p-1 -ml-2 text-muted-foreground/30"
             onClick={(e) => e.stopPropagation()}
           >
             <GripVertical className="h-4 w-4" />
@@ -609,7 +609,7 @@ const FlowsPage = () => {
                   <MoreVertical className="h-5 w-5" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48 bg-[#0f0f12] border-[#2a2a2e]">
+              <DropdownMenuContent align="end" className="w-48 bg-card border-border">
                 <DropdownMenuItem onClick={(e) => {
                   e.stopPropagation();
                   setEditingFolder(folder);
@@ -639,7 +639,7 @@ const FlowsPage = () => {
                     <><MessageSquare className="h-4 w-4 mr-2" />Mostrar no Chat</>
                   )}
                 </DropdownMenuItem>
-                <DropdownMenuSeparator className="bg-[#2a2a2e]" />
+                <DropdownMenuSeparator className="bg-muted" />
                 <DropdownMenuItem onClick={(e) => {
                   e.stopPropagation();
                   duplicateFolder.mutate({ folderId: folder.id, newParentId: folder.parent_id });
@@ -665,7 +665,7 @@ const FlowsPage = () => {
 
         {/* Folder Contents */}
         {isExpanded && (
-          <div className="bg-[#0a0a0c]">
+          <div className="bg-card">
             <SortableContext items={innerItems.map(i => i.id)} strategy={verticalListSortingStrategy}>
               {innerItems.map(item => (
                 <SortableRow key={item.id} id={item.id}>
@@ -687,7 +687,7 @@ const FlowsPage = () => {
     return (
       <MainLayout title="Fluxos" subtitle="Gerencie suas automações de atendimento">
         <div className="flex items-center justify-center h-64">
-          <Loader2 className="h-8 w-8 animate-spin text-[#ff2d85]" />
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </div>
       </MainLayout>
     );
@@ -709,7 +709,7 @@ const FlowsPage = () => {
 
       {/* Create Folder Dialog */}
       <Dialog open={showFolderDialog} onOpenChange={setShowFolderDialog}>
-        <DialogContent className="bg-[#0f0f12] border-white/10 max-w-md p-6 rounded-2xl">
+        <DialogContent className="bg-card border-border max-w-md p-6 rounded-2xl">
           <DialogHeader>
             <DialogTitle className="text-xl font-bold">Nova Pasta</DialogTitle>
           </DialogHeader>
@@ -721,7 +721,7 @@ const FlowsPage = () => {
                 value={newFolderName}
                 onChange={(e) => setNewFolderName(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleCreateFolder()}
-                className="bg-[#1a1a1e] border-[#2a2a2e] focus:ring-0 focus:border-white/20 h-11 rounded-lg"
+                className="bg-muted border-border focus:ring-0 focus:border-border h-11 rounded-lg"
               />
             </div>
             {isAdmin && (
@@ -731,10 +731,10 @@ const FlowsPage = () => {
                   value={folderWorkspaceId || 'all'}
                   onValueChange={(val) => setFolderWorkspaceId(val === 'all' ? null : val)}
                 >
-                  <SelectTrigger className="bg-[#1a1a1e] border-[#2a2a2e] h-11 rounded-lg">
+                  <SelectTrigger className="bg-muted border-border h-11 rounded-lg">
                     <SelectValue placeholder="Selecione" />
                   </SelectTrigger>
-                  <SelectContent className="bg-[#0f0f12] border-[#2a2a2e]">
+                  <SelectContent className="bg-card border-border">
                     <SelectItem value="all">Todos os Workspaces</SelectItem>
                     {availableWorkspaces.map(ws => (
                       <SelectItem key={ws.id} value={ws.id}>
@@ -762,7 +762,7 @@ const FlowsPage = () => {
             <Button
               onClick={handleCreateFolder}
               disabled={!newFolderName.trim()}
-              className="bg-gradient-to-r from-[#ff2d85] to-[#ff7b54] hover:opacity-90 font-bold px-8 rounded-lg"
+              className="bg-gradient-to-r from-primary to-[hsl(20_90%_60%)] hover:opacity-90 font-bold px-8 rounded-lg"
             >
               Criar
             </Button>
@@ -772,7 +772,7 @@ const FlowsPage = () => {
 
       {/* Rename/Edit Folder Dialog */}
       <Dialog open={showRenameDialog} onOpenChange={setShowRenameDialog}>
-        <DialogContent className="bg-[#0f0f12] border-white/10 max-w-md p-6 rounded-2xl">
+        <DialogContent className="bg-card border-border max-w-md p-6 rounded-2xl">
           <DialogHeader>
             <DialogTitle className="text-xl font-bold">Editar Pasta</DialogTitle>
           </DialogHeader>
@@ -784,7 +784,7 @@ const FlowsPage = () => {
                 value={newFolderName}
                 onChange={(e) => setNewFolderName(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleRenameFolder()}
-                className="bg-[#1a1a1e] border-[#2a2a2e] focus:ring-0 focus:border-white/20 h-11 rounded-lg"
+                className="bg-muted border-border focus:ring-0 focus:border-border h-11 rounded-lg"
               />
             </div>
             {isAdmin && (
@@ -794,10 +794,10 @@ const FlowsPage = () => {
                   value={folderWorkspaceId || 'all'}
                   onValueChange={(val) => setFolderWorkspaceId(val === 'all' ? null : val)}
                 >
-                  <SelectTrigger className="bg-[#1a1a1e] border-[#2a2a2e] h-11 rounded-lg">
+                  <SelectTrigger className="bg-muted border-border h-11 rounded-lg">
                     <SelectValue placeholder="Selecione" />
                   </SelectTrigger>
-                  <SelectContent className="bg-[#0f0f12] border-[#2a2a2e]">
+                  <SelectContent className="bg-card border-border">
                     <SelectItem value="all">Todos os Workspaces</SelectItem>
                     {availableWorkspaces.map(ws => (
                       <SelectItem key={ws.id} value={ws.id}>
@@ -825,7 +825,7 @@ const FlowsPage = () => {
             <Button
               onClick={handleRenameFolder}
               disabled={!newFolderName.trim()}
-              className="bg-gradient-to-r from-[#ff2d85] to-[#ff7b54] hover:opacity-90 font-bold px-8 rounded-lg"
+              className="bg-gradient-to-r from-primary to-[hsl(20_90%_60%)] hover:opacity-90 font-bold px-8 rounded-lg"
             >
               Salvar
             </Button>
@@ -840,7 +840,7 @@ const FlowsPage = () => {
           <p className="text-muted-foreground mb-8 text-sm">Crie pastas ou fluxos para começar.</p>
           <Button
             onClick={() => setShowCreateDialog(true)}
-            className="bg-gradient-to-r from-[#ff2d85] to-[#ff7b54] font-bold px-8 h-12 rounded-xl"
+            className="bg-gradient-to-r from-primary to-[hsl(20_90%_60%)] font-bold px-8 h-12 rounded-xl"
           >
             Começar Agora
           </Button>
@@ -852,7 +852,7 @@ const FlowsPage = () => {
             <Button
               variant="outline"
               size="sm"
-              className="bg-[#0f0f12] border-[#2a2a2e] hover:bg-[#1a1a1e] font-bold text-xs px-4"
+              className="bg-card border-border hover:bg-muted font-bold text-xs px-4"
               onClick={() => {
                 setCurrentFolderId(null);
                 setFolderWorkspaceId(selectedWorkspaceId);
@@ -864,9 +864,9 @@ const FlowsPage = () => {
             </Button>
           </div>
 
-          <div className="bg-[#0f0f12] rounded-xl border border-[#2a2a2e] overflow-hidden shadow-2xl">
+          <div className="bg-card rounded-xl border border-border overflow-hidden shadow-2xl">
             {/* Header */}
-            <div className="flex items-center gap-4 px-4 py-3 bg-[#1a1a1e] border-b border-[#2a2a2e] text-[10px] font-bold text-muted-foreground uppercase tracking-[0.1em]">
+            <div className="flex items-center gap-4 px-4 py-3 bg-muted border-b border-border text-[10px] font-bold text-muted-foreground uppercase tracking-[0.1em]">
               <div className="w-9" /> {/* Icon space */}
               <div className="flex-1">Nome</div>
               <div className="hidden md:flex items-center gap-12 text-center">
@@ -878,7 +878,7 @@ const FlowsPage = () => {
               <div className="w-28 text-right pr-2">Ações</div>
             </div>
 
-            <div className="bg-[#0a0a0c]">
+            <div className="bg-card">
               <DndContext
                 sensors={sensors}
                 collisionDetection={closestCenter}
