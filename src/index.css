@@ -9,78 +9,78 @@
 
 @layer base {
   :root {
-    /* Background & Surface - Layer 1 (deeper, brand-tinted) */
-    --background: 220 25% 94%;
-    --foreground: 222 47% 11%;
+    /* Background & Surface - Layer 1 (neutral grafite-claro, sem viés azul) */
+    --background: 0 0% 94%;
+    --foreground: 240 10% 10%;
 
-    /* Cards & Elevated Surfaces - Layer 2 (pure white, contrasts with bg) */
+    /* Cards & Elevated Surfaces - Layer 2 (branco puro, contrasta com bg) */
     --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
+    --card-foreground: 240 10% 10%;
 
     /* Popover & Dropdowns */
     --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
+    --popover-foreground: 240 10% 10%;
 
-    /* Primary - Deep Indigo */
-    --primary: 234 89% 54%;
+    /* Primary - mantém identidade da marca (magenta, igual ao dark) */
+    --primary: 340 82% 55%;
     --primary-foreground: 0 0% 100%;
 
-    /* Secondary - Slate (more visible than muted) */
-    --secondary: 220 20% 92%;
-    --secondary-foreground: 222 47% 11%;
+    /* Secondary - cinza neutro mais visível */
+    --secondary: 0 0% 92%;
+    --secondary-foreground: 240 10% 10%;
 
-    /* Muted - subtle areas/text */
-    --muted: 220 16% 96%;
-    --muted-foreground: 220 9% 46%;
+    /* Muted - áreas/texto sutis (cinza neutro) */
+    --muted: 0 0% 96%;
+    --muted-foreground: 240 5% 45%;
 
-    /* Accent - Soft Indigo */
-    --accent: 234 89% 96%;
-    --accent-foreground: 234 89% 54%;
+    /* Accent - cinza claro neutro (hover states sem viés azul) */
+    --accent: 0 0% 95%;
+    --accent-foreground: 340 82% 45%;
 
     /* Destructive - Red */
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
 
-    /* Borders & Inputs - more perceptible separation */
-    --border: 220 15% 86%;
-    --input: 220 15% 88%;
-    --ring: 234 89% 54%;
+    /* Borders & Inputs - cinza neutro perceptível */
+    --border: 0 0% 86%;
+    --input: 0 0% 88%;
+    --ring: 340 82% 55%;
 
     /* Radius */
     --radius: 0.75rem;
 
-    /* Sidebar */
-    --sidebar-background: 222 47% 11%;
-    --sidebar-foreground: 220 14% 96%;
-    --sidebar-primary: 234 89% 60%;
+    /* Sidebar - grafite neutro (mesma família do dark) */
+    --sidebar-background: 240 10% 8%;
+    --sidebar-foreground: 0 0% 92%;
+    --sidebar-primary: 340 82% 55%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 222 40% 18%;
-    --sidebar-accent-foreground: 220 14% 96%;
-    --sidebar-border: 222 40% 18%;
-    --sidebar-ring: 234 89% 60%;
+    --sidebar-accent: 240 8% 14%;
+    --sidebar-accent-foreground: 0 0% 96%;
+    --sidebar-border: 240 8% 14%;
+    --sidebar-ring: 340 82% 55%;
 
     /* Status Colors */
     --status-open: 142 71% 45%;
     --status-pending: 38 92% 50%;
-    --status-closed: 220 9% 46%;
+    --status-closed: 240 5% 45%;
     --status-urgent: 0 84% 60%;
 
-    /* AI Agent Colors */
-    --agent-ai: 234 89% 54%;
+    /* AI Agent Colors - alinhado à identidade magenta */
+    --agent-ai: 340 82% 55%;
     --agent-human: 142 71% 45%;
 
-    /* Gradient Tokens */
-    --gradient-primary: linear-gradient(135deg, hsl(234 89% 54%) 0%, hsl(262 83% 58%) 100%);
+    /* Gradient Tokens - mesmo padrão magenta/coral do dark */
+    --gradient-primary: linear-gradient(135deg, hsl(340 82% 55%) 0%, hsl(20 90% 60%) 100%);
     --gradient-success: linear-gradient(135deg, hsl(142 71% 45%) 0%, hsl(166 72% 44%) 100%);
-    --gradient-surface: linear-gradient(180deg, hsl(0 0% 100%) 0%, hsl(220 20% 98%) 100%);
-    --gradient-bg: linear-gradient(180deg, hsl(220 25% 94%) 0%, hsl(234 30% 95%) 100%);
+    --gradient-surface: linear-gradient(180deg, hsl(0 0% 100%) 0%, hsl(0 0% 98%) 100%);
+    --gradient-bg: linear-gradient(180deg, hsl(0 0% 94%) 0%, hsl(0 0% 96%) 100%);
 
-    /* Shadows - more presence + brand tint */
-    --shadow-sm: 0 1px 2px 0 rgb(15 23 42 / 0.08), 0 1px 1px 0 rgb(15 23 42 / 0.04);
-    --shadow-md: 0 4px 8px -2px rgb(15 23 42 / 0.1), 0 2px 4px -2px hsl(234 89% 54% / 0.06);
-    --shadow-lg: 0 12px 20px -4px rgb(15 23 42 / 0.12), 0 4px 8px -4px hsl(234 89% 54% / 0.08);
-    --shadow-card: 0 2px 6px -1px rgb(15 23 42 / 0.08), 0 8px 24px -8px hsl(234 89% 54% / 0.1);
-    --shadow-glow: 0 0 20px -5px hsl(234 89% 54% / 0.3);
+    /* Shadows - presença neutra (cinza puro, sem tinta azul) */
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.06), 0 1px 1px 0 rgb(0 0 0 / 0.04);
+    --shadow-md: 0 4px 8px -2px rgb(0 0 0 / 0.08), 0 2px 4px -2px rgb(0 0 0 / 0.04);
+    --shadow-lg: 0 12px 20px -4px rgb(0 0 0 / 0.1), 0 4px 8px -4px rgb(0 0 0 / 0.06);
+    --shadow-card: 0 2px 6px -1px rgb(0 0 0 / 0.06), 0 8px 24px -8px rgb(0 0 0 / 0.08);
+    --shadow-glow: 0 0 20px -5px hsl(340 82% 55% / 0.3);
   }
 
   .dark {
