@@ -49,21 +49,21 @@ export default function LegalDashboardPage() {
   return (
     <MainLayout fullWidth>
       <div
-        className="relative min-h-[calc(100vh-4rem)] bg-[#0a0e1a] p-4 md:p-8"
+        className="relative min-h-[calc(100vh-4rem)] bg-background p-4 md:p-8"
         style={{
           backgroundImage:
-            'radial-gradient(circle at 0% 0%, rgba(20,184,166,0.08), transparent 50%), radial-gradient(circle at 100% 0%, rgba(6,182,212,0.06), transparent 50%), linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px)',
+            'radial-gradient(circle at 0% 0%, hsl(var(--primary) / 0.10), transparent 50%), radial-gradient(circle at 100% 0%, hsl(20 90% 60% / 0.08), transparent 50%), linear-gradient(hsl(var(--foreground) / 0.025) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--foreground) / 0.025) 1px, transparent 1px)',
           backgroundSize: '100% 100%, 100% 100%, 32px 32px, 32px 32px',
         }}
       >
         {/* Page title */}
         <div className="mb-6 flex items-center gap-3">
-          <div className="rounded-xl border border-teal-400/30 bg-teal-500/10 p-2 text-teal-300 shadow-[0_0_18px_-4px] shadow-teal-500/40">
+          <div className="gradient-icon-box p-2 text-primary-foreground shadow-glow">
             <Scale className="h-5 w-5" />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-white md:text-2xl">Dashboard Jurídico</h1>
-            <p className="text-xs text-white/50">Visão financeira, funil de vendas e captação</p>
+            <h1 className="text-xl font-bold text-foreground md:text-2xl">Dashboard Jurídico</h1>
+            <p className="text-xs text-muted-foreground">Visão financeira, funil de vendas e captação</p>
           </div>
         </div>
 
@@ -109,7 +109,7 @@ export default function LegalDashboardPage() {
         </div>
 
         {/* Footer hint */}
-        <p className="mt-6 text-center text-xs text-white/30">
+        <p className="mt-6 text-center text-xs text-muted-foreground/70">
           Dados demonstrativos · integrações reais (Meta Ads, Asaas, DataJud) chegam nas próximas fases
         </p>
       </div>
