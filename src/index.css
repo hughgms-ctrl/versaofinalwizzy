@@ -9,11 +9,11 @@
 
 @layer base {
   :root {
-    /* Background & Surface */
-    --background: 220 20% 97%;
+    /* Background & Surface - Layer 1 (deeper, brand-tinted) */
+    --background: 220 25% 94%;
     --foreground: 222 47% 11%;
 
-    /* Cards & Elevated Surfaces */
+    /* Cards & Elevated Surfaces - Layer 2 (pure white, contrasts with bg) */
     --card: 0 0% 100%;
     --card-foreground: 222 47% 11%;
 
@@ -25,12 +25,12 @@
     --primary: 234 89% 54%;
     --primary-foreground: 0 0% 100%;
 
-    /* Secondary - Slate */
-    --secondary: 220 14% 96%;
+    /* Secondary - Slate (more visible than muted) */
+    --secondary: 220 20% 92%;
     --secondary-foreground: 222 47% 11%;
 
-    /* Muted */
-    --muted: 220 14% 96%;
+    /* Muted - subtle areas/text */
+    --muted: 220 16% 96%;
     --muted-foreground: 220 9% 46%;
 
     /* Accent - Soft Indigo */
@@ -41,9 +41,9 @@
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
 
-    /* Borders & Inputs */
-    --border: 220 13% 91%;
-    --input: 220 13% 91%;
+    /* Borders & Inputs - more perceptible separation */
+    --border: 220 15% 86%;
+    --input: 220 15% 88%;
     --ring: 234 89% 54%;
 
     /* Radius */
@@ -73,11 +73,13 @@
     --gradient-primary: linear-gradient(135deg, hsl(234 89% 54%) 0%, hsl(262 83% 58%) 100%);
     --gradient-success: linear-gradient(135deg, hsl(142 71% 45%) 0%, hsl(166 72% 44%) 100%);
     --gradient-surface: linear-gradient(180deg, hsl(0 0% 100%) 0%, hsl(220 20% 98%) 100%);
+    --gradient-bg: linear-gradient(180deg, hsl(220 25% 94%) 0%, hsl(234 30% 95%) 100%);
 
-    /* Shadows */
-    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+    /* Shadows - more presence + brand tint */
+    --shadow-sm: 0 1px 2px 0 rgb(15 23 42 / 0.08), 0 1px 1px 0 rgb(15 23 42 / 0.04);
+    --shadow-md: 0 4px 8px -2px rgb(15 23 42 / 0.1), 0 2px 4px -2px hsl(234 89% 54% / 0.06);
+    --shadow-lg: 0 12px 20px -4px rgb(15 23 42 / 0.12), 0 4px 8px -4px hsl(234 89% 54% / 0.08);
+    --shadow-card: 0 2px 6px -1px rgb(15 23 42 / 0.08), 0 8px 24px -8px hsl(234 89% 54% / 0.1);
     --shadow-glow: 0 0 20px -5px hsl(234 89% 54% / 0.3);
   }
 
@@ -154,6 +156,13 @@
   body {
     @apply bg-background text-foreground font-sans antialiased;
     font-family: 'Inter', system-ui, sans-serif;
+    background-image: var(--gradient-bg);
+    background-attachment: fixed;
+  }
+
+  /* Dark mode keeps solid background (no light gradient) */
+  .dark body {
+    background-image: none;
   }
 
   /* Scrollbar Styling */
@@ -179,11 +188,14 @@
 
   /* Metric Card Styles */
   .metric-card {
-    @apply relative overflow-hidden rounded-xl bg-card p-6 shadow-sm border border-border transition-all duration-200;
+    @apply relative overflow-hidden rounded-xl bg-card p-6 border border-border transition-all duration-200;
+    box-shadow: var(--shadow-card);
   }
 
   .metric-card:hover {
-    @apply shadow-md -translate-y-0.5;
+    @apply -translate-y-0.5 border-primary/20;
+    box-shadow: var(--shadow-lg);
+    background-color: hsl(var(--accent) / 0.4);
   }
 
   .metric-card-gradient {
@@ -191,38 +203,45 @@
     background: var(--gradient-primary);
   }
 
-  /* Status Badge Styles */
+  /* Status Badge Styles - using semantic tokens */
   .status-badge {
     @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium;
   }
 
   .status-open {
-    @apply bg-green-100 text-green-700;
+    background-color: hsl(var(--status-open) / 0.15);
+    color: hsl(var(--status-open));
   }
 
   .status-pending {
-    @apply bg-amber-100 text-amber-700;
+    background-color: hsl(var(--status-pending) / 0.15);
+    color: hsl(var(--status-pending));
   }
 
   .status-closed {
-    @apply bg-slate-100 text-slate-600;
+    background-color: hsl(var(--status-closed) / 0.15);
+    color: hsl(var(--status-closed));
   }
 
   .status-urgent {
-    @apply bg-red-100 text-red-700;
+    background-color: hsl(var(--status-urgent) / 0.15);
+    color: hsl(var(--status-urgent));
   }
 
   /* Pipeline Column Styles */
   .pipeline-column {
-    @apply flex-shrink-0 w-[420px] bg-muted/50 rounded-xl p-3 flex flex-col max-h-[calc(100vh-140px)];
+    @apply flex-shrink-0 w-[420px] bg-muted/50 rounded-xl p-3 flex flex-col max-h-[calc(100vh-140px)] border border-border/50;
   }
 
   .pipeline-card {
-    @apply bg-card rounded-lg p-4 shadow-sm border border-border cursor-grab active:cursor-grabbing transition-all duration-200;
+    @apply bg-card rounded-lg p-4 border border-border cursor-grab active:cursor-grabbing transition-all duration-200;
+    box-shadow: var(--shadow-sm);
   }
 
   .pipeline-card:hover {
-    @apply shadow-md border-primary/20;
+    @apply border-primary/30;
+    box-shadow: var(--shadow-md);
+    background-color: hsl(var(--accent) / 0.3);
   }
 
   .pipeline-card:active {

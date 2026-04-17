@@ -30,7 +30,7 @@ export function Header({
   const { privacyMode, togglePrivacy } = usePrivacy();
   
   return (
-    <header className="sticky top-0 z-30 flex h-14 md:h-16 items-center justify-between border-b border-border bg-background/80 backdrop-blur-xl px-3 md:px-6">
+    <header className="sticky top-0 z-30 flex h-14 md:h-16 items-center justify-between border-b border-border bg-card/95 backdrop-blur-xl px-3 md:px-6 shadow-sm">
       <div className="flex items-center gap-3">
         {/* Mobile Nav Trigger */}
         <MobileNav />
