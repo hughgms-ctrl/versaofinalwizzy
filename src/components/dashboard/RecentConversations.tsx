@@ -8,7 +8,10 @@ import { useNavigate } from 'react-router-dom';
 import { useCanAccessModule } from '@/hooks/useUserPermissions';
 
 export function RecentConversations() {
-  const { data: recentConversations = [], isLoading } = useRecentConversations(5);
+  const { data: allRecent = [], isLoading } = useRecentConversations(20);
+  const recentConversations = allRecent
+    .filter((c) => c.status === 'open')
+    .slice(0, 5);
   const { canAccess: canAccessConversations } = useCanAccessModule('conversations');
   const navigate = useNavigate();
 
