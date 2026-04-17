@@ -23,6 +23,7 @@ import { Label } from '@/components/ui/label';
 import { usePipelines, usePipelineColumns } from '@/hooks/usePipelines';
 import { useFunnelConfig, useSaveFunnelConfig } from '@/hooks/useFunnelConfig';
 import { useFunnelData, type FunnelPeriod } from '@/hooks/useFunnelData';
+import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { toast } from '@/hooks/use-toast';
 
 const PERIOD_OPTIONS: { value: FunnelPeriod; label: string }[] = [
@@ -33,12 +34,22 @@ const PERIOD_OPTIONS: { value: FunnelPeriod; label: string }[] = [
 ];
 
 export function FunnelChart() {
-  const { data: pipelines = [] } = usePipelines();
+  const { data: allPipelines = [] } = usePipelines();
+  const { selectedWorkspaceId } = useWorkspaceContext();
   const { data: config, isLoading: loadingConfig } = useFunnelConfig();
   const saveConfig = useSaveFunnelConfig();
 
   const [period, setPeriod] = useState<FunnelPeriod>('30d');
   const [dialogOpen, setDialogOpen] = useState(false);
+
+  // Filter pipelines by selected workspace (or show all when "All workspaces")
+  const pipelines = useMemo(() => {
+    if (!selectedWorkspaceId) return allPipelines;
+    return allPipelines.filter((p: any) => {
+      const ws = p.workspace_ids || [];
+      return ws.length === 0 || ws.includes(selectedWorkspaceId);
+    });
+  }, [allPipelines, selectedWorkspaceId]);
 
   // Dialog draft state
   const [draftPipelineId, setDraftPipelineId] = useState<string>('');
