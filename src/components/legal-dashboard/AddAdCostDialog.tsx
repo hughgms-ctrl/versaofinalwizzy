@@ -114,7 +114,7 @@ export function AddAdCostDialog({ open, onOpenChange }: Props) {
           </Button>
           <Button
             onClick={handleSubmit}
-            className="bg-gradient-to-r from-teal-500 to-cyan-500 text-white hover:from-teal-400 hover:to-cyan-400"
+            className="bg-gradient-primary text-primary-foreground shadow-glow hover:opacity-90"
           >
             Salvar custo
           </Button>

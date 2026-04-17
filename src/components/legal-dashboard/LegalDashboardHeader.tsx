@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { ChevronDown, Plus, Scale, Calendar as CalendarIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -33,33 +32,29 @@ export function LegalDashboardHeader({ client, onClientChange, period, onPeriodC
       {/* Client selector */}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button className="group flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-left backdrop-blur-sm transition hover:bg-white/10">
-            <Avatar className="h-10 w-10 border border-white/10">
-              <AvatarFallback className="bg-gradient-to-br from-teal-500 to-cyan-500 text-white text-sm font-semibold">
+          <button className="group flex items-center gap-3 rounded-2xl border border-border bg-card px-3 py-2 text-left backdrop-blur-sm transition hover:border-primary/40 hover:bg-accent">
+            <Avatar className="h-10 w-10 border border-border">
+              <AvatarFallback className="bg-gradient-primary text-primary-foreground text-sm font-semibold">
                 {client.id === 'all' ? <Scale className="h-5 w-5" /> : initials}
               </AvatarFallback>
             </Avatar>
             <div className="min-w-0">
               <div className="flex items-center gap-1.5">
-                <p className="truncate text-sm font-semibold text-white">{client.name}</p>
-                <ChevronDown className="h-4 w-4 text-white/50 transition group-hover:text-white" />
+                <p className="truncate text-sm font-semibold text-foreground">{client.name}</p>
+                <ChevronDown className="h-4 w-4 text-muted-foreground transition group-hover:text-foreground" />
               </div>
-              <p className="truncate text-xs text-white/50">{client.type}</p>
+              <p className="truncate text-xs text-muted-foreground">{client.type}</p>
             </div>
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent className="w-72 border-white/10 bg-[#0f1424] text-white">
-          <DropdownMenuLabel className="text-white/60">Filtrar por cliente</DropdownMenuLabel>
-          <DropdownMenuSeparator className="bg-white/10" />
+        <DropdownMenuContent className="w-72">
+          <DropdownMenuLabel>Filtrar por cliente</DropdownMenuLabel>
+          <DropdownMenuSeparator />
           {MOCK_CLIENTS.map((c) => (
-            <DropdownMenuItem
-              key={c.id}
-              onClick={() => onClientChange(c)}
-              className="focus:bg-white/10 focus:text-white"
-            >
+            <DropdownMenuItem key={c.id} onClick={() => onClientChange(c)}>
               <div className="flex flex-col">
                 <span className="text-sm font-medium">{c.name}</span>
-                <span className="text-xs text-white/50">{c.type}</span>
+                <span className="text-xs text-muted-foreground">{c.type}</span>
               </div>
             </DropdownMenuItem>
           ))}
@@ -70,7 +65,7 @@ export function LegalDashboardHeader({ client, onClientChange, period, onPeriodC
       <div className="flex flex-wrap items-center gap-2">
         <Button
           onClick={onAddAdCost}
-          className="rounded-xl bg-gradient-to-r from-teal-500 to-cyan-500 text-white shadow-[0_0_20px_-5px] shadow-teal-500/40 hover:from-teal-400 hover:to-cyan-400"
+          className="rounded-xl bg-gradient-primary text-primary-foreground shadow-glow hover:opacity-90"
         >
           <Plus className="mr-1.5 h-4 w-4" />
           Adicionar custo de Ads
@@ -78,22 +73,15 @@ export function LegalDashboardHeader({ client, onClientChange, period, onPeriodC
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button
-              variant="outline"
-              className="rounded-xl border-white/10 bg-white/5 text-white hover:bg-white/10 hover:text-white"
-            >
-              <CalendarIcon className="mr-1.5 h-4 w-4 text-teal-400" />
+            <Button variant="outline" className="rounded-xl">
+              <CalendarIcon className="mr-1.5 h-4 w-4 text-primary" />
               {PERIOD_LABELS[period]}
               <ChevronDown className="ml-1.5 h-4 w-4 opacity-60" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent className="w-48 border-white/10 bg-[#0f1424] text-white">
+          <DropdownMenuContent className="w-48">
             {(Object.keys(PERIOD_LABELS) as PeriodKey[]).map((p) => (
-              <DropdownMenuItem
-                key={p}
-                onClick={() => onPeriodChange(p)}
-                className="focus:bg-white/10 focus:text-white"
-              >
+              <DropdownMenuItem key={p} onClick={() => onPeriodChange(p)}>
                 {PERIOD_LABELS[p]}
               </DropdownMenuItem>
             ))}

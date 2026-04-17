@@ -13,14 +13,22 @@ export function ProfitCard({ value, delta, spark }: Props) {
   const max = Math.max(...spark);
 
   return (
-    <div className="relative h-full overflow-hidden rounded-2xl border border-emerald-500/20 bg-gradient-to-br from-emerald-500/10 via-white/[0.02] to-emerald-500/5 p-5 backdrop-blur-sm">
-      <div className="pointer-events-none absolute -bottom-16 -right-12 h-40 w-40 rounded-full bg-emerald-500/20 blur-3xl" />
+    <div className="relative h-full overflow-hidden rounded-2xl border border-[hsl(var(--status-open)/0.25)] bg-card p-5 backdrop-blur-sm">
+      {/* subtle success gradient overlay */}
+      <div
+        className="pointer-events-none absolute inset-0 opacity-60"
+        style={{
+          background:
+            'linear-gradient(135deg, hsl(var(--status-open) / 0.10) 0%, transparent 60%, hsl(var(--status-open) / 0.05) 100%)',
+        }}
+      />
+      <div className="pointer-events-none absolute -bottom-16 -right-12 h-40 w-40 rounded-full bg-[hsl(var(--status-open)/0.20)] blur-3xl" />
 
       <div className="relative">
-        <p className="text-xs font-medium uppercase tracking-wider text-white/60">Lucro Líquido</p>
+        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Lucro Líquido</p>
         <p
-          className="mt-3 text-3xl font-bold tabular-nums text-emerald-300 md:text-4xl"
-          style={{ textShadow: '0 0 28px rgba(16,255,157,0.35)' }}
+          className="mt-3 text-3xl font-bold tabular-nums text-[hsl(var(--status-open))] md:text-4xl"
+          style={{ textShadow: '0 0 28px hsl(var(--status-open) / 0.35)' }}
         >
           {formatCurrency(value)}
         </p>
@@ -28,13 +36,15 @@ export function ProfitCard({ value, delta, spark }: Props) {
           <span
             className={cn(
               'inline-flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-xs font-semibold tabular-nums',
-              isUp ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-400',
+              isUp
+                ? 'bg-[hsl(var(--status-open)/0.20)] text-[hsl(var(--status-open))]'
+                : 'bg-destructive/20 text-destructive',
             )}
           >
             {isUp ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
             {Math.abs(delta).toFixed(1)}%
           </span>
-          <span className="text-xs text-white/40">vs período anterior</span>
+          <span className="text-xs text-muted-foreground/70">vs período anterior</span>
         </div>
 
         {/* Sparkline bars */}
@@ -48,16 +58,22 @@ export function ProfitCard({ value, delta, spark }: Props) {
                   className={cn(
                     'w-full rounded-t-md transition-all',
                     isLast
-                      ? 'bg-gradient-to-t from-emerald-500 to-emerald-300 shadow-[0_0_12px_-2px] shadow-emerald-400/60'
-                      : 'bg-gradient-to-t from-emerald-500/40 to-emerald-400/20',
+                      ? 'shadow-[0_0_12px_-2px]'
+                      : '',
                   )}
-                  style={{ height: `${h}%` }}
+                  style={{
+                    height: `${h}%`,
+                    background: isLast
+                      ? 'linear-gradient(to top, hsl(var(--status-open)) 0%, hsl(var(--status-open) / 0.7) 100%)'
+                      : 'linear-gradient(to top, hsl(var(--status-open) / 0.4) 0%, hsl(var(--status-open) / 0.15) 100%)',
+                    boxShadow: isLast ? '0 0 12px -2px hsl(var(--status-open) / 0.6)' : undefined,
+                  }}
                 />
               </div>
             );
           })}
         </div>
-        <div className="mt-1 flex justify-between text-[10px] text-white/30">
+        <div className="mt-1 flex justify-between text-[10px] text-muted-foreground/60">
           <span>7d atrás</span>
           <span>Hoje</span>
         </div>
