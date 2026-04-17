@@ -1,83 +1,86 @@
 
 
-## Diagnóstico de UX — Tema Claro Wizzy
+## Fase 1 — Dashboard Jurídico estilo Profitfy (visual + mock)
 
-### Problemas identificados (causa do "tudo branco demais")
+Foco: criar a página nova com o visual premium das referências, usando dados mock. Sem integrações ainda. Valida o design antes de plugar dados reais.
 
-| # | Problema | Onde | Impacto |
-|---|---|---|---|
-| 1 | **Background e card quase idênticos** | `--background: 220 20% 97%` vs `--card: 0 0% 100%` — diferença de só 3% de luminosidade | Cards "somem" no fundo, sem hierarquia visual |
-| 2 | **Bordas fracas** | `--border: 220 13% 91%` (cinza muito claro) | Separação entre seções imperceptível |
-| 3 | **Sombras quase invisíveis** | `shadow-sm: 0.05` opacity | Cards parecem planos, sem elevação |
-| 4 | **Header transparente sobre fundo claro** | `bg-background/80 backdrop-blur` | Header se mistura com conteúdo, sem ancoragem visual |
-| 5 | **`bg-secondary` = `bg-muted`** | ambos `220 14% 96%` | Inputs, badges e áreas secundárias têm a mesma cor — sem diferenciação |
-| 6 | **Falta tonalidade de marca no fundo** | Tudo cinza neutro | Interface "fria", sem identidade |
-| 7 | **Status badges com cores Tailwind hardcoded** | `bg-green-100`, `bg-amber-100` | Inconsistente com o sistema de tokens |
+### Rota e navegação
+- Nova rota `/legal-dashboard` (registrada em `App.tsx`)
+- Item no Sidebar: "Dashboard Jurídico" (ícone Scale/Gavel) — visível para todos por enquanto
+- Página dedicada com tema escuro premium próprio (não altera tokens globais)
 
-### Proposta — Reescala de profundidade (3 camadas claras)
+### Layout (1 coluna principal + grid responsivo)
 
 ```text
-┌─────────────────────────────────────────────┐
-│ CAMADA 1: Background (mais escuro)          │ ← 220 20% 94% (era 97%)
-│  ┌──────────────────────────────────────┐   │
-│  │ CAMADA 2: Card (intermediário)       │   │ ← 0 0% 100% + sombra real
-│  │   ┌────────────────────────────┐     │   │
-│  │   │ CAMADA 3: Input/secondary  │     │   │ ← 220 16% 97% (mais claro)
-│  │   └────────────────────────────┘     │   │
-│  └──────────────────────────────────────┘   │
-└─────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│ [Avatar Cliente ▾]  [+ Adicionar custo de Ads]   [Hoje ▾]  │ ← Header contextual
+├─────────────────────────────────────────────────────────────┤
+│ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐                 │
+│ │Receita │ │ Custo  │ │Marketing│ │Impostos│   ← 4 KPI Cards│
+│ │Líquida │ │Serviços│ │         │ │ /Taxas │   gradient teal│
+│ │ R$ XXk │ │ R$ XXk │ │ R$ XXk  │ │ R$ XXk │   +/- variação│
+│ │ +12.5% │ │ -3.2%  │ │ +8.1%   │ │ +1.0%  │                │
+│ └────────┘ └────────┘ └────────┘ └────────┘                 │
+├─────────────────────────────────────────────────┬───────────┤
+│  PERFORMANCE DE FUNIL                           │  LUCRO    │
+│  ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐            │  LÍQUIDO  │
+│  │ Lead │→│Reuni.│→│Propos│→│Contr.│            │  R$ 84.3k │
+│  │ 1240 │ │ 380  │ │ 142  │ │  47  │            │  ▆▅▇▆█▇▅  │
+│  │      │ │ 30%  │ │ 37%  │ │ 33%  │            │           │
+│  └──────┘ └──────┘ └──────┘ └──────┘            │  +18.2%   │
+│  [SVG funil em gradient verde→teal]             │           │
+├─────────────────────────────────────────────────┴───────────┤
+│ ┌─────┐ ┌─────┐ ┌─────┐ ┌─────┐ ┌─────┐                     │
+│ │ CPM │ │ CTR │ │ CPC │ │ CPA │ │ROAS │  ← Métricas de Ads  │
+│ └─────┘ └─────┘ └─────┘ └─────┘ └─────┘                     │
+├─────────────────────────────────────────────────────────────┤
+│ ┌──────────┐ ┌──────────┐ ┌──────────┐                      │
+│ │   ROI    │ │  Margem  │ │  Ticket  │  ← Mini-cards        │
+│ │  187%    │ │  Lucro   │ │  Médio   │                      │
+│ │          │ │   42%    │ │ R$ 1.8k  │                      │
+│ └──────────┘ └──────────┘ └──────────┘                      │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-**Regra**: o olho precisa enxergar **diferença mínima de 4-5% de luminosidade** entre camadas adjacentes para perceber profundidade.
-
-### Mudanças propostas (`src/index.css`)
-
-**1. Reforçar contraste entre camadas (apenas tema claro `:root`)**
-- `--background`: `220 20% 97%` → **`220 25% 94%`** (fundo levemente mais escuro e com leve toque azul/marca)
-- `--card`: mantém `0 0% 100%` (cria contraste real com o fundo)
-- `--secondary` / `--muted`: separar — secondary fica `220 20% 92%` (botões secundários visíveis), muted continua `220 14% 96%` (textos/áreas suaves)
-- `--border`: `220 13% 91%` → **`220 15% 86%`** (bordas perceptíveis mas suaves)
-
-**2. Sombras com mais presença**
-- `--shadow-sm`: opacity `0.05` → **`0.08`** + segunda camada
-- `--shadow-md`: adicionar leve tinta da cor primária (sombra "viva")
-- Novo `--shadow-card`: dedicado para cards (mais soft e maior)
-
-**3. Toque de marca no fundo (sutil)**
-- Adicionar gradient muito sutil ao body: `linear-gradient(180deg, hsl(220 25% 94%), hsl(234 30% 95%))` — dá vida sem poluir
-
-**4. Header ancorado**
-- Trocar `bg-background/80` → **`bg-card/95`** + sombra inferior sutil → header "flutua" sobre o conteúdo
-
-**5. Hover states mais visíveis**
-- `.metric-card:hover`, `.pipeline-card:hover` ganham fundo levemente colorido (`hsl(var(--accent) / 0.4)`) em vez de só sombra
-
-**6. Status badges usando tokens**
-- Substituir `bg-green-100` etc. por classes baseadas em `hsl(var(--status-open) / 0.15)` — consistência total
-
-### Comparação visual esperada
+### Componentes a criar
 
 ```text
-ANTES:                          DEPOIS:
-┌────────────────────┐          ┌────────────────────┐
-│ ░░░░░░░░░░░░░░░░░░ │          │ ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ │ ← fundo distinto
-│ ░ ┌──────────┐ ░░ │          │ ▓ ┌──────────┐ ▓▓ │
-│ ░ │  card?   │ ░░ │          │ ▓ │  CARD ✓  │ ▓▓ │ ← card com elevação
-│ ░ └──────────┘ ░░ │          │ ▓ └──────────┘ ▓▓ │   e sombra real
-│ ░░░░░░░░░░░░░░░░░░ │          │ ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓ │
-└────────────────────┘          └────────────────────┘
-Tudo plano                       Hierarquia clara
+src/pages/LegalDashboardPage.tsx
+src/components/legal-dashboard/
+  LegalDashboardHeader.tsx     ← cliente + botão Ads + filtro período
+  KpiCard.tsx                   ← card grande gradient + variação
+  FunnelChart.tsx               ← 4 etapas + SVG funil
+  ProfitCard.tsx                ← lucro + sparkline barras
+  AdMetricsRow.tsx              ← linha CPM/CTR/CPC/CPA/ROAS
+  MiniMetricCard.tsx            ← ROI/Margem/Ticket
+  AddAdCostDialog.tsx           ← modal mock (sem persistência ainda)
+src/data/legalDashboardMock.ts  ← dados de exemplo
 ```
 
-### Arquivos a editar
-- **`src/index.css`** — atualizar `:root` (apenas tema claro), tokens de sombra, gradient sutil no body, hover states, status badges com tokens
-- **`src/components/layout/Header.tsx`** — trocar `bg-background/80` por `bg-card/95` com sombra
-- **Sem mudanças** no tema escuro (que já funciona bem) e sem tocar em componentes individuais
+### Decisões visuais (Profitfy-style, sem poluir resto da plataforma)
+- Container da página com `bg-[#0a0e1a]` + sutil grid pattern
+- KPI Cards: gradient `from-teal-500/20 to-cyan-500/5`, borda `teal-500/30`, ícone com glow
+- Funil SVG: path com gradient `#10b981 → #06b6d4`, números brancos sobre fundo translúcido
+- Lucro: verde neon `#10ff9d` para o valor, sparkline com mesmas barras
+- Variações: verde `#10b981` ↑ / vermelho `#ef4444` ↓ com setas
+- Tudo com fonte tabular-nums para alinhamento de números
+- Filtro de período: dropdown shadcn com opções (Hoje, Ontem, 7d, 30d, Mês atual, Custom)
+- 100% responsivo (grid colapsa em mobile)
 
-### Princípios respeitados
-- 100% baseado em tokens semânticos (não quebra nada)
-- Cores HSL (compatível com sistema atual)
-- Reversível (só mudam variáveis CSS)
-- Modo escuro intocado
-- Modo privacidade intocado
+### Dados mock realistas
+- Receita Líquida: R$ 184.250 (+12.5%)
+- Funil: 1240 leads → 380 reuniões → 142 propostas → 47 contratos
+- CPA: R$ 287 / ROAS: 4.2x
+- Sparkline: 7 barras com variação natural
+
+### Arquivos editados
+- `src/App.tsx` — registrar rota
+- `src/components/layout/Sidebar.tsx` — adicionar item "Dashboard Jurídico"
+- Novos arquivos listados acima
+
+### Fora do escopo desta fase (próximas)
+- Persistência real (vem na Fase 2 com tabelas `legal_cases`, `case_revenues`, `case_costs`)
+- Meta Ads sync (Fase 3)
+- DataJud integração (Fase 4)
+- Asaas cobrança (Fase 5)
 
