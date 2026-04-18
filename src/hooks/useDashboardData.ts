@@ -393,20 +393,28 @@ export function useRecentConversations(limit = 5) {
   });
 }
 
-export function useTeamPerformance() {
+export function useTeamPerformance(period: string = '7d') {
   const { profile } = useAuth();
   const { selectedWorkspaceId, workspaces } = useWorkspaceContext();
 
   return useQuery({
-    queryKey: ['team-performance', profile?.organization_id, selectedWorkspaceId],
+    queryKey: ['team-performance', profile?.organization_id, selectedWorkspaceId, period],
     queryFn: async () => {
       if (!profile?.organization_id) return [];
+
+      const daysMap: Record<string, number> = { today: 0, '7d': 7, '30d': 30, '90d': 90 };
+      const days = daysMap[period] ?? 7;
+      const since = days === 0
+        ? startOfDay(new Date()).toISOString()
+        : subDays(new Date(), days).toISOString();
 
       const wsConvIds = await getWorkspaceConversationIds(
         profile.organization_id,
         selectedWorkspaceId,
         workspaces
       );
+
+      if (wsConvIds !== null && wsConvIds.length === 0) return [];
 
       const { data: profiles } = await supabase
         .from('profiles')
@@ -415,40 +423,39 @@ export function useTeamPerformance() {
 
       if (!profiles) return [];
 
-      const result = [];
-      
-      for (const member of profiles) {
-        let count: number | null;
-        if (wsConvIds !== null) {
-          if (wsConvIds.length === 0) {
-            count = 0;
-          } else {
-            const { count: c } = await supabase
-              .from('conversations')
-              .select('*', { count: 'exact', head: true })
-              .eq('organization_id', profile.organization_id)
-              .eq('assigned_to', member.user_id)
-              .in('id', wsConvIds);
-            count = c;
-          }
-        } else {
-          const { count: c } = await supabase
-            .from('conversations')
-            .select('*', { count: 'exact', head: true })
-            .eq('organization_id', profile.organization_id)
-            .eq('assigned_to', member.user_id);
-          count = c;
-        }
+      // Get conversations attended in period: intervened OR assigned and updated in period
+      let convQuery = supabase
+        .from('conversations')
+        .select('id, intervened_by, assigned_to, intervened_at, updated_at')
+        .eq('organization_id', profile.organization_id)
+        .gte('updated_at', since);
 
-        result.push({
-          id: member.id,
-          name: member.full_name,
-          avatar_url: member.avatar_url,
-          conversationsHandled: count || 0,
-          avgResponseTime: 0,
-          satisfactionScore: 0,
-        });
-      }
+      if (wsConvIds) convQuery = convQuery.in('id', wsConvIds);
+
+      const { data: convs } = await convQuery;
+
+      const counts: Record<string, Set<string>> = {};
+      (convs || []).forEach((c: any) => {
+        // Prefer intervened_by (who actually took over from AI/queue)
+        const userId = c.intervened_by || c.assigned_to;
+        if (!userId) return;
+        // If using assigned_to, ensure intervention happened in period (use intervened_at when available)
+        if (c.intervened_by && c.intervened_at && new Date(c.intervened_at) < new Date(since)) {
+          // Intervention happened before period - skip
+          return;
+        }
+        if (!counts[userId]) counts[userId] = new Set();
+        counts[userId].add(c.id);
+      });
+
+      const result = profiles.map((member: any) => ({
+        id: member.id,
+        name: member.full_name,
+        avatar_url: member.avatar_url,
+        conversationsHandled: counts[member.user_id]?.size || 0,
+        avgResponseTime: 0,
+        satisfactionScore: 0,
+      }));
 
       return result.filter(m => m.conversationsHandled > 0);
     },
