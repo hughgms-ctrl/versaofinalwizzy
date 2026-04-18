@@ -1,10 +1,19 @@
+import { useState } from 'react';
 import { useTeamPerformance } from '@/hooks/useDashboardData';
-import { Bot, User, Zap, MessageSquare } from 'lucide-react';
+import { User, Zap, MessageSquare } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 export function AgentPerformance() {
-  const { data: teamMembers = [], isLoading } = useTeamPerformance();
+  const [period, setPeriod] = useState('7d');
+  const { data: teamMembers = [], isLoading } = useTeamPerformance(period);
 
   const getInitials = (name: string) => {
     return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
@@ -14,12 +23,25 @@ export function AgentPerformance() {
     <div className="metric-card">
       <div className="metric-card-gradient" />
       <div className="relative">
-        <div className="mb-4 flex items-center justify-between">
+        <div className="mb-4 flex items-center justify-between gap-2">
           <div>
             <h3 className="text-lg font-semibold text-foreground">Performance da Equipe</h3>
-            <p className="text-sm text-muted-foreground">Atendimentos realizados</p>
+            <p className="text-sm text-muted-foreground">Conversas atendidas no período</p>
           </div>
-          <User className="h-5 w-5 text-muted-foreground" />
+          <div className="flex items-center gap-2">
+            <Select value={period} onValueChange={setPeriod}>
+              <SelectTrigger className="w-[130px] h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="today">Hoje</SelectItem>
+                <SelectItem value="7d">Últimos 7 dias</SelectItem>
+                <SelectItem value="30d">Últimos 30 dias</SelectItem>
+                <SelectItem value="90d">Últimos 90 dias</SelectItem>
+              </SelectContent>
+            </Select>
+            <User className="h-5 w-5 text-muted-foreground" />
+          </div>
         </div>
 
         {isLoading ? (
