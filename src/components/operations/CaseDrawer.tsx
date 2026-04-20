@@ -3,7 +3,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import { Scale, Building2, MessageSquare, FileText, ListTodo, Calendar, Activity, ExternalLink, Trash2 } from 'lucide-react';
+import { Scale, Building2, MessageSquare, FileText, ListTodo, Calendar, Activity, ExternalLink, Trash2, X } from 'lucide-react';
 import { useCase, useUpdateCase, useDeleteCase } from '@/hooks/useOperationsCases';
 import { useCaseStatuses } from '@/hooks/useOperationsCases';
 import { useTeamMembers } from '@/hooks/useTeamMembers';
