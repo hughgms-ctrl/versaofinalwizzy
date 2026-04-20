@@ -145,7 +145,7 @@ export function FunnelChart() {
 
   // Build stages with column metadata
   const stages = useMemo(() => {
-    return columnIds
+    return effectiveColumnIds
       .map((cid) => {
         const col = pipelineColumns.find((c) => c.id === cid);
         const data = funnelData.find((d) => d.column_id === cid);
@@ -154,9 +154,10 @@ export function FunnelChart() {
           : null;
       })
       .filter(Boolean) as { id: string; label: string; count: number }[];
-  }, [columnIds, pipelineColumns, funnelData]);
+  }, [effectiveColumnIds, pipelineColumns, funnelData]);
 
-  const isConfigured = pipelineId && columnIds.length >= 2;
+  const hasPipeline = !!pipelineId && pipelines.length > 0;
+  const isConfigured = hasPipeline && stages.length >= 2;
   const max = stages.length > 0 ? Math.max(...stages.map((s) => s.count), 1) : 1;
   const totalConv =
     stages.length >= 2 && stages[0].count > 0
