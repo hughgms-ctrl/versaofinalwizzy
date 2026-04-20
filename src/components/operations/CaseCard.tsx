@@ -50,7 +50,10 @@ export function CaseCard({ case_, taskStats, onClick }: CaseCardProps) {
   const contactName = case_.contact?.name || case_.contact?.phone || 'Sem contato';
   const initials = contactName.slice(0, 2).toUpperCase();
   const isDone = !!case_.closed_at;
-  const accentColor = case_.category?.color || 'hsl(var(--primary))';
+  // Borda lateral segue a cor do workspace; se não houver, usa a cor da categoria; se não, primary
+  const accentColor = case_.workspace?.color || case_.category?.color || 'hsl(var(--primary))';
+  const unreadCount = case_.conversation?.unread_count || 0;
+  const conversationId = case_.conversation?.id;
 
   // Prazo
   let dueBadge: React.ReactNode = null;
