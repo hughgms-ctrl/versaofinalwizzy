@@ -1087,6 +1087,7 @@ export type Database = {
         Row: {
           created_at: string
           days_to_due: number
+          default_time: string | null
           description: string | null
           id: string
           is_mandatory: boolean
@@ -1097,6 +1098,7 @@ export type Database = {
         Insert: {
           created_at?: string
           days_to_due?: number
+          default_time?: string | null
           description?: string | null
           id?: string
           is_mandatory?: boolean
@@ -1107,6 +1109,7 @@ export type Database = {
         Update: {
           created_at?: string
           days_to_due?: number
+          default_time?: string | null
           description?: string | null
           id?: string
           is_mandatory?: boolean
@@ -1209,6 +1212,7 @@ export type Database = {
         Row: {
           column_id: string
           created_at: string
+          default_assignee_id: string | null
           id: string
           is_active: boolean
           organization_id: string
@@ -1219,6 +1223,7 @@ export type Database = {
         Insert: {
           column_id: string
           created_at?: string
+          default_assignee_id?: string | null
           id?: string
           is_active?: boolean
           organization_id: string
@@ -1229,6 +1234,7 @@ export type Database = {
         Update: {
           column_id?: string
           created_at?: string
+          default_assignee_id?: string | null
           id?: string
           is_active?: boolean
           organization_id?: string
@@ -1242,6 +1248,13 @@ export type Database = {
             columns: ["column_id"]
             isOneToOne: false
             referencedRelation: "pipeline_columns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "case_triggers_default_assignee_id_fkey"
+            columns: ["default_assignee_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
           {
@@ -5353,15 +5366,26 @@ export type Database = {
           reason: string
         }[]
       }
-      create_case_from_template: {
-        Args: {
-          _contact_id: string
-          _conversation_id: string
-          _created_by?: string
-          _template_id: string
-        }
-        Returns: string
-      }
+      create_case_from_template:
+        | {
+            Args: {
+              _contact_id: string
+              _conversation_id: string
+              _created_by?: string
+              _template_id: string
+            }
+            Returns: string
+          }
+        | {
+            Args: {
+              _contact_id: string
+              _conversation_id: string
+              _created_by?: string
+              _override_assignee_id?: string
+              _template_id: string
+            }
+            Returns: string
+          }
       deactivate_org_instances: {
         Args: { _org_id: string }
         Returns: undefined

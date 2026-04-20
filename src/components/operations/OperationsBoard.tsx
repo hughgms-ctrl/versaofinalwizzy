@@ -79,16 +79,18 @@ export function OperationsBoard({ filters, onOpenCase }: Props) {
                 ref={provided.innerRef}
                 {...provided.droppableProps}
                 className={cn(
-                  'flex-shrink-0 w-72 rounded-lg p-3 transition-colors',
+                  'flex-shrink-0 w-96 rounded-lg p-3 transition-colors',
                   snapshot.isDraggingOver ? 'bg-muted' : 'bg-muted/40'
                 )}
               >
-                <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center justify-between mb-3 px-1">
                   <div className="flex items-center gap-2">
-                    <div className="h-2 w-2 rounded-full" style={{ backgroundColor: s.color }} />
+                    <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: s.color }} />
                     <h3 className="text-sm font-semibold">{s.name}</h3>
                   </div>
-                  <span className="text-xs text-muted-foreground">{(grouped[s.id] || []).length}</span>
+                  <span className="text-xs text-muted-foreground bg-background/60 px-2 py-0.5 rounded-full">
+                    {(grouped[s.id] || []).length}
+                  </span>
                 </div>
                 <div className="space-y-2 min-h-[40px]">
                   {(grouped[s.id] || []).map((c: any, idx: number) => (
