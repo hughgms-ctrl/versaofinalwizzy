@@ -82,6 +82,8 @@ export function useCreateCaseTask() {
     onSuccess: (_, v) => {
       qc.invalidateQueries({ queryKey: ['case-tasks', v.case_id] });
       qc.invalidateQueries({ queryKey: ['my-tasks'] });
+      qc.invalidateQueries({ queryKey: ['all-pending-tasks'] });
+      qc.invalidateQueries({ queryKey: ['tasks-by-case'] });
       toast({ title: 'Tarefa adicionada' });
     },
     onError: (e: any) => toast({ title: 'Erro', description: e.message, variant: 'destructive' }),
@@ -110,6 +112,8 @@ export function useUpdateCaseTask() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['case-tasks'] });
       qc.invalidateQueries({ queryKey: ['my-tasks'] });
+      qc.invalidateQueries({ queryKey: ['all-pending-tasks'] });
+      qc.invalidateQueries({ queryKey: ['tasks-by-case'] });
     },
   });
 }
@@ -124,6 +128,8 @@ export function useDeleteCaseTask() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['case-tasks'] });
       qc.invalidateQueries({ queryKey: ['my-tasks'] });
+      qc.invalidateQueries({ queryKey: ['all-pending-tasks'] });
+      qc.invalidateQueries({ queryKey: ['tasks-by-case'] });
     },
   });
 }
