@@ -206,11 +206,11 @@ export function CaseCard({ case_, taskStats, onClick }: CaseCardProps) {
             </div>
 
             <div className="flex items-center gap-1">
-              {conversationId && (
+              {chatHref && (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Link
-                      to={`/conversations?conversation=${conversationId}`}
+                      to={chatHref}
                       onClick={(e) => e.stopPropagation()}
                       className="relative inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
                       aria-label="Abrir conversa"
