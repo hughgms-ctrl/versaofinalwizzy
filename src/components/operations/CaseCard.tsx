@@ -266,6 +266,13 @@ export function CaseCard({ case_, taskStats, onClick }: CaseCardProps) {
           {expanded && <InlineTaskList caseId={case_.id} />}
         </div>
       </Card>
+      {hasChat && conversationFull && (
+        <PipelineChatModal
+          conversation={conversationFull as any}
+          open={chatOpen}
+          onOpenChange={setChatOpen}
+        />
+      )}
     </TooltipProvider>
   );
 }
