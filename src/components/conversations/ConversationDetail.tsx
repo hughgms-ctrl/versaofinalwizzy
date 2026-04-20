@@ -381,8 +381,8 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
           error_message: 'Cancelled: AI deactivated by human agent',
         } as any)
         .eq('conversation_id', conversation.id)
-        .eq('status', 'waiting_input')
-        .eq('variables->>source', 'chat_follow_up');
+        .in('status', ['waiting_input', 'running'])
+        .eq('current_node_id', 'chat-follow-up');
 
       setAiPausedUntil('permanent');
       toast({
@@ -433,8 +433,8 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
         error_message: 'Cancelled: AI paused by human agent',
       } as any)
       .eq('conversation_id', conversation.id)
-      .eq('status', 'waiting_input')
-      .eq('variables->>source', 'chat_follow_up');
+      .in('status', ['waiting_input', 'running'])
+      .eq('current_node_id', 'chat-follow-up');
 
     setAiPausedUntil(pauseValue);
     queryClient.invalidateQueries({ queryKey: ['conversations'] });

@@ -71,8 +71,8 @@ export function ConversationActionsMenu({ conversation, onShowMediaGallery }: Co
         error_message: reason,
       } as any)
       .eq('conversation_id', conversation.id)
-      .eq('status', 'waiting_input')
-      .eq('variables->>source', 'chat_follow_up');
+      .in('status', ['waiting_input', 'running'])
+      .eq('current_node_id', 'chat-follow-up');
   };
 
   const { data: tags } = useTags();
