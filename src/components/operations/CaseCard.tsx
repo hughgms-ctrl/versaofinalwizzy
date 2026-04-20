@@ -115,13 +115,7 @@ export function CaseCard({ case_, taskStats, onClick }: CaseCardProps) {
         )}
         onClick={onClick}
       >
-        {/* Accent bar lateral fina */}
-        <div
-          className="absolute left-0 top-0 bottom-0 w-[3px]"
-          style={{ backgroundColor: accentColor }}
-        />
-
-        <div className="p-4 pl-[14px] space-y-3">
+        <div className="p-4 space-y-3">
           {/* Header: avatar + contato + categoria + chat */}
           <div className="flex items-start gap-2.5">
             <Avatar className="h-8 w-8 flex-shrink-0">
