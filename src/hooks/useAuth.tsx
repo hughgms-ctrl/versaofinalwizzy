@@ -146,7 +146,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (data?.user && isPendingApproval(data.user)) {
         await supabase.auth.signOut();
-        return { error: new Error('Sua conta está aguardando aprovação de um administrador. Você será notificado assim que for liberada.') };
+        return { error: new Error('Sua conta está em verificação. Aguarde alguns instantes e tente novamente em breve.') };
       }
 
       return { error: null };

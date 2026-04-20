@@ -1,5 +1,5 @@
 import React from 'react';
-import { Shield, AlertTriangle, Building2, User, Globe, Info } from 'lucide-react';
+import { Shield, AlertTriangle, Building2, User, Globe, Clock } from 'lucide-react';
 import { 
   Popover, 
   PopoverContent, 
@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useSecurityAlerts } from '@/hooks/useAdminDashboard';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { formatDistanceToNow } from 'date-fns';
+import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 export function SecurityAlerts() {
@@ -78,6 +78,12 @@ export function SecurityAlerts() {
                         <Globe className="h-3 w-3" />
                         IP: {alert.ip_address}
                       </div>
+                      {alert.created_at && (
+                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <Clock className="h-3 w-3" />
+                          {format(new Date(alert.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                        </div>
+                      )}
                       <div className="mt-2 p-2 bg-warning/5 border border-warning/10 rounded text-[10px] text-warning-foreground italic">
                         "{alert.reason}"
                       </div>
