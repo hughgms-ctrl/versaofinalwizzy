@@ -25,11 +25,92 @@ import {
   MapPin, AlertTriangle, Eye, CheckCircle, XCircle
 } from 'lucide-react';
 
+function UserFingerprintsDialog({ user, onClose }: { user: any; onClose: () => void }) {
+  const blockIp = useBlockIp();
+  const fingerprints = user?.fingerprints || [];
+
+  return (
+    <Dialog open={!!user} onOpenChange={onClose}>
+      <DialogContent className="max-w-2xl max-h-[85vh]">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Monitor className="h-5 w-5 text-primary" />
+            Fingerprints de {user?.name || user?.email}
+          </DialogTitle>
+        </DialogHeader>
+        <ScrollArea className="max-h-[65vh] pr-4">
+          <div className="space-y-3 py-2">
+            {fingerprints.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">
+                Nenhum fingerprint registrado para este usuário.
+              </p>
+            ) : (
+              fingerprints.map((fp: any) => {
+                const browser = fp.browser_data || {};
+                const location = fp.location_data || {};
+                return (
+                  <div key={fp.id} className="p-3 border rounded-lg text-sm">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(fp.created_at).toLocaleString('pt-BR')}
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 text-xs text-destructive"
+                        onClick={() => blockIp.mutate({ ip_address: fp.ip_address, reason: `Bloqueado via fingerprint do usuário ${user?.name || user?.email}` })}
+                        disabled={blockIp.isPending || !fp.ip_address}
+                      >
+                        <Ban className="h-3 w-3 mr-1" />
+                        Bloquear IP
+                      </Button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <Globe className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                        <span className="text-muted-foreground">IP:</span>
+                        <span className="font-mono text-xs">{fp.ip_address || '—'}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <Monitor className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                        <span className="text-muted-foreground">Navegador:</span>
+                        <span className="truncate">{browser.browser || fp.user_agent?.split('/')[0] || '—'}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <MapPin className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                        <span className="text-muted-foreground">Local:</span>
+                        <span>{location.city ? `${location.city}, ${location.region || location.country || ''}` : '—'}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <Monitor className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                        <span className="text-muted-foreground">OS:</span>
+                        <span>{browser.os || browser.platform || '—'}</span>
+                      </div>
+                      {browser.timezone && (
+                        <div className="flex items-center gap-1.5 col-span-2">
+                          <Globe className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                          <span className="text-muted-foreground">Timezone:</span>
+                          <span>{browser.timezone}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </ScrollArea>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function OrgUsersRow({ orgId }: { orgId: string }) {
   const { data, isLoading } = useAdminOrgUsers(orgId);
   const blockUser = useBlockUser();
   const deleteUser = useDeleteOrgUser();
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
+  const [fpTarget, setFpTarget] = useState<any | null>(null);
 
   if (isLoading) return (
     <TableRow>
@@ -64,39 +145,57 @@ function OrgUsersRow({ orgId }: { orgId: string }) {
                         {u.is_blocked && (
                           <Badge variant="destructive" className="text-[10px] px-1.5 py-0">Bloqueado</Badge>
                         )}
+                        {u.fingerprints?.length > 0 && (
+                          <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                            {u.fingerprints.length} FP
+                          </Badge>
+                        )}
                       </div>
                       <p className="text-xs text-muted-foreground">{u.email}</p>
                     </div>
                   </div>
-                  {u.role !== 'platform_admin' && (
-                    <div className="flex items-center gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className={u.is_blocked ? 'text-green-600 hover:text-green-700' : 'text-orange-600 hover:text-orange-700'}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          blockUser.mutate({ user_id: u.user_id, block: !u.is_blocked });
-                        }}
-                        disabled={blockUser.isPending}
-                      >
-                        {u.is_blocked ? <ShieldCheck className="h-4 w-4 mr-1" /> : <ShieldOff className="h-4 w-4 mr-1" />}
-                        {u.is_blocked ? 'Desbloquear' : 'Bloquear'}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-destructive hover:text-destructive"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setDeleteTarget({ id: u.user_id, name: u.name || u.email });
-                        }}
-                      >
-                        <Trash2 className="h-4 w-4 mr-1" />
-                        Excluir
-                      </Button>
-                    </div>
-                  )}
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      title="Ver fingerprints"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setFpTarget(u);
+                      }}
+                    >
+                      <Eye className="h-4 w-4" />
+                    </Button>
+                    {u.role !== 'platform_admin' && (
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className={u.is_blocked ? 'text-green-600 hover:text-green-700' : 'text-orange-600 hover:text-orange-700'}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            blockUser.mutate({ user_id: u.user_id, block: !u.is_blocked });
+                          }}
+                          disabled={blockUser.isPending}
+                        >
+                          {u.is_blocked ? <ShieldCheck className="h-4 w-4 mr-1" /> : <ShieldOff className="h-4 w-4 mr-1" />}
+                          {u.is_blocked ? 'Desbloquear' : 'Bloquear'}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-destructive hover:text-destructive"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeleteTarget({ id: u.user_id, name: u.name || u.email });
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4 mr-1" />
+                          Excluir
+                        </Button>
+                      </>
+                    )}
+                  </div>
                 </div>
               ))}
               {users.length === 0 && (
@@ -106,6 +205,8 @@ function OrgUsersRow({ orgId }: { orgId: string }) {
           </div>
         </TableCell>
       </TableRow>
+
+      <UserFingerprintsDialog user={fpTarget} onClose={() => setFpTarget(null)} />
 
       <AlertDialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
         <AlertDialogContent onClick={(e) => e.stopPropagation()}>
