@@ -932,6 +932,67 @@ export type Database = {
           },
         ]
       }
+      case_task_notifications: {
+        Row: {
+          case_task_id: string | null
+          created_at: string
+          id: string
+          notify_channel: string
+          notify_days_before: number
+          notify_on_create: boolean
+          notify_on_overdue: boolean
+          organization_id: string
+          template_task_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          case_task_id?: string | null
+          created_at?: string
+          id?: string
+          notify_channel?: string
+          notify_days_before?: number
+          notify_on_create?: boolean
+          notify_on_overdue?: boolean
+          organization_id: string
+          template_task_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          case_task_id?: string | null
+          created_at?: string
+          id?: string
+          notify_channel?: string
+          notify_days_before?: number
+          notify_on_create?: boolean
+          notify_on_overdue?: boolean
+          organization_id?: string
+          template_task_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "case_task_notifications_case_task_id_fkey"
+            columns: ["case_task_id"]
+            isOneToOne: false
+            referencedRelation: "case_tasks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "case_task_notifications_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "case_task_notifications_template_task_id_fkey"
+            columns: ["template_task_id"]
+            isOneToOne: false
+            referencedRelation: "case_template_tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       case_tasks: {
         Row: {
           assignee_id: string | null
