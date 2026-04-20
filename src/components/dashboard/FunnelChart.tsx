@@ -81,6 +81,30 @@ export function FunnelChart() {
     period
   );
 
+  useEffect(() => {
+    if (loadingConfig || saveConfig.isPending) return;
+    if (!pipelineId || columnIds.length < 2) return;
+
+    const currentPipelineId = configuredPipelineVisible ? config?.pipeline_id || null : null;
+    const currentColumnIds = configuredPipelineVisible ? config?.column_ids || [] : [];
+    const isSameConfig =
+      currentPipelineId === pipelineId &&
+      currentColumnIds.length === columnIds.length &&
+      currentColumnIds.every((columnId, index) => columnId === columnIds[index]);
+
+    if (!isSameConfig) {
+      saveConfig.mutate({ pipeline_id: pipelineId, column_ids: columnIds });
+    }
+  }, [
+    columnIds,
+    config?.column_ids,
+    config?.pipeline_id,
+    configuredPipelineVisible,
+    loadingConfig,
+    pipelineId,
+    saveConfig,
+  ]);
+
   // Init draft when opening dialog
   useEffect(() => {
     if (dialogOpen) {
@@ -261,7 +285,7 @@ export function FunnelChart() {
         </div>
 
         {/* Body */}
-        {loadingConfig ? (
+        {loadingConfig || (pipelineId && loadingPipelineColumns) ? (
           <Skeleton className="h-[320px] w-full rounded-xl" />
         ) : !isConfigured ? (
           <div className="flex h-[280px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border bg-secondary/30 p-6 text-center">
