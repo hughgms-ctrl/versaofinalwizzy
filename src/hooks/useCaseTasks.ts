@@ -30,7 +30,7 @@ export function useMyTasks() {
       if (!profile?.id) return [];
       const { data, error } = await (supabase as any)
         .from('case_tasks')
-        .select('*, case:cases(id,title,kind,contact:contacts(name,phone))')
+        .select('*, case:cases(id,title,kind,workspace_id,contact:contacts(name,phone,avatar_url))')
         .eq('assignee_id', profile.id)
         .is('completed_at', null)
         .order('due_date', { ascending: true, nullsFirst: false });
@@ -38,6 +38,26 @@ export function useMyTasks() {
       return data || [];
     },
     enabled: !!profile?.id,
+  });
+}
+
+export function useAllPendingTasks() {
+  const { profile } = useAuth();
+  return useQuery({
+    queryKey: ['all-pending-tasks', profile?.organization_id],
+    queryFn: async () => {
+      if (!profile?.organization_id) return [];
+      const { data, error } = await (supabase as any)
+        .from('case_tasks')
+        .select('*, case:cases(id,title,kind,workspace_id,contact:contacts(name,phone,avatar_url)), assignee:profiles!case_tasks_assignee_id_fkey(id,full_name,avatar_url)')
+        .eq('organization_id', profile.organization_id)
+        .is('completed_at', null)
+        .order('due_date', { ascending: true, nullsFirst: false })
+        .limit(500);
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!profile?.organization_id,
   });
 }
 
