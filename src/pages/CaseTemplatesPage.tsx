@@ -244,6 +244,7 @@ export default function CaseTemplatesPage() {
             <CaseStatusManager />
           </TabsContent>
         </Tabs>
+      </div>
     </MainLayout>
   );
 }
