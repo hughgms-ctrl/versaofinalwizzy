@@ -37,6 +37,8 @@ export interface CaseTemplate {
   category_id: string | null;
   default_assignee_id: string | null;
   default_status_id: string | null;
+  default_judicial_data: JudicialData;
+  default_administrative_data: AdministrativeData;
   is_active: boolean;
   created_at: string;
   updated_at: string;
