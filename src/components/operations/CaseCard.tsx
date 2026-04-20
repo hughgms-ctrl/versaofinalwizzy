@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
+import { PipelineChatModal } from '@/components/pipeline/PipelineChatModal';
 import { Card } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -46,6 +48,7 @@ const priorityStyle: Record<string, { label: string; className: string }> = {
 
 export function CaseCard({ case_, taskStats, onClick }: CaseCardProps) {
   const [expanded, setExpanded] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
   const Icon = case_.kind === 'judicial' ? Scale : Building2;
   const contactName = case_.contact?.name || case_.contact?.phone || 'Sem contato';
   const initials = contactName.slice(0, 2).toUpperCase();
@@ -55,11 +58,19 @@ export function CaseCard({ case_, taskStats, onClick }: CaseCardProps) {
   const unreadCount = case_.conversation?.unread_count || 0;
   const conversationId = case_.conversation?.id;
   const contactId = (case_ as any).contact_id || (case_ as any).contact?.id;
-  const chatHref = conversationId
-    ? `/conversations?conversation=${conversationId}`
-    : contactId
-      ? `/conversations?contact=${contactId}`
-      : null;
+  const hasChat = !!(conversationId || contactId);
+
+  const { data: conversationFull } = useQuery({
+    queryKey: ['case-card-conversation', conversationId, contactId],
+    enabled: chatOpen && hasChat,
+    queryFn: async () => {
+      let q = (supabase as any).from('conversations').select('*, contact:contacts(*)');
+      if (conversationId) q = q.eq('id', conversationId);
+      else q = q.eq('contact_id', contactId).order('last_message_at', { ascending: false }).limit(1);
+      const { data } = await q.maybeSingle();
+      return data;
+    },
+  });
 
   // Prazo
   let dueBadge: React.ReactNode = null;
@@ -133,12 +144,15 @@ export function CaseCard({ case_, taskStats, onClick }: CaseCardProps) {
                 <TooltipContent>{case_.contact?.phone}</TooltipContent>
               </Tooltip>
             </div>
-            {chatHref && (
+            {hasChat && (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Link
-                    to={chatHref}
-                    onClick={(e) => e.stopPropagation()}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setChatOpen(true);
+                    }}
                     className="relative inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors flex-shrink-0"
                     aria-label="Abrir conversa"
                   >
@@ -148,7 +162,7 @@ export function CaseCard({ case_, taskStats, onClick }: CaseCardProps) {
                         {unreadCount > 9 ? '9+' : unreadCount}
                       </span>
                     )}
-                  </Link>
+                  </button>
                 </TooltipTrigger>
                 <TooltipContent>
                   {unreadCount > 0 ? `Abrir conversa (${unreadCount} não lidas)` : 'Abrir conversa'}
@@ -252,6 +266,13 @@ export function CaseCard({ case_, taskStats, onClick }: CaseCardProps) {
           {expanded && <InlineTaskList caseId={case_.id} />}
         </div>
       </Card>
+      {hasChat && conversationFull && (
+        <PipelineChatModal
+          conversation={conversationFull as any}
+          open={chatOpen}
+          onOpenChange={setChatOpen}
+        />
+      )}
     </TooltipProvider>
   );
 }
