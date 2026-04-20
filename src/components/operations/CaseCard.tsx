@@ -1,6 +1,6 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
@@ -18,6 +18,7 @@ import {
   ChevronDown,
   ChevronUp,
   ListTodo,
+  MessageSquare,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format, formatDistanceToNow, differenceInHours, isPast } from 'date-fns';
@@ -30,6 +31,8 @@ interface CaseCardProps {
     contact?: { name: string | null; phone: string; avatar_url: string | null };
     category?: { name: string; kind: string; color: string | null };
     assignee?: { full_name: string | null; avatar_url: string | null };
+    workspace?: { id: string; name: string; color: string | null } | null;
+    conversation?: { id: string; unread_count: number } | null;
   };
   taskStats?: { total: number; done: number; nextDue?: string | null };
   onClick?: () => void;
@@ -47,7 +50,10 @@ export function CaseCard({ case_, taskStats, onClick }: CaseCardProps) {
   const contactName = case_.contact?.name || case_.contact?.phone || 'Sem contato';
   const initials = contactName.slice(0, 2).toUpperCase();
   const isDone = !!case_.closed_at;
-  const accentColor = case_.category?.color || 'hsl(var(--primary))';
+  // Borda lateral segue a cor do workspace; se não houver, usa a cor da categoria; se não, primary
+  const accentColor = case_.workspace?.color || case_.category?.color || 'hsl(var(--primary))';
+  const unreadCount = case_.conversation?.unread_count || 0;
+  const conversationId = case_.conversation?.id;
 
   // Prazo
   let dueBadge: React.ReactNode = null;
@@ -193,24 +199,49 @@ export function CaseCard({ case_, taskStats, onClick }: CaseCardProps) {
               </Tooltip>
             </div>
 
-            {taskStats && taskStats.total > 0 && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setExpanded(!expanded);
-                    }}
-                    className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground hover:text-foreground transition-colors rounded px-1 py-0.5"
-                  >
-                    <ListTodo className="h-3 w-3" />
-                    <span className="tabular-nums">{taskStats.done}/{taskStats.total}</span>
-                    {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent>{expanded ? 'Esconder tarefas' : 'Ver tarefas'}</TooltipContent>
-              </Tooltip>
-            )}
+            <div className="flex items-center gap-1">
+              {conversationId && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Link
+                      to={`/conversations?conversation=${conversationId}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="relative inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                      aria-label="Abrir conversa"
+                    >
+                      <MessageSquare className="h-3.5 w-3.5" />
+                      {unreadCount > 0 && (
+                        <span className="absolute -top-1 -right-1 h-3.5 min-w-[14px] px-0.5 rounded-full bg-destructive text-destructive-foreground text-[9px] font-bold flex items-center justify-center leading-none">
+                          {unreadCount > 9 ? '9+' : unreadCount}
+                        </span>
+                      )}
+                    </Link>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {unreadCount > 0 ? `Abrir conversa (${unreadCount} não lidas)` : 'Abrir conversa'}
+                  </TooltipContent>
+                </Tooltip>
+              )}
+
+              {taskStats && taskStats.total > 0 && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setExpanded(!expanded);
+                      }}
+                      className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground hover:text-foreground transition-colors rounded px-1 py-0.5"
+                    >
+                      <ListTodo className="h-3 w-3" />
+                      <span className="tabular-nums">{taskStats.done}/{taskStats.total}</span>
+                      {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>{expanded ? 'Esconder tarefas' : 'Ver tarefas'}</TooltipContent>
+                </Tooltip>
+              )}
+            </div>
           </div>
 
           {expanded && <InlineTaskList caseId={case_.id} />}

@@ -79,6 +79,15 @@ export default function OperationsPage() {
             <option value="all">Todos os status</option>
             {statuses.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
+
+          <div className="flex-1" />
+
+          <Button asChild variant="outline" size="sm">
+            <Link to="/operations/templates">
+              <Settings className="h-3.5 w-3.5 mr-1.5" />
+              {categoryId === 'all' ? 'Configurar colunas' : 'Editar colunas desta categoria'}
+            </Link>
+          </Button>
         </div>
 
         <OperationsBoard
