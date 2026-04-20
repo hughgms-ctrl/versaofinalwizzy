@@ -187,16 +187,32 @@ export function FunnelChart() {
       <div className="relative">
         {/* Header */}
         <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h3 className="text-lg font-semibold text-foreground">Performance de Funil</h3>
-            <p className="text-sm text-muted-foreground">
-              {isConfigured
-                ? 'Conversões entre as etapas escolhidas do pipeline'
-                : 'Configure o pipeline e as 4 etapas que servem de marco'}
-            </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <div>
+              <h3 className="text-lg font-semibold text-foreground">Performance de Funil</h3>
+              <p className="text-sm text-muted-foreground">
+                {hasPipeline
+                  ? 'Conversões entre as etapas escolhidas do pipeline'
+                  : 'Nenhum pipeline disponível neste workspace'}
+              </p>
+            </div>
+            {pipelines.length > 0 && (
+              <Select value={pipelineId || ''} onValueChange={handlePipelineSwitch}>
+                <SelectTrigger className="h-9 w-[200px]">
+                  <SelectValue placeholder="Selecionar pipeline..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {pipelines.map((p: any) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
           </div>
           <div className="flex items-center gap-2">
-            {isConfigured && (
+            {hasPipeline && (
               <Select value={period} onValueChange={(v) => setPeriod(v as FunnelPeriod)}>
                 <SelectTrigger className="h-9 w-[130px]">
                   <Filter className="mr-1 h-3.5 w-3.5" />
@@ -216,70 +232,10 @@ export function FunnelChart() {
               <DialogTrigger asChild>
                 <Button variant="outline" size="sm" className="h-9">
                   <Settings2 className="mr-1.5 h-4 w-4" />
-                  Configurar
+                  Etapas
                 </Button>
               </DialogTrigger>
-              <DialogContent className="max-w-lg">
-                <DialogHeader>
-                  <DialogTitle>Configurar Funil</DialogTitle>
-                  <DialogDescription>
-                    Escolha o pipeline e até 4 colunas que serão os marcos do funil.
-                  </DialogDescription>
-                </DialogHeader>
-
-                <div className="space-y-4 py-2">
-                  <div className="space-y-2">
-                    <Label>Pipeline</Label>
-                    <Select value={draftPipelineId} onValueChange={setDraftPipelineId}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione um pipeline" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {pipelines.map((p) => (
-                          <SelectItem key={p.id} value={p.id}>
-                            {p.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Etapas do funil ({draftColumnIds.length}/4)</Label>
-                    {draftColumns.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">Nenhuma coluna disponível.</p>
-                    ) : (
-                      <div className="max-h-64 space-y-1.5 overflow-y-auto rounded-lg border border-border p-2">
-                        {draftColumns.map((col) => {
-                          const checked = draftColumnIds.includes(col.id);
-                          return (
-                            <label
-                              key={col.id}
-                              className="flex cursor-pointer items-center gap-3 rounded-md p-2 hover:bg-secondary/50"
-                            >
-                              <Checkbox checked={checked} onCheckedChange={() => handleToggleColumn(col.id)} />
-                              <div className="h-3 w-3 rounded-full" style={{ backgroundColor: col.color }} />
-                              <span className="text-sm text-foreground">{col.name}</span>
-                            </label>
-                          );
-                        })}
-                      </div>
-                    )}
-                    <p className="text-xs text-muted-foreground">
-                      A ordem segue a ordem das colunas no pipeline. Selecione no mínimo 2.
-                    </p>
-                  </div>
-                </div>
-
-                <DialogFooter>
-                  <Button variant="outline" onClick={() => setDialogOpen(false)}>
-                    Cancelar
-                  </Button>
-                  <Button onClick={handleSave} disabled={saveConfig.isPending}>
-                    {saveConfig.isPending ? 'Salvando...' : 'Salvar'}
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
+...
             </Dialog>
           </div>
         </div>
@@ -287,13 +243,20 @@ export function FunnelChart() {
         {/* Body */}
         {loadingConfig ? (
           <Skeleton className="h-[320px] w-full rounded-xl" />
+        ) : !hasPipeline ? (
+          <div className="flex h-[280px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border bg-secondary/30 p-6 text-center">
+            <Settings2 className="h-8 w-8 text-muted-foreground" />
+            <p className="text-sm font-medium text-foreground">Nenhum pipeline neste workspace</p>
+            <p className="max-w-sm text-xs text-muted-foreground">
+              Crie um pipeline ou vincule um existente a este workspace para visualizar o funil.
+            </p>
+          </div>
         ) : !isConfigured ? (
           <div className="flex h-[280px] flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border bg-secondary/30 p-6 text-center">
             <Settings2 className="h-8 w-8 text-muted-foreground" />
-            <p className="text-sm font-medium text-foreground">Funil não configurado</p>
+            <p className="text-sm font-medium text-foreground">Selecione as etapas do funil</p>
             <p className="max-w-sm text-xs text-muted-foreground">
-              Clique em "Configurar" para escolher um pipeline e selecionar até 4 colunas que servirão
-              como etapas do funil deste workspace.
+              Clique em "Etapas" para escolher até 4 colunas deste pipeline como marcos do funil.
             </p>
           </div>
         ) : (
