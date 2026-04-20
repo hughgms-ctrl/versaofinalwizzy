@@ -54,6 +54,12 @@ export function CaseCard({ case_, taskStats, onClick }: CaseCardProps) {
   const accentColor = case_.workspace?.color || case_.category?.color || 'hsl(var(--primary))';
   const unreadCount = case_.conversation?.unread_count || 0;
   const conversationId = case_.conversation?.id;
+  const contactId = (case_ as any).contact_id || (case_ as any).contact?.id;
+  const chatHref = conversationId
+    ? `/conversations?conversation=${conversationId}`
+    : contactId
+      ? `/conversations?contact=${contactId}`
+      : null;
 
   // Prazo
   let dueBadge: React.ReactNode = null;
