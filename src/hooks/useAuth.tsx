@@ -61,9 +61,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const isPendingApproval = (u: User | null) => {
+    if (!u) return false;
+    const appMeta = (u.app_metadata || {}) as Record<string, unknown>;
+    const userMeta = (u.user_metadata || {}) as Record<string, unknown>;
+    return appMeta.pending_approval === true || userMeta.pending_approval === true;
+  };
+
   useEffect(() => {
     // Set up auth state listener BEFORE checking session
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user && isPendingApproval(session.user)) {
+        // Block pending-approval users immediately
+        supabase.auth.signOut();
+        setSession(null);
+        setUser(null);
+        setProfile(null);
+        setLoading(false);
+        return;
+      }
+
       setSession(session);
       setUser(session?.user ?? null);
       
@@ -78,6 +95,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // Check for existing session
     supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user && isPendingApproval(session.user)) {
+        supabase.auth.signOut();
+        setSession(null);
+        setUser(null);
+        setProfile(null);
+        setLoading(false);
+        return;
+      }
+
       setSession(session);
       setUser(session?.user ?? null);
       
