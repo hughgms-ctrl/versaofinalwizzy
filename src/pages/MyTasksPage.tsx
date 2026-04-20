@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { useMyTasks, useUpdateCaseTask } from '@/hooks/useCaseTasks';
 import { Card } from '@/components/ui/card';
@@ -7,12 +8,14 @@ import { format, differenceInHours, isPast } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 import { Link, useLocation } from 'react-router-dom';
-import { Briefcase, ListTodo, Calendar, Settings, AlertTriangle, Clock } from 'lucide-react';
+import { Briefcase, ListTodo, Calendar, Settings, AlertTriangle, Clock, ExternalLink } from 'lucide-react';
+import { CaseDrawer } from '@/components/operations/CaseDrawer';
 
 export default function MyTasksPage() {
   const { data: tasks = [], isLoading } = useMyTasks();
   const update = useUpdateCaseTask();
   const location = useLocation();
+  const [openCaseId, setOpenCaseId] = useState<string | null>(null);
 
   const tabs = [
     { href: '/operations', label: 'Casos', icon: Briefcase },
@@ -60,21 +63,37 @@ export default function MyTasksPage() {
               else if (differenceInHours(due, new Date()) < 72) badge = <Badge className="bg-orange-500 text-white">Em breve</Badge>;
             }
             return (
-              <Card key={t.id} className="p-3 flex items-start gap-3">
-                <Checkbox checked={false} onCheckedChange={() => update.mutate({ id: t.id, status: 'done' })} className="mt-1" />
+              <Card
+                key={t.id}
+                className="p-3 flex items-start gap-3 hover:shadow-md transition cursor-pointer"
+                onClick={() => t.case?.id && setOpenCaseId(t.case.id)}
+              >
+                <Checkbox
+                  checked={false}
+                  onCheckedChange={() => update.mutate({ id: t.id, status: 'done' })}
+                  onClick={(e) => e.stopPropagation()}
+                  className="mt-1"
+                />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium">{t.title}</p>
                   <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
-                    <span className="truncate">{t.case?.title || '—'}</span>
+                    <span className="truncate flex items-center gap-1">
+                      <Briefcase className="h-3 w-3" />
+                      {t.case?.title || '—'}
+                    </span>
+                    {t.case?.contact?.name && <span>• {t.case.contact.name}</span>}
                     {t.due_date && <span>• {format(new Date(t.due_date), "dd/MM HH:mm", { locale: ptBR })}</span>}
                   </div>
                 </div>
                 {badge}
+                <ExternalLink className="h-4 w-4 text-muted-foreground" />
               </Card>
             );
           })}
         </div>
       </div>
+
+      <CaseDrawer caseId={openCaseId} open={!!openCaseId} onOpenChange={(o) => !o && setOpenCaseId(null)} />
     </MainLayout>
   );
 }
