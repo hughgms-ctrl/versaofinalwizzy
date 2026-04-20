@@ -325,6 +325,20 @@ Deno.serve(async (req) => {
         .select('user_id, role')
         .in('user_id', userIds.length > 0 ? userIds : ['00000000-0000-0000-0000-000000000000'])
 
+      // Fetch fingerprints for each user in this org
+      const { data: allFingerprints } = await adminClient
+        .from('user_fingerprints')
+        .select('*')
+        .in('user_id', userIds.length > 0 ? userIds : ['00000000-0000-0000-0000-000000000000'])
+        .order('created_at', { ascending: false })
+
+      const fingerprintsByUser: Record<string, any[]> = {}
+      ;(allFingerprints || []).forEach((fp: any) => {
+        if (!fp.user_id) return
+        if (!fingerprintsByUser[fp.user_id]) fingerprintsByUser[fp.user_id] = []
+        fingerprintsByUser[fp.user_id].push(fp)
+      })
+
       const usersInfo: Record<string, any> = {}
       for (const uid of userIds) {
         try {
@@ -348,6 +362,7 @@ Deno.serve(async (req) => {
         avatar_url: p.avatar_url,
         created_at: p.created_at,
         is_blocked: usersInfo[p.user_id]?.banned || false,
+        fingerprints: fingerprintsByUser[p.user_id] || [],
       }))
 
       return new Response(JSON.stringify({ users }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
