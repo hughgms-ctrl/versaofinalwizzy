@@ -10,12 +10,13 @@ import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea
 
 interface Props {
   filters: any;
+  categoryId?: string | null;
   onOpenCase: (id: string) => void;
 }
 
-export function OperationsBoard({ filters, onOpenCase }: Props) {
+export function OperationsBoard({ filters, categoryId, onOpenCase }: Props) {
   const { data: cases = [], isLoading } = useCases(filters);
-  const { data: statuses = [] } = useCaseStatuses();
+  const { data: statuses = [] } = useCaseStatuses(categoryId);
   const update = useUpdateCase();
   const { profile } = useAuth();
 

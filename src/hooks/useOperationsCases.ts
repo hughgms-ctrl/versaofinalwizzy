@@ -22,18 +22,25 @@ export function useCaseCategories() {
   });
 }
 
-export function useCaseStatuses() {
+export function useCaseStatuses(categoryId?: string | null) {
   const { profile } = useAuth();
   return useQuery({
-    queryKey: ['case-statuses', profile?.organization_id],
+    queryKey: ['case-statuses', profile?.organization_id, categoryId ?? 'all'],
     queryFn: async () => {
       if (!profile?.organization_id) return [];
       const { data, error } = await (supabase as any)
         .from('case_statuses')
         .select('*')
+        .eq('organization_id', profile.organization_id)
         .order('order');
       if (error) throw error;
-      return data || [];
+      const all = data || [];
+      // Filtragem em memória: globais (category_id null) + da categoria escolhida
+      if (categoryId && categoryId !== 'all') {
+        return all.filter((s: any) => !s.category_id || s.category_id === categoryId);
+      }
+      // Sem categoria selecionada: mostra apenas globais
+      return all.filter((s: any) => !s.category_id);
     },
     enabled: !!profile?.organization_id,
   });
