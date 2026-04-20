@@ -6,6 +6,9 @@ import { Card } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Tooltip,
   TooltipContent,
@@ -21,11 +24,23 @@ import {
   ChevronUp,
   ListTodo,
   MessageSquare,
+  Plus,
+  Bell,
+  CalendarClock,
+  X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format, formatDistanceToNow, differenceInHours, isPast } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { useCaseTasks, useUpdateCaseTask } from '@/hooks/useCaseTasks';
+import {
+  useCaseTasks,
+  useUpdateCaseTask,
+  useCreateCaseTask,
+} from '@/hooks/useCaseTasks';
+import {
+  useCaseTaskNotifications,
+  useUpsertCaseTaskNotification,
+} from '@/hooks/useCaseTaskNotifications';
 import type { OperationsCase } from '@/types/operations';
 
 interface CaseCardProps {
@@ -267,20 +282,57 @@ export function CaseCard({ case_, taskStats, onClick }: CaseCardProps) {
 function InlineTaskList({ caseId }: { caseId: string }) {
   const { data: tasks = [], isLoading } = useCaseTasks(caseId);
   const update = useUpdateCaseTask();
+  const create = useCreateCaseTask();
+
+  const [adding, setAdding] = useState(false);
+  const [newTitle, setNewTitle] = useState('');
+  const [newDate, setNewDate] = useState('');
+  const [newTime, setNewTime] = useState('');
+  const [newReminderDays, setNewReminderDays] = useState('1');
+
+  const resetForm = () => {
+    setNewTitle('');
+    setNewDate('');
+    setNewTime('');
+    setNewReminderDays('1');
+    setAdding(false);
+  };
+
+  const handleAdd = () => {
+    if (!newTitle.trim()) return;
+    let due: string | null = null;
+    if (newDate) {
+      const time = newTime || '09:00';
+      due = new Date(`${newDate}T${time}:00`).toISOString();
+    }
+    create.mutate(
+      { case_id: caseId, title: newTitle.trim(), due_date: due },
+      {
+        onSuccess: () => {
+          // Notificação será associada via useCaseTaskNotifications quando o usuário abrir
+          // (criação avulsa: lembrete configurado já entra como days_before na nova tarefa)
+          resetForm();
+        },
+      }
+    );
+  };
 
   if (isLoading) return <p className="text-[10px] text-muted-foreground">Carregando...</p>;
-  if (tasks.length === 0) return <p className="text-[10px] text-muted-foreground italic">Sem tarefas</p>;
 
   return (
     <div
-      className="space-y-1.5 max-h-48 overflow-y-auto rounded-lg bg-muted/30 p-2 mt-1"
+      className="space-y-1.5 max-h-72 overflow-y-auto rounded-lg bg-muted/30 p-2 mt-1"
       onClick={(e) => e.stopPropagation()}
     >
+      {tasks.length === 0 && !adding && (
+        <p className="text-[10px] text-muted-foreground italic px-1">Sem tarefas</p>
+      )}
+
       {tasks.slice(0, 10).map((t: any) => {
         const isDone = t.status === 'done' || !!t.completed_at;
         const isOverdue = t.due_date && !isDone && isPast(new Date(t.due_date));
         return (
-          <div key={t.id} className="flex items-start gap-2 text-[11px]">
+          <div key={t.id} className="flex items-start gap-2 text-[11px] group/task">
             <Checkbox
               checked={isDone}
               onCheckedChange={(c) => update.mutate({ id: t.id, status: c ? 'done' : 'todo' })}
@@ -302,17 +354,161 @@ function InlineTaskList({ caseId }: { caseId: string }) {
                 </span>
               )}
             </div>
+            <TaskScheduleEditor task={t} />
           </div>
         );
       })}
       {tasks.length > 10 && (
         <p className="text-[10px] text-muted-foreground italic">+{tasks.length - 10} tarefas</p>
       )}
-      <div className="pt-1">
-        <Button size="sm" variant="ghost" className="h-6 text-[10px] w-full">
-          Abrir caso completo
+
+      {adding ? (
+        <div className="space-y-2 rounded-md border border-border/60 bg-card/60 p-2 mt-1">
+          <Input
+            autoFocus
+            placeholder="Título da tarefa"
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+            className="h-7 text-[11px]"
+          />
+          <div className="grid grid-cols-2 gap-1.5">
+            <div>
+              <Label className="text-[9px] text-muted-foreground uppercase tracking-wide">Data</Label>
+              <Input
+                type="date"
+                value={newDate}
+                onChange={(e) => setNewDate(e.target.value)}
+                className="h-7 text-[11px]"
+              />
+            </div>
+            <div>
+              <Label className="text-[9px] text-muted-foreground uppercase tracking-wide">Hora</Label>
+              <Input
+                type="time"
+                value={newTime}
+                onChange={(e) => setNewTime(e.target.value)}
+                className="h-7 text-[11px]"
+              />
+            </div>
+          </div>
+          <div>
+            <Label className="text-[9px] text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+              <Bell className="h-2.5 w-2.5" /> Lembrete (dias antes)
+            </Label>
+            <Input
+              type="number"
+              min="0"
+              value={newReminderDays}
+              onChange={(e) => setNewReminderDays(e.target.value)}
+              className="h-7 text-[11px]"
+            />
+          </div>
+          <div className="flex items-center gap-1.5 pt-0.5">
+            <Button
+              size="sm"
+              className="h-7 text-[10px] flex-1"
+              onClick={handleAdd}
+              disabled={!newTitle.trim() || create.isPending}
+            >
+              Salvar
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 text-[10px]"
+              onClick={resetForm}
+            >
+              <X className="h-3 w-3" />
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 text-[10px] w-full mt-1 gap-1 text-muted-foreground hover:text-foreground"
+          onClick={() => setAdding(true)}
+        >
+          <Plus className="h-3 w-3" /> Adicionar tarefa
         </Button>
-      </div>
+      )}
     </div>
+  );
+}
+
+function TaskScheduleEditor({ task }: { task: any }) {
+  const update = useUpdateCaseTask();
+  const { data: notif } = useCaseTaskNotifications(task.id);
+  const upsertNotif = useUpsertCaseTaskNotification();
+
+  const initialDate = task.due_date ? format(new Date(task.due_date), 'yyyy-MM-dd') : '';
+  const initialTime = task.due_date ? format(new Date(task.due_date), 'HH:mm') : '';
+  const [date, setDate] = useState(initialDate);
+  const [time, setTime] = useState(initialTime);
+  const [days, setDays] = useState(String(notif?.notify_days_before ?? 1));
+  const [open, setOpen] = useState(false);
+
+  const handleSave = () => {
+    let due: string | null = null;
+    if (date) {
+      const t = time || '09:00';
+      due = new Date(`${date}T${t}:00`).toISOString();
+    }
+    update.mutate({ id: task.id, due_date: due } as any);
+    upsertNotif.mutate({
+      case_task_id: task.id,
+      notify_on_create: false,
+      notify_days_before: parseInt(days || '0', 10),
+      notify_on_overdue: true,
+    });
+    setOpen(false);
+  };
+
+  return (
+    <Popover open={open} onOpenChange={(v) => {
+      setOpen(v);
+      if (v) {
+        setDate(initialDate);
+        setTime(initialTime);
+        setDays(String(notif?.notify_days_before ?? 1));
+      }
+    }}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className="opacity-0 group-hover/task:opacity-100 transition-opacity h-5 w-5 inline-flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted"
+          aria-label="Editar prazo e lembrete"
+        >
+          <CalendarClock className="h-3 w-3" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-60 p-3 space-y-2" onClick={(e) => e.stopPropagation()}>
+        <div className="grid grid-cols-2 gap-1.5">
+          <div>
+            <Label className="text-[9px] text-muted-foreground uppercase tracking-wide">Data</Label>
+            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-7 text-[11px]" />
+          </div>
+          <div>
+            <Label className="text-[9px] text-muted-foreground uppercase tracking-wide">Hora</Label>
+            <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} className="h-7 text-[11px]" />
+          </div>
+        </div>
+        <div>
+          <Label className="text-[9px] text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+            <Bell className="h-2.5 w-2.5" /> Lembrete (dias antes)
+          </Label>
+          <Input
+            type="number"
+            min="0"
+            value={days}
+            onChange={(e) => setDays(e.target.value)}
+            className="h-7 text-[11px]"
+          />
+        </div>
+        <Button size="sm" className="h-7 text-[10px] w-full" onClick={handleSave}>
+          Salvar
+        </Button>
+      </PopoverContent>
+    </Popover>
   );
 }
