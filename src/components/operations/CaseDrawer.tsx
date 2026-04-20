@@ -101,9 +101,19 @@ export function CaseDrawer({ caseId, open, onOpenChange }: CaseDrawerProps) {
                         Excluir
                       </AlertDialogAction>
                     </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-              )}
+                    </AlertDialogContent>
+                  </AlertDialog>
+                )}
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-8 w-8 text-muted-foreground"
+                  onClick={() => onOpenChange(false)}
+                  aria-label="Fechar"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
 
             {c && (
