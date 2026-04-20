@@ -61,7 +61,7 @@ export function useCases(filters?: {
       if (!profile?.organization_id) return [];
       let q = (supabase as any)
         .from('cases')
-        .select('*, contact:contacts(id,name,phone,avatar_url), category:case_categories(id,name,kind,color,icon), assignee:profiles!cases_assignee_id_fkey(id,full_name,avatar_url)')
+        .select('*, contact:contacts(id,name,phone,avatar_url), category:case_categories(id,name,kind,color,icon), assignee:profiles!cases_assignee_id_fkey(id,full_name,avatar_url), workspace:workspaces(id,name,color), conversation:conversations(id,unread_count)')
         .order('opened_at', { ascending: false });
 
       if (selectedWorkspaceId) q = q.eq('workspace_id', selectedWorkspaceId);

@@ -1,6 +1,6 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
@@ -18,6 +18,7 @@ import {
   ChevronDown,
   ChevronUp,
   ListTodo,
+  MessageSquare,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { format, formatDistanceToNow, differenceInHours, isPast } from 'date-fns';
@@ -30,6 +31,8 @@ interface CaseCardProps {
     contact?: { name: string | null; phone: string; avatar_url: string | null };
     category?: { name: string; kind: string; color: string | null };
     assignee?: { full_name: string | null; avatar_url: string | null };
+    workspace?: { id: string; name: string; color: string | null } | null;
+    conversation?: { id: string; unread_count: number } | null;
   };
   taskStats?: { total: number; done: number; nextDue?: string | null };
   onClick?: () => void;
