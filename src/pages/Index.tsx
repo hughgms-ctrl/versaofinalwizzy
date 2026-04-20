@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { MetricCard } from '@/components/dashboard/MetricCard';
@@ -11,6 +11,7 @@ import { useDashboardMetrics } from '@/hooks/useDashboardData';
 import { usePipelines } from '@/hooks/usePipelines';
 import { usePipelineStageDistribution, useTeamPerformanceByPipeline } from '@/hooks/usePipelineStats';
 import { useCanAccessModule } from '@/hooks/useUserPermissions';
+import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { MessageSquare, Clock, Bot, ThumbsUp, GitBranch } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -28,8 +29,30 @@ import { Zap } from 'lucide-react';
 const Index = () => {
   const { canAccess, isLoading: accessLoading } = useCanAccessModule('dashboard');
   const { data: metrics, isLoading } = useDashboardMetrics();
-  const { data: pipelines = [] } = usePipelines();
+  const { data: allPipelines = [] } = usePipelines();
+  const { selectedWorkspaceId } = useWorkspaceContext();
+
+  // Filter pipelines strictly by selected workspace (or show all when "All workspaces")
+  const pipelines = useMemo(() => {
+    if (!selectedWorkspaceId) return allPipelines;
+    return allPipelines.filter((p: any) => {
+      const ws = Array.isArray(p.workspace_ids) ? p.workspace_ids : [];
+      return ws.includes(selectedWorkspaceId);
+    });
+  }, [allPipelines, selectedWorkspaceId]);
+
   const [selectedPipelineId, setSelectedPipelineId] = useState<string | null>(null);
+
+  // Always keep a pipeline selected; reset if current selection is not in the filtered list
+  useEffect(() => {
+    if (pipelines.length === 0) {
+      if (selectedPipelineId !== null) setSelectedPipelineId(null);
+      return;
+    }
+    const stillVisible = pipelines.some((p) => p.id === selectedPipelineId);
+    if (!stillVisible) setSelectedPipelineId(pipelines[0].id);
+  }, [pipelines, selectedPipelineId]);
+
   const { data: stageData = [], isLoading: loadingStages } = usePipelineStageDistribution(selectedPipelineId);
   const { data: teamByPipeline = [], isLoading: loadingTeamPipeline } = useTeamPerformanceByPipeline(selectedPipelineId);
 
