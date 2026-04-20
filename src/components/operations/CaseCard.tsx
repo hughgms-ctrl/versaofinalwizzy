@@ -203,13 +203,8 @@ export function CaseCard({ case_, taskStats, onClick }: CaseCardProps) {
               <TooltipTrigger asChild>
                 <div className="h-1 w-full bg-muted/60 rounded-full overflow-hidden">
                   <div
-                    className="h-full transition-all duration-500 rounded-full"
-                    style={{
-                      width: `${Math.max(progress, 2)}%`,
-                      background: progress === 100
-                        ? 'hsl(var(--primary))'
-                        : `linear-gradient(90deg, ${accentColor}, ${accentColor}cc)`,
-                    }}
+                    className="h-full transition-all duration-500 rounded-full bg-primary"
+                    style={{ width: `${Math.max(progress, 2)}%` }}
                   />
                 </div>
               </TooltipTrigger>
