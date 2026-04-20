@@ -302,3 +302,102 @@ function CaseTriggersCard({ templateId }: { templateId: string }) {
     </Card>
   );
 }
+
+function TemplateTaskRow({ task }: { task: any }) {
+  const updateTask = useUpdateTemplateTask();
+  const delTask = useDeleteTemplateTask();
+  const { data: notif } = useTemplateTaskNotification(task.id);
+  const upsertNotif = useUpsertTemplateTaskNotification();
+
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState(task.title);
+  const [days, setDays] = useState(String(task.days_to_due ?? 0));
+  const [time, setTime] = useState(task.default_time || '');
+  const [reminderDays, setReminderDays] = useState(String(notif?.notify_days_before ?? 1));
+  const [notifyOverdue, setNotifyOverdue] = useState(notif?.notify_on_overdue ?? true);
+
+  const handleOpen = (v: boolean) => {
+    setOpen(v);
+    if (v) {
+      setTitle(task.title);
+      setDays(String(task.days_to_due ?? 0));
+      setTime(task.default_time || '');
+      setReminderDays(String(notif?.notify_days_before ?? 1));
+      setNotifyOverdue(notif?.notify_on_overdue ?? true);
+    }
+  };
+
+  const handleSave = () => {
+    updateTask.mutate({
+      id: task.id,
+      title: title.trim() || task.title,
+      days_to_due: parseInt(days || '0', 10),
+      default_time: time || null,
+    } as any);
+    upsertNotif.mutate({
+      template_task_id: task.id,
+      notify_on_create: false,
+      notify_days_before: parseInt(reminderDays || '0', 10),
+      notify_on_overdue: notifyOverdue,
+    });
+    setOpen(false);
+  };
+
+  return (
+    <div className="flex items-center justify-between p-2 rounded border group">
+      <div className="flex-1 min-w-0">
+        <p className="text-sm truncate">{task.title}</p>
+        <p className="text-xs text-muted-foreground flex items-center gap-2">
+          <span className="inline-flex items-center gap-1">
+            <CalendarClock className="h-3 w-3" /> Vence em +{task.days_to_due} dias
+            {task.default_time ? ` às ${task.default_time}` : ''}
+          </span>
+          {notif && notif.notify_days_before > 0 && (
+            <span className="inline-flex items-center gap-1">
+              <Bell className="h-3 w-3" /> Lembrete {notif.notify_days_before}d antes
+            </span>
+          )}
+        </p>
+      </div>
+      <div className="flex items-center gap-1">
+        <Popover open={open} onOpenChange={handleOpen}>
+          <PopoverTrigger asChild>
+            <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-foreground">
+              <Pencil className="h-3.5 w-3.5" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-72 p-3 space-y-2">
+            <div>
+              <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Título</Label>
+              <Input value={title} onChange={(e) => setTitle(e.target.value)} className="h-8 text-sm" />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Dias até vencer</Label>
+                <Input type="number" min="0" value={days} onChange={(e) => setDays(e.target.value)} className="h-8 text-sm" />
+              </div>
+              <div>
+                <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">Horário</Label>
+                <Input type="time" value={time} onChange={(e) => setTime(e.target.value)} className="h-8 text-sm" />
+              </div>
+            </div>
+            <div>
+              <Label className="text-[10px] uppercase tracking-wide text-muted-foreground flex items-center gap-1">
+                <Bell className="h-3 w-3" /> Lembrete (dias antes)
+              </Label>
+              <Input type="number" min="0" value={reminderDays} onChange={(e) => setReminderDays(e.target.value)} className="h-8 text-sm" />
+            </div>
+            <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+              <input type="checkbox" checked={notifyOverdue} onChange={(e) => setNotifyOverdue(e.target.checked)} />
+              Notificar quando vencer
+            </label>
+            <Button size="sm" className="w-full h-8" onClick={handleSave}>Salvar</Button>
+          </PopoverContent>
+        </Popover>
+        <Button size="icon" variant="ghost" onClick={() => delTask.mutate(task.id)} className="h-7 w-7 text-muted-foreground hover:text-destructive">
+          <Trash2 className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    </div>
+  );
+}
