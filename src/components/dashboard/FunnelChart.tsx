@@ -42,12 +42,14 @@ export function FunnelChart() {
   const [period, setPeriod] = useState<FunnelPeriod>('30d');
   const [dialogOpen, setDialogOpen] = useState(false);
 
-  // Filter pipelines by selected workspace (or show all when "All workspaces")
+  // Filter pipelines strictly by selected workspace.
+  // - "All workspaces" (null) → show every pipeline
+  // - Specific workspace → ONLY pipelines explicitly assigned to it (no globals)
   const pipelines = useMemo(() => {
     if (!selectedWorkspaceId) return allPipelines;
     return allPipelines.filter((p: any) => {
       const ws = p.workspace_ids || [];
-      return ws.length === 0 || ws.includes(selectedWorkspaceId);
+      return ws.includes(selectedWorkspaceId);
     });
   }, [allPipelines, selectedWorkspaceId]);
 
@@ -55,16 +57,52 @@ export function FunnelChart() {
   const [draftPipelineId, setDraftPipelineId] = useState<string>('');
   const [draftColumnIds, setDraftColumnIds] = useState<string[]>([]);
 
-  const pipelineId = config?.pipeline_id || null;
-  const columnIds = useMemo(() => config?.column_ids || [], [config]);
+  // Effective pipeline: saved config if it belongs to the current workspace,
+  // otherwise auto-fallback to the first available pipeline of the workspace.
+  const savedPipelineValid = useMemo(() => {
+    if (!config?.pipeline_id) return false;
+    return pipelines.some((p: any) => p.id === config.pipeline_id);
+  }, [config, pipelines]);
+
+  const pipelineId = savedPipelineValid
+    ? config!.pipeline_id
+    : pipelines[0]?.id || null;
+  const columnIds = useMemo(
+    () => (savedPipelineValid ? config?.column_ids || [] : []),
+    [config, savedPipelineValid]
+  );
 
   const { data: pipelineColumns = [] } = usePipelineColumns(pipelineId);
   const { data: draftColumns = [] } = usePipelineColumns(draftPipelineId || null);
+
+  // Auto-pick first 4 columns when no config exists yet for this pipeline
+  const effectiveColumnIds = useMemo(() => {
+    if (columnIds.length > 0) return columnIds;
+    return pipelineColumns.slice(0, 4).map((c) => c.id);
+  }, [columnIds, pipelineColumns]);
+
   const { data: funnelData = [], isLoading: loadingData } = useFunnelData(
     pipelineId,
-    columnIds,
+    effectiveColumnIds,
     period
   );
+
+  // Persist auto-selection so the next visit reopens with the same config
+  useEffect(() => {
+    if (
+      pipelineId &&
+      effectiveColumnIds.length >= 2 &&
+      (!savedPipelineValid || (config?.column_ids?.length ?? 0) === 0)
+    ) {
+      saveConfig.mutate({ pipeline_id: pipelineId, column_ids: effectiveColumnIds });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pipelineId, effectiveColumnIds.join(','), savedPipelineValid]);
+
+  // Inline pipeline switcher (header)
+  const handlePipelineSwitch = (newId: string) => {
+    saveConfig.mutate({ pipeline_id: newId, column_ids: [] });
+  };
 
   // Init draft when opening dialog
   useEffect(() => {
