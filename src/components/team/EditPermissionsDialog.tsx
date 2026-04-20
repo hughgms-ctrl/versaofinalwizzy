@@ -34,6 +34,7 @@ import {
   CalendarClock,
   Building2,
   LayoutDashboard,
+  Briefcase,
 } from 'lucide-react';
 import { TeamMember } from '@/hooks/useTeamMembers';
 import { useUserPermissions, useUpdateUserPermissions, UserPermissions } from '@/hooks/useUserPermissions';
@@ -61,6 +62,7 @@ const defaultPermissions: Partial<UserPermissions> = {
   can_access_team: false,
   can_access_scheduled: false,
   can_access_calendar: false,
+  can_access_operations: false,
   conversations_filter_type: 'all',
   conversations_allowed_tags: [],
   pipeline_access_type: 'all',
@@ -80,6 +82,7 @@ const supervisorDefaultPermissions: Partial<UserPermissions> = {
   can_access_team: true,
   can_access_scheduled: true,
   can_access_calendar: true,
+  can_access_operations: true,
   conversations_filter_type: 'all',
   conversations_allowed_tags: [],
   pipeline_access_type: 'all',
@@ -132,6 +135,7 @@ export function EditPermissionsDialog({ open, onOpenChange, member }: EditPermis
         can_access_team: existingPermissions.can_access_team,
         can_access_scheduled: existingPermissions.can_access_scheduled,
         can_access_calendar: (existingPermissions as any).can_access_calendar ?? true,
+        can_access_operations: (existingPermissions as any).can_access_operations ?? false,
         conversations_filter_type: existingPermissions.conversations_filter_type,
         conversations_allowed_tags: existingPermissions.conversations_allowed_tags || [],
         pipeline_access_type: existingPermissions.pipeline_access_type,
@@ -314,6 +318,12 @@ export function EditPermissionsDialog({ open, onOpenChange, member }: EditPermis
                     label="Agendamento de Mensagens"
                     checked={permissions.can_access_scheduled || false}
                     onCheckedChange={(v) => toggleModule('can_access_scheduled', v)}
+                  />
+                  <ModuleSwitch
+                    icon={Briefcase}
+                    label="Operacional"
+                    checked={permissions.can_access_operations || false}
+                    onCheckedChange={(v) => toggleModule('can_access_operations', v)}
                   />
                 </div>
               </div>
