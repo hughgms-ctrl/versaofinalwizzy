@@ -128,6 +128,8 @@ export function useBlockUser() {
     mutationFn: (data: { user_id: string; block: boolean }) => adminFetch('block_user', data),
     onSuccess: (_, vars) => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'org-users'] });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'pending-approvals'] });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'clients'] });
       toast.success(vars.block ? 'Usuário bloqueado' : 'Usuário desbloqueado');
     },
     onError: (err: Error) => toast.error(err.message),
