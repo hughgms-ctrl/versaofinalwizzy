@@ -228,29 +228,6 @@ export function CaseCard({ case_, taskStats, onClick }: CaseCardProps) {
             </div>
 
             <div className="flex items-center gap-1">
-              {chatHref && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Link
-                      to={chatHref}
-                      onClick={(e) => e.stopPropagation()}
-                      className="relative inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-                      aria-label="Abrir conversa"
-                    >
-                      <MessageSquare className="h-3.5 w-3.5" />
-                      {unreadCount > 0 && (
-                        <span className="absolute -top-1 -right-1 h-3.5 min-w-[14px] px-0.5 rounded-full bg-destructive text-destructive-foreground text-[9px] font-bold flex items-center justify-center leading-none">
-                          {unreadCount > 9 ? '9+' : unreadCount}
-                        </span>
-                      )}
-                    </Link>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    {unreadCount > 0 ? `Abrir conversa (${unreadCount} não lidas)` : 'Abrir conversa'}
-                  </TooltipContent>
-                </Tooltip>
-              )}
-
               {taskStats && taskStats.total > 0 && (
                 <Tooltip>
                   <TooltipTrigger asChild>
