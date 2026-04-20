@@ -112,6 +112,18 @@ export function useCreateTemplateTask() {
   });
 }
 
+export function useUpdateTemplateTask() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, ...patch }: { id: string } & Partial<CaseTemplateTask>) => {
+      const { error } = await (supabase as any).from('case_template_tasks').update(patch).eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['case-template-tasks'] }),
+    onError: (e: any) => toast({ title: 'Erro', description: e.message, variant: 'destructive' }),
+  });
+}
+
 export function useDeleteTemplateTask() {
   const qc = useQueryClient();
   return useMutation({
