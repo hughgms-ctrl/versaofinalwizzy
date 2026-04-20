@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, Trash2, Briefcase, Scale, Building2, ChevronDown, ChevronRight } from 'lucide-react';
+import { Plus, Trash2, Briefcase, Scale, Building2, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -9,6 +9,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useCaseTemplates, useCreateCaseTemplate, useCreateTemplateTask } from '@/hooks/useCaseTemplates';
 import { useCaseCategories } from '@/hooks/useOperationsCases';
+import { useTeamMembers } from '@/hooks/useTeamMembers';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
@@ -25,9 +26,9 @@ export function OperationsTriggerSection({ pipelineId, columns }: Props) {
   const { profile } = useAuth();
   const qc = useQueryClient();
   const { data: templates = [] } = useCaseTemplates();
+  const { data: team = [] } = useTeamMembers();
   const [creatingFor, setCreatingFor] = useState<string | null>(null);
 
-  // Carrega gatilhos existentes para este pipeline
   const { data: triggers = [] } = useQuery({
     queryKey: ['case-triggers-pipeline', pipelineId],
     queryFn: async () => {
@@ -41,7 +42,17 @@ export function OperationsTriggerSection({ pipelineId, columns }: Props) {
   });
 
   const upsertTrigger = useMutation({
-    mutationFn: async ({ columnId, templateId, isActive }: { columnId: string; templateId: string | null; isActive: boolean }) => {
+    mutationFn: async ({
+      columnId,
+      templateId,
+      isActive,
+      assigneeId,
+    }: {
+      columnId: string;
+      templateId: string | null;
+      isActive: boolean;
+      assigneeId?: string | null;
+    }) => {
       if (!profile?.organization_id) throw new Error('Sem organização');
       const existing = triggers.find((t: any) => t.column_id === columnId);
       if (existing) {
@@ -49,10 +60,9 @@ export function OperationsTriggerSection({ pipelineId, columns }: Props) {
           const { error } = await (supabase as any).from('case_triggers').delete().eq('id', existing.id);
           if (error) throw error;
         } else {
-          const { error } = await (supabase as any)
-            .from('case_triggers')
-            .update({ template_id: templateId, is_active: isActive })
-            .eq('id', existing.id);
+          const patch: any = { template_id: templateId, is_active: isActive };
+          if (assigneeId !== undefined) patch.default_assignee_id = assigneeId;
+          const { error } = await (supabase as any).from('case_triggers').update(patch).eq('id', existing.id);
           if (error) throw error;
         }
       } else if (templateId && isActive) {
@@ -62,6 +72,7 @@ export function OperationsTriggerSection({ pipelineId, columns }: Props) {
           column_id: columnId,
           template_id: templateId,
           is_active: true,
+          default_assignee_id: assigneeId || null,
         });
         if (error) throw error;
       }
@@ -83,7 +94,7 @@ export function OperationsTriggerSection({ pipelineId, columns }: Props) {
           <Briefcase className="h-4 w-4" /> Operacional
         </h3>
         <p className="text-xs text-muted-foreground">
-          Quando um lead chegar a uma coluna abaixo, um caso operacional será criado automaticamente com o template escolhido.
+          Quando um lead chegar a uma coluna, será criado um caso operacional com o template e responsável definidos.
         </p>
       </div>
 
@@ -116,33 +127,67 @@ export function OperationsTriggerSection({ pipelineId, columns }: Props) {
 
               {isActive && (
                 <div className="space-y-2 pl-5 border-l-2 border-primary/20">
-                  <div className="flex items-center gap-2">
+                  <div>
+                    <Label className="text-[11px] text-muted-foreground">Template</Label>
+                    <div className="flex items-center gap-2">
+                      <Select
+                        value={trigger?.template_id || ''}
+                        onValueChange={(v) =>
+                          upsertTrigger.mutate({ columnId: col.id, templateId: v, isActive: true })
+                        }
+                      >
+                        <SelectTrigger className="h-8 text-xs flex-1">
+                          <SelectValue placeholder="Selecione um template" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {templates.map((t: any) => (
+                            <SelectItem key={t.id} value={t.id}>
+                              <div className="flex items-center gap-2">
+                                {t.kind === 'judicial' ? <Scale className="h-3 w-3" /> : <Building2 className="h-3 w-3" />}
+                                {t.name}
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-8 px-2 text-xs"
+                        onClick={() => setCreatingFor(col.id)}
+                      >
+                        <Plus className="h-3 w-3 mr-1" /> Novo
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label className="text-[11px] text-muted-foreground">Responsável padrão (opcional)</Label>
                     <Select
-                      value={trigger?.template_id || ''}
-                      onValueChange={(v) => upsertTrigger.mutate({ columnId: col.id, templateId: v, isActive: true })}
+                      value={trigger?.default_assignee_id || 'inherit'}
+                      onValueChange={(v) =>
+                        upsertTrigger.mutate({
+                          columnId: col.id,
+                          templateId: trigger?.template_id || null,
+                          isActive: true,
+                          assigneeId: v === 'inherit' ? null : v,
+                        })
+                      }
                     >
-                      <SelectTrigger className="h-8 text-xs flex-1">
-                        <SelectValue placeholder="Selecione um template" />
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {templates.map((t: any) => (
-                          <SelectItem key={t.id} value={t.id}>
+                        <SelectItem value="inherit">Usar do template</SelectItem>
+                        {team.map((m: any) => (
+                          <SelectItem key={m.id} value={m.id}>
                             <div className="flex items-center gap-2">
-                              {t.kind === 'judicial' ? <Scale className="h-3 w-3" /> : <Building2 className="h-3 w-3" />}
-                              {t.name}
+                              <User className="h-3 w-3" /> {m.name}
                             </div>
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-8 px-2 text-xs"
-                      onClick={() => setCreatingFor(col.id)}
-                    >
-                      <Plus className="h-3 w-3 mr-1" /> Novo
-                    </Button>
                   </div>
 
                   {template && (
@@ -165,9 +210,15 @@ export function OperationsTriggerSection({ pipelineId, columns }: Props) {
 
       {creatingFor && (
         <NewTemplateInline
+          team={team}
           onClose={() => setCreatingFor(null)}
-          onCreated={(templateId) => {
-            upsertTrigger.mutate({ columnId: creatingFor, templateId, isActive: true });
+          onCreated={(templateId, assigneeId) => {
+            upsertTrigger.mutate({
+              columnId: creatingFor,
+              templateId,
+              isActive: true,
+              assigneeId: assigneeId || null,
+            });
             setCreatingFor(null);
           }}
         />
@@ -176,11 +227,22 @@ export function OperationsTriggerSection({ pipelineId, columns }: Props) {
   );
 }
 
-function NewTemplateInline({ onClose, onCreated }: { onClose: () => void; onCreated: (id: string) => void }) {
+function NewTemplateInline({
+  team,
+  onClose,
+  onCreated,
+}: {
+  team: any[];
+  onClose: () => void;
+  onCreated: (id: string, assigneeId: string | null) => void;
+}) {
   const [name, setName] = useState('');
   const [kind, setKind] = useState<CaseKind>('judicial');
   const [categoryId, setCategoryId] = useState<string>('');
-  const [tasks, setTasks] = useState<{ title: string; days_to_due: number }[]>([{ title: '', days_to_due: 7 }]);
+  const [assigneeId, setAssigneeId] = useState<string>('');
+  const [tasks, setTasks] = useState<{ title: string; days_to_due: number; default_time: string }[]>([
+    { title: '', days_to_due: 7, default_time: '09:00' },
+  ]);
   const { data: categories = [] } = useCaseCategories();
   const createTpl = useCreateCaseTemplate();
   const createTask = useCreateTemplateTask();
@@ -196,8 +258,8 @@ function NewTemplateInline({ onClose, onCreated }: { onClose: () => void; onCrea
       name: name.trim(),
       kind,
       category_id: categoryId || null,
+      default_assignee_id: assigneeId || null,
     });
-    // Cria as tarefas em ordem
     for (let i = 0; i < tasks.length; i++) {
       const t = tasks[i];
       if (t.title.trim()) {
@@ -206,10 +268,11 @@ function NewTemplateInline({ onClose, onCreated }: { onClose: () => void; onCrea
           title: t.title.trim(),
           days_to_due: t.days_to_due,
           order: i,
-        });
+          default_time: t.default_time,
+        } as any);
       }
     }
-    onCreated(tpl.id);
+    onCreated(tpl.id, assigneeId || null);
   };
 
   return (
@@ -248,36 +311,60 @@ function NewTemplateInline({ onClose, onCreated }: { onClose: () => void; onCrea
           </div>
         </div>
 
+        <div>
+          <Label className="text-xs">Responsável padrão</Label>
+          <Select value={assigneeId || 'none'} onValueChange={(v) => setAssigneeId(v === 'none' ? '' : v)}>
+            <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Sem responsável</SelectItem>
+              {team.map((m: any) => (
+                <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
         <div className="space-y-1">
           <Label className="text-xs">Tarefas do checklist</Label>
+          <div className="grid grid-cols-[1fr_60px_70px_28px] gap-1 text-[10px] text-muted-foreground px-1">
+            <span>Tarefa</span>
+            <span className="text-center">Dias</span>
+            <span className="text-center">Hora</span>
+            <span></span>
+          </div>
           {tasks.map((t, i) => (
-            <div key={i} className="flex items-center gap-1">
+            <div key={i} className="grid grid-cols-[1fr_60px_70px_28px] gap-1 items-center">
               <Input
                 value={t.title}
                 onChange={(e) => setTasks(tasks.map((x, idx) => idx === i ? { ...x, title: e.target.value } : x))}
                 placeholder={`Tarefa ${i + 1}`}
-                className="h-7 text-xs flex-1"
+                className="h-7 text-xs"
               />
               <Input
                 type="number"
                 value={t.days_to_due}
                 onChange={(e) => setTasks(tasks.map((x, idx) => idx === i ? { ...x, days_to_due: parseInt(e.target.value) || 0 } : x))}
-                className="h-7 text-xs w-16"
+                className="h-7 text-xs"
                 title="Dias para vencer"
               />
-              <span className="text-[10px] text-muted-foreground">d</span>
-              {tasks.length > 1 && (
+              <Input
+                type="time"
+                value={t.default_time}
+                onChange={(e) => setTasks(tasks.map((x, idx) => idx === i ? { ...x, default_time: e.target.value } : x))}
+                className="h-7 text-xs px-1"
+              />
+              {tasks.length > 1 ? (
                 <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setTasks(tasks.filter((_, idx) => idx !== i))}>
                   <Trash2 className="h-3 w-3" />
                 </Button>
-              )}
+              ) : <span />}
             </div>
           ))}
           <Button
             size="sm"
             variant="ghost"
             className="h-7 text-xs"
-            onClick={() => setTasks([...tasks, { title: '', days_to_due: 7 }])}
+            onClick={() => setTasks([...tasks, { title: '', days_to_due: 7, default_time: '09:00' }])}
           >
             <Plus className="h-3 w-3 mr-1" /> Tarefa
           </Button>
