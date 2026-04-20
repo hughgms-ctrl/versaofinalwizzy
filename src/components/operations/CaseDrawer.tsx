@@ -55,10 +55,10 @@ export function CaseDrawer({ caseId, open, onOpenChange }: CaseDrawerProps) {
   return (
     <>
       <Sheet open={open} onOpenChange={onOpenChange}>
-        <SheetContent side="right" className="w-full sm:max-w-2xl overflow-y-auto p-0">
+        <SheetContent side="right" className="w-full sm:max-w-2xl overflow-y-auto p-0 [&>button]:hidden">
           <SheetHeader className="p-6 pb-4 border-b">
             <div className="flex items-start justify-between gap-3">
-              <div className="flex items-start gap-3 flex-1 min-w-0">
+              <div className="flex items-start gap-3 flex-1 min-w-0 pr-2">
                 <Avatar className="h-12 w-12">
                   <AvatarImage src={c?.contact?.avatar_url || undefined} />
                   <AvatarFallback>{contactName.slice(0, 2).toUpperCase()}</AvatarFallback>
@@ -75,14 +75,15 @@ export function CaseDrawer({ caseId, open, onOpenChange }: CaseDrawerProps) {
                   </div>
                 </div>
               </div>
-              {c && (
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button size="icon" variant="ghost" className="text-muted-foreground hover:text-destructive">
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
+              <div className="flex items-center gap-1 shrink-0">
+                {c && (
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button size="icon" variant="ghost" className="h-8 w-8 text-muted-foreground hover:text-destructive">
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
                     <AlertDialogHeader>
                       <AlertDialogTitle>Excluir caso?</AlertDialogTitle>
                       <AlertDialogDescription>
