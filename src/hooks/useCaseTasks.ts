@@ -128,6 +128,8 @@ export function useDeleteCaseTask() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['case-tasks'] });
       qc.invalidateQueries({ queryKey: ['my-tasks'] });
+      qc.invalidateQueries({ queryKey: ['all-pending-tasks'] });
+      qc.invalidateQueries({ queryKey: ['tasks-by-case'] });
     },
   });
 }
