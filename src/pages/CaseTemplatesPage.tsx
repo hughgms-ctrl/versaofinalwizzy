@@ -20,6 +20,7 @@ import {
   useCreateCaseTrigger,
   useDeleteCaseTrigger,
 } from '@/hooks/useCaseTemplates';
+import { TemplateSummaryEditor } from '@/components/operations/TemplateSummaryEditor';
 import { useCaseCategories } from '@/hooks/useOperationsCases';
 import { useTeamMembers } from '@/hooks/useTeamMembers';
 import { usePipelines, usePipelineColumns } from '@/hooks/usePipelines';
@@ -211,6 +212,13 @@ export default function CaseTemplatesPage() {
                     ))}
                   </div>
                 </Card>
+
+                <TemplateSummaryEditor
+                  templateId={selected.id}
+                  kind={selected.kind}
+                  judicial={(selected as any).default_judicial_data || {}}
+                  administrative={(selected as any).default_administrative_data || {}}
+                />
 
                 <CaseTriggersCard templateId={selected.id} />
               </>

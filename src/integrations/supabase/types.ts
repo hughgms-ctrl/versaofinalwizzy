@@ -1131,7 +1131,9 @@ export type Database = {
         Row: {
           category_id: string | null
           created_at: string
+          default_administrative_data: Json
           default_assignee_id: string | null
+          default_judicial_data: Json
           default_status_id: string | null
           description: string | null
           id: string
@@ -1145,7 +1147,9 @@ export type Database = {
         Insert: {
           category_id?: string | null
           created_at?: string
+          default_administrative_data?: Json
           default_assignee_id?: string | null
+          default_judicial_data?: Json
           default_status_id?: string | null
           description?: string | null
           id?: string
@@ -1159,7 +1163,9 @@ export type Database = {
         Update: {
           category_id?: string | null
           created_at?: string
+          default_administrative_data?: Json
           default_assignee_id?: string | null
+          default_judicial_data?: Json
           default_status_id?: string | null
           description?: string | null
           id?: string
