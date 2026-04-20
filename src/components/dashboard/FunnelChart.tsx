@@ -246,7 +246,9 @@ export function FunnelChart() {
 
                   <div className="space-y-2">
                     <Label>Etapas do funil ({draftColumnIds.length}/4)</Label>
-                    {draftColumns.length === 0 ? (
+                    {draftPipelineId && loadingDraftColumns ? (
+                      <Skeleton className="h-32 w-full rounded-lg" />
+                    ) : draftColumns.length === 0 ? (
                       <p className="text-sm text-muted-foreground">Nenhuma coluna disponível.</p>
                     ) : (
                       <div className="max-h-64 space-y-1.5 overflow-y-auto rounded-lg border border-border p-2">
