@@ -15,13 +15,14 @@ export default function OperationsPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const { data: categories = [] } = useCaseCategories();
-  const { data: statuses = [] } = useCaseStatuses();
   const { data: team = [] } = useTeamMembers();
 
   const [kind, setKind] = useState<'all' | 'judicial' | 'administrative'>('all');
   const [categoryId, setCategoryId] = useState<string>('all');
   const [assigneeId, setAssigneeId] = useState<string>('all');
   const [statusId, setStatusId] = useState<string>('all');
+
+  const { data: statuses = [] } = useCaseStatuses(categoryId === 'all' ? null : categoryId);
 
   const handleOpen = (id: string) => {
     setOpenCaseId(id);
@@ -82,6 +83,7 @@ export default function OperationsPage() {
 
         <OperationsBoard
           filters={{ kind, category_id: categoryId, assignee_id: assigneeId, status_id: statusId }}
+          categoryId={categoryId === 'all' ? null : categoryId}
           onOpenCase={handleOpen}
         />
       </div>

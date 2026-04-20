@@ -880,6 +880,7 @@ export type Database = {
       }
       case_statuses: {
         Row: {
+          category_id: string | null
           color: string
           created_at: string
           id: string
@@ -892,6 +893,7 @@ export type Database = {
           workspace_id: string | null
         }
         Insert: {
+          category_id?: string | null
           color?: string
           created_at?: string
           id?: string
@@ -904,6 +906,7 @@ export type Database = {
           workspace_id?: string | null
         }
         Update: {
+          category_id?: string | null
           color?: string
           created_at?: string
           id?: string
@@ -916,6 +919,13 @@ export type Database = {
           workspace_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "case_statuses_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "case_categories"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "case_statuses_organization_id_fkey"
             columns: ["organization_id"]
