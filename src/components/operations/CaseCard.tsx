@@ -48,6 +48,7 @@ const priorityStyle: Record<string, { label: string; className: string }> = {
 
 export function CaseCard({ case_, taskStats, onClick }: CaseCardProps) {
   const [expanded, setExpanded] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
   const Icon = case_.kind === 'judicial' ? Scale : Building2;
   const contactName = case_.contact?.name || case_.contact?.phone || 'Sem contato';
   const initials = contactName.slice(0, 2).toUpperCase();
@@ -57,11 +58,19 @@ export function CaseCard({ case_, taskStats, onClick }: CaseCardProps) {
   const unreadCount = case_.conversation?.unread_count || 0;
   const conversationId = case_.conversation?.id;
   const contactId = (case_ as any).contact_id || (case_ as any).contact?.id;
-  const chatHref = conversationId
-    ? `/conversations?conversation=${conversationId}`
-    : contactId
-      ? `/conversations?contact=${contactId}`
-      : null;
+  const hasChat = !!(conversationId || contactId);
+
+  const { data: conversationFull } = useQuery({
+    queryKey: ['case-card-conversation', conversationId, contactId],
+    enabled: chatOpen && hasChat,
+    queryFn: async () => {
+      let q = (supabase as any).from('conversations').select('*, contact:contacts(*)');
+      if (conversationId) q = q.eq('id', conversationId);
+      else q = q.eq('contact_id', contactId).order('last_message_at', { ascending: false }).limit(1);
+      const { data } = await q.maybeSingle();
+      return data;
+    },
+  });
 
   // Prazo
   let dueBadge: React.ReactNode = null;
