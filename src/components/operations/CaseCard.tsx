@@ -53,8 +53,6 @@ export function CaseCard({ case_, taskStats, onClick }: CaseCardProps) {
   const contactName = case_.contact?.name || case_.contact?.phone || 'Sem contato';
   const initials = contactName.slice(0, 2).toUpperCase();
   const isDone = !!case_.closed_at;
-  // Cor de destaque (usada apenas em ícones/progresso, não como barra lateral)
-  const accentColor = case_.category?.color || 'hsl(var(--primary))';
   const unreadCount = case_.conversation?.unread_count || 0;
   const conversationId = case_.conversation?.id;
   const contactId = (case_ as any).contact_id || (case_ as any).contact?.id;
@@ -120,10 +118,7 @@ export function CaseCard({ case_, taskStats, onClick }: CaseCardProps) {
           <div className="flex items-start gap-2.5">
             <Avatar className="h-9 w-9 flex-shrink-0 ring-2 ring-background shadow-sm">
               <AvatarImage src={case_.contact?.avatar_url || undefined} />
-              <AvatarFallback
-                className="text-[11px] font-semibold text-white"
-                style={{ background: `linear-gradient(135deg, ${accentColor}, ${accentColor}dd)` }}
-              >
+              <AvatarFallback className="text-[11px] font-semibold text-primary-foreground bg-gradient-to-br from-primary to-primary/80">
                 {initials}
               </AvatarFallback>
             </Avatar>
@@ -133,14 +128,7 @@ export function CaseCard({ case_, taskStats, onClick }: CaseCardProps) {
               </p>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <span
-                    className="mt-1 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium border"
-                    style={{
-                      backgroundColor: `${accentColor}14`,
-                      color: accentColor,
-                      borderColor: `${accentColor}33`,
-                    }}
-                  >
+                  <span className="mt-1 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium border bg-primary/10 text-primary border-primary/20">
                     <Icon className="h-2.5 w-2.5" />
                     {case_.category?.name || (case_.kind === 'judicial' ? 'Judicial' : 'Administrativo')}
                   </span>
