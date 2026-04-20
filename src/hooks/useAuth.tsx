@@ -138,11 +138,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signIn = async (email: string, password: string) => {
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
-      return { error: error as Error | null };
+      if (error) return { error: error as Error };
+
+      if (data?.user && isPendingApproval(data.user)) {
+        await supabase.auth.signOut();
+        return { error: new Error('Sua conta está aguardando aprovação de um administrador. Você será notificado assim que for liberada.') };
+      }
+
+      return { error: null };
     } catch (error) {
       return { error: error as Error };
     }
