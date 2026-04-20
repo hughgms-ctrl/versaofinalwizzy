@@ -42,12 +42,12 @@ export function FunnelChart() {
   const [period, setPeriod] = useState<FunnelPeriod>('30d');
   const [dialogOpen, setDialogOpen] = useState(false);
 
-  // Filter pipelines by selected workspace (or show all when "All workspaces")
+  // Filter pipelines strictly by selected workspace (or show all when "All workspaces")
   const pipelines = useMemo(() => {
     if (!selectedWorkspaceId) return allPipelines;
     return allPipelines.filter((p: any) => {
-      const ws = p.workspace_ids || [];
-      return ws.length === 0 || ws.includes(selectedWorkspaceId);
+      const ws = Array.isArray(p.workspace_ids) ? p.workspace_ids : [];
+      return ws.includes(selectedWorkspaceId);
     });
   }, [allPipelines, selectedWorkspaceId]);
 
@@ -55,11 +55,26 @@ export function FunnelChart() {
   const [draftPipelineId, setDraftPipelineId] = useState<string>('');
   const [draftColumnIds, setDraftColumnIds] = useState<string[]>([]);
 
-  const pipelineId = config?.pipeline_id || null;
-  const columnIds = useMemo(() => config?.column_ids || [], [config]);
+  const configuredPipelineVisible = useMemo(
+    () => !!config?.pipeline_id && pipelines.some((pipeline) => pipeline.id === config.pipeline_id),
+    [config?.pipeline_id, pipelines]
+  );
 
-  const { data: pipelineColumns = [] } = usePipelineColumns(pipelineId);
-  const { data: draftColumns = [] } = usePipelineColumns(draftPipelineId || null);
+  const pipelineId = configuredPipelineVisible ? config?.pipeline_id || null : pipelines[0]?.id || null;
+  const { data: pipelineColumns = [], isLoading: loadingPipelineColumns } = usePipelineColumns(pipelineId);
+  const { data: draftColumns = [], isLoading: loadingDraftColumns } = usePipelineColumns(draftPipelineId || null);
+
+  const columnIds = useMemo(() => {
+    const availableColumnIds = new Set(pipelineColumns.map((column) => column.id));
+
+    if (configuredPipelineVisible && config?.column_ids?.length) {
+      const validConfiguredColumns = config.column_ids.filter((columnId) => availableColumnIds.has(columnId));
+      if (validConfiguredColumns.length >= 2) return validConfiguredColumns;
+    }
+
+    return pipelineColumns.slice(0, 4).map((column) => column.id);
+  }, [configuredPipelineVisible, config?.column_ids, pipelineColumns]);
+
   const { data: funnelData = [], isLoading: loadingData } = useFunnelData(
     pipelineId,
     columnIds,
@@ -69,10 +84,10 @@ export function FunnelChart() {
   // Init draft when opening dialog
   useEffect(() => {
     if (dialogOpen) {
-      setDraftPipelineId(config?.pipeline_id || pipelines[0]?.id || '');
-      setDraftColumnIds(config?.column_ids || []);
+      setDraftPipelineId(pipelineId || '');
+      setDraftColumnIds(columnIds);
     }
-  }, [dialogOpen, config, pipelines]);
+  }, [dialogOpen, pipelineId, columnIds]);
 
   // Reset columns when pipeline changes in draft
   useEffect(() => {
@@ -118,7 +133,7 @@ export function FunnelChart() {
       .filter(Boolean) as { id: string; label: string; count: number }[];
   }, [columnIds, pipelineColumns, funnelData]);
 
-  const isConfigured = pipelineId && columnIds.length >= 2;
+  const isConfigured = !!pipelineId && columnIds.length >= 2;
   const max = stages.length > 0 ? Math.max(...stages.map((s) => s.count), 1) : 1;
   const totalConv =
     stages.length >= 2 && stages[0].count > 0
