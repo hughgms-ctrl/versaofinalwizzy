@@ -359,7 +359,13 @@ Deno.serve(async (req) => {
       if (!user_id) throw new Error('Missing user_id')
 
       if (block) {
-        const { error } = await adminClient.auth.admin.updateUserById(user_id, { ban_duration: '876000h' })
+        // Block/reject: ban the user AND remove pending_approval flag so they
+        // don't keep showing in the pending approvals list
+        const { error } = await adminClient.auth.admin.updateUserById(user_id, {
+          ban_duration: '876000h',
+          user_metadata: { pending_approval: false },
+          app_metadata: { pending_approval: false },
+        })
         if (error) throw error
       } else {
         const { error } = await adminClient.auth.admin.updateUserById(user_id, { ban_duration: 'none' })
@@ -403,10 +409,11 @@ Deno.serve(async (req) => {
       const { user_id } = body
       if (!user_id) throw new Error('Missing user_id')
 
-      // Unban the user and remove pending_approval
+      // Unban the user and remove pending_approval from BOTH metadata fields
       const { error } = await adminClient.auth.admin.updateUserById(user_id, {
         ban_duration: 'none',
         user_metadata: { pending_approval: false },
+        app_metadata: { pending_approval: false },
       })
       if (error) throw error
 
@@ -422,9 +429,12 @@ Deno.serve(async (req) => {
     }
 
     if (action === 'pending_approvals') {
-      // Get all users with pending_approval metadata
+      // Get all users with pending_approval flag in EITHER metadata location
       const { data: { users: allUsers } } = await adminClient.auth.admin.listUsers({ perPage: 1000 })
-      const pendingUsers = (allUsers || []).filter((u: any) => u.user_metadata?.pending_approval === true)
+      const pendingUsers = (allUsers || []).filter((u: any) =>
+        u.user_metadata?.pending_approval === true ||
+        u.app_metadata?.pending_approval === true
+      )
 
       // Enrich with org info
       const enriched = []
