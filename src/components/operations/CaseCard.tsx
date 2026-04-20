@@ -109,29 +109,39 @@ export function CaseCard({ case_, taskStats, onClick }: CaseCardProps) {
     <TooltipProvider delayDuration={300}>
       <Card
         className={cn(
-          'group relative overflow-hidden rounded-xl border border-border/60 bg-card shadow-none',
-          'hover:shadow-md hover:border-border transition-all duration-200 cursor-pointer',
+          'group relative overflow-hidden rounded-xl border border-border/50 bg-gradient-to-b from-card to-card/60 backdrop-blur-sm shadow-sm',
+          'hover:shadow-lg hover:border-border hover:-translate-y-0.5 transition-all duration-200 cursor-pointer',
           isDone && 'opacity-60'
         )}
         onClick={onClick}
       >
-        <div className="p-4 space-y-3">
-          {/* Header: avatar + contato + categoria + chat */}
+        <div className="p-3.5 space-y-2.5">
+          {/* Header: avatar + nome + chat */}
           <div className="flex items-start gap-2.5">
-            <Avatar className="h-8 w-8 flex-shrink-0">
+            <Avatar className="h-9 w-9 flex-shrink-0 ring-2 ring-background shadow-sm">
               <AvatarImage src={case_.contact?.avatar_url || undefined} />
-              <AvatarFallback className="text-[11px] bg-muted text-foreground/70 font-medium">
+              <AvatarFallback
+                className="text-[11px] font-semibold text-white"
+                style={{ background: `linear-gradient(135deg, ${accentColor}, ${accentColor}dd)` }}
+              >
                 {initials}
               </AvatarFallback>
             </Avatar>
             <div className="flex-1 min-w-0">
-              <p className="text-[13px] font-medium text-foreground truncate leading-tight">
+              <p className="text-[13px] font-semibold text-foreground truncate leading-tight">
                 {contactName}
               </p>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <span className="text-[11px] text-muted-foreground inline-flex items-center gap-1 mt-0.5">
-                    <Icon className="h-2.5 w-2.5" style={{ color: accentColor }} />
+                  <span
+                    className="mt-1 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium border"
+                    style={{
+                      backgroundColor: `${accentColor}14`,
+                      color: accentColor,
+                      borderColor: `${accentColor}33`,
+                    }}
+                  >
+                    <Icon className="h-2.5 w-2.5" />
                     {case_.category?.name || (case_.kind === 'judicial' ? 'Judicial' : 'Administrativo')}
                   </span>
                 </TooltipTrigger>
@@ -152,7 +162,7 @@ export function CaseCard({ case_, taskStats, onClick }: CaseCardProps) {
                   >
                     <MessageSquare className="h-4 w-4" />
                     {unreadCount > 0 && (
-                      <span className="absolute -top-1 -right-1 h-4 min-w-[16px] px-1 rounded-full bg-destructive text-destructive-foreground text-[9px] font-bold flex items-center justify-center leading-none">
+                      <span className="absolute -top-1 -right-1 h-4 min-w-[16px] px-1 rounded-full bg-destructive text-destructive-foreground text-[9px] font-bold flex items-center justify-center leading-none ring-2 ring-card">
                         {unreadCount > 9 ? '9+' : unreadCount}
                       </span>
                     )}
@@ -168,7 +178,7 @@ export function CaseCard({ case_, taskStats, onClick }: CaseCardProps) {
           {/* Título do caso */}
           <Tooltip>
             <TooltipTrigger asChild>
-              <p className="text-sm font-semibold text-foreground line-clamp-2 leading-snug">
+              <p className="text-[13px] font-medium text-foreground/90 line-clamp-2 leading-snug">
                 {case_.title}
               </p>
             </TooltipTrigger>
@@ -191,16 +201,16 @@ export function CaseCard({ case_, taskStats, onClick }: CaseCardProps) {
           {taskStats && taskStats.total > 0 && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <div className="space-y-1.5">
-                  <div className="h-[3px] bg-muted rounded-full overflow-hidden">
-                    <div
-                      className="h-full transition-all rounded-full"
-                      style={{
-                        width: `${progress}%`,
-                        backgroundColor: progress === 100 ? 'hsl(var(--primary))' : accentColor,
-                      }}
-                    />
-                  </div>
+                <div className="h-1 w-full bg-muted/60 rounded-full overflow-hidden">
+                  <div
+                    className="h-full transition-all duration-500 rounded-full"
+                    style={{
+                      width: `${Math.max(progress, 2)}%`,
+                      background: progress === 100
+                        ? 'hsl(var(--primary))'
+                        : `linear-gradient(90deg, ${accentColor}, ${accentColor}cc)`,
+                    }}
+                  />
                 </div>
               </TooltipTrigger>
               <TooltipContent>
@@ -210,7 +220,7 @@ export function CaseCard({ case_, taskStats, onClick }: CaseCardProps) {
           )}
 
           {/* Footer minimalista */}
-          <div className="flex items-center justify-between pt-1">
+          <div className="flex items-center justify-between pt-0.5">
             <div className="flex items-center gap-2">
               {assigneeName && (
                 <Tooltip>
