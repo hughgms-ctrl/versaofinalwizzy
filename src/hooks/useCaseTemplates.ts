@@ -103,6 +103,7 @@ export function useCreateTemplateTask() {
       days_to_due: number;
       order?: number;
       is_mandatory?: boolean;
+      default_time?: string;
     }) => {
       const { error } = await (supabase as any).from('case_template_tasks').insert(input);
       if (error) throw error;
