@@ -705,6 +705,640 @@ export type Database = {
           },
         ]
       }
+      case_activity_log: {
+        Row: {
+          action: string
+          actor_id: string | null
+          case_id: string
+          created_at: string
+          id: string
+          organization_id: string
+          payload: Json
+        }
+        Insert: {
+          action: string
+          actor_id?: string | null
+          case_id: string
+          created_at?: string
+          id?: string
+          organization_id: string
+          payload?: Json
+        }
+        Update: {
+          action?: string
+          actor_id?: string | null
+          case_id?: string
+          created_at?: string
+          id?: string
+          organization_id?: string
+          payload?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "case_activity_log_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "case_activity_log_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "cases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "case_activity_log_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      case_categories: {
+        Row: {
+          color: string | null
+          created_at: string
+          icon: string | null
+          id: string
+          kind: string
+          name: string
+          organization_id: string
+          slug: string
+          updated_at: string
+        }
+        Insert: {
+          color?: string | null
+          created_at?: string
+          icon?: string | null
+          id?: string
+          kind: string
+          name: string
+          organization_id: string
+          slug: string
+          updated_at?: string
+        }
+        Update: {
+          color?: string | null
+          created_at?: string
+          icon?: string | null
+          id?: string
+          kind?: string
+          name?: string
+          organization_id?: string
+          slug?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "case_categories_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      case_deadlines: {
+        Row: {
+          case_id: string
+          completed_at: string | null
+          completed_by: string | null
+          created_at: string
+          created_by: string | null
+          description: string | null
+          due_date: string
+          id: string
+          is_fatal: boolean
+          notify_days_before: number
+          organization_id: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          case_id: string
+          completed_at?: string | null
+          completed_by?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          due_date: string
+          id?: string
+          is_fatal?: boolean
+          notify_days_before?: number
+          organization_id: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          case_id?: string
+          completed_at?: string | null
+          completed_by?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          due_date?: string
+          id?: string
+          is_fatal?: boolean
+          notify_days_before?: number
+          organization_id?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "case_deadlines_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "cases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "case_deadlines_completed_by_fkey"
+            columns: ["completed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "case_deadlines_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "case_deadlines_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      case_statuses: {
+        Row: {
+          color: string
+          created_at: string
+          id: string
+          is_closed: boolean
+          is_default: boolean
+          name: string
+          order: number
+          organization_id: string
+          updated_at: string
+          workspace_id: string | null
+        }
+        Insert: {
+          color?: string
+          created_at?: string
+          id?: string
+          is_closed?: boolean
+          is_default?: boolean
+          name: string
+          order?: number
+          organization_id: string
+          updated_at?: string
+          workspace_id?: string | null
+        }
+        Update: {
+          color?: string
+          created_at?: string
+          id?: string
+          is_closed?: boolean
+          is_default?: boolean
+          name?: string
+          order?: number
+          organization_id?: string
+          updated_at?: string
+          workspace_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "case_statuses_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "case_statuses_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      case_tasks: {
+        Row: {
+          assignee_id: string | null
+          case_id: string
+          completed_at: string | null
+          completed_by: string | null
+          created_at: string
+          created_by: string | null
+          description: string | null
+          due_date: string | null
+          id: string
+          is_mandatory: boolean
+          order: number
+          organization_id: string
+          status: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          assignee_id?: string | null
+          case_id: string
+          completed_at?: string | null
+          completed_by?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          due_date?: string | null
+          id?: string
+          is_mandatory?: boolean
+          order?: number
+          organization_id: string
+          status?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          assignee_id?: string | null
+          case_id?: string
+          completed_at?: string | null
+          completed_by?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          due_date?: string | null
+          id?: string
+          is_mandatory?: boolean
+          order?: number
+          organization_id?: string
+          status?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "case_tasks_assignee_id_fkey"
+            columns: ["assignee_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "case_tasks_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "cases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "case_tasks_completed_by_fkey"
+            columns: ["completed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "case_tasks_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "case_tasks_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      case_template_tasks: {
+        Row: {
+          created_at: string
+          days_to_due: number
+          description: string | null
+          id: string
+          is_mandatory: boolean
+          order: number
+          template_id: string
+          title: string
+        }
+        Insert: {
+          created_at?: string
+          days_to_due?: number
+          description?: string | null
+          id?: string
+          is_mandatory?: boolean
+          order?: number
+          template_id: string
+          title: string
+        }
+        Update: {
+          created_at?: string
+          days_to_due?: number
+          description?: string | null
+          id?: string
+          is_mandatory?: boolean
+          order?: number
+          template_id?: string
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "case_template_tasks_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "case_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      case_templates: {
+        Row: {
+          category_id: string | null
+          created_at: string
+          default_assignee_id: string | null
+          default_status_id: string | null
+          description: string | null
+          id: string
+          is_active: boolean
+          kind: string
+          name: string
+          organization_id: string
+          updated_at: string
+          workspace_id: string | null
+        }
+        Insert: {
+          category_id?: string | null
+          created_at?: string
+          default_assignee_id?: string | null
+          default_status_id?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          kind: string
+          name: string
+          organization_id: string
+          updated_at?: string
+          workspace_id?: string | null
+        }
+        Update: {
+          category_id?: string | null
+          created_at?: string
+          default_assignee_id?: string | null
+          default_status_id?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          kind?: string
+          name?: string
+          organization_id?: string
+          updated_at?: string
+          workspace_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "case_templates_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "case_categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "case_templates_default_assignee_id_fkey"
+            columns: ["default_assignee_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "case_templates_default_status_id_fkey"
+            columns: ["default_status_id"]
+            isOneToOne: false
+            referencedRelation: "case_statuses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "case_templates_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "case_templates_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      case_triggers: {
+        Row: {
+          column_id: string
+          created_at: string
+          id: string
+          is_active: boolean
+          organization_id: string
+          pipeline_id: string
+          template_id: string
+          updated_at: string
+        }
+        Insert: {
+          column_id: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          organization_id: string
+          pipeline_id: string
+          template_id: string
+          updated_at?: string
+        }
+        Update: {
+          column_id?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          organization_id?: string
+          pipeline_id?: string
+          template_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "case_triggers_column_id_fkey"
+            columns: ["column_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_columns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "case_triggers_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "case_triggers_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "pipelines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "case_triggers_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "case_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cases: {
+        Row: {
+          administrative_data: Json
+          assignee_id: string | null
+          category_id: string | null
+          closed_at: string | null
+          contact_id: string | null
+          conversation_id: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          judicial_data: Json
+          kind: string
+          metadata: Json
+          opened_at: string
+          organization_id: string
+          priority: string
+          status_id: string | null
+          template_id: string | null
+          title: string
+          updated_at: string
+          workspace_id: string | null
+        }
+        Insert: {
+          administrative_data?: Json
+          assignee_id?: string | null
+          category_id?: string | null
+          closed_at?: string | null
+          contact_id?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          judicial_data?: Json
+          kind: string
+          metadata?: Json
+          opened_at?: string
+          organization_id: string
+          priority?: string
+          status_id?: string | null
+          template_id?: string | null
+          title: string
+          updated_at?: string
+          workspace_id?: string | null
+        }
+        Update: {
+          administrative_data?: Json
+          assignee_id?: string | null
+          category_id?: string | null
+          closed_at?: string | null
+          contact_id?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          judicial_data?: Json
+          kind?: string
+          metadata?: Json
+          opened_at?: string
+          organization_id?: string
+          priority?: string
+          status_id?: string | null
+          template_id?: string | null
+          title?: string
+          updated_at?: string
+          workspace_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cases_assignee_id_fkey"
+            columns: ["assignee_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cases_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "case_categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cases_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cases_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cases_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cases_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cases_status_id_fkey"
+            columns: ["status_id"]
+            isOneToOne: false
+            referencedRelation: "case_statuses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cases_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "case_templates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cases_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       contact_files: {
         Row: {
           contact_id: string
@@ -3847,6 +4481,7 @@ export type Database = {
           can_access_conversations: boolean
           can_access_dashboard: boolean
           can_access_flows: boolean
+          can_access_operations: boolean
           can_access_pipeline: boolean
           can_access_reports: boolean
           can_access_scheduled: boolean
@@ -3869,6 +4504,7 @@ export type Database = {
           can_access_conversations?: boolean
           can_access_dashboard?: boolean
           can_access_flows?: boolean
+          can_access_operations?: boolean
           can_access_pipeline?: boolean
           can_access_reports?: boolean
           can_access_scheduled?: boolean
@@ -3891,6 +4527,7 @@ export type Database = {
           can_access_conversations?: boolean
           can_access_dashboard?: boolean
           can_access_flows?: boolean
+          can_access_operations?: boolean
           can_access_pipeline?: boolean
           can_access_reports?: boolean
           can_access_scheduled?: boolean
@@ -4579,6 +5216,7 @@ export type Database = {
         Row: {
           color: string
           created_at: string
+          default_operations_assignee_id: string | null
           description: string | null
           filter_tag_ids: string[] | null
           id: string
@@ -4591,6 +5229,7 @@ export type Database = {
         Insert: {
           color?: string
           created_at?: string
+          default_operations_assignee_id?: string | null
           description?: string | null
           filter_tag_ids?: string[] | null
           id?: string
@@ -4603,6 +5242,7 @@ export type Database = {
         Update: {
           color?: string
           created_at?: string
+          default_operations_assignee_id?: string | null
           description?: string | null
           filter_tag_ids?: string[] | null
           id?: string
@@ -4613,6 +5253,13 @@ export type Database = {
           whatsapp_instance_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "workspaces_default_operations_assignee_id_fkey"
+            columns: ["default_operations_assignee_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "workspaces_organization_id_fkey"
             columns: ["organization_id"]
@@ -4645,6 +5292,15 @@ export type Database = {
           reason: string
         }[]
       }
+      create_case_from_template: {
+        Args: {
+          _contact_id: string
+          _conversation_id: string
+          _created_by?: string
+          _template_id: string
+        }
+        Returns: string
+      }
       deactivate_org_instances: {
         Args: { _org_id: string }
         Returns: undefined
@@ -4672,6 +5328,10 @@ export type Database = {
         Returns: undefined
       }
       is_platform_admin: { Args: { _user_id: string }; Returns: boolean }
+      seed_operations_defaults: {
+        Args: { _org_id: string }
+        Returns: undefined
+      }
       user_belongs_to_org: {
         Args: { _org_id: string; _user_id: string }
         Returns: boolean
