@@ -15,11 +15,16 @@ import {
   useCreateCaseTemplate,
   useDeleteCaseTemplate,
   useCreateTemplateTask,
+  useUpdateTemplateTask,
   useDeleteTemplateTask,
   useCaseTriggers,
   useCreateCaseTrigger,
   useDeleteCaseTrigger,
 } from '@/hooks/useCaseTemplates';
+import {
+  useTemplateTaskNotification,
+  useUpsertTemplateTaskNotification,
+} from '@/hooks/useCaseTaskNotifications';
 import { TemplateSummaryEditor } from '@/components/operations/TemplateSummaryEditor';
 import { CaseStatusManager } from '@/components/operations/CaseStatusManager';
 import { useCaseCategories } from '@/hooks/useOperationsCases';
@@ -27,6 +32,8 @@ import { useTeamMembers } from '@/hooks/useTeamMembers';
 import { usePipelines, usePipelineColumns } from '@/hooks/usePipelines';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Bell, CalendarClock, Pencil } from 'lucide-react';
 
 export default function CaseTemplatesPage() {
   const location = useLocation();
@@ -209,15 +216,7 @@ export default function CaseTemplatesPage() {
                       </div>
                       <div className="space-y-2">
                         {tplTasks.map((t: any) => (
-                          <div key={t.id} className="flex items-center justify-between p-2 rounded border">
-                            <div>
-                              <p className="text-sm">{t.title}</p>
-                              <p className="text-xs text-muted-foreground">Vence em +{t.days_to_due} dias</p>
-                            </div>
-                            <Button size="icon" variant="ghost" onClick={() => delTask.mutate(t.id)} className="h-7 w-7">
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </Button>
-                          </div>
+                          <TemplateTaskRow key={t.id} task={t} />
                         ))}
                       </div>
                     </Card>
