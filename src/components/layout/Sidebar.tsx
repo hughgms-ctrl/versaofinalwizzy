@@ -89,7 +89,7 @@ export function Sidebar() {
       team: 'can_access_team',
       scheduled: 'can_access_scheduled',
       calendar: 'can_access_calendar',
-      operations: 'can_access_pipeline', // operacional segue permissão de pipeline por enquanto
+      operations: 'can_access_operations',
     };
 
     const key = moduleMap[module];

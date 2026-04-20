@@ -17,6 +17,7 @@ export interface UserPermissions {
   can_access_team: boolean;
   can_access_scheduled: boolean;
   can_access_calendar: boolean;
+  can_access_operations: boolean;
   conversations_filter_type: 'all' | 'assigned' | 'tags' | 'assigned_and_tags';
   conversations_allowed_tags: string[];
   pipeline_access_type: 'all' | 'specific';
@@ -142,6 +143,7 @@ export function useCanAccessModule(module: string) {
     team: 'can_access_team',
     scheduled: 'can_access_scheduled',
     calendar: 'can_access_calendar',
+    operations: 'can_access_operations',
   };
 
   const key = moduleMap[module];
