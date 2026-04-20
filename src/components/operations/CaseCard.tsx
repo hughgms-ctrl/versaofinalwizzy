@@ -53,8 +53,8 @@ export function CaseCard({ case_, taskStats, onClick }: CaseCardProps) {
   const contactName = case_.contact?.name || case_.contact?.phone || 'Sem contato';
   const initials = contactName.slice(0, 2).toUpperCase();
   const isDone = !!case_.closed_at;
-  // Borda lateral segue a cor do workspace; se não houver, usa a cor da categoria; se não, primary
-  const accentColor = case_.workspace?.color || case_.category?.color || 'hsl(var(--primary))';
+  // Cor de destaque (usada apenas em ícones/progresso, não como barra lateral)
+  const accentColor = case_.category?.color || 'hsl(var(--primary))';
   const unreadCount = case_.conversation?.unread_count || 0;
   const conversationId = case_.conversation?.id;
   const contactId = (case_ as any).contact_id || (case_ as any).contact?.id;
@@ -115,13 +115,7 @@ export function CaseCard({ case_, taskStats, onClick }: CaseCardProps) {
         )}
         onClick={onClick}
       >
-        {/* Accent bar lateral fina */}
-        <div
-          className="absolute left-0 top-0 bottom-0 w-[3px]"
-          style={{ backgroundColor: accentColor }}
-        />
-
-        <div className="p-4 pl-[14px] space-y-3">
+        <div className="p-4 space-y-3">
           {/* Header: avatar + contato + categoria + chat */}
           <div className="flex items-start gap-2.5">
             <Avatar className="h-8 w-8 flex-shrink-0">
