@@ -61,6 +61,20 @@ export function ConversationActionsMenu({ conversation, onShowMediaGallery }: Co
   const queryClient = useQueryClient();
   const isArchived = conversation.status === 'archived';
 
+  const cancelPendingChatFollowUps = async (reason: string) => {
+    await supabase
+      .from('flow_executions')
+      .update({
+        status: 'completed',
+        timeout_at: null,
+        completed_at: new Date().toISOString(),
+        error_message: reason,
+      } as any)
+      .eq('conversation_id', conversation.id)
+      .in('status', ['waiting_input', 'running'])
+      .eq('current_node_id', 'chat-follow-up');
+  };
+
   const { data: tags } = useTags();
   const { data: contactTags } = useContactTags(conversation.contact?.id || null);
   const { data: pipelines } = usePipelines();
@@ -428,9 +442,27 @@ export function ConversationActionsMenu({ conversation, onShowMediaGallery }: Co
                 <DropdownMenuItem onClick={async () => {
                   setIsUpdating(true);
                   try {
-                    const { error } = await supabase.from('conversations').update({ service_mode: 'ativo' } as any).eq('id', conversation.id);
+                    const { data: currentConv } = await supabase
+                      .from('conversations')
+                      .select('metadata')
+                      .eq('id', conversation.id)
+                      .single();
+
+                    const currentMetadata = (currentConv?.metadata as Record<string, unknown>) || {};
+
+                    const { error } = await supabase
+                      .from('conversations')
+                      .update({
+                        service_mode: 'ativo',
+                        metadata: { ...currentMetadata, ai_paused_until: 'permanent' }
+                      } as any)
+                      .eq('id', conversation.id);
                     if (error) throw error;
+
+                    await cancelPendingChatFollowUps('Cancelled: AI deactivated by human agent');
+
                     queryClient.invalidateQueries({ queryKey: ['conversations'] });
+                    queryClient.invalidateQueries({ queryKey: ['follow-up-status'] });
                     toast({ title: 'IA desativada', description: 'Você assumiu o atendimento desta conversa.' });
                   } catch { toast({ title: 'Erro ao desativar', variant: 'destructive' }); } finally { setIsUpdating(false); }
                 }}>
