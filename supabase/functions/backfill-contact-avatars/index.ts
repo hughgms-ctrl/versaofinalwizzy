@@ -1,21 +1,10 @@
-// v2 - verify_jwt disabled, manual auth validation
+// v3 - multiple endpoint variants + GET fallback for UAZAPI 405 errors
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
-
-const TEMPORARY_HOSTS = ['pps.whatsapp.net', 'mmg.whatsapp.net', 'media.whatsapp.net'];
-function isTemporaryUrl(url: string | null | undefined) {
-  if (!url) return false;
-  try {
-    const u = new URL(url);
-    return TEMPORARY_HOSTS.some((h) => u.hostname.endsWith(h));
-  } catch {
-    return false;
-  }
-}
 
 function ensureCountryCode(phone: string): string {
   const clean = phone.replace(/\D/g, '');
@@ -32,6 +21,71 @@ async function fetchWithTimeout(url: string, options: RequestInit, ms = 8000): P
   } finally {
     clearTimeout(t);
   }
+}
+
+/**
+ * Try multiple UAZAPI endpoint variants to fetch profile picture URL.
+ * Different UAZAPI versions/deployments expose different endpoints.
+ * Returns the first successful URL (or null).
+ */
+async function fetchAvatarFromUazapi(
+  baseUrl: string,
+  token: string,
+  formattedPhone: string,
+  isLid: boolean,
+  collectSample: (s: string) => void,
+): Promise<string | null> {
+  const phoneBody = isLid ? { phone: formattedPhone } : { number: formattedPhone };
+  const numberBody = { number: formattedPhone };
+  const baseHeaders = { 'Content-Type': 'application/json', token };
+
+  type Attempt = { url: string; method: 'GET' | 'POST'; body?: unknown; pickUrl: (d: any) => string | null };
+  const attempts: Attempt[] = [
+    // POST variants (legacy)
+    { url: `${baseUrl}/contact/info`, method: 'POST', body: phoneBody,
+      pickUrl: (d) => d?.profilePicture || d?.profileThumbnail || d?.imgUrl || d?.profilePictureUrl || d?.profilePicUrl || null },
+    { url: `${baseUrl}/contact/profile-picture`, method: 'POST', body: phoneBody,
+      pickUrl: (d) => d?.profilePictureUrl || d?.profilePicture || d?.imgUrl || d?.url || null },
+    // POST chat/* variants (UAZAPI v2)
+    { url: `${baseUrl}/chat/getProfilePicUrl`, method: 'POST', body: numberBody,
+      pickUrl: (d) => d?.profilePicUrl || d?.url || d?.imgUrl || (typeof d === 'string' ? d : null) },
+    { url: `${baseUrl}/chat/check`, method: 'POST', body: { numbers: [formattedPhone] },
+      pickUrl: (d) => Array.isArray(d) ? (d[0]?.profilePicUrl || d[0]?.imgUrl || null) : (d?.profilePicUrl || null) },
+    // GET variants with query param
+    { url: `${baseUrl}/contact/info?number=${encodeURIComponent(formattedPhone)}`, method: 'GET',
+      pickUrl: (d) => d?.profilePicture || d?.profileThumbnail || d?.imgUrl || d?.profilePictureUrl || d?.profilePicUrl || null },
+    { url: `${baseUrl}/chat/getProfilePicUrl?number=${encodeURIComponent(formattedPhone)}`, method: 'GET',
+      pickUrl: (d) => d?.profilePicUrl || d?.url || d?.imgUrl || (typeof d === 'string' ? d : null) },
+  ];
+
+  let firstStatusSample: string | null = null;
+  for (const a of attempts) {
+    try {
+      const init: RequestInit = { method: a.method, headers: baseHeaders };
+      if (a.method === 'POST' && a.body !== undefined) init.body = JSON.stringify(a.body);
+      const res = await fetchWithTimeout(a.url, init, 6000);
+      if (res.ok) {
+        let d: any = null;
+        try { d = await res.json(); } catch { /* not json */ }
+        const url = a.pickUrl(d);
+        if (url) {
+          collectSample(`OK ${a.method} ${a.url.replace(baseUrl, '')} -> ${String(url).slice(0, 80)}`);
+          return url;
+        } else if (!firstStatusSample) {
+          firstStatusSample = `200 ${a.method} ${a.url.replace(baseUrl, '')} no-url body=${JSON.stringify(d).slice(0, 120)}`;
+        }
+      } else if (!firstStatusSample) {
+        const txt = await res.text();
+        firstStatusSample = `${res.status} ${a.method} ${a.url.replace(baseUrl, '')} body=${txt.slice(0, 100)}`;
+      } else {
+        await res.text(); // drain
+      }
+    } catch (e) {
+      if (!firstStatusSample) firstStatusSample = `ERR ${a.method} ${a.url.replace(baseUrl, '')}: ${String(e).slice(0, 60)}`;
+    }
+  }
+  if (firstStatusSample) collectSample(firstStatusSample);
+  return null;
 }
 
 Deno.serve(async (req) => {
@@ -75,59 +129,52 @@ Deno.serve(async (req) => {
 
     let batchSize = 40;
     let skipMissing = false;
+    let probeOnly = false;
     try {
       const body = await req.json();
-      if (body?.batchSize && typeof body.batchSize === 'number') {
-        batchSize = Math.min(Math.max(body.batchSize, 5), 100);
-      }
-      // After a full pass, the client can request to skip contacts known to have no picture
-      if (body?.skipMissing === true) skipMissing = true;
-    } catch {/* no body */}
+      if (body?.batchSize && typeof body.batchSize === 'number') batchSize = Math.min(Math.max(body.batchSize, 1), 200);
+      if (body?.skipMissing) skipMissing = true;
+      if (body?.probeOnly) probeOnly = true;
+    } catch { /* no body */ }
 
-    const { data: instances } = await supabase.from('whatsapp_instances')
-      .select('*').eq('organization_id', profile.organization_id)
-      .eq('status', 'connected').limit(1);
-    const instance = instances?.[0];
+    const orgId = profile.organization_id;
+    console.log(`[backfill] Starting org=${orgId} batchSize=${batchSize} probeOnly=${probeOnly}`);
+
+    const { data: instance } = await supabase
+      .from('whatsapp_instances')
+      .select('id, zapi_token')
+      .eq('organization_id', orgId)
+      .eq('status', 'connected')
+      .limit(1).maybeSingle();
+
     if (!instance?.zapi_token) {
       return respond(200, { success: false, error: 'No connected WhatsApp instance' });
     }
 
-    console.log(`[backfill] Starting org=${profile.organization_id} batchSize=${batchSize}`);
-
-    // Only target contacts with conversations (active) — exclude broadcast lists
-    const { data: contacts, error: contactsErr } = await supabase
+    // Get contacts that need an avatar refresh:
+    // - missing avatar OR
+    // - using a temporary WhatsApp CDN URL (pps.whatsapp.net etc.)
+    const { data: allTargets } = await supabase
       .from('contacts')
       .select('id, phone, avatar_url')
-      .eq('organization_id', profile.organization_id)
-      .not('phone', 'like', '%@broadcast')
+      .eq('organization_id', orgId)
+      .or('avatar_url.is.null,avatar_url.like.%whatsapp.net%')
       .limit(2000);
 
-    if (contactsErr) {
-      console.error('[backfill] contacts query error:', contactsErr);
-      return respond(200, { success: false, error: contactsErr.message });
-    }
+    const targets = (allTargets || []).filter((c) => c.phone && c.phone.length >= 10);
+    if (!targets.length) return respond(200, { success: true, message: 'No targets', processed: 0 });
 
-    const allTargets = (contacts || []).filter((c) =>
-      c.phone && (isTemporaryUrl(c.avatar_url) || !c.avatar_url)
-    );
-    const targets = allTargets.slice(0, batchSize);
+    console.log(`[backfill] ${targets.length} candidates, processing ${Math.min(batchSize, targets.length)}`);
 
-    console.log(`[backfill] ${allTargets.length} candidates, processing ${targets.length}`);
-
-    let processed = 0;
-    let persisted = 0;
-    let failed = 0;
-    let noPicture = 0;
     const samples: string[] = [];
+    const collectSample = (s: string) => { if (samples.length < 6) samples.push(s); };
+    let processed = 0, persisted = 0, failed = 0, noPicture = 0;
 
-    const concurrency = 3;
-    for (let i = 0; i < targets.length; i += concurrency) {
-      if (Date.now() - startTime > 45000) {
-        console.log('[backfill] Time limit approaching, stopping');
-        break;
-      }
+    const work = targets.slice(0, batchSize);
+    const concurrency = probeOnly ? 1 : 5;
 
-      const batch = targets.slice(i, i + concurrency);
+    for (let i = 0; i < work.length; i += concurrency) {
+      const batch = work.slice(i, i + concurrency);
       await Promise.all(batch.map(async (c) => {
         processed++;
         try {
@@ -136,49 +183,11 @@ Deno.serve(async (req) => {
           const formattedPhone = isLid ? rawPhone : ensureCountryCode(rawPhone);
           if (!formattedPhone) { noPicture++; return; }
 
-          const phoneBody = isLid ? { phone: formattedPhone } : { number: formattedPhone };
-
-          // 1) Try /contact/info first (matches working zapi-contact-profile)
-          let remoteAvatarUrl: string | null = null;
-          try {
-            const infoRes = await fetchWithTimeout(`${uazapiBaseUrl}/contact/info`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'token': instance.zapi_token },
-              body: JSON.stringify(phoneBody),
-            }, 6000);
-            if (infoRes.ok) {
-              const d = await infoRes.json();
-              remoteAvatarUrl = d.profilePicture || d.profileThumbnail || d.imgUrl || d.profilePictureUrl || null;
-              if (samples.length < 3) {
-                samples.push(`info(${formattedPhone}): ${JSON.stringify(d).slice(0, 200)}`);
-              }
-            } else if (samples.length < 3) {
-              const txt = await infoRes.text();
-              samples.push(`info(${formattedPhone}) status=${infoRes.status}: ${txt.slice(0, 150)}`);
-            }
-          } catch (e) {
-            if (samples.length < 3) samples.push(`info err: ${String(e).slice(0, 100)}`);
-          }
-
-          // 2) Fallback to /contact/profile-picture
-          if (!remoteAvatarUrl) {
-            try {
-              const picRes = await fetchWithTimeout(`${uazapiBaseUrl}/contact/profile-picture`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'token': instance.zapi_token },
-                body: JSON.stringify(phoneBody),
-              }, 6000);
-              if (picRes.ok) {
-                const d = await picRes.json();
-                remoteAvatarUrl = d.profilePictureUrl || d.profilePicture || d.imgUrl || d.url || null;
-                if (samples.length < 3) {
-                  samples.push(`pic(${formattedPhone}): ${JSON.stringify(d).slice(0, 200)}`);
-                }
-              }
-            } catch {/* ignore */}
-          }
-
+          const remoteAvatarUrl = await fetchAvatarFromUazapi(
+            uazapiBaseUrl, instance.zapi_token, formattedPhone, isLid, collectSample,
+          );
           if (!remoteAvatarUrl) { noPicture++; return; }
+          if (probeOnly) { persisted++; return; }
 
           const imgRes = await fetchWithTimeout(remoteAvatarUrl, {
             headers: { 'User-Agent': 'Mozilla/5.0' },
@@ -203,15 +212,17 @@ Deno.serve(async (req) => {
           failed++;
         }
       }));
+      // Stop early in probe mode after first batch
+      if (probeOnly && samples.length >= 4) break;
     }
 
-    const remaining = Math.max(allTargets.length - processed, 0);
+    const remaining = Math.max(targets.length - processed, 0);
     console.log(`[backfill] Done processed=${processed} persisted=${persisted} failed=${failed} noPicture=${noPicture} remaining=${remaining}`);
     if (samples.length) console.log('[backfill] samples:', samples.join(' | '));
 
     return respond(200, {
       success: true,
-      total_candidates: allTargets.length,
+      total_candidates: targets.length,
       processed,
       persisted,
       failed,
