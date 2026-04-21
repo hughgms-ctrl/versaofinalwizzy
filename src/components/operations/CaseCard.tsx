@@ -62,6 +62,7 @@ interface CaseCardProps {
     conversation?: { id: string; unread_count: number } | null;
   };
   taskStats?: { total: number; done: number; nextDue?: string | null };
+  contactTags?: Array<{ id: string; name: string; color: string }>;
   onClick?: () => void;
 }
 
@@ -71,7 +72,7 @@ const priorityStyle: Record<string, { label: string; className: string }> = {
   low: { label: 'Baixa', className: 'bg-muted text-muted-foreground border-transparent' },
 };
 
-export function CaseCard({ case_, taskStats, onClick }: CaseCardProps) {
+export function CaseCard({ case_, taskStats, contactTags = [], onClick }: CaseCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const Icon = case_.kind === 'judicial' ? Scale : Building2;
