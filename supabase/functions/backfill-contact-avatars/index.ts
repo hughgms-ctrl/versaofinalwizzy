@@ -1,8 +1,7 @@
-// v5 - Dual-endpoint strategy mirroring zapi-contact-profile (proven in production)
-// 1) POST /contact/info  -> nome + sometimes avatar
-// 2) POST /contact/profile-picture -> dedicated avatar endpoint (forces live fetch)
-// 3) Fallback POST /chat/details -> cached chat info
-// Supports both regular numbers and LIDs (@lid).
+// v6 - Cache warm-up + chat/details strategy
+// 1) POST /chat/check  -> forces UAZAPI to validate the number on WhatsApp servers (warms cache & avatar)
+// 2) POST /chat/details -> reads the (now hopefully populated) chat record with image/imagePreview
+// 3) Optional /contact/profile-picture and /contact/info as last resort (some instances reject with 405)
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
@@ -108,7 +107,39 @@ async function tryChatDetailsEndpoint(
 }
 
 /**
- * Run all 3 strategies for a single contact and return first hit.
+ * Strategy 0 (warm-up): POST /chat/check
+ * Forces UAZAPI to query WhatsApp servers for this number, validates it exists
+ * and triggers a fresh fetch of profile data (including the avatar) into UAZAPI's cache.
+ * This is the key step that allows /chat/details to return an image afterwards
+ * for contacts that were not previously cached.
+ */
+async function warmUpChatCheck(
+  baseUrl: string, token: string, numbers: string[], sample: Sample,
+): Promise<boolean> {
+  try {
+    const res = await fetchWithTimeout(`${baseUrl}/chat/check`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', token },
+      body: JSON.stringify({ numbers }),
+    }, 12000);
+    if (!res.ok) {
+      sample(`check:${res.status}`);
+      return false;
+    }
+    // Body is fire-and-forget for our purposes; UAZAPI will populate the cache async
+    await res.text().catch(() => '');
+    return true;
+  } catch (e) {
+    sample(`check-err:${String(e).slice(0, 30)}`);
+    return false;
+  }
+}
+
+/**
+ * Run strategies for a single contact:
+ *  1. /chat/details (after warm-up the cache should be populated)
+ *  2. /contact/profile-picture (some instances support it)
+ *  3. /contact/info (last resort)
  */
 async function fetchAvatarMultiStrategy(
   baseUrl: string,
@@ -116,25 +147,23 @@ async function fetchAvatarMultiStrategy(
   rawPhone: string,
   sample: Sample,
 ): Promise<{ url: string | null; name: string | null; strategyUsed: string }> {
-  // Detect LID (WhatsApp linked-id format)
   const isLid = rawPhone.includes('@lid') || rawPhone.length > 20;
   const formattedPhone = isLid ? rawPhone : ensureCountryCode(rawPhone);
-  // Some UAZAPI versions accept 'phone', others 'number' - matches zapi-contact-profile pattern
   const body = isLid ? { phone: formattedPhone } : { number: formattedPhone };
 
-  // Strategy 1: dedicated profile-picture endpoint (most reliable for live fetch)
-  const ppUrl = await tryProfilePictureEndpoint(baseUrl, token, body, sample);
-  if (ppUrl) return { url: ppUrl, name: null, strategyUsed: 'profile-picture' };
-
-  // Strategy 2: contact/info (also returns name)
-  const ci = await tryContactInfoEndpoint(baseUrl, token, body, sample);
-  if (ci.url) return { url: ci.url, name: ci.name, strategyUsed: 'contact-info' };
-
-  // Strategy 3: chat/details fallback (cache-only)
+  // Strategy 1: chat/details (now warmed up)
   const cd = await tryChatDetailsEndpoint(baseUrl, token, body, sample);
-  if (cd.url) return { url: cd.url, name: cd.name || ci.name, strategyUsed: 'chat-details' };
+  if (cd.url) return { url: cd.url, name: cd.name, strategyUsed: 'chat-details' };
 
-  return { url: null, name: ci.name || cd.name, strategyUsed: 'none' };
+  // Strategy 2: dedicated profile-picture endpoint
+  const ppUrl = await tryProfilePictureEndpoint(baseUrl, token, body, sample);
+  if (ppUrl) return { url: ppUrl, name: cd.name, strategyUsed: 'profile-picture' };
+
+  // Strategy 3: contact/info
+  const ci = await tryContactInfoEndpoint(baseUrl, token, body, sample);
+  if (ci.url) return { url: ci.url, name: ci.name || cd.name, strategyUsed: 'contact-info' };
+
+  return { url: null, name: cd.name || ci.name, strategyUsed: 'none' };
 }
 
 Deno.serve(async (req) => {
@@ -188,7 +217,7 @@ Deno.serve(async (req) => {
     } catch { /* no body */ }
 
     const orgId = profile.organization_id;
-    console.log(`[backfill v5] Starting org=${orgId} batchSize=${batchSize} probeOnly=${probeOnly} retryUnavailable=${resetUnavailable}`);
+    console.log(`[backfill v6] Starting org=${orgId} batchSize=${batchSize} probeOnly=${probeOnly} retryUnavailable=${resetUnavailable}`);
 
     const { data: instance } = await supabase
       .from('whatsapp_instances')
@@ -226,10 +255,10 @@ Deno.serve(async (req) => {
       });
     }
 
-    console.log(`[backfill v5] ${targets.length} candidates, processing ${Math.min(batchSize, targets.length)}`);
+    console.log(`[backfill v6] ${targets.length} candidates, processing ${Math.min(batchSize, targets.length)}`);
 
     const samples: string[] = [];
-    const collectSample = (s: string) => { if (samples.length < 10) samples.push(s); };
+    const collectSample = (s: string) => { if (samples.length < 12) samples.push(s); };
     const strategyStats: Record<string, number> = {
       'profile-picture': 0, 'contact-info': 0, 'chat-details': 0, 'none': 0,
     };
@@ -237,6 +266,25 @@ Deno.serve(async (req) => {
 
     const work = targets.slice(0, batchSize);
     const concurrency = probeOnly ? 1 : 4;
+
+    // === WARM-UP STEP ===
+    // Forces UAZAPI to validate each number on WhatsApp servers and populate
+    // its internal cache (including the avatar) so that /chat/details works.
+    const numbersToWarm = work
+      .map((c) => {
+        const isLid = c.phone.includes('@lid') || c.phone.length > 20;
+        return isLid ? c.phone : ensureCountryCode(c.phone);
+      })
+      .filter(Boolean);
+
+    let warmOk = false;
+    if (numbersToWarm.length) {
+      console.log(`[backfill v6] Warming up cache for ${numbersToWarm.length} numbers via /chat/check...`);
+      warmOk = await warmUpChatCheck(uazapiBaseUrl, instance.zapi_token, numbersToWarm, collectSample);
+      console.log(`[backfill v6] Warm-up ${warmOk ? 'OK' : 'FAILED'}; waiting 4s for cache to populate...`);
+      // Give UAZAPI a few seconds to fetch profile pictures from WhatsApp servers
+      await new Promise((r) => setTimeout(r, 4000));
+    }
 
     for (let i = 0; i < work.length; i += concurrency) {
       const batch = work.slice(i, i + concurrency);
@@ -284,7 +332,7 @@ Deno.serve(async (req) => {
           }).eq('id', c.id);
           persisted++;
         } catch (e) {
-          console.warn(`[backfill v5] contact ${c.id} failed:`, String(e).slice(0, 100));
+          console.warn(`[backfill v6] contact ${c.id} failed:`, String(e).slice(0, 100));
           failed++;
         }
       }));
@@ -293,9 +341,9 @@ Deno.serve(async (req) => {
     const remainingRaw = Math.max(targets.length - processed, 0);
     const hasMore = persisted > 0 && remainingRaw > 0;
 
-    console.log(`[backfill v5] Done processed=${processed} persisted=${persisted} failed=${failed} noPicture=${noPicture} remaining=${remainingRaw} hasMore=${hasMore}`);
-    console.log(`[backfill v5] Strategy hits: profile-picture=${strategyStats['profile-picture']} contact-info=${strategyStats['contact-info']} chat-details=${strategyStats['chat-details']} none=${strategyStats['none']}`);
-    if (samples.length) console.log('[backfill v5] samples:', samples.join(' | '));
+    console.log(`[backfill v6] Done processed=${processed} persisted=${persisted} failed=${failed} noPicture=${noPicture} remaining=${remainingRaw} hasMore=${hasMore} warmOk=${warmOk}`);
+    console.log(`[backfill v6] Strategy hits: chat-details=${strategyStats['chat-details']} profile-picture=${strategyStats['profile-picture']} contact-info=${strategyStats['contact-info']} none=${strategyStats['none']}`);
+    if (samples.length) console.log('[backfill v6] samples:', samples.join(' | '));
 
     return respond(200, {
       success: true,
@@ -304,10 +352,11 @@ Deno.serve(async (req) => {
       remaining: remainingRaw, hasMore,
       strategyStats,
       samples,
+      warmOk,
       duration_ms: Date.now() - startTime,
     });
   } catch (e) {
-    console.error('[backfill v5] fatal error:', e);
+    console.error('[backfill v6] fatal error:', e);
     return respond(200, { success: false, error: String(e), duration_ms: Date.now() - startTime });
   }
 });
