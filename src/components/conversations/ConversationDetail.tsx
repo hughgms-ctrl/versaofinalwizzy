@@ -40,6 +40,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { AIFeedbackDialog } from './AIFeedbackDialog';
 import { ChatFollowUpDialog } from './ChatFollowUpDialog';
 import { useFollowUpStatus } from '@/hooks/useFollowUpStatus';
+import { ContactAvatar } from './ContactAvatar';
 
 interface ConversationDetailProps {
   conversation: DbConversation;
@@ -508,18 +509,15 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
         <div className="flex items-center justify-between p-3 md:p-4 border-b border-border bg-card gap-2">
           <div className="flex items-center gap-2 md:gap-3 min-w-0 flex-1">
             <div className="relative flex-shrink-0">
-              <div className="h-10 w-10 md:h-12 md:w-12 rounded-full bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center overflow-hidden">
-                {conversation.contact?.avatar_url ? (
-                  <img
-                    src={conversation.contact.avatar_url}
-                    alt=""
-                    className="h-10 w-10 md:h-12 md:w-12 rounded-full object-cover"
-                  />
-                ) : null}
-                <span data-sensitive className="text-xs md:text-sm font-semibold text-primary absolute inset-0 flex items-center justify-center">
-                  {getInitials()}
-                </span>
-              </div>
+              <ContactAvatar
+                src={conversation.contact?.avatar_url}
+                name={conversation.contact?.name || null}
+                phone={conversation.contact?.phone}
+                contactId={conversation.contact?.id}
+                instanceId={(conversation as any).whatsapp_instance_id}
+                size={48}
+                className="md:!w-12 md:!h-12"
+              />
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1 md:gap-2 flex-wrap">
@@ -1351,14 +1349,14 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
       )}
     >
       {isInbound && (
-        <div className="h-8 w-8 rounded-full bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center flex-shrink-0 overflow-hidden relative">
-          {contactAvatar ? (
-            <img src={contactAvatar} alt="" className="h-8 w-8 object-cover absolute inset-0" />
-          ) : null}
-          <span data-sensitive className="text-xs font-medium text-primary absolute inset-0 flex items-center justify-center">
-            {getInitialsFromName(contactName || null, contactPhone)}
-          </span>
-        </div>
+        <ContactAvatar
+          src={contactAvatar}
+          name={contactName || null}
+          phone={contactPhone}
+          contactId={contactId || null}
+          size={32}
+          className="flex-shrink-0"
+        />
       )}
 
       {/* Hover Action Buttons - inline next to bubble */}

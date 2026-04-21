@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { DbConversation } from '@/hooks/useConversations';
+import { ContactAvatar } from './ContactAvatar';
 import { useTags, useContactTags, useAddTagToContact, useRemoveTagFromContact, useCreateTag, Tag } from '@/hooks/useTags';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -266,12 +267,14 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
             <Button variant="ghost" size="icon" className="shrink-0" onClick={() => setIsFullscreen(false)}>
               <ArrowLeft className="h-4 w-4" />
             </Button>
-            <div className="h-12 w-12 rounded-full bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center shrink-0 overflow-hidden relative">
-              {contact?.avatar_url ? (
-                <img src={contact.avatar_url} alt="" className="h-12 w-12 rounded-full object-cover absolute inset-0" />
-              ) : null}
-              <span data-sensitive className="text-lg font-bold text-primary absolute inset-0 flex items-center justify-center">{getInitials()}</span>
-            </div>
+            <ContactAvatar
+              src={contact?.avatar_url}
+              name={contact?.name || null}
+              phone={contact?.phone}
+              contactId={contact?.id}
+              size={48}
+              className="shrink-0"
+            />
             <div className="flex-1 min-w-0">
               <h2 data-sensitive className="font-semibold text-foreground text-lg truncate">{contact?.name || 'Sem nome'}</h2>
               <div className="flex items-center gap-3 text-sm text-muted-foreground">
@@ -574,18 +577,14 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
         <div className="w-full min-w-0 space-y-6 p-4 pb-16">
           {/* Avatar & Name */}
           <div className="flex flex-col items-center text-center">
-            <div className="h-20 w-20 rounded-full bg-gradient-to-br from-primary/20 to-primary/5 flex items-center justify-center mb-3 overflow-hidden relative">
-              {contact?.avatar_url ? (
-                <img
-                  src={contact.avatar_url}
-                  alt=""
-                  className="h-20 w-20 rounded-full object-cover absolute inset-0"
-                />
-              ) : null}
-              <span data-sensitive className="text-2xl font-bold text-primary absolute inset-0 flex items-center justify-center">
-                {getInitials()}
-              </span>
-            </div>
+            <ContactAvatar
+              src={contact?.avatar_url}
+              name={contact?.name || null}
+              phone={contact?.phone}
+              contactId={contact?.id}
+              size={80}
+              className="mb-3"
+            />
 
             {isEditingName ? (
               <div className="flex items-center gap-2 w-full">

@@ -8,6 +8,7 @@ import { Bot, MessageCircle, Check, CheckCheck, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { highlightTerm } from '@/lib/highlightTerm';
 import { ConversationCardActions } from './ConversationCardActions';
+import { ContactAvatar } from './ContactAvatar';
 
 interface ConversationListProps {
   conversations: DbConversation[];
@@ -115,21 +116,15 @@ export function ConversationList({ conversations, selectedId, onSelect, onSpyVie
               <div className="flex items-start gap-2">
                 {/* Avatar with indicator */}
                 <div className="relative flex-shrink-0">
-                  <div className="h-10 w-10 rounded-full bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center relative overflow-hidden">
-                    {conversation.contact?.avatar_url ? (
-                      <img
-                        src={conversation.contact.avatar_url}
-                        alt=""
-                        className="h-10 w-10 rounded-full object-cover absolute inset-0"
-                        onError={(e) => {
-                          (e.currentTarget as HTMLImageElement).style.display = 'none';
-                        }}
-                      />
-                    ) : null}
-                    <span data-sensitive className="text-xs font-semibold text-primary absolute inset-0 flex items-center justify-center">
-                      {getInitials(contactName || null, contactPhone)}
-                    </span>
-
+                  <div className="relative">
+                    <ContactAvatar
+                      src={conversation.contact?.avatar_url}
+                      name={contactName || null}
+                      phone={contactPhone}
+                      contactId={conversation.contact?.id}
+                      instanceId={(conversation as any).whatsapp_instance_id}
+                      size={40}
+                    />
                     {/* Online Status Dot - only show when presence is active */}
                     {isOnline && (
                       <div className={cn(
