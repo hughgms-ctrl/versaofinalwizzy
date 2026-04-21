@@ -290,10 +290,26 @@ export function WhatsAppInstancesSettings() {
                 </CardDescription>
               </div>
             </div>
-            <Button onClick={handleAddNumber} className="gap-2" disabled={isAddingNumber}>
-              {isAddingNumber ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-              Adicionar Número
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={handleBackfillAvatars}
+                variant="outline"
+                className="gap-2"
+                disabled={isBackfillingAvatars}
+                title="Baixa as fotos de perfil de todos os contatos e salva permanentemente"
+              >
+                {isBackfillingAvatars ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="h-4 w-4" />
+                )}
+                Atualizar fotos dos contatos
+              </Button>
+              <Button onClick={handleAddNumber} className="gap-2" disabled={isAddingNumber}>
+                {isAddingNumber ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                Adicionar Número
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
