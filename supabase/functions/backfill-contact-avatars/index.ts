@@ -1,4 +1,8 @@
-// v4 - UAZAPI v2 endpoint: POST /chat/details (correct endpoint per official n8n-nodes-uazapi)
+// v5 - Dual-endpoint strategy mirroring zapi-contact-profile (proven in production)
+// 1) POST /contact/info  -> nome + sometimes avatar
+// 2) POST /contact/profile-picture -> dedicated avatar endpoint (forces live fetch)
+// 3) Fallback POST /chat/details -> cached chat info
+// Supports both regular numbers and LIDs (@lid).
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
@@ -23,56 +27,114 @@ async function fetchWithTimeout(url: string, options: RequestInit, ms = 8000): P
   }
 }
 
+type Sample = (s: string) => void;
+
 /**
- * UAZAPI v2 - POST /chat/details
- * Body: { number: "5511999999999", preview: false }
- * Returns: object with image/imagePreview/name/etc.
+ * Strategy 1: POST /contact/profile-picture (dedicated avatar endpoint)
+ * Returns: { profilePictureUrl?, profilePicture?, imgUrl?, url? }
  */
-async function fetchAvatarFromUazapi(
-  baseUrl: string,
-  token: string,
-  formattedPhone: string,
-  collectSample: (s: string) => void,
+async function tryProfilePictureEndpoint(
+  baseUrl: string, token: string, body: Record<string, string>, sample: Sample,
+): Promise<string | null> {
+  try {
+    const res = await fetchWithTimeout(`${baseUrl}/contact/profile-picture`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', token },
+      body: JSON.stringify(body),
+    }, 8000);
+    if (!res.ok) {
+      sample(`pp:${res.status}`);
+      return null;
+    }
+    const d: any = await res.json();
+    return d?.profilePictureUrl || d?.profilePicture || d?.imgUrl || d?.url || d?.image || null;
+  } catch (e) {
+    sample(`pp-err:${String(e).slice(0, 40)}`);
+    return null;
+  }
+}
+
+/**
+ * Strategy 2: POST /contact/info (returns name + sometimes avatar)
+ */
+async function tryContactInfoEndpoint(
+  baseUrl: string, token: string, body: Record<string, string>, sample: Sample,
+): Promise<{ url: string | null; name: string | null }> {
+  try {
+    const res = await fetchWithTimeout(`${baseUrl}/contact/info`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', token },
+      body: JSON.stringify(body),
+    }, 8000);
+    if (!res.ok) {
+      sample(`ci:${res.status}`);
+      return { url: null, name: null };
+    }
+    const d: any = await res.json();
+    const url = d?.profilePicture || d?.profileThumbnail || d?.profilePicUrl || d?.profilePictureUrl || d?.imgUrl || null;
+    const name = d?.name || d?.pushname || d?.verifiedName || d?.notify || null;
+    return { url, name };
+  } catch (e) {
+    sample(`ci-err:${String(e).slice(0, 40)}`);
+    return { url: null, name: null };
+  }
+}
+
+/**
+ * Strategy 3: POST /chat/details (cached chat record - last resort)
+ */
+async function tryChatDetailsEndpoint(
+  baseUrl: string, token: string, body: Record<string, unknown>, sample: Sample,
 ): Promise<{ url: string | null; name: string | null }> {
   try {
     const res = await fetchWithTimeout(`${baseUrl}/chat/details`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', token },
-      body: JSON.stringify({ number: formattedPhone, preview: false }),
+      body: JSON.stringify({ ...body, preview: false }),
     }, 8000);
-
     if (!res.ok) {
-      const txt = await res.text();
-      collectSample(`${res.status} /chat/details body=${txt.slice(0, 100)}`);
+      sample(`cd:${res.status}`);
       return { url: null, name: null };
     }
-
     const d: any = await res.json();
-    // UAZAPI v2 returns: { image, imagePreview, name, wa_name, wa_contactName, ... }
-    // Sometimes nested under 'chat' or 'contact'
     const root = d?.chat || d?.contact || d;
-    const url = root?.image
-      || root?.imagePreview
-      || root?.profilePicture
-      || root?.profilePictureUrl
-      || root?.profilePicUrl
-      || root?.imgUrl
-      || null;
-    const name = root?.name
-      || root?.wa_name
-      || root?.wa_contactName
-      || root?.pushname
-      || null;
-
-    if (!url) {
-      // Sample once when we get 200 but no image (helps debug response shape)
-      collectSample(`200 no-image keys=${Object.keys(d || {}).slice(0, 8).join(',')}`);
-    }
+    const url = root?.image || root?.imagePreview || null;
+    const name = root?.name || root?.lead_name || root?.lead_fullName || null;
     return { url, name };
   } catch (e) {
-    collectSample(`ERR /chat/details: ${String(e).slice(0, 80)}`);
+    sample(`cd-err:${String(e).slice(0, 40)}`);
     return { url: null, name: null };
   }
+}
+
+/**
+ * Run all 3 strategies for a single contact and return first hit.
+ */
+async function fetchAvatarMultiStrategy(
+  baseUrl: string,
+  token: string,
+  rawPhone: string,
+  sample: Sample,
+): Promise<{ url: string | null; name: string | null; strategyUsed: string }> {
+  // Detect LID (WhatsApp linked-id format)
+  const isLid = rawPhone.includes('@lid') || rawPhone.length > 20;
+  const formattedPhone = isLid ? rawPhone : ensureCountryCode(rawPhone);
+  // Some UAZAPI versions accept 'phone', others 'number' - matches zapi-contact-profile pattern
+  const body = isLid ? { phone: formattedPhone } : { number: formattedPhone };
+
+  // Strategy 1: dedicated profile-picture endpoint (most reliable for live fetch)
+  const ppUrl = await tryProfilePictureEndpoint(baseUrl, token, body, sample);
+  if (ppUrl) return { url: ppUrl, name: null, strategyUsed: 'profile-picture' };
+
+  // Strategy 2: contact/info (also returns name)
+  const ci = await tryContactInfoEndpoint(baseUrl, token, body, sample);
+  if (ci.url) return { url: ci.url, name: ci.name, strategyUsed: 'contact-info' };
+
+  // Strategy 3: chat/details fallback (cache-only)
+  const cd = await tryChatDetailsEndpoint(baseUrl, token, body, sample);
+  if (cd.url) return { url: cd.url, name: cd.name || ci.name, strategyUsed: 'chat-details' };
+
+  return { url: null, name: ci.name || cd.name, strategyUsed: 'none' };
 }
 
 Deno.serve(async (req) => {
@@ -94,7 +156,6 @@ Deno.serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const uazapiBaseUrl = Deno.env.get('UAZAPI_BASE_URL');
     if (!uazapiBaseUrl) {
-      console.error('[backfill] UAZAPI_BASE_URL missing');
       return respond(200, { success: false, error: 'UAZAPI_BASE_URL not configured' });
     }
 
@@ -105,7 +166,6 @@ Deno.serve(async (req) => {
 
     const { data: userData, error: authError } = await userClient.auth.getUser();
     if (authError || !userData?.user) {
-      console.error('[backfill] auth error:', authError);
       return respond(200, { success: false, error: `Unauthorized: ${authError?.message || 'no user'}` });
     }
     const userId = userData.user.id;
@@ -116,14 +176,19 @@ Deno.serve(async (req) => {
 
     let batchSize = 40;
     let probeOnly = false;
+    let resetUnavailable = false;
     try {
       const body = await req.json();
-      if (body?.batchSize && typeof body.batchSize === 'number') batchSize = Math.min(Math.max(body.batchSize, 1), 200);
+      if (body?.batchSize && typeof body.batchSize === 'number') {
+        batchSize = Math.min(Math.max(body.batchSize, 1), 200);
+      }
       if (body?.probeOnly) probeOnly = true;
+      // Allow client to retry contacts previously marked as having no avatar
+      if (body?.retryUnavailable === true) resetUnavailable = true;
     } catch { /* no body */ }
 
     const orgId = profile.organization_id;
-    console.log(`[backfill] Starting org=${orgId} batchSize=${batchSize} probeOnly=${probeOnly}`);
+    console.log(`[backfill v5] Starting org=${orgId} batchSize=${batchSize} probeOnly=${probeOnly} retryUnavailable=${resetUnavailable}`);
 
     const { data: instance } = await supabase
       .from('whatsapp_instances')
@@ -136,10 +201,7 @@ Deno.serve(async (req) => {
       return respond(200, { success: false, error: 'No connected WhatsApp instance' });
     }
 
-    // Mark contacts already attempted (no picture available) by metadata flag
-    // so we don't reprocess them on every batch run.
-    // Targets: missing avatar OR using temp WhatsApp CDN URL,
-    // AND not yet flagged as 'avatar_unavailable'
+    // Build candidate list
     const { data: allTargets } = await supabase
       .from('contacts')
       .select('id, phone, avatar_url, metadata')
@@ -149,50 +211,45 @@ Deno.serve(async (req) => {
 
     const targets = (allTargets || []).filter((c) => {
       if (!c.phone || c.phone.length < 10) return false;
-      // Skip contacts already marked as having no avatar
-      const meta = (c.metadata as any) || {};
-      if (meta.avatar_unavailable === true) return false;
+      if (!resetUnavailable) {
+        const meta = (c.metadata as any) || {};
+        if (meta.avatar_unavailable === true) return false;
+      }
       return true;
     });
 
     if (!targets.length) {
       return respond(200, {
-        success: true,
-        message: 'No targets',
-        processed: 0,
-        persisted: 0,
-        failed: 0,
-        noPicture: 0,
-        remaining: 0,
-        hasMore: false,
-        total_candidates: 0,
+        success: true, message: 'No targets',
+        processed: 0, persisted: 0, failed: 0, noPicture: 0,
+        remaining: 0, hasMore: false, total_candidates: 0,
       });
     }
 
-    console.log(`[backfill] ${targets.length} candidates, processing ${Math.min(batchSize, targets.length)}`);
+    console.log(`[backfill v5] ${targets.length} candidates, processing ${Math.min(batchSize, targets.length)}`);
 
     const samples: string[] = [];
-    const collectSample = (s: string) => { if (samples.length < 6) samples.push(s); };
+    const collectSample = (s: string) => { if (samples.length < 10) samples.push(s); };
+    const strategyStats: Record<string, number> = {
+      'profile-picture': 0, 'contact-info': 0, 'chat-details': 0, 'none': 0,
+    };
     let processed = 0, persisted = 0, failed = 0, noPicture = 0;
 
     const work = targets.slice(0, batchSize);
-    const concurrency = probeOnly ? 1 : 5;
+    const concurrency = probeOnly ? 1 : 4;
 
     for (let i = 0; i < work.length; i += concurrency) {
       const batch = work.slice(i, i + concurrency);
       await Promise.all(batch.map(async (c) => {
         processed++;
         try {
-          const rawPhone = c.phone;
-          const formattedPhone = ensureCountryCode(rawPhone);
-          if (!formattedPhone) { noPicture++; return; }
-
-          const { url: remoteAvatarUrl, name } = await fetchAvatarFromUazapi(
-            uazapiBaseUrl, instance.zapi_token, formattedPhone, collectSample,
+          const { url: remoteAvatarUrl, strategyUsed } = await fetchAvatarMultiStrategy(
+            uazapiBaseUrl, instance.zapi_token, c.phone, collectSample,
           );
+          strategyStats[strategyUsed] = (strategyStats[strategyUsed] || 0) + 1;
 
           if (!remoteAvatarUrl) {
-            // Mark contact so we don't keep reprocessing it
+            // Mark with timestamp - allows future retry via retryUnavailable flag
             const meta = ((c.metadata as any) || {}) as Record<string, unknown>;
             meta.avatar_unavailable = true;
             meta.avatar_checked_at = new Date().toISOString();
@@ -213,53 +270,44 @@ Deno.serve(async (req) => {
           const { error: upErr } = await supabase.storage
             .from('contact-avatars')
             .upload(path, bytes, { contentType, upsert: true, cacheControl: '604800' });
-          if (upErr) {
-            console.warn(`[backfill] upload failed ${c.id}:`, upErr.message);
-            failed++; return;
-          }
+          if (upErr) { failed++; return; }
           const { data: pub } = supabase.storage.from('contact-avatars').getPublicUrl(path);
-          const updatePayload: Record<string, unknown> = { avatar_url: pub.publicUrl };
-          if (name && (!c.metadata || (c.metadata as any).preserve_name !== true)) {
-            // Don't overwrite name if it was manually set; only update on contacts that have no real name
-            // (handled at the application layer normally; here we just set avatar)
-          }
-          await supabase.from('contacts').update(updatePayload).eq('id', c.id);
+
+          // Clear avatar_unavailable flag if it was set previously
+          const cleanMeta = { ...((c.metadata as any) || {}) };
+          delete cleanMeta.avatar_unavailable;
+          delete cleanMeta.avatar_checked_at;
+
+          await supabase.from('contacts').update({
+            avatar_url: pub.publicUrl,
+            metadata: cleanMeta,
+          }).eq('id', c.id);
           persisted++;
         } catch (e) {
-          console.warn(`[backfill] contact ${c.id} failed:`, String(e).slice(0, 100));
+          console.warn(`[backfill v5] contact ${c.id} failed:`, String(e).slice(0, 100));
           failed++;
         }
       }));
     }
 
-    // Recalculate "remaining" based on what's still actually pending after this run
-    // (contacts marked as avatar_unavailable shouldn't be counted)
-    const { data: stillPending } = await supabase
-      .from('contacts')
-      .select('id', { count: 'exact', head: true })
-      .eq('organization_id', orgId)
-      .or('avatar_url.is.null,avatar_url.like.%whatsapp.net%');
-
     const remainingRaw = Math.max(targets.length - processed, 0);
-    const hasMore = persisted > 0 && remainingRaw > 0; // only continue if we made progress
+    const hasMore = persisted > 0 && remainingRaw > 0;
 
-    console.log(`[backfill] Done processed=${processed} persisted=${persisted} failed=${failed} noPicture=${noPicture} remaining=${remainingRaw} hasMore=${hasMore}`);
-    if (samples.length) console.log('[backfill] samples:', samples.join(' | '));
+    console.log(`[backfill v5] Done processed=${processed} persisted=${persisted} failed=${failed} noPicture=${noPicture} remaining=${remainingRaw} hasMore=${hasMore}`);
+    console.log(`[backfill v5] Strategy hits: profile-picture=${strategyStats['profile-picture']} contact-info=${strategyStats['contact-info']} chat-details=${strategyStats['chat-details']} none=${strategyStats['none']}`);
+    if (samples.length) console.log('[backfill v5] samples:', samples.join(' | '));
 
     return respond(200, {
       success: true,
       total_candidates: targets.length,
-      processed,
-      persisted,
-      failed,
-      noPicture,
-      remaining: remainingRaw,
-      hasMore,
+      processed, persisted, failed, noPicture,
+      remaining: remainingRaw, hasMore,
+      strategyStats,
       samples,
       duration_ms: Date.now() - startTime,
     });
   } catch (e) {
-    console.error('[backfill] fatal error:', e);
+    console.error('[backfill v5] fatal error:', e);
     return respond(200, { success: false, error: String(e), duration_ms: Date.now() - startTime });
   }
 });
