@@ -2,8 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { PipelineChatModal } from '@/components/pipeline/PipelineChatModal';
-import { Card } from '@/components/ui/card';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { ContactAvatar } from '@/components/conversations/ContactAvatar';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -42,6 +41,17 @@ import {
   useUpsertCaseTaskNotification,
 } from '@/hooks/useCaseTaskNotifications';
 import type { OperationsCase } from '@/types/operations';
+
+function formatPhoneNumber(phone: string) {
+  const cleaned = phone.replace(/\D/g, '');
+  if (cleaned.length === 13) {
+    return `+${cleaned.slice(0, 2)} (${cleaned.slice(2, 4)}) ${cleaned.slice(4, 9)}-${cleaned.slice(9)}`;
+  }
+  if (cleaned.length === 12) {
+    return `+${cleaned.slice(0, 2)} (${cleaned.slice(2, 4)}) ${cleaned.slice(4, 8)}-${cleaned.slice(8)}`;
+  }
+  return phone;
+}
 
 interface CaseCardProps {
   case_: OperationsCase & {
@@ -118,79 +128,107 @@ export function CaseCard({ case_, taskStats, onClick }: CaseCardProps) {
     : '';
   const priority = priorityStyle[case_.priority];
 
+  const phone = case_.contact?.phone || '';
+  const formattedPhone = phone ? formatPhoneNumber(phone) : '';
+  const hasName = !!case_.contact?.name;
+  const displayName = case_.contact?.name || formattedPhone || 'Sem contato';
+
   return (
     <TooltipProvider delayDuration={300}>
-      <Card
+      <div
         className={cn(
-          'group relative overflow-hidden rounded-xl border border-border/50 bg-gradient-to-b from-card to-card/60 backdrop-blur-sm shadow-sm',
-          'hover:shadow-lg hover:border-border hover:-translate-y-0.5 transition-all duration-200 cursor-pointer',
+          'pipeline-card !cursor-pointer transition-all duration-200 relative overflow-hidden',
+          unreadCount > 0 && 'bg-primary/5',
           isDone && 'opacity-60'
         )}
         onClick={onClick}
       >
-        <div className="p-3.5 space-y-2.5">
-          {/* Header: avatar + nome + chat */}
-          <div className="flex items-start gap-2.5">
-            <Avatar className="h-9 w-9 flex-shrink-0 ring-2 ring-background shadow-sm">
-              <AvatarImage src={case_.contact?.avatar_url || undefined} />
-              <AvatarFallback className="text-[11px] font-semibold text-primary-foreground bg-gradient-to-br from-primary to-primary/80">
-                {initials}
-              </AvatarFallback>
-            </Avatar>
-            <div className="flex-1 min-w-0">
-              <p className="text-[13px] font-semibold text-foreground truncate leading-tight">
-                {contactName}
-              </p>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span className="mt-1 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium border bg-primary/10 text-primary border-primary/20">
-                    <Icon className="h-2.5 w-2.5" />
-                    {case_.category?.name || (case_.kind === 'judicial' ? 'Judicial' : 'Administrativo')}
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent>{case_.contact?.phone}</TooltipContent>
-              </Tooltip>
+        <div className="flex items-start gap-2">
+          {/* Avatar com badge do tipo de caso */}
+          <div className="relative flex-shrink-0">
+            <ContactAvatar
+              src={case_.contact?.avatar_url}
+              name={case_.contact?.name || null}
+              phone={phone}
+              contactId={(case_ as any).contact_id || (case_ as any).contact?.id}
+              size={40}
+            />
+            <div
+              className={cn(
+                'absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-full flex items-center justify-center ring-2 ring-card',
+                case_.kind === 'judicial' ? 'bg-primary' : 'bg-blue-500'
+              )}
+              title={case_.kind === 'judicial' ? 'Judicial' : 'Administrativo'}
+            >
+              <Icon className="h-2.5 w-2.5 text-white" />
             </div>
-            {hasChat && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setChatOpen(true);
-                    }}
-                    className="relative inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors flex-shrink-0"
-                    aria-label="Abrir conversa"
-                  >
-                    <MessageSquare className="h-4 w-4" />
-                    {unreadCount > 0 && (
-                      <span className="absolute -top-1 -right-1 h-4 min-w-[16px] px-1 rounded-full bg-destructive text-destructive-foreground text-[9px] font-bold flex items-center justify-center leading-none ring-2 ring-card">
-                        {unreadCount > 9 ? '9+' : unreadCount}
-                      </span>
-                    )}
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  {unreadCount > 0 ? `Abrir conversa (${unreadCount} não lidas)` : 'Abrir conversa'}
-                </TooltipContent>
-              </Tooltip>
-            )}
           </div>
 
-          {/* Título do caso */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <p className="text-[13px] font-medium text-foreground/90 line-clamp-2 leading-snug">
-                {case_.title}
-              </p>
-            </TooltipTrigger>
-            <TooltipContent className="max-w-xs">{case_.title}</TooltipContent>
-          </Tooltip>
+          {/* Conteúdo */}
+          <div className="flex-1 min-w-0 overflow-hidden">
+            <div className="flex flex-col gap-0.5">
+              {/* Linha 1: tempo + ações */}
+              <div className="flex items-center justify-between gap-2 min-w-0">
+                <div className="min-w-0 flex-1" />
+                <div className="flex items-center gap-1 flex-shrink-0 ml-auto">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="text-[10px] whitespace-nowrap text-muted-foreground">
+                        {formatDistanceToNow(new Date(case_.opened_at), { locale: ptBR, addSuffix: false })}
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      Aberto em {format(new Date(case_.opened_at), "dd 'de' MMM 'às' HH:mm", { locale: ptBR })}
+                    </TooltipContent>
+                  </Tooltip>
+                  {hasChat && (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setChatOpen(true);
+                          }}
+                          className="relative inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                          aria-label="Abrir conversa"
+                        >
+                          <MessageSquare className="h-3.5 w-3.5" />
+                          {unreadCount > 0 && (
+                            <span className="absolute -top-1 -right-1 h-3.5 min-w-[14px] px-1 rounded-full bg-destructive text-destructive-foreground text-[8px] font-bold flex items-center justify-center leading-none ring-1 ring-card">
+                              {unreadCount > 9 ? '9+' : unreadCount}
+                            </span>
+                          )}
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        {unreadCount > 0 ? `Abrir conversa (${unreadCount} não lidas)` : 'Abrir conversa'}
+                      </TooltipContent>
+                    </Tooltip>
+                  )}
+                </div>
+              </div>
 
-          {/* Metadados sutis */}
-          {(priority || dueBadge) && (
-            <div className="flex items-center gap-1.5 flex-wrap">
+              {/* Linha 2: Nome */}
+              <div className="flex items-center justify-between gap-2 min-w-0">
+                <p data-sensitive className="text-sm truncate flex-1 min-w-0 font-medium text-foreground">
+                  {displayName}
+                </p>
+              </div>
+              {/* Linha 3: Telefone */}
+              {hasName && formattedPhone && (
+                <p data-sensitive className="text-[10px] text-muted-foreground truncate">
+                  {formattedPhone}
+                </p>
+              )}
+            </div>
+
+            {/* Linha 4: Categoria + Prioridade + Prazo */}
+            <div className="flex items-center gap-1 mt-1 flex-wrap">
+              <span className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium border bg-primary/10 text-primary border-primary/20">
+                <Icon className="h-2.5 w-2.5" />
+                {case_.category?.name || (case_.kind === 'judicial' ? 'Judicial' : 'Administrativo')}
+              </span>
               {priority && (
                 <span className={cn('inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium', priority.className)}>
                   {priority.label}
@@ -198,52 +236,56 @@ export function CaseCard({ case_, taskStats, onClick }: CaseCardProps) {
               )}
               {dueBadge}
             </div>
-          )}
 
-          {/* Barra de progresso fina */}
-          {taskStats && taskStats.total > 0 && (
+            {/* Título do caso */}
             <Tooltip>
               <TooltipTrigger asChild>
-                <div className="h-1 w-full bg-muted/60 rounded-full overflow-hidden">
-                  <div
-                    className="h-full transition-all duration-500 rounded-full bg-primary"
-                    style={{ width: `${Math.max(progress, 2)}%` }}
-                  />
-                </div>
+                <p className="text-[12px] text-foreground/85 line-clamp-2 leading-snug mt-1.5">
+                  {case_.title}
+                </p>
               </TooltipTrigger>
-              <TooltipContent>
-                {taskStats.done} de {taskStats.total} tarefas concluídas
-              </TooltipContent>
+              <TooltipContent className="max-w-xs">{case_.title}</TooltipContent>
             </Tooltip>
-          )}
 
-          {/* Footer minimalista */}
-          <div className="flex items-center justify-between pt-0.5">
-            <div className="flex items-center gap-2">
-              {assigneeName && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Avatar className="h-5 w-5 ring-1 ring-border">
-                      <AvatarImage src={case_.assignee?.avatar_url || undefined} />
-                      <AvatarFallback className="text-[8px] font-medium">{assigneeInitials}</AvatarFallback>
-                    </Avatar>
-                  </TooltipTrigger>
-                  <TooltipContent>Responsável: {assigneeName}</TooltipContent>
-                </Tooltip>
-              )}
+            {/* Barra de progresso de tarefas */}
+            {taskStats && taskStats.total > 0 && (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <span className="text-[10px] text-muted-foreground">
-                    {formatDistanceToNow(new Date(case_.opened_at), { locale: ptBR, addSuffix: false })}
-                  </span>
+                  <div className="h-1 w-full bg-muted/60 rounded-full overflow-hidden mt-2">
+                    <div
+                      className="h-full transition-all duration-500 rounded-full bg-primary"
+                      style={{ width: `${Math.max(progress, 2)}%` }}
+                    />
+                  </div>
                 </TooltipTrigger>
                 <TooltipContent>
-                  Aberto em {format(new Date(case_.opened_at), "dd 'de' MMM 'às' HH:mm", { locale: ptBR })}
+                  {taskStats.done} de {taskStats.total} tarefas concluídas
                 </TooltipContent>
               </Tooltip>
-            </div>
+            )}
 
-            <div className="flex items-center gap-1">
+            {/* Footer: responsável + tarefas */}
+            <div className="flex items-center justify-between gap-2 mt-1.5">
+              <div className="flex items-center gap-1.5 min-w-0">
+                {assigneeName && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className="flex items-center gap-1 min-w-0">
+                        <div className="h-4 w-4 rounded-full ring-1 ring-border bg-muted flex items-center justify-center text-[7px] font-semibold text-muted-foreground overflow-hidden flex-shrink-0">
+                          {case_.assignee?.avatar_url ? (
+                            <img src={case_.assignee.avatar_url} alt="" className="h-full w-full object-cover" />
+                          ) : (
+                            assigneeInitials
+                          )}
+                        </div>
+                        <span className="text-[10px] text-muted-foreground truncate">{assigneeName}</span>
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent>Responsável: {assigneeName}</TooltipContent>
+                  </Tooltip>
+                )}
+              </div>
+
               {taskStats && taskStats.total > 0 && (
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -252,7 +294,7 @@ export function CaseCard({ case_, taskStats, onClick }: CaseCardProps) {
                         e.stopPropagation();
                         setExpanded(!expanded);
                       }}
-                      className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground hover:text-foreground transition-colors rounded px-1 py-0.5"
+                      className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground hover:text-foreground transition-colors rounded px-1 py-0.5 flex-shrink-0"
                     >
                       <ListTodo className="h-3 w-3" />
                       <span className="tabular-nums">{taskStats.done}/{taskStats.total}</span>
@@ -263,11 +305,11 @@ export function CaseCard({ case_, taskStats, onClick }: CaseCardProps) {
                 </Tooltip>
               )}
             </div>
-          </div>
 
-          {expanded && <InlineTaskList caseId={case_.id} />}
+            {expanded && <InlineTaskList caseId={case_.id} />}
+          </div>
         </div>
-      </Card>
+      </div>
       {hasChat && conversationFull && (
         <PipelineChatModal
           conversation={conversationFull as any}
