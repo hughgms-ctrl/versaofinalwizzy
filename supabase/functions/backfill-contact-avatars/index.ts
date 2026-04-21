@@ -217,7 +217,7 @@ Deno.serve(async (req) => {
     } catch { /* no body */ }
 
     const orgId = profile.organization_id;
-    console.log(`[backfill v5] Starting org=${orgId} batchSize=${batchSize} probeOnly=${probeOnly} retryUnavailable=${resetUnavailable}`);
+    console.log(`[backfill v6] Starting org=${orgId} batchSize=${batchSize} probeOnly=${probeOnly} retryUnavailable=${resetUnavailable}`);
 
     const { data: instance } = await supabase
       .from('whatsapp_instances')
