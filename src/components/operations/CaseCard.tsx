@@ -2,8 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { PipelineChatModal } from '@/components/pipeline/PipelineChatModal';
-import { Card } from '@/components/ui/card';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { ContactAvatar } from '@/components/conversations/ContactAvatar';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -42,6 +41,17 @@ import {
   useUpsertCaseTaskNotification,
 } from '@/hooks/useCaseTaskNotifications';
 import type { OperationsCase } from '@/types/operations';
+
+function formatPhoneNumber(phone: string) {
+  const cleaned = phone.replace(/\D/g, '');
+  if (cleaned.length === 13) {
+    return `+${cleaned.slice(0, 2)} (${cleaned.slice(2, 4)}) ${cleaned.slice(4, 9)}-${cleaned.slice(9)}`;
+  }
+  if (cleaned.length === 12) {
+    return `+${cleaned.slice(0, 2)} (${cleaned.slice(2, 4)}) ${cleaned.slice(4, 8)}-${cleaned.slice(8)}`;
+  }
+  return phone;
+}
 
 interface CaseCardProps {
   case_: OperationsCase & {
