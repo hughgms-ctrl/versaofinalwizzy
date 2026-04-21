@@ -62,6 +62,7 @@ interface CaseCardProps {
     conversation?: { id: string; unread_count: number } | null;
   };
   taskStats?: { total: number; done: number; nextDue?: string | null };
+  contactTags?: Array<{ id: string; name: string; color: string }>;
   onClick?: () => void;
 }
 
@@ -71,7 +72,7 @@ const priorityStyle: Record<string, { label: string; className: string }> = {
   low: { label: 'Baixa', className: 'bg-muted text-muted-foreground border-transparent' },
 };
 
-export function CaseCard({ case_, taskStats, onClick }: CaseCardProps) {
+export function CaseCard({ case_, taskStats, contactTags = [], onClick }: CaseCardProps) {
   const [expanded, setExpanded] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const Icon = case_.kind === 'judicial' ? Scale : Building2;
@@ -246,6 +247,26 @@ export function CaseCard({ case_, taskStats, onClick }: CaseCardProps) {
               </TooltipTrigger>
               <TooltipContent className="max-w-xs">{case_.title}</TooltipContent>
             </Tooltip>
+
+            {/* Tags do contato */}
+            {contactTags.length > 0 && (
+              <div className="flex items-center gap-1 mt-1.5 flex-wrap">
+                {contactTags.slice(0, 3).map((tag) => (
+                  <span
+                    key={tag.id}
+                    className="text-[9px] px-1.5 py-0.5 rounded truncate max-w-[80px]"
+                    style={{ backgroundColor: `${tag.color}20`, color: tag.color }}
+                  >
+                    {tag.name}
+                  </span>
+                ))}
+                {contactTags.length > 3 && (
+                  <span className="text-[10px] text-muted-foreground">
+                    +{contactTags.length - 3}
+                  </span>
+                )}
+              </div>
+            )}
 
             {/* Barra de progresso de tarefas */}
             {taskStats && taskStats.total > 0 && (
