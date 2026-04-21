@@ -16,9 +16,22 @@ interface ContactAvatarProps {
   autoRefetch?: boolean;
 }
 
-// Module-level set to avoid hammering the edge function for the same contact
-const refetchedContacts = new Set<string>();
+// Track in-flight refetches per contact to avoid duplicate calls,
+// but allow retrying again later (different src) instead of permanently blocking.
+const inflightRefetch = new Map<string, Promise<void>>();
 const failedUrls = new Set<string>();
+// Hosts whose URLs are temporary and expire (WhatsApp CDN). Anything else
+// (our own Supabase storage URL) is considered permanent.
+const TEMPORARY_HOSTS = ['pps.whatsapp.net', 'mmg.whatsapp.net', 'media.whatsapp.net'];
+function isTemporaryUrl(url?: string | null): boolean {
+  if (!url) return false;
+  try {
+    const u = new URL(url);
+    return TEMPORARY_HOSTS.some((h) => u.hostname.endsWith(h));
+  } catch {
+    return false;
+  }
+}
 
 function getInitials(name?: string | null, phone?: string | null) {
   if (name && name.trim()) {
@@ -61,36 +74,72 @@ export function ContactAvatar({
     }
   }, [src]);
 
-  const showImage = !!src && !errored && !failedUrls.has(src);
-  const initials = getInitials(name, phone);
-
-  const handleError = () => {
-    if (src) failedUrls.add(src);
-    setErrored(true);
-
-    // Try to refetch fresh profile picture (WhatsApp URLs expire)
-    if (
-      autoRefetch &&
-      contactId &&
-      session?.access_token &&
-      !refetchedContacts.has(contactId)
-    ) {
-      refetchedContacts.add(contactId);
-      supabase.functions
+  // Proactively migrate temporary WhatsApp URLs to our permanent Storage.
+  // This runs once per contact even when the image still loads — it just
+  // refreshes the DB so future loads use the persisted URL.
+  useEffect(() => {
+    if (!autoRefetch || !contactId || !session?.access_token) return;
+    if (!isTemporaryUrl(src)) return;
+    if (inflightRefetch.has(contactId)) return;
+    // Fire and forget — won't show a loading state
+    const t = setTimeout(() => {
+      if (inflightRefetch.has(contactId)) return;
+      const p = supabase.functions
         .invoke('zapi-contact-profile', {
           body: { contactId, instanceId: instanceId || undefined },
           headers: { Authorization: `Bearer ${session.access_token}` },
         })
         .then(({ data }) => {
-          if (data?.avatarUrl) {
-            // New URL - invalidate so UI re-renders with fresh src
+          if (data?.avatarUrl && data.avatarUrl !== src) {
             queryClient.invalidateQueries({ queryKey: ['conversations'] });
             queryClient.invalidateQueries({ queryKey: ['contacts'] });
           }
         })
-        .catch(() => {
-          /* silent */
+        .catch(() => {})
+        .finally(() => {
+          setTimeout(() => inflightRefetch.delete(contactId), 60_000);
         });
+      inflightRefetch.set(contactId, p);
+    }, 800);
+    return () => clearTimeout(t);
+  }, [src, contactId, instanceId, autoRefetch, session?.access_token, queryClient]);
+
+  const showImage = !!src && !errored && !failedUrls.has(src);
+  const initials = getInitials(name, phone);
+
+  const triggerRefetch = () => {
+    if (!autoRefetch || !contactId || !session?.access_token) return;
+    if (inflightRefetch.has(contactId)) return;
+
+    const p = supabase.functions
+      .invoke('zapi-contact-profile', {
+        body: { contactId, instanceId: instanceId || undefined },
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+      .then(({ data }) => {
+        if (data?.avatarUrl) {
+          queryClient.invalidateQueries({ queryKey: ['conversations'] });
+          queryClient.invalidateQueries({ queryKey: ['contacts'] });
+        }
+      })
+      .catch(() => {
+        /* silent */
+      })
+      .finally(() => {
+        // Free the slot after a short cooldown so the same contact can be retried later
+        setTimeout(() => inflightRefetch.delete(contactId), 30_000);
+      });
+
+    inflightRefetch.set(contactId, p);
+  };
+
+  const handleError = () => {
+    if (src) failedUrls.add(src);
+    setErrored(true);
+    // Only auto-refetch when the failed URL is a known-temporary WhatsApp URL.
+    // Permanent storage URLs that fail are likely transient network errors.
+    if (isTemporaryUrl(src)) {
+      triggerRefetch();
     }
   };
 
