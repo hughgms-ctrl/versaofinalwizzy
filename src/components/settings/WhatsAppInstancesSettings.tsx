@@ -62,13 +62,36 @@ export function WhatsAppInstancesSettings() {
     if (isBackfillingAvatars) return;
     setIsBackfillingAvatars(true);
     try {
-      const { data, error } = await supabase.functions.invoke('backfill-contact-avatars', {
-        body: {},
-      });
-      if (error) throw error;
+      let totalPersisted = 0;
+      let totalProcessed = 0;
+      let totalFailed = 0;
+      let totalCandidates = 0;
+      let runs = 0;
+      const maxRuns = 20; // safety cap
+
+      toast({ title: 'Atualizando fotos...', description: 'Isso pode levar alguns minutos.' });
+
+      while (runs < maxRuns) {
+        runs++;
+        const { data, error } = await supabase.functions.invoke('backfill-contact-avatars', {
+          body: { batchSize: 60 },
+        });
+        if (error) throw error;
+        if (data?.success === false) throw new Error(data?.error || 'Falha desconhecida');
+
+        totalPersisted += data?.persisted ?? 0;
+        totalProcessed += data?.processed ?? 0;
+        totalFailed += data?.failed ?? 0;
+        totalCandidates = data?.total_candidates ?? totalCandidates;
+
+        if (!data?.hasMore) break;
+        // small pause between batches
+        await new Promise((r) => setTimeout(r, 500));
+      }
+
       toast({
         title: 'Fotos atualizadas!',
-        description: `${data?.persisted ?? 0} fotos salvas (${data?.total_candidates ?? 0} contatos verificados, ${data?.failed ?? 0} falhas).`,
+        description: `${totalPersisted} fotos salvas em ${runs} lote(s). ${totalProcessed} processados, ${totalFailed} falhas.`,
       });
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
       queryClient.invalidateQueries({ queryKey: ['contacts'] });
