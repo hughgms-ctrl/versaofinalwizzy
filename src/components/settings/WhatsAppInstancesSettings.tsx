@@ -56,6 +56,32 @@ export function WhatsAppInstancesSettings() {
   const [isSyncing, setIsSyncing] = useState<string | null>(null);
   const [syncProgress, setSyncProgress] = useState(0);
   const [isAddingNumber, setIsAddingNumber] = useState(false);
+  const [isBackfillingAvatars, setIsBackfillingAvatars] = useState(false);
+
+  const handleBackfillAvatars = async () => {
+    if (isBackfillingAvatars) return;
+    setIsBackfillingAvatars(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('backfill-contact-avatars', {
+        body: {},
+      });
+      if (error) throw error;
+      toast({
+        title: 'Fotos atualizadas!',
+        description: `${data?.persisted ?? 0} fotos salvas (${data?.total_candidates ?? 0} contatos verificados, ${data?.failed ?? 0} falhas).`,
+      });
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['contacts'] });
+    } catch (e: any) {
+      toast({
+        title: 'Erro ao atualizar fotos',
+        description: e.message || String(e),
+        variant: 'destructive',
+      });
+    } finally {
+      setIsBackfillingAvatars(false);
+    }
+  };
 
   // Poll for connection when showing QR code
   useEffect(() => {
@@ -264,10 +290,26 @@ export function WhatsAppInstancesSettings() {
                 </CardDescription>
               </div>
             </div>
-            <Button onClick={handleAddNumber} className="gap-2" disabled={isAddingNumber}>
-              {isAddingNumber ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-              Adicionar Número
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={handleBackfillAvatars}
+                variant="outline"
+                className="gap-2"
+                disabled={isBackfillingAvatars}
+                title="Baixa as fotos de perfil de todos os contatos e salva permanentemente"
+              >
+                {isBackfillingAvatars ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="h-4 w-4" />
+                )}
+                Atualizar fotos dos contatos
+              </Button>
+              <Button onClick={handleAddNumber} className="gap-2" disabled={isAddingNumber}>
+                {isAddingNumber ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                Adicionar Número
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
