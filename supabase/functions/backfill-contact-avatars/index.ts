@@ -1,3 +1,4 @@
+// v2 - verify_jwt disabled, manual auth validation
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
