@@ -71,10 +71,18 @@ export function WhatsAppInstancesSettings() {
 
       toast({ title: 'Atualizando fotos...', description: 'Isso pode levar alguns minutos.' });
 
+      let totalNoPicture = 0;
+      const aggregatedStrategy: Record<string, number> = {};
+
       while (runs < maxRuns) {
         runs++;
         const { data, error } = await supabase.functions.invoke('backfill-contact-avatars', {
-          body: { batchSize: 60 },
+          body: {
+            batchSize: 60,
+            // First pass: retry contacts previously marked as 'avatar_unavailable'
+            // so the new multi-endpoint strategy gets a chance on them.
+            retryUnavailable: runs === 1,
+          },
         });
         if (error) throw error;
         if (data?.success === false) throw new Error(data?.error || 'Falha desconhecida');
@@ -83,7 +91,14 @@ export function WhatsAppInstancesSettings() {
         totalPersisted += persistedNow;
         totalProcessed += data?.processed ?? 0;
         totalFailed += data?.failed ?? 0;
+        totalNoPicture += data?.noPicture ?? 0;
         totalCandidates = data?.total_candidates ?? totalCandidates;
+
+        // Aggregate strategy hits across runs for diagnostics
+        const ss = (data?.strategyStats ?? {}) as Record<string, number>;
+        for (const [k, v] of Object.entries(ss)) {
+          aggregatedStrategy[k] = (aggregatedStrategy[k] || 0) + (v as number);
+        }
 
         // Stop if backend says no more, OR if this batch made zero progress
         // (avoids infinite loop when remaining contacts simply have no WhatsApp photo).
@@ -93,9 +108,16 @@ export function WhatsAppInstancesSettings() {
         await new Promise((r) => setTimeout(r, 500));
       }
 
+      const strategyParts = Object.entries(aggregatedStrategy)
+        .filter(([k, v]) => k !== 'none' && (v as number) > 0)
+        .map(([k, v]) => `${k}=${v}`).join(', ');
+      const strategyMsg = strategyParts ? ` Fontes: ${strategyParts}.` : '';
+
       toast({
         title: 'Fotos atualizadas!',
-        description: `${totalPersisted} fotos salvas em ${runs} lote(s). ${totalProcessed} processados, ${totalFailed} falhas.`,
+        description:
+          `${totalPersisted} fotos salvas em ${runs} lote(s). ` +
+          `${totalProcessed} verificados, ${totalNoPicture} sem foto pública, ${totalFailed} falhas.${strategyMsg}`,
       });
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
       queryClient.invalidateQueries({ queryKey: ['contacts'] });
