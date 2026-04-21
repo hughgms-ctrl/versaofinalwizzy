@@ -56,6 +56,32 @@ export function WhatsAppInstancesSettings() {
   const [isSyncing, setIsSyncing] = useState<string | null>(null);
   const [syncProgress, setSyncProgress] = useState(0);
   const [isAddingNumber, setIsAddingNumber] = useState(false);
+  const [isBackfillingAvatars, setIsBackfillingAvatars] = useState(false);
+
+  const handleBackfillAvatars = async () => {
+    if (isBackfillingAvatars) return;
+    setIsBackfillingAvatars(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('backfill-contact-avatars', {
+        body: {},
+      });
+      if (error) throw error;
+      toast({
+        title: 'Fotos atualizadas!',
+        description: `${data?.persisted ?? 0} fotos salvas (${data?.total_candidates ?? 0} contatos verificados, ${data?.failed ?? 0} falhas).`,
+      });
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['contacts'] });
+    } catch (e: any) {
+      toast({
+        title: 'Erro ao atualizar fotos',
+        description: e.message || String(e),
+        variant: 'destructive',
+      });
+    } finally {
+      setIsBackfillingAvatars(false);
+    }
+  };
 
   // Poll for connection when showing QR code
   useEffect(() => {
