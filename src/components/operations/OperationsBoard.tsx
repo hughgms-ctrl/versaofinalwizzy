@@ -1,11 +1,12 @@
 import { useMemo } from 'react';
 import { useCases, useCaseStatuses, useUpdateCase } from '@/hooks/useOperationsCases';
 import { CaseCard } from './CaseCard';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Inbox } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
+import { useTags } from '@/hooks/useTags';
 import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 
 interface Props {
@@ -19,8 +20,9 @@ export function OperationsBoard({ filters, categoryId, onOpenCase }: Props) {
   const { data: statuses = [] } = useCaseStatuses(categoryId);
   const update = useUpdateCase();
   const { profile } = useAuth();
+  const { data: tags = [] } = useTags();
 
-  // Carrega contagem de tarefas por caso
+  // Tarefas por caso
   const { data: tasksByCase = {} } = useQuery({
     queryKey: ['tasks-by-case', profile?.organization_id, cases.map((c: any) => c.id).join(',')],
     queryFn: async () => {
@@ -42,6 +44,30 @@ export function OperationsBoard({ filters, categoryId, onOpenCase }: Props) {
       return map;
     },
     enabled: cases.length > 0,
+  });
+
+  // Tags por contato (para exibir no card)
+  const contactIds = useMemo(
+    () => Array.from(new Set(cases.map((c: any) => c.contact?.id).filter(Boolean))),
+    [cases],
+  );
+
+  const { data: contactTagsByContact = {} } = useQuery({
+    queryKey: ['operations-contact-tags', contactIds.join(',')],
+    queryFn: async () => {
+      if (contactIds.length === 0) return {};
+      const { data } = await supabase
+        .from('contact_tags')
+        .select('contact_id, tag_id')
+        .in('contact_id', contactIds);
+      const map: Record<string, string[]> = {};
+      (data || []).forEach((row: any) => {
+        if (!map[row.contact_id]) map[row.contact_id] = [];
+        map[row.contact_id].push(row.tag_id);
+      });
+      return map;
+    },
+    enabled: contactIds.length > 0,
   });
 
   const grouped = useMemo(() => {
@@ -70,45 +96,87 @@ export function OperationsBoard({ filters, categoryId, onOpenCase }: Props) {
     );
   }
 
+  if (statuses.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
+        <Inbox className="h-16 w-16 mb-4 opacity-30" />
+        <p className="text-lg font-medium">Sem colunas configuradas</p>
+        <p className="text-sm text-center mt-2">
+          Configure os status desta categoria para começar.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <DragDropContext onDragEnd={handleDragEnd}>
-      <div className="flex gap-4 overflow-x-auto pb-4 min-h-[60vh]">
-        {statuses.map((s: any) => (
-          <Droppable droppableId={s.id} key={s.id}>
-            {(provided, snapshot) => (
-              <div
-                ref={provided.innerRef}
-                {...provided.droppableProps}
-                className={cn(
-                  'flex-shrink-0 w-96 rounded-lg p-3 transition-colors',
-                  snapshot.isDraggingOver ? 'bg-muted' : 'bg-muted/40'
-                )}
-              >
-                <div className="flex items-center justify-between mb-3 px-1">
-                  <div className="flex items-center gap-2">
-                    <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: s.color }} />
-                    <h3 className="text-sm font-semibold">{s.name}</h3>
+      <div className="flex gap-4 h-[calc(100vh-200px)] overflow-x-auto overflow-y-hidden">
+        {statuses.map((s: any) => {
+          const items = grouped[s.id] || [];
+          return (
+            <Droppable droppableId={s.id} key={s.id}>
+              {(provided, snapshot) => (
+                <div
+                  ref={provided.innerRef}
+                  {...provided.droppableProps}
+                  className={cn(
+                    'pipeline-column transition-all duration-300 border-l-4',
+                    snapshot.isDraggingOver && 'scale-[1.01]',
+                  )}
+                  style={{
+                    borderLeftColor: s.color,
+                    ...(snapshot.isDraggingOver
+                      ? { boxShadow: `inset 0 0 20px ${s.color}15, 0 0 0 1px ${s.color}40` }
+                      : {}),
+                  }}
+                >
+                  <div
+                    className="flex items-center justify-between mb-3 px-2 py-1.5 -mx-3 -mt-3 rounded-t-xl"
+                    style={{ backgroundColor: `${s.color}15` }}
+                  >
+                    <div className="flex items-center gap-2">
+                      <div className="h-3 w-3 rounded-full" style={{ backgroundColor: s.color }} />
+                      <h3 className="font-semibold text-foreground text-sm">{s.name}</h3>
+                      <span
+                        className="flex items-center justify-center h-5 min-w-[20px] px-1 rounded-full text-[10px] font-bold text-white"
+                        style={{ backgroundColor: s.color }}
+                      >
+                        {items.length}
+                      </span>
+                    </div>
                   </div>
-                  <span className="text-xs text-muted-foreground bg-background/60 px-2 py-0.5 rounded-full">
-                    {(grouped[s.id] || []).length}
-                  </span>
+
+                  <div
+                    className="space-y-2 min-h-[200px] overflow-y-auto flex-1"
+                    style={{ WebkitOverflowScrolling: 'touch' }}
+                  >
+                    {items.map((c: any, idx: number) => {
+                      const contactTagIds = c.contact?.id
+                        ? contactTagsByContact[c.contact.id] || []
+                        : [];
+                      const cardTags = tags.filter((t) => contactTagIds.includes(t.id));
+                      return (
+                        <Draggable draggableId={c.id} index={idx} key={c.id}>
+                          {(p) => (
+                            <div ref={p.innerRef} {...p.draggableProps} {...p.dragHandleProps}>
+                              <CaseCard
+                                case_={c}
+                                taskStats={tasksByCase[c.id]}
+                                contactTags={cardTags}
+                                onClick={() => onOpenCase(c.id)}
+                              />
+                            </div>
+                          )}
+                        </Draggable>
+                      );
+                    })}
+                    {provided.placeholder}
+                  </div>
                 </div>
-                <div className="space-y-2 min-h-[40px]">
-                  {(grouped[s.id] || []).map((c: any, idx: number) => (
-                    <Draggable draggableId={c.id} index={idx} key={c.id}>
-                      {(p) => (
-                        <div ref={p.innerRef} {...p.draggableProps} {...p.dragHandleProps}>
-                          <CaseCard case_={c} taskStats={tasksByCase[c.id]} onClick={() => onOpenCase(c.id)} />
-                        </div>
-                      )}
-                    </Draggable>
-                  ))}
-                  {provided.placeholder}
-                </div>
-              </div>
-            )}
-          </Droppable>
-        ))}
+              )}
+            </Droppable>
+          );
+        })}
       </div>
     </DragDropContext>
   );
