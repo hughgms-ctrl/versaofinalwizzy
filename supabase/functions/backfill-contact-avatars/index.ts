@@ -41,6 +41,7 @@ Deno.serve(async (req) => {
     if (!authHeader) return respond(200, { success: false, error: 'Unauthorized' });
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const uazapiBaseUrl = Deno.env.get('UAZAPI_BASE_URL');
     if (!uazapiBaseUrl) {
@@ -48,14 +49,22 @@ Deno.serve(async (req) => {
       return respond(200, { success: false, error: 'UAZAPI_BASE_URL not configured' });
     }
 
+    // User client (validates JWT via anon key) and admin client (bypasses RLS)
+    const userClient = createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const token = authHeader.replace(/^Bearer\s+/i, '');
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-    if (authError || !user) return respond(200, { success: false, error: 'Unauthorized' });
+    const { data: claimsData, error: authError } = await userClient.auth.getClaims(token);
+    if (authError || !claimsData?.claims) {
+      console.error('[backfill] auth error:', authError);
+      return respond(200, { success: false, error: 'Unauthorized' });
+    }
+    const userId = claimsData.claims.sub;
 
     const { data: profile } = await supabase
-      .from('profiles').select('organization_id').eq('user_id', user.id).single();
+      .from('profiles').select('organization_id').eq('user_id', userId).single();
     if (!profile?.organization_id) return respond(200, { success: false, error: 'No organization' });
 
     // Parse optional batch size from request body
