@@ -62,17 +62,24 @@ export function ConversationActionsMenu({ conversation, onShowMediaGallery }: Co
   const isArchived = conversation.status === 'archived';
 
   const cancelPendingChatFollowUps = async (reason: string) => {
-    await supabase
-      .from('flow_executions')
-      .update({
-        status: 'completed',
-        timeout_at: null,
-        completed_at: new Date().toISOString(),
-        error_message: reason,
-      } as any)
-      .eq('conversation_id', conversation.id)
-      .in('status', ['waiting_input', 'running'])
-      .eq('current_node_id', 'chat-follow-up');
+    const patch = {
+      status: 'completed',
+      timeout_at: null,
+      completed_at: new Date().toISOString(),
+      error_message: reason,
+    } as any;
+    const base = () =>
+      supabase
+        .from('flow_executions')
+        .update(patch)
+        .eq('conversation_id', conversation.id)
+        .in('status', ['waiting_input', 'running']);
+    // 1) Follow-ups iniciados pelo chat (current_node_id = 'chat-follow-up')
+    await base().eq('current_node_id', 'chat-follow-up');
+    // 2) Qualquer execução em remarketing avançada (remarketing_step > 0)
+    await base().gt('remarketing_step', 0);
+    // 3) Execuções marcadas por variables.source = 'chat_follow_up'
+    await base().eq('variables->>source', 'chat_follow_up');
   };
 
   const { data: tags } = useTags();

@@ -55,6 +55,26 @@ const getInitialsFromName = (name: string | null, phone?: string) => {
   return phone?.slice(-2) || '??';
 };
 
+// Cancela qualquer follow-up/remarketing pendente para uma conversa.
+// Cobre 3 casos: nó "chat-follow-up", remarketing_step > 0 e variables.source = 'chat_follow_up'.
+async function cancelPendingFollowUps(conversationId: string, reason: string) {
+  const patch = {
+    status: 'completed',
+    timeout_at: null,
+    completed_at: new Date().toISOString(),
+    error_message: reason,
+  } as any;
+  const base = () =>
+    supabase
+      .from('flow_executions')
+      .update(patch)
+      .eq('conversation_id', conversationId)
+      .in('status', ['waiting_input', 'running']);
+  await base().eq('current_node_id', 'chat-follow-up');
+  await base().gt('remarketing_step', 0);
+  await base().eq('variables->>source', 'chat_follow_up');
+}
+
 const statusLabels: Record<string, string> = {
   open: 'Aberto',
   resolved: 'Resolvido',
@@ -372,18 +392,8 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
         } as any)
         .eq('id', conversation.id);
 
-      // Cancel any pending chat follow-ups for this conversation
-      await supabase
-        .from('flow_executions')
-        .update({
-          status: 'completed',
-          timeout_at: null,
-          completed_at: new Date().toISOString(),
-          error_message: 'Cancelled: AI deactivated by human agent',
-        } as any)
-        .eq('conversation_id', conversation.id)
-        .in('status', ['waiting_input', 'running'])
-        .eq('current_node_id', 'chat-follow-up');
+      // Cancel any pending follow-ups for this conversation (chat-follow-up node OR any active remarketing)
+      await cancelPendingFollowUps(conversation.id, 'Cancelled: AI deactivated by human agent');
 
       setAiPausedUntil('permanent');
       toast({
@@ -424,18 +434,8 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
       } as any)
       .eq('id', conversation.id);
 
-    // Cancel any pending chat follow-ups for this conversation
-    await supabase
-      .from('flow_executions')
-      .update({
-        status: 'completed',
-        timeout_at: null,
-        completed_at: new Date().toISOString(),
-        error_message: 'Cancelled: AI paused by human agent',
-      } as any)
-      .eq('conversation_id', conversation.id)
-      .in('status', ['waiting_input', 'running'])
-      .eq('current_node_id', 'chat-follow-up');
+    // Cancel any pending follow-ups for this conversation (chat-follow-up node OR any active remarketing)
+    await cancelPendingFollowUps(conversation.id, 'Cancelled: AI paused by human agent');
 
     setAiPausedUntil(pauseValue);
     queryClient.invalidateQueries({ queryKey: ['conversations'] });
