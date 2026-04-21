@@ -61,13 +61,12 @@ Deno.serve(async (req) => {
     });
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const token = authHeader.replace(/^Bearer\s+/i, '');
-    const { data: claimsData, error: authError } = await userClient.auth.getClaims(token);
-    if (authError || !claimsData?.claims) {
+    const { data: userData, error: authError } = await userClient.auth.getUser();
+    if (authError || !userData?.user) {
       console.error('[backfill] auth error:', authError);
-      return respond(200, { success: false, error: 'Unauthorized' });
+      return respond(200, { success: false, error: `Unauthorized: ${authError?.message || 'no user'}` });
     }
-    const userId = claimsData.claims.sub;
+    const userId = userData.user.id;
 
     const { data: profile } = await supabase
       .from('profiles').select('organization_id').eq('user_id', userId).single();
