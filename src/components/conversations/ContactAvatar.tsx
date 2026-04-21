@@ -74,6 +74,36 @@ export function ContactAvatar({
     }
   }, [src]);
 
+  // Proactively migrate temporary WhatsApp URLs to our permanent Storage.
+  // This runs once per contact even when the image still loads — it just
+  // refreshes the DB so future loads use the persisted URL.
+  useEffect(() => {
+    if (!autoRefetch || !contactId || !session?.access_token) return;
+    if (!isTemporaryUrl(src)) return;
+    if (inflightRefetch.has(contactId)) return;
+    // Fire and forget — won't show a loading state
+    const t = setTimeout(() => {
+      if (inflightRefetch.has(contactId)) return;
+      const p = supabase.functions
+        .invoke('zapi-contact-profile', {
+          body: { contactId, instanceId: instanceId || undefined },
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        })
+        .then(({ data }) => {
+          if (data?.avatarUrl && data.avatarUrl !== src) {
+            queryClient.invalidateQueries({ queryKey: ['conversations'] });
+            queryClient.invalidateQueries({ queryKey: ['contacts'] });
+          }
+        })
+        .catch(() => {})
+        .finally(() => {
+          setTimeout(() => inflightRefetch.delete(contactId), 60_000);
+        });
+      inflightRefetch.set(contactId, p);
+    }, 800);
+    return () => clearTimeout(t);
+  }, [src, contactId, instanceId, autoRefetch, session?.access_token, queryClient]);
+
   const showImage = !!src && !errored && !failedUrls.has(src);
   const initials = getInitials(name, phone);
 
