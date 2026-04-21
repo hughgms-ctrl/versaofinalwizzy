@@ -1,8 +1,7 @@
-// v5 - Dual-endpoint strategy mirroring zapi-contact-profile (proven in production)
-// 1) POST /contact/info  -> nome + sometimes avatar
-// 2) POST /contact/profile-picture -> dedicated avatar endpoint (forces live fetch)
-// 3) Fallback POST /chat/details -> cached chat info
-// Supports both regular numbers and LIDs (@lid).
+// v6 - Cache warm-up + chat/details strategy
+// 1) POST /chat/check  -> forces UAZAPI to validate the number on WhatsApp servers (warms cache & avatar)
+// 2) POST /chat/details -> reads the (now hopefully populated) chat record with image/imagePreview
+// 3) Optional /contact/profile-picture and /contact/info as last resort (some instances reject with 405)
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
