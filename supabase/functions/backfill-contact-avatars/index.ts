@@ -16,6 +16,13 @@ function isTemporaryUrl(url: string | null | undefined) {
   }
 }
 
+function ensureCountryCode(phone: string): string {
+  const clean = phone.replace(/\D/g, '');
+  if (clean.length >= 12) return clean;
+  if (clean.length >= 10 && clean.length <= 11) return `55${clean}`;
+  return clean;
+}
+
 async function fetchWithTimeout(url: string, options: RequestInit, ms = 8000): Promise<Response> {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), ms);
@@ -49,7 +56,6 @@ Deno.serve(async (req) => {
       return respond(200, { success: false, error: 'UAZAPI_BASE_URL not configured' });
     }
 
-    // User client (validates JWT via anon key) and admin client (bypasses RLS)
     const userClient = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: authHeader } },
     });
@@ -67,16 +73,17 @@ Deno.serve(async (req) => {
       .from('profiles').select('organization_id').eq('user_id', userId).single();
     if (!profile?.organization_id) return respond(200, { success: false, error: 'No organization' });
 
-    // Parse optional batch size from request body
-    let batchSize = 60;
+    let batchSize = 40;
+    let skipMissing = false;
     try {
       const body = await req.json();
       if (body?.batchSize && typeof body.batchSize === 'number') {
-        batchSize = Math.min(Math.max(body.batchSize, 10), 150);
+        batchSize = Math.min(Math.max(body.batchSize, 5), 100);
       }
+      // After a full pass, the client can request to skip contacts known to have no picture
+      if (body?.skipMissing === true) skipMissing = true;
     } catch {/* no body */}
 
-    // Get active connected instance for this org
     const { data: instances } = await supabase.from('whatsapp_instances')
       .select('*').eq('organization_id', profile.organization_id)
       .eq('status', 'connected').limit(1);
@@ -85,13 +92,14 @@ Deno.serve(async (req) => {
       return respond(200, { success: false, error: 'No connected WhatsApp instance' });
     }
 
-    console.log(`[backfill] Starting for org ${profile.organization_id}, batchSize=${batchSize}`);
+    console.log(`[backfill] Starting org=${profile.organization_id} batchSize=${batchSize}`);
 
-    // Get candidate contacts (temp URLs or no avatar)
+    // Only target contacts with conversations (active) — exclude broadcast lists
     const { data: contacts, error: contactsErr } = await supabase
       .from('contacts')
       .select('id, phone, avatar_url')
       .eq('organization_id', profile.organization_id)
+      .not('phone', 'like', '%@broadcast')
       .limit(2000);
 
     if (contactsErr) {
@@ -99,19 +107,21 @@ Deno.serve(async (req) => {
       return respond(200, { success: false, error: contactsErr.message });
     }
 
-    const allTargets = (contacts || []).filter((c) => isTemporaryUrl(c.avatar_url) || !c.avatar_url);
+    const allTargets = (contacts || []).filter((c) =>
+      c.phone && (isTemporaryUrl(c.avatar_url) || !c.avatar_url)
+    );
     const targets = allTargets.slice(0, batchSize);
 
-    console.log(`[backfill] ${allTargets.length} candidates total, processing ${targets.length} this run`);
+    console.log(`[backfill] ${allTargets.length} candidates, processing ${targets.length}`);
 
     let processed = 0;
     let persisted = 0;
     let failed = 0;
     let noPicture = 0;
+    const samples: string[] = [];
 
     const concurrency = 3;
     for (let i = 0; i < targets.length; i += concurrency) {
-      // Stop if approaching CPU limit (~50s)
       if (Date.now() - startTime > 45000) {
         console.log('[backfill] Time limit approaching, stopping');
         break;
@@ -121,23 +131,51 @@ Deno.serve(async (req) => {
       await Promise.all(batch.map(async (c) => {
         processed++;
         try {
-          const phone = c.phone;
-          const isLid = phone.includes('@lid') || phone.length > 20;
-          const phoneBody = isLid ? { phone } : { number: phone };
+          const rawPhone = c.phone;
+          const isLid = rawPhone.includes('@lid') || rawPhone.length > 20;
+          const formattedPhone = isLid ? rawPhone : ensureCountryCode(rawPhone);
+          if (!formattedPhone) { noPicture++; return; }
 
+          const phoneBody = isLid ? { phone: formattedPhone } : { number: formattedPhone };
+
+          // 1) Try /contact/info first (matches working zapi-contact-profile)
           let remoteAvatarUrl: string | null = null;
           try {
-            const picRes = await fetchWithTimeout(`${uazapiBaseUrl}/contact/profile-picture`, {
+            const infoRes = await fetchWithTimeout(`${uazapiBaseUrl}/contact/info`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'token': instance.zapi_token },
               body: JSON.stringify(phoneBody),
             }, 6000);
-            if (picRes.ok) {
-              const d = await picRes.json();
-              remoteAvatarUrl = d.profilePictureUrl || d.profilePicture || d.imgUrl || d.url || null;
+            if (infoRes.ok) {
+              const d = await infoRes.json();
+              remoteAvatarUrl = d.profilePicture || d.profileThumbnail || d.imgUrl || d.profilePictureUrl || null;
+              if (samples.length < 3) {
+                samples.push(`info(${formattedPhone}): ${JSON.stringify(d).slice(0, 200)}`);
+              }
+            } else if (samples.length < 3) {
+              const txt = await infoRes.text();
+              samples.push(`info(${formattedPhone}) status=${infoRes.status}: ${txt.slice(0, 150)}`);
             }
           } catch (e) {
-            console.warn(`[backfill] picture fetch failed ${c.id}:`, String(e).slice(0, 80));
+            if (samples.length < 3) samples.push(`info err: ${String(e).slice(0, 100)}`);
+          }
+
+          // 2) Fallback to /contact/profile-picture
+          if (!remoteAvatarUrl) {
+            try {
+              const picRes = await fetchWithTimeout(`${uazapiBaseUrl}/contact/profile-picture`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'token': instance.zapi_token },
+                body: JSON.stringify(phoneBody),
+              }, 6000);
+              if (picRes.ok) {
+                const d = await picRes.json();
+                remoteAvatarUrl = d.profilePictureUrl || d.profilePicture || d.imgUrl || d.url || null;
+                if (samples.length < 3) {
+                  samples.push(`pic(${formattedPhone}): ${JSON.stringify(d).slice(0, 200)}`);
+                }
+              }
+            } catch {/* ignore */}
           }
 
           if (!remoteAvatarUrl) { noPicture++; return; }
@@ -153,9 +191,9 @@ Deno.serve(async (req) => {
           const { error: upErr } = await supabase.storage
             .from('contact-avatars')
             .upload(path, bytes, { contentType, upsert: true, cacheControl: '604800' });
-          if (upErr) { 
+          if (upErr) {
             console.warn(`[backfill] upload failed ${c.id}:`, upErr.message);
-            failed++; return; 
+            failed++; return;
           }
           const { data: pub } = supabase.storage.from('contact-avatars').getPublicUrl(path);
           await supabase.from('contacts').update({ avatar_url: pub.publicUrl }).eq('id', c.id);
@@ -168,7 +206,8 @@ Deno.serve(async (req) => {
     }
 
     const remaining = Math.max(allTargets.length - processed, 0);
-    console.log(`[backfill] Done: processed=${processed}, persisted=${persisted}, failed=${failed}, noPicture=${noPicture}, remaining=${remaining}`);
+    console.log(`[backfill] Done processed=${processed} persisted=${persisted} failed=${failed} noPicture=${noPicture} remaining=${remaining}`);
+    if (samples.length) console.log('[backfill] samples:', samples.join(' | '));
 
     return respond(200, {
       success: true,
@@ -179,6 +218,7 @@ Deno.serve(async (req) => {
       noPicture,
       remaining,
       hasMore: remaining > 0,
+      samples,
       duration_ms: Date.now() - startTime,
     });
   } catch (e) {
