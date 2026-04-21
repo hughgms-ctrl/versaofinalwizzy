@@ -332,7 +332,7 @@ Deno.serve(async (req) => {
           }).eq('id', c.id);
           persisted++;
         } catch (e) {
-          console.warn(`[backfill v5] contact ${c.id} failed:`, String(e).slice(0, 100));
+          console.warn(`[backfill v6] contact ${c.id} failed:`, String(e).slice(0, 100));
           failed++;
         }
       }));
@@ -341,9 +341,9 @@ Deno.serve(async (req) => {
     const remainingRaw = Math.max(targets.length - processed, 0);
     const hasMore = persisted > 0 && remainingRaw > 0;
 
-    console.log(`[backfill v5] Done processed=${processed} persisted=${persisted} failed=${failed} noPicture=${noPicture} remaining=${remainingRaw} hasMore=${hasMore}`);
-    console.log(`[backfill v5] Strategy hits: profile-picture=${strategyStats['profile-picture']} contact-info=${strategyStats['contact-info']} chat-details=${strategyStats['chat-details']} none=${strategyStats['none']}`);
-    if (samples.length) console.log('[backfill v5] samples:', samples.join(' | '));
+    console.log(`[backfill v6] Done processed=${processed} persisted=${persisted} failed=${failed} noPicture=${noPicture} remaining=${remainingRaw} hasMore=${hasMore} warmOk=${warmOk}`);
+    console.log(`[backfill v6] Strategy hits: chat-details=${strategyStats['chat-details']} profile-picture=${strategyStats['profile-picture']} contact-info=${strategyStats['contact-info']} none=${strategyStats['none']}`);
+    if (samples.length) console.log('[backfill v6] samples:', samples.join(' | '));
 
     return respond(200, {
       success: true,
@@ -352,10 +352,11 @@ Deno.serve(async (req) => {
       remaining: remainingRaw, hasMore,
       strategyStats,
       samples,
+      warmOk,
       duration_ms: Date.now() - startTime,
     });
   } catch (e) {
-    console.error('[backfill v5] fatal error:', e);
+    console.error('[backfill v6] fatal error:', e);
     return respond(200, { success: false, error: String(e), duration_ms: Date.now() - startTime });
   }
 });
