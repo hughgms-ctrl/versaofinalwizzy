@@ -248,6 +248,26 @@ export function CaseCard({ case_, taskStats, contactTags = [], onClick }: CaseCa
               <TooltipContent className="max-w-xs">{case_.title}</TooltipContent>
             </Tooltip>
 
+            {/* Tags do contato */}
+            {contactTags.length > 0 && (
+              <div className="flex items-center gap-1 mt-1.5 flex-wrap">
+                {contactTags.slice(0, 3).map((tag) => (
+                  <span
+                    key={tag.id}
+                    className="text-[9px] px-1.5 py-0.5 rounded truncate max-w-[80px]"
+                    style={{ backgroundColor: `${tag.color}20`, color: tag.color }}
+                  >
+                    {tag.name}
+                  </span>
+                ))}
+                {contactTags.length > 3 && (
+                  <span className="text-[10px] text-muted-foreground">
+                    +{contactTags.length - 3}
+                  </span>
+                )}
+              </div>
+            )}
+
             {/* Barra de progresso de tarefas */}
             {taskStats && taskStats.total > 0 && (
               <Tooltip>
