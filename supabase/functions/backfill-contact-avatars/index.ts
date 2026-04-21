@@ -255,10 +255,10 @@ Deno.serve(async (req) => {
       });
     }
 
-    console.log(`[backfill v5] ${targets.length} candidates, processing ${Math.min(batchSize, targets.length)}`);
+    console.log(`[backfill v6] ${targets.length} candidates, processing ${Math.min(batchSize, targets.length)}`);
 
     const samples: string[] = [];
-    const collectSample = (s: string) => { if (samples.length < 10) samples.push(s); };
+    const collectSample = (s: string) => { if (samples.length < 12) samples.push(s); };
     const strategyStats: Record<string, number> = {
       'profile-picture': 0, 'contact-info': 0, 'chat-details': 0, 'none': 0,
     };
@@ -266,6 +266,25 @@ Deno.serve(async (req) => {
 
     const work = targets.slice(0, batchSize);
     const concurrency = probeOnly ? 1 : 4;
+
+    // === WARM-UP STEP ===
+    // Forces UAZAPI to validate each number on WhatsApp servers and populate
+    // its internal cache (including the avatar) so that /chat/details works.
+    const numbersToWarm = work
+      .map((c) => {
+        const isLid = c.phone.includes('@lid') || c.phone.length > 20;
+        return isLid ? c.phone : ensureCountryCode(c.phone);
+      })
+      .filter(Boolean);
+
+    let warmOk = false;
+    if (numbersToWarm.length) {
+      console.log(`[backfill v6] Warming up cache for ${numbersToWarm.length} numbers via /chat/check...`);
+      warmOk = await warmUpChatCheck(uazapiBaseUrl, instance.zapi_token, numbersToWarm, collectSample);
+      console.log(`[backfill v6] Warm-up ${warmOk ? 'OK' : 'FAILED'}; waiting 4s for cache to populate...`);
+      // Give UAZAPI a few seconds to fetch profile pictures from WhatsApp servers
+      await new Promise((r) => setTimeout(r, 4000));
+    }
 
     for (let i = 0; i < work.length; i += concurrency) {
       const batch = work.slice(i, i + concurrency);
