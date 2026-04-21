@@ -79,12 +79,16 @@ export function WhatsAppInstancesSettings() {
         if (error) throw error;
         if (data?.success === false) throw new Error(data?.error || 'Falha desconhecida');
 
-        totalPersisted += data?.persisted ?? 0;
+        const persistedNow = data?.persisted ?? 0;
+        totalPersisted += persistedNow;
         totalProcessed += data?.processed ?? 0;
         totalFailed += data?.failed ?? 0;
         totalCandidates = data?.total_candidates ?? totalCandidates;
 
-        if (!data?.hasMore) break;
+        // Stop if backend says no more, OR if this batch made zero progress
+        // (avoids infinite loop when remaining contacts simply have no WhatsApp photo).
+        if (!data?.hasMore || persistedNow === 0) break;
+
         // small pause between batches
         await new Promise((r) => setTimeout(r, 500));
       }

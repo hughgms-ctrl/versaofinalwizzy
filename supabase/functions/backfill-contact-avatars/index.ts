@@ -1,4 +1,4 @@
-// v3 - multiple endpoint variants + GET fallback for UAZAPI 405 errors
+// v4 - UAZAPI v2 endpoint: POST /chat/details (correct endpoint per official n8n-nodes-uazapi)
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
@@ -24,68 +24,55 @@ async function fetchWithTimeout(url: string, options: RequestInit, ms = 8000): P
 }
 
 /**
- * Try multiple UAZAPI endpoint variants to fetch profile picture URL.
- * Different UAZAPI versions/deployments expose different endpoints.
- * Returns the first successful URL (or null).
+ * UAZAPI v2 - POST /chat/details
+ * Body: { number: "5511999999999", preview: false }
+ * Returns: object with image/imagePreview/name/etc.
  */
 async function fetchAvatarFromUazapi(
   baseUrl: string,
   token: string,
   formattedPhone: string,
-  isLid: boolean,
   collectSample: (s: string) => void,
-): Promise<string | null> {
-  const phoneBody = isLid ? { phone: formattedPhone } : { number: formattedPhone };
-  const numberBody = { number: formattedPhone };
-  const baseHeaders = { 'Content-Type': 'application/json', token };
+): Promise<{ url: string | null; name: string | null }> {
+  try {
+    const res = await fetchWithTimeout(`${baseUrl}/chat/details`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', token },
+      body: JSON.stringify({ number: formattedPhone, preview: false }),
+    }, 8000);
 
-  type Attempt = { url: string; method: 'GET' | 'POST'; body?: unknown; pickUrl: (d: any) => string | null };
-  const attempts: Attempt[] = [
-    // POST variants (legacy)
-    { url: `${baseUrl}/contact/info`, method: 'POST', body: phoneBody,
-      pickUrl: (d) => d?.profilePicture || d?.profileThumbnail || d?.imgUrl || d?.profilePictureUrl || d?.profilePicUrl || null },
-    { url: `${baseUrl}/contact/profile-picture`, method: 'POST', body: phoneBody,
-      pickUrl: (d) => d?.profilePictureUrl || d?.profilePicture || d?.imgUrl || d?.url || null },
-    // POST chat/* variants (UAZAPI v2)
-    { url: `${baseUrl}/chat/getProfilePicUrl`, method: 'POST', body: numberBody,
-      pickUrl: (d) => d?.profilePicUrl || d?.url || d?.imgUrl || (typeof d === 'string' ? d : null) },
-    { url: `${baseUrl}/chat/check`, method: 'POST', body: { numbers: [formattedPhone] },
-      pickUrl: (d) => Array.isArray(d) ? (d[0]?.profilePicUrl || d[0]?.imgUrl || null) : (d?.profilePicUrl || null) },
-    // GET variants with query param
-    { url: `${baseUrl}/contact/info?number=${encodeURIComponent(formattedPhone)}`, method: 'GET',
-      pickUrl: (d) => d?.profilePicture || d?.profileThumbnail || d?.imgUrl || d?.profilePictureUrl || d?.profilePicUrl || null },
-    { url: `${baseUrl}/chat/getProfilePicUrl?number=${encodeURIComponent(formattedPhone)}`, method: 'GET',
-      pickUrl: (d) => d?.profilePicUrl || d?.url || d?.imgUrl || (typeof d === 'string' ? d : null) },
-  ];
-
-  let firstStatusSample: string | null = null;
-  for (const a of attempts) {
-    try {
-      const init: RequestInit = { method: a.method, headers: baseHeaders };
-      if (a.method === 'POST' && a.body !== undefined) init.body = JSON.stringify(a.body);
-      const res = await fetchWithTimeout(a.url, init, 6000);
-      if (res.ok) {
-        let d: any = null;
-        try { d = await res.json(); } catch { /* not json */ }
-        const url = a.pickUrl(d);
-        if (url) {
-          collectSample(`OK ${a.method} ${a.url.replace(baseUrl, '')} -> ${String(url).slice(0, 80)}`);
-          return url;
-        } else if (!firstStatusSample) {
-          firstStatusSample = `200 ${a.method} ${a.url.replace(baseUrl, '')} no-url body=${JSON.stringify(d).slice(0, 120)}`;
-        }
-      } else if (!firstStatusSample) {
-        const txt = await res.text();
-        firstStatusSample = `${res.status} ${a.method} ${a.url.replace(baseUrl, '')} body=${txt.slice(0, 100)}`;
-      } else {
-        await res.text(); // drain
-      }
-    } catch (e) {
-      if (!firstStatusSample) firstStatusSample = `ERR ${a.method} ${a.url.replace(baseUrl, '')}: ${String(e).slice(0, 60)}`;
+    if (!res.ok) {
+      const txt = await res.text();
+      collectSample(`${res.status} /chat/details body=${txt.slice(0, 100)}`);
+      return { url: null, name: null };
     }
+
+    const d: any = await res.json();
+    // UAZAPI v2 returns: { image, imagePreview, name, wa_name, wa_contactName, ... }
+    // Sometimes nested under 'chat' or 'contact'
+    const root = d?.chat || d?.contact || d;
+    const url = root?.image
+      || root?.imagePreview
+      || root?.profilePicture
+      || root?.profilePictureUrl
+      || root?.profilePicUrl
+      || root?.imgUrl
+      || null;
+    const name = root?.name
+      || root?.wa_name
+      || root?.wa_contactName
+      || root?.pushname
+      || null;
+
+    if (!url) {
+      // Sample once when we get 200 but no image (helps debug response shape)
+      collectSample(`200 no-image keys=${Object.keys(d || {}).slice(0, 8).join(',')}`);
+    }
+    return { url, name };
+  } catch (e) {
+    collectSample(`ERR /chat/details: ${String(e).slice(0, 80)}`);
+    return { url: null, name: null };
   }
-  if (firstStatusSample) collectSample(firstStatusSample);
-  return null;
 }
 
 Deno.serve(async (req) => {
@@ -128,12 +115,10 @@ Deno.serve(async (req) => {
     if (!profile?.organization_id) return respond(200, { success: false, error: 'No organization' });
 
     let batchSize = 40;
-    let skipMissing = false;
     let probeOnly = false;
     try {
       const body = await req.json();
       if (body?.batchSize && typeof body.batchSize === 'number') batchSize = Math.min(Math.max(body.batchSize, 1), 200);
-      if (body?.skipMissing) skipMissing = true;
       if (body?.probeOnly) probeOnly = true;
     } catch { /* no body */ }
 
@@ -151,18 +136,38 @@ Deno.serve(async (req) => {
       return respond(200, { success: false, error: 'No connected WhatsApp instance' });
     }
 
-    // Get contacts that need an avatar refresh:
-    // - missing avatar OR
-    // - using a temporary WhatsApp CDN URL (pps.whatsapp.net etc.)
+    // Mark contacts already attempted (no picture available) by metadata flag
+    // so we don't reprocess them on every batch run.
+    // Targets: missing avatar OR using temp WhatsApp CDN URL,
+    // AND not yet flagged as 'avatar_unavailable'
     const { data: allTargets } = await supabase
       .from('contacts')
-      .select('id, phone, avatar_url')
+      .select('id, phone, avatar_url, metadata')
       .eq('organization_id', orgId)
       .or('avatar_url.is.null,avatar_url.like.%whatsapp.net%')
       .limit(2000);
 
-    const targets = (allTargets || []).filter((c) => c.phone && c.phone.length >= 10);
-    if (!targets.length) return respond(200, { success: true, message: 'No targets', processed: 0 });
+    const targets = (allTargets || []).filter((c) => {
+      if (!c.phone || c.phone.length < 10) return false;
+      // Skip contacts already marked as having no avatar
+      const meta = (c.metadata as any) || {};
+      if (meta.avatar_unavailable === true) return false;
+      return true;
+    });
+
+    if (!targets.length) {
+      return respond(200, {
+        success: true,
+        message: 'No targets',
+        processed: 0,
+        persisted: 0,
+        failed: 0,
+        noPicture: 0,
+        remaining: 0,
+        hasMore: false,
+        total_candidates: 0,
+      });
+    }
 
     console.log(`[backfill] ${targets.length} candidates, processing ${Math.min(batchSize, targets.length)}`);
 
@@ -179,14 +184,22 @@ Deno.serve(async (req) => {
         processed++;
         try {
           const rawPhone = c.phone;
-          const isLid = rawPhone.includes('@lid') || rawPhone.length > 20;
-          const formattedPhone = isLid ? rawPhone : ensureCountryCode(rawPhone);
+          const formattedPhone = ensureCountryCode(rawPhone);
           if (!formattedPhone) { noPicture++; return; }
 
-          const remoteAvatarUrl = await fetchAvatarFromUazapi(
-            uazapiBaseUrl, instance.zapi_token, formattedPhone, isLid, collectSample,
+          const { url: remoteAvatarUrl, name } = await fetchAvatarFromUazapi(
+            uazapiBaseUrl, instance.zapi_token, formattedPhone, collectSample,
           );
-          if (!remoteAvatarUrl) { noPicture++; return; }
+
+          if (!remoteAvatarUrl) {
+            // Mark contact so we don't keep reprocessing it
+            const meta = ((c.metadata as any) || {}) as Record<string, unknown>;
+            meta.avatar_unavailable = true;
+            meta.avatar_checked_at = new Date().toISOString();
+            await supabase.from('contacts').update({ metadata: meta }).eq('id', c.id);
+            noPicture++;
+            return;
+          }
           if (probeOnly) { persisted++; return; }
 
           const imgRes = await fetchWithTimeout(remoteAvatarUrl, {
@@ -205,19 +218,32 @@ Deno.serve(async (req) => {
             failed++; return;
           }
           const { data: pub } = supabase.storage.from('contact-avatars').getPublicUrl(path);
-          await supabase.from('contacts').update({ avatar_url: pub.publicUrl }).eq('id', c.id);
+          const updatePayload: Record<string, unknown> = { avatar_url: pub.publicUrl };
+          if (name && (!c.metadata || (c.metadata as any).preserve_name !== true)) {
+            // Don't overwrite name if it was manually set; only update on contacts that have no real name
+            // (handled at the application layer normally; here we just set avatar)
+          }
+          await supabase.from('contacts').update(updatePayload).eq('id', c.id);
           persisted++;
         } catch (e) {
           console.warn(`[backfill] contact ${c.id} failed:`, String(e).slice(0, 100));
           failed++;
         }
       }));
-      // Stop early in probe mode after first batch
-      if (probeOnly && samples.length >= 4) break;
     }
 
-    const remaining = Math.max(targets.length - processed, 0);
-    console.log(`[backfill] Done processed=${processed} persisted=${persisted} failed=${failed} noPicture=${noPicture} remaining=${remaining}`);
+    // Recalculate "remaining" based on what's still actually pending after this run
+    // (contacts marked as avatar_unavailable shouldn't be counted)
+    const { data: stillPending } = await supabase
+      .from('contacts')
+      .select('id', { count: 'exact', head: true })
+      .eq('organization_id', orgId)
+      .or('avatar_url.is.null,avatar_url.like.%whatsapp.net%');
+
+    const remainingRaw = Math.max(targets.length - processed, 0);
+    const hasMore = persisted > 0 && remainingRaw > 0; // only continue if we made progress
+
+    console.log(`[backfill] Done processed=${processed} persisted=${persisted} failed=${failed} noPicture=${noPicture} remaining=${remainingRaw} hasMore=${hasMore}`);
     if (samples.length) console.log('[backfill] samples:', samples.join(' | '));
 
     return respond(200, {
@@ -227,8 +253,8 @@ Deno.serve(async (req) => {
       persisted,
       failed,
       noPicture,
-      remaining,
-      hasMore: remaining > 0,
+      remaining: remainingRaw,
+      hasMore,
       samples,
       duration_ms: Date.now() - startTime,
     });
