@@ -107,7 +107,39 @@ async function tryChatDetailsEndpoint(
 }
 
 /**
- * Run all 3 strategies for a single contact and return first hit.
+ * Strategy 0 (warm-up): POST /chat/check
+ * Forces UAZAPI to query WhatsApp servers for this number, validates it exists
+ * and triggers a fresh fetch of profile data (including the avatar) into UAZAPI's cache.
+ * This is the key step that allows /chat/details to return an image afterwards
+ * for contacts that were not previously cached.
+ */
+async function warmUpChatCheck(
+  baseUrl: string, token: string, numbers: string[], sample: Sample,
+): Promise<boolean> {
+  try {
+    const res = await fetchWithTimeout(`${baseUrl}/chat/check`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', token },
+      body: JSON.stringify({ numbers }),
+    }, 12000);
+    if (!res.ok) {
+      sample(`check:${res.status}`);
+      return false;
+    }
+    // Body is fire-and-forget for our purposes; UAZAPI will populate the cache async
+    await res.text().catch(() => '');
+    return true;
+  } catch (e) {
+    sample(`check-err:${String(e).slice(0, 30)}`);
+    return false;
+  }
+}
+
+/**
+ * Run strategies for a single contact:
+ *  1. /chat/details (after warm-up the cache should be populated)
+ *  2. /contact/profile-picture (some instances support it)
+ *  3. /contact/info (last resort)
  */
 async function fetchAvatarMultiStrategy(
   baseUrl: string,
@@ -115,25 +147,23 @@ async function fetchAvatarMultiStrategy(
   rawPhone: string,
   sample: Sample,
 ): Promise<{ url: string | null; name: string | null; strategyUsed: string }> {
-  // Detect LID (WhatsApp linked-id format)
   const isLid = rawPhone.includes('@lid') || rawPhone.length > 20;
   const formattedPhone = isLid ? rawPhone : ensureCountryCode(rawPhone);
-  // Some UAZAPI versions accept 'phone', others 'number' - matches zapi-contact-profile pattern
   const body = isLid ? { phone: formattedPhone } : { number: formattedPhone };
 
-  // Strategy 1: dedicated profile-picture endpoint (most reliable for live fetch)
-  const ppUrl = await tryProfilePictureEndpoint(baseUrl, token, body, sample);
-  if (ppUrl) return { url: ppUrl, name: null, strategyUsed: 'profile-picture' };
-
-  // Strategy 2: contact/info (also returns name)
-  const ci = await tryContactInfoEndpoint(baseUrl, token, body, sample);
-  if (ci.url) return { url: ci.url, name: ci.name, strategyUsed: 'contact-info' };
-
-  // Strategy 3: chat/details fallback (cache-only)
+  // Strategy 1: chat/details (now warmed up)
   const cd = await tryChatDetailsEndpoint(baseUrl, token, body, sample);
-  if (cd.url) return { url: cd.url, name: cd.name || ci.name, strategyUsed: 'chat-details' };
+  if (cd.url) return { url: cd.url, name: cd.name, strategyUsed: 'chat-details' };
 
-  return { url: null, name: ci.name || cd.name, strategyUsed: 'none' };
+  // Strategy 2: dedicated profile-picture endpoint
+  const ppUrl = await tryProfilePictureEndpoint(baseUrl, token, body, sample);
+  if (ppUrl) return { url: ppUrl, name: cd.name, strategyUsed: 'profile-picture' };
+
+  // Strategy 3: contact/info
+  const ci = await tryContactInfoEndpoint(baseUrl, token, body, sample);
+  if (ci.url) return { url: ci.url, name: ci.name || cd.name, strategyUsed: 'contact-info' };
+
+  return { url: null, name: cd.name || ci.name, strategyUsed: 'none' };
 }
 
 Deno.serve(async (req) => {
