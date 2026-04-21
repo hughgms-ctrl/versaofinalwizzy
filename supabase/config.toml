@@ -160,3 +160,6 @@ verify_jwt = false
 
 [functions.quiz-actions]
 verify_jwt = false
+
+[functions.backfill-contact-avatars]
+verify_jwt = false
