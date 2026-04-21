@@ -40,6 +40,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { AIFeedbackDialog } from './AIFeedbackDialog';
 import { ChatFollowUpDialog } from './ChatFollowUpDialog';
 import { useFollowUpStatus } from '@/hooks/useFollowUpStatus';
+import { ContactAvatar } from './ContactAvatar';
 
 interface ConversationDetailProps {
   conversation: DbConversation;
