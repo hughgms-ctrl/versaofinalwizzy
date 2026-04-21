@@ -131,16 +131,49 @@ Deno.serve(async (req) => {
         }
 
         const name = profileData.name || profileData.pushname || profileData.verifiedName || null;
-        const avatarUrl = avatarFromPicEndpoint || profileData.profilePicture || profileData.profileThumbnail || profileData.imgUrl || null;
+        const remoteAvatarUrl = avatarFromPicEndpoint || profileData.profilePicture || profileData.profileThumbnail || profileData.imgUrl || null;
 
-        if (contactId && (name || avatarUrl)) {
+        // Download the WhatsApp avatar (URLs expire) and persist to our Storage for a permanent URL
+        let persistedAvatarUrl: string | null = null;
+        if (remoteAvatarUrl && contactId) {
+            try {
+                const imgRes = await fetch(remoteAvatarUrl, {
+                    headers: { 'User-Agent': 'Mozilla/5.0' },
+                });
+                if (imgRes.ok) {
+                    const contentType = imgRes.headers.get('content-type') || 'image/jpeg';
+                    const ext = contentType.includes('png') ? 'png' : contentType.includes('webp') ? 'webp' : 'jpg';
+                    const bytes = new Uint8Array(await imgRes.arrayBuffer());
+                    // Cache-bust path so old CDN cache for the same contact doesn't stick
+                    const path = `${contactId}/${Date.now()}.${ext}`;
+                    const { error: upErr } = await supabase.storage
+                        .from('contact-avatars')
+                        .upload(path, bytes, { contentType, upsert: true, cacheControl: '604800' });
+                    if (!upErr) {
+                        const { data: pub } = supabase.storage.from('contact-avatars').getPublicUrl(path);
+                        persistedAvatarUrl = pub.publicUrl;
+                        console.log('Avatar persisted to storage:', persistedAvatarUrl);
+                    } else {
+                        console.warn('Avatar upload failed:', upErr.message);
+                    }
+                } else {
+                    console.warn('Avatar download failed:', imgRes.status);
+                }
+            } catch (e) {
+                console.warn('Avatar persist exception:', String(e));
+            }
+        }
+
+        const finalAvatarUrl = persistedAvatarUrl || remoteAvatarUrl;
+
+        if (contactId && (name || finalAvatarUrl)) {
             const updateData: any = {};
             if (name) updateData.name = name;
-            if (avatarUrl) updateData.avatar_url = avatarUrl;
+            if (finalAvatarUrl) updateData.avatar_url = finalAvatarUrl;
             await supabase.from('contacts').update(updateData).eq('id', contactId);
         }
 
-        return new Response(JSON.stringify({ success: true, name, avatarUrl, raw: profileData }), {
+        return new Response(JSON.stringify({ success: true, name, avatarUrl: finalAvatarUrl, raw: profileData }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
 

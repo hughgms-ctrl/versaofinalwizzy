@@ -16,9 +16,22 @@ interface ContactAvatarProps {
   autoRefetch?: boolean;
 }
 
-// Module-level set to avoid hammering the edge function for the same contact
-const refetchedContacts = new Set<string>();
+// Track in-flight refetches per contact to avoid duplicate calls,
+// but allow retrying again later (different src) instead of permanently blocking.
+const inflightRefetch = new Map<string, Promise<void>>();
 const failedUrls = new Set<string>();
+// Hosts whose URLs are temporary and expire (WhatsApp CDN). Anything else
+// (our own Supabase storage URL) is considered permanent.
+const TEMPORARY_HOSTS = ['pps.whatsapp.net', 'mmg.whatsapp.net', 'media.whatsapp.net'];
+function isTemporaryUrl(url?: string | null): boolean {
+  if (!url) return false;
+  try {
+    const u = new URL(url);
+    return TEMPORARY_HOSTS.some((h) => u.hostname.endsWith(h));
+  } catch {
+    return false;
+  }
+}
 
 function getInitials(name?: string | null, phone?: string | null) {
   if (name && name.trim()) {
@@ -64,33 +77,39 @@ export function ContactAvatar({
   const showImage = !!src && !errored && !failedUrls.has(src);
   const initials = getInitials(name, phone);
 
+  const triggerRefetch = () => {
+    if (!autoRefetch || !contactId || !session?.access_token) return;
+    if (inflightRefetch.has(contactId)) return;
+
+    const p = supabase.functions
+      .invoke('zapi-contact-profile', {
+        body: { contactId, instanceId: instanceId || undefined },
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+      .then(({ data }) => {
+        if (data?.avatarUrl) {
+          queryClient.invalidateQueries({ queryKey: ['conversations'] });
+          queryClient.invalidateQueries({ queryKey: ['contacts'] });
+        }
+      })
+      .catch(() => {
+        /* silent */
+      })
+      .finally(() => {
+        // Free the slot after a short cooldown so the same contact can be retried later
+        setTimeout(() => inflightRefetch.delete(contactId), 30_000);
+      });
+
+    inflightRefetch.set(contactId, p);
+  };
+
   const handleError = () => {
     if (src) failedUrls.add(src);
     setErrored(true);
-
-    // Try to refetch fresh profile picture (WhatsApp URLs expire)
-    if (
-      autoRefetch &&
-      contactId &&
-      session?.access_token &&
-      !refetchedContacts.has(contactId)
-    ) {
-      refetchedContacts.add(contactId);
-      supabase.functions
-        .invoke('zapi-contact-profile', {
-          body: { contactId, instanceId: instanceId || undefined },
-          headers: { Authorization: `Bearer ${session.access_token}` },
-        })
-        .then(({ data }) => {
-          if (data?.avatarUrl) {
-            // New URL - invalidate so UI re-renders with fresh src
-            queryClient.invalidateQueries({ queryKey: ['conversations'] });
-            queryClient.invalidateQueries({ queryKey: ['contacts'] });
-          }
-        })
-        .catch(() => {
-          /* silent */
-        });
+    // Only auto-refetch when the failed URL is a known-temporary WhatsApp URL.
+    // Permanent storage URLs that fail are likely transient network errors.
+    if (isTemporaryUrl(src)) {
+      triggerRefetch();
     }
   };
 
