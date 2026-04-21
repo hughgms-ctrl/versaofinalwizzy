@@ -372,18 +372,8 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
         } as any)
         .eq('id', conversation.id);
 
-      // Cancel any pending chat follow-ups for this conversation
-      await supabase
-        .from('flow_executions')
-        .update({
-          status: 'completed',
-          timeout_at: null,
-          completed_at: new Date().toISOString(),
-          error_message: 'Cancelled: AI deactivated by human agent',
-        } as any)
-        .eq('conversation_id', conversation.id)
-        .in('status', ['waiting_input', 'running'])
-        .eq('current_node_id', 'chat-follow-up');
+      // Cancel any pending follow-ups for this conversation (chat-follow-up node OR any active remarketing)
+      await cancelPendingFollowUps(conversation.id, 'Cancelled: AI deactivated by human agent');
 
       setAiPausedUntil('permanent');
       toast({
