@@ -265,7 +265,11 @@ Deno.serve(async (req) => {
       resolveIntegrationConfig(supabase, organizationId),
       supabase.from('agent_training_rules').select('*')
         .eq('organization_id', organizationId).eq('is_active', true),
+      supabase.from('agent_qualification_rules').select('*')
+        .eq('organization_id', organizationId).eq('is_active', true),
     ]);
+
+    const qualificationRules = (await Promise.resolve(undefined), null);
 
     const rawMessages = (messagesResult.data || []).reverse();
     const agents = agentsResult.data || [];
