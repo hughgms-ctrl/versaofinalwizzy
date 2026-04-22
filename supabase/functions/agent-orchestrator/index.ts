@@ -1563,7 +1563,40 @@ async function invokeAgentAI(
   }
 
   if (!shouldAdvance && hasNextNodes && autoAdvance) {
-    if (hasConfiguredOutcomes && inferredOutcome && !hasQuestionLikeReply) {
+    // SAFETY NET: clear rejection cue but no negative outcome configured.
+    // Do NOT fall back to default (= qualified path). Stop the flow and hand
+    // off to a human so the rejected lead is not pushed through qualification.
+    if (inferredOutcome === NEGATIVE_NO_HANDLE_SENTINEL) {
+      console.log('[AGENT] REJECTION DETECTED but no negative outcome handle on this node — stopping flow, switching to humano');
+      state.variables = { ...(state.variables || {}), ai_resultado: 'desqualificado' };
+      // Mark current flow execution as completed and clear handoff context
+      if (ctx.flowExecutionId) {
+        try {
+          await supabase.from('flow_executions').update({
+            status: 'completed',
+            variables: state.variables,
+            completed_at: new Date().toISOString(),
+          }).eq('id', ctx.flowExecutionId);
+          const { data: convData } = await supabase.from('conversations').select('metadata').eq('id', ctx.conversationId).single();
+          const metadata = { ...(convData?.metadata || {}) };
+          delete metadata.ai_handoff_context;
+          await supabase.from('conversations').update({ metadata, service_mode: 'humano' }).eq('id', ctx.conversationId);
+        } catch (e) {
+          console.error('[AGENT] Error stopping flow on rejection-without-handle:', e);
+        }
+      } else {
+        try {
+          await supabase.from('conversations').update({ service_mode: 'humano' }).eq('id', ctx.conversationId);
+        } catch (_e) { /* ignore */ }
+      }
+      shouldAdvance = false;
+      state.flow_completed = true;
+      toolsExecuted.push({
+        name: 'finalizar_interacao',
+        arguments: { resultado: 'desqualificado' },
+        result: { success: true, fallback: true, stopped_no_negative_handle: true },
+      });
+    } else if (hasConfiguredOutcomes && inferredOutcome && !hasQuestionLikeReply) {
       console.log(`[AGENT] FALLBACK: inferred outcome "${inferredOutcome}" from reply — advancing`);
       state.last_outcome = inferredOutcome;
       state.variables = { ...(state.variables || {}), ai_resultado: inferredOutcome };
@@ -2401,7 +2434,28 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
         !hasQuestionLikeReply &&
         hasExplicitCompletionCue(replyText);
 
-      if ((configuredOutcomes.length > 0 && inferredOutcome && !hasQuestionLikeReply) || shouldAdvanceWithoutOutcomes) {
+      // SAFETY NET: clear rejection cue but no negative outcome configured.
+      // Stop the flow and hand off to humano instead of falling into default.
+      if (inferredOutcome === NEGATIVE_NO_HANDLE_SENTINEL) {
+        console.log('[LEGACY] REJECTION DETECTED but no negative outcome handle — stopping flow, switching to humano');
+        const variables = { ...(flowExec.variables || {}), ai_resultado: 'desqualificado' };
+        try {
+          await supabase.from('flow_executions').update({
+            status: 'completed', variables, completed_at: new Date().toISOString(),
+          }).eq('id', ctx.flowExecutionId);
+          const { data: convData } = await supabase.from('conversations').select('metadata').eq('id', ctx.conversationId).single();
+          const metadata = { ...(convData?.metadata || {}) };
+          delete metadata.ai_handoff_context;
+          await supabase.from('conversations').update({ metadata, service_mode: 'humano' }).eq('id', ctx.conversationId);
+        } catch (e) {
+          console.error('[LEGACY] Error stopping flow on rejection-without-handle:', e);
+        }
+        toolsExecuted.push({
+          name: 'finalizar_interacao',
+          arguments: { resultado: 'desqualificado' },
+          result: { success: true, fallback: true, stopped_no_negative_handle: true },
+        });
+      } else if ((configuredOutcomes.length > 0 && inferredOutcome && !hasQuestionLikeReply) || shouldAdvanceWithoutOutcomes) {
         const resultado = inferredOutcome || 'concluido';
         console.log(`[LEGACY] FALLBACK: inferred completion with resultado="${resultado}" — force advancing`);
 
