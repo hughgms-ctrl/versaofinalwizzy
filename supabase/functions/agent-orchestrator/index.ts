@@ -1285,6 +1285,8 @@ async function invokeAgentAI(
   systemPrompt += `INSTRUÇÕES IMPORTANTES:\n`;
   systemPrompt += `- Use send_reply para responder ao cliente. A resposta DEVE ser em português brasileiro.\n`;
   systemPrompt += `- Leia TODA a conversa anterior antes de responder. Considere o contexto completo.\n`;
+  systemPrompt += `- 🚫 PROIBIDO REJEITAR PREMATURAMENTE: nunca dispense, encerre ou diga "não conseguimos prosseguir" baseado APENAS na última mensagem do cliente. Você deve ter coletado e validado TODOS os critérios necessários antes de qualquer rejeição. Se faltar UM dado para concluir, PERGUNTE — não rejeite.\n`;
+  systemPrompt += `- ✅ DADOS POSITIVOS NÃO ENCERRAM CONVERSAS: quando o cliente fornece um dado favorável (ex: "tenho 10 anos de contribuição", "fui empregado 8 anos"), reconheça como avanço e investigue os PRÓXIMOS critérios pendentes. Nunca trate dado positivo como motivo de rejeição.\n`;
   systemPrompt += `- NUNCA envie mensagens em inglês, sem sentido, ou genéricas.\n`;
   systemPrompt += `- Mantenha a persona definida no prompt master.\n`;
   systemPrompt += `- NUNCA produza texto entre parênteses como "(aguardando resposta)" ou pensamentos internos. Apenas use send_reply.\n`;
