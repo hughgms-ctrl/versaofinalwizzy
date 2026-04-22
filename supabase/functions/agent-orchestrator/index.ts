@@ -637,6 +637,7 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
   let shouldAdvance = false;
   let round = 0;
   let replySentViaTool = false;
+  let lastAgentConfig: ReturnType<typeof resolveAgentConfig> | null = null;
 
   while (round < 3) {
     round++;
@@ -1411,6 +1412,7 @@ async function invokeAgentAI(
     console.log(`--- Agent AI Round ${round} ---`);
 
     const agentConfig = resolveAgentConfig(ctx, agent, ctx.integrationConfig);
+    lastAgentConfig = agentConfig;
     const abortCtrl = new AbortController();
     const tid = setTimeout(() => abortCtrl.abort(), 25000);
     let aiResponse: Response;
@@ -1521,12 +1523,12 @@ async function invokeAgentAI(
     !hasQuestionLikeReply &&
     hasExplicitCompletionCue(replyText);
 
-  if ((!hasUserVisibleReply || isKnownGenericDetailFallback(replyText)) && !shouldAdvance && hasNextNodes) {
+  if ((!hasUserVisibleReply || isKnownGenericDetailFallback(replyText)) && !shouldAdvance && hasNextNodes && lastAgentConfig) {
     console.log('[AGENT] RECOVERY: no visible reply generated or generic fallback detected, attempting guided regeneration');
     const recoveredReply = await recoverVisibleReply({
-      endpoint: agentConfig.endpoint,
-      apiKey: agentConfig.apiKey,
-      model: agentConfig.model,
+      endpoint: lastAgentConfig.endpoint,
+      apiKey: lastAgentConfig.apiKey,
+      model: lastAgentConfig.model,
       aiMessages,
       logPrefix: '[AGENT]',
     });
