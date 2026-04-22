@@ -11,16 +11,34 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
-import { CheckSquare, Plus, Trash2, Pencil, Check, X, Loader2, ChevronDown, ChevronRight } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
+import { CheckSquare, Plus, Trash2, Pencil, Check, X, Loader2, ChevronDown, ChevronRight, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 
 interface Props {
   scope: QualificationScope;
   organizationId: string;
   scopeLabel?: string;
+  sourcePrompt?: string;
 }
 
-export function QualificationRulesPanel({ scope, organizationId, scopeLabel }: Props) {
+interface ExtractedRule {
+  label: string;
+  criteria: string;
+  selected: boolean;
+}
+
+export function QualificationRulesPanel({ scope, organizationId, scopeLabel, sourcePrompt }: Props) {
   const { data: rules = [], isLoading } = useQualificationRules(scope);
   const create = useCreateQualificationRule();
   const update = useUpdateQualificationRule();
@@ -34,6 +52,10 @@ export function QualificationRulesPanel({ scope, organizationId, scopeLabel }: P
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editLabel, setEditLabel] = useState('');
   const [editCriteria, setEditCriteria] = useState('');
+
+  const [extracting, setExtracting] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [extractedRules, setExtractedRules] = useState<ExtractedRule[] | null>(null);
 
   const handleCreate = () => {
     if (!newLabel.trim() || !newCriteria.trim()) return;
@@ -69,6 +91,62 @@ export function QualificationRulesPanel({ scope, organizationId, scopeLabel }: P
     );
   };
 
+  const handleExtract = async () => {
+    if (!sourcePrompt || !sourcePrompt.trim()) {
+      toast.error('Este nó não possui prompt para analisar.');
+      return;
+    }
+    setExtracting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('extract-qualification-rules', {
+        body: { prompt: sourcePrompt, organizationId },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      const found = (data?.rules || []) as { label: string; criteria: string }[];
+      if (found.length === 0) {
+        toast.info('Nenhum critério objetivo encontrado no prompt.');
+        return;
+      }
+      setExtractedRules(found.map(r => ({ ...r, selected: true })));
+    } catch (e: any) {
+      console.error(e);
+      toast.error(e?.message || 'Erro ao extrair regras');
+    } finally {
+      setExtracting(false);
+    }
+  };
+
+  const handleImportSelected = async () => {
+    if (!extractedRules) return;
+    const selected = extractedRules.filter(r => r.selected);
+    if (selected.length === 0) {
+      setExtractedRules(null);
+      return;
+    }
+    setImporting(true);
+    try {
+      let i = rules.length;
+      for (const r of selected) {
+        await create.mutateAsync({
+          scope,
+          organization_id: organizationId,
+          label: r.label,
+          criteria: r.criteria,
+          order: i++,
+        });
+      }
+      toast.success(`${selected.length} regra${selected.length === 1 ? '' : 's'} importada${selected.length === 1 ? '' : 's'}.`);
+      setExtractedRules(null);
+    } catch (e: any) {
+      toast.error(e?.message || 'Erro ao importar');
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const canExtract = !!sourcePrompt && sourcePrompt.trim().length > 10;
+
   return (
     <div className="rounded-lg border border-border bg-card overflow-hidden">
       <button
@@ -96,6 +174,22 @@ export function QualificationRulesPanel({ scope, organizationId, scopeLabel }: P
             {scopeLabel ? <> em <strong>{scopeLabel}</strong></> : null}.
             Se algum critério estiver pendente, a IA <strong>deve perguntar</strong> em vez de assumir o pior.
           </p>
+
+          {canExtract && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExtract}
+              disabled={extracting}
+              className="w-full border-primary/40 bg-primary/5 hover:bg-primary/10 text-foreground"
+            >
+              {extracting ? (
+                <><Loader2 className="h-3 w-3 mr-2 animate-spin" /> Analisando prompt...</>
+              ) : (
+                <><Sparkles className="h-3 w-3 mr-2 text-primary" /> Extrair regras do prompt com IA</>
+              )}
+            </Button>
+          )}
 
           {isLoading && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -209,6 +303,53 @@ export function QualificationRulesPanel({ scope, organizationId, scopeLabel }: P
           )}
         </div>
       )}
+
+      <Dialog open={!!extractedRules} onOpenChange={(open) => !open && setExtractedRules(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-primary" /> Regras encontradas no prompt
+            </DialogTitle>
+            <DialogDescription>
+              Marque as que você quer adicionar ao checklist. Você pode editá-las depois.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2 max-h-[50vh] overflow-y-auto">
+            {extractedRules?.map((r, idx) => (
+              <div
+                key={idx}
+                className="flex items-start gap-3 rounded-md border border-border bg-muted/20 p-3"
+              >
+                <Checkbox
+                  checked={r.selected}
+                  onCheckedChange={(v) => {
+                    setExtractedRules(prev => prev?.map((p, i) => i === idx ? { ...p, selected: !!v } : p) || null);
+                  }}
+                  className="mt-0.5"
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-foreground">{r.label}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{r.criteria}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setExtractedRules(null)} disabled={importing}>
+              Cancelar
+            </Button>
+            <Button onClick={handleImportSelected} disabled={importing || !extractedRules?.some(r => r.selected)}>
+              {importing ? (
+                <><Loader2 className="h-3 w-3 mr-2 animate-spin" /> Importando...</>
+              ) : (
+                <>Importar {extractedRules?.filter(r => r.selected).length || 0}</>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
