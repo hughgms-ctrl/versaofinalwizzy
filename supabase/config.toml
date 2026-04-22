@@ -166,3 +166,6 @@ verify_jwt = false
 
 [functions.debug-uazapi-strategy]
 verify_jwt = false
+
+[functions.extract-qualification-rules]
+verify_jwt = false
