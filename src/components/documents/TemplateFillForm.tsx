@@ -108,29 +108,18 @@ export function TemplateFillForm({ template, onBack, onGeneratedForSignature }: 
     }
   };
 
-  // Preview filled content
-  const filledContent = fields.reduce(
-    (text, field) => text.replace(
-      new RegExp(`\\{\\{${field.name}\\}\\}`, 'g'),
-      formData[field.name] || `[${field.label}]`
-    ),
-    template.content
-  );
+  // Preview filled content (HTML or plain)
+  const filledContent = useMemo(() => {
+    const sourceHtml = template.content_html || `<p>${(template.content || '').replace(/\n/g, '</p><p>')}</p>`;
+    return fillTemplate(sourceHtml, formData, fields);
+  }, [template, formData, fields]);
 
   const getInputType = (fieldType: string) => {
     switch (fieldType) {
-      case 'date': return 'date';
       case 'email': return 'email';
       case 'phone': return 'tel';
       case 'number': return 'number';
       default: return 'text';
-    }
-  };
-
-  const getInputMask = (fieldType: string) => {
-    switch (fieldType) {
-      case 'cpf': return '000.000.000-00';
-      default: return undefined;
     }
   };
 
