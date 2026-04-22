@@ -1676,6 +1676,9 @@ async function invokeDocumentAgentAI(
   }
   systemPrompt += `TAREFA: Coletar todos os dados necessários para preencher o documento/contrato.\n\n---\n\n`;
 
+  // ANÁLISE HOLÍSTICA — força leitura completa do histórico antes de qualquer ação
+  systemPrompt += buildHolisticAnalysisBlock();
+
   // 4. REGRAS APRENDIDAS (TREINAMENTO)
   const rulesSection = buildTrainingRulesSection(ctx.trainingRules, {
     agentId: agent?.id,
@@ -2834,6 +2837,9 @@ function buildLegacySystemPrompt(ctx: any): string {
 
   // 3.5. CONTEXTO TEMPORAL — injected so the AI can reason about relative dates
   prompt += buildTemporalContextBlock(ctx.organizationTimezone);
+
+  // 3.6. ANÁLISE HOLÍSTICA — força a IA a ler todo histórico antes de rejeitar
+  prompt += buildHolisticAnalysisBlock();
 
   // 4. REGRAS APRENDIDAS (TREINAMENTO) - Grouped and strictly followed
   const rulesSection = buildTrainingRulesSection(ctx.trainingRules, {
