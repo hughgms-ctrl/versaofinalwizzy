@@ -2754,6 +2754,32 @@ function buildHolisticAnalysisBlock(): string {
     `8. Sintetize o que sabe → identifique o que falta → faça a próxima pergunta. Esse é o ciclo correto.\n\n---\n\n`;
 }
 
+/**
+ * Bloco de checklist de qualificação por agente.
+ * Lista os critérios obrigatórios definidos pelo gestor — a IA deve validar
+ * TODOS antes de qualquer rejeição. Se algum estiver pendente, deve PERGUNTAR.
+ */
+function buildQualificationChecklistBlock(qualificationRules: any[], agentId?: string): string {
+  if (!qualificationRules || qualificationRules.length === 0) return '';
+  const filtered = agentId
+    ? qualificationRules.filter((r) => r.agent_id === agentId && r.is_active)
+    : qualificationRules.filter((r) => r.is_active);
+  if (filtered.length === 0) return '';
+
+  const sorted = [...filtered].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  let block = `# ✅ CHECKLIST DE QUALIFICAÇÃO (OBRIGATÓRIO):\n`;
+  block += `Antes de qualificar, rejeitar ou avançar, valide CADA item abaixo. Se faltar dado para qualquer um, PERGUNTE — nunca rejeite por omissão.\n\n`;
+  sorted.forEach((r, i) => {
+    block += `${i + 1}. **${r.label}**: ${r.criteria}\n`;
+  });
+  block += `\nREGRAS DE USO:\n`;
+  block += `- Marque mentalmente cada item como ✓ atendido, ✗ não atendido ou ? desconhecido com base no histórico.\n`;
+  block += `- Para itens "?", a próxima ação OBRIGATÓRIA é fazer uma pergunta ao cliente para descobrir.\n`;
+  block += `- Só conclua "qualificado" se TODOS estiverem ✓.\n`;
+  block += `- Só conclua "não qualificado" se houver pelo menos UM ✗ confirmado pelo próprio cliente — nunca por suposição.\n\n---\n\n`;
+  return block;
+}
+
 function inferOutcomeFromReply(reply: string | null, configuredOutcomes: string[]): string | null {
 
   if (!reply || configuredOutcomes.length === 0) return null;
