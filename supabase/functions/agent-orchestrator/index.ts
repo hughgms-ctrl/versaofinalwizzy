@@ -2284,24 +2284,35 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
             const configuredOutcomes = parseExpectedOutcomes(currentNodeObj?.data?.expectedOutcomes);
 
             let nextEdge: any = null;
+            let stopOnRejection = false;
             if (configuredOutcomes.length > 0) {
               // Try to match resultado to a configured outcome handle
               const outcomeHandle = `outcome-${resultado}`;
               nextEdge = edges.find((e: any) => e.source === currentNodeId && e.sourceHandle === outcomeHandle);
               if (!nextEdge) {
-                // Fallback to default handle
-                nextEdge = edges.find((e: any) => e.source === currentNodeId && e.sourceHandle === 'outcome-default');
+                // SAFETY NET: before falling back to default, check if the AI's
+                // reply was a rejection AND there is no negative outcome handle.
+                // If so, do NOT route through default (= qualified path).
+                const inferred = inferOutcomeFromReply(replyText, configuredOutcomes);
+                if (inferred === NEGATIVE_NO_HANDLE_SENTINEL) {
+                  console.log('[ORCHESTRATOR] finalizar_interacao with unmatched resultado AND rejection cue, but NO negative outcome handle — stopping flow');
+                  stopOnRejection = true;
+                } else {
+                  // Fallback to default handle
+                  nextEdge = edges.find((e: any) => e.source === currentNodeId && e.sourceHandle === 'outcome-default');
+                  if (!nextEdge) {
+                    // Last fallback: any edge from this node
+                    nextEdge = edges.find((e: any) => e.source === currentNodeId);
+                  }
+                }
               }
-              if (!nextEdge) {
-                // Last fallback: any edge from this node
-                nextEdge = edges.find((e: any) => e.source === currentNodeId);
-              }
-              console.log(`[ORCHESTRATOR] Outcome routing: resultado="${resultado}", matched handle="${nextEdge?.sourceHandle || 'none'}"`);
+              console.log(`[ORCHESTRATOR] Outcome routing: resultado="${resultado}", matched handle="${nextEdge?.sourceHandle || (stopOnRejection ? 'STOPPED-rejection' : 'none')}"`);
             } else {
               // No outcomes configured — use simple next edge (backward compatible)
               nextEdge = edges.find((e: any) => e.source === currentNodeId);
             }
-            const nextNodeId = nextEdge?.target || null;
+            const nextNodeId = stopOnRejection ? null : (nextEdge?.target || null);
+            const finalResultado = stopOnRejection ? 'desqualificado' : resultado;
 
             // Store the resultado in variables for condition nodes downstream
             const variables = { ...(flowExec.variables || {}), ai_resultado: resultado };
