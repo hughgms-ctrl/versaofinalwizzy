@@ -784,7 +784,7 @@ async function executeDocumentAction(
       } else {
         const { data: template } = await supabase
           .from('document_templates')
-          .select('name, content, fields')
+          .select('name, content, content_html, logo_url, fields')
           .eq('id', templateId)
           .single();
         if (template) {
