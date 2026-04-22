@@ -28,6 +28,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
 import { TrainingRulesList } from '@/components/agents/TrainingRulesList';
+import { QualificationRulesPanel } from '@/components/agents/QualificationRulesPanel';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 
 // Generate simple unique ID
@@ -1490,6 +1491,15 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
                 onCheckedChange={(checked) => handleChange('autoAdvance', checked)}
               />
             </div>
+
+            {/* Regras de qualificação específicas deste nó */}
+            {organizationId && flowId && (
+              <QualificationRulesPanel
+                scope={{ type: 'flow-node', flow_id: flowId, node_id: node.id }}
+                organizationId={organizationId}
+                scopeLabel="este nó do fluxo"
+              />
+            )}
 
             {/* Per-outcome pipeline mapping */}
             {(() => {

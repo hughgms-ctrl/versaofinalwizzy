@@ -516,7 +516,7 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
 
   // 3.6. ANÁLISE HOLÍSTICA + CHECKLIST DE QUALIFICAÇÃO
   systemPrompt += buildHolisticAnalysisBlock();
-  systemPrompt += buildQualificationChecklistBlock(qualificationRules, agent?.id);
+  systemPrompt += buildQualificationChecklistBlock(qualificationRules, agent?.id, flowId, agentNode?.id);
 
   // 4. REGRAS APRENDIDAS (TREINAMENTO)
   const rulesSection = buildTrainingRulesSection(trainingRules, {
@@ -1248,7 +1248,12 @@ async function invokeAgentAI(
   systemPrompt += buildHolisticAnalysisBlock();
 
   // 3.7. CHECKLIST DE QUALIFICAÇÃO — critérios obrigatórios definidos pelo gestor
-  systemPrompt += buildQualificationChecklistBlock(ctx.qualificationRules || [], agent?.id);
+  systemPrompt += buildQualificationChecklistBlock(
+    ctx.qualificationRules || [],
+    agent?.id,
+    ctx.resolvedFlowId || (ctx.masterPrompt as any)?.flow_id,
+    agentNode?.id,
+  );
 
   // 4. REGRAS APRENDIDAS (TREINAMENTO) - Grouped and prioritized
   const rulesSection = buildTrainingRulesSection(ctx.trainingRules, {
@@ -1694,7 +1699,12 @@ async function invokeDocumentAgentAI(
   systemPrompt += buildHolisticAnalysisBlock();
 
   // CHECKLIST DE QUALIFICAÇÃO — critérios obrigatórios do agente ativo
-  systemPrompt += buildQualificationChecklistBlock(ctx.qualificationRules || [], agent?.id);
+  systemPrompt += buildQualificationChecklistBlock(
+    ctx.qualificationRules || [],
+    agent?.id,
+    ctx.resolvedFlowId || (ctx.masterPrompt as any)?.flow_id,
+    docNode?.id,
+  );
 
   // 4. REGRAS APRENDIDAS (TREINAMENTO)
   const rulesSection = buildTrainingRulesSection(ctx.trainingRules, {
@@ -2771,15 +2781,31 @@ function buildHolisticAnalysisBlock(): string {
  * Lista os critérios obrigatórios definidos pelo gestor — a IA deve validar
  * TODOS antes de qualquer rejeição. Se algum estiver pendente, deve PERGUNTAR.
  */
-function buildQualificationChecklistBlock(qualificationRules: any[], agentId?: string): string {
+function buildQualificationChecklistBlock(
+  qualificationRules: any[],
+  agentId?: string,
+  flowId?: string | null,
+  nodeId?: string | null,
+): string {
   if (!qualificationRules || qualificationRules.length === 0) return '';
-  const filtered = agentId
-    ? qualificationRules.filter((r) => r.agent_id === agentId && r.is_active)
-    : qualificationRules.filter((r) => r.is_active);
+
+  // Regras específicas do nó atual no fluxo (mais específicas, prioritárias)
+  const flowNodeRules = (flowId && nodeId)
+    ? qualificationRules.filter((r) => r.flow_id === flowId && r.node_id === nodeId && r.is_active)
+    : [];
+
+  // Regras gerais do agente (fallback / regras globais do agente base)
+  const agentRules = agentId
+    ? qualificationRules.filter((r) => r.agent_id === agentId && !r.flow_id && r.is_active)
+    : [];
+
+  // Prioriza regras do fluxo. Se não houver, usa as do agente.
+  const filtered = flowNodeRules.length > 0 ? flowNodeRules : agentRules;
   if (filtered.length === 0) return '';
 
   const sorted = [...filtered].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-  let block = `# ✅ CHECKLIST DE QUALIFICAÇÃO (OBRIGATÓRIO):\n`;
+  const scopeLabel = flowNodeRules.length > 0 ? 'DESTE NÓ DO FLUXO' : 'DO AGENTE';
+  let block = `# ✅ CHECKLIST DE QUALIFICAÇÃO ${scopeLabel} (OBRIGATÓRIO):\n`;
   block += `Antes de qualificar, rejeitar ou avançar, valide CADA item abaixo. Se faltar dado para qualquer um, PERGUNTE — nunca rejeite por omissão.\n\n`;
   sorted.forEach((r, i) => {
     block += `${i + 1}. **${r.label}**: ${r.criteria}\n`;
@@ -2885,7 +2911,12 @@ function buildLegacySystemPrompt(ctx: any): string {
   prompt += buildHolisticAnalysisBlock();
 
   // 3.7. CHECKLIST DE QUALIFICAÇÃO — critérios obrigatórios do agente ativo
-  prompt += buildQualificationChecklistBlock(ctx.qualificationRules || [], activeAgent?.id);
+  prompt += buildQualificationChecklistBlock(
+    ctx.qualificationRules || [],
+    activeAgent?.id,
+    ctx.resolvedFlowId,
+    ctx.nodeId,
+  );
 
   // 4. REGRAS APRENDIDAS (TREINAMENTO) - Grouped and strictly followed
   const rulesSection = buildTrainingRulesSection(ctx.trainingRules, {
