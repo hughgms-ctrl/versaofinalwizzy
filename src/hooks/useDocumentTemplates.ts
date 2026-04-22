@@ -10,6 +10,8 @@ export interface DocumentTemplate {
   description: string | null;
   category: string | null;
   content: string;
+  content_html?: string | null;
+  logo_url?: string | null;
   fields: Array<{ name: string; label: string; type: string; required: boolean }>;
   original_file_url: string | null;
   folder_id: string | null;
@@ -49,6 +51,8 @@ export function useCreateDocumentTemplate() {
       description?: string;
       category?: string;
       content: string;
+      content_html?: string;
+      logo_url?: string | null;
       fields: any[];
       original_file_url?: string;
       auto_send_whatsapp?: boolean;
