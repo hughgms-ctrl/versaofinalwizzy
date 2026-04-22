@@ -252,7 +252,7 @@ Deno.serve(async (req) => {
       trainingRulesResult,
     ] = await Promise.all([
       supabase.from('messages').select('*').eq('conversation_id', conversationId)
-        .order('created_at', { ascending: false }).limit(50),
+        .order('created_at', { ascending: false }).limit(80),
       supabase.from('ai_agents').select('*').eq('organization_id', organizationId).eq('is_active', true),
       supabase.from('tags').select('*').eq('organization_id', organizationId),
       supabase.from('contact_tags').select('*, tag:tags(*)').eq('contact_id', contactId),
@@ -2723,6 +2723,24 @@ function buildTemporalContextBlock(timezone: string | null | undefined): string 
     `  • Se a data resultante já passou ou é hoje → mantenha o ano atual.\n` +
     `  • Se a data ainda não chegou neste ano e o contexto sugere passado → use o ano anterior.\n` +
     `  • Em dúvida, PERGUNTE o ano explicitamente em vez de assumir.\n\n---\n\n`;
+}
+
+/**
+ * Bloco crítico que força a IA a fazer leitura HOLÍSTICA do histórico
+ * antes de qualquer rejeição/dispensa. Resolve o problema da IA decidir
+ * com base apenas na última mensagem isolada, ignorando contexto anterior.
+ */
+function buildHolisticAnalysisBlock(): string {
+  return `# 🧠 ANÁLISE HOLÍSTICA OBRIGATÓRIA (LEIA ANTES DE RESPONDER):\n` +
+    `Antes de gerar QUALQUER resposta, você DEVE:\n` +
+    `1. Reler MENTALMENTE todo o histórico desta conversa (não apenas a última mensagem do cliente).\n` +
+    `2. Consolidar TODOS os dados já fornecidos pelo cliente em mensagens anteriores: idade, profissão, tempo de contribuição, doenças, documentos, datas, valores, vínculos, dependentes, cidade, etc.\n` +
+    `3. Tratar a última mensagem como UMA PEÇA do quebra-cabeça — não como o todo. Se o cliente respondeu "10 anos", entenda que é a resposta a uma pergunta sua anterior, e some isso ao que já foi coletado.\n` +
+    `4. Antes de concluir qualquer rejeição, desqualificação, encerramento ou frase do tipo "infelizmente não conseguimos prosseguir", verifique se você JÁ TEM informação suficiente para essa conclusão. Falta UM critério? PERGUNTE em vez de rejeitar.\n` +
+    `5. Critérios de qualificação geralmente exigem MÚLTIPLAS condições combinadas (ex: tempo de contribuição + qualidade de segurado + idade + carência). Avaliar UMA isoladamente é ERRO grave.\n` +
+    `6. Se o cliente forneceu um dado POSITIVO (ex: "tenho mais de 10 anos de contribuição"), reconheça isso como avanço e prossiga investigando os outros critérios — NÃO ignore e NÃO encerre.\n` +
+    `7. Se você não sabe se um critério está atendido, a regra é: PERGUNTE. NUNCA assuma que está reprovado por falta de informação.\n` +
+    `8. Sintetize o que sabe → identifique o que falta → faça a próxima pergunta. Esse é o ciclo correto.\n\n---\n\n`;
 }
 
 function inferOutcomeFromReply(reply: string | null, configuredOutcomes: string[]): string | null {
