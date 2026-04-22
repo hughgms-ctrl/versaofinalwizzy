@@ -11,6 +11,7 @@ import TableRow from "@tiptap/extension-table-row";
 import TableCell from "@tiptap/extension-table-cell";
 import TableHeader from "@tiptap/extension-table-header";
 import FontFamily from "@tiptap/extension-font-family";
+import { FontSize } from "./extensions/FontSize";
 import { useEffect, useRef } from "react";
 import {
   Bold,
@@ -87,6 +88,7 @@ export function RichTextEditor({ value, onChange, fields = [], organizationLogoU
       Underline,
       TextStyle,
       FontFamily.configure({ types: ["textStyle"] }),
+      FontSize,
       Color.configure({ types: ["textStyle"] }),
       Highlight.configure({ multicolor: true }),
       TextAlign.configure({ types: ["heading", "paragraph"] }),
@@ -203,18 +205,14 @@ export function RichTextEditor({ value, onChange, fields = [], organizationLogoU
               {FONT_SIZES.map((size) => (
                 <DropdownMenuItem
                   key={size}
-                  onClick={() => {
-                    // Use inline style via mark TextStyle
-                    editor
-                      .chain()
-                      .focus()
-                      .setMark("textStyle", { fontSize: size } as any)
-                      .run();
-                  }}
+                  onClick={() => editor.chain().focus().setFontSize(size).run()}
                 >
                   {size}
                 </DropdownMenuItem>
               ))}
+              <DropdownMenuItem onClick={() => editor.chain().focus().unsetFontSize().run()}>
+                Padrão
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
 

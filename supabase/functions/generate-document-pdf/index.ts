@@ -92,23 +92,59 @@ function sanitizeWinAnsi(text: string): string {
 }
 
 // ====================== Lightweight HTML → block parser ======================
-type InlineRun = { text: string; bold?: boolean; italic?: boolean };
+type InlineRun = {
+  text: string;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  strike?: boolean;
+  fontSize?: number; // in points
+};
 type Block =
   | { type: "p" | "h1" | "h2" | "h3"; runs: InlineRun[]; align?: "left" | "center" | "right" | "justify" }
   | { type: "li"; ordered: boolean; index: number; runs: InlineRun[] }
   | { type: "spacer"; height: number }
   | { type: "hr" };
 
+function parseFontSizeFromStyle(style: string | null | undefined): number | undefined {
+  if (!style) return undefined;
+  const m = /font-size\s*:\s*([\d.]+)\s*(px|pt|em|rem)?/i.exec(style);
+  if (!m) return undefined;
+  const value = parseFloat(m[1]);
+  const unit = (m[2] || "px").toLowerCase();
+  if (!Number.isFinite(value)) return undefined;
+  // Convert to points (PDF unit). 1pt = 1.333px, 1em ≈ 11pt baseline.
+  if (unit === "pt") return value;
+  if (unit === "px") return value * 0.75;
+  if (unit === "em" || unit === "rem") return value * 11;
+  return value;
+}
+
 function parseInlineRuns(html: string): InlineRun[] {
-  // Returns runs of text with bold/italic flags.
-  // Strategy: tokenize tags <b>, <strong>, <i>, <em>, <br>; ignore others.
+  // Tracks bold/italic/underline/strike depths and a font-size stack.
   const runs: InlineRun[] = [];
   let bold = 0;
   let italic = 0;
+  let underline = 0;
+  let strike = 0;
+  const fontSizeStack: Array<number | undefined> = [];
   let buf = "";
+  const currentFontSize = () => {
+    for (let i = fontSizeStack.length - 1; i >= 0; i--) {
+      if (fontSizeStack[i] !== undefined) return fontSizeStack[i];
+    }
+    return undefined;
+  };
   const flush = () => {
     if (buf.length === 0) return;
-    runs.push({ text: decodeHtmlEntities(buf), bold: bold > 0, italic: italic > 0 });
+    runs.push({
+      text: decodeHtmlEntities(buf),
+      bold: bold > 0,
+      italic: italic > 0,
+      underline: underline > 0,
+      strike: strike > 0,
+      fontSize: currentFontSize(),
+    });
     buf = "";
   };
   // Normalize <br> to newlines first
@@ -128,8 +164,25 @@ function parseInlineRuns(html: string): InlineRun[] {
         flush();
         italic += closing ? -1 : 1;
         if (italic < 0) italic = 0;
+      } else if (name === "u") {
+        flush();
+        underline += closing ? -1 : 1;
+        if (underline < 0) underline = 0;
+      } else if (name === "s" || name === "strike" || name === "del") {
+        flush();
+        strike += closing ? -1 : 1;
+        if (strike < 0) strike = 0;
+      } else if (name === "span" || name === "font") {
+        flush();
+        if (closing) {
+          fontSizeStack.pop();
+        } else {
+          const styleAttr = getAttr(tok, "style");
+          const size = parseFontSizeFromStyle(styleAttr);
+          fontSizeStack.push(size);
+        }
       }
-      // ignore other inline tags (u, span, a, etc.) - text inside still processed
+      // ignore other inline tags - text inside still processed
     } else {
       buf += tok;
     }
@@ -238,12 +291,14 @@ function pickFont(ctx: RenderCtx, bold?: boolean, italic?: boolean): PDFFont {
   return ctx.font;
 }
 
-function wrapRuns(ctx: RenderCtx, runs: InlineRun[], maxWidth: number, fontSize: number): { run: InlineRun; width: number }[][] {
-  // Tokenize each run by whitespace; wrap into lines preserving formatting
-  const lines: { run: InlineRun; width: number }[][] = [];
-  let currentLine: { run: InlineRun; width: number }[] = [];
+type LineToken = { run: InlineRun; width: number; size: number };
+
+function wrapRuns(ctx: RenderCtx, runs: InlineRun[], maxWidth: number, baseFontSize: number): LineToken[][] {
+  // Tokenize each run by whitespace; wrap into lines preserving formatting.
+  // Each run can have its own fontSize (in points), falling back to baseFontSize.
+  const lines: LineToken[][] = [];
+  let currentLine: LineToken[] = [];
   let currentWidth = 0;
-  const spaceWidthCache: Record<string, number> = {};
 
   const pushLine = () => {
     lines.push(currentLine);
@@ -253,6 +308,7 @@ function wrapRuns(ctx: RenderCtx, runs: InlineRun[], maxWidth: number, fontSize:
 
   for (const run of runs) {
     const fontRef = pickFont(ctx, run.bold, run.italic);
+    const size = run.fontSize && run.fontSize > 0 ? run.fontSize : baseFontSize;
     const cleanedText = sanitizeWinAnsi(run.text);
     // Split keeping newlines as line breaks
     const paragraphs = cleanedText.split("\n");
@@ -262,15 +318,15 @@ function wrapRuns(ctx: RenderCtx, runs: InlineRun[], maxWidth: number, fontSize:
       for (const token of tokens) {
         if (/^\s+$/.test(token)) {
           if (currentLine.length === 0) continue;
-          const sw = spaceWidthCache[`${run.bold}-${run.italic}`] ??= fontRef.widthOfTextAtSize(" ", fontSize);
+          const sw = fontRef.widthOfTextAtSize(" ", size);
           if (currentWidth + sw > maxWidth) {
             pushLine();
           } else {
-            currentLine.push({ run: { text: " ", bold: run.bold, italic: run.italic }, width: sw });
+            currentLine.push({ run: { ...run, text: " " }, width: sw, size });
             currentWidth += sw;
           }
         } else {
-          const w = fontRef.widthOfTextAtSize(token, fontSize);
+          const w = fontRef.widthOfTextAtSize(token, size);
           if (currentWidth + w > maxWidth && currentLine.length > 0) {
             pushLine();
           }
@@ -279,9 +335,9 @@ function wrapRuns(ctx: RenderCtx, runs: InlineRun[], maxWidth: number, fontSize:
             let buf = "";
             let bufW = 0;
             for (const ch of token) {
-              const cw = fontRef.widthOfTextAtSize(ch, fontSize);
+              const cw = fontRef.widthOfTextAtSize(ch, size);
               if (bufW + cw > maxWidth && buf.length > 0) {
-                currentLine.push({ run: { text: buf, bold: run.bold, italic: run.italic }, width: bufW });
+                currentLine.push({ run: { ...run, text: buf }, width: bufW, size });
                 pushLine();
                 buf = ch;
                 bufW = cw;
@@ -291,11 +347,11 @@ function wrapRuns(ctx: RenderCtx, runs: InlineRun[], maxWidth: number, fontSize:
               }
             }
             if (buf.length > 0) {
-              currentLine.push({ run: { text: buf, bold: run.bold, italic: run.italic }, width: bufW });
+              currentLine.push({ run: { ...run, text: buf }, width: bufW, size });
               currentWidth = bufW;
             }
           } else {
-            currentLine.push({ run: { text: token, bold: run.bold, italic: run.italic }, width: w });
+            currentLine.push({ run: { ...run, text: token }, width: w, size });
             currentWidth += w;
           }
         }
@@ -319,7 +375,17 @@ function ensureSpace(ctx: RenderCtx, needed: number): void {
   }
 }
 
-function drawTextLine(ctx: RenderCtx, line: { run: InlineRun; width: number }[], fontSize: number, lineHeight: number, align: "left" | "center" | "right" | "justify" = "left", color = rgb(0.1, 0.1, 0.1)) {
+function drawTextLine(
+  ctx: RenderCtx,
+  line: LineToken[],
+  baseFontSize: number,
+  baseLineHeight: number,
+  align: "left" | "center" | "right" | "justify" = "left",
+  color = rgb(0.1, 0.1, 0.1),
+) {
+  // Effective line height: respect the largest run size on this line.
+  const maxSize = line.reduce((m, t) => Math.max(m, t.size), baseFontSize);
+  const lineHeight = Math.max(baseLineHeight, maxSize * 1.4);
   ensureSpace(ctx, lineHeight);
   const totalWidth = line.reduce((s, t) => s + t.width, 0);
   let x = ctx.margin;
@@ -336,15 +402,34 @@ function drawTextLine(ctx: RenderCtx, line: { run: InlineRun; width: number }[],
     }
   }
 
+  // Baseline so larger text shares the same baseline as smaller runs.
+  const baselineY = ctx.y - maxSize;
+
   for (const tok of line) {
     const fontRef = pickFont(ctx, tok.run.bold, tok.run.italic);
     ctx.page.drawText(tok.run.text, {
       x,
-      y: ctx.y - fontSize,
-      size: fontSize,
+      y: baselineY,
+      size: tok.size,
       font: fontRef,
       color,
     });
+    if (tok.run.underline && tok.run.text.trim().length > 0) {
+      ctx.page.drawLine({
+        start: { x, y: baselineY - 1 },
+        end: { x: x + tok.width, y: baselineY - 1 },
+        thickness: Math.max(0.5, tok.size / 18),
+        color,
+      });
+    }
+    if (tok.run.strike && tok.run.text.trim().length > 0) {
+      ctx.page.drawLine({
+        start: { x, y: baselineY + tok.size * 0.32 },
+        end: { x: x + tok.width, y: baselineY + tok.size * 0.32 },
+        thickness: Math.max(0.5, tok.size / 18),
+        color,
+      });
+    }
     x += tok.width + (align === "justify" && tok.run.text === " " ? extraSpaceWidth : 0);
   }
   ctx.y -= lineHeight;
