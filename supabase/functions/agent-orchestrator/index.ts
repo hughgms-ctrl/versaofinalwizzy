@@ -2675,11 +2675,17 @@ function inferOutcomeFromReply(reply: string | null, configuredOutcomes: string[
     return /(qualif|aprov|prosseguir|seguir|continuar|concluido)/.test(normalizedOutcome);
   });
 
-  const hasNegativeCue = /(infelizmente|nao\s+sera\s+possivel|nao\s+poderemos|nao\s+podemos\s+prosseguir|nao\s+atende|nao\s+cumpre|encerrar\s+o\s+atendimento|encerrar\s+atendimento)/.test(normalizedReply);
+  const hasNegativeCue = /(infelizmente|nao\s+sera\s+possivel|nao\s+poderemos|nao\s+podemos\s+prosseguir|nao\s+atende|nao\s+cumpre|nao\s+conseguimos\s+prosseguir|nao\s+conseguiremos\s+prosseguir|nao\s+podemos\s+seguir|fora\s+dos\s+criterios|nao\s+se\s+enquadra|nao\s+atende\s+aos\s+requisitos|encerrar\s+o\s+atendimento|encerrar\s+atendimento|encerrar\s+a\s+interacao|ja\s+possui\s+advogado|ja\s+tem\s+advogado|nunca\s+contribuiu|sem\s+contribuicao|pelas\s+regras\s+do\s+inss\s+nao)/.test(normalizedReply);
   if (hasNegativeCue && negativeOutcome) return negativeOutcome;
 
   const hasPositiveCue = /(podemos\s+seguir|vamos\s+seguir|proxima\s+etapa|proximo\s+passo|dar\s+continuidade|encaminhar\s+para\s+proxima\s+etapa|seguiremos\s+com\s+o\s+atendimento)/.test(normalizedReply);
   if (hasPositiveCue && positiveOutcome) return positiveOutcome;
+
+  // SAFETY NET: clear rejection cue, but the node has NO negative outcome
+  // configured. Returning null here would let the caller fall back to the
+  // default handle (= qualified path). Return a sentinel so the caller can
+  // stop the flow instead of routing the rejected lead through qualification.
+  if (hasNegativeCue && !negativeOutcome) return NEGATIVE_NO_HANDLE_SENTINEL;
 
   return null;
 }
