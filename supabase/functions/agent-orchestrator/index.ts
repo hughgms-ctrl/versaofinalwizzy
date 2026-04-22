@@ -252,7 +252,7 @@ Deno.serve(async (req) => {
       trainingRulesResult,
     ] = await Promise.all([
       supabase.from('messages').select('*').eq('conversation_id', conversationId)
-        .order('created_at', { ascending: false }).limit(50),
+        .order('created_at', { ascending: false }).limit(80),
       supabase.from('ai_agents').select('*').eq('organization_id', organizationId).eq('is_active', true),
       supabase.from('tags').select('*').eq('organization_id', organizationId),
       supabase.from('contact_tags').select('*, tag:tags(*)').eq('contact_id', contactId),
@@ -1235,6 +1235,9 @@ async function invokeAgentAI(
   // 3.5. CONTEXTO TEMPORAL — injected so the AI can reason about relative dates
   systemPrompt += buildTemporalContextBlock(ctx.organizationTimezone);
 
+  // 3.6. ANÁLISE HOLÍSTICA — força a IA a ler todo histórico antes de rejeitar
+  systemPrompt += buildHolisticAnalysisBlock();
+
   // 4. REGRAS APRENDIDAS (TREINAMENTO) - Grouped and prioritized
   const rulesSection = buildTrainingRulesSection(ctx.trainingRules, {
     agentId: agent?.id, 
@@ -1282,6 +1285,8 @@ async function invokeAgentAI(
   systemPrompt += `INSTRUÇÕES IMPORTANTES:\n`;
   systemPrompt += `- Use send_reply para responder ao cliente. A resposta DEVE ser em português brasileiro.\n`;
   systemPrompt += `- Leia TODA a conversa anterior antes de responder. Considere o contexto completo.\n`;
+  systemPrompt += `- 🚫 PROIBIDO REJEITAR PREMATURAMENTE: nunca dispense, encerre ou diga "não conseguimos prosseguir" baseado APENAS na última mensagem do cliente. Você deve ter coletado e validado TODOS os critérios necessários antes de qualquer rejeição. Se faltar UM dado para concluir, PERGUNTE — não rejeite.\n`;
+  systemPrompt += `- ✅ DADOS POSITIVOS NÃO ENCERRAM CONVERSAS: quando o cliente fornece um dado favorável (ex: "tenho 10 anos de contribuição", "fui empregado 8 anos"), reconheça como avanço e investigue os PRÓXIMOS critérios pendentes. Nunca trate dado positivo como motivo de rejeição.\n`;
   systemPrompt += `- NUNCA envie mensagens em inglês, sem sentido, ou genéricas.\n`;
   systemPrompt += `- Mantenha a persona definida no prompt master.\n`;
   systemPrompt += `- NUNCA produza texto entre parênteses como "(aguardando resposta)" ou pensamentos internos. Apenas use send_reply.\n`;
@@ -1672,6 +1677,9 @@ async function invokeDocumentAgentAI(
     systemPrompt += `INSTRUÇÕES ESPECÍFICAS DO OPERADOR:\n${cleanPrompt(additionalInstructions)}\n`;
   }
   systemPrompt += `TAREFA: Coletar todos os dados necessários para preencher o documento/contrato.\n\n---\n\n`;
+
+  // ANÁLISE HOLÍSTICA — força leitura completa do histórico antes de qualquer ação
+  systemPrompt += buildHolisticAnalysisBlock();
 
   // 4. REGRAS APRENDIDAS (TREINAMENTO)
   const rulesSection = buildTrainingRulesSection(ctx.trainingRules, {
@@ -2725,6 +2733,24 @@ function buildTemporalContextBlock(timezone: string | null | undefined): string 
     `  • Em dúvida, PERGUNTE o ano explicitamente em vez de assumir.\n\n---\n\n`;
 }
 
+/**
+ * Bloco crítico que força a IA a fazer leitura HOLÍSTICA do histórico
+ * antes de qualquer rejeição/dispensa. Resolve o problema da IA decidir
+ * com base apenas na última mensagem isolada, ignorando contexto anterior.
+ */
+function buildHolisticAnalysisBlock(): string {
+  return `# 🧠 ANÁLISE HOLÍSTICA OBRIGATÓRIA (LEIA ANTES DE RESPONDER):\n` +
+    `Antes de gerar QUALQUER resposta, você DEVE:\n` +
+    `1. Reler MENTALMENTE todo o histórico desta conversa (não apenas a última mensagem do cliente).\n` +
+    `2. Consolidar TODOS os dados já fornecidos pelo cliente em mensagens anteriores: idade, profissão, tempo de contribuição, doenças, documentos, datas, valores, vínculos, dependentes, cidade, etc.\n` +
+    `3. Tratar a última mensagem como UMA PEÇA do quebra-cabeça — não como o todo. Se o cliente respondeu "10 anos", entenda que é a resposta a uma pergunta sua anterior, e some isso ao que já foi coletado.\n` +
+    `4. Antes de concluir qualquer rejeição, desqualificação, encerramento ou frase do tipo "infelizmente não conseguimos prosseguir", verifique se você JÁ TEM informação suficiente para essa conclusão. Falta UM critério? PERGUNTE em vez de rejeitar.\n` +
+    `5. Critérios de qualificação geralmente exigem MÚLTIPLAS condições combinadas (ex: tempo de contribuição + qualidade de segurado + idade + carência). Avaliar UMA isoladamente é ERRO grave.\n` +
+    `6. Se o cliente forneceu um dado POSITIVO (ex: "tenho mais de 10 anos de contribuição"), reconheça isso como avanço e prossiga investigando os outros critérios — NÃO ignore e NÃO encerre.\n` +
+    `7. Se você não sabe se um critério está atendido, a regra é: PERGUNTE. NUNCA assuma que está reprovado por falta de informação.\n` +
+    `8. Sintetize o que sabe → identifique o que falta → faça a próxima pergunta. Esse é o ciclo correto.\n\n---\n\n`;
+}
+
 function inferOutcomeFromReply(reply: string | null, configuredOutcomes: string[]): string | null {
 
   if (!reply || configuredOutcomes.length === 0) return null;
@@ -2813,6 +2839,9 @@ function buildLegacySystemPrompt(ctx: any): string {
 
   // 3.5. CONTEXTO TEMPORAL — injected so the AI can reason about relative dates
   prompt += buildTemporalContextBlock(ctx.organizationTimezone);
+
+  // 3.6. ANÁLISE HOLÍSTICA — força a IA a ler todo histórico antes de rejeitar
+  prompt += buildHolisticAnalysisBlock();
 
   // 4. REGRAS APRENDIDAS (TREINAMENTO) - Grouped and strictly followed
   const rulesSection = buildTrainingRulesSection(ctx.trainingRules, {
