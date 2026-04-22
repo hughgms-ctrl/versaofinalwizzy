@@ -105,6 +105,7 @@ export function RichTextEditor({ value, onChange, fields = [], organizationLogoU
     editorProps: {
       attributes: {
         class: "tiptap-paper focus:outline-none",
+        lang: "pt-BR",
       },
     },
   });
@@ -456,11 +457,11 @@ export function RichTextEditor({ value, onChange, fields = [], organizationLogoU
         </div>
 
         {/* Paper area — always white */}
-        <div className="bg-muted/30 dark:bg-muted/10 p-4 sm:p-6 max-h-[70vh] overflow-y-auto">
+        <div className="bg-muted/30 dark:bg-muted/10 p-4 sm:p-6 max-h-[70vh] overflow-auto">
           <div
             className={cn(
-              "mx-auto bg-white text-black shadow-md",
-              "max-w-[21cm] min-h-[29.7cm]",
+              "mx-auto w-[21cm] min-w-[21cm] bg-white text-black shadow-md",
+              "min-h-[29.7cm]",
               "px-[2.5cm] py-[2.5cm]",
             )}
             style={{ fontFamily: "Arial, sans-serif", fontSize: "12pt", lineHeight: 1.6 }}
