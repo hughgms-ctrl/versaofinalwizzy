@@ -1684,8 +1684,7 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
           </div>
         );
 
-      case 'action-transfer':
-      case 'orch-human': {
+      case 'action-transfer': {
         const notifyUserIds = (localData.notifyUserIds as string[]) || [];
         const toggleNotifyUser = (userId: string) => {
           const next = notifyUserIds.includes(userId)
