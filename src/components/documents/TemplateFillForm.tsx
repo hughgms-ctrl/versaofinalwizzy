@@ -49,31 +49,16 @@ export function TemplateFillForm({ template, onBack, onGeneratedForSignature }: 
 
     setGenerating(true);
     try {
-      // Upload logo if present
-      let logoUrl: string | null = null;
-      if (logoFile) {
-        const safeName = logoFile.name
-          .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-          .replace(/[^a-zA-Z0-9._-]/g, '_');
-        const logoPath = `${profile.organization_id}/logos/${Date.now()}-${safeName}`;
-        const { error: uploadError } = await supabase.storage
-          .from('contact-files')
-          .upload(logoPath, logoFile);
-        if (uploadError) throw uploadError;
-
-        const { data: urlData } = supabase.storage
-          .from('contact-files')
-          .getPublicUrl(logoPath);
-        logoUrl = urlData.publicUrl;
-      }
-
-      // Call PDF generation edge function
+      // Call PDF generation edge function (logo comes from template/org)
       const { data, error } = await supabase.functions.invoke('generate-document-pdf', {
         body: {
           template_content: template.content,
+          template_html: template.content_html,
+          template_fields: fields,
           filled_data: formData,
           document_name: documentName,
-          logo_url: logoUrl,
+          logo_url: template.logo_url || null,
+          template_id: template.id,
         },
       });
 
