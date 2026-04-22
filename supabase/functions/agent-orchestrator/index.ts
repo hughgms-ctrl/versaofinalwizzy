@@ -2589,6 +2589,52 @@ function hasExplicitCompletionCue(reply: string | null): boolean {
   return /\b(concluido|concluida|conclui|concluimos|encerrado|encerrada|encerramos|finalizado|finalizada|finalizei|encaminhando|proxima etapa|proximo passo)\b/.test(normalized);
 }
 
+// Sentinel returned by inferOutcomeFromReply when the AI clearly rejected the
+// lead but the current node has NO negative outcome handle configured. The
+// caller MUST treat this as "stop the flow" instead of falling back to the
+// default (qualified) handle.
+const NEGATIVE_NO_HANDLE_SENTINEL = '__NEGATIVE_NO_HANDLE__';
+
+/**
+ * Builds a temporal context block to inject into the system prompt so the AI
+ * can correctly reason about relative dates ("ano passado", "mês passado",
+ * "DD de MMMM" without a year) using the organization's timezone.
+ */
+function buildTemporalContextBlock(timezone: string | null | undefined): string {
+  const tz = timezone && typeof timezone === 'string' ? timezone : 'America/Sao_Paulo';
+  let dateStr = '';
+  let yearStr = '';
+  try {
+    const now = new Date();
+    const dateFmt = new Intl.DateTimeFormat('pt-BR', {
+      timeZone: tz,
+      weekday: 'long',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    dateStr = dateFmt.format(now);
+    const yearFmt = new Intl.DateTimeFormat('pt-BR', { timeZone: tz, year: 'numeric' });
+    yearStr = yearFmt.format(now);
+  } catch (_e) {
+    const now = new Date();
+    dateStr = now.toISOString();
+    yearStr = String(now.getUTCFullYear());
+  }
+
+  return `# CONTEXTO TEMPORAL (CRÍTICO):\n` +
+    `- Data e hora atual: ${dateStr} (fuso ${tz})\n` +
+    `- Ano atual: ${yearStr}\n` +
+    `- Use estas informações para calcular datas relativas ("ano passado", "mês passado", "semana passada") SEMPRE em relação à data atual acima, NUNCA em relação a outras datas mencionadas na conversa.\n` +
+    `- Quando o cliente disser apenas "DD de MMMM" sem ano:\n` +
+    `  • Se a data resultante já passou ou é hoje → mantenha o ano atual.\n` +
+    `  • Se a data ainda não chegou neste ano e o contexto sugere passado → use o ano anterior.\n` +
+    `  • Em dúvida, PERGUNTE o ano explicitamente em vez de assumir.\n\n---\n\n`;
+}
+
 function inferOutcomeFromReply(reply: string | null, configuredOutcomes: string[]): string | null {
 
   if (!reply || configuredOutcomes.length === 0) return null;
