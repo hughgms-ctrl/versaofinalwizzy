@@ -53,8 +53,8 @@ export function TemplateFillForm({ template, onBack, onGeneratedForSignature }: 
       const { data, error } = await supabase.functions.invoke('generate-document-pdf', {
         body: {
           template_content: template.content,
-          template_html: template.content_html,
-          template_fields: fields,
+          template_content_html: template.content_html,
+          fields,
           filled_data: formData,
           document_name: documentName,
           logo_url: template.logo_url || null,
