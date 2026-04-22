@@ -877,15 +877,126 @@ async function executeTransfer(
 ): Promise<NodeResult> {
   try {
     const departmentId = String(data.departmentId || '');
+    const assignedUserId = String(data.assignedUserId || '');
+    const notifyUserIds = Array.isArray(data.notifyUserIds) ? (data.notifyUserIds as string[]) : [];
+    const notifyMessageTemplate = String(data.notifyMessage || '').trim();
+
+    // 1) Update conversation: switch to human mode and apply assignment/department
     const updateData: Record<string, unknown> = { service_mode: 'humano' };
     if (departmentId) updateData.department_id = departmentId;
+    if (assignedUserId) updateData.assigned_to = assignedUserId;
 
     await supabase.from('conversations').update(updateData).eq('id', context.conversationId);
-    console.log('[FLOW EXECUTE] Transferred to human');
-    return { success: true, metadata: { transferred: true, departmentId } };
+    console.log('[FLOW EXECUTE] Transferred to human', { assignedUserId, departmentId, notifyCount: notifyUserIds.length });
+
+    // 2) Send WhatsApp notifications to selected users (best-effort, non-blocking failures)
+    if (notifyUserIds.length > 0) {
+      try {
+        await notifyHumanEscalation({
+          supabase,
+          context,
+          notifyUserIds,
+          assignedUserId,
+          messageTemplate: notifyMessageTemplate,
+        });
+      } catch (notifyError) {
+        console.error('[FLOW EXECUTE] Notification error (non-fatal):', notifyError);
+      }
+    }
+
+    return { success: true, metadata: { transferred: true, departmentId, assignedUserId, notifiedUsers: notifyUserIds.length } };
   } catch (error) {
     console.error('[FLOW EXECUTE] Transfer error:', error);
     return { success: false, error: String(error) };
+  }
+}
+
+// Send WhatsApp notifications to selected internal users about a human escalation
+async function notifyHumanEscalation({
+  supabase,
+  context,
+  notifyUserIds,
+  assignedUserId,
+  messageTemplate,
+}: {
+  supabase: SupabaseClientType;
+  context: ExecutionContext;
+  notifyUserIds: string[];
+  assignedUserId: string;
+  messageTemplate: string;
+}): Promise<void> {
+  // Resolve contact info
+  const { data: contact } = await supabase
+    .from('contacts')
+    .select('name, phone')
+    .eq('id', context.contactId)
+    .maybeSingle();
+
+  const contactName = contact?.name || contact?.phone || context.contactPhone || 'Contato';
+  const contactPhone = contact?.phone || context.contactPhone || '';
+
+  // Resolve assignee name (if any)
+  let assigneeName = 'Fila';
+  if (assignedUserId) {
+    const { data: assigneeProfile } = await supabase
+      .from('profiles')
+      .select('full_name')
+      .eq('user_id', assignedUserId)
+      .maybeSingle();
+    if (assigneeProfile?.full_name) assigneeName = assigneeProfile.full_name;
+  }
+
+  // Resolve recipient profiles (need phone numbers)
+  const { data: recipients } = await supabase
+    .from('profiles')
+    .select('user_id, full_name, phone')
+    .in('user_id', notifyUserIds);
+
+  const validRecipients = (recipients || []).filter((p: { phone: string | null }) => !!p.phone);
+  if (validRecipients.length === 0) {
+    console.log('[FLOW EXECUTE] No recipients with phone for notification');
+    return;
+  }
+
+  // Get active WhatsApp instance for this org
+  const { data: instance } = await supabase
+    .from('whatsapp_instances')
+    .select('zapi_token, name')
+    .eq('organization_id', context.organizationId)
+    .eq('is_active', true)
+    .maybeSingle();
+
+  if (!instance?.zapi_token) {
+    console.log('[FLOW EXECUTE] No active WhatsApp instance for notifications');
+    return;
+  }
+
+  const uazapiBase = (Deno.env.get('UAZAPI_BASE_URL') || '').replace(/\/$/, '');
+  if (!uazapiBase) {
+    console.log('[FLOW EXECUTE] UAZAPI_BASE_URL not configured');
+    return;
+  }
+
+  const defaultTemplate = '🔔 Novo lead aguardando atendimento humano\n\n👤 *{nome}*\n📱 {telefone}\n👨‍💼 Atendente: {atendente}';
+  const template = messageTemplate || defaultTemplate;
+  const message = template
+    .replaceAll('{nome}', contactName)
+    .replaceAll('{telefone}', contactPhone)
+    .replaceAll('{atendente}', assigneeName);
+
+  for (const recipient of validRecipients) {
+    const normalized = String(recipient.phone || '').replace(/\D/g, '');
+    if (!normalized) continue;
+    try {
+      const res = await fetch(`${uazapiBase}/send/text`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', token: instance.zapi_token },
+        body: JSON.stringify({ number: normalized, text: message }),
+      });
+      console.log('[FLOW EXECUTE] Notification sent to', recipient.full_name, '->', res.status);
+    } catch (err) {
+      console.error('[FLOW EXECUTE] Notification send failed for', recipient.full_name, err);
+    }
   }
 }
 
