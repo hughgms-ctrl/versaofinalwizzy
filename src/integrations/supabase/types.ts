@@ -2411,6 +2411,7 @@ export type Database = {
           auto_send_whatsapp: boolean | null
           category: string | null
           content: string
+          content_html: string | null
           created_at: string
           created_by: string | null
           default_signing_method: string | null
@@ -2418,6 +2419,7 @@ export type Database = {
           fields: Json
           folder_id: string | null
           id: string
+          logo_url: string | null
           name: string
           organization_id: string
           original_file_url: string | null
@@ -2428,6 +2430,7 @@ export type Database = {
           auto_send_whatsapp?: boolean | null
           category?: string | null
           content?: string
+          content_html?: string | null
           created_at?: string
           created_by?: string | null
           default_signing_method?: string | null
@@ -2435,6 +2438,7 @@ export type Database = {
           fields?: Json
           folder_id?: string | null
           id?: string
+          logo_url?: string | null
           name: string
           organization_id: string
           original_file_url?: string | null
@@ -2445,6 +2449,7 @@ export type Database = {
           auto_send_whatsapp?: boolean | null
           category?: string | null
           content?: string
+          content_html?: string | null
           created_at?: string
           created_by?: string | null
           default_signing_method?: string | null
@@ -2452,6 +2457,7 @@ export type Database = {
           fields?: Json
           folder_id?: string | null
           id?: string
+          logo_url?: string | null
           name?: string
           organization_id?: string
           original_file_url?: string | null

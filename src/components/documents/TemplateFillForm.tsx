@@ -1,15 +1,17 @@
-import { useState } from 'react';
-import { ArrowLeft, Loader2, FileDown, Image as ImageIcon, X, FileSignature } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { ArrowLeft, Loader2, FileDown, FileSignature } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { DatePicker } from '@/components/ui/date-picker';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { DocumentTemplate } from '@/hooks/useDocumentTemplates';
 import { useQueryClient } from '@tanstack/react-query';
+import { fillTemplate } from '@/lib/documentFormatters';
 
 interface TemplateFillFormProps {
   template: DocumentTemplate;
@@ -23,29 +25,12 @@ export function TemplateFillForm({ template, onBack, onGeneratedForSignature }: 
   const queryClient = useQueryClient();
   const [formData, setFormData] = useState<Record<string, string>>({});
   const [documentName, setDocumentName] = useState(template.name);
-  const [logoFile, setLogoFile] = useState<File | null>(null);
-  const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
 
   const fields = (template.fields || []) as Array<{ name: string; label: string; type: string; required: boolean }>;
 
   const handleFieldChange = (fieldName: string, value: string) => {
     setFormData(prev => ({ ...prev, [fieldName]: value }));
-  };
-
-  const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setLogoFile(file);
-      const reader = new FileReader();
-      reader.onload = (ev) => setLogoPreview(ev.target?.result as string);
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const removeLogo = () => {
-    setLogoFile(null);
-    setLogoPreview(null);
   };
 
   const handleGenerate = async (advanceToSignature = false) => {
@@ -64,31 +49,16 @@ export function TemplateFillForm({ template, onBack, onGeneratedForSignature }: 
 
     setGenerating(true);
     try {
-      // Upload logo if present
-      let logoUrl: string | null = null;
-      if (logoFile) {
-        const safeName = logoFile.name
-          .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-          .replace(/[^a-zA-Z0-9._-]/g, '_');
-        const logoPath = `${profile.organization_id}/logos/${Date.now()}-${safeName}`;
-        const { error: uploadError } = await supabase.storage
-          .from('contact-files')
-          .upload(logoPath, logoFile);
-        if (uploadError) throw uploadError;
-
-        const { data: urlData } = supabase.storage
-          .from('contact-files')
-          .getPublicUrl(logoPath);
-        logoUrl = urlData.publicUrl;
-      }
-
-      // Call PDF generation edge function
+      // Call PDF generation edge function (logo comes from template/org)
       const { data, error } = await supabase.functions.invoke('generate-document-pdf', {
         body: {
           template_content: template.content,
+          template_html: template.content_html,
+          template_fields: fields,
           filled_data: formData,
           document_name: documentName,
-          logo_url: logoUrl,
+          logo_url: template.logo_url || null,
+          template_id: template.id,
         },
       });
 
@@ -138,29 +108,18 @@ export function TemplateFillForm({ template, onBack, onGeneratedForSignature }: 
     }
   };
 
-  // Preview filled content
-  const filledContent = fields.reduce(
-    (text, field) => text.replace(
-      new RegExp(`\\{\\{${field.name}\\}\\}`, 'g'),
-      formData[field.name] || `[${field.label}]`
-    ),
-    template.content
-  );
+  // Preview filled content (HTML or plain)
+  const filledContent = useMemo(() => {
+    const sourceHtml = template.content_html || `<p>${(template.content || '').replace(/\n/g, '</p><p>')}</p>`;
+    return fillTemplate(sourceHtml, formData, fields);
+  }, [template, formData, fields]);
 
   const getInputType = (fieldType: string) => {
     switch (fieldType) {
-      case 'date': return 'date';
       case 'email': return 'email';
       case 'phone': return 'tel';
       case 'number': return 'number';
       default: return 'text';
-    }
-  };
-
-  const getInputMask = (fieldType: string) => {
-    switch (fieldType) {
-      case 'cpf': return '000.000.000-00';
-      default: return undefined;
     }
   };
 
@@ -193,32 +152,14 @@ export function TemplateFillForm({ template, onBack, onGeneratedForSignature }: 
                 />
               </div>
 
-              <div>
-                <Label>Logo (cabeçalho do documento)</Label>
-                {logoPreview ? (
-                  <div className="mt-1 flex items-center gap-3 p-3 border rounded-lg">
-                    <img
-                      src={logoPreview}
-                      alt="Logo preview"
-                      className="h-12 w-auto max-w-[200px] object-contain"
-                    />
-                    <Button variant="ghost" size="icon" onClick={removeLogo}>
-                      <X className="h-4 w-4" />
-                    </Button>
+              {template.logo_url && (
+                <div>
+                  <Label>Logo do template</Label>
+                  <div className="mt-1 p-3 border rounded-lg bg-white">
+                    <img src={template.logo_url} alt="Logo" className="h-12 w-auto max-w-[200px] object-contain" />
                   </div>
-                ) : (
-                  <label className="mt-1 border-2 border-dashed border-border rounded-lg p-4 text-center block cursor-pointer hover:border-primary/50 transition-colors relative">
-                    <ImageIcon className="h-6 w-6 mx-auto text-muted-foreground mb-1" />
-                    <p className="text-xs text-muted-foreground">Clique para selecionar</p>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleLogoChange}
-                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                    />
-                  </label>
-                )}
-              </div>
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -240,6 +181,11 @@ export function TemplateFillForm({ template, onBack, onGeneratedForSignature }: 
                       placeholder={field.label}
                       rows={2}
                       className="text-sm"
+                    />
+                  ) : field.type === 'date' ? (
+                    <DatePicker
+                      value={formData[field.name] || ''}
+                      onChange={(v) => handleFieldChange(field.name, v)}
                     />
                   ) : (
                     <Input
@@ -290,20 +236,21 @@ export function TemplateFillForm({ template, onBack, onGeneratedForSignature }: 
           </div>
         </div>
 
-        {/* Preview Section */}
+        {/* Preview Section — papel A4 simulado */}
         <Card className="lg:sticky lg:top-4 h-fit">
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Preview do documento</CardTitle>
           </CardHeader>
           <CardContent>
-            {logoPreview && (
-              <div className="mb-4 pb-3 border-b">
-                <img src={logoPreview} alt="Logo" className="h-10 w-auto object-contain" />
+            {template.logo_url && (
+              <div className="mb-4 pb-3 border-b bg-white p-2 rounded">
+                <img src={template.logo_url} alt="Logo" className="h-10 w-auto object-contain" />
               </div>
             )}
-            <div className="max-h-[60vh] overflow-y-auto text-xs font-mono whitespace-pre-wrap bg-muted p-4 rounded-lg leading-relaxed">
-              {filledContent}
-            </div>
+            <div
+              className="max-h-[60vh] overflow-y-auto bg-white text-black p-6 rounded-lg leading-relaxed prose prose-sm max-w-none"
+              dangerouslySetInnerHTML={{ __html: filledContent }}
+            />
           </CardContent>
         </Card>
       </div>
