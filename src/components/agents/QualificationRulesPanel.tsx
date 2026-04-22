@@ -5,6 +5,7 @@ import {
   useUpdateQualificationRule,
   useDeleteQualificationRule,
   type QualificationRule,
+  type QualificationScope,
 } from '@/hooks/useQualificationRules';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -14,12 +15,13 @@ import { CheckSquare, Plus, Trash2, Pencil, Check, X, Loader2, ChevronDown, Chev
 import { cn } from '@/lib/utils';
 
 interface Props {
-  agentId: string;
+  scope: QualificationScope;
   organizationId: string;
+  scopeLabel?: string;
 }
 
-export function QualificationRulesPanel({ agentId, organizationId }: Props) {
-  const { data: rules = [], isLoading } = useQualificationRules(agentId);
+export function QualificationRulesPanel({ scope, organizationId, scopeLabel }: Props) {
+  const { data: rules = [], isLoading } = useQualificationRules(scope);
   const create = useCreateQualificationRule();
   const update = useUpdateQualificationRule();
   const del = useDeleteQualificationRule();
@@ -37,7 +39,7 @@ export function QualificationRulesPanel({ agentId, organizationId }: Props) {
     if (!newLabel.trim() || !newCriteria.trim()) return;
     create.mutate(
       {
-        agent_id: agentId,
+        scope,
         organization_id: organizationId,
         label: newLabel.trim(),
         criteria: newCriteria.trim(),
@@ -62,7 +64,7 @@ export function QualificationRulesPanel({ agentId, organizationId }: Props) {
   const saveEdit = (id: string) => {
     if (!editLabel.trim() || !editCriteria.trim()) return;
     update.mutate(
-      { id, agent_id: agentId, label: editLabel.trim(), criteria: editCriteria.trim() },
+      { id, scope, label: editLabel.trim(), criteria: editCriteria.trim() },
       { onSuccess: () => setEditingId(null) }
     );
   };
@@ -90,7 +92,8 @@ export function QualificationRulesPanel({ agentId, organizationId }: Props) {
       {expanded && (
         <div className="border-t border-border p-4 space-y-3">
           <p className="text-xs text-muted-foreground">
-            Checklist obrigatório que a IA deve validar <strong>antes</strong> de qualificar ou rejeitar um lead.
+            Checklist obrigatório que a IA deve validar <strong>antes</strong> de qualificar ou rejeitar um lead
+            {scopeLabel ? <> em <strong>{scopeLabel}</strong></> : null}.
             Se algum critério estiver pendente, a IA <strong>deve perguntar</strong> em vez de assumir o pior.
           </p>
 
@@ -152,7 +155,7 @@ export function QualificationRulesPanel({ agentId, organizationId }: Props) {
                         <Switch
                           checked={r.is_active}
                           onCheckedChange={(v) =>
-                            update.mutate({ id: r.id, agent_id: agentId, is_active: v })
+                            update.mutate({ id: r.id, scope, is_active: v })
                           }
                           className="scale-75"
                         />
@@ -163,7 +166,7 @@ export function QualificationRulesPanel({ agentId, organizationId }: Props) {
                           size="icon"
                           variant="ghost"
                           className="h-7 w-7 text-destructive hover:text-destructive"
-                          onClick={() => del.mutate({ id: r.id, agent_id: agentId })}
+                          onClick={() => del.mutate({ id: r.id, scope })}
                         >
                           <Trash2 className="h-3 w-3" />
                         </Button>

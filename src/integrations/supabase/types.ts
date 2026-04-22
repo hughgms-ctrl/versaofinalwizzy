@@ -191,39 +191,45 @@ export type Database = {
       }
       agent_qualification_rules: {
         Row: {
-          agent_id: string
+          agent_id: string | null
           created_at: string
           created_by: string | null
           criteria: string
+          flow_id: string | null
           id: string
           is_active: boolean
           label: string
+          node_id: string | null
           order: number
           organization_id: string
           requires_all: boolean
           updated_at: string
         }
         Insert: {
-          agent_id: string
+          agent_id?: string | null
           created_at?: string
           created_by?: string | null
           criteria: string
+          flow_id?: string | null
           id?: string
           is_active?: boolean
           label: string
+          node_id?: string | null
           order?: number
           organization_id: string
           requires_all?: boolean
           updated_at?: string
         }
         Update: {
-          agent_id?: string
+          agent_id?: string | null
           created_at?: string
           created_by?: string | null
           criteria?: string
+          flow_id?: string | null
           id?: string
           is_active?: boolean
           label?: string
+          node_id?: string | null
           order?: number
           organization_id?: string
           requires_all?: boolean
@@ -235,6 +241,13 @@ export type Database = {
             columns: ["agent_id"]
             isOneToOne: false
             referencedRelation: "ai_agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_qualification_rules_flow_id_fkey"
+            columns: ["flow_id"]
+            isOneToOne: false
+            referencedRelation: "flows"
             referencedColumns: ["id"]
           },
           {
