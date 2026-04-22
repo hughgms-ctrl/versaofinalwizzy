@@ -291,12 +291,14 @@ function pickFont(ctx: RenderCtx, bold?: boolean, italic?: boolean): PDFFont {
   return ctx.font;
 }
 
-function wrapRuns(ctx: RenderCtx, runs: InlineRun[], maxWidth: number, fontSize: number): { run: InlineRun; width: number }[][] {
-  // Tokenize each run by whitespace; wrap into lines preserving formatting
-  const lines: { run: InlineRun; width: number }[][] = [];
-  let currentLine: { run: InlineRun; width: number }[] = [];
+type LineToken = { run: InlineRun; width: number; size: number };
+
+function wrapRuns(ctx: RenderCtx, runs: InlineRun[], maxWidth: number, baseFontSize: number): LineToken[][] {
+  // Tokenize each run by whitespace; wrap into lines preserving formatting.
+  // Each run can have its own fontSize (in points), falling back to baseFontSize.
+  const lines: LineToken[][] = [];
+  let currentLine: LineToken[] = [];
   let currentWidth = 0;
-  const spaceWidthCache: Record<string, number> = {};
 
   const pushLine = () => {
     lines.push(currentLine);
@@ -306,6 +308,7 @@ function wrapRuns(ctx: RenderCtx, runs: InlineRun[], maxWidth: number, fontSize:
 
   for (const run of runs) {
     const fontRef = pickFont(ctx, run.bold, run.italic);
+    const size = run.fontSize && run.fontSize > 0 ? run.fontSize : baseFontSize;
     const cleanedText = sanitizeWinAnsi(run.text);
     // Split keeping newlines as line breaks
     const paragraphs = cleanedText.split("\n");
@@ -315,15 +318,15 @@ function wrapRuns(ctx: RenderCtx, runs: InlineRun[], maxWidth: number, fontSize:
       for (const token of tokens) {
         if (/^\s+$/.test(token)) {
           if (currentLine.length === 0) continue;
-          const sw = spaceWidthCache[`${run.bold}-${run.italic}`] ??= fontRef.widthOfTextAtSize(" ", fontSize);
+          const sw = fontRef.widthOfTextAtSize(" ", size);
           if (currentWidth + sw > maxWidth) {
             pushLine();
           } else {
-            currentLine.push({ run: { text: " ", bold: run.bold, italic: run.italic }, width: sw });
+            currentLine.push({ run: { ...run, text: " " }, width: sw, size });
             currentWidth += sw;
           }
         } else {
-          const w = fontRef.widthOfTextAtSize(token, fontSize);
+          const w = fontRef.widthOfTextAtSize(token, size);
           if (currentWidth + w > maxWidth && currentLine.length > 0) {
             pushLine();
           }
@@ -332,9 +335,9 @@ function wrapRuns(ctx: RenderCtx, runs: InlineRun[], maxWidth: number, fontSize:
             let buf = "";
             let bufW = 0;
             for (const ch of token) {
-              const cw = fontRef.widthOfTextAtSize(ch, fontSize);
+              const cw = fontRef.widthOfTextAtSize(ch, size);
               if (bufW + cw > maxWidth && buf.length > 0) {
-                currentLine.push({ run: { text: buf, bold: run.bold, italic: run.italic }, width: bufW });
+                currentLine.push({ run: { ...run, text: buf }, width: bufW, size });
                 pushLine();
                 buf = ch;
                 bufW = cw;
@@ -344,11 +347,11 @@ function wrapRuns(ctx: RenderCtx, runs: InlineRun[], maxWidth: number, fontSize:
               }
             }
             if (buf.length > 0) {
-              currentLine.push({ run: { text: buf, bold: run.bold, italic: run.italic }, width: bufW });
+              currentLine.push({ run: { ...run, text: buf }, width: bufW, size });
               currentWidth = bufW;
             }
           } else {
-            currentLine.push({ run: { text: token, bold: run.bold, italic: run.italic }, width: w });
+            currentLine.push({ run: { ...run, text: token }, width: w, size });
             currentWidth += w;
           }
         }
@@ -372,7 +375,17 @@ function ensureSpace(ctx: RenderCtx, needed: number): void {
   }
 }
 
-function drawTextLine(ctx: RenderCtx, line: { run: InlineRun; width: number }[], fontSize: number, lineHeight: number, align: "left" | "center" | "right" | "justify" = "left", color = rgb(0.1, 0.1, 0.1)) {
+function drawTextLine(
+  ctx: RenderCtx,
+  line: LineToken[],
+  baseFontSize: number,
+  baseLineHeight: number,
+  align: "left" | "center" | "right" | "justify" = "left",
+  color = rgb(0.1, 0.1, 0.1),
+) {
+  // Effective line height: respect the largest run size on this line.
+  const maxSize = line.reduce((m, t) => Math.max(m, t.size), baseFontSize);
+  const lineHeight = Math.max(baseLineHeight, maxSize * 1.4);
   ensureSpace(ctx, lineHeight);
   const totalWidth = line.reduce((s, t) => s + t.width, 0);
   let x = ctx.margin;
@@ -389,15 +402,34 @@ function drawTextLine(ctx: RenderCtx, line: { run: InlineRun; width: number }[],
     }
   }
 
+  // Baseline so larger text shares the same baseline as smaller runs.
+  const baselineY = ctx.y - maxSize;
+
   for (const tok of line) {
     const fontRef = pickFont(ctx, tok.run.bold, tok.run.italic);
     ctx.page.drawText(tok.run.text, {
       x,
-      y: ctx.y - fontSize,
-      size: fontSize,
+      y: baselineY,
+      size: tok.size,
       font: fontRef,
       color,
     });
+    if (tok.run.underline && tok.run.text.trim().length > 0) {
+      ctx.page.drawLine({
+        start: { x, y: baselineY - 1 },
+        end: { x: x + tok.width, y: baselineY - 1 },
+        thickness: Math.max(0.5, tok.size / 18),
+        color,
+      });
+    }
+    if (tok.run.strike && tok.run.text.trim().length > 0) {
+      ctx.page.drawLine({
+        start: { x, y: baselineY + tok.size * 0.32 },
+        end: { x: x + tok.width, y: baselineY + tok.size * 0.32 },
+        thickness: Math.max(0.5, tok.size / 18),
+        color,
+      });
+    }
     x += tok.width + (align === "justify" && tok.run.text === " " ? extraSpaceWidth : 0);
   }
   ctx.y -= lineHeight;
