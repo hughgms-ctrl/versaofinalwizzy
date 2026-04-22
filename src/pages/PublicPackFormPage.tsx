@@ -84,7 +84,6 @@ export default function PublicPackFormPage() {
 
   const getInputType = (fieldType: string) => {
     switch (fieldType) {
-      case 'date': return 'date';
       case 'email': return 'email';
       case 'phone': return 'tel';
       case 'number': return 'number';

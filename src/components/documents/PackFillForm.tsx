@@ -187,11 +187,27 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature 
                     {field.name}
                     <span className="text-xs text-muted-foreground">({field.templateNames.length} docs)</span>
                   </Label>
-                  <Input
-                    value={values[field.name] || ''}
-                    onChange={e => setValues(prev => ({ ...prev, [field.name]: e.target.value }))}
-                    placeholder={`Digite ${field.name}`}
-                  />
+                  {(() => {
+                    const tplField = templates
+                      .flatMap((t) => (t.fields as any[]) || [])
+                      .find((f: any) => (f.name || f) === field.name);
+                    const fType = tplField?.type;
+                    if (fType === 'date') {
+                      return (
+                        <DatePicker
+                          value={values[field.name] || ''}
+                          onChange={(v) => setValues((prev) => ({ ...prev, [field.name]: v }))}
+                        />
+                      );
+                    }
+                    return (
+                      <Input
+                        value={values[field.name] || ''}
+                        onChange={(e) => setValues((prev) => ({ ...prev, [field.name]: e.target.value }))}
+                        placeholder={`Digite ${field.name}`}
+                      />
+                    );
+                  })()}
                 </div>
               ))}
             </div>
@@ -215,11 +231,27 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature 
                     {field.name}
                     <span className="text-xs text-muted-foreground">({field.templateNames[0]})</span>
                   </Label>
-                  <Input
-                    value={values[field.name] || ''}
-                    onChange={e => setValues(prev => ({ ...prev, [field.name]: e.target.value }))}
-                    placeholder={`Digite ${field.name}`}
-                  />
+                  {(() => {
+                    const tplField = templates
+                      .flatMap((t) => (t.fields as any[]) || [])
+                      .find((f: any) => (f.name || f) === field.name);
+                    const fType = tplField?.type;
+                    if (fType === 'date') {
+                      return (
+                        <DatePicker
+                          value={values[field.name] || ''}
+                          onChange={(v) => setValues((prev) => ({ ...prev, [field.name]: v }))}
+                        />
+                      );
+                    }
+                    return (
+                      <Input
+                        value={values[field.name] || ''}
+                        onChange={(e) => setValues((prev) => ({ ...prev, [field.name]: e.target.value }))}
+                        placeholder={`Digite ${field.name}`}
+                      />
+                    );
+                  })()}
                 </div>
               ))}
             </div>
