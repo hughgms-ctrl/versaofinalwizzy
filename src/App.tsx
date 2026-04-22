@@ -77,7 +77,8 @@ const App = () => (
                   <Routes>
                     <Route path="/landing" element={<LandingPage />} />
                     <Route path="/auth" element={<AuthPage />} />
-                    <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
+                    <Route path="/" element={<LandingPage />} />
+                    <Route path="/dashboard" element={<ProtectedRoute><Index /></ProtectedRoute>} />
                     <Route path="/conversations" element={<ProtectedRoute><ConversationsPage /></ProtectedRoute>} />
                     <Route path="/contacts" element={<ProtectedRoute><ContactsPage /></ProtectedRoute>} />
                     <Route path="/pipeline" element={<ProtectedRoute><PipelinePage /></ProtectedRoute>} />
