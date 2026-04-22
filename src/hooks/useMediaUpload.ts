@@ -32,10 +32,19 @@ export function useMediaUpload() {
         });
 
       if (error) {
-        console.error('Upload error:', error);
+        console.error('Upload error:', error, 'File:', file.name, 'Type:', file.type, 'Size:', file.size);
+        const msg = (error as any)?.message || '';
+        let description = 'Não foi possível enviar o arquivo. Tente novamente.';
+        if (msg.toLowerCase().includes('mime') || msg.toLowerCase().includes('type')) {
+          description = `Formato não suportado: ${file.type || 'desconhecido'}.`;
+        } else if (msg.toLowerCase().includes('size') || msg.toLowerCase().includes('large')) {
+          description = `Arquivo muito grande (${(file.size / 1024 / 1024).toFixed(1)} MB). Limite: 100 MB.`;
+        } else if (msg) {
+          description = msg;
+        }
         toast({
           title: 'Erro no upload',
-          description: 'Não foi possível enviar o arquivo. Tente novamente.',
+          description,
           variant: 'destructive',
         });
         return null;
