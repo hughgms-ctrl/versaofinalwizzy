@@ -249,7 +249,7 @@ Deno.serve(async (req) => {
     const [
       messagesResult, agentsResult, tagsResult, contactTagsResult,
       pipelinesResult, pipelinePositionsResult, flowsResult, workspaceConfig, integrationConfig,
-      trainingRulesResult,
+      trainingRulesResult, qualificationRulesResult,
     ] = await Promise.all([
       supabase.from('messages').select('*').eq('conversation_id', conversationId)
         .order('created_at', { ascending: false }).limit(80),
@@ -268,8 +268,6 @@ Deno.serve(async (req) => {
       supabase.from('agent_qualification_rules').select('*')
         .eq('organization_id', organizationId).eq('is_active', true),
     ]);
-
-    const qualificationRules = (await Promise.resolve(undefined), null);
 
     const rawMessages = (messagesResult.data || []).reverse();
     const agents = agentsResult.data || [];
