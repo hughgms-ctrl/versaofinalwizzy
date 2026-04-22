@@ -449,6 +449,11 @@ body:not(.privacy-mode) [data-sensitive] {
    ============================================================ */
 .tiptap-paper {
   color: #111;
+  word-break: normal;
+  overflow-wrap: break-word;
+  hyphens: auto;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
 }
 .tiptap-paper h1 {
   font-size: 24pt;
@@ -471,6 +476,14 @@ body:not(.privacy-mode) [data-sensitive] {
 .tiptap-paper p {
   margin: 0 0 0.6em;
   min-height: 1em;
+}
+.tiptap-paper p[style*="text-align: justify"],
+.tiptap-paper h1[style*="text-align: justify"],
+.tiptap-paper h2[style*="text-align: justify"],
+.tiptap-paper h3[style*="text-align: justify"],
+.tiptap-paper li[style*="text-align: justify"] {
+  text-justify: inter-word;
+  hyphens: auto;
 }
 .tiptap-paper ul,
 .tiptap-paper ol {
