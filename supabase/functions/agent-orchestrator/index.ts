@@ -249,7 +249,7 @@ Deno.serve(async (req) => {
     const [
       messagesResult, agentsResult, tagsResult, contactTagsResult,
       pipelinesResult, pipelinePositionsResult, flowsResult, workspaceConfig, integrationConfig,
-      trainingRulesResult,
+      trainingRulesResult, qualificationRulesResult,
     ] = await Promise.all([
       supabase.from('messages').select('*').eq('conversation_id', conversationId)
         .order('created_at', { ascending: false }).limit(80),
@@ -264,6 +264,8 @@ Deno.serve(async (req) => {
       resolveWorkspaceConfig(supabase, conversation),
       resolveIntegrationConfig(supabase, organizationId),
       supabase.from('agent_training_rules').select('*')
+        .eq('organization_id', organizationId).eq('is_active', true),
+      supabase.from('agent_qualification_rules').select('*')
         .eq('organization_id', organizationId).eq('is_active', true),
     ]);
 
@@ -305,7 +307,8 @@ Deno.serve(async (req) => {
     const pipelinePositions = pipelinePositionsResult.data || [];
     const flows = flowsResult.data || [];
     const trainingRules = trainingRulesResult.data || [];
-    console.log(`[ORCHESTRATOR] Loaded ${trainingRules.length} active training rules for org ${organizationId}`);
+    const qualificationRules = qualificationRulesResult.data || [];
+    console.log(`[ORCHESTRATOR] Loaded ${trainingRules.length} training rules and ${qualificationRules.length} qualification rules for org ${organizationId}`);
 
     // Resolve AI config: activeAgent > masterPrompt > integration_configs > workspace_agent_configs > defaults
     const finalProvider = activeAgent?.provider || masterPrompt?.provider || integrationConfig?.ai_provider || 'lovable';
@@ -342,7 +345,7 @@ Deno.serve(async (req) => {
       messages, agents, allTags, contactTags, pipelines, pipelinePositions,
       flows, aiModel, masterPrompt, LOVABLE_API_KEY,
       aiEndpoint: aiConfig.endpoint, aiApiKey: aiConfig.apiKey,
-      integrationConfig, flowExecutionId, trainingRules,
+      integrationConfig, flowExecutionId, trainingRules, qualificationRules,
       forceResponse, // PASS TO CONTEXT
       additionalContext, // NEW: Pass the payload additionalContext
       organizationTimezone, // NEW: For temporal context block in prompts
@@ -447,11 +450,12 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
   if (!organizationId) return { error: 'organizationId is required for simulation' };
 
   // Load context from DB (same as production)
-  const [agentsResult, tagsResult, pipelinesResult, trainingRulesResult, integrationConfigResult, organizationResult] = await Promise.all([
+  const [agentsResult, tagsResult, pipelinesResult, trainingRulesResult, qualificationRulesResult, integrationConfigResult, organizationResult] = await Promise.all([
     supabase.from('ai_agents').select('*').eq('organization_id', organizationId).eq('is_active', true),
     supabase.from('tags').select('*').eq('organization_id', organizationId),
     supabase.from('pipelines').select('*, columns:pipeline_columns!pipeline_columns_pipeline_id_fkey(*)').eq('organization_id', organizationId),
     supabase.from('agent_training_rules').select('*').eq('organization_id', organizationId).eq('is_active', true),
+    supabase.from('agent_qualification_rules').select('*').eq('organization_id', organizationId).eq('is_active', true),
     resolveIntegrationConfig(supabase, organizationId),
     supabase.from('organizations').select('timezone').eq('id', organizationId).maybeSingle(),
   ]);
@@ -460,6 +464,7 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
   const allTags = tagsResult.data || [];
   const pipelines = pipelinesResult.data || [];
   const trainingRules = trainingRulesResult.data || [];
+  const qualificationRules = qualificationRulesResult.data || [];
   const integrationConfig = integrationConfigResult;
   const organizationTimezone = organizationResult?.data?.timezone || 'America/Sao_Paulo';
 
@@ -508,6 +513,10 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
 
   // 3.5. CONTEXTO TEMPORAL — injected so the AI can reason about relative dates
   systemPrompt += buildTemporalContextBlock(organizationTimezone);
+
+  // 3.6. ANÁLISE HOLÍSTICA + CHECKLIST DE QUALIFICAÇÃO
+  systemPrompt += buildHolisticAnalysisBlock();
+  systemPrompt += buildQualificationChecklistBlock(qualificationRules, agent?.id);
 
   // 4. REGRAS APRENDIDAS (TREINAMENTO)
   const rulesSection = buildTrainingRulesSection(trainingRules, {
@@ -1238,6 +1247,9 @@ async function invokeAgentAI(
   // 3.6. ANÁLISE HOLÍSTICA — força a IA a ler todo histórico antes de rejeitar
   systemPrompt += buildHolisticAnalysisBlock();
 
+  // 3.7. CHECKLIST DE QUALIFICAÇÃO — critérios obrigatórios definidos pelo gestor
+  systemPrompt += buildQualificationChecklistBlock(ctx.qualificationRules || [], agent?.id);
+
   // 4. REGRAS APRENDIDAS (TREINAMENTO) - Grouped and prioritized
   const rulesSection = buildTrainingRulesSection(ctx.trainingRules, {
     agentId: agent?.id, 
@@ -1680,6 +1692,9 @@ async function invokeDocumentAgentAI(
 
   // ANÁLISE HOLÍSTICA — força leitura completa do histórico antes de qualquer ação
   systemPrompt += buildHolisticAnalysisBlock();
+
+  // CHECKLIST DE QUALIFICAÇÃO — critérios obrigatórios do agente ativo
+  systemPrompt += buildQualificationChecklistBlock(ctx.qualificationRules || [], agent?.id);
 
   // 4. REGRAS APRENDIDAS (TREINAMENTO)
   const rulesSection = buildTrainingRulesSection(ctx.trainingRules, {
@@ -2751,6 +2766,32 @@ function buildHolisticAnalysisBlock(): string {
     `8. Sintetize o que sabe → identifique o que falta → faça a próxima pergunta. Esse é o ciclo correto.\n\n---\n\n`;
 }
 
+/**
+ * Bloco de checklist de qualificação por agente.
+ * Lista os critérios obrigatórios definidos pelo gestor — a IA deve validar
+ * TODOS antes de qualquer rejeição. Se algum estiver pendente, deve PERGUNTAR.
+ */
+function buildQualificationChecklistBlock(qualificationRules: any[], agentId?: string): string {
+  if (!qualificationRules || qualificationRules.length === 0) return '';
+  const filtered = agentId
+    ? qualificationRules.filter((r) => r.agent_id === agentId && r.is_active)
+    : qualificationRules.filter((r) => r.is_active);
+  if (filtered.length === 0) return '';
+
+  const sorted = [...filtered].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  let block = `# ✅ CHECKLIST DE QUALIFICAÇÃO (OBRIGATÓRIO):\n`;
+  block += `Antes de qualificar, rejeitar ou avançar, valide CADA item abaixo. Se faltar dado para qualquer um, PERGUNTE — nunca rejeite por omissão.\n\n`;
+  sorted.forEach((r, i) => {
+    block += `${i + 1}. **${r.label}**: ${r.criteria}\n`;
+  });
+  block += `\nREGRAS DE USO:\n`;
+  block += `- Marque mentalmente cada item como ✓ atendido, ✗ não atendido ou ? desconhecido com base no histórico.\n`;
+  block += `- Para itens "?", a próxima ação OBRIGATÓRIA é fazer uma pergunta ao cliente para descobrir.\n`;
+  block += `- Só conclua "qualificado" se TODOS estiverem ✓.\n`;
+  block += `- Só conclua "não qualificado" se houver pelo menos UM ✗ confirmado pelo próprio cliente — nunca por suposição.\n\n---\n\n`;
+  return block;
+}
+
 function inferOutcomeFromReply(reply: string | null, configuredOutcomes: string[]): string | null {
 
   if (!reply || configuredOutcomes.length === 0) return null;
@@ -2842,6 +2883,9 @@ function buildLegacySystemPrompt(ctx: any): string {
 
   // 3.6. ANÁLISE HOLÍSTICA — força a IA a ler todo histórico antes de rejeitar
   prompt += buildHolisticAnalysisBlock();
+
+  // 3.7. CHECKLIST DE QUALIFICAÇÃO — critérios obrigatórios do agente ativo
+  prompt += buildQualificationChecklistBlock(ctx.qualificationRules || [], activeAgent?.id);
 
   // 4. REGRAS APRENDIDAS (TREINAMENTO) - Grouped and strictly followed
   const rulesSection = buildTrainingRulesSection(ctx.trainingRules, {

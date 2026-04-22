@@ -189,6 +189,63 @@ export type Database = {
           },
         ]
       }
+      agent_qualification_rules: {
+        Row: {
+          agent_id: string
+          created_at: string
+          created_by: string | null
+          criteria: string
+          id: string
+          is_active: boolean
+          label: string
+          order: number
+          organization_id: string
+          requires_all: boolean
+          updated_at: string
+        }
+        Insert: {
+          agent_id: string
+          created_at?: string
+          created_by?: string | null
+          criteria: string
+          id?: string
+          is_active?: boolean
+          label: string
+          order?: number
+          organization_id: string
+          requires_all?: boolean
+          updated_at?: string
+        }
+        Update: {
+          agent_id?: string
+          created_at?: string
+          created_by?: string | null
+          criteria?: string
+          id?: string
+          is_active?: boolean
+          label?: string
+          order?: number
+          organization_id?: string
+          requires_all?: boolean
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_qualification_rules_agent_id_fkey"
+            columns: ["agent_id"]
+            isOneToOne: false
+            referencedRelation: "ai_agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_qualification_rules_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       agent_training_rules: {
         Row: {
           agent_id: string | null
