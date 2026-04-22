@@ -326,6 +326,17 @@ Deno.serve(async (req) => {
     
     console.log(`[ORCHESTRATOR] AI Config: Provider=${finalProvider}, Model=${aiModel} (Target=${finalModel})`);
 
+    // Load organization timezone for temporal context (default: America/Sao_Paulo)
+    let organizationTimezone = 'America/Sao_Paulo';
+    try {
+      const { data: orgRow } = await supabase
+        .from('organizations')
+        .select('timezone')
+        .eq('id', organizationId)
+        .maybeSingle();
+      if (orgRow?.timezone) organizationTimezone = orgRow.timezone;
+    } catch (_e) { /* keep default */ }
+
     const context = {
       conversationId, contactId, organizationId, conversation,
       messages, agents, allTags, contactTags, pipelines, pipelinePositions,
@@ -334,6 +345,7 @@ Deno.serve(async (req) => {
       integrationConfig, flowExecutionId, trainingRules,
       forceResponse, // PASS TO CONTEXT
       additionalContext, // NEW: Pass the payload additionalContext
+      organizationTimezone, // NEW: For temporal context block in prompts
     };
 
     // 4. Resolve flow_id from available sources
@@ -435,12 +447,13 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
   if (!organizationId) return { error: 'organizationId is required for simulation' };
 
   // Load context from DB (same as production)
-  const [agentsResult, tagsResult, pipelinesResult, trainingRulesResult, integrationConfigResult] = await Promise.all([
+  const [agentsResult, tagsResult, pipelinesResult, trainingRulesResult, integrationConfigResult, organizationResult] = await Promise.all([
     supabase.from('ai_agents').select('*').eq('organization_id', organizationId).eq('is_active', true),
     supabase.from('tags').select('*').eq('organization_id', organizationId),
     supabase.from('pipelines').select('*, columns:pipeline_columns!pipeline_columns_pipeline_id_fkey(*)').eq('organization_id', organizationId),
     supabase.from('agent_training_rules').select('*').eq('organization_id', organizationId).eq('is_active', true),
     resolveIntegrationConfig(supabase, organizationId),
+    supabase.from('organizations').select('timezone').eq('id', organizationId).maybeSingle(),
   ]);
 
   const agents = agentsResult.data || [];
@@ -448,6 +461,7 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
   const pipelines = pipelinesResult.data || [];
   const trainingRules = trainingRulesResult.data || [];
   const integrationConfig = integrationConfigResult;
+  const organizationTimezone = organizationResult?.data?.timezone || 'America/Sao_Paulo';
 
   const agent = agentId ? agents.find((a: any) => a.id === agentId) : null;
 
@@ -491,6 +505,9 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
   if (additionalPrompt) {
     systemPrompt += `# INSTRUÇÕES ESPECÍFICAS/OBJETIVO ATUAL:\n${cleanPrompt(additionalPrompt)}\n\n---\n\n`;
   }
+
+  // 3.5. CONTEXTO TEMPORAL — injected so the AI can reason about relative dates
+  systemPrompt += buildTemporalContextBlock(organizationTimezone);
 
   // 4. REGRAS APRENDIDAS (TREINAMENTO)
   const rulesSection = buildTrainingRulesSection(trainingRules, {
@@ -536,6 +553,7 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
   systemPrompt += `- Mantenha a persona definida no prompt master.\n`;
   systemPrompt += `- NUNCA produza texto entre parênteses como "(aguardando resposta)" ou pensamentos internos. Apenas use send_reply.\n`;
   systemPrompt += `- Se não precisa responder ao cliente, NÃO gere texto algum. Apenas execute as ferramentas necessárias.\n`;
+  systemPrompt += `- COERÊNCIA REJEIÇÃO/QUALIFICAÇÃO: se você está REJEITANDO ou DESQUALIFICANDO o cliente, ao finalizar a etapa use um resultado negativo (ex: "desqualificado", "reprovado", "negado"). NUNCA use resultado positivo quando a mensagem enviada for de rejeição.\n`;
 
   if (isFirstActivation) {
     systemPrompt += `\n⚠️ ATENÇÃO: Você ACABOU de ser ativado nesta etapa do fluxo.\n`;
@@ -1214,6 +1232,9 @@ async function invokeAgentAI(
     systemPrompt += `# INSTRUÇÕES ESPECÍFICAS/OBJETIVO ATUAL:\n${cleanPrompt(additionalPrompt)}\n\n---\n\n`;
   }
 
+  // 3.5. CONTEXTO TEMPORAL — injected so the AI can reason about relative dates
+  systemPrompt += buildTemporalContextBlock(ctx.organizationTimezone);
+
   // 4. REGRAS APRENDIDAS (TREINAMENTO) - Grouped and prioritized
   const rulesSection = buildTrainingRulesSection(ctx.trainingRules, {
     agentId: agent?.id, 
@@ -1265,6 +1286,7 @@ async function invokeAgentAI(
   systemPrompt += `- Mantenha a persona definida no prompt master.\n`;
   systemPrompt += `- NUNCA produza texto entre parênteses como "(aguardando resposta)" ou pensamentos internos. Apenas use send_reply.\n`;
   systemPrompt += `- Se não precisa responder ao cliente, NÃO gere texto algum. Apenas execute as ferramentas necessárias.\n`;
+  systemPrompt += `- COERÊNCIA REJEIÇÃO/QUALIFICAÇÃO: se você está REJEITANDO ou DESQUALIFICANDO o cliente nesta etapa, ao chamar finalizar_interacao use resultado="desqualificado" (ou o termo equivalente que aparecer nos outcomes deste nó, ex: "reprovado", "negado", "inapto"). NUNCA use um resultado positivo (qualificado/aprovado) quando a mensagem enviada for de rejeição/encerramento negativo. Se o nó não tiver outcome negativo configurado, apenas envie a mensagem de despedida com send_reply e NÃO chame finalizar_interacao — o sistema encerrará automaticamente.\n`;
 
   if (isFirstActivation) {
     systemPrompt += `\n⚠️ ATENÇÃO: Você ACABOU de ser ativado nesta etapa do fluxo.\n`;
@@ -1541,7 +1563,40 @@ async function invokeAgentAI(
   }
 
   if (!shouldAdvance && hasNextNodes && autoAdvance) {
-    if (hasConfiguredOutcomes && inferredOutcome && !hasQuestionLikeReply) {
+    // SAFETY NET: clear rejection cue but no negative outcome configured.
+    // Do NOT fall back to default (= qualified path). Stop the flow and hand
+    // off to a human so the rejected lead is not pushed through qualification.
+    if (inferredOutcome === NEGATIVE_NO_HANDLE_SENTINEL) {
+      console.log('[AGENT] REJECTION DETECTED but no negative outcome handle on this node — stopping flow, switching to humano');
+      state.variables = { ...(state.variables || {}), ai_resultado: 'desqualificado' };
+      // Mark current flow execution as completed and clear handoff context
+      if (ctx.flowExecutionId) {
+        try {
+          await supabase.from('flow_executions').update({
+            status: 'completed',
+            variables: state.variables,
+            completed_at: new Date().toISOString(),
+          }).eq('id', ctx.flowExecutionId);
+          const { data: convData } = await supabase.from('conversations').select('metadata').eq('id', ctx.conversationId).single();
+          const metadata = { ...(convData?.metadata || {}) };
+          delete metadata.ai_handoff_context;
+          await supabase.from('conversations').update({ metadata, service_mode: 'humano' }).eq('id', ctx.conversationId);
+        } catch (e) {
+          console.error('[AGENT] Error stopping flow on rejection-without-handle:', e);
+        }
+      } else {
+        try {
+          await supabase.from('conversations').update({ service_mode: 'humano' }).eq('id', ctx.conversationId);
+        } catch (_e) { /* ignore */ }
+      }
+      shouldAdvance = false;
+      state.flow_completed = true;
+      toolsExecuted.push({
+        name: 'finalizar_interacao',
+        arguments: { resultado: 'desqualificado' },
+        result: { success: true, fallback: true, stopped_no_negative_handle: true },
+      });
+    } else if (hasConfiguredOutcomes && inferredOutcome && !hasQuestionLikeReply) {
       console.log(`[AGENT] FALLBACK: inferred outcome "${inferredOutcome}" from reply — advancing`);
       state.last_outcome = inferredOutcome;
       state.variables = { ...(state.variables || {}), ai_resultado: inferredOutcome };
@@ -2229,27 +2284,38 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
             const configuredOutcomes = parseExpectedOutcomes(currentNodeObj?.data?.expectedOutcomes);
 
             let nextEdge: any = null;
+            let stopOnRejection = false;
             if (configuredOutcomes.length > 0) {
               // Try to match resultado to a configured outcome handle
               const outcomeHandle = `outcome-${resultado}`;
               nextEdge = edges.find((e: any) => e.source === currentNodeId && e.sourceHandle === outcomeHandle);
               if (!nextEdge) {
-                // Fallback to default handle
-                nextEdge = edges.find((e: any) => e.source === currentNodeId && e.sourceHandle === 'outcome-default');
+                // SAFETY NET: before falling back to default, check if the AI's
+                // reply was a rejection AND there is no negative outcome handle.
+                // If so, do NOT route through default (= qualified path).
+                const inferred = inferOutcomeFromReply(replyText, configuredOutcomes);
+                if (inferred === NEGATIVE_NO_HANDLE_SENTINEL) {
+                  console.log('[ORCHESTRATOR] finalizar_interacao with unmatched resultado AND rejection cue, but NO negative outcome handle — stopping flow');
+                  stopOnRejection = true;
+                } else {
+                  // Fallback to default handle
+                  nextEdge = edges.find((e: any) => e.source === currentNodeId && e.sourceHandle === 'outcome-default');
+                  if (!nextEdge) {
+                    // Last fallback: any edge from this node
+                    nextEdge = edges.find((e: any) => e.source === currentNodeId);
+                  }
+                }
               }
-              if (!nextEdge) {
-                // Last fallback: any edge from this node
-                nextEdge = edges.find((e: any) => e.source === currentNodeId);
-              }
-              console.log(`[ORCHESTRATOR] Outcome routing: resultado="${resultado}", matched handle="${nextEdge?.sourceHandle || 'none'}"`);
+              console.log(`[ORCHESTRATOR] Outcome routing: resultado="${resultado}", matched handle="${nextEdge?.sourceHandle || (stopOnRejection ? 'STOPPED-rejection' : 'none')}"`);
             } else {
               // No outcomes configured — use simple next edge (backward compatible)
               nextEdge = edges.find((e: any) => e.source === currentNodeId);
             }
-            const nextNodeId = nextEdge?.target || null;
+            const nextNodeId = stopOnRejection ? null : (nextEdge?.target || null);
+            const finalResultado = stopOnRejection ? 'desqualificado' : resultado;
 
             // Store the resultado in variables for condition nodes downstream
-            const variables = { ...(flowExec.variables || {}), ai_resultado: resultado };
+            const variables = { ...(flowExec.variables || {}), ai_resultado: finalResultado };
 
             if (nextNodeId) {
               // Resume flow from the next node — COMPLETE the old execution first
@@ -2379,7 +2445,28 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
         !hasQuestionLikeReply &&
         hasExplicitCompletionCue(replyText);
 
-      if ((configuredOutcomes.length > 0 && inferredOutcome && !hasQuestionLikeReply) || shouldAdvanceWithoutOutcomes) {
+      // SAFETY NET: clear rejection cue but no negative outcome configured.
+      // Stop the flow and hand off to humano instead of falling into default.
+      if (inferredOutcome === NEGATIVE_NO_HANDLE_SENTINEL) {
+        console.log('[LEGACY] REJECTION DETECTED but no negative outcome handle — stopping flow, switching to humano');
+        const variables = { ...(flowExec.variables || {}), ai_resultado: 'desqualificado' };
+        try {
+          await supabase.from('flow_executions').update({
+            status: 'completed', variables, completed_at: new Date().toISOString(),
+          }).eq('id', ctx.flowExecutionId);
+          const { data: convData } = await supabase.from('conversations').select('metadata').eq('id', ctx.conversationId).single();
+          const metadata = { ...(convData?.metadata || {}) };
+          delete metadata.ai_handoff_context;
+          await supabase.from('conversations').update({ metadata, service_mode: 'humano' }).eq('id', ctx.conversationId);
+        } catch (e) {
+          console.error('[LEGACY] Error stopping flow on rejection-without-handle:', e);
+        }
+        toolsExecuted.push({
+          name: 'finalizar_interacao',
+          arguments: { resultado: 'desqualificado' },
+          result: { success: true, fallback: true, stopped_no_negative_handle: true },
+        });
+      } else if ((configuredOutcomes.length > 0 && inferredOutcome && !hasQuestionLikeReply) || shouldAdvanceWithoutOutcomes) {
         const resultado = inferredOutcome || 'concluido';
         console.log(`[LEGACY] FALLBACK: inferred completion with resultado="${resultado}" — force advancing`);
 
@@ -2589,6 +2676,52 @@ function hasExplicitCompletionCue(reply: string | null): boolean {
   return /\b(concluido|concluida|conclui|concluimos|encerrado|encerrada|encerramos|finalizado|finalizada|finalizei|encaminhando|proxima etapa|proximo passo)\b/.test(normalized);
 }
 
+// Sentinel returned by inferOutcomeFromReply when the AI clearly rejected the
+// lead but the current node has NO negative outcome handle configured. The
+// caller MUST treat this as "stop the flow" instead of falling back to the
+// default (qualified) handle.
+const NEGATIVE_NO_HANDLE_SENTINEL = '__NEGATIVE_NO_HANDLE__';
+
+/**
+ * Builds a temporal context block to inject into the system prompt so the AI
+ * can correctly reason about relative dates ("ano passado", "mês passado",
+ * "DD de MMMM" without a year) using the organization's timezone.
+ */
+function buildTemporalContextBlock(timezone: string | null | undefined): string {
+  const tz = timezone && typeof timezone === 'string' ? timezone : 'America/Sao_Paulo';
+  let dateStr = '';
+  let yearStr = '';
+  try {
+    const now = new Date();
+    const dateFmt = new Intl.DateTimeFormat('pt-BR', {
+      timeZone: tz,
+      weekday: 'long',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    dateStr = dateFmt.format(now);
+    const yearFmt = new Intl.DateTimeFormat('pt-BR', { timeZone: tz, year: 'numeric' });
+    yearStr = yearFmt.format(now);
+  } catch (_e) {
+    const now = new Date();
+    dateStr = now.toISOString();
+    yearStr = String(now.getUTCFullYear());
+  }
+
+  return `# CONTEXTO TEMPORAL (CRÍTICO):\n` +
+    `- Data e hora atual: ${dateStr} (fuso ${tz})\n` +
+    `- Ano atual: ${yearStr}\n` +
+    `- Use estas informações para calcular datas relativas ("ano passado", "mês passado", "semana passada") SEMPRE em relação à data atual acima, NUNCA em relação a outras datas mencionadas na conversa.\n` +
+    `- Quando o cliente disser apenas "DD de MMMM" sem ano:\n` +
+    `  • Se a data resultante já passou ou é hoje → mantenha o ano atual.\n` +
+    `  • Se a data ainda não chegou neste ano e o contexto sugere passado → use o ano anterior.\n` +
+    `  • Em dúvida, PERGUNTE o ano explicitamente em vez de assumir.\n\n---\n\n`;
+}
+
 function inferOutcomeFromReply(reply: string | null, configuredOutcomes: string[]): string | null {
 
   if (!reply || configuredOutcomes.length === 0) return null;
@@ -2629,11 +2762,17 @@ function inferOutcomeFromReply(reply: string | null, configuredOutcomes: string[
     return /(qualif|aprov|prosseguir|seguir|continuar|concluido)/.test(normalizedOutcome);
   });
 
-  const hasNegativeCue = /(infelizmente|nao\s+sera\s+possivel|nao\s+poderemos|nao\s+podemos\s+prosseguir|nao\s+atende|nao\s+cumpre|encerrar\s+o\s+atendimento|encerrar\s+atendimento)/.test(normalizedReply);
+  const hasNegativeCue = /(infelizmente|nao\s+sera\s+possivel|nao\s+poderemos|nao\s+podemos\s+prosseguir|nao\s+atende|nao\s+cumpre|nao\s+conseguimos\s+prosseguir|nao\s+conseguiremos\s+prosseguir|nao\s+podemos\s+seguir|fora\s+dos\s+criterios|nao\s+se\s+enquadra|nao\s+atende\s+aos\s+requisitos|encerrar\s+o\s+atendimento|encerrar\s+atendimento|encerrar\s+a\s+interacao|ja\s+possui\s+advogado|ja\s+tem\s+advogado|nunca\s+contribuiu|sem\s+contribuicao|pelas\s+regras\s+do\s+inss\s+nao)/.test(normalizedReply);
   if (hasNegativeCue && negativeOutcome) return negativeOutcome;
 
   const hasPositiveCue = /(podemos\s+seguir|vamos\s+seguir|proxima\s+etapa|proximo\s+passo|dar\s+continuidade|encaminhar\s+para\s+proxima\s+etapa|seguiremos\s+com\s+o\s+atendimento)/.test(normalizedReply);
   if (hasPositiveCue && positiveOutcome) return positiveOutcome;
+
+  // SAFETY NET: clear rejection cue, but the node has NO negative outcome
+  // configured. Returning null here would let the caller fall back to the
+  // default handle (= qualified path). Return a sentinel so the caller can
+  // stop the flow instead of routing the rejected lead through qualification.
+  if (hasNegativeCue && !negativeOutcome) return NEGATIVE_NO_HANDLE_SENTINEL;
 
   return null;
 }
@@ -2668,6 +2807,9 @@ function buildLegacySystemPrompt(ctx: any): string {
   if (additionalContext) {
     prompt += `# INSTRUÇÕES ESPECÍFICAS PARA ESTE MOMENTO:\n${cleanPrompt(additionalContext)}\n\n---\n\n`;
   }
+
+  // 3.5. CONTEXTO TEMPORAL — injected so the AI can reason about relative dates
+  prompt += buildTemporalContextBlock(ctx.organizationTimezone);
 
   // 4. REGRAS APRENDIDAS (TREINAMENTO) - Grouped and strictly followed
   const rulesSection = buildTrainingRulesSection(ctx.trainingRules, {
