@@ -169,11 +169,15 @@ export function QualificationRulesPanel({ scope, organizationId, scopeLabel, sou
 
       {expanded && (
         <div className="border-t border-border p-4 space-y-3">
-          <p className="text-xs text-muted-foreground">
-            Checklist obrigatório que a IA deve validar <strong>antes</strong> de qualificar ou rejeitar um lead
-            {scopeLabel ? <> em <strong>{scopeLabel}</strong></> : null}.
-            Se algum critério estiver pendente, a IA <strong>deve perguntar</strong> em vez de assumir o pior.
-          </p>
+          <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3">
+            <p className="text-xs text-foreground">
+              <strong>Opcional.</strong> Na maioria dos casos, um prompt bem escrito já é suficiente — a IA segue as instruções diretamente.
+            </p>
+            <p className="text-xs text-muted-foreground mt-1.5">
+              Use este checklist <strong>apenas</strong> para regras críticas que não podem falhar (ex.: critérios jurídicos, compliance, validações numéricas exatas)
+              {scopeLabel ? <> em <strong>{scopeLabel}</strong></> : null}.
+            </p>
+          </div>
 
           {canExtract && (
             <Button
