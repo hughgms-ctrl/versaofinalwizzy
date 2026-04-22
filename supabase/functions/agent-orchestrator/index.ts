@@ -307,7 +307,8 @@ Deno.serve(async (req) => {
     const pipelinePositions = pipelinePositionsResult.data || [];
     const flows = flowsResult.data || [];
     const trainingRules = trainingRulesResult.data || [];
-    console.log(`[ORCHESTRATOR] Loaded ${trainingRules.length} active training rules for org ${organizationId}`);
+    const qualificationRules = qualificationRulesResult.data || [];
+    console.log(`[ORCHESTRATOR] Loaded ${trainingRules.length} training rules and ${qualificationRules.length} qualification rules for org ${organizationId}`);
 
     // Resolve AI config: activeAgent > masterPrompt > integration_configs > workspace_agent_configs > defaults
     const finalProvider = activeAgent?.provider || masterPrompt?.provider || integrationConfig?.ai_provider || 'lovable';
@@ -344,7 +345,7 @@ Deno.serve(async (req) => {
       messages, agents, allTags, contactTags, pipelines, pipelinePositions,
       flows, aiModel, masterPrompt, LOVABLE_API_KEY,
       aiEndpoint: aiConfig.endpoint, aiApiKey: aiConfig.apiKey,
-      integrationConfig, flowExecutionId, trainingRules,
+      integrationConfig, flowExecutionId, trainingRules, qualificationRules,
       forceResponse, // PASS TO CONTEXT
       additionalContext, // NEW: Pass the payload additionalContext
       organizationTimezone, // NEW: For temporal context block in prompts
