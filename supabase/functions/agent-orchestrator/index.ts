@@ -514,6 +514,10 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
   // 3.5. CONTEXTO TEMPORAL — injected so the AI can reason about relative dates
   systemPrompt += buildTemporalContextBlock(organizationTimezone);
 
+  // 3.6. ANÁLISE HOLÍSTICA + CHECKLIST DE QUALIFICAÇÃO
+  systemPrompt += buildHolisticAnalysisBlock();
+  systemPrompt += buildQualificationChecklistBlock(qualificationRules, agent?.id);
+
   // 4. REGRAS APRENDIDAS (TREINAMENTO)
   const rulesSection = buildTrainingRulesSection(trainingRules, {
     agentId: agent?.id,
