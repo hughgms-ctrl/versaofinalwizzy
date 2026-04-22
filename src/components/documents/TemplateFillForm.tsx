@@ -1,15 +1,17 @@
-import { useState } from 'react';
-import { ArrowLeft, Loader2, FileDown, Image as ImageIcon, X, FileSignature } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { ArrowLeft, Loader2, FileDown, FileSignature } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { DatePicker } from '@/components/ui/date-picker';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { DocumentTemplate } from '@/hooks/useDocumentTemplates';
 import { useQueryClient } from '@tanstack/react-query';
+import { fillTemplate } from '@/lib/documentFormatters';
 
 interface TemplateFillFormProps {
   template: DocumentTemplate;
