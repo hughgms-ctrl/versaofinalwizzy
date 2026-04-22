@@ -1521,10 +1521,20 @@ async function invokeAgentAI(
     !hasQuestionLikeReply &&
     hasExplicitCompletionCue(replyText);
 
-  if (!hasUserVisibleReply && !shouldAdvance && hasNextNodes) {
-    replyText = 'Entendi. Para continuar, pode me dar mais um detalhe sobre isso?';
-    hasUserVisibleReply = true;
-    console.log('[AGENT] RECOVERY: no visible reply generated, sending follow-up question to avoid deadlock');
+  if ((!hasUserVisibleReply || isKnownGenericDetailFallback(replyText)) && !shouldAdvance && hasNextNodes) {
+    console.log('[AGENT] RECOVERY: no visible reply generated or generic fallback detected, attempting guided regeneration');
+    const recoveredReply = await recoverVisibleReply({
+      endpoint: agentConfig.endpoint,
+      apiKey: agentConfig.apiKey,
+      model: agentConfig.model,
+      aiMessages,
+      logPrefix: '[AGENT]',
+    });
+
+    if (recoveredReply) {
+      replyText = recoveredReply;
+      hasUserVisibleReply = true;
+    }
   }
 
   if (!shouldAdvance && hasNextNodes && autoAdvance) {
@@ -2329,10 +2339,20 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
   const handoffCtx = ctx.conversation?.metadata?.ai_handoff_context || {};
   const autoAdvance = handoffCtx.autoAdvance !== false;
 
-  if (!shouldBreak && ctx.flowExecutionId && !hasUserVisibleReply) {
-    replyText = 'Entendi. Para continuar, pode me dar mais um detalhe sobre isso?';
-    hasUserVisibleReply = true;
-    console.log('[LEGACY] RECOVERY: no visible reply generated, sending follow-up question to avoid deadlock');
+  if (!shouldBreak && ctx.flowExecutionId && (!hasUserVisibleReply || isKnownGenericDetailFallback(replyText))) {
+    console.log('[LEGACY] RECOVERY: no visible reply generated or generic fallback detected, attempting guided regeneration');
+    const recoveredReply = await recoverVisibleReply({
+      endpoint: ctx.aiEndpoint,
+      apiKey: ctx.aiApiKey,
+      model: ctx.aiModel,
+      aiMessages,
+      logPrefix: '[LEGACY]',
+    });
+
+    if (recoveredReply) {
+      replyText = recoveredReply;
+      hasUserVisibleReply = true;
+    }
   }
 
   if (!shouldBreak && ctx.flowExecutionId && hasUserVisibleReply && autoAdvance) {
