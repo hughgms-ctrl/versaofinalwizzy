@@ -450,11 +450,12 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
   if (!organizationId) return { error: 'organizationId is required for simulation' };
 
   // Load context from DB (same as production)
-  const [agentsResult, tagsResult, pipelinesResult, trainingRulesResult, integrationConfigResult, organizationResult] = await Promise.all([
+  const [agentsResult, tagsResult, pipelinesResult, trainingRulesResult, qualificationRulesResult, integrationConfigResult, organizationResult] = await Promise.all([
     supabase.from('ai_agents').select('*').eq('organization_id', organizationId).eq('is_active', true),
     supabase.from('tags').select('*').eq('organization_id', organizationId),
     supabase.from('pipelines').select('*, columns:pipeline_columns!pipeline_columns_pipeline_id_fkey(*)').eq('organization_id', organizationId),
     supabase.from('agent_training_rules').select('*').eq('organization_id', organizationId).eq('is_active', true),
+    supabase.from('agent_qualification_rules').select('*').eq('organization_id', organizationId).eq('is_active', true),
     resolveIntegrationConfig(supabase, organizationId),
     supabase.from('organizations').select('timezone').eq('id', organizationId).maybeSingle(),
   ]);
@@ -463,6 +464,7 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
   const allTags = tagsResult.data || [];
   const pipelines = pipelinesResult.data || [];
   const trainingRules = trainingRulesResult.data || [];
+  const qualificationRules = qualificationRulesResult.data || [];
   const integrationConfig = integrationConfigResult;
   const organizationTimezone = organizationResult?.data?.timezone || 'America/Sao_Paulo';
 
@@ -1241,6 +1243,9 @@ async function invokeAgentAI(
   // 3.6. ANÁLISE HOLÍSTICA — força a IA a ler todo histórico antes de rejeitar
   systemPrompt += buildHolisticAnalysisBlock();
 
+  // 3.7. CHECKLIST DE QUALIFICAÇÃO — critérios obrigatórios definidos pelo gestor
+  systemPrompt += buildQualificationChecklistBlock(ctx.qualificationRules || [], agent?.id);
+
   // 4. REGRAS APRENDIDAS (TREINAMENTO) - Grouped and prioritized
   const rulesSection = buildTrainingRulesSection(ctx.trainingRules, {
     agentId: agent?.id, 
@@ -1683,6 +1688,9 @@ async function invokeDocumentAgentAI(
 
   // ANÁLISE HOLÍSTICA — força leitura completa do histórico antes de qualquer ação
   systemPrompt += buildHolisticAnalysisBlock();
+
+  // CHECKLIST DE QUALIFICAÇÃO — critérios obrigatórios do agente ativo
+  systemPrompt += buildQualificationChecklistBlock(ctx.qualificationRules || [], agent?.id);
 
   // 4. REGRAS APRENDIDAS (TREINAMENTO)
   const rulesSection = buildTrainingRulesSection(ctx.trainingRules, {
@@ -2871,6 +2879,9 @@ function buildLegacySystemPrompt(ctx: any): string {
 
   // 3.6. ANÁLISE HOLÍSTICA — força a IA a ler todo histórico antes de rejeitar
   prompt += buildHolisticAnalysisBlock();
+
+  // 3.7. CHECKLIST DE QUALIFICAÇÃO — critérios obrigatórios do agente ativo
+  prompt += buildQualificationChecklistBlock(ctx.qualificationRules || [], activeAgent?.id);
 
   // 4. REGRAS APRENDIDAS (TREINAMENTO) - Grouped and strictly followed
   const rulesSection = buildTrainingRulesSection(ctx.trainingRules, {
