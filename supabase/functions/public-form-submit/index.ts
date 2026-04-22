@@ -25,7 +25,7 @@ Deno.serve(async (req) => {
 
     const { data: template, error: tErr } = await supabase
       .from("document_templates")
-      .select("content, organization_id, name, auto_send_whatsapp")
+      .select("content, content_html, logo_url, fields, organization_id, name, auto_send_whatsapp")
       .eq("id", template_id)
       .maybeSingle();
 
@@ -36,6 +36,17 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Resolve logo: explicit override > template logo > organization logo
+    let resolvedLogo: string | null = logo_url || (template as any).logo_url || null;
+    if (!resolvedLogo) {
+      const { data: org } = await supabase
+        .from("organizations")
+        .select("logo_url")
+        .eq("id", template.organization_id)
+        .maybeSingle();
+      resolvedLogo = org?.logo_url || null;
+    }
+
     const pdfResp = await fetch(`${supabaseUrl}/functions/v1/generate-document-pdf`, {
       method: "POST",
       headers: {
@@ -44,9 +55,11 @@ Deno.serve(async (req) => {
       },
       body: JSON.stringify({
         template_content: template.content,
+        template_content_html: (template as any).content_html ?? null,
+        fields: (template as any).fields ?? [],
         filled_data,
         document_name: document_name || template.name,
-        logo_url,
+        logo_url: resolvedLogo,
       }),
     });
 

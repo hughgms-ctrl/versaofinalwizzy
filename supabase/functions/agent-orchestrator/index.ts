@@ -1934,8 +1934,11 @@ async function invokeDocumentAgentAI(
               headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseKey}` },
               body: JSON.stringify({
                 template_content: tmpl.content,
+                template_content_html: (tmpl as any).content_html ?? null,
+                fields: (tmpl as any).fields ?? [],
                 filled_data: docCtx.collected_data,
                 document_name: tmpl.name,
+                logo_url: (tmpl as any).logo_url ?? null,
               }),
             });
             const pdfResult = await pdfResp.json();
