@@ -42,6 +42,7 @@ export function useCampaigns() {
                   flow:flows(id, name),
                   pending_count:campaign_queue(count)
                 `)
+                .eq('campaign_queue.status', 'pending')
                 .eq('organization_id', currentOrganizationId)
                 .order('created_at', { ascending: false });
 
