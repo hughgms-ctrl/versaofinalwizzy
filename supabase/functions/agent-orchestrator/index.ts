@@ -1235,6 +1235,9 @@ async function invokeAgentAI(
   // 3.5. CONTEXTO TEMPORAL — injected so the AI can reason about relative dates
   systemPrompt += buildTemporalContextBlock(ctx.organizationTimezone);
 
+  // 3.6. ANÁLISE HOLÍSTICA — força a IA a ler todo histórico antes de rejeitar
+  systemPrompt += buildHolisticAnalysisBlock();
+
   // 4. REGRAS APRENDIDAS (TREINAMENTO) - Grouped and prioritized
   const rulesSection = buildTrainingRulesSection(ctx.trainingRules, {
     agentId: agent?.id, 
