@@ -40,7 +40,7 @@ export function useCampaigns() {
                 .select(`
                   *,
                   flow:flows(id, name),
-                  pending_count:campaign_queue!inner(count)
+                  pending_count:campaign_queue(count)
                 `)
                 .eq('campaign_queue.status', 'pending')
                 .eq('organization_id', currentOrganizationId)
