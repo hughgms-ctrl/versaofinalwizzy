@@ -2315,7 +2315,7 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
             const finalResultado = stopOnRejection ? 'desqualificado' : resultado;
 
             // Store the resultado in variables for condition nodes downstream
-            const variables = { ...(flowExec.variables || {}), ai_resultado: resultado };
+            const variables = { ...(flowExec.variables || {}), ai_resultado: finalResultado };
 
             if (nextNodeId) {
               // Resume flow from the next node — COMPLETE the old execution first
