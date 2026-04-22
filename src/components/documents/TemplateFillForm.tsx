@@ -25,29 +25,12 @@ export function TemplateFillForm({ template, onBack, onGeneratedForSignature }: 
   const queryClient = useQueryClient();
   const [formData, setFormData] = useState<Record<string, string>>({});
   const [documentName, setDocumentName] = useState(template.name);
-  const [logoFile, setLogoFile] = useState<File | null>(null);
-  const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
 
   const fields = (template.fields || []) as Array<{ name: string; label: string; type: string; required: boolean }>;
 
   const handleFieldChange = (fieldName: string, value: string) => {
     setFormData(prev => ({ ...prev, [fieldName]: value }));
-  };
-
-  const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setLogoFile(file);
-      const reader = new FileReader();
-      reader.onload = (ev) => setLogoPreview(ev.target?.result as string);
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const removeLogo = () => {
-    setLogoFile(null);
-    setLogoPreview(null);
   };
 
   const handleGenerate = async (advanceToSignature = false) => {
