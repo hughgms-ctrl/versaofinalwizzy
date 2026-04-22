@@ -67,20 +67,29 @@ export function useRegenerateDocumentPdf() {
   return useMutation({
     mutationFn: async (doc: GeneratedDocument) => {
       let templateContent = '';
+      let templateContentHtml: string | null = null;
+      let templateLogoUrl: string | null = null;
+      let templateFields: any[] = [];
       if (doc.template_id) {
         const { data: template } = await (supabase as any)
           .from('document_templates')
-          .select('content')
+          .select('content, content_html, logo_url, fields')
           .eq('id', doc.template_id)
           .single();
         templateContent = template?.content || '';
+        templateContentHtml = template?.content_html || null;
+        templateLogoUrl = template?.logo_url || null;
+        templateFields = template?.fields || [];
       }
 
       const { data, error } = await supabase.functions.invoke('generate-document-pdf', {
         body: {
           template_content: templateContent,
+          template_content_html: templateContentHtml,
+          fields: templateFields,
           filled_data: doc.filled_data,
           document_name: doc.name,
+          logo_url: templateLogoUrl,
         },
       });
       if (error) throw error;

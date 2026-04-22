@@ -251,8 +251,11 @@ Deno.serve(async (req) => {
               },
               body: JSON.stringify({
                 template_content: template.content,
+                template_content_html: (template as any).content_html ?? null,
+                fields: (template as any).fields ?? [],
                 filled_data: templateData,
                 document_name: docName,
+                logo_url: (template as any).logo_url ?? null,
               }),
             });
 
