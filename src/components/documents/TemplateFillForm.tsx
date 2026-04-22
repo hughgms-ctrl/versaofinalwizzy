@@ -152,32 +152,14 @@ export function TemplateFillForm({ template, onBack, onGeneratedForSignature }: 
                 />
               </div>
 
-              <div>
-                <Label>Logo (cabeçalho do documento)</Label>
-                {logoPreview ? (
-                  <div className="mt-1 flex items-center gap-3 p-3 border rounded-lg">
-                    <img
-                      src={logoPreview}
-                      alt="Logo preview"
-                      className="h-12 w-auto max-w-[200px] object-contain"
-                    />
-                    <Button variant="ghost" size="icon" onClick={removeLogo}>
-                      <X className="h-4 w-4" />
-                    </Button>
+              {template.logo_url && (
+                <div>
+                  <Label>Logo do template</Label>
+                  <div className="mt-1 p-3 border rounded-lg bg-white">
+                    <img src={template.logo_url} alt="Logo" className="h-12 w-auto max-w-[200px] object-contain" />
                   </div>
-                ) : (
-                  <label className="mt-1 border-2 border-dashed border-border rounded-lg p-4 text-center block cursor-pointer hover:border-primary/50 transition-colors relative">
-                    <ImageIcon className="h-6 w-6 mx-auto text-muted-foreground mb-1" />
-                    <p className="text-xs text-muted-foreground">Clique para selecionar</p>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleLogoChange}
-                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                    />
-                  </label>
-                )}
-              </div>
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -199,6 +181,11 @@ export function TemplateFillForm({ template, onBack, onGeneratedForSignature }: 
                       placeholder={field.label}
                       rows={2}
                       className="text-sm"
+                    />
+                  ) : field.type === 'date' ? (
+                    <DatePicker
+                      value={formData[field.name] || ''}
+                      onChange={(v) => handleFieldChange(field.name, v)}
                     />
                   ) : (
                     <Input
