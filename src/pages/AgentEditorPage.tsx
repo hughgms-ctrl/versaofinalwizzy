@@ -12,6 +12,7 @@ import { ArrowLeft, Save, Sparkles, Loader2, ChevronDown, ChevronRight } from 'l
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { TrainingRulesList } from '@/components/agents/TrainingRulesList';
+import { QualificationRulesPanel } from '@/components/agents/QualificationRulesPanel';
 
 
 const AgentEditorPage = () => {
@@ -205,6 +206,10 @@ const AgentEditorPage = () => {
             organizationId={agent.organization_id}
           />
         </div>
+
+        {agentId && (
+          <QualificationRulesPanel agentId={agentId} organizationId={agent.organization_id} />
+        )}
       </div>
     </MainLayout>
   );
