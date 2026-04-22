@@ -446,6 +446,7 @@ async function executeNode(
       return await executeDocumentAction(data, context, supabase, flow);
 
     case 'action-transfer':
+    case 'orch-human':
       return await executeTransfer(data, context, supabase);
 
     case 'action-workspace':
