@@ -1186,6 +1186,7 @@ async function invokeAgentAI(
   const toolsExecuted: any[] = [];
   let replyText: string | null = null;
   let shouldAdvance = false;
+  let lastAgentConfig: ReturnType<typeof resolveAgentConfig> | null = null;
 
   const agentId = agentNode.data?.agentId;
   const agent = ctx.agents.find((a: any) => a.id === agentId);
