@@ -447,12 +447,13 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
   if (!organizationId) return { error: 'organizationId is required for simulation' };
 
   // Load context from DB (same as production)
-  const [agentsResult, tagsResult, pipelinesResult, trainingRulesResult, integrationConfigResult] = await Promise.all([
+  const [agentsResult, tagsResult, pipelinesResult, trainingRulesResult, integrationConfigResult, organizationResult] = await Promise.all([
     supabase.from('ai_agents').select('*').eq('organization_id', organizationId).eq('is_active', true),
     supabase.from('tags').select('*').eq('organization_id', organizationId),
     supabase.from('pipelines').select('*, columns:pipeline_columns!pipeline_columns_pipeline_id_fkey(*)').eq('organization_id', organizationId),
     supabase.from('agent_training_rules').select('*').eq('organization_id', organizationId).eq('is_active', true),
     resolveIntegrationConfig(supabase, organizationId),
+    supabase.from('organizations').select('timezone').eq('id', organizationId).maybeSingle(),
   ]);
 
   const agents = agentsResult.data || [];
@@ -460,6 +461,7 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
   const pipelines = pipelinesResult.data || [];
   const trainingRules = trainingRulesResult.data || [];
   const integrationConfig = integrationConfigResult;
+  const organizationTimezone = organizationResult?.data?.timezone || 'America/Sao_Paulo';
 
   const agent = agentId ? agents.find((a: any) => a.id === agentId) : null;
 
@@ -503,6 +505,9 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
   if (additionalPrompt) {
     systemPrompt += `# INSTRUÇÕES ESPECÍFICAS/OBJETIVO ATUAL:\n${cleanPrompt(additionalPrompt)}\n\n---\n\n`;
   }
+
+  // 3.5. CONTEXTO TEMPORAL — injected so the AI can reason about relative dates
+  systemPrompt += buildTemporalContextBlock(organizationTimezone);
 
   // 4. REGRAS APRENDIDAS (TREINAMENTO)
   const rulesSection = buildTrainingRulesSection(trainingRules, {
@@ -1225,6 +1230,9 @@ async function invokeAgentAI(
   if (additionalPrompt) {
     systemPrompt += `# INSTRUÇÕES ESPECÍFICAS/OBJETIVO ATUAL:\n${cleanPrompt(additionalPrompt)}\n\n---\n\n`;
   }
+
+  // 3.5. CONTEXTO TEMPORAL — injected so the AI can reason about relative dates
+  systemPrompt += buildTemporalContextBlock(ctx.organizationTimezone);
 
   // 4. REGRAS APRENDIDAS (TREINAMENTO) - Grouped and prioritized
   const rulesSection = buildTrainingRulesSection(ctx.trainingRules, {
