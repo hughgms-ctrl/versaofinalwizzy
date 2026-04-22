@@ -12,6 +12,7 @@ import { useDocumentTemplates, DocumentTemplate } from '@/hooks/useDocumentTempl
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
+import { DatePicker } from '@/components/ui/date-picker';
 
 interface PackFillFormProps {
   pack: DocumentPack;

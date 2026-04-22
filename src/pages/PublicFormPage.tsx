@@ -7,6 +7,8 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { supabase } from '@/integrations/supabase/client';
+import { DatePicker } from '@/components/ui/date-picker';
+import { fillTemplate } from '@/lib/documentFormatters';
 
 interface TemplateField {
   name: string;
