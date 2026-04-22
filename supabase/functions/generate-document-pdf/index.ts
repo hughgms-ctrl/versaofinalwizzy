@@ -92,23 +92,59 @@ function sanitizeWinAnsi(text: string): string {
 }
 
 // ====================== Lightweight HTML → block parser ======================
-type InlineRun = { text: string; bold?: boolean; italic?: boolean };
+type InlineRun = {
+  text: string;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  strike?: boolean;
+  fontSize?: number; // in points
+};
 type Block =
   | { type: "p" | "h1" | "h2" | "h3"; runs: InlineRun[]; align?: "left" | "center" | "right" | "justify" }
   | { type: "li"; ordered: boolean; index: number; runs: InlineRun[] }
   | { type: "spacer"; height: number }
   | { type: "hr" };
 
+function parseFontSizeFromStyle(style: string | null | undefined): number | undefined {
+  if (!style) return undefined;
+  const m = /font-size\s*:\s*([\d.]+)\s*(px|pt|em|rem)?/i.exec(style);
+  if (!m) return undefined;
+  const value = parseFloat(m[1]);
+  const unit = (m[2] || "px").toLowerCase();
+  if (!Number.isFinite(value)) return undefined;
+  // Convert to points (PDF unit). 1pt = 1.333px, 1em ≈ 11pt baseline.
+  if (unit === "pt") return value;
+  if (unit === "px") return value * 0.75;
+  if (unit === "em" || unit === "rem") return value * 11;
+  return value;
+}
+
 function parseInlineRuns(html: string): InlineRun[] {
-  // Returns runs of text with bold/italic flags.
-  // Strategy: tokenize tags <b>, <strong>, <i>, <em>, <br>; ignore others.
+  // Tracks bold/italic/underline/strike depths and a font-size stack.
   const runs: InlineRun[] = [];
   let bold = 0;
   let italic = 0;
+  let underline = 0;
+  let strike = 0;
+  const fontSizeStack: Array<number | undefined> = [];
   let buf = "";
+  const currentFontSize = () => {
+    for (let i = fontSizeStack.length - 1; i >= 0; i--) {
+      if (fontSizeStack[i] !== undefined) return fontSizeStack[i];
+    }
+    return undefined;
+  };
   const flush = () => {
     if (buf.length === 0) return;
-    runs.push({ text: decodeHtmlEntities(buf), bold: bold > 0, italic: italic > 0 });
+    runs.push({
+      text: decodeHtmlEntities(buf),
+      bold: bold > 0,
+      italic: italic > 0,
+      underline: underline > 0,
+      strike: strike > 0,
+      fontSize: currentFontSize(),
+    });
     buf = "";
   };
   // Normalize <br> to newlines first
@@ -128,8 +164,25 @@ function parseInlineRuns(html: string): InlineRun[] {
         flush();
         italic += closing ? -1 : 1;
         if (italic < 0) italic = 0;
+      } else if (name === "u") {
+        flush();
+        underline += closing ? -1 : 1;
+        if (underline < 0) underline = 0;
+      } else if (name === "s" || name === "strike" || name === "del") {
+        flush();
+        strike += closing ? -1 : 1;
+        if (strike < 0) strike = 0;
+      } else if (name === "span" || name === "font") {
+        flush();
+        if (closing) {
+          fontSizeStack.pop();
+        } else {
+          const styleAttr = getAttr(tok, "style");
+          const size = parseFontSizeFromStyle(styleAttr);
+          fontSizeStack.push(size);
+        }
       }
-      // ignore other inline tags (u, span, a, etc.) - text inside still processed
+      // ignore other inline tags - text inside still processed
     } else {
       buf += tok;
     }
