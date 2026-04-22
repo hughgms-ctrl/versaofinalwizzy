@@ -637,6 +637,7 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
   let shouldAdvance = false;
   let round = 0;
   let replySentViaTool = false;
+  let lastAgentConfig: ReturnType<typeof resolveAgentConfig> | null = null;
 
   while (round < 3) {
     round++;
@@ -1185,6 +1186,7 @@ async function invokeAgentAI(
   const toolsExecuted: any[] = [];
   let replyText: string | null = null;
   let shouldAdvance = false;
+  let lastAgentConfig: ReturnType<typeof resolveAgentConfig> | null = null;
 
   const agentId = agentNode.data?.agentId;
   const agent = ctx.agents.find((a: any) => a.id === agentId);
@@ -1411,6 +1413,7 @@ async function invokeAgentAI(
     console.log(`--- Agent AI Round ${round} ---`);
 
     const agentConfig = resolveAgentConfig(ctx, agent, ctx.integrationConfig);
+    lastAgentConfig = agentConfig;
     const abortCtrl = new AbortController();
     const tid = setTimeout(() => abortCtrl.abort(), 25000);
     let aiResponse: Response;
@@ -1521,10 +1524,20 @@ async function invokeAgentAI(
     !hasQuestionLikeReply &&
     hasExplicitCompletionCue(replyText);
 
-  if (!hasUserVisibleReply && !shouldAdvance && hasNextNodes) {
-    replyText = 'Entendi. Para continuar, pode me dar mais um detalhe sobre isso?';
-    hasUserVisibleReply = true;
-    console.log('[AGENT] RECOVERY: no visible reply generated, sending follow-up question to avoid deadlock');
+  if ((!hasUserVisibleReply || isKnownGenericDetailFallback(replyText)) && !shouldAdvance && hasNextNodes && lastAgentConfig) {
+    console.log('[AGENT] RECOVERY: no visible reply generated or generic fallback detected, attempting guided regeneration');
+    const recoveredReply = await recoverVisibleReply({
+      endpoint: lastAgentConfig.endpoint,
+      apiKey: lastAgentConfig.apiKey,
+      model: lastAgentConfig.model,
+      aiMessages,
+      logPrefix: '[AGENT]',
+    });
+
+    if (recoveredReply) {
+      replyText = recoveredReply;
+      hasUserVisibleReply = true;
+    }
   }
 
   if (!shouldAdvance && hasNextNodes && autoAdvance) {
@@ -2329,10 +2342,20 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
   const handoffCtx = ctx.conversation?.metadata?.ai_handoff_context || {};
   const autoAdvance = handoffCtx.autoAdvance !== false;
 
-  if (!shouldBreak && ctx.flowExecutionId && !hasUserVisibleReply) {
-    replyText = 'Entendi. Para continuar, pode me dar mais um detalhe sobre isso?';
-    hasUserVisibleReply = true;
-    console.log('[LEGACY] RECOVERY: no visible reply generated, sending follow-up question to avoid deadlock');
+  if (!shouldBreak && ctx.flowExecutionId && (!hasUserVisibleReply || isKnownGenericDetailFallback(replyText))) {
+    console.log('[LEGACY] RECOVERY: no visible reply generated or generic fallback detected, attempting guided regeneration');
+    const recoveredReply = await recoverVisibleReply({
+      endpoint: ctx.aiEndpoint,
+      apiKey: ctx.aiApiKey,
+      model: ctx.aiModel,
+      aiMessages,
+      logPrefix: '[LEGACY]',
+    });
+
+    if (recoveredReply) {
+      replyText = recoveredReply;
+      hasUserVisibleReply = true;
+    }
   }
 
   if (!shouldBreak && ctx.flowExecutionId && hasUserVisibleReply && autoAdvance) {
@@ -2688,7 +2711,7 @@ function buildTrainingRulesSection(
     (!r.agent_id || r.agent_id === filters.agentId));
   
   const nodeRules = allRules.filter(r => r.is_active && r.target_type === 'flow_node' && 
-    (r.flow_id === filters.flowId && (r.node_id === filters.nodeId))); // Strict node_id match for flow_node rules
+    r.flow_id === filters.flowId && (!r.node_id || r.node_id === filters.nodeId));
 
   console.log('[DEBUG-RULES] Results -> Master:', masterRules.length, '| Agent:', agentRules.length, '| Node:', nodeRules.length);
   
@@ -2716,6 +2739,121 @@ function buildTrainingRulesSection(
   }
 
   return section;
+}
+
+function isKnownGenericDetailFallback(message: string | null | undefined): boolean {
+  if (!message) return false;
+
+  const normalized = message
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+
+  return [
+    'entendi. para continuar, pode me dar mais um detalhe sobre isso?',
+    'para continuar, pode me dar mais um detalhe sobre isso?',
+    'pode me dar mais um detalhe sobre isso?',
+    'pode me dar mais detalhes sobre isso?',
+  ].includes(normalized);
+}
+
+async function recoverVisibleReply(args: {
+  endpoint: string;
+  apiKey: string;
+  model: string;
+  aiMessages: any[];
+  logPrefix: string;
+}) {
+  const recoveryMessages = [
+    ...args.aiMessages,
+    {
+      role: 'system',
+      content: [
+        'RECUPERAÇÃO OBRIGATÓRIA DE RESPOSTA VISÍVEL:',
+        'Na rodada anterior você não gerou nenhuma resposta visível ao cliente.',
+        'Gere AGORA uma única resposta útil, objetiva e totalmente aderente a TODAS as regras anteriores.',
+        'NÃO peça "mais detalhes" nem use pedidos genéricos como "pode me dar mais um detalhe sobre isso?", a menos que isso tenha sido explicitamente exigido pelas instruções anteriores.',
+        'Se faltar informação, peça apenas o dado específico que realmente estiver faltando.',
+        'Use send_reply para responder.',
+      ].join('\n'),
+    },
+  ];
+
+  const recoveryTools = [
+    {
+      type: 'function',
+      function: {
+        name: 'send_reply',
+        description: 'Responder ao cliente com uma mensagem visível e útil.',
+        parameters: {
+          type: 'object',
+          properties: {
+            message: { type: 'string' },
+          },
+          required: ['message'],
+        },
+      },
+    },
+  ];
+
+  const abortCtrl = new AbortController();
+  const tid = setTimeout(() => abortCtrl.abort(), 15000);
+
+  try {
+    const response = await fetch(args.endpoint, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${args.apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: args.model,
+        messages: recoveryMessages,
+        tools: recoveryTools,
+        tool_choice: 'auto',
+      }),
+      signal: abortCtrl.signal,
+    });
+
+    clearTimeout(tid);
+
+    if (!response.ok) {
+      console.warn(`${args.logPrefix} recovery AI error: ${response.status}`);
+      return null;
+    }
+
+    const aiResult = await response.json();
+    const choice = aiResult.choices?.[0];
+    if (!choice?.message) return null;
+
+    const directReply = choice.message.content?.trim();
+    if (directReply && !isInternalThought(directReply) && !isKnownGenericDetailFallback(directReply)) {
+      return directReply;
+    }
+
+    const toolCalls = choice.message.tool_calls || [];
+    for (const toolCall of toolCalls) {
+      if (toolCall.function?.name !== 'send_reply') continue;
+
+      try {
+        const fnArgs = JSON.parse(toolCall.function.arguments || '{}');
+        const candidateReply = fnArgs.message?.trim();
+
+        if (candidateReply && !isInternalThought(candidateReply) && !isKnownGenericDetailFallback(candidateReply)) {
+          return candidateReply;
+        }
+      } catch (error) {
+        console.warn(`${args.logPrefix} recovery parse error:`, error);
+      }
+    }
+
+    return null;
+  } catch (error) {
+    clearTimeout(tid);
+    console.warn(`${args.logPrefix} recovery fetch error:`, error);
+    return null;
+  }
 }
 
 function buildLegacyTools(ctx?: any) {
