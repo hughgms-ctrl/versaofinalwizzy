@@ -236,20 +236,21 @@ export function TemplateFillForm({ template, onBack, onGeneratedForSignature }: 
           </div>
         </div>
 
-        {/* Preview Section */}
+        {/* Preview Section — papel A4 simulado */}
         <Card className="lg:sticky lg:top-4 h-fit">
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Preview do documento</CardTitle>
           </CardHeader>
           <CardContent>
-            {logoPreview && (
-              <div className="mb-4 pb-3 border-b">
-                <img src={logoPreview} alt="Logo" className="h-10 w-auto object-contain" />
+            {template.logo_url && (
+              <div className="mb-4 pb-3 border-b bg-white p-2 rounded">
+                <img src={template.logo_url} alt="Logo" className="h-10 w-auto object-contain" />
               </div>
             )}
-            <div className="max-h-[60vh] overflow-y-auto text-xs font-mono whitespace-pre-wrap bg-muted p-4 rounded-lg leading-relaxed">
-              {filledContent}
-            </div>
+            <div
+              className="max-h-[60vh] overflow-y-auto bg-white text-black p-6 rounded-lg leading-relaxed prose prose-sm max-w-none"
+              dangerouslySetInnerHTML={{ __html: filledContent }}
+            />
           </CardContent>
         </Card>
       </div>
