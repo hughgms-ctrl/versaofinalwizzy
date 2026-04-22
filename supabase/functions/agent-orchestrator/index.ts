@@ -326,6 +326,17 @@ Deno.serve(async (req) => {
     
     console.log(`[ORCHESTRATOR] AI Config: Provider=${finalProvider}, Model=${aiModel} (Target=${finalModel})`);
 
+    // Load organization timezone for temporal context (default: America/Sao_Paulo)
+    let organizationTimezone = 'America/Sao_Paulo';
+    try {
+      const { data: orgRow } = await supabase
+        .from('organizations')
+        .select('timezone')
+        .eq('id', organizationId)
+        .maybeSingle();
+      if (orgRow?.timezone) organizationTimezone = orgRow.timezone;
+    } catch (_e) { /* keep default */ }
+
     const context = {
       conversationId, contactId, organizationId, conversation,
       messages, agents, allTags, contactTags, pipelines, pipelinePositions,
@@ -334,6 +345,7 @@ Deno.serve(async (req) => {
       integrationConfig, flowExecutionId, trainingRules,
       forceResponse, // PASS TO CONTEXT
       additionalContext, // NEW: Pass the payload additionalContext
+      organizationTimezone, // NEW: For temporal context block in prompts
     };
 
     // 4. Resolve flow_id from available sources
