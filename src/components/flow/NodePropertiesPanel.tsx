@@ -1498,7 +1498,11 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
                 scope={{ type: 'flow-node', flow_id: flowId, node_id: node.id }}
                 organizationId={organizationId}
                 scopeLabel="este nó do fluxo"
-                sourcePrompt={(localData.prompt as string) || (localData.instructions as string) || ''}
+                sourcePrompt={[
+                  (localData.additionalPrompt as string) || '',
+                  (localData.aiAssistantPrompt as string) || '',
+                  (localData.prompt as string) || '',
+                ].filter(Boolean).join('\n\n')}
               />
             )}
 
