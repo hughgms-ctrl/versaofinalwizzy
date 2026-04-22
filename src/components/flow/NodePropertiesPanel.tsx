@@ -1684,6 +1684,161 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
           </div>
         );
 
+      case 'action-transfer':
+      case 'orch-human': {
+        const notifyUserIds = (localData.notifyUserIds as string[]) || [];
+        const toggleNotifyUser = (userId: string) => {
+          const next = notifyUserIds.includes(userId)
+            ? notifyUserIds.filter(id => id !== userId)
+            : [...notifyUserIds, userId];
+          handleChange('notifyUserIds', next);
+        };
+        return (
+          <div className="space-y-4">
+            <div className="p-3 bg-rose-500/10 rounded-lg flex items-center gap-3">
+              <UserPlus className="h-5 w-5 text-rose-500" />
+              <div>
+                <p className="text-xs font-semibold">Escalação Humana</p>
+                <p className="text-[10px] text-muted-foreground">Pausa a IA e direciona a conversa para um atendente humano.</p>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Atribuir a um atendente</Label>
+              <Select
+                value={(localData.assignedUserId as string) || 'queue'}
+                onValueChange={(val) => {
+                  if (val === 'queue') {
+                    const newData = { ...localData, assignedUserId: '', assignedUserName: '' };
+                    setLocalData(newData);
+                    onUpdate(node.id, newData);
+                  } else {
+                    const m = teamMembers.find(t => t.user_id === val);
+                    const newData = {
+                      ...localData,
+                      assignedUserId: val,
+                      assignedUserName: m?.name || 'Atendente',
+                    };
+                    setLocalData(newData);
+                    onUpdate(node.id, newData);
+                  }
+                }}
+              >
+                <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="queue">
+                    <span className="text-muted-foreground">Fila (sem atribuição específica)</span>
+                  </SelectItem>
+                  {teamMembers.map((m) => (
+                    <SelectItem key={m.user_id} value={m.user_id}>
+                      {m.name} <span className="text-muted-foreground text-xs">· {m.role}</span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-muted-foreground">
+                Se nenhum atendente for escolhido, a conversa entra na fila para qualquer atendente assumir.
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Departamento (opcional)</Label>
+              <Select
+                value={(localData.departmentId as string) || 'none'}
+                onValueChange={(val) => {
+                  if (val === 'none') {
+                    const newData = { ...localData, departmentId: '', departmentName: '' };
+                    setLocalData(newData);
+                    onUpdate(node.id, newData);
+                  } else {
+                    const dept = departments.find(d => d.id === val);
+                    const newData = {
+                      ...localData,
+                      departmentId: val,
+                      departmentName: dept?.name || 'Departamento',
+                    };
+                    setLocalData(newData);
+                    onUpdate(node.id, newData);
+                  }
+                }}
+              >
+                <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">
+                    <span className="text-muted-foreground">Sem alteração</span>
+                  </SelectItem>
+                  {departments.map((d) => (
+                    <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2 pt-2 border-t border-border/50">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-semibold">Notificar atendentes via WhatsApp</Label>
+                <span className="text-[10px] text-muted-foreground">
+                  {notifyUserIds.length} selecionado{notifyUserIds.length === 1 ? '' : 's'}
+                </span>
+              </div>
+              <p className="text-[10px] text-muted-foreground leading-tight">
+                Os atendentes selecionados receberão uma mensagem no WhatsApp informando que há um lead aguardando atendimento.
+              </p>
+              <div className="max-h-48 overflow-y-auto rounded-lg border border-border/50 bg-muted/20 p-2 space-y-1">
+                {teamMembers.length === 0 && (
+                  <p className="text-xs text-muted-foreground text-center py-2">Nenhum atendente cadastrado.</p>
+                )}
+                {teamMembers.map((m) => {
+                  const checked = notifyUserIds.includes(m.user_id);
+                  const hasPhone = !!m.phone;
+                  return (
+                    <label
+                      key={m.user_id}
+                      className={cn(
+                        "flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer hover:bg-muted/50 transition-colors",
+                        !hasPhone && "opacity-60"
+                      )}
+                      title={!hasPhone ? 'Este usuário não tem telefone cadastrado' : ''}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleNotifyUser(m.user_id)}
+                        className="h-3.5 w-3.5 rounded border-border accent-rose-500"
+                        disabled={!hasPhone}
+                      />
+                      <span className="text-sm flex-1 truncate">{m.name}</span>
+                      <span className="text-[10px] text-muted-foreground">{m.role}</span>
+                      {!hasPhone && (
+                        <span className="text-[10px] text-amber-500">sem telefone</span>
+                      )}
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            {notifyUserIds.length > 0 && (
+              <div className="space-y-2">
+                <Label className="text-xs font-semibold">Mensagem da notificação</Label>
+                <Textarea
+                  value={(localData.notifyMessage as string) || ''}
+                  onChange={(e) => handleChange('notifyMessage', e.target.value)}
+                  placeholder="🔔 Novo lead aguardando atendimento: {nome} ({telefone})"
+                  className="min-h-[70px] text-sm"
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  Variáveis: <code className="bg-muted px-1 rounded">{'{nome}'}</code>{' '}
+                  <code className="bg-muted px-1 rounded">{'{telefone}'}</code>{' '}
+                  <code className="bg-muted px-1 rounded">{'{atendente}'}</code>.
+                  Se vazio, será usado um modelo padrão.
+                </p>
+              </div>
+            )}
+          </div>
+        );
+      }
+
       case 'action-department':
         return (
           <div className="space-y-4">
