@@ -177,7 +177,7 @@ Deno.serve(async (req) => {
       // Get templates
       const { data: templates } = await supabase
         .from("document_templates")
-        .select("id, name, fields, content")
+        .select("id, name, fields, content, content_html, logo_url")
         .in("id", pack.template_ids || []);
 
       if (!templates || templates.length === 0) {
