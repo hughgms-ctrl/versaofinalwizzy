@@ -28,7 +28,7 @@ export default function AuthPage() {
 
   useEffect(() => {
     if (!authLoading && user) {
-      navigate('/');
+      navigate('/dashboard');
     }
   }, [user, authLoading, navigate]);
 
@@ -51,7 +51,7 @@ export default function AuthPage() {
         title: 'Bem-vindo!',
         description: 'Login realizado com sucesso.',
       });
-      navigate('/');
+      navigate('/dashboard');
     }
 
     setIsLoading(false);
@@ -90,7 +90,7 @@ export default function AuthPage() {
         title: 'Conta criada!',
         description: 'Sua conta foi criada com sucesso. Você já pode usar o sistema.',
       });
-      navigate('/');
+      navigate('/dashboard');
     }
 
     setIsLoading(false);
