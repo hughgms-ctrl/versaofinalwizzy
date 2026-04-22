@@ -553,6 +553,7 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
   systemPrompt += `- Mantenha a persona definida no prompt master.\n`;
   systemPrompt += `- NUNCA produza texto entre parênteses como "(aguardando resposta)" ou pensamentos internos. Apenas use send_reply.\n`;
   systemPrompt += `- Se não precisa responder ao cliente, NÃO gere texto algum. Apenas execute as ferramentas necessárias.\n`;
+  systemPrompt += `- COERÊNCIA REJEIÇÃO/QUALIFICAÇÃO: se você está REJEITANDO ou DESQUALIFICANDO o cliente, ao finalizar a etapa use um resultado negativo (ex: "desqualificado", "reprovado", "negado"). NUNCA use resultado positivo quando a mensagem enviada for de rejeição.\n`;
 
   if (isFirstActivation) {
     systemPrompt += `\n⚠️ ATENÇÃO: Você ACABOU de ser ativado nesta etapa do fluxo.\n`;
@@ -1285,6 +1286,7 @@ async function invokeAgentAI(
   systemPrompt += `- Mantenha a persona definida no prompt master.\n`;
   systemPrompt += `- NUNCA produza texto entre parênteses como "(aguardando resposta)" ou pensamentos internos. Apenas use send_reply.\n`;
   systemPrompt += `- Se não precisa responder ao cliente, NÃO gere texto algum. Apenas execute as ferramentas necessárias.\n`;
+  systemPrompt += `- COERÊNCIA REJEIÇÃO/QUALIFICAÇÃO: se você está REJEITANDO ou DESQUALIFICANDO o cliente nesta etapa, ao chamar finalizar_interacao use resultado="desqualificado" (ou o termo equivalente que aparecer nos outcomes deste nó, ex: "reprovado", "negado", "inapto"). NUNCA use um resultado positivo (qualificado/aprovado) quando a mensagem enviada for de rejeição/encerramento negativo. Se o nó não tiver outcome negativo configurado, apenas envie a mensagem de despedida com send_reply e NÃO chame finalizar_interacao — o sistema encerrará automaticamente.\n`;
 
   if (isFirstActivation) {
     systemPrompt += `\n⚠️ ATENÇÃO: Você ACABOU de ser ativado nesta etapa do fluxo.\n`;
@@ -2740,6 +2742,9 @@ function buildLegacySystemPrompt(ctx: any): string {
   if (additionalContext) {
     prompt += `# INSTRUÇÕES ESPECÍFICAS PARA ESTE MOMENTO:\n${cleanPrompt(additionalContext)}\n\n---\n\n`;
   }
+
+  // 3.5. CONTEXTO TEMPORAL — injected so the AI can reason about relative dates
+  prompt += buildTemporalContextBlock(ctx.organizationTimezone);
 
   // 4. REGRAS APRENDIDAS (TREINAMENTO) - Grouped and strictly followed
   const rulesSection = buildTrainingRulesSection(ctx.trainingRules, {
