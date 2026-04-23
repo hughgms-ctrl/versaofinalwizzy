@@ -95,8 +95,12 @@ export default function PublicSignaturePage() {
   }, [cameraStream]);
 
   useEffect(() => {
+    previewUrlsRef.current = previewUrls;
+  }, [previewUrls]);
+
+  useEffect(() => {
     return () => {
-      Object.values(previewUrls).forEach((url) => {
+      Object.values(previewUrlsRef.current).forEach((url) => {
         try {
           URL.revokeObjectURL(url);
         } catch {
@@ -104,7 +108,7 @@ export default function PublicSignaturePage() {
         }
       });
     };
-  }, [previewUrls]);
+  }, []);
 
   const loadPreviewBlob = useCallback(async (documentId: string, pdfUrl: string) => {
     setPreviewLoading((prev) => ({ ...prev, [documentId]: true }));
