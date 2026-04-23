@@ -15,7 +15,7 @@ import { fillTemplate } from '@/lib/documentFormatters';
 import { FillModeStep, FillMode } from './FillModeStep';
 import { SignersManager } from './SignersManager';
 import { SignerInput, useCreateSigners } from '@/hooks/useDocumentSigners';
-import { getPublicOrigin } from '@/lib/publicOrigin';
+import { getPublicAppOrigin } from '@/lib/publicOrigin';
 
 interface TemplateFillFormProps {
   template: DocumentTemplate;
