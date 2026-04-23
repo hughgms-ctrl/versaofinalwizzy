@@ -442,7 +442,7 @@ export default function PublicSignaturePage() {
     <div className="min-h-screen bg-background">
       {/* Header */}
       <header className="border-b bg-card/80 backdrop-blur-sm sticky top-0 z-10">
-        <div className="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
+        <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Shield className="h-5 w-5 text-primary" />
             <span className="font-semibold text-sm">Assinatura Eletrônica Avançada</span>
@@ -452,7 +452,7 @@ export default function PublicSignaturePage() {
       </header>
 
       {/* Progress Steps */}
-      <div className="max-w-lg mx-auto px-4 py-4">
+      <div className="max-w-3xl mx-auto px-4 py-4">
         <div className="flex items-center justify-between mb-6">
           {activeSteps.map((s, i) => {
             const Icon = s.icon;
@@ -476,47 +476,97 @@ export default function PublicSignaturePage() {
           })}
         </div>
 
-        {/* Step 1: Review Document */}
-        {step === 'review' && (
-          <div className="space-y-4">
-            <Card className="p-4">
-              <div className="flex items-center gap-3 mb-3">
-                <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                  <FileText className="h-5 w-5 text-primary" />
-                </div>
-                <div>
-                  <h2 className="font-semibold text-sm">{documentData?.generated_document?.name || 'Documento'}</h2>
-                  <p className="text-xs text-muted-foreground">Revise o documento antes de prosseguir</p>
-                </div>
-              </div>
-              {documentData?.generated_document?.pdf_url && (
-                <div className="border rounded-lg overflow-hidden">
-                  <iframe
-                    src={documentData.generated_document.pdf_url}
-                    className="w-full h-[400px]"
-                    title="Documento"
-                  />
-                </div>
+        {/* Step 1: Review Document(s) */}
+        {step === 'review' && (() => {
+          const packDocs = documentData?.pack?.documents as Array<{ id: string; name: string; pdf_url: string | null }> | undefined;
+          const isPack = Array.isArray(packDocs) && packDocs.length > 0;
+          const docsToShow = isPack
+            ? packDocs!
+            : documentData?.generated_document
+              ? [documentData.generated_document]
+              : [];
+
+          return (
+            <div className="space-y-4">
+              {isPack && (
+                <Card className="p-4 border-primary/30 bg-primary/5">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                      <FileText className="h-5 w-5 text-primary" />
+                    </div>
+                    <div className="flex-1">
+                      <h2 className="font-semibold text-sm">
+                        {documentData?.pack?.name || 'Pacote de documentos'}
+                      </h2>
+                      <p className="text-xs text-muted-foreground">
+                        {docsToShow.length} {docsToShow.length === 1 ? 'documento' : 'documentos'} para revisar e assinar
+                      </p>
+                    </div>
+                  </div>
+                </Card>
               )}
-            </Card>
 
-            {documentData?.signer_name && (
-              <Card className="p-3">
-                <p className="text-xs text-muted-foreground">Signatário</p>
-                <p className="font-medium text-sm">{documentData.signer_name}</p>
-                {documentData.signer_email && <p className="text-xs text-muted-foreground">{documentData.signer_email}</p>}
-              </Card>
-            )}
+              {docsToShow.map((d, idx) => (
+                <Card key={d.id} className="p-4">
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                      <FileText className="h-4 w-4 text-primary" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-semibold text-sm truncate">
+                        {isPack && (
+                          <span className="text-muted-foreground mr-1">{idx + 1}.</span>
+                        )}
+                        {d.name}
+                      </h3>
+                      <p className="text-xs text-muted-foreground">Revise o documento abaixo antes de prosseguir</p>
+                    </div>
+                    {d.pdf_url && (
+                      <Button size="sm" variant="ghost" asChild className="gap-1 shrink-0">
+                        <a href={d.pdf_url} target="_blank" rel="noopener noreferrer">
+                          <Eye className="h-3.5 w-3.5" />
+                          <span className="hidden sm:inline">Abrir</span>
+                        </a>
+                      </Button>
+                    )}
+                  </div>
+                  {d.pdf_url ? (
+                    <div className="border rounded-lg overflow-hidden bg-muted">
+                      <iframe
+                        src={`${d.pdf_url}#toolbar=1&view=FitH`}
+                        className="w-full h-[600px]"
+                        title={d.name}
+                      />
+                    </div>
+                  ) : (
+                    <div className="border rounded-lg p-6 text-center text-xs text-muted-foreground">
+                      Pré-visualização indisponível.
+                    </div>
+                  )}
+                </Card>
+              ))}
 
-            <Button 
-              onClick={() => setStep(documentData?.signing_method === 'internal' ? 'otp_send' : 'signature')} 
-              className="w-full gap-2"
-            >
-              Li e concordo com o documento
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
-        )}
+              {documentData?.signer_name && (
+                <Card className="p-3">
+                  <p className="text-xs text-muted-foreground">Signatário</p>
+                  <p className="font-medium text-sm">{documentData.signer_name}</p>
+                  {documentData.signer_email && <p className="text-xs text-muted-foreground">{documentData.signer_email}</p>}
+                </Card>
+              )}
+
+              <Button
+                onClick={() => setStep(documentData?.signing_method === 'internal' ? 'otp_send' : 'signature')}
+                className="w-full gap-2"
+                size="lg"
+              >
+                {isPack
+                  ? `Li e concordo com ${docsToShow.length === 1 ? 'o documento' : `os ${docsToShow.length} documentos`}`
+                  : 'Li e concordo com o documento'}
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          );
+        })()}
 
         {/* Step 2: OTP Verification */}
         {(step === 'otp_send' || step === 'otp_verify') && (

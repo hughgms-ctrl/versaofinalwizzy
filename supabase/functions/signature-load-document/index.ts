@@ -28,9 +28,29 @@ serve(async (req) => {
     // Load the related generated document for preview
     const { data: doc } = await supabase
       .from("generated_documents")
-      .select("id, name, pdf_url, status")
+      .select("id, name, pdf_url, status, pack_id")
       .eq("id", resolved.generated_document_id)
       .maybeSingle();
+
+    // If this document belongs to a pack, load all sibling documents in that pack
+    // so the signer can review every document before signing.
+    let packDocuments: any[] = [];
+    let packName: string | null = null;
+    if (doc?.pack_id) {
+      const { data: pack } = await supabase
+        .from("document_packs")
+        .select("name")
+        .eq("id", doc.pack_id)
+        .maybeSingle();
+      packName = pack?.name || null;
+
+      const { data: siblings } = await supabase
+        .from("generated_documents")
+        .select("id, name, pdf_url, status")
+        .eq("pack_id", doc.pack_id)
+        .order("created_at", { ascending: true });
+      packDocuments = (siblings || []).filter((d: any) => !!d.pdf_url);
+    }
 
     const signature = {
       id: resolved.id,
@@ -42,6 +62,9 @@ serve(async (req) => {
       metadata: resolved.metadata,
       expires_at: resolved.expires_at,
       generated_document: doc || null,
+      pack: doc?.pack_id
+        ? { id: doc.pack_id, name: packName, documents: packDocuments }
+        : null,
     };
 
     return jsonResponse({ success: true, signature });
