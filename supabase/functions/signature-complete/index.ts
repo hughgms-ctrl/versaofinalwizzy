@@ -265,13 +265,26 @@ serve(async (req) => {
       })
       .eq("id", signature.id);
 
-    await supabase
-      .from("generated_documents")
-      .update({
-        signing_status: "signed",
-        status: "signed",
-      })
-      .eq("id", signature.generated_document_id);
+    // Propagate to document_signers row (if this signature originated from one)
+    await markSignerSigned(supabase, signature.id, signedAt);
+
+    // Only mark the generated_document as fully signed when there are no
+    // remaining pending signers. Multi-signer documents need every signer.
+    const { count: pendingSigners } = await supabase
+      .from("document_signers")
+      .select("id", { count: "exact", head: true })
+      .eq("generated_document_id", signature.generated_document_id)
+      .neq("status", "signed");
+
+    if (!pendingSigners || pendingSigners === 0) {
+      await supabase
+        .from("generated_documents")
+        .update({
+          signing_status: "signed",
+          status: "signed",
+        })
+        .eq("id", signature.generated_document_id);
+    }
 
     // Receipt
     let receiptPdfUrl: string | null = null;
