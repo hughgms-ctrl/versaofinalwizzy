@@ -89,6 +89,14 @@ export default function OnboardingPage() {
   const publishedAreas = areas.filter((a) => a.is_published);
   const publishedObjectives = objectives.filter((o) => o.is_published);
 
+  // Se não há áreas disponíveis, pula o passo 1 automaticamente
+  // (evita o usuário ficar preso numa tela sem opções)
+  useEffect(() => {
+    if (step === 1 && !loadingAreas && publishedAreas.length === 0) {
+      setStep(2);
+    }
+  }, [step, loadingAreas, publishedAreas.length]);
+
   const finish = async (skipped = false) => {
     if (!profile?.organization_id) return;
     setFinishing(true);
@@ -116,7 +124,11 @@ export default function OnboardingPage() {
   };
 
   const handleActivateAll = async () => {
-    if (!selectedAreaId) return;
+    // Sem área selecionada (ex: pulou o passo 1), apenas finaliza
+    if (!selectedAreaId) {
+      await finish(false);
+      return;
+    }
     setActivatingAll(true);
     try {
       // Always activate the area first
@@ -357,7 +369,18 @@ export default function OnboardingPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {publishedObjectives.length === 0 ? (
+              {!selectedAreaId ? (
+                <div className="rounded-lg border border-dashed p-6 text-center">
+                  <Sparkles className="h-6 w-6 mx-auto text-muted-foreground mb-2" />
+                  <p className="text-sm text-muted-foreground">
+                    Nenhum pacote pronto está disponível no momento.
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Você pode começar a usar o sistema normalmente. Quando houver pacotes prontos,
+                    você poderá ativá-los em Configurações → Pacotes.
+                  </p>
+                </div>
+              ) : publishedObjectives.length === 0 ? (
                 <div className="rounded-lg border border-dashed p-6 text-center">
                   <Sparkles className="h-6 w-6 mx-auto text-muted-foreground mb-2" />
                   <p className="text-sm text-muted-foreground">
@@ -415,17 +438,21 @@ export default function OnboardingPage() {
                   Voltar
                 </Button>
                 <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    onClick={() => finish(true)}
-                    disabled={activatingAll || finishing}
-                  >
-                    Pular ativação
-                  </Button>
+                  {selectedAreaId && (
+                    <Button
+                      variant="outline"
+                      onClick={() => finish(true)}
+                      disabled={activatingAll || finishing}
+                    >
+                      Pular ativação
+                    </Button>
+                  )}
                   <Button onClick={handleActivateAll} disabled={activatingAll || finishing}>
-                    {activatingAll && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                    {(activatingAll || finishing) && (
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    )}
                     <Sparkles className="h-4 w-4 mr-2" />
-                    Ativar e finalizar
+                    {selectedAreaId ? 'Ativar e finalizar' : 'Finalizar e entrar'}
                   </Button>
                 </div>
               </div>
