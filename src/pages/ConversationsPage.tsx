@@ -4,12 +4,11 @@ import { MainLayout } from '@/components/layout/MainLayout';
 import { ConversationList } from '@/components/conversations/ConversationList';
 import { ConversationDetail } from '@/components/conversations/ConversationDetail';
 import { ConversationFilters, ConversationFiltersState, defaultFilters } from '@/components/shared/ConversationFilters';
-import { ServiceModeTabs, ServiceMode } from '@/components/conversations/ServiceModeTabs';
 import { useConversations, DbConversation } from '@/hooks/useConversations';
 import { useWhatsAppStatus } from '@/hooks/useWhatsAppStatus';
 import { supabase } from '@/integrations/supabase/client';
 import { isWithinInterval, parseISO } from 'date-fns';
-import { MessageSquare, Loader2, Inbox, Search, X, Smartphone, Settings, ArrowLeft, Archive, EyeOff, MessageSquarePlus } from 'lucide-react';
+import { MessageSquare, Loader2, Inbox, Search, X, Smartphone, Settings, ArrowLeft, EyeOff, MessageSquarePlus } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -27,8 +26,8 @@ const ConversationsPage = () => {
   const [selectedConversation, setSelectedConversation] = useState<DbConversation | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filters, setFilters] = useState<ConversationFiltersState>(defaultFilters);
-  const [serviceMode, setServiceMode] = useState<ServiceMode>('all');
-  const [showArchived, setShowArchived] = useState(false);
+  const serviceMode = filters.serviceMode;
+  const showArchived = filters.showArchived;
   const [isSpyMode, setIsSpyMode] = useState(false);
   const [showNewConversationDialog, setShowNewConversationDialog] = useState(false);
   const { data: conversations, isLoading, error, refetch } = useConversations({ onlyArchived: showArchived });
@@ -368,6 +367,7 @@ const ConversationsPage = () => {
               filters={filters}
               onFiltersChange={setFilters}
               showCount={false}
+              serviceModeCounts={serviceModeCounts}
             />
           </div>
 
@@ -419,38 +419,9 @@ const ConversationsPage = () => {
                   filters={filters}
                   onFiltersChange={setFilters}
                   showCount={false}
+                  serviceModeCounts={serviceModeCounts}
                 />
               </div>
-            </div>
-
-            {/* Service Mode Tabs */}
-            <div className="px-2 py-2 border-b border-border">
-              <ServiceModeTabs
-                value={serviceMode}
-                onChange={(mode) => {
-                  setServiceMode(mode);
-                  setShowArchived(false);
-                }}
-                counts={serviceModeCounts}
-              />
-              {/* Arquivados Button - Below tabs, discrete */}
-              <button
-                onClick={() => {
-                  setShowArchived(!showArchived);
-                  if (!showArchived) {
-                    setServiceMode('all');
-                  }
-                }}
-                className={cn(
-                  "flex items-center gap-1.5 text-xs mt-2 transition-colors",
-                  showArchived
-                    ? "text-primary font-medium"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <Archive className="h-3.5 w-3.5" />
-                Arquivados
-              </button>
             </div>
 
             {/* List Content */}
