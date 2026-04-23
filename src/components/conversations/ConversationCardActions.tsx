@@ -11,7 +11,9 @@ import {
   MailWarning,
   EyeOff,
   ArrowRightLeft,
-  UserPlus
+  UserPlus,
+  CheckCheck,
+  RefreshCw
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -53,13 +55,19 @@ export function ConversationCardActions({
   const moveConversation = useMoveConversation();
   const transferConversation = useTransferConversation();
 
-  const handleStatusChange = async (status: 'open' | 'pending' | 'resolved' | 'archived', e?: React.MouseEvent) => {
+  const isClosed = (conversation as any).status === 'closed' || !!(conversation as any).closed_at;
+
+  const handleStatusChange = async (status: 'open' | 'pending' | 'resolved' | 'closed' | 'archived', e?: React.MouseEvent) => {
     e?.stopPropagation();
     setIsUpdating(true);
     try {
+      const patch: any = { status };
+      if (status === 'closed') patch.closed_at = new Date().toISOString();
+      if (status === 'open') patch.closed_at = null;
+
       const { error } = await supabase
         .from('conversations')
-        .update({ status })
+        .update(patch)
         .eq('id', conversation.id);
 
       if (error) throw error;
@@ -69,13 +77,14 @@ export function ConversationCardActions({
       
       const statusLabels: Record<string, string> = {
         open: 'aberta',
+        closed: 'encerrada',
         resolved: 'resolvida',
         archived: 'arquivada',
       };
       
       toast({
         title: 'Status atualizado',
-        description: `Conversa marcada como ${statusLabels[status]}`,
+        description: `Conversa marcada como ${statusLabels[status] || status}`,
       });
     } catch (error) {
       toast({
@@ -251,6 +260,18 @@ export function ConversationCardActions({
         </DropdownMenuItem>
 
         <DropdownMenuSeparator />
+        {!isClosed && conversation.status !== 'archived' && (
+          <DropdownMenuItem onClick={(e) => handleStatusChange('closed' as any, e)}>
+            <CheckCheck className="h-4 w-4 mr-2 text-emerald-500" />
+            Encerrar atendimento
+          </DropdownMenuItem>
+        )}
+        {isClosed && conversation.status !== 'archived' && (
+          <DropdownMenuItem onClick={(e) => handleStatusChange('open', e)}>
+            <RefreshCw className="h-4 w-4 mr-2 text-blue-500" />
+            Reabrir atendimento
+          </DropdownMenuItem>
+        )}
         {conversation.status === 'archived' ? (
           <DropdownMenuItem onClick={(e) => handleStatusChange('open', e)}>
             <CheckCircle className="h-4 w-4 mr-2 text-blue-500" />
