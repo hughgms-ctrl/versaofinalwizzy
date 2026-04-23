@@ -75,17 +75,23 @@ serve(async (req) => {
     const signerUserAgent = signerDevice || req.headers.get("user-agent") || "unknown";
     const uaInfo = parseUserAgent(signerUserAgent);
 
+    const resolved = await resolveSignatureByToken(supabase, signatureToken);
+    if (!resolved) {
+      return errorResponse("Assinatura não encontrada", 404);
+    }
+    if (resolved.status === "signed") {
+      return errorResponse("Documento já foi assinado", 400);
+    }
+
+    // Re-fetch with the joined generated_document for hashing/stamping
     const { data: signature, error: sigError } = await supabase
       .from("document_signatures")
       .select("*, generated_document:generated_documents(id, name, pdf_url, filled_data)")
-      .eq("signature_token", signatureToken)
+      .eq("id", resolved.id)
       .single();
 
     if (sigError || !signature) {
       return errorResponse("Assinatura não encontrada", 404);
-    }
-    if (signature.status === "signed") {
-      return errorResponse("Documento já foi assinado", 400);
     }
 
     const meta = (signature.metadata || {}) as Record<string, any>;
