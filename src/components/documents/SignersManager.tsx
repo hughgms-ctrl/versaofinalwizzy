@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import type { ReactNode } from 'react';
 import { Plus, Trash2, User, Mail, Phone, IdCard, Shield, UserCog, FormInput, Wand2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -158,7 +158,7 @@ export function SignersManager({ signers, onChange, availableFields = [] }: Sign
                 </div>
                 <Badge variant="outline" className="text-[10px]">{signer.signer_role || 'Assinar'}</Badge>
                 {isFromForm ? (
-                  <Badge className="text-[10px] bg-blue-500/10 text-blue-600 hover:bg-blue-500/10 border-blue-500/30">
+                  <Badge className="text-[10px] bg-accent text-accent-foreground hover:bg-accent border-accent">
                     <FormInput className="h-2.5 w-2.5 mr-1" /> Cliente preenche
                   </Badge>
                 ) : (
@@ -261,9 +261,9 @@ export function SignersManager({ signers, onChange, availableFields = [] }: Sign
                 </div>
               </div>
             ) : (
-              <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 p-3 space-y-3">
+              <div className="rounded-lg border border-primary/20 bg-primary/5 p-3 space-y-3">
                 <div className="flex items-start gap-2">
-                  <Wand2 className="h-3.5 w-3.5 text-blue-600 mt-0.5 shrink-0" />
+                  <Wand2 className="h-3.5 w-3.5 text-primary mt-0.5 shrink-0" />
                   <p className="text-[11px] text-muted-foreground">
                     Vincule cada dado do signatário a um campo do formulário. Sugerimos automaticamente — revise se precisar.
                   </p>
@@ -345,7 +345,7 @@ function FieldMapper({
   onChange,
   fields,
 }: {
-  icon: React.ReactNode;
+  icon: ReactNode;
   label: string;
   value: string | undefined;
   onChange: (v: string) => void;
