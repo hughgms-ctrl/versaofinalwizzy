@@ -4162,12 +4162,15 @@ export type Database = {
       platform_packages: {
         Row: {
           agents_template: Json
+          allow_post_edit: boolean
           color: string | null
           created_at: string
           description: string | null
           flows_template: Json
           icon: string | null
           id: string
+          is_clonable: boolean
+          is_locked: boolean
           is_published: boolean
           kind: string
           master_prompt: string | null
@@ -4182,12 +4185,15 @@ export type Database = {
         }
         Insert: {
           agents_template?: Json
+          allow_post_edit?: boolean
           color?: string | null
           created_at?: string
           description?: string | null
           flows_template?: Json
           icon?: string | null
           id?: string
+          is_clonable?: boolean
+          is_locked?: boolean
           is_published?: boolean
           kind: string
           master_prompt?: string | null
@@ -4202,12 +4208,15 @@ export type Database = {
         }
         Update: {
           agents_template?: Json
+          allow_post_edit?: boolean
           color?: string | null
           created_at?: string
           description?: string | null
           flows_template?: Json
           icon?: string | null
           id?: string
+          is_clonable?: boolean
+          is_locked?: boolean
           is_published?: boolean
           kind?: string
           master_prompt?: string | null
@@ -5686,6 +5695,88 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "workspace_members_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      workspace_templates: {
+        Row: {
+          agents_template: Json
+          color: string | null
+          created_at: string
+          created_by: string | null
+          description: string | null
+          flows_template: Json
+          icon: string | null
+          id: string
+          master_prompt: string | null
+          name: string
+          organization_id: string
+          pipeline_template: Json
+          source: string
+          source_package_id: string | null
+          tags_template: Json
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          agents_template?: Json
+          color?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          flows_template?: Json
+          icon?: string | null
+          id?: string
+          master_prompt?: string | null
+          name: string
+          organization_id: string
+          pipeline_template?: Json
+          source?: string
+          source_package_id?: string | null
+          tags_template?: Json
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          agents_template?: Json
+          color?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          flows_template?: Json
+          icon?: string | null
+          id?: string
+          master_prompt?: string | null
+          name?: string
+          organization_id?: string
+          pipeline_template?: Json
+          source?: string
+          source_package_id?: string | null
+          tags_template?: Json
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workspace_templates_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "workspace_templates_source_package_id_fkey"
+            columns: ["source_package_id"]
+            isOneToOne: false
+            referencedRelation: "platform_packages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "workspace_templates_workspace_id_fkey"
             columns: ["workspace_id"]
             isOneToOne: false
             referencedRelation: "workspaces"
