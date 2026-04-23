@@ -112,17 +112,20 @@ serve(async (req) => {
 
       // Auto-fill "form" signers from the submitted data using their field_mapping.
       // Build a merged data object from all docs (pack-aware).
-      try {
-        const mergedData: Record<string, any> = { ...(body.filled_data || {}) };
-        if (body.pack_filled_data) {
-          for (const data of Object.values(body.pack_filled_data)) {
-            Object.assign(mergedData, data || {});
-          }
+      const mergedData: Record<string, any> = { ...(body.filled_data || {}) };
+      if (body.pack_filled_data) {
+        for (const data of Object.values(body.pack_filled_data)) {
+          Object.assign(mergedData, data || {});
         }
+      }
 
+      // Track which signer (by signature_token) corresponds to the person filling the form.
+      let fillerSignerToken: string | null = null;
+
+      try {
         const { data: formSigners } = await (supabase as any)
           .from("document_signers")
-          .select("id, field_mapping, signer_name, signer_email, signer_phone, signer_cpf")
+          .select("id, signature_token, field_mapping, signer_name, signer_email, signer_phone, signer_cpf")
           .in("generated_document_id", docIds)
           .eq("data_source", "form");
 
@@ -138,27 +141,31 @@ serve(async (req) => {
               .from("document_signers")
               .update(patch)
               .eq("id", s.id);
+            // The first form-signer that received data IS the person filling.
+            if (!fillerSignerToken) fillerSignerToken = s.signature_token;
           }
         }
       } catch (e) {
         console.warn("Could not auto-fill form signers:", e);
       }
 
-      // Find signers — only auto-redirect when there is exactly ONE signer
-      // (typical case: the person filling is also the only person signing).
-      // Otherwise the document owner sends individual links to each signer.
-      let signatureToken: string | null = null;
+      // Decide where to send the user next.
+      // Priority:
+      //   1. If the filler matches a "form" signer → use that signer's token.
+      //   2. Otherwise → use the FIRST pending signer's token (so the flow
+      //      always advances to the signature step instead of stopping).
+      //   3. If there are no signers at all → fall back to the success screen.
+      let signatureToken: string | null = fillerSignerToken;
       try {
         const { data: signers } = await (supabase as any)
           .from("document_signers")
-          .select("signature_token, status")
+          .select("signature_token, status, order")
           .in("generated_document_id", docIds)
           .eq("status", "pending")
           .order("order", { ascending: true });
-        // Group by signer (pack may duplicate the same signer across docs)
-        const uniqueTokens = [...new Set((signers || []).map((s: any) => s.signature_token))];
-        if (uniqueTokens.length === 1) {
-          signatureToken = uniqueTokens[0] as string;
+
+        if (!signatureToken && signers && signers.length > 0) {
+          signatureToken = signers[0].signature_token as string;
         }
       } catch (e) {
         console.warn("Could not fetch signers:", e);
