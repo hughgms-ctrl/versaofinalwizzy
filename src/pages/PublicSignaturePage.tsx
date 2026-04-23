@@ -593,7 +593,9 @@ export default function PublicSignaturePage() {
             <Card className="p-6">
               <div className="flex items-center gap-3 mb-4">
                 <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
-                  {otpChannel === 'whatsapp' ? (
+                  {otpChannels.length > 1 ? (
+                    <Shield className="h-5 w-5 text-primary" />
+                  ) : otpChannel === 'whatsapp' ? (
                     <MessageSquare className="h-5 w-5 text-primary" />
                   ) : (
                     <Mail className="h-5 w-5 text-primary" />
@@ -602,16 +604,18 @@ export default function PublicSignaturePage() {
                 <div>
                   <h2 className="font-semibold">Verificação de Identidade</h2>
                   <p className="text-xs text-muted-foreground">
-                    {otpChannel === 'whatsapp' 
-                      ? 'Enviaremos um código para seu WhatsApp' 
-                      : 'Enviaremos um código para seu e-mail'}
+                    {otpChannels.length > 1
+                      ? `Enviaremos o código por ${otpChannels.map(c => c === 'whatsapp' ? 'WhatsApp' : 'e-mail').join(' e ')}`
+                      : otpChannel === 'whatsapp'
+                        ? 'Enviaremos um código para seu WhatsApp'
+                        : 'Enviaremos um código para seu e-mail'}
                   </p>
                 </div>
               </div>
 
               {!otpSent ? (
                 <div className="space-y-3">
-                  {otpChannel === 'email' ? (
+                  {otpChannels.includes('email') && (
                     <div>
                       <label className="text-sm font-medium">E-mail</label>
                       <Input
@@ -626,7 +630,8 @@ export default function PublicSignaturePage() {
                         <p className="text-[10px] text-muted-foreground mt-1">E-mail pré-definido pelo remetente</p>
                       )}
                     </div>
-                  ) : (
+                  )}
+                  {otpChannels.includes('whatsapp') && (
                     <div>
                       <label className="text-sm font-medium">WhatsApp</label>
                       <Input
@@ -638,22 +643,25 @@ export default function PublicSignaturePage() {
                       <p className="text-[10px] text-muted-foreground mt-1">Número pré-definido pelo remetente</p>
                     </div>
                   )}
-                  <Button 
-                    onClick={handleSendOtp} 
-                    disabled={otpSending || (otpChannel === 'email' && !otpEmail)} 
+                  <Button
+                    onClick={handleSendOtp}
+                    disabled={otpSending || (otpChannels.includes('email') && !otpEmail)}
                     className="w-full gap-2"
                   >
-                    {otpSending ? <Loader2 className="h-4 w-4 animate-spin" /> : (
-                      otpChannel === 'whatsapp' ? <MessageSquare className="h-4 w-4" /> : <Mail className="h-4 w-4" />
-                    )}
-                    Enviar Código {otpChannel === 'whatsapp' ? 'via WhatsApp' : 'por E-mail'}
+                    {otpSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Shield className="h-4 w-4" />}
+                    {otpChannels.length > 1
+                      ? 'Enviar Código (e-mail + WhatsApp)'
+                      : otpChannel === 'whatsapp' ? 'Enviar Código via WhatsApp' : 'Enviar Código por E-mail'}
                   </Button>
                 </div>
               ) : (
                 <div className="space-y-3">
                   <p className="text-sm text-muted-foreground">
-                    Código enviado {otpChannel === 'whatsapp' ? 'via WhatsApp' : 'para '}
-                    {otpChannel === 'email' && <strong>{otpEmail.replace(/(.{2}).*(@.*)/, "$1***$2")}</strong>}
+                    Código enviado {otpChannels.length > 1
+                      ? `por ${otpChannels.map(c => c === 'whatsapp' ? 'WhatsApp' : 'e-mail').join(' e ')}. Use qualquer um dos códigos.`
+                      : otpChannel === 'whatsapp'
+                        ? 'via WhatsApp'
+                        : <>para <strong>{otpEmail.replace(/(.{2}).*(@.*)/, "$1***$2")}</strong></>}
                   </p>
                   <div>
                     <label className="text-sm font-medium">Código de 6 dígitos</label>
