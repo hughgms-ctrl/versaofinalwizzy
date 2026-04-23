@@ -14,51 +14,6 @@ export type Database = {
   }
   public: {
     Tables: {
-      activated_packages: {
-        Row: {
-          activated_at: string
-          activated_by: string | null
-          activated_version: number
-          id: string
-          metadata: Json
-          organization_id: string
-          package_id: string
-        }
-        Insert: {
-          activated_at?: string
-          activated_by?: string | null
-          activated_version?: number
-          id?: string
-          metadata?: Json
-          organization_id: string
-          package_id: string
-        }
-        Update: {
-          activated_at?: string
-          activated_by?: string | null
-          activated_version?: number
-          id?: string
-          metadata?: Json
-          organization_id?: string
-          package_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "activated_packages_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "activated_packages_package_id_fkey"
-            columns: ["package_id"]
-            isOneToOne: false
-            referencedRelation: "platform_packages"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       admin_audit_logs: {
         Row: {
           action: string
@@ -3798,68 +3753,6 @@ export type Database = {
           },
         ]
       }
-      organization_knowledge: {
-        Row: {
-          about: string | null
-          address: string | null
-          company_name: string | null
-          created_at: string
-          custom_fields: Json
-          differentials: string | null
-          email: string | null
-          faqs: Json
-          hours: string | null
-          organization_id: string
-          payment_methods: string | null
-          phone: string | null
-          tone_of_voice: string | null
-          updated_at: string
-          website: string | null
-        }
-        Insert: {
-          about?: string | null
-          address?: string | null
-          company_name?: string | null
-          created_at?: string
-          custom_fields?: Json
-          differentials?: string | null
-          email?: string | null
-          faqs?: Json
-          hours?: string | null
-          organization_id: string
-          payment_methods?: string | null
-          phone?: string | null
-          tone_of_voice?: string | null
-          updated_at?: string
-          website?: string | null
-        }
-        Update: {
-          about?: string | null
-          address?: string | null
-          company_name?: string | null
-          created_at?: string
-          custom_fields?: Json
-          differentials?: string | null
-          email?: string | null
-          faqs?: Json
-          hours?: string | null
-          organization_id?: string
-          payment_methods?: string | null
-          phone?: string | null
-          tone_of_voice?: string | null
-          updated_at?: string
-          website?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "organization_knowledge_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: true
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       organization_plans: {
         Row: {
           asaas_customer_id: string | null
@@ -3986,7 +3879,6 @@ export type Database = {
           id: string
           logo_url: string | null
           name: string
-          onboarded_at: string | null
           slug: string
           storage_limit_bytes: number | null
           storage_used_bytes: number | null
@@ -3999,7 +3891,6 @@ export type Database = {
           id?: string
           logo_url?: string | null
           name: string
-          onboarded_at?: string | null
           slug: string
           storage_limit_bytes?: number | null
           storage_used_bytes?: number | null
@@ -4012,7 +3903,6 @@ export type Database = {
           id?: string
           logo_url?: string | null
           name?: string
-          onboarded_at?: string | null
           slug?: string
           storage_limit_bytes?: number | null
           storage_used_bytes?: number | null
@@ -4158,86 +4048,6 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
-      }
-      platform_packages: {
-        Row: {
-          agents_template: Json
-          allow_post_edit: boolean
-          color: string | null
-          created_at: string
-          description: string | null
-          flows_template: Json
-          icon: string | null
-          id: string
-          is_clonable: boolean
-          is_locked: boolean
-          is_published: boolean
-          kind: string
-          master_prompt: string | null
-          name: string
-          parent_package_id: string | null
-          pipeline_template: Json
-          slug: string
-          sort_order: number
-          tags_template: Json
-          updated_at: string
-          version: number
-        }
-        Insert: {
-          agents_template?: Json
-          allow_post_edit?: boolean
-          color?: string | null
-          created_at?: string
-          description?: string | null
-          flows_template?: Json
-          icon?: string | null
-          id?: string
-          is_clonable?: boolean
-          is_locked?: boolean
-          is_published?: boolean
-          kind: string
-          master_prompt?: string | null
-          name: string
-          parent_package_id?: string | null
-          pipeline_template?: Json
-          slug: string
-          sort_order?: number
-          tags_template?: Json
-          updated_at?: string
-          version?: number
-        }
-        Update: {
-          agents_template?: Json
-          allow_post_edit?: boolean
-          color?: string | null
-          created_at?: string
-          description?: string | null
-          flows_template?: Json
-          icon?: string | null
-          id?: string
-          is_clonable?: boolean
-          is_locked?: boolean
-          is_published?: boolean
-          kind?: string
-          master_prompt?: string | null
-          name?: string
-          parent_package_id?: string | null
-          pipeline_template?: Json
-          slug?: string
-          sort_order?: number
-          tags_template?: Json
-          updated_at?: string
-          version?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "platform_packages_parent_package_id_fkey"
-            columns: ["parent_package_id"]
-            isOneToOne: false
-            referencedRelation: "platform_packages"
-            referencedColumns: ["id"]
-          },
-        ]
       }
       platform_plans: {
         Row: {
@@ -5695,88 +5505,6 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "workspace_members_workspace_id_fkey"
-            columns: ["workspace_id"]
-            isOneToOne: false
-            referencedRelation: "workspaces"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      workspace_templates: {
-        Row: {
-          agents_template: Json
-          color: string | null
-          created_at: string
-          created_by: string | null
-          description: string | null
-          flows_template: Json
-          icon: string | null
-          id: string
-          master_prompt: string | null
-          name: string
-          organization_id: string
-          pipeline_template: Json
-          source: string
-          source_package_id: string | null
-          tags_template: Json
-          updated_at: string
-          workspace_id: string
-        }
-        Insert: {
-          agents_template?: Json
-          color?: string | null
-          created_at?: string
-          created_by?: string | null
-          description?: string | null
-          flows_template?: Json
-          icon?: string | null
-          id?: string
-          master_prompt?: string | null
-          name: string
-          organization_id: string
-          pipeline_template?: Json
-          source?: string
-          source_package_id?: string | null
-          tags_template?: Json
-          updated_at?: string
-          workspace_id: string
-        }
-        Update: {
-          agents_template?: Json
-          color?: string | null
-          created_at?: string
-          created_by?: string | null
-          description?: string | null
-          flows_template?: Json
-          icon?: string | null
-          id?: string
-          master_prompt?: string | null
-          name?: string
-          organization_id?: string
-          pipeline_template?: Json
-          source?: string
-          source_package_id?: string | null
-          tags_template?: Json
-          updated_at?: string
-          workspace_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "workspace_templates_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "workspace_templates_source_package_id_fkey"
-            columns: ["source_package_id"]
-            isOneToOne: false
-            referencedRelation: "platform_packages"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "workspace_templates_workspace_id_fkey"
             columns: ["workspace_id"]
             isOneToOne: false
             referencedRelation: "workspaces"

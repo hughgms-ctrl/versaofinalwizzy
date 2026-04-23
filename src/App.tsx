@@ -50,12 +50,10 @@ import DeadlinesCalendarPage from "./pages/DeadlinesCalendarPage";
 import CaseTemplatesPage from "./pages/CaseTemplatesPage";
 import LandingPage from "./pages/LandingPage";
 import PlansPage from "./pages/PlansPage";
-import OnboardingPage from "./pages/OnboardingPage";
 import AdminPage from "./pages/AdminPage";
 import AdminLoginPage from "./pages/AdminLoginPage";
 import AdminClientsPage from "./pages/admin/AdminClientsPage";
 import AdminPlansPage from "./pages/admin/AdminPlansPage";
-import AdminPackagesPage from "./pages/admin/AdminPackagesPage";
 import AdminApiPage from "./pages/admin/AdminApiPage";
 import AdminGovernancePage from "./pages/admin/AdminGovernancePage";
 import AdminSecurityPage from "./pages/admin/AdminSecurityPage";
@@ -82,7 +80,6 @@ const App = () => (
                     <Route path="/landing" element={<LandingPage />} />
                     <Route path="/auth" element={<AuthPage />} />
                     <Route path="/" element={<LandingPage />} />
-                    <Route path="/onboarding" element={<ProtectedRoute><OnboardingPage /></ProtectedRoute>} />
                     <Route path="/dashboard" element={<ProtectedRoute><Index /></ProtectedRoute>} />
                     <Route path="/conversations" element={<ProtectedRoute><ConversationsPage /></ProtectedRoute>} />
                     <Route path="/contacts" element={<ProtectedRoute><ContactsPage /></ProtectedRoute>} />
@@ -127,7 +124,6 @@ const App = () => (
                     <Route path="/admin" element={<AdminProtectedRoute><AdminPage /></AdminProtectedRoute>} />
                     <Route path="/admin/clients" element={<AdminProtectedRoute><AdminClientsPage /></AdminProtectedRoute>} />
                     <Route path="/admin/plans" element={<AdminProtectedRoute><AdminPlansPage /></AdminProtectedRoute>} />
-                    <Route path="/admin/packages" element={<AdminProtectedRoute><AdminPackagesPage /></AdminProtectedRoute>} />
                     <Route path="/admin/api" element={<AdminProtectedRoute><AdminApiPage /></AdminProtectedRoute>} />
                     <Route path="/admin/governance" element={<AdminProtectedRoute><AdminGovernancePage /></AdminProtectedRoute>} />
                     <Route path="/admin/security" element={<AdminProtectedRoute><AdminSecurityPage /></AdminProtectedRoute>} />
