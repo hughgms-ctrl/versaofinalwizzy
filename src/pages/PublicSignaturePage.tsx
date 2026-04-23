@@ -213,6 +213,38 @@ export default function PublicSignaturePage() {
   };
 
   // ==================== Selfie ====================
+  const attachStreamToVideo = async (stream: MediaStream) => {
+    // Wait for the <video> element to be mounted (cameraActive triggers render)
+    for (let i = 0; i < 30; i++) {
+      if (videoRef.current) break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    const video = videoRef.current;
+    if (!video) return;
+    video.srcObject = stream;
+    video.muted = true;
+    (video as any).playsInline = true;
+    try {
+      await video.play();
+    } catch {
+      // Some browsers require an explicit gesture; ignore
+    }
+    // Wait until video has real dimensions before allowing capture
+    if (video.videoWidth === 0 || video.videoHeight === 0) {
+      await new Promise<void>((resolve) => {
+        const onReady = () => {
+          video.removeEventListener('loadedmetadata', onReady);
+          video.removeEventListener('playing', onReady);
+          resolve();
+        };
+        video.addEventListener('loadedmetadata', onReady);
+        video.addEventListener('playing', onReady);
+        // Safety timeout
+        setTimeout(onReady, 2000);
+      });
+    }
+  };
+
   const startCamera = async () => {
     setCameraError(null);
 
@@ -231,27 +263,60 @@ export default function PublicSignaturePage() {
       });
       setCameraStream(stream);
       setCameraActive(true);
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play().catch(() => null);
-      }
+      // Attach asynchronously so React mounts the <video> first
+      void attachStreamToVideo(stream);
     } catch (err) {
       setCameraError('Não foi possível abrir a câmera. Você pode continuar enviando uma foto da galeria.');
       toast.error('Não foi possível acessar a câmera. Verifique as permissões.');
     }
   };
 
-  const captureSelfie = () => {
-    if (!videoRef.current) return;
+  const captureSelfie = async () => {
+    const video = videoRef.current;
+    if (!video) {
+      toast.error('Câmera não está pronta. Tente novamente.');
+      return;
+    }
+
+    // Make sure the video actually has frames before capturing
+    if (video.videoWidth === 0 || video.videoHeight === 0) {
+      // Wait briefly for metadata
+      await new Promise<void>((resolve) => {
+        const onReady = () => {
+          video.removeEventListener('loadedmetadata', onReady);
+          video.removeEventListener('playing', onReady);
+          resolve();
+        };
+        video.addEventListener('loadedmetadata', onReady);
+        video.addEventListener('playing', onReady);
+        setTimeout(onReady, 1500);
+      });
+    }
+
+    const w = video.videoWidth;
+    const h = video.videoHeight;
+    if (!w || !h) {
+      toast.error('A câmera ainda não está pronta. Aguarde um instante e tente novamente.');
+      return;
+    }
+
     const canvas = document.createElement('canvas');
-    canvas.width = videoRef.current.videoWidth;
-    canvas.height = videoRef.current.videoHeight;
+    canvas.width = w;
+    canvas.height = h;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    ctx.drawImage(videoRef.current, 0, 0);
-    const dataUrl = canvas.toDataURL('image/png');
+    ctx.drawImage(video, 0, 0, w, h);
+    // Use JPEG to keep payload reasonable and ensure non-empty bytes
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+
+    // Sanity check: a real photo should be well over a few KB
+    if (!dataUrl || dataUrl.length < 5000) {
+      toast.error('Não foi possível capturar a imagem. Tente novamente.');
+      return;
+    }
+
     setSelfieImage(dataUrl);
-    
+
     if (cameraStream) {
       cameraStream.getTracks().forEach(t => t.stop());
       setCameraStream(null);
