@@ -97,6 +97,13 @@ export function TemplateFillForm({ template, onBack, onGeneratedForSignature }: 
 
       queryClient.invalidateQueries({ queryKey: ['generated-documents'] });
 
+      if (signers.length > 0 && docData?.id) {
+        // Show signer links screen
+        setGeneratedDocId(docData.id);
+        toast({ title: 'Documento gerado! Envie os links abaixo.' });
+        return;
+      }
+
       if (advanceToSignature && docData?.id && onGeneratedForSignature) {
         toast({ title: 'Documento gerado! Configure a assinatura.' });
         onGeneratedForSignature(docData.id);
@@ -155,6 +162,7 @@ export function TemplateFillForm({ template, onBack, onGeneratedForSignature }: 
 
       const link = `${getPublicAppOrigin()}/preencher-contrato/${fillToken}`;
       setPublicLink(link);
+      if (docData?.id) setGeneratedDocId(docData.id);
       queryClient.invalidateQueries({ queryKey: ['generated-documents'] });
       toast({ title: 'Link público gerado!' });
     } catch (e: any) {
