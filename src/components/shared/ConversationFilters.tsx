@@ -123,7 +123,11 @@ export function ConversationFilters({
 
   const selectedStatusLabel = (() => {
     if (filters.statusFilter === 'all') return null;
-    const map: Record<string, string> = { open: 'Abertos', resolved: 'Resolvidos', archived: 'Arquivados' };
+    const map: Record<string, string> = {
+      aberto: 'Aberto',
+      em_andamento: 'Em andamento',
+      archived: 'Arquivados',
+    };
     return map[filters.statusFilter] || null;
   })();
 
@@ -268,9 +272,9 @@ export function ConversationFilters({
                 <div className="flex flex-wrap gap-1.5">
                   {[
                     { value: 'all', label: 'Todos' },
-                    { value: 'open', label: 'Abertos' },
-                    { value: 'resolved', label: 'Resolvidos' },
-                    { value: 'archived', label: 'Arquivados' },
+                    { value: 'aberto', label: 'Aberto' },
+                    { value: 'em_andamento', label: 'Em andamento' },
+                    { value: 'archived', label: 'Arquivado' },
                   ].map((status) => (
                     <Button
                       key={status.value}
