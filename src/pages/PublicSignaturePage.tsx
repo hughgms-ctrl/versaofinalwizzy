@@ -47,6 +47,7 @@ export default function PublicSignaturePage() {
   const { token } = useParams<{ token: string }>();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const previewUrlsRef = useRef<Record<string, string>>({});
   const [step, setStep] = useState<Step>('loading');
   const [documentData, setDocumentData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
@@ -62,6 +63,10 @@ export default function PublicSignaturePage() {
   const [otpSending, setOtpSending] = useState(false);
   const [otpVerifying, setOtpVerifying] = useState(false);
   const [otpSent, setOtpSent] = useState(false);
+
+  // PDF preview state
+  const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
+  const [previewLoading, setPreviewLoading] = useState<Record<string, boolean>>({});
 
   // Selfie state
   const [selfieImage, setSelfieImage] = useState<string | null>(null);
@@ -88,6 +93,50 @@ export default function PublicSignaturePage() {
       }
     };
   }, [cameraStream]);
+
+  useEffect(() => {
+    previewUrlsRef.current = previewUrls;
+  }, [previewUrls]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(previewUrlsRef.current).forEach((url) => {
+        try {
+          URL.revokeObjectURL(url);
+        } catch {
+          // ignore cleanup errors
+        }
+      });
+    };
+  }, []);
+
+  const loadPreviewBlob = useCallback(async (documentId: string, pdfUrl: string) => {
+    setPreviewLoading((prev) => ({ ...prev, [documentId]: true }));
+
+    try {
+      const response = await fetch(pdfUrl);
+      if (!response.ok) throw new Error('Falha ao carregar PDF');
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+
+      setPreviewUrls((prev) => {
+        const previousUrl = prev[documentId];
+        if (previousUrl && previousUrl !== objectUrl) {
+          try {
+            URL.revokeObjectURL(previousUrl);
+          } catch {
+            // ignore cleanup errors
+          }
+        }
+        return { ...prev, [documentId]: objectUrl };
+      });
+    } catch (err) {
+      console.error('Error loading PDF preview:', err);
+      setPreviewUrls((prev) => ({ ...prev, [documentId]: pdfUrl }));
+    } finally {
+      setPreviewLoading((prev) => ({ ...prev, [documentId]: false }));
+    }
+  }, []);
 
   const loadDocument = async () => {
     if (!token) {
@@ -124,6 +173,19 @@ export default function PublicSignaturePage() {
       }
 
       setDocumentData(signatureData);
+
+      const packDocs = signatureData?.pack?.documents as Array<{ id: string; pdf_url: string | null }> | undefined;
+      const docsToPreview = Array.isArray(packDocs) && packDocs.length > 0
+        ? packDocs
+        : signatureData?.generated_document
+          ? [signatureData.generated_document]
+          : [];
+
+      docsToPreview.forEach((doc: { id: string; pdf_url: string | null }) => {
+        if (doc?.id && doc?.pdf_url) {
+          void loadPreviewBlob(doc.id, doc.pdf_url);
+        }
+      });
       
       // Read config from metadata
       const meta = signatureData.metadata || {};
@@ -616,11 +678,18 @@ export default function PublicSignaturePage() {
                   </div>
                   {d.pdf_url ? (
                     <div className="border rounded-lg overflow-hidden bg-muted">
-                      <iframe
-                        src={`${d.pdf_url}#toolbar=1&view=FitH`}
-                        className="w-full h-[600px]"
-                        title={d.name}
-                      />
+                      {previewLoading[d.id] && !previewUrls[d.id] ? (
+                        <div className="h-[600px] flex flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
+                          <Loader2 className="h-5 w-5 animate-spin" />
+                          <p>Carregando pré-visualização…</p>
+                        </div>
+                      ) : (
+                        <iframe
+                          src={`${previewUrls[d.id] || d.pdf_url}#toolbar=1&view=FitH`}
+                          className="w-full h-[600px]"
+                          title={d.name}
+                        />
+                      )}
                     </div>
                   ) : (
                     <div className="border rounded-lg p-6 text-center text-xs text-muted-foreground space-y-2">
