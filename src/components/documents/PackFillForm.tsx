@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 import { DatePicker } from '@/components/ui/date-picker';
 import { FillModeStep, FillMode } from './FillModeStep';
 import { SignersManager } from './SignersManager';
+import { SignerLinksList } from './SignerLinksList';
 import { SignerInput, useCreateSigners } from '@/hooks/useDocumentSigners';
 import { getPublicAppOrigin } from '@/lib/publicOrigin';
 
@@ -41,6 +42,7 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature 
   const [signers, setSigners] = useState<SignerInput[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [publicLink, setPublicLink] = useState<string | null>(null);
+  const [generatedDocIds, setGeneratedDocIds] = useState<string[]>([]);
   const [copied, setCopied] = useState(false);
 
   const templates = useMemo(() => {
@@ -111,6 +113,12 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature 
         await createSigners.mutateAsync({ documentIds: docIds, packId: pack.id, signers, signing_method: 'internal' });
       }
 
+      if (signers.length > 0 && docIds.length > 0) {
+        setGeneratedDocIds(docIds);
+        toast.success(`${templates.length} documentos gerados! Envie os links abaixo.`);
+        return;
+      }
+
       if (advanceToSignature && firstDocId && onGeneratedForSignature) {
         toast.success(`${templates.length} documentos gerados!`);
         onGeneratedForSignature(firstDocId);
@@ -170,6 +178,7 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature 
 
       const link = `${getPublicAppOrigin()}/preencher-contrato/${fillToken}`;
       setPublicLink(link);
+      setGeneratedDocIds(docIds);
       toast.success('Link público gerado!');
     } catch (e: any) {
       toast.error('Erro: ' + (e.message || ''));
