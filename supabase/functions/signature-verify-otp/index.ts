@@ -8,7 +8,7 @@ serve(async (req) => {
   }
 
   try {
-    const { signatureToken, code } = await parseJsonBody<{ signatureToken: string; code: string }>(req);
+    const { signatureToken, code, channel } = await parseJsonBody<{ signatureToken: string; code: string; channel?: 'email' | 'whatsapp' }>(req);
 
     if (!signatureToken || !code) {
       return errorResponse("signatureToken and code are required", 400);
@@ -27,8 +27,14 @@ serve(async (req) => {
       return errorResponse("Documento já foi assinado", 400);
     }
 
-    // Find and validate OTP
-    const { data: otp, error: otpError } = await supabase
+    const meta = (signature.metadata as any) || {};
+    const configuredChannels: Array<'email' | 'whatsapp'> = Array.isArray(meta.otp_channels) && meta.otp_channels.length > 0
+      ? meta.otp_channels
+      : [meta.otp_channel || 'email'];
+    const targetChannel = channel || configuredChannels[0];
+
+    // Find and validate OTP for the requested channel only
+    let query = supabase
       .from("signature_otp_codes")
       .select("*")
       .eq("signature_id", signature.id)
@@ -36,14 +42,18 @@ serve(async (req) => {
       .eq("verified", false)
       .gte("expires_at", new Date().toISOString())
       .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .limit(1);
+
+    query = targetChannel === 'whatsapp'
+      ? query.not("phone", "is", null)
+      : query.eq("phone", null as any);
+
+    const { data: otp, error: otpError } = await query.maybeSingle();
 
     if (otpError || !otp) {
       return errorResponse("Código inválido ou expirado", 400);
     }
 
-    // Mark OTP as verified
     await supabase
       .from("signature_otp_codes")
       .update({ verified: true })
@@ -53,6 +63,7 @@ serve(async (req) => {
       success: true, 
       verified: true,
       otpId: otp.id,
+      channel: targetChannel,
     });
   } catch (error) {
     console.error("Error in signature-verify-otp:", error);

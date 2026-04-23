@@ -56,6 +56,8 @@ export default function PublicSignaturePage() {
   const [requireSelfie, setRequireSelfie] = useState(true);
   const [otpChannel, setOtpChannel] = useState<'email' | 'whatsapp'>('email');
   const [otpChannels, setOtpChannels] = useState<Array<'email' | 'whatsapp'>>(['email']);
+  const [otpStepIndex, setOtpStepIndex] = useState(0);
+  const [otpVerifiedChannels, setOtpVerifiedChannels] = useState<Array<'email' | 'whatsapp'>>([]);
 
   // OTP state
   const [otpEmail, setOtpEmail] = useState('');
@@ -197,6 +199,10 @@ export default function PublicSignaturePage() {
       setRequireSelfie(selfieRequired);
       setOtpChannel(primaryChannel);
       setOtpChannels(channels);
+      setOtpStepIndex(0);
+      setOtpVerifiedChannels([]);
+      setOtpSent(false);
+      setOtpCode('');
 
       if (signatureData.signing_method === 'internal') {
         setOtpEmail(signatureData.signer_email || '');
@@ -213,18 +219,19 @@ export default function PublicSignaturePage() {
 
   // ==================== OTP ====================
   const handleSendOtp = async () => {
-    if (otpChannels.includes('email') && !otpEmail) {
+    const currentChannel = otpChannels[otpStepIndex] || otpChannel;
+    if (currentChannel === 'email' && !otpEmail) {
       toast.error('Informe seu e-mail');
       return;
     }
+
     setOtpSending(true);
     try {
       const body: any = {
         signatureToken: token,
-        // 'all' tells the backend to use every channel saved in metadata
-        channel: otpChannels.length > 1 ? 'all' : otpChannels[0],
+        channel: currentChannel,
       };
-      if (otpChannels.includes('email')) body.email = otpEmail;
+      if (currentChannel === 'email') body.email = otpEmail;
 
       const { data, error } = await supabase.functions.invoke('signature-send-otp', { body });
       if (error) throw new Error(await extractEdgeFunctionError(error));
@@ -245,24 +252,38 @@ export default function PublicSignaturePage() {
       toast.error('Informe o código de 6 dígitos');
       return;
     }
+
+    const currentChannel = otpChannels[otpStepIndex] || otpChannel;
+
     setOtpVerifying(true);
     try {
       const { data, error } = await supabase.functions.invoke('signature-verify-otp', {
-        body: { signatureToken: token, code: otpCode },
+        body: { signatureToken: token, code: otpCode, channel: currentChannel },
       });
       if (error) throw new Error(await extractEdgeFunctionError(error));
       if (data?.error) throw new Error(data.error);
       
       if (data?.verified) {
-        toast.success('Identidade verificada!');
-        // Skip selfie if not required
-        if (requireSelfie) {
-          setStep('selfie');
-          setTimeout(() => {
-            void startCamera();
-          }, 150);
+        const nextVerified = Array.from(new Set([...otpVerifiedChannels, currentChannel])) as Array<'email' | 'whatsapp'>;
+        const nextStepIndex = otpStepIndex + 1;
+        setOtpVerifiedChannels(nextVerified);
+        setOtpCode('');
+        setOtpSent(false);
+
+        if (nextStepIndex < otpChannels.length) {
+          setOtpStepIndex(nextStepIndex);
+          setOtpChannel(otpChannels[nextStepIndex]);
+          toast.success(`${currentChannel === 'whatsapp' ? 'WhatsApp' : 'E-mail'} validado. Vamos para a próxima etapa.`);
+          setStep('otp_send');
         } else {
-          setStep('signature');
+          toast.success('Identidade verificada!');
+          if (requireSelfie) {
+            setStep('selfie');
+            setCameraActive(false);
+            setCameraError(null);
+          } else {
+            setStep('signature');
+          }
         }
       } else {
         toast.error('Código inválido');
@@ -398,7 +419,8 @@ export default function PublicSignaturePage() {
 
   const retakeSelfie = () => {
     setSelfieImage(null);
-    startCamera();
+    setCameraActive(false);
+    setCameraError(null);
   };
 
   // ==================== Signature Pad ====================
@@ -859,7 +881,7 @@ export default function PublicSignaturePage() {
                         autoPlay
                         playsInline
                         muted
-                        className="w-full rounded-lg border"
+                        className="w-full min-h-[280px] rounded-lg border bg-muted object-cover"
                       />
                       <Button
                         onClick={captureSelfie}
@@ -871,7 +893,7 @@ export default function PublicSignaturePage() {
                   ) : (
                     <div className="space-y-3">
                       <Button onClick={startCamera} className="w-full gap-2" variant="outline">
-                        <Camera className="h-4 w-4" /> Abrir Câmera
+                        <Camera className="h-4 w-4" /> Abrir câmera para tirar selfie
                       </Button>
                       {cameraError && (
                         <p className="text-xs text-muted-foreground text-center">{cameraError}</p>
@@ -980,7 +1002,12 @@ export default function PublicSignaturePage() {
                           size="sm"
                           variant="ghost"
                           className="gap-1 text-[11px] h-7"
-                          onClick={() => { setSelfieImage(null); setStep('selfie'); setTimeout(() => void startCamera(), 150); }}
+                          onClick={() => {
+                            setSelfieImage(null);
+                            setStep('selfie');
+                            setCameraActive(false);
+                            setCameraError(null);
+                          }}
                         >
                           <RotateCcw className="h-3 w-3" /> Refazer
                         </Button>
