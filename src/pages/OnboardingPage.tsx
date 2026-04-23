@@ -124,7 +124,11 @@ export default function OnboardingPage() {
   };
 
   const handleActivateAll = async () => {
-    if (!selectedAreaId) return;
+    // Sem área selecionada (ex: pulou o passo 1), apenas finaliza
+    if (!selectedAreaId) {
+      await finish(false);
+      return;
+    }
     setActivatingAll(true);
     try {
       // Always activate the area first
