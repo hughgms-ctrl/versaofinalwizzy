@@ -151,19 +151,23 @@ export default function PublicSignaturePage() {
 
   // ==================== OTP ====================
   const handleSendOtp = async () => {
-    if (otpChannel === 'email' && !otpEmail) {
+    if (otpChannels.includes('email') && !otpEmail) {
       toast.error('Informe seu e-mail');
       return;
     }
     setOtpSending(true);
     try {
-      const body: any = { signatureToken: token, channel: otpChannel };
-      if (otpChannel === 'email') body.email = otpEmail;
+      const body: any = {
+        signatureToken: token,
+        // 'all' tells the backend to use every channel saved in metadata
+        channel: otpChannels.length > 1 ? 'all' : otpChannels[0],
+      };
+      if (otpChannels.includes('email')) body.email = otpEmail;
 
       const { data, error } = await supabase.functions.invoke('signature-send-otp', { body });
       if (error) throw new Error(await extractEdgeFunctionError(error));
       if (data?.error) throw new Error(data.error);
-      
+
       setOtpSent(true);
       setStep('otp_verify');
       toast.success(data?.message || 'Código enviado!');
