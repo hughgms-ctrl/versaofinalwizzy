@@ -24,7 +24,8 @@ import {
 } from '@/components/ui/select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Building2, Plus, Pencil, Trash2, Loader2, Users, Tag } from 'lucide-react';
-import { useWorkspaces, useCreateWorkspace, useUpdateWorkspace, useWorkspaceMembers, useManageWorkspaceMembers, Workspace } from '@/hooks/useWorkspaces';
+import { useAllWorkspaces, useCreateWorkspace, useUpdateWorkspace, useWorkspaceMembers, useManageWorkspaceMembers, Workspace } from '@/hooks/useWorkspaces';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useTags, Tag as TagType } from '@/hooks/useTags';
 import { useTeamMembers } from '@/hooks/useTeamMembers';
 import { useToast } from '@/hooks/use-toast';
@@ -35,7 +36,13 @@ const WORKSPACE_COLORS = [
 ];
 
 export function WorkspacesSettings() {
-  const { data: workspaces = [], isLoading } = useWorkspaces();
+  const { data: allWorkspaces = [], isLoading } = useAllWorkspaces();
+  const workspaces = [...allWorkspaces].sort((a, b) => {
+    if (a.is_active !== b.is_active) return a.is_active ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+  const activeCount = allWorkspaces.filter(w => w.is_active).length;
+  const inactiveCount = allWorkspaces.length - activeCount;
   const [editingWorkspace, setEditingWorkspace] = useState<Workspace | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
 
@@ -57,6 +64,12 @@ export function WorkspacesSettings() {
               <CardDescription>
                 Gerencie os workspaces da sua organização. Cada workspace isola leads, pipelines, fluxos e widgets por área de atuação.
               </CardDescription>
+              {allWorkspaces.length > 0 && (
+                <p className="text-xs text-muted-foreground mt-2">
+                  {activeCount} ativo{activeCount === 1 ? '' : 's'}
+                  {inactiveCount > 0 && ` · ${inactiveCount} inativo${inactiveCount === 1 ? '' : 's'}`}
+                </p>
+              )}
             </div>
             <Button onClick={() => setShowCreateDialog(true)} className="gap-2">
               <Plus className="h-4 w-4" />
@@ -113,7 +126,7 @@ function WorkspaceCard({ workspace, onEdit }: { workspace: Workspace; onEdit: ()
   const workspaceTags = tags.filter(t => workspace.filter_tag_ids.includes(t.id));
 
   return (
-    <div className="flex items-center justify-between p-4 border rounded-lg bg-card hover:bg-muted/30 transition-colors">
+    <div className={`flex items-center justify-between p-4 border rounded-lg bg-card hover:bg-muted/30 transition-colors ${!workspace.is_active ? 'opacity-60' : ''}`}>
       <div className="flex items-center gap-3 flex-1 min-w-0">
         <div
           className="h-10 w-10 rounded-lg flex items-center justify-center flex-shrink-0"
@@ -125,7 +138,16 @@ function WorkspaceCard({ workspace, onEdit }: { workspace: Workspace; onEdit: ()
           <div className="flex items-center gap-2">
             <p className="font-medium text-foreground truncate">{workspace.name}</p>
             {!workspace.is_active && (
-              <Badge variant="secondary" className="text-xs">Inativo</Badge>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Badge variant="secondary" className="text-xs cursor-help">Inativo</Badge>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    Oculto da operação. Dados preservados. Reative no botão de edição.
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             )}
           </div>
           <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
