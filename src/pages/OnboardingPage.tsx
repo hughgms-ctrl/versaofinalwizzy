@@ -89,6 +89,14 @@ export default function OnboardingPage() {
   const publishedAreas = areas.filter((a) => a.is_published);
   const publishedObjectives = objectives.filter((o) => o.is_published);
 
+  // Se não há áreas disponíveis, pula o passo 1 automaticamente
+  // (evita o usuário ficar preso numa tela sem opções)
+  useEffect(() => {
+    if (step === 1 && !loadingAreas && publishedAreas.length === 0) {
+      setStep(2);
+    }
+  }, [step, loadingAreas, publishedAreas.length]);
+
   const finish = async (skipped = false) => {
     if (!profile?.organization_id) return;
     setFinishing(true);
