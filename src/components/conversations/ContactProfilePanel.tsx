@@ -41,6 +41,7 @@ import { ContactFilesSection } from './ContactFilesSection';
 import { CreateScheduledMessageDialog } from '@/components/scheduled/CreateScheduledMessageDialog';
 import { ConversationAttributesPanel } from './ConversationAttributesPanel';
 import { ContactProfileTabs } from './ContactProfileTabs';
+import { getDerivedStatusInfo } from '@/lib/conversationStatus';
 
 interface ContactProfilePanelProps {
   conversation: DbConversation;
@@ -283,7 +284,7 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
               </div>
             </div>
             <Badge variant="secondary" className="shrink-0">
-              {conversation.status === 'open' ? 'Aberto' : conversation.status === 'resolved' ? 'Resolvido' : 'Arquivado'}
+              {getDerivedStatusInfo(conversation).label}
             </Badge>
             <Button variant="ghost" size="icon" className="shrink-0" onClick={() => { setIsFullscreen(false); onClose(); }}>
               <X className="h-4 w-4" />

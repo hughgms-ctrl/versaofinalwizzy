@@ -75,11 +75,7 @@ async function cancelPendingFollowUps(conversationId: string, reason: string) {
   await base().eq('variables->>source', 'chat_follow_up');
 }
 
-const statusLabels: Record<string, string> = {
-  open: 'Aberto',
-  resolved: 'Resolvido',
-  archived: 'Arquivado',
-};
+// Status labels removidos: agora usamos getDerivedStatusInfo do helper conversationStatus.
 
 export function ConversationDetail({ conversation, headerActions }: ConversationDetailProps) {
   const { session } = useAuth();

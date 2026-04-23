@@ -20,6 +20,7 @@ import { useUserPermissions, useCurrentUserRole } from '@/hooks/useUserPermissio
 import { useAuth } from '@/hooks/useAuth';
 import { useConversationShares } from '@/hooks/useConversationShares';
 import { useMessageSearch } from '@/hooks/useMessageSearch';
+import { getDerivedStatus } from '@/lib/conversationStatus';
 
 const ConversationsPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -134,8 +135,11 @@ const ConversationsPage = () => {
         if (!matchesNameOrPhone && !matchesMessage) return false;
       }
 
-      // Status filter
-      if (filters.statusFilter !== 'all' && conv.status !== filters.statusFilter) return false;
+      // Status filter (derived: aberto / em_andamento / archived)
+      if (filters.statusFilter !== 'all') {
+        const derived = getDerivedStatus(conv);
+        if (derived !== filters.statusFilter) return false;
+      }
 
       // Assignee filter
       if (filters.assigneeFilter !== 'all') {
