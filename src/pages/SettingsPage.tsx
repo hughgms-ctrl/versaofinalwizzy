@@ -19,7 +19,7 @@ import { CrmEntitiesSettings } from '@/components/settings/CrmEntitiesSettings';
 import { WorkspacesSettings } from '@/components/settings/WorkspacesSettings';
 import { WhatsAppInstancesSettings } from '@/components/settings/WhatsAppInstancesSettings';
 import { CompanyKnowledgeSettings } from '@/components/settings/CompanyKnowledgeSettings';
-import { PackagesSettings } from '@/components/settings/PackagesSettings';
+import { PackagesAndTemplatesSettings } from '@/components/settings/PackagesAndTemplatesSettings';
 import {
   Select,
   SelectContent,
