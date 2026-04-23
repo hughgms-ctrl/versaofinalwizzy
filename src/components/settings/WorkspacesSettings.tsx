@@ -36,7 +36,13 @@ const WORKSPACE_COLORS = [
 ];
 
 export function WorkspacesSettings() {
-  const { data: workspaces = [], isLoading } = useWorkspaces();
+  const { data: allWorkspaces = [], isLoading } = useAllWorkspaces();
+  const workspaces = [...allWorkspaces].sort((a, b) => {
+    if (a.is_active !== b.is_active) return a.is_active ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+  const activeCount = allWorkspaces.filter(w => w.is_active).length;
+  const inactiveCount = allWorkspaces.length - activeCount;
   const [editingWorkspace, setEditingWorkspace] = useState<Workspace | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
 
