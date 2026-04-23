@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 import { DatePicker } from '@/components/ui/date-picker';
 import { FillModeStep, FillMode } from './FillModeStep';
 import { SignersManager } from './SignersManager';
+import { SignerLinksList } from './SignerLinksList';
 import { SignerInput, useCreateSigners } from '@/hooks/useDocumentSigners';
 import { getPublicAppOrigin } from '@/lib/publicOrigin';
 
@@ -41,6 +42,7 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature 
   const [signers, setSigners] = useState<SignerInput[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [publicLink, setPublicLink] = useState<string | null>(null);
+  const [generatedDocIds, setGeneratedDocIds] = useState<string[]>([]);
   const [copied, setCopied] = useState(false);
 
   const templates = useMemo(() => {
@@ -111,6 +113,12 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature 
         await createSigners.mutateAsync({ documentIds: docIds, packId: pack.id, signers, signing_method: 'internal' });
       }
 
+      if (signers.length > 0 && docIds.length > 0) {
+        setGeneratedDocIds(docIds);
+        toast.success(`${templates.length} documentos gerados! Envie os links abaixo.`);
+        return;
+      }
+
       if (advanceToSignature && firstDocId && onGeneratedForSignature) {
         toast.success(`${templates.length} documentos gerados!`);
         onGeneratedForSignature(firstDocId);
@@ -170,6 +178,7 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature 
 
       const link = `${getPublicAppOrigin()}/preencher-contrato/${fillToken}`;
       setPublicLink(link);
+      setGeneratedDocIds(docIds);
       toast.success('Link público gerado!');
     } catch (e: any) {
       toast.error('Erro: ' + (e.message || ''));
@@ -194,9 +203,30 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature 
     return <Input value={values[field.name] || ''} onChange={(e) => setValues((prev) => ({ ...prev, [field.name]: e.target.value }))} placeholder={`Digite ${field.label}`} />;
   };
 
+  // Internal pack: docs generated, show signer links
+  if (generatedDocIds.length > 0 && !publicLink) {
+    return (
+      <div className="space-y-6 max-w-2xl mx-auto">
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" onClick={onBack}><ArrowLeft className="h-5 w-5" /></Button>
+          <div>
+            <h2 className="text-lg font-semibold">{generatedDocIds.length} documentos gerados</h2>
+            <p className="text-sm text-muted-foreground">Envie o link de assinatura para cada signatário</p>
+          </div>
+        </div>
+        <Card>
+          <CardContent className="pt-6">
+            <SignerLinksList documentIds={generatedDocIds} />
+          </CardContent>
+        </Card>
+        <Button onClick={onBack} variant="outline" className="w-full">Concluir</Button>
+      </div>
+    );
+  }
+
   if (publicLink) {
     return (
-      <div className="space-y-6 max-w-xl mx-auto">
+      <div className="space-y-6 max-w-2xl mx-auto">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" onClick={onBack}><ArrowLeft className="h-5 w-5" /></Button>
           <div>
@@ -206,6 +236,7 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature 
         </div>
         <Card>
           <CardContent className="pt-6 space-y-4">
+            <Label className="text-xs text-muted-foreground">Link para o cliente preencher</Label>
             <div className="flex gap-2">
               <Input value={publicLink} readOnly className="font-mono text-xs" />
               <Button onClick={copyLink} className="gap-2 shrink-0">
@@ -213,17 +244,28 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature 
                 {copied ? 'Copiado' : 'Copiar'}
               </Button>
             </div>
-            <div className="bg-muted/50 rounded-lg p-4 text-xs text-muted-foreground">
-              <p className="font-semibold text-foreground mb-2">Como funciona:</p>
-              <ol className="space-y-1 list-decimal pl-4">
-                <li>O cliente abre o link e preenche os campos uma única vez</li>
-                <li>Os dados são aplicados aos {templates.length} documentos do pack</li>
-                <li>Cada documento segue para os {signers.length} signatário(s)</li>
-              </ol>
+            <div className="bg-muted/50 rounded-lg p-3 text-xs text-muted-foreground">
+              Após o cliente preencher, cada signatário receberá automaticamente seu link único de assinatura.
             </div>
-            <Button onClick={onBack} variant="outline" className="w-full">Concluir</Button>
           </CardContent>
         </Card>
+
+        {generatedDocIds.length > 0 && (
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">Links dos signatários (já disponíveis)</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <SignerLinksList
+                documentIds={generatedDocIds}
+                title=""
+                description="Você pode enviar agora ou aguardar o cliente preencher os dados."
+              />
+            </CardContent>
+          </Card>
+        )}
+
+        <Button onClick={onBack} variant="outline" className="w-full">Concluir</Button>
       </div>
     );
   }

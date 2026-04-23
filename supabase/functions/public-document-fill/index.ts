@@ -110,18 +110,21 @@ serve(async (req) => {
         docIds.push(doc.id);
       }
 
-      // Find first signer for these documents to redirect to signature page
+      // Find signers — only auto-redirect when there is exactly ONE signer
+      // (typical case: the person filling is also the only person signing).
+      // Otherwise the document owner sends individual links to each signer.
       let signatureToken: string | null = null;
       try {
         const { data: signers } = await (supabase as any)
           .from("document_signers")
-          .select("signature_token, order")
+          .select("signature_token, status")
           .in("generated_document_id", docIds)
           .eq("status", "pending")
-          .order("order", { ascending: true })
-          .limit(1);
-        if (signers && signers.length > 0) {
-          signatureToken = signers[0].signature_token;
+          .order("order", { ascending: true });
+        // Group by signer (pack may duplicate the same signer across docs)
+        const uniqueTokens = [...new Set((signers || []).map((s: any) => s.signature_token))];
+        if (uniqueTokens.length === 1) {
+          signatureToken = uniqueTokens[0] as string;
         }
       } catch (e) {
         console.warn("Could not fetch signers:", e);
