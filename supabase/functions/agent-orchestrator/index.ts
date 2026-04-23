@@ -405,6 +405,17 @@ Deno.serve(async (req) => {
       if (orgRow?.timezone) organizationTimezone = orgRow.timezone;
     } catch (_e) { /* keep default */ }
 
+    // Load company knowledge for prompt interpolation ({{empresa.*}})
+    let organizationKnowledge: any = null;
+    try {
+      const { data: knowRow } = await supabase
+        .from('organization_knowledge')
+        .select('*')
+        .eq('organization_id', organizationId)
+        .maybeSingle();
+      organizationKnowledge = knowRow || null;
+    } catch (_e) { /* knowledge optional */ }
+
     const context = {
       conversationId, contactId, organizationId, conversation,
       messages, agents, allTags, contactTags, pipelines, pipelinePositions,
@@ -414,6 +425,7 @@ Deno.serve(async (req) => {
       forceResponse, // PASS TO CONTEXT
       additionalContext, // NEW: Pass the payload additionalContext
       organizationTimezone, // NEW: For temporal context block in prompts
+      organizationKnowledge, // NEW: For {{empresa.*}} placeholder injection
     };
 
     // 4. Resolve flow_id from available sources
