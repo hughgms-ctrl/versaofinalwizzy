@@ -1,5 +1,6 @@
-import { FileText, Download, Search, Trash2, User, FolderOpen, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react';
+import { FileText, Download, Search, Trash2, User, FolderOpen, ChevronDown, ChevronRight, RefreshCw, Archive } from 'lucide-react';
 import { useState, useMemo } from 'react';
+import JSZip from 'jszip';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -237,6 +238,45 @@ export function GeneratedDocumentsList() {
                       <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" />
                     )}
                   </button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mr-1 gap-1 text-xs shrink-0"
+                    title="Baixar todos os documentos do grupo em ZIP"
+                    onClick={async () => {
+                      const downloadable = docs.filter((d: any) => d.pdf_url);
+                      if (downloadable.length === 0) {
+                        toast.error('Nenhum PDF disponível para download');
+                        return;
+                      }
+                      try {
+                        toast.info('Preparando ZIP...');
+                        const zip = new JSZip();
+                        await Promise.all(downloadable.map(async (d: any) => {
+                          const r = await fetch(d.pdf_url);
+                          if (!r.ok) return;
+                          const blob = await r.blob();
+                          const safeName = (d.name || 'documento').replace(/[^\w\-. ]/g, '_');
+                          zip.file(`${safeName}.pdf`, blob);
+                        }));
+                        const content = await zip.generateAsync({ type: 'blob' });
+                        const url = URL.createObjectURL(content);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        const groupName = (docs[0]?.document_packs?.name || 'pack').replace(/[^\w\-. ]/g, '_');
+                        a.download = `${groupName}.zip`;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                        toast.success('ZIP gerado!');
+                      } catch (e) {
+                        toast.error('Erro ao gerar ZIP');
+                      }
+                    }}
+                  >
+                    <Archive className="h-3.5 w-3.5" /> ZIP
+                  </Button>
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
                       <Button variant="ghost" size="icon" className="mr-2 text-destructive hover:text-destructive shrink-0">

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { FileSignature, Search, Send, ExternalLink, CheckCircle2, Clock, Eye, Copy, FileText, Download } from 'lucide-react';
+import { FileSignature, Search, Send, ExternalLink, CheckCircle2, Clock, Eye, Copy, FileText, Download, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -146,6 +146,17 @@ export function SignaturesList() {
                       <Button variant="ghost" size="icon" asChild title="Baixar assinado">
                         <a href={sig.signed_pdf_url} target="_blank" rel="noopener noreferrer">
                           <Download className="h-4 w-4" />
+                        </a>
+                      </Button>
+                    )}
+                    {(sig.metadata as any)?.verification_code && (
+                      <Button variant="ghost" size="icon" asChild title="Verificar autenticidade">
+                        <a
+                          href={`https://wizzybr.com/verificar/${(sig.metadata as any).verification_code}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          <ShieldCheck className="h-4 w-4" />
                         </a>
                       </Button>
                     )}
