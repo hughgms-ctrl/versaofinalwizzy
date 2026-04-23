@@ -18,6 +18,9 @@ export interface PlatformPackage {
   tags_template: any[];
   pipeline_template: Record<string, any>;
   is_published: boolean;
+  is_locked: boolean;
+  is_clonable: boolean;
+  allow_post_edit: boolean;
   sort_order: number;
   version: number;
   created_at: string;

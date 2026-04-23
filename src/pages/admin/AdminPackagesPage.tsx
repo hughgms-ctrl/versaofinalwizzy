@@ -39,7 +39,8 @@ import {
   useDeletePlatformPackage,
   PlatformPackage,
 } from '@/hooks/usePlatformPackages';
-import { Plus, Pencil, Trash2, Package, Layers, Loader2 } from 'lucide-react';
+import { Plus, Pencil, Trash2, Package, Layers, Loader2, FolderInput } from 'lucide-react';
+import { ExportWorkspaceDialog } from '@/components/settings/ExportWorkspaceDialog';
 
 const EMPTY_PKG: Partial<PlatformPackage> = {
   kind: 'area',
@@ -54,6 +55,9 @@ const EMPTY_PKG: Partial<PlatformPackage> = {
   tags_template: [],
   pipeline_template: {},
   is_published: false,
+  is_locked: false,
+  is_clonable: true,
+  allow_post_edit: true,
   sort_order: 0,
   version: 1,
   parent_package_id: null,
@@ -77,6 +81,7 @@ export default function AdminPackagesPage() {
 
   const [editing, setEditing] = useState<Partial<PlatformPackage> | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<PlatformPackage | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
 
   const list = tab === 'area' ? areas : objectives;
   const loading = tab === 'area' ? loadingAreas : loadingObj;
@@ -102,10 +107,16 @@ export default function AdminPackagesPage() {
               Templates verticais que clientes podem ativar com 2 cliques.
             </p>
           </div>
-          <Button onClick={openNew}>
-            <Plus className="h-4 w-4 mr-2" />
-            Novo {tab === 'area' ? 'Pacote de Área' : 'Objetivo'}
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setImportOpen(true)}>
+              <FolderInput className="h-4 w-4 mr-2" />
+              Importar do workspace
+            </Button>
+            <Button onClick={openNew}>
+              <Plus className="h-4 w-4 mr-2" />
+              Novo {tab === 'area' ? 'Pacote de Área' : 'Objetivo'}
+            </Button>
+          </div>
         </div>
 
         <Tabs value={tab} onValueChange={(v) => setTab(v as 'area' | 'objective')}>
@@ -320,6 +331,30 @@ export default function AdminPackagesPage() {
                   onChange={(v) => setEditing({ ...editing, pipeline_template: v as Record<string, any> })}
                   placeholder='{"name":"Atendimento","columns":[{"name":"Novo","color":"#94a3b8"}]}'
                 />
+
+                <div className="rounded-md border bg-muted/30 p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label className="cursor-pointer">Bloqueado (esconde "Duplicar")</Label>
+                    <Switch
+                      checked={!!editing.is_locked}
+                      onCheckedChange={(c) => setEditing({ ...editing, is_locked: c })}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <Label className="cursor-pointer">Permite duplicar como template do cliente</Label>
+                    <Switch
+                      checked={editing.is_clonable !== false}
+                      onCheckedChange={(c) => setEditing({ ...editing, is_clonable: c })}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <Label className="cursor-pointer">Permite editar recursos depois de ativar</Label>
+                    <Switch
+                      checked={editing.allow_post_edit !== false}
+                      onCheckedChange={(c) => setEditing({ ...editing, allow_post_edit: c })}
+                    />
+                  </div>
+                </div>
 
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
