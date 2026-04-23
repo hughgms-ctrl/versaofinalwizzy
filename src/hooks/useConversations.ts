@@ -252,7 +252,7 @@ export function useCreateConversation() {
         .from('conversations')
         .select('*, contact:contacts(*)')
         .eq('contact_id', contactId)
-        .in('status', ['open', 'pending', 'closed'])
+        .in('status', ['open', 'pending', 'closed'] as any)
         .maybeSingle();
 
       if (existingConv) {
