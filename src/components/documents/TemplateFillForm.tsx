@@ -151,7 +151,7 @@ export function TemplateFillForm({ template, onBack, onGeneratedForSignature }: 
         });
       }
 
-      const link = `${getPublicOrigin()}/preencher-contrato/${fillToken}`;
+      const link = `${getPublicAppOrigin()}/preencher-contrato/${fillToken}`;
       setPublicLink(link);
       queryClient.invalidateQueries({ queryKey: ['generated-documents'] });
       toast({ title: 'Link público gerado!' });
