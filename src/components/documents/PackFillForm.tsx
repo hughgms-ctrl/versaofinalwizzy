@@ -177,7 +177,13 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature 
       }
 
       if (docIds.length > 0) {
-        await createSigners.mutateAsync({ documentIds: docIds, packId: pack.id, signers, signing_method: 'internal' });
+        const normalizedSigners = signers.map((s) => ({
+          ...s,
+          signer_name: s.data_source === 'form' && !s.signer_name?.trim()
+            ? '(será preenchido pelo cliente)'
+            : s.signer_name,
+        }));
+        await createSigners.mutateAsync({ documentIds: docIds, packId: pack.id, signers: normalizedSigners, signing_method: 'internal' });
       }
 
       const link = `${getPublicAppOrigin()}/preencher-contrato/${fillToken}`;
