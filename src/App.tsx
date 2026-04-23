@@ -54,6 +54,7 @@ import AdminPage from "./pages/AdminPage";
 import AdminLoginPage from "./pages/AdminLoginPage";
 import AdminClientsPage from "./pages/admin/AdminClientsPage";
 import AdminPlansPage from "./pages/admin/AdminPlansPage";
+import AdminPackagesPage from "./pages/admin/AdminPackagesPage";
 import AdminApiPage from "./pages/admin/AdminApiPage";
 import AdminGovernancePage from "./pages/admin/AdminGovernancePage";
 import AdminSecurityPage from "./pages/admin/AdminSecurityPage";
@@ -124,6 +125,7 @@ const App = () => (
                     <Route path="/admin" element={<AdminProtectedRoute><AdminPage /></AdminProtectedRoute>} />
                     <Route path="/admin/clients" element={<AdminProtectedRoute><AdminClientsPage /></AdminProtectedRoute>} />
                     <Route path="/admin/plans" element={<AdminProtectedRoute><AdminPlansPage /></AdminProtectedRoute>} />
+                    <Route path="/admin/packages" element={<AdminProtectedRoute><AdminPackagesPage /></AdminProtectedRoute>} />
                     <Route path="/admin/api" element={<AdminProtectedRoute><AdminApiPage /></AdminProtectedRoute>} />
                     <Route path="/admin/governance" element={<AdminProtectedRoute><AdminGovernancePage /></AdminProtectedRoute>} />
                     <Route path="/admin/security" element={<AdminProtectedRoute><AdminSecurityPage /></AdminProtectedRoute>} />
