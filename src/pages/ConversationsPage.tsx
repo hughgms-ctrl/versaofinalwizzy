@@ -360,19 +360,8 @@ const ConversationsPage = () => {
             </Button>
           </div>
 
-          {/* Filters - centered */}
-          <div className="flex-1 flex items-center justify-center">
-            <ConversationFilters
-              conversations={conversations || []}
-              filters={filters}
-              onFiltersChange={setFilters}
-              showCount={false}
-              serviceModeCounts={serviceModeCounts}
-            />
-          </div>
-
-          {/* Spacer to balance layout */}
-          <div className="w-80 lg:w-96 flex-shrink-0" />
+          {/* Spacer for the rest of the header */}
+          <div className="flex-1" />
         </div>
 
         <div className="flex flex-1 overflow-hidden">
