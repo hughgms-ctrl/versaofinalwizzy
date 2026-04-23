@@ -3,6 +3,13 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 
+export interface SignerFieldMapping {
+  name?: string;
+  email?: string;
+  cpf?: string;
+  phone?: string;
+}
+
 export interface DocumentSigner {
   id: string;
   organization_id: string;
@@ -29,6 +36,8 @@ export interface DocumentSigner {
   sent_at: string | null;
   order: number;
   metadata: Record<string, any>;
+  data_source: 'manual' | 'form';
+  field_mapping: SignerFieldMapping;
   created_at: string;
   updated_at: string;
 }
@@ -40,6 +49,8 @@ export interface SignerInput {
   signer_cpf?: string;
   signer_role?: string;
   auth_methods?: DocumentSigner['auth_methods'];
+  data_source?: 'manual' | 'form';
+  field_mapping?: SignerFieldMapping;
 }
 
 export function useDocumentSigners(documentId: string | null) {
@@ -93,6 +104,8 @@ export function useCreateSigners() {
             signature_token: crypto.randomUUID(),
             order: idx,
             status: 'pending',
+            data_source: s.data_source || 'manual',
+            field_mapping: s.field_mapping || {},
           });
         });
       });
