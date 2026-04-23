@@ -17,7 +17,9 @@ import {
   MailWarning,
   Bot,
   UserCheck,
-  UserPlus
+  UserPlus,
+  CircleSlash,
+  CheckCheck
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -60,6 +62,7 @@ export function ConversationActionsMenu({ conversation, onShowMediaGallery }: Co
   const [showShareDialog, setShowShareDialog] = useState(false);
   const queryClient = useQueryClient();
   const isArchived = conversation.status === 'archived';
+  const isClosed = (conversation as any).status === 'closed' || !!(conversation as any).closed_at;
 
   const cancelPendingChatFollowUps = async (reason: string) => {
     const patch = {
@@ -109,20 +112,31 @@ export function ConversationActionsMenu({ conversation, onShowMediaGallery }: Co
     return data || [];
   };
 
-  const handleStatusChange = async (status: 'open' | 'pending' | 'resolved' | 'archived') => {
+  const handleStatusChange = async (status: 'open' | 'pending' | 'resolved' | 'closed' | 'archived') => {
     setIsUpdating(true);
     try {
+      const patch: any = { status };
+      if (status === 'closed') patch.closed_at = new Date().toISOString();
+      if (status === 'open') patch.closed_at = null;
+
       const { error } = await supabase
         .from('conversations')
-        .update({ status })
+        .update(patch)
         .eq('id', conversation.id);
 
       if (error) throw error;
 
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      const labels: Record<string, string> = {
+        open: 'aberta',
+        closed: 'encerrada',
+        archived: 'arquivada',
+        resolved: 'resolvida',
+        pending: 'pendente',
+      };
       toast({
         title: 'Status atualizado',
-        description: `Conversa marcada como ${status === 'resolved' ? 'resolvida' : status === 'archived' ? 'arquivada' : status}`,
+        description: `Conversa marcada como ${labels[status] || status}`,
       });
     } catch (error) {
       toast({
