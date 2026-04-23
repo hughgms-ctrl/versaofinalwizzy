@@ -369,7 +369,18 @@ export default function OnboardingPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {publishedObjectives.length === 0 ? (
+              {!selectedAreaId ? (
+                <div className="rounded-lg border border-dashed p-6 text-center">
+                  <Sparkles className="h-6 w-6 mx-auto text-muted-foreground mb-2" />
+                  <p className="text-sm text-muted-foreground">
+                    Nenhum pacote pronto está disponível no momento.
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Você pode começar a usar o sistema normalmente. Quando houver pacotes prontos,
+                    você poderá ativá-los em Configurações → Pacotes.
+                  </p>
+                </div>
+              ) : publishedObjectives.length === 0 ? (
                 <div className="rounded-lg border border-dashed p-6 text-center">
                   <Sparkles className="h-6 w-6 mx-auto text-muted-foreground mb-2" />
                   <p className="text-sm text-muted-foreground">
