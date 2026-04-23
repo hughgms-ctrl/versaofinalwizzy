@@ -14,6 +14,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { fillTemplate } from '@/lib/documentFormatters';
 import { FillModeStep, FillMode } from './FillModeStep';
 import { SignersManager } from './SignersManager';
+import { SignerLinksList } from './SignerLinksList';
 import { SignerInput, useCreateSigners } from '@/hooks/useDocumentSigners';
 import { getPublicAppOrigin } from '@/lib/publicOrigin';
 
@@ -35,6 +36,7 @@ export function TemplateFillForm({ template, onBack, onGeneratedForSignature }: 
   const [signers, setSigners] = useState<SignerInput[]>([]);
   const [generating, setGenerating] = useState(false);
   const [publicLink, setPublicLink] = useState<string | null>(null);
+  const [generatedDocId, setGeneratedDocId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
   const fields = (template.fields || []) as Array<{ name: string; label: string; type: string; required: boolean }>;
