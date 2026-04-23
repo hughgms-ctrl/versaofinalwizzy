@@ -125,9 +125,14 @@ export function TemplateFillForm({ template, onBack, onGeneratedForSignature }: 
       toast({ title: 'Adicione ao menos 1 signatário', variant: 'destructive' });
       return;
     }
-    const invalidSigner = signers.find((s) => !s.signer_name?.trim());
-    if (invalidSigner) {
-      toast({ title: 'Preencha o nome de todos os signatários', variant: 'destructive' });
+    const invalidManual = signers.find((s) => (s.data_source ?? 'manual') === 'manual' && !s.signer_name?.trim());
+    if (invalidManual) {
+      toast({ title: 'Preencha o nome dos signatários com dados fixos', variant: 'destructive' });
+      return;
+    }
+    const invalidForm = signers.find((s) => s.data_source === 'form' && !s.field_mapping?.name);
+    if (invalidForm) {
+      toast({ title: 'Vincule o campo "Nome" dos signatários do tipo "Cliente preenche"', variant: 'destructive' });
       return;
     }
     setGenerating(true);
@@ -153,9 +158,15 @@ export function TemplateFillForm({ template, onBack, onGeneratedForSignature }: 
 
       // Pre-create signers (will activate when document is filled)
       if (docData?.id) {
+        const normalizedSigners = signers.map((s) => ({
+          ...s,
+          signer_name: s.data_source === 'form' && !s.signer_name?.trim()
+            ? '(será preenchido pelo cliente)'
+            : s.signer_name,
+        }));
         await createSigners.mutateAsync({
           documentIds: [docData.id],
-          signers,
+          signers: normalizedSigners,
           signing_method: 'internal',
         });
       }
