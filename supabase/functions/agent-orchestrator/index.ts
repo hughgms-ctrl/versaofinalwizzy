@@ -42,6 +42,71 @@ interface DocumentCollectionContext {
 
 const MAX_TOOL_ROUNDS = 3;
 
+// ==================== COMPANY KNOWLEDGE INJECTION ====================
+// Replace placeholders like {{empresa.nome}}, {{empresa.endereco}} in any prompt
+// with values from organization_knowledge. Missing values become "[não informado]".
+function buildCompanyKnowledgeMap(k: any | null): Record<string, string> {
+  if (!k) return {};
+  const faqsText = Array.isArray(k.faqs) && k.faqs.length > 0
+    ? k.faqs
+        .map((f: any) => `• ${f?.question || ''}\n  ${f?.answer || ''}`)
+        .join('\n')
+    : '';
+  return {
+    'empresa.nome': k.company_name || '',
+    'empresa.site': k.website || '',
+    'empresa.telefone': k.phone || '',
+    'empresa.email': k.email || '',
+    'empresa.endereco': k.address || '',
+    'empresa.horario': k.hours || '',
+    'empresa.pagamentos': k.payment_methods || '',
+    'empresa.tom': k.tone_of_voice || '',
+    'empresa.diferenciais': k.differentials || '',
+    'empresa.sobre': k.about || '',
+    'empresa.faqs': faqsText,
+  };
+}
+
+function interpolateCompanyKnowledge(text: string, knowledge: any | null): string {
+  if (!text) return text;
+  const map = buildCompanyKnowledgeMap(knowledge);
+  // Custom fields support: {{empresa.custom.X}}
+  const customFields = knowledge?.custom_fields && typeof knowledge.custom_fields === 'object'
+    ? knowledge.custom_fields
+    : {};
+  return text.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g, (full, key) => {
+    if (key in map) return map[key] || '[não informado]';
+    if (key.startsWith('empresa.custom.')) {
+      const fieldName = key.replace('empresa.custom.', '');
+      return customFields[fieldName] ?? '[não informado]';
+    }
+    return full; // unknown placeholders preserved
+  });
+}
+
+function buildCompanyKnowledgeBlock(knowledge: any | null): string {
+  if (!knowledge) return '';
+  const lines: string[] = [];
+  if (knowledge.company_name) lines.push(`- Nome: ${knowledge.company_name}`);
+  if (knowledge.website) lines.push(`- Site: ${knowledge.website}`);
+  if (knowledge.phone) lines.push(`- Telefone: ${knowledge.phone}`);
+  if (knowledge.email) lines.push(`- Email: ${knowledge.email}`);
+  if (knowledge.address) lines.push(`- Endereço: ${knowledge.address}`);
+  if (knowledge.hours) lines.push(`- Horário: ${knowledge.hours}`);
+  if (knowledge.payment_methods) lines.push(`- Formas de pagamento: ${knowledge.payment_methods}`);
+  if (knowledge.tone_of_voice) lines.push(`- Tom de voz: ${knowledge.tone_of_voice}`);
+  if (knowledge.differentials) lines.push(`- Diferenciais: ${knowledge.differentials}`);
+  if (knowledge.about) lines.push(`- Sobre: ${knowledge.about}`);
+  if (Array.isArray(knowledge.faqs) && knowledge.faqs.length > 0) {
+    lines.push(`- FAQs:`);
+    for (const f of knowledge.faqs) {
+      lines.push(`  • ${f?.question || ''} → ${f?.answer || ''}`);
+    }
+  }
+  if (lines.length === 0) return '';
+  return `# DADOS DA EMPRESA (use sempre que precisar dessas informações):\n${lines.join('\n')}\n\n---\n\n`;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
