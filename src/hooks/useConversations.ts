@@ -7,12 +7,13 @@ export interface DbConversation {
   id: string;
   contact_id: string;
   organization_id: string;
-  status: 'open' | 'pending' | 'resolved' | 'archived';
+  status: 'open' | 'pending' | 'resolved' | 'closed' | 'archived';
   unread_count: number;
   last_message_at: string | null;
   assigned_to: string | null;
   ai_agent_id: string | null;
   metadata: Record<string, any> | null;
+  closed_at: string | null;
   created_at: string;
   updated_at: string;
   contact: {
