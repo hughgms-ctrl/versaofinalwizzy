@@ -141,8 +141,12 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature 
       toast.error('Adicione ao menos 1 signatário');
       return;
     }
-    if (signers.some((s) => !s.signer_name?.trim())) {
-      toast.error('Preencha o nome de todos os signatários');
+    if (signers.some((s) => (s.data_source ?? 'manual') === 'manual' && !s.signer_name?.trim())) {
+      toast.error('Preencha o nome dos signatários com dados fixos');
+      return;
+    }
+    if (signers.some((s) => s.data_source === 'form' && !s.field_mapping?.name)) {
+      toast.error('Vincule o campo "Nome" dos signatários do tipo "Cliente preenche"');
       return;
     }
     setIsGenerating(true);

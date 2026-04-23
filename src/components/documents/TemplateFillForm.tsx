@@ -125,9 +125,14 @@ export function TemplateFillForm({ template, onBack, onGeneratedForSignature }: 
       toast({ title: 'Adicione ao menos 1 signatário', variant: 'destructive' });
       return;
     }
-    const invalidSigner = signers.find((s) => !s.signer_name?.trim());
-    if (invalidSigner) {
-      toast({ title: 'Preencha o nome de todos os signatários', variant: 'destructive' });
+    const invalidManual = signers.find((s) => (s.data_source ?? 'manual') === 'manual' && !s.signer_name?.trim());
+    if (invalidManual) {
+      toast({ title: 'Preencha o nome dos signatários com dados fixos', variant: 'destructive' });
+      return;
+    }
+    const invalidForm = signers.find((s) => s.data_source === 'form' && !s.field_mapping?.name);
+    if (invalidForm) {
+      toast({ title: 'Vincule o campo "Nome" dos signatários do tipo "Cliente preenche"', variant: 'destructive' });
       return;
     }
     setGenerating(true);
