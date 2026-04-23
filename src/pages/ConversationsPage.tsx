@@ -26,8 +26,8 @@ const ConversationsPage = () => {
   const [selectedConversation, setSelectedConversation] = useState<DbConversation | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filters, setFilters] = useState<ConversationFiltersState>(defaultFilters);
-  const [serviceMode, setServiceMode] = useState<ServiceMode>('all');
-  const [showArchived, setShowArchived] = useState(false);
+  const serviceMode = filters.serviceMode;
+  const showArchived = filters.showArchived;
   const [isSpyMode, setIsSpyMode] = useState(false);
   const [showNewConversationDialog, setShowNewConversationDialog] = useState(false);
   const { data: conversations, isLoading, error, refetch } = useConversations({ onlyArchived: showArchived });
