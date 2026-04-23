@@ -1,18 +1,20 @@
 import { useState, useMemo } from 'react';
-import { ArrowLeft, FileText, Send, Loader2, FileSignature } from 'lucide-react';
+import { ArrowLeft, FileText, Send, Loader2, Users, Copy, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DocumentPack } from '@/hooks/useDocumentPacks';
 import { useDocumentTemplates, DocumentTemplate } from '@/hooks/useDocumentTemplates';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 import { DatePicker } from '@/components/ui/date-picker';
+import { FillModeStep, FillMode } from './FillModeStep';
+import { SignersManager } from './SignersManager';
+import { SignerInput, useCreateSigners } from '@/hooks/useDocumentSigners';
+import { getPublicAppOrigin } from '@/lib/publicOrigin';
 
 interface PackFillFormProps {
   pack: DocumentPack;
@@ -23,6 +25,8 @@ interface PackFillFormProps {
 
 interface FieldInfo {
   name: string;
+  label: string;
+  type: string;
   templateIds: string[];
   templateNames: string[];
 }
@@ -30,29 +34,27 @@ interface FieldInfo {
 export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature }: PackFillFormProps) {
   const { data: allTemplates } = useDocumentTemplates();
   const { profile } = useAuth();
-  const [values, setValues] = useState<Record<string, string>>({});
-  const [signingMethod, setSigningMethod] = useState<string>('manual');
-  const [isGenerating, setIsGenerating] = useState(false);
+  const createSigners = useCreateSigners();
 
-  // Get templates in this pack
+  const [fillMode, setFillMode] = useState<FillMode>('internal');
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [signers, setSigners] = useState<SignerInput[]>([]);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [publicLink, setPublicLink] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
   const templates = useMemo(() => {
     if (!allTemplates) return [];
-    return pack.template_ids
-      .map(id => allTemplates.find(t => t.id === id))
-      .filter(Boolean) as DocumentTemplate[];
+    return pack.template_ids.map((id) => allTemplates.find((t) => t.id === id)).filter(Boolean) as DocumentTemplate[];
   }, [allTemplates, pack.template_ids]);
 
-  // Analyze fields across templates
-  const { sharedFields, uniqueFields } = useMemo(() => {
+  const { sharedFields, uniqueFields, allFields } = useMemo(() => {
     const fieldMap = new Map<string, FieldInfo>();
-
-    templates.forEach(template => {
-      const fields = (template.fields as any[]) || [];
-      fields.forEach((field: any) => {
+    templates.forEach((template) => {
+      const fs = (template.fields as any[]) || [];
+      fs.forEach((field: any) => {
         const name = field.name || field;
-        if (!fieldMap.has(name)) {
-          fieldMap.set(name, { name, templateIds: [], templateNames: [] });
-        }
+        if (!fieldMap.has(name)) fieldMap.set(name, { name, label: field.label || name, type: field.type || 'text', templateIds: [], templateNames: [] });
         const info = fieldMap.get(name)!;
         if (!info.templateIds.includes(template.id)) {
           info.templateIds.push(template.id);
@@ -60,33 +62,22 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature 
         }
       });
     });
-
     const shared: FieldInfo[] = [];
     const unique: FieldInfo[] = [];
-
-    fieldMap.forEach(info => {
-      if (info.templateIds.length > 1) {
-        shared.push(info);
-      } else {
-        unique.push(info);
-      }
-    });
-
-    return { sharedFields: shared, uniqueFields: unique };
+    fieldMap.forEach((info) => (info.templateIds.length > 1 ? shared.push(info) : unique.push(info)));
+    return { sharedFields: shared, uniqueFields: unique, allFields: Array.from(fieldMap.values()) };
   }, [templates]);
 
-  const handleGenerate = async (advanceToSignature = false) => {
+  const handleGenerateInternal = async (advanceToSignature = false) => {
     if (!profile?.organization_id) return;
-
     setIsGenerating(true);
     try {
       let firstDocId: string | null = null;
+      const docIds: string[] = [];
 
-      // Generate a document for each template in the pack
       for (const template of templates) {
         const templateFields = (template.fields as any[]) || [];
         const filledData: Record<string, string> = {};
-        
         templateFields.forEach((field: any) => {
           const name = field.name || field;
           filledData[name] = values[name] || '';
@@ -101,18 +92,27 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature 
             name: `${pack.name} - ${template.name}`,
             filled_data: filledData,
             status: 'generated',
-            signing_method: signingMethod,
+            signing_method: 'internal',
+            fill_mode: 'internal',
+            is_filled: true,
             created_by: profile.id,
           })
           .select('id')
           .single();
-
         if (error) throw error;
-        if (!firstDocId && docData?.id) firstDocId = docData.id;
+        if (docData?.id) {
+          docIds.push(docData.id);
+          if (!firstDocId) firstDocId = docData.id;
+        }
+      }
+
+      // Apply signers to all docs in pack
+      if (signers.length > 0 && docIds.length > 0) {
+        await createSigners.mutateAsync({ documentIds: docIds, packId: pack.id, signers, signing_method: 'internal' });
       }
 
       if (advanceToSignature && firstDocId && onGeneratedForSignature) {
-        toast.success(`${templates.length} documentos gerados! Configure a assinatura.`);
+        toast.success(`${templates.length} documentos gerados!`);
         onGeneratedForSignature(firstDocId);
       } else {
         toast.success(`${templates.length} documentos gerados com sucesso!`);
@@ -127,157 +127,216 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature 
     }
   };
 
-  const allFieldsFilled = useMemo(() => {
-    const allFields = [...sharedFields, ...uniqueFields];
-    return allFields.every(f => values[f.name]?.trim());
-  }, [sharedFields, uniqueFields, values]);
+  const handleGeneratePublicLink = async () => {
+    if (!profile?.organization_id) return;
+    if (signers.length === 0) {
+      toast.error('Adicione ao menos 1 signatário');
+      return;
+    }
+    if (signers.some((s) => !s.signer_name?.trim())) {
+      toast.error('Preencha o nome de todos os signatários');
+      return;
+    }
+    setIsGenerating(true);
+    try {
+      const fillToken = crypto.randomUUID();
+      const docIds: string[] = [];
+
+      for (const template of templates) {
+        const { data: docData, error } = await (supabase as any)
+          .from('generated_documents')
+          .insert({
+            organization_id: profile.organization_id,
+            template_id: template.id,
+            pack_id: pack.id,
+            name: `${pack.name} - ${template.name}`,
+            filled_data: {},
+            status: 'awaiting_fill',
+            fill_mode: 'public',
+            is_filled: false,
+            public_fill_token: fillToken,
+            signature_config: { signing_method: 'internal', signers },
+            created_by: profile.id,
+          })
+          .select('id')
+          .single();
+        if (error) throw error;
+        if (docData?.id) docIds.push(docData.id);
+      }
+
+      if (docIds.length > 0) {
+        await createSigners.mutateAsync({ documentIds: docIds, packId: pack.id, signers, signing_method: 'internal' });
+      }
+
+      const link = `${getPublicAppOrigin()}/preencher-contrato/${fillToken}`;
+      setPublicLink(link);
+      toast.success('Link público gerado!');
+    } catch (e: any) {
+      toast.error('Erro: ' + (e.message || ''));
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const copyLink = async () => {
+    if (!publicLink) return;
+    await navigator.clipboard.writeText(publicLink);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const allFieldsFilled = useMemo(() => allFields.every((f) => values[f.name]?.trim()), [allFields, values]);
+
+  const renderFieldInput = (field: FieldInfo) => {
+    if (field.type === 'date') {
+      return <DatePicker value={values[field.name] || ''} onChange={(v) => setValues((prev) => ({ ...prev, [field.name]: v }))} />;
+    }
+    return <Input value={values[field.name] || ''} onChange={(e) => setValues((prev) => ({ ...prev, [field.name]: e.target.value }))} placeholder={`Digite ${field.label}`} />;
+  };
+
+  if (publicLink) {
+    return (
+      <div className="space-y-6 max-w-xl mx-auto">
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" onClick={onBack}><ArrowLeft className="h-5 w-5" /></Button>
+          <div>
+            <h2 className="text-lg font-semibold">Link de preenchimento</h2>
+            <p className="text-sm text-muted-foreground">Envie este link para o cliente preencher os dados do pack</p>
+          </div>
+        </div>
+        <Card>
+          <CardContent className="pt-6 space-y-4">
+            <div className="flex gap-2">
+              <Input value={publicLink} readOnly className="font-mono text-xs" />
+              <Button onClick={copyLink} className="gap-2 shrink-0">
+                {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                {copied ? 'Copiado' : 'Copiar'}
+              </Button>
+            </div>
+            <div className="bg-muted/50 rounded-lg p-4 text-xs text-muted-foreground">
+              <p className="font-semibold text-foreground mb-2">Como funciona:</p>
+              <ol className="space-y-1 list-decimal pl-4">
+                <li>O cliente abre o link e preenche os campos uma única vez</li>
+                <li>Os dados são aplicados aos {templates.length} documentos do pack</li>
+                <li>Cada documento segue para os {signers.length} signatário(s)</li>
+              </ol>
+            </div>
+            <Button onClick={onBack} variant="outline" className="w-full">Concluir</Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-2">
-        <Button variant="ghost" onClick={onBack}>
-          <ArrowLeft className="h-4 w-4 mr-2" /> Voltar
-        </Button>
-        <div className="flex gap-2">
-          {onGeneratedForSignature && (
-            <Button variant="outline" onClick={() => handleGenerate(true)} disabled={!allFieldsFilled || isGenerating} className="gap-2">
-              <FileSignature className="h-4 w-4" />
-              Gerar e Assinar
-            </Button>
-          )}
-          <Button onClick={() => handleGenerate(false)} disabled={!allFieldsFilled || isGenerating}>
-            {isGenerating ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            ) : (
-              <Send className="h-4 w-4 mr-2" />
-            )}
-            Gerar {templates.length} documento{templates.length > 1 ? 's' : ''}
-          </Button>
+      <div className="flex items-center gap-4">
+        <Button variant="ghost" onClick={onBack}><ArrowLeft className="h-4 w-4 mr-2" /> Voltar</Button>
+        <div>
+          <h2 className="text-lg font-semibold">{pack.name}</h2>
+          <p className="text-sm text-muted-foreground">{pack.description || `Pack com ${templates.length} documentos`}</p>
         </div>
       </div>
 
-      <div>
-        <h2 className="text-lg font-semibold">{pack.name}</h2>
-        <p className="text-sm text-muted-foreground">{pack.description || 'Preencha os campos abaixo para gerar os documentos'}</p>
-        <div className="flex gap-2 mt-2">
-          {templates.map(t => (
-            <Badge key={t.id} variant="outline">
-              <FileText className="h-3 w-3 mr-1" />
-              {t.name}
-            </Badge>
-          ))}
-        </div>
+      <div className="flex flex-wrap gap-2">
+        {templates.map((t) => (
+          <Badge key={t.id} variant="outline"><FileText className="h-3 w-3 mr-1" />{t.name}</Badge>
+        ))}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        {/* Shared Fields */}
-        {sharedFields.length > 0 && (
-          <Card className="p-4">
-            <h3 className="font-medium mb-4 flex items-center gap-2">
-              <Badge variant="default">{sharedFields.length}</Badge>
-              Campos compartilhados
-            </h3>
-            <p className="text-xs text-muted-foreground mb-4">
-              Estes campos serão preenchidos em múltiplos documentos
-            </p>
-            <div className="space-y-4">
-              {sharedFields.map(field => (
-                <div key={field.name}>
-                  <Label className="text-sm flex items-center gap-2">
-                    {field.name}
-                    <span className="text-xs text-muted-foreground">({field.templateNames.length} docs)</span>
-                  </Label>
-                  {(() => {
-                    const tplField = templates
-                      .flatMap((t) => (t.fields as any[]) || [])
-                      .find((f: any) => (f.name || f) === field.name);
-                    const fType = tplField?.type;
-                    if (fType === 'date') {
-                      return (
-                        <DatePicker
-                          value={values[field.name] || ''}
-                          onChange={(v) => setValues((prev) => ({ ...prev, [field.name]: v }))}
-                        />
-                      );
-                    }
-                    return (
-                      <Input
-                        value={values[field.name] || ''}
-                        onChange={(e) => setValues((prev) => ({ ...prev, [field.name]: e.target.value }))}
-                        placeholder={`Digite ${field.name}`}
-                      />
-                    );
-                  })()}
-                </div>
-              ))}
-            </div>
-          </Card>
-        )}
-
-        {/* Unique Fields */}
-        {uniqueFields.length > 0 && (
-          <Card className="p-4">
-            <h3 className="font-medium mb-4 flex items-center gap-2">
-              <Badge variant="secondary">{uniqueFields.length}</Badge>
-              Campos específicos
-            </h3>
-            <p className="text-xs text-muted-foreground mb-4">
-              Estes campos aparecem em apenas um documento
-            </p>
-            <div className="space-y-4">
-              {uniqueFields.map(field => (
-                <div key={field.name}>
-                  <Label className="text-sm flex items-center gap-2">
-                    {field.name}
-                    <span className="text-xs text-muted-foreground">({field.templateNames[0]})</span>
-                  </Label>
-                  {(() => {
-                    const tplField = templates
-                      .flatMap((t) => (t.fields as any[]) || [])
-                      .find((f: any) => (f.name || f) === field.name);
-                    const fType = tplField?.type;
-                    if (fType === 'date') {
-                      return (
-                        <DatePicker
-                          value={values[field.name] || ''}
-                          onChange={(v) => setValues((prev) => ({ ...prev, [field.name]: v }))}
-                        />
-                      );
-                    }
-                    return (
-                      <Input
-                        value={values[field.name] || ''}
-                        onChange={(e) => setValues((prev) => ({ ...prev, [field.name]: e.target.value }))}
-                        placeholder={`Digite ${field.name}`}
-                      />
-                    );
-                  })()}
-                </div>
-              ))}
-            </div>
-          </Card>
-        )}
-      </div>
-
-      <Separator />
-
-      <Card className="p-4">
-        <h3 className="font-medium mb-4">Assinatura</h3>
-        <div className="max-w-xs">
-          <Label>Método de assinatura</Label>
-          <Select value={signingMethod} onValueChange={setSigningMethod}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="manual">Manual (cliente devolve assinado)</SelectItem>
-              <SelectItem value="desenho">Assinatura digital (desenho)</SelectItem>
-              <SelectItem value="govbr" disabled>Gov.br (em breve)</SelectItem>
-              <SelectItem value="zapsign" disabled>ZapSign (em breve)</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+      {/* Step 1: Mode */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <span className="h-6 w-6 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center">1</span>
+            Quem preenche os dados?
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <FillModeStep value={fillMode} onChange={setFillMode} />
+        </CardContent>
       </Card>
+
+      {fillMode === 'internal' && (
+        <div className="grid gap-6 lg:grid-cols-2">
+          {sharedFields.length > 0 && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Badge variant="default">{sharedFields.length}</Badge>
+                  Campos compartilhados
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {sharedFields.map((field) => (
+                  <div key={field.name}>
+                    <Label className="text-sm flex items-center gap-2">
+                      {field.label}
+                      <span className="text-xs text-muted-foreground">({field.templateNames.length} docs)</span>
+                    </Label>
+                    {renderFieldInput(field)}
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
+          {uniqueFields.length > 0 && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Badge variant="secondary">{uniqueFields.length}</Badge>
+                  Campos específicos
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {uniqueFields.map((field) => (
+                  <div key={field.name}>
+                    <Label className="text-sm flex items-center gap-2">
+                      {field.label}
+                      <span className="text-xs text-muted-foreground">({field.templateNames[0]})</span>
+                    </Label>
+                    {renderFieldInput(field)}
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
+
+      {/* Signers */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <span className="h-6 w-6 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center">{fillMode === 'internal' ? 3 : 2}</span>
+            <Users className="h-4 w-4" /> Signatários (válidos para todos os documentos do pack)
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <SignersManager signers={signers} onChange={setSigners} />
+        </CardContent>
+      </Card>
+
+      <div className="flex flex-col sm:flex-row gap-2 sticky bottom-4 bg-background/80 backdrop-blur p-3 rounded-lg border shadow-lg">
+        {fillMode === 'internal' ? (
+          <>
+            <Button onClick={() => handleGenerateInternal(false)} disabled={!allFieldsFilled || isGenerating} className="flex-1" size="lg">
+              {isGenerating ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Send className="h-4 w-4 mr-2" />}
+              Gerar {templates.length} documento{templates.length > 1 ? 's' : ''}
+            </Button>
+            {onGeneratedForSignature && signers.length === 0 && (
+              <Button onClick={() => handleGenerateInternal(true)} disabled={!allFieldsFilled || isGenerating} variant="outline" size="lg" className="flex-1">
+                Gerar e configurar assinatura
+              </Button>
+            )}
+          </>
+        ) : (
+          <Button onClick={handleGeneratePublicLink} disabled={isGenerating || signers.length === 0} className="flex-1" size="lg">
+            {isGenerating ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Gerando...</> : <><Send className="h-4 w-4 mr-2" />Gerar link público</>}
+          </Button>
+        )}
+      </div>
     </div>
   );
 }
