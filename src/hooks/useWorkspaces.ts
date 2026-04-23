@@ -41,6 +41,24 @@ export function useWorkspaces() {
   });
 }
 
+export function useAllWorkspaces() {
+  const { session } = useAuth();
+
+  return useQuery({
+    queryKey: ['workspaces', 'all'],
+    queryFn: async (): Promise<Workspace[]> => {
+      const { data, error } = await supabase
+        .from('workspaces')
+        .select('*')
+        .order('name');
+
+      if (error) throw error;
+      return (data || []) as unknown as Workspace[];
+    },
+    enabled: !!session,
+  });
+}
+
 export function useWorkspaceMembers(workspaceId?: string | null) {
   const { session } = useAuth();
 
