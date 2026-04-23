@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { ArrowLeft, Loader2, FileDown, FileSignature } from 'lucide-react';
+import { ArrowLeft, Loader2, FileDown, Send, Users, Copy, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,6 +12,10 @@ import { useAuth } from '@/hooks/useAuth';
 import { DocumentTemplate } from '@/hooks/useDocumentTemplates';
 import { useQueryClient } from '@tanstack/react-query';
 import { fillTemplate } from '@/lib/documentFormatters';
+import { FillModeStep, FillMode } from './FillModeStep';
+import { SignersManager } from './SignersManager';
+import { SignerInput, useCreateSigners } from '@/hooks/useDocumentSigners';
+import { getPublicOrigin } from '@/lib/publicOrigin';
 
 interface TemplateFillFormProps {
   template: DocumentTemplate;
@@ -23,33 +27,32 @@ export function TemplateFillForm({ template, onBack, onGeneratedForSignature }: 
   const { profile } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const createSigners = useCreateSigners();
+
+  const [fillMode, setFillMode] = useState<FillMode>('internal');
   const [formData, setFormData] = useState<Record<string, string>>({});
   const [documentName, setDocumentName] = useState(template.name);
+  const [signers, setSigners] = useState<SignerInput[]>([]);
   const [generating, setGenerating] = useState(false);
+  const [publicLink, setPublicLink] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const fields = (template.fields || []) as Array<{ name: string; label: string; type: string; required: boolean }>;
 
   const handleFieldChange = (fieldName: string, value: string) => {
-    setFormData(prev => ({ ...prev, [fieldName]: value }));
+    setFormData((prev) => ({ ...prev, [fieldName]: value }));
   };
 
-  const handleGenerate = async (advanceToSignature = false) => {
+  // ---- Internal flow: fill now → generate PDF → optionally sign
+  const handleGenerateInternal = async (advanceToSignature = false) => {
     if (!profile) return;
-
-    // Validate required fields
-    const missing = fields.filter(f => f.required && !formData[f.name]?.trim());
+    const missing = fields.filter((f) => f.required && !formData[f.name]?.trim());
     if (missing.length > 0) {
-      toast({
-        title: 'Campos obrigatórios',
-        description: `Preencha: ${missing.map(f => f.label).join(', ')}`,
-        variant: 'destructive',
-      });
+      toast({ title: 'Campos obrigatórios', description: `Preencha: ${missing.map((f) => f.label).join(', ')}`, variant: 'destructive' });
       return;
     }
-
     setGenerating(true);
     try {
-      // Call PDF generation edge function (logo comes from template/org)
       const { data, error } = await supabase.functions.invoke('generate-document-pdf', {
         body: {
           template_content: template.content,
@@ -61,17 +64,9 @@ export function TemplateFillForm({ template, onBack, onGeneratedForSignature }: 
           template_id: template.id,
         },
       });
+      if (error) throw new Error(typeof error === 'object' && error.message ? error.message : 'Erro ao gerar PDF');
+      if (!data?.pdf_url) throw new Error('PDF não foi gerado corretamente');
 
-      if (error) {
-        console.error('PDF generation error:', error);
-        throw new Error(typeof error === 'object' && error.message ? error.message : 'Erro ao gerar PDF');
-      }
-
-      if (!data?.pdf_url) {
-        throw new Error('PDF não foi gerado corretamente');
-      }
-
-      // Save generated document to database
       const { data: docData, error: dbError } = await (supabase as any)
         .from('generated_documents')
         .insert({
@@ -81,12 +76,22 @@ export function TemplateFillForm({ template, onBack, onGeneratedForSignature }: 
           filled_data: formData,
           pdf_url: data.pdf_url,
           status: 'generated',
+          fill_mode: 'internal',
+          is_filled: true,
           created_by: profile.id,
         })
         .select('id')
         .single();
-
       if (dbError) throw dbError;
+
+      // Save signers if any
+      if (signers.length > 0 && docData?.id) {
+        await createSigners.mutateAsync({
+          documentIds: [docData.id],
+          signers,
+          signing_method: 'internal',
+        });
+      }
 
       queryClient.invalidateQueries({ queryKey: ['generated-documents'] });
 
@@ -98,17 +103,72 @@ export function TemplateFillForm({ template, onBack, onGeneratedForSignature }: 
         onBack();
       }
     } catch (error: any) {
-      toast({
-        title: 'Erro ao gerar documento',
-        description: error.message,
-        variant: 'destructive',
-      });
+      toast({ title: 'Erro ao gerar documento', description: error.message, variant: 'destructive' });
     } finally {
       setGenerating(false);
     }
   };
 
-  // Preview filled content (HTML or plain)
+  // ---- Public flow: create empty doc with token → return public link
+  const handleGeneratePublicLink = async () => {
+    if (!profile) return;
+    if (signers.length === 0) {
+      toast({ title: 'Adicione ao menos 1 signatário', variant: 'destructive' });
+      return;
+    }
+    const invalidSigner = signers.find((s) => !s.signer_name?.trim());
+    if (invalidSigner) {
+      toast({ title: 'Preencha o nome de todos os signatários', variant: 'destructive' });
+      return;
+    }
+    setGenerating(true);
+    try {
+      const fillToken = crypto.randomUUID();
+      const { data: docData, error: dbError } = await (supabase as any)
+        .from('generated_documents')
+        .insert({
+          organization_id: profile.organization_id,
+          template_id: template.id,
+          name: documentName,
+          filled_data: {},
+          status: 'awaiting_fill',
+          fill_mode: 'public',
+          is_filled: false,
+          public_fill_token: fillToken,
+          signature_config: { signing_method: 'internal', signers },
+          created_by: profile.id,
+        })
+        .select('id')
+        .single();
+      if (dbError) throw dbError;
+
+      // Pre-create signers (will activate when document is filled)
+      if (docData?.id) {
+        await createSigners.mutateAsync({
+          documentIds: [docData.id],
+          signers,
+          signing_method: 'internal',
+        });
+      }
+
+      const link = `${getPublicOrigin()}/preencher-contrato/${fillToken}`;
+      setPublicLink(link);
+      queryClient.invalidateQueries({ queryKey: ['generated-documents'] });
+      toast({ title: 'Link público gerado!' });
+    } catch (e: any) {
+      toast({ title: 'Erro', description: e.message, variant: 'destructive' });
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const copyLink = async () => {
+    if (!publicLink) return;
+    await navigator.clipboard.writeText(publicLink);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   const filledContent = useMemo(() => {
     const sourceHtml = template.content_html || `<p>${(template.content || '').replace(/\n/g, '</p><p>')}</p>`;
     return fillTemplate(sourceHtml, formData, fields);
@@ -123,49 +183,87 @@ export function TemplateFillForm({ template, onBack, onGeneratedForSignature }: 
     }
   };
 
+  // Public link generated screen
+  if (publicLink) {
+    return (
+      <div className="space-y-6 max-w-xl mx-auto">
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" onClick={onBack}><ArrowLeft className="h-5 w-5" /></Button>
+          <div>
+            <h2 className="text-lg font-semibold">Link de preenchimento</h2>
+            <p className="text-sm text-muted-foreground">Envie este link para o cliente preencher os dados</p>
+          </div>
+        </div>
+        <Card>
+          <CardContent className="pt-6 space-y-4">
+            <div className="flex gap-2">
+              <Input value={publicLink} readOnly className="font-mono text-xs" />
+              <Button onClick={copyLink} className="gap-2 shrink-0">
+                {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                {copied ? 'Copiado' : 'Copiar'}
+              </Button>
+            </div>
+            <div className="bg-muted/50 rounded-lg p-4 text-xs text-muted-foreground">
+              <p className="font-semibold text-foreground mb-2">Como funciona:</p>
+              <ol className="space-y-1 list-decimal pl-4">
+                <li>O cliente abre o link e preenche os dados do contrato</li>
+                <li>Após o envio, o PDF é gerado automaticamente</li>
+                <li>O documento é encaminhado aos {signers.length} signatário(s) configurado(s)</li>
+              </ol>
+            </div>
+            <Button onClick={onBack} variant="outline" className="w-full">Concluir</Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={onBack}>
-          <ArrowLeft className="h-5 w-5" />
-        </Button>
+        <Button variant="ghost" size="icon" onClick={onBack}><ArrowLeft className="h-5 w-5" /></Button>
         <div>
-          <h2 className="text-lg font-semibold">Preencher documento</h2>
+          <h2 className="text-lg font-semibold">Gerar documento</h2>
           <p className="text-sm text-muted-foreground">Template: {template.name}</p>
         </div>
       </div>
 
+      {/* Step 1: Mode */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <span className="h-6 w-6 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center">1</span>
+            Quem preenche os dados?
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <FillModeStep value={fillMode} onChange={setFillMode} />
+        </CardContent>
+      </Card>
+
+      {/* Step 2: Document name */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <span className="h-6 w-6 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center">2</span>
+            Identificação do documento
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Label>Nome do documento</Label>
+          <Input value={documentName} onChange={(e) => setDocumentName(e.target.value)} placeholder="Ex: Contrato João Silva" className="mt-1" />
+        </CardContent>
+      </Card>
+
       <div className="grid gap-6 lg:grid-cols-2">
-        {/* Form Section */}
-        <div className="space-y-4">
+        {/* Step 3: Fields (only if internal) */}
+        {fillMode === 'internal' && (
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">Informações do documento</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <Label>Nome do documento</Label>
-                <Input
-                  value={documentName}
-                  onChange={e => setDocumentName(e.target.value)}
-                  placeholder="Ex: Contrato João Silva"
-                />
-              </div>
-
-              {template.logo_url && (
-                <div>
-                  <Label>Logo do template</Label>
-                  <div className="mt-1 p-3 border rounded-lg bg-white">
-                    <img src={template.logo_url} alt="Logo" className="h-12 w-auto max-w-[200px] object-contain" />
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Campos do documento ({fields.length})</CardTitle>
+              <CardTitle className="text-sm flex items-center gap-2">
+                <span className="h-6 w-6 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center">3</span>
+                Campos do documento ({fields.length})
+              </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               {fields.map((field) => (
@@ -175,84 +273,65 @@ export function TemplateFillForm({ template, onBack, onGeneratedForSignature }: 
                     {field.required && <span className="text-destructive ml-1">*</span>}
                   </Label>
                   {field.type === 'address' ? (
-                    <Textarea
-                      value={formData[field.name] || ''}
-                      onChange={e => handleFieldChange(field.name, e.target.value)}
-                      placeholder={field.label}
-                      rows={2}
-                      className="text-sm"
-                    />
+                    <Textarea value={formData[field.name] || ''} onChange={(e) => handleFieldChange(field.name, e.target.value)} rows={2} className="text-sm" />
                   ) : field.type === 'date' ? (
-                    <DatePicker
-                      value={formData[field.name] || ''}
-                      onChange={(v) => handleFieldChange(field.name, v)}
-                    />
+                    <DatePicker value={formData[field.name] || ''} onChange={(v) => handleFieldChange(field.name, v)} />
                   ) : (
-                    <Input
-                      type={getInputType(field.type)}
-                      value={formData[field.name] || ''}
-                      onChange={e => handleFieldChange(field.name, e.target.value)}
-                      placeholder={field.label}
-                      className="text-sm"
-                    />
+                    <Input type={getInputType(field.type)} value={formData[field.name] || ''} onChange={(e) => handleFieldChange(field.name, e.target.value)} className="text-sm" />
                   )}
                 </div>
               ))}
             </CardContent>
           </Card>
+        )}
 
-          <div className="space-y-2">
-            <Button
-              onClick={() => handleGenerate(false)}
-              disabled={generating || !documentName.trim()}
-              className="w-full"
-              size="lg"
-            >
-              {generating ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Gerando PDF...
-                </>
-              ) : (
-                <>
-                  <FileDown className="h-4 w-4 mr-2" />
-                  Gerar documento PDF
-                </>
+        {/* Preview */}
+        {fillMode === 'internal' && (
+          <Card className="lg:sticky lg:top-4 h-fit">
+            <CardHeader className="pb-3"><CardTitle className="text-sm">Preview</CardTitle></CardHeader>
+            <CardContent>
+              {template.logo_url && (
+                <div className="mb-4 pb-3 border-b bg-white p-2 rounded">
+                  <img src={template.logo_url} alt="Logo" className="h-10 w-auto object-contain" />
+                </div>
               )}
-            </Button>
+              <div className="max-h-[50vh] overflow-y-auto bg-white text-black p-6 rounded-lg leading-relaxed prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: filledContent }} />
+            </CardContent>
+          </Card>
+        )}
+      </div>
 
-            {onGeneratedForSignature && (
-              <Button
-                onClick={() => handleGenerate(true)}
-                disabled={generating || !documentName.trim()}
-                variant="outline"
-                className="w-full gap-2"
-                size="lg"
-              >
-                <FileSignature className="h-4 w-4" />
-                Gerar e Solicitar Assinatura
+      {/* Step: Signers */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <span className="h-6 w-6 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center">{fillMode === 'internal' ? 4 : 3}</span>
+            <Users className="h-4 w-4" /> Quem irá assinar?
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <SignersManager signers={signers} onChange={setSigners} />
+        </CardContent>
+      </Card>
+
+      {/* Actions */}
+      <div className="flex flex-col sm:flex-row gap-2 sticky bottom-4 bg-background/80 backdrop-blur p-3 rounded-lg border shadow-lg">
+        {fillMode === 'internal' ? (
+          <>
+            <Button onClick={() => handleGenerateInternal(false)} disabled={generating || !documentName.trim()} className="flex-1" size="lg">
+              {generating ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Gerando...</> : <><FileDown className="h-4 w-4 mr-2" />Gerar PDF</>}
+            </Button>
+            {onGeneratedForSignature && signers.length === 0 && (
+              <Button onClick={() => handleGenerateInternal(true)} disabled={generating || !documentName.trim()} variant="outline" size="lg" className="flex-1">
+                Gerar e configurar assinatura
               </Button>
             )}
-          </div>
-        </div>
-
-        {/* Preview Section — papel A4 simulado */}
-        <Card className="lg:sticky lg:top-4 h-fit">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Preview do documento</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {template.logo_url && (
-              <div className="mb-4 pb-3 border-b bg-white p-2 rounded">
-                <img src={template.logo_url} alt="Logo" className="h-10 w-auto object-contain" />
-              </div>
-            )}
-            <div
-              className="max-h-[60vh] overflow-y-auto bg-white text-black p-6 rounded-lg leading-relaxed prose prose-sm max-w-none"
-              dangerouslySetInnerHTML={{ __html: filledContent }}
-            />
-          </CardContent>
-        </Card>
+          </>
+        ) : (
+          <Button onClick={handleGeneratePublicLink} disabled={generating || !documentName.trim() || signers.length === 0} className="flex-1" size="lg">
+            {generating ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Gerando...</> : <><Send className="h-4 w-4 mr-2" />Gerar link público</>}
+          </Button>
+        )}
       </div>
     </div>
   );
