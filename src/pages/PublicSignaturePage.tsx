@@ -128,9 +128,13 @@ export default function PublicSignaturePage() {
       // Read config from metadata
       const meta = signatureData.metadata || {};
       const selfieRequired = meta.require_selfie !== false; // default true
-      const channel = meta.otp_channel || 'email';
+      const channels: Array<'email' | 'whatsapp'> = Array.isArray(meta.otp_channels) && meta.otp_channels.length > 0
+        ? meta.otp_channels
+        : [meta.otp_channel || 'email'];
+      const primaryChannel = channels[0];
       setRequireSelfie(selfieRequired);
-      setOtpChannel(channel);
+      setOtpChannel(primaryChannel);
+      setOtpChannels(channels);
 
       if (signatureData.signing_method === 'internal') {
         setOtpEmail(signatureData.signer_email || '');
