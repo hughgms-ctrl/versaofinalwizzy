@@ -275,6 +275,8 @@ export default function PublicSignaturePage() {
   };
 
   // ==================== Signature Pad ====================
+  const [hasStrokes, setHasStrokes] = useState(false);
+
   const initCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -284,6 +286,9 @@ export default function PublicSignaturePage() {
     canvas.width = rect.width * window.devicePixelRatio;
     canvas.height = rect.height * window.devicePixelRatio;
     ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+    // White background so the exported PNG is opaque (avoids invisible stamp on PDFs)
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, rect.width, rect.height);
     ctx.strokeStyle = '#000';
     ctx.lineWidth = 2;
     ctx.lineCap = 'round';
@@ -326,11 +331,12 @@ export default function PublicSignaturePage() {
     const { x, y } = getCoordinates(e);
     ctx.lineTo(x, y);
     ctx.stroke();
+    if (!hasStrokes) setHasStrokes(true);
   };
 
   const stopDrawing = () => {
     setIsDrawing(false);
-    if (canvasRef.current) {
+    if (canvasRef.current && hasStrokes) {
       setSignatureImage(canvasRef.current.toDataURL('image/png'));
     }
   };
@@ -340,7 +346,11 @@ export default function PublicSignaturePage() {
     const ctx = canvas?.getContext('2d');
     if (!ctx || !canvas) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const rect = canvas.getBoundingClientRect();
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, rect.width, rect.height);
     setSignatureImage(null);
+    setHasStrokes(false);
   };
 
   // ==================== Submit ====================
