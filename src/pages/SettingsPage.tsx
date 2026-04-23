@@ -19,6 +19,7 @@ import { CrmEntitiesSettings } from '@/components/settings/CrmEntitiesSettings';
 import { WorkspacesSettings } from '@/components/settings/WorkspacesSettings';
 import { WhatsAppInstancesSettings } from '@/components/settings/WhatsAppInstancesSettings';
 import { CompanyKnowledgeSettings } from '@/components/settings/CompanyKnowledgeSettings';
+import { PackagesSettings } from '@/components/settings/PackagesSettings';
 import {
   Select,
   SelectContent,
@@ -47,7 +48,8 @@ import {
   VolumeX,
   PenLine,
   ListChecks,
-  Building2
+  Building2,
+  Sparkles
 } from 'lucide-react';
 
 interface WhatsAppStatus {
@@ -489,10 +491,18 @@ export default function SettingsPage() {
             <Building className="h-3.5 w-3.5 md:h-4 md:w-4" />
             <span className="hidden sm:inline">Empresa</span>
           </TabsTrigger>
+          <TabsTrigger value="packages" className="flex items-center gap-1.5 text-xs md:text-sm px-2 md:px-3">
+            <Sparkles className="h-3.5 w-3.5 md:h-4 md:w-4" />
+            <span className="hidden sm:inline">Pacotes</span>
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="company" className="space-y-6">
           <CompanyKnowledgeSettings />
+        </TabsContent>
+
+        <TabsContent value="packages" className="space-y-6">
+          <PackagesSettings />
         </TabsContent>
 
         {/* WhatsApp Settings */}

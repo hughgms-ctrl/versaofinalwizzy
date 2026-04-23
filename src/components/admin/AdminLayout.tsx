@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { WhatsAppDisconnectedBanner } from '@/components/layout/WhatsAppDisconnectedBanner';
 import {
   LayoutDashboard, Building2, CreditCard, Key, Shield,
-  ScrollText, TrendingUp, LogOut, ShieldCheck, ChevronLeft, ChevronRight
+  ScrollText, TrendingUp, LogOut, ShieldCheck, ChevronLeft, ChevronRight, Package
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
@@ -22,6 +22,7 @@ const adminNav = [
   { name: 'Visão Geral', href: '/admin', icon: LayoutDashboard },
   { name: 'Clientes', href: '/admin/clients', icon: Building2 },
   { name: 'Planos', href: '/admin/plans', icon: CreditCard },
+  { name: 'Pacotes', href: '/admin/packages', icon: Package },
   { name: 'API & Custos', href: '/admin/api', icon: Key },
   { name: 'Governança', href: '/admin/governance', icon: ScrollText },
   { name: 'Segurança', href: '/admin/security', icon: Shield },
