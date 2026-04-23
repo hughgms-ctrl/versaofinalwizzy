@@ -158,9 +158,15 @@ export function TemplateFillForm({ template, onBack, onGeneratedForSignature }: 
 
       // Pre-create signers (will activate when document is filled)
       if (docData?.id) {
+        const normalizedSigners = signers.map((s) => ({
+          ...s,
+          signer_name: s.data_source === 'form' && !s.signer_name?.trim()
+            ? '(será preenchido pelo cliente)'
+            : s.signer_name,
+        }));
         await createSigners.mutateAsync({
           documentIds: [docData.id],
-          signers,
+          signers: normalizedSigners,
           signing_method: 'internal',
         });
       }
