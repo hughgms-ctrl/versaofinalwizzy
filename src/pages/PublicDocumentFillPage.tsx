@@ -85,8 +85,13 @@ export default function PublicDocumentFillPage() {
           body.pack_filled_data[d.id] = fd;
         });
       }
-      const { error } = await supabase.functions.invoke('public-document-fill', { body });
+      const { data, error } = await supabase.functions.invoke('public-document-fill', { body });
       if (error) throw error;
+      // If we have a signature URL, redirect immediately to the signing page
+      if (data?.signature_url) {
+        window.location.href = data.signature_url;
+        return;
+      }
       setDone(true);
     } catch (e: any) {
       toast.error('Erro ao enviar: ' + (e.message || ''));
