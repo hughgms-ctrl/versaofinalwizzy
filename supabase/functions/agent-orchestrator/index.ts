@@ -670,7 +670,7 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
   console.log(`[SIMULATION] System prompt length: ${systemPrompt.length} chars, history: ${trimmedHistory.length}/${history.length} messages`);
   
   const aiMessages: any[] = [
-    { role: 'system', content: systemPrompt },
+    { role: 'system', content: interpolateCompanyKnowledge(systemPrompt, organizationKnowledge) },
     ...trimmedHistory,
   ];
 
