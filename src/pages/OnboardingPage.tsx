@@ -438,17 +438,21 @@ export default function OnboardingPage() {
                   Voltar
                 </Button>
                 <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    onClick={() => finish(true)}
-                    disabled={activatingAll || finishing}
-                  >
-                    Pular ativação
-                  </Button>
+                  {selectedAreaId && (
+                    <Button
+                      variant="outline"
+                      onClick={() => finish(true)}
+                      disabled={activatingAll || finishing}
+                    >
+                      Pular ativação
+                    </Button>
+                  )}
                   <Button onClick={handleActivateAll} disabled={activatingAll || finishing}>
-                    {activatingAll && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                    {(activatingAll || finishing) && (
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    )}
                     <Sparkles className="h-4 w-4 mr-2" />
-                    Ativar e finalizar
+                    {selectedAreaId ? 'Ativar e finalizar' : 'Finalizar e entrar'}
                   </Button>
                 </div>
               </div>
