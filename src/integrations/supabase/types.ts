@@ -2481,6 +2481,8 @@ export type Database = {
           auth_methods: Json
           created_at: string
           created_by: string | null
+          data_source: string
+          field_mapping: Json
           generated_document_id: string
           id: string
           metadata: Json
@@ -2504,6 +2506,8 @@ export type Database = {
           auth_methods?: Json
           created_at?: string
           created_by?: string | null
+          data_source?: string
+          field_mapping?: Json
           generated_document_id: string
           id?: string
           metadata?: Json
@@ -2527,6 +2531,8 @@ export type Database = {
           auth_methods?: Json
           created_at?: string
           created_by?: string | null
+          data_source?: string
+          field_mapping?: Json
           generated_document_id?: string
           id?: string
           metadata?: Json

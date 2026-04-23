@@ -355,7 +355,11 @@ export function TemplateFillForm({ template, onBack, onGeneratedForSignature }: 
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <SignersManager signers={signers} onChange={setSigners} />
+          <SignersManager
+            signers={signers}
+            onChange={setSigners}
+            availableFields={fields.map((f) => ({ name: f.name, label: f.label, type: f.type }))}
+          />
         </CardContent>
       </Card>
 

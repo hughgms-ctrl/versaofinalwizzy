@@ -110,6 +110,40 @@ serve(async (req) => {
         docIds.push(doc.id);
       }
 
+      // Auto-fill "form" signers from the submitted data using their field_mapping.
+      // Build a merged data object from all docs (pack-aware).
+      try {
+        const mergedData: Record<string, any> = { ...(body.filled_data || {}) };
+        if (body.pack_filled_data) {
+          for (const data of Object.values(body.pack_filled_data)) {
+            Object.assign(mergedData, data || {});
+          }
+        }
+
+        const { data: formSigners } = await (supabase as any)
+          .from("document_signers")
+          .select("id, field_mapping, signer_name, signer_email, signer_phone, signer_cpf")
+          .in("generated_document_id", docIds)
+          .eq("data_source", "form");
+
+        for (const s of formSigners || []) {
+          const m = s.field_mapping || {};
+          const patch: Record<string, any> = {};
+          if (m.name && mergedData[m.name]) patch.signer_name = String(mergedData[m.name]);
+          if (m.email && mergedData[m.email]) patch.signer_email = String(mergedData[m.email]);
+          if (m.phone && mergedData[m.phone]) patch.signer_phone = String(mergedData[m.phone]);
+          if (m.cpf && mergedData[m.cpf]) patch.signer_cpf = String(mergedData[m.cpf]);
+          if (Object.keys(patch).length > 0) {
+            await (supabase as any)
+              .from("document_signers")
+              .update(patch)
+              .eq("id", s.id);
+          }
+        }
+      } catch (e) {
+        console.warn("Could not auto-fill form signers:", e);
+      }
+
       // Find signers — only auto-redirect when there is exactly ONE signer
       // (typical case: the person filling is also the only person signing).
       // Otherwise the document owner sends individual links to each signer.
