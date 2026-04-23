@@ -175,3 +175,6 @@ verify_jwt = false
 
 [functions.extract-qualification-rules]
 verify_jwt = false
+
+[functions.public-document-fill]
+verify_jwt = false
