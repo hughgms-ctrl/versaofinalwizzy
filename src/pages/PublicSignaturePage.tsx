@@ -800,9 +800,35 @@ export default function PublicSignaturePage() {
               <div className="space-y-1 text-xs">
                 <p><strong>Documento:</strong> {documentData?.generated_document?.name}</p>
                 <p><strong>Signatário:</strong> {documentData?.signer_name || 'N/A'}</p>
-                <p><strong>Verificação:</strong> OTP por {otpChannel === 'whatsapp' ? 'WhatsApp' : 'e-mail'} ✅</p>
-                {requireSelfie && <p><strong>Selfie:</strong> {selfieImage ? '✅ Capturada' : '⏳ Pendente'}</p>}
-                <p><strong>Método:</strong> Assinatura Eletrônica Avançada (Lei 14.063/2020)</p>
+                <p>
+                  <strong>Verificação:</strong> OTP por {otpChannels.length > 1
+                    ? otpChannels.map(c => c === 'whatsapp' ? 'WhatsApp' : 'e-mail').join(' + ')
+                    : (otpChannel === 'whatsapp' ? 'WhatsApp' : 'e-mail')} ✅
+                </p>
+                {requireSelfie && (
+                  <div className="pt-1">
+                    <p className="mb-1.5"><strong>Selfie:</strong> {selfieImage ? '✅ Capturada' : '⏳ Pendente'}</p>
+                    {selfieImage && (
+                      <div className="flex items-center gap-2">
+                        <img
+                          src={selfieImage}
+                          alt="Selfie capturada"
+                          className="h-20 w-20 rounded-lg border border-border object-cover"
+                        />
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="gap-1 text-[11px] h-7"
+                          onClick={() => { setSelfieImage(null); setStep('selfie'); setTimeout(() => void startCamera(), 150); }}
+                        >
+                          <RotateCcw className="h-3 w-3" /> Refazer
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
+                <p className="pt-1"><strong>Método:</strong> Assinatura Eletrônica Avançada (Lei 14.063/2020)</p>
               </div>
             </Card>
 
