@@ -46,7 +46,7 @@ serve(async (req) => {
 
     query = targetChannel === 'whatsapp'
       ? query.not("phone", "is", null)
-      : query.eq("phone", null as any);
+      : query.is("phone", null);
 
     const { data: otp, error: otpError } = await query.maybeSingle();
 

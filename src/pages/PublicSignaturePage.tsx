@@ -774,7 +774,7 @@ export default function PublicSignaturePage() {
                   <h2 className="font-semibold">Verificação de Identidade</h2>
                   <p className="text-xs text-muted-foreground">
                     {otpChannels.length > 1
-                      ? `Enviaremos o código por ${otpChannels.map(c => c === 'whatsapp' ? 'WhatsApp' : 'e-mail').join(' e ')}`
+                      ? 'Esta assinatura exige validação em etapas por WhatsApp e e-mail.'
                       : otpChannel === 'whatsapp'
                         ? 'Enviaremos um código para seu WhatsApp'
                         : 'Enviaremos um código para seu e-mail'}
@@ -983,9 +983,8 @@ export default function PublicSignaturePage() {
                 <p><strong>Documento:</strong> {documentData?.generated_document?.name}</p>
                 <p><strong>Signatário:</strong> {documentData?.signer_name || 'N/A'}</p>
                 <p>
-                  <strong>Verificação:</strong> OTP por {otpChannels.length > 1
-                    ? otpChannels.map(c => c === 'whatsapp' ? 'WhatsApp' : 'e-mail').join(' + ')
-                    : (otpChannel === 'whatsapp' ? 'WhatsApp' : 'e-mail')} ✅
+                  <strong>Verificação:</strong> OTP por {otpChannels.map(c => c === 'whatsapp' ? 'WhatsApp' : 'e-mail').join(' + ')}{' '}
+                  {otpVerifiedChannels.length === otpChannels.length ? '✅' : '⏳'}
                 </p>
                 {requireSelfie && (
                   <div className="pt-1">

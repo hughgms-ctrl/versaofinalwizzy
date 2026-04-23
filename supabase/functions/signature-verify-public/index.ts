@@ -90,6 +90,7 @@ serve(async (req) => {
       authentication: {
         method: meta.signature_method || sig?.signing_method || "internal",
         otp_channel: meta.otp_channel || "email",
+        otp_channels: meta.otp_channels || [meta.otp_channel || "email"],
         ip_masked: maskIp((evidence as any).signer_ip),
         browser: meta.browser || null,
         os: meta.os || null,

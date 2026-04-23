@@ -137,17 +137,23 @@ serve(async (req) => {
       return errorResponse("Selfie é obrigatória para esta assinatura", 400);
     }
 
-    const { data: otpVerified } = await supabase
+    const configuredChannels: Array<'email' | 'whatsapp'> = Array.isArray(meta.otp_channels) && meta.otp_channels.length > 0
+      ? meta.otp_channels
+      : [meta.otp_channel || 'email'];
+
+    const { data: otpVerifiedRows } = await supabase
       .from("signature_otp_codes")
-      .select("id, verified, otp_verified_at:created_at")
+      .select("id, phone, verified, otp_verified_at:created_at")
       .eq("signature_id", signature.id)
       .eq("verified", true)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .order("created_at", { ascending: false });
 
-    if (!otpVerified) {
-      return errorResponse("Verificação OTP não completada", 400);
+    const verifiedChannels = new Set<string>((otpVerifiedRows || []).map((row: any) => row.phone ? 'whatsapp' : 'email'));
+    const missingChannels = configuredChannels.filter((channel) => !verifiedChannels.has(channel));
+    const otpVerifiedAt = (otpVerifiedRows || [])[0]?.otp_verified_at || null;
+
+    if (missingChannels.length > 0) {
+      return errorResponse(`Verificação OTP pendente: ${missingChannels.map((c) => c === 'whatsapp' ? 'WhatsApp' : 'e-mail').join(' e ')}`, 400);
     }
 
     // Document hash from original PDF
@@ -226,7 +232,7 @@ serve(async (req) => {
         signer_ip: signerIp,
         signer_device: signerUserAgent,
         selfie_url: selfieUrl,
-        otp_verified_at: otpVerified.otp_verified_at,
+        otp_verified_at: otpVerifiedAt,
         signed_at: signedAt,
         verification_code: verificationCode,
         geolocation: geolocation || null,
@@ -240,6 +246,7 @@ serve(async (req) => {
           law_reference: "MP 2.200-2/2001 + Lei 14.063/2020",
           require_selfie: selfieRequired,
           otp_channel: meta.otp_channel || "email",
+          otp_channels: configuredChannels,
         },
       });
 
