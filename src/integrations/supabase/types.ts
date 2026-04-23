@@ -2033,6 +2033,7 @@ export type Database = {
         Row: {
           ai_agent_id: string | null
           assigned_to: string | null
+          closed_at: string | null
           contact_id: string
           conversation_status_id: string | null
           created_at: string
@@ -2057,6 +2058,7 @@ export type Database = {
         Insert: {
           ai_agent_id?: string | null
           assigned_to?: string | null
+          closed_at?: string | null
           contact_id: string
           conversation_status_id?: string | null
           created_at?: string
@@ -2081,6 +2083,7 @@ export type Database = {
         Update: {
           ai_agent_id?: string | null
           assigned_to?: string | null
+          closed_at?: string | null
           contact_id?: string
           conversation_status_id?: string | null
           created_at?: string
@@ -3871,6 +3874,7 @@ export type Database = {
       }
       organizations: {
         Row: {
+          auto_close_hours: number
           created_at: string
           id: string
           logo_url: string | null
@@ -3882,6 +3886,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          auto_close_hours?: number
           created_at?: string
           id?: string
           logo_url?: string | null
@@ -3893,6 +3898,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          auto_close_hours?: number
           created_at?: string
           id?: string
           logo_url?: string | null

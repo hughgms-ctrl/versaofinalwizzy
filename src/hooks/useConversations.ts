@@ -7,12 +7,13 @@ export interface DbConversation {
   id: string;
   contact_id: string;
   organization_id: string;
-  status: 'open' | 'pending' | 'resolved' | 'archived';
+  status: 'open' | 'pending' | 'resolved' | 'closed' | 'archived';
   unread_count: number;
   last_message_at: string | null;
   assigned_to: string | null;
   ai_agent_id: string | null;
   metadata: Record<string, any> | null;
+  closed_at: string | null;
   created_at: string;
   updated_at: string;
   contact: {
@@ -61,14 +62,16 @@ export interface DbMessage {
   metadata?: any;
 }
 
-export function useConversations(options?: { includeArchived?: boolean; onlyArchived?: boolean }) {
+export function useConversations(options?: { includeArchived?: boolean; onlyArchived?: boolean; includeClosed?: boolean; onlyClosed?: boolean }) {
   const { session } = useAuth();
   const queryClient = useQueryClient();
   const includeArchived = options?.includeArchived ?? false;
   const onlyArchived = options?.onlyArchived ?? false;
+  const includeClosed = options?.includeClosed ?? false;
+  const onlyClosed = options?.onlyClosed ?? false;
 
   const query = useQuery({
-    queryKey: ['conversations', { includeArchived, onlyArchived }],
+    queryKey: ['conversations', { includeArchived, onlyArchived, includeClosed, onlyClosed }],
     queryFn: async (): Promise<DbConversation[]> => {
       let query = supabase
         .from('conversations')
@@ -82,11 +85,14 @@ export function useConversations(options?: { includeArchived?: boolean; onlyArch
         .limit(1, { referencedTable: 'messages' });
 
       if (onlyArchived) {
-        // Show only archived conversations
         query = query.eq('status', 'archived');
-      } else if (!includeArchived) {
-        // Exclude archived conversations
-        query = query.neq('status', 'archived');
+      } else if (onlyClosed) {
+        query = query.eq('status', 'closed' as any);
+      } else {
+        // Hide archived by default
+        if (!includeArchived) query = query.neq('status', 'archived');
+        // Hide closed by default
+        if (!includeClosed) query = query.neq('status', 'closed' as any);
       }
 
       const { data, error } = await query;
@@ -246,12 +252,12 @@ export function useCreateConversation() {
         contactId = newContact.id;
       }
 
-      // 3. Check for existing open/pending conversation
+      // 3. Check for existing open/pending/closed conversation
       const { data: existingConv } = await supabase
         .from('conversations')
         .select('*, contact:contacts(*)')
         .eq('contact_id', contactId)
-        .in('status', ['open', 'pending'])
+        .in('status', ['open', 'pending', 'closed'] as any)
         .maybeSingle();
 
       if (existingConv) {

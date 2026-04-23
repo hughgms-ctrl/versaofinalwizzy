@@ -119,11 +119,15 @@ export function useDashboardMetrics() {
       const { count: conversationsToday } = await buildConvQuery()
         .gte('created_at', todayStart);
 
-      // "Resolvidos hoje" foi substituído por "Arquivados hoje" (mantém o mesmo
-      // contrato da métrica para compatibilidade com a UI existente).
-      const { count: resolvedToday } = await buildConvQuery()
+      // "Resolvidos hoje" agora considera atendimentos encerrados hoje
+      // (ou arquivados hoje, como fallback) — mantém o mesmo contrato da UI.
+      const { count: closedTodayCount } = await buildConvQuery()
+        .eq('status', 'closed' as any)
+        .gte('closed_at', todayStart);
+      const { count: archivedTodayCount } = await buildConvQuery()
         .eq('status', 'archived')
         .gte('updated_at', todayStart);
+      const resolvedToday = (closedTodayCount || 0) + (archivedTodayCount || 0);
 
       // Open conversations
       const { count: openConversations } = await buildConvQuery()

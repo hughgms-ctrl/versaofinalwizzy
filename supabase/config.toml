@@ -178,3 +178,6 @@ verify_jwt = false
 
 [functions.public-document-fill]
 verify_jwt = false
+
+[functions.auto-close-conversations]
+verify_jwt = false

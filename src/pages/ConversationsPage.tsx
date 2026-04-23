@@ -29,9 +29,15 @@ const ConversationsPage = () => {
   const [filters, setFilters] = useState<ConversationFiltersState>(defaultFilters);
   const serviceMode = filters.serviceMode;
   const showArchived = filters.showArchived;
+  const showOnlyClosed = filters.statusFilter === 'encerrada';
   const [isSpyMode, setIsSpyMode] = useState(false);
   const [showNewConversationDialog, setShowNewConversationDialog] = useState(false);
-  const { data: conversations, isLoading, error, refetch } = useConversations({ onlyArchived: showArchived });
+  const { data: conversations, isLoading, error, refetch } = useConversations({
+    onlyArchived: showArchived,
+    // Quando o usuário filtra por "Encerradas", buscamos só essas;
+    // caso contrário, mostramos abertas/em andamento (escondendo as encerradas por padrão).
+    onlyClosed: showOnlyClosed && !showArchived,
+  });
   const { connected: whatsappConnected, isLoading: whatsappLoading } = useWhatsAppStatus();
   const { selectedWorkspace, selectedWorkspaceId } = useWorkspaceContext();
   const { user } = useAuth();
