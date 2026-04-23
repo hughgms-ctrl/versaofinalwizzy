@@ -502,7 +502,7 @@ export default function SettingsPage() {
         </TabsContent>
 
         <TabsContent value="packages" className="space-y-6">
-          <PackagesSettings />
+          <PackagesAndTemplatesSettings />
         </TabsContent>
 
         {/* WhatsApp Settings */}
