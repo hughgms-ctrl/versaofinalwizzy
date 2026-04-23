@@ -1,7 +1,8 @@
-// Activate a platform package (area or objective) for an organization.
-// Materializes ai_agents, flows, tags, master_prompts and pipeline columns
-// from the package templates. Idempotent: re-running updates the activated_version
-// and skips records already created (by name) for this org.
+// Activate a platform package or workspace template for an organization.
+// source: 'platform' (default) reads from platform_packages
+// source: 'workspace' reads from workspace_templates
+// Materializes ai_agents, flows, tags, master_prompts and pipeline columns.
+// Idempotent: skips records already created (by name) for this org.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
 
@@ -20,24 +21,9 @@ interface AgentTemplate {
   persona?: string;
   is_active?: boolean;
 }
-
-interface TagTemplate {
-  name: string;
-  color?: string;
-  description?: string;
-}
-
-interface PipelineColumnTemplate {
-  name: string;
-  color?: string;
-}
-
-interface PipelineTemplateShape {
-  name?: string;
-  description?: string;
-  columns?: PipelineColumnTemplate[];
-}
-
+interface TagTemplate { name: string; color?: string; description?: string }
+interface PipelineColumnTemplate { name: string; color?: string }
+interface PipelineTemplateShape { name?: string; description?: string; columns?: PipelineColumnTemplate[] }
 interface FlowTemplate {
   name: string;
   description?: string;
@@ -49,28 +35,24 @@ interface FlowTemplate {
   is_master_active?: boolean;
 }
 
-interface PackagePayload {
+interface NormalizedPackage {
   id: string;
-  kind: 'area' | 'objective';
   name: string;
+  kind: 'area' | 'objective' | 'template';
   version: number;
   master_prompt: string | null;
-  agents_template: AgentTemplate[] | null;
-  flows_template: FlowTemplate[] | null;
-  tags_template: TagTemplate[] | null;
+  agents_template: AgentTemplate[];
+  flows_template: FlowTemplate[];
+  tags_template: TagTemplate[];
   pipeline_template: PipelineTemplateShape | null;
 }
 
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
-  }
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {
     const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
-      return json({ error: 'Missing Authorization header' }, 401);
-    }
+    if (!authHeader) return json({ error: 'Missing Authorization header' }, 401);
 
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
     const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -81,18 +63,17 @@ Deno.serve(async (req) => {
     });
     const admin = createClient(SUPABASE_URL, SERVICE_KEY);
 
-    const {
-      data: { user },
-      error: userError,
-    } = await userClient.auth.getUser();
-    if (userError || !user) {
-      return json({ error: 'Invalid session' }, 401);
-    }
+    const { data: { user }, error: userError } = await userClient.auth.getUser();
+    if (userError || !user) return json({ error: 'Invalid session' }, 401);
 
     const body = await req.json().catch(() => ({}));
     const packageId = body?.package_id as string | undefined;
-    const orgIdRaw = body?.organization_id as string | undefined;
-    if (!packageId) return json({ error: 'package_id is required' }, 400);
+    const templateId = body?.template_id as string | undefined;
+    const source = (body?.source as 'platform' | 'workspace' | undefined) || (templateId ? 'workspace' : 'platform');
+    const targetWorkspaceId = (body?.workspace_id as string | undefined) || null;
+
+    if (source === 'platform' && !packageId) return json({ error: 'package_id is required' }, 400);
+    if (source === 'workspace' && !templateId) return json({ error: 'template_id is required' }, 400);
 
     // Resolve org from caller profile (do not trust client orgId)
     const { data: profile } = await admin
@@ -100,46 +81,69 @@ Deno.serve(async (req) => {
       .select('organization_id')
       .eq('user_id', user.id)
       .maybeSingle();
-
-    const organizationId = profile?.organization_id || orgIdRaw;
+    const organizationId = profile?.organization_id;
     if (!organizationId) return json({ error: 'No organization' }, 400);
 
-    // Load the package
-    const { data: pkg, error: pkgError } = await admin
-      .from('platform_packages')
-      .select('*')
-      .eq('id', packageId)
-      .maybeSingle<PackagePayload>();
-
-    if (pkgError || !pkg) {
-      return json({ error: 'Package not found' }, 404);
+    // Load source
+    let pkg: NormalizedPackage;
+    if (source === 'platform') {
+      const { data, error } = await admin
+        .from('platform_packages')
+        .select('*')
+        .eq('id', packageId!)
+        .maybeSingle();
+      if (error || !data) return json({ error: 'Package not found' }, 404);
+      pkg = {
+        id: data.id,
+        name: data.name,
+        kind: data.kind,
+        version: data.version || 1,
+        master_prompt: data.master_prompt,
+        agents_template: Array.isArray(data.agents_template) ? data.agents_template : [],
+        flows_template: Array.isArray(data.flows_template) ? data.flows_template : [],
+        tags_template: Array.isArray(data.tags_template) ? data.tags_template : [],
+        pipeline_template: data.pipeline_template || null,
+      };
+    } else {
+      const { data, error } = await admin
+        .from('workspace_templates')
+        .select('*')
+        .eq('id', templateId!)
+        .eq('organization_id', organizationId) // safety: same org only
+        .maybeSingle();
+      if (error || !data) return json({ error: 'Template not found' }, 404);
+      pkg = {
+        id: data.id,
+        name: data.name,
+        kind: 'template',
+        version: 1,
+        master_prompt: data.master_prompt,
+        agents_template: Array.isArray(data.agents_template) ? data.agents_template : [],
+        flows_template: Array.isArray(data.flows_template) ? data.flows_template : [],
+        tags_template: Array.isArray(data.tags_template) ? data.tags_template : [],
+        pipeline_template: data.pipeline_template || null,
+      };
     }
 
     const summary = {
-      agents_created: 0,
-      agents_skipped: 0,
-      flows_created: 0,
-      flows_skipped: 0,
-      tags_created: 0,
-      tags_skipped: 0,
+      agents_created: 0, agents_skipped: 0,
+      flows_created: 0, flows_skipped: 0,
+      tags_created: 0, tags_skipped: 0,
       master_prompt_created: false,
       pipeline_created: false,
     };
 
-    // 1) Master prompt (only if there's content)
+    // 1) Master prompt
     if (pkg.master_prompt && pkg.master_prompt.trim().length > 0) {
       const { data: existingMp } = await admin
-        .from('master_prompts')
-        .select('id')
-        .eq('organization_id', organizationId)
-        .eq('name', pkg.name)
+        .from('master_prompts').select('id')
+        .eq('organization_id', organizationId).eq('name', pkg.name)
         .maybeSingle();
-
       if (!existingMp) {
         await admin.from('master_prompts').insert({
           organization_id: organizationId,
           name: pkg.name,
-          niche: pkg.kind === 'area' ? pkg.name : 'objetivo',
+          niche: pkg.kind === 'area' ? pkg.name : (pkg.kind === 'template' ? 'template' : 'objetivo'),
           content: pkg.master_prompt,
           is_active: false,
         } as never);
@@ -148,22 +152,12 @@ Deno.serve(async (req) => {
     }
 
     // 2) Agents
-    const agents = Array.isArray(pkg.agents_template) ? pkg.agents_template : [];
-    for (const a of agents) {
+    for (const a of pkg.agents_template) {
       if (!a?.name) continue;
-      const { data: existing } = await admin
-        .from('ai_agents')
-        .select('id')
-        .eq('organization_id', organizationId)
-        .eq('name', a.name)
-        .maybeSingle();
-
-      if (existing) {
-        summary.agents_skipped++;
-        continue;
-      }
-
-      const { error: insErr } = await admin.from('ai_agents').insert({
+      const { data: existing } = await admin.from('ai_agents').select('id')
+        .eq('organization_id', organizationId).eq('name', a.name).maybeSingle();
+      if (existing) { summary.agents_skipped++; continue; }
+      const insertPayload: Record<string, unknown> = {
         organization_id: organizationId,
         name: a.name,
         description: a.description || null,
@@ -171,26 +165,18 @@ Deno.serve(async (req) => {
         prompt_base: a.prompt_base || '',
         persona: a.persona || null,
         is_active: a.is_active ?? true,
-      } as never);
+      };
+      if (targetWorkspaceId) insertPayload.workspace_id = targetWorkspaceId;
+      const { error: insErr } = await admin.from('ai_agents').insert(insertPayload as never);
       if (!insErr) summary.agents_created++;
     }
 
     // 3) Tags
-    const tags = Array.isArray(pkg.tags_template) ? pkg.tags_template : [];
-    for (const t of tags) {
+    for (const t of pkg.tags_template) {
       if (!t?.name) continue;
-      const { data: existing } = await admin
-        .from('tags')
-        .select('id')
-        .eq('organization_id', organizationId)
-        .eq('name', t.name)
-        .maybeSingle();
-
-      if (existing) {
-        summary.tags_skipped++;
-        continue;
-      }
-
+      const { data: existing } = await admin.from('tags').select('id')
+        .eq('organization_id', organizationId).eq('name', t.name).maybeSingle();
+      if (existing) { summary.tags_skipped++; continue; }
       const { error: insErr } = await admin.from('tags').insert({
         organization_id: organizationId,
         name: t.name,
@@ -201,34 +187,15 @@ Deno.serve(async (req) => {
     }
 
     // 4) Flows
-    const flows = Array.isArray(pkg.flows_template) ? pkg.flows_template : [];
-    for (const f of flows) {
+    for (const f of pkg.flows_template) {
       if (!f?.name) continue;
-      const { data: existing } = await admin
-        .from('flows')
-        .select('id')
-        .eq('organization_id', organizationId)
-        .eq('name', f.name)
-        .maybeSingle();
-
-      if (existing) {
-        summary.flows_skipped++;
-        continue;
-      }
-
-      const baseNodes =
-        Array.isArray(f.nodes) && f.nodes.length > 0
-          ? f.nodes
-          : [
-              {
-                id: 'start-1',
-                type: 'start',
-                position: { x: 250, y: 200 },
-                data: { label: 'Início' },
-              },
-            ];
-
-      const { error: insErr } = await admin.from('flows').insert({
+      const { data: existing } = await admin.from('flows').select('id')
+        .eq('organization_id', organizationId).eq('name', f.name).maybeSingle();
+      if (existing) { summary.flows_skipped++; continue; }
+      const baseNodes = Array.isArray(f.nodes) && f.nodes.length > 0
+        ? f.nodes
+        : [{ id: 'start-1', type: 'start', position: { x: 250, y: 200 }, data: { label: 'Início' } }];
+      const insertPayload: Record<string, unknown> = {
         organization_id: organizationId,
         name: f.name,
         description: f.description || null,
@@ -240,32 +207,24 @@ Deno.serve(async (req) => {
         is_master_active: f.is_master_active ?? false,
         is_active: false,
         created_by: user.id,
-      } as never);
+      };
+      if (targetWorkspaceId) insertPayload.workspace_id = targetWorkspaceId;
+      const { error: insErr } = await admin.from('flows').insert(insertPayload as never);
       if (!insErr) summary.flows_created++;
     }
 
-    // 5) Pipeline (only create if no pipeline with same name yet)
+    // 5) Pipeline
     const pipeTpl = pkg.pipeline_template;
     if (pipeTpl && pipeTpl.name && Array.isArray(pipeTpl.columns) && pipeTpl.columns.length > 0) {
-      const { data: existingPipe } = await admin
-        .from('pipelines')
-        .select('id')
-        .eq('organization_id', organizationId)
-        .eq('name', pipeTpl.name)
-        .maybeSingle();
-
+      const { data: existingPipe } = await admin.from('pipelines').select('id')
+        .eq('organization_id', organizationId).eq('name', pipeTpl.name).maybeSingle();
       if (!existingPipe) {
-        const { data: newPipe, error: pipeErr } = await admin
-          .from('pipelines')
-          .insert({
-            organization_id: organizationId,
-            name: pipeTpl.name,
-            description: pipeTpl.description || null,
-            workspace_ids: [],
-          } as never)
-          .select('id')
-          .single<{ id: string }>();
-
+        const { data: newPipe, error: pipeErr } = await admin.from('pipelines').insert({
+          organization_id: organizationId,
+          name: pipeTpl.name,
+          description: pipeTpl.description || null,
+          workspace_ids: targetWorkspaceId ? [targetWorkspaceId] : [],
+        } as never).select('id').single<{ id: string }>();
         if (!pipeErr && newPipe?.id) {
           const colsPayload = pipeTpl.columns.map((c, idx) => ({
             pipeline_id: newPipe.id,
@@ -279,35 +238,29 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 6) Track activation (idempotent upsert by composite key org+package)
-    const { data: existingAct } = await admin
-      .from('activated_packages')
-      .select('id')
-      .eq('organization_id', organizationId)
-      .eq('package_id', packageId)
-      .maybeSingle();
-
-    if (existingAct) {
-      await admin
-        .from('activated_packages')
-        .update({
-          activated_version: pkg.version || 1,
+    // 6) Track activation only for platform packages
+    if (source === 'platform') {
+      const { data: existingAct } = await admin.from('activated_packages').select('id')
+        .eq('organization_id', organizationId).eq('package_id', packageId!).maybeSingle();
+      if (existingAct) {
+        await admin.from('activated_packages').update({
+          activated_version: pkg.version,
           activated_at: new Date().toISOString(),
           activated_by: user.id,
           metadata: summary as never,
-        } as never)
-        .eq('id', existingAct.id);
-    } else {
-      await admin.from('activated_packages').insert({
-        organization_id: organizationId,
-        package_id: packageId,
-        activated_version: pkg.version || 1,
-        activated_by: user.id,
-        metadata: summary as never,
-      } as never);
+        } as never).eq('id', existingAct.id);
+      } else {
+        await admin.from('activated_packages').insert({
+          organization_id: organizationId,
+          package_id: packageId!,
+          activated_version: pkg.version,
+          activated_by: user.id,
+          metadata: summary as never,
+        } as never);
+      }
     }
 
-    return json({ ok: true, summary, package: { id: pkg.id, name: pkg.name, kind: pkg.kind } }, 200);
+    return json({ ok: true, summary, source, package: { id: pkg.id, name: pkg.name, kind: pkg.kind } }, 200);
   } catch (err) {
     console.error('activate-package error:', err);
     return json({ error: err instanceof Error ? err.message : 'Unknown error' }, 500);
