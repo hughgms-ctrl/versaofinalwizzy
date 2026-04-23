@@ -680,11 +680,7 @@ serve(async (req) => {
 
     const pdfBytes = await pdfDoc.save();
 
-    // Upload
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
-
+    // Upload (re-uses the supabase client created at the top of the handler)
     const safeName = (document_name || "documento")
       .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
       .replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -702,6 +698,15 @@ serve(async (req) => {
     const { data: urlData } = supabase.storage
       .from("contact-files")
       .getPublicUrl(storagePath);
+
+    // When invoked with a generated_document_id, persist the URL on the row
+    // so future loads (signature page, lists) can show the PDF immediately.
+    if (generatedDocumentId) {
+      await supabase
+        .from("generated_documents")
+        .update({ pdf_url: urlData.publicUrl, status: "generated" })
+        .eq("id", generatedDocumentId);
+    }
 
     return new Response(JSON.stringify({ pdf_url: urlData.publicUrl }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
