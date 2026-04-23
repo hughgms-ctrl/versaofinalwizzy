@@ -498,6 +498,19 @@ export function ConversationActionsMenu({ conversation, onShowMediaGallery }: Co
         <DropdownMenuSeparator />
 
         {/* Status Actions: archive / unarchive */}
+        {/* Status Actions: close / reopen / archive / unarchive */}
+        {!isArchived && !isClosed && (
+          <DropdownMenuItem onClick={() => handleStatusChange('closed' as any)}>
+            <CheckCheck className="h-4 w-4 mr-2 text-emerald-500" />
+            Encerrar atendimento
+          </DropdownMenuItem>
+        )}
+        {isClosed && !isArchived && (
+          <DropdownMenuItem onClick={() => handleStatusChange('open')}>
+            <RefreshCw className="h-4 w-4 mr-2 text-blue-500" />
+            Reabrir atendimento
+          </DropdownMenuItem>
+        )}
         {conversation.status === 'archived' ? (
           <DropdownMenuItem onClick={() => handleStatusChange('open')}>
             <RefreshCw className="h-4 w-4 mr-2 text-blue-500" />
@@ -512,6 +525,7 @@ export function ConversationActionsMenu({ conversation, onShowMediaGallery }: Co
         <DropdownMenuItem onClick={handleTogglePriority}>
           <Star className="h-4 w-4 mr-2" />
           Marcar como prioritária
+        </DropdownMenuItem>
         </DropdownMenuItem>
         <DropdownMenuItem onClick={handleMarkUnread}>
           <MailWarning className="h-4 w-4 mr-2 text-amber-500" />
