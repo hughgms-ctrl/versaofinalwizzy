@@ -497,7 +497,6 @@ export function ConversationActionsMenu({ conversation, onShowMediaGallery }: Co
 
         <DropdownMenuSeparator />
 
-        {/* Status Actions: archive / unarchive */}
         {/* Status Actions: close / reopen / archive / unarchive */}
         {!isArchived && !isClosed && (
           <DropdownMenuItem onClick={() => handleStatusChange('closed' as any)}>
@@ -525,7 +524,6 @@ export function ConversationActionsMenu({ conversation, onShowMediaGallery }: Co
         <DropdownMenuItem onClick={handleTogglePriority}>
           <Star className="h-4 w-4 mr-2" />
           Marcar como prioritária
-        </DropdownMenuItem>
         </DropdownMenuItem>
         <DropdownMenuItem onClick={handleMarkUnread}>
           <MailWarning className="h-4 w-4 mr-2 text-amber-500" />
