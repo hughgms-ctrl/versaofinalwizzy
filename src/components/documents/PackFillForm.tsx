@@ -356,7 +356,11 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature 
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <SignersManager signers={signers} onChange={setSigners} />
+          <SignersManager
+            signers={signers}
+            onChange={setSigners}
+            availableFields={allFields.map((f) => ({ name: f.name, label: f.label, type: f.type }))}
+          />
         </CardContent>
       </Card>
 
