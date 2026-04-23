@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, jsonResponse, errorResponse, createServiceClient, parseJsonBody } from "../_shared/middleware.ts";
+import { resolveSignatureByToken, markSignerSigned } from "../_shared/signerBridge.ts";
 
 function getClientIp(req: Request): string {
   const forwarded = req.headers.get("x-forwarded-for");
@@ -74,17 +75,23 @@ serve(async (req) => {
     const signerUserAgent = signerDevice || req.headers.get("user-agent") || "unknown";
     const uaInfo = parseUserAgent(signerUserAgent);
 
+    const resolved = await resolveSignatureByToken(supabase, signatureToken);
+    if (!resolved) {
+      return errorResponse("Assinatura não encontrada", 404);
+    }
+    if (resolved.status === "signed") {
+      return errorResponse("Documento já foi assinado", 400);
+    }
+
+    // Re-fetch with the joined generated_document for hashing/stamping
     const { data: signature, error: sigError } = await supabase
       .from("document_signatures")
       .select("*, generated_document:generated_documents(id, name, pdf_url, filled_data)")
-      .eq("signature_token", signatureToken)
+      .eq("id", resolved.id)
       .single();
 
     if (sigError || !signature) {
       return errorResponse("Assinatura não encontrada", 404);
-    }
-    if (signature.status === "signed") {
-      return errorResponse("Documento já foi assinado", 400);
     }
 
     const meta = (signature.metadata || {}) as Record<string, any>;
@@ -258,13 +265,26 @@ serve(async (req) => {
       })
       .eq("id", signature.id);
 
-    await supabase
-      .from("generated_documents")
-      .update({
-        signing_status: "signed",
-        status: "signed",
-      })
-      .eq("id", signature.generated_document_id);
+    // Propagate to document_signers row (if this signature originated from one)
+    await markSignerSigned(supabase, signature.id, signedAt);
+
+    // Only mark the generated_document as fully signed when there are no
+    // remaining pending signers. Multi-signer documents need every signer.
+    const { count: pendingSigners } = await supabase
+      .from("document_signers")
+      .select("id", { count: "exact", head: true })
+      .eq("generated_document_id", signature.generated_document_id)
+      .neq("status", "signed");
+
+    if (!pendingSigners || pendingSigners === 0) {
+      await supabase
+        .from("generated_documents")
+        .update({
+          signing_status: "signed",
+          status: "signed",
+        })
+        .eq("id", signature.generated_document_id);
+    }
 
     // Receipt
     let receiptPdfUrl: string | null = null;
