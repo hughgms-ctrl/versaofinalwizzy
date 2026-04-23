@@ -127,7 +127,7 @@ serve(async (req) => {
     const { signatureToken, email, channel } = await parseJsonBody<{
       signatureToken: string;
       email?: string;
-      channel?: 'email' | 'whatsapp' | 'all';
+      channel?: 'email' | 'whatsapp';
     }>(req);
 
     if (!signatureToken) {
@@ -145,93 +145,81 @@ serve(async (req) => {
     }
 
     const meta = (signature.metadata as any) || {};
-    // Multi-channel support: prefer the explicit list saved in metadata
-    let channels: Array<'email' | 'whatsapp'> = Array.isArray(meta.otp_channels) && meta.otp_channels.length > 0
+    const configuredChannels: Array<'email' | 'whatsapp'> = Array.isArray(meta.otp_channels) && meta.otp_channels.length > 0
       ? meta.otp_channels
       : [meta.otp_channel || 'email'];
 
-    // If client explicitly requests a single channel, restrict to it
-    if (channel && channel !== 'all') {
-      channels = [channel as 'email' | 'whatsapp'];
+    const targetChannel = channel || configuredChannels[0];
+    if (!configuredChannels.includes(targetChannel)) {
+      return errorResponse("Canal OTP inválido para esta assinatura", 400);
     }
 
     const targetEmail = email || signature.signer_email;
     const targetPhone = signature.signer_phone;
 
-    // Validate availability of contact info per requested channel
-    if (channels.includes('email') && !targetEmail) {
+    if (targetChannel === 'email' && !targetEmail) {
       return errorResponse("E-mail do signatário é obrigatório para verificação por e-mail", 400);
     }
-    if (channels.includes('whatsapp') && !targetPhone) {
+    if (targetChannel === 'whatsapp' && !targetPhone) {
       return errorResponse("Telefone do signatário é obrigatório para verificação por WhatsApp", 400);
     }
-    if (channels.includes('email') && signature.signer_email && targetEmail &&
+    if (targetChannel === 'email' && signature.signer_email && targetEmail &&
         signature.signer_email.toLowerCase() !== targetEmail.toLowerCase()) {
       return errorResponse("E-mail não corresponde ao signatário", 400);
     }
 
-    // Generate ONE 6-digit OTP shared across channels (simpler UX: any code works)
     const code = String(Math.floor(100000 + Math.random() * 900000));
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
 
-    // Replace any existing OTP for this signature
     await supabase
       .from("signature_otp_codes")
       .delete()
-      .eq("signature_id", signature.id);
+      .eq("signature_id", signature.id)
+      .eq("email", targetChannel === 'email' ? (targetEmail || '') : '')
+      .eq("phone", targetChannel === 'whatsapp' ? (targetPhone || null) : null);
+
+    const insertPayload = {
+      signature_id: signature.id,
+      email: targetChannel === 'email' ? (targetEmail || '') : '',
+      phone: targetChannel === 'whatsapp' ? (targetPhone || null) : null,
+      code,
+      expires_at: expiresAt,
+      verified: false,
+    };
 
     const { error: otpError } = await supabase
       .from("signature_otp_codes")
-      .insert({
-        signature_id: signature.id,
-        email: targetEmail || null,
-        phone: targetPhone || null,
-        code,
-        expires_at: expiresAt,
-      });
+      .insert(insertPayload);
 
     if (otpError) {
       console.error("Error storing OTP:", otpError);
       return errorResponse("Erro ao gerar código", 500);
     }
 
-    // Dispatch in parallel
-    const dispatches = await Promise.all(channels.map((c) => {
-      if (c === 'email') {
-        return sendEmailOtp({ email: targetEmail!, code });
-      }
-      return sendWhatsappOtp({
-        phone: targetPhone!,
-        code,
-        organizationId: signature.organization_id,
-        supabase,
-      });
-    }));
+    const dispatch = targetChannel === 'email'
+      ? await sendEmailOtp({ email: targetEmail!, code })
+      : await sendWhatsappOtp({
+          phone: targetPhone!,
+          code,
+          organizationId: signature.organization_id,
+          supabase,
+        });
 
-    const successes = dispatches.filter(d => d.ok);
-    const failures = dispatches.filter(d => !d.ok);
-
-    if (successes.length === 0) {
-      // Total failure → cleanup so user can retry
+    if (!dispatch.ok) {
       await supabase
         .from("signature_otp_codes")
         .delete()
-        .eq("signature_id", signature.id);
-      const reason = failures.map(f => `${f.channel}: ${f.error}`).join(' | ');
-      return errorResponse(reason || "Erro ao enviar código", 500);
+        .eq("signature_id", signature.id)
+        .eq("code", code);
+      return errorResponse(dispatch.error || "Erro ao enviar código", 500);
     }
 
-    const messageParts = successes.map(s => s.message!).filter(Boolean);
-    const warning = failures.length > 0
-      ? ` (Aviso: ${failures.map(f => `${f.channel} falhou`).join(', ')})`
-      : '';
-
-    console.log(`[SIGNATURE-OTP] Code dispatched via [${successes.map(s => s.channel).join(', ')}] for signature ${signature.id}`);
+    console.log(`[SIGNATURE-OTP] Code dispatched via [${dispatch.channel}] for signature ${signature.id}`);
 
     return jsonResponse({
       success: true,
-      channels: successes.map(s => s.channel),
-      message: `Código enviado: ${messageParts.join(' e ')}${warning}`,
+      channel: dispatch.channel,
+      message: dispatch.message || "Código enviado",
     });
   } catch (error) {
     console.error("Error in signature-send-otp:", error);
