@@ -18,6 +18,7 @@ import { ImportHistorySettings } from '@/components/settings/ImportHistorySettin
 import { CrmEntitiesSettings } from '@/components/settings/CrmEntitiesSettings';
 import { WorkspacesSettings } from '@/components/settings/WorkspacesSettings';
 import { WhatsAppInstancesSettings } from '@/components/settings/WhatsAppInstancesSettings';
+import { CompanyKnowledgeSettings } from '@/components/settings/CompanyKnowledgeSettings';
 import {
   Select,
   SelectContent,
@@ -484,7 +485,15 @@ export default function SettingsPage() {
             <Building2 className="h-3.5 w-3.5 md:h-4 md:w-4" />
             <span className="hidden sm:inline">Workspaces</span>
           </TabsTrigger>
+          <TabsTrigger value="company" className="flex items-center gap-1.5 text-xs md:text-sm px-2 md:px-3">
+            <Building className="h-3.5 w-3.5 md:h-4 md:w-4" />
+            <span className="hidden sm:inline">Empresa</span>
+          </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="company" className="space-y-6">
+          <CompanyKnowledgeSettings />
+        </TabsContent>
 
         {/* WhatsApp Settings */}
         <TabsContent value="whatsapp" className="space-y-6">

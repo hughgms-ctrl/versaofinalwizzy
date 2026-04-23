@@ -42,6 +42,71 @@ interface DocumentCollectionContext {
 
 const MAX_TOOL_ROUNDS = 3;
 
+// ==================== COMPANY KNOWLEDGE INJECTION ====================
+// Replace placeholders like {{empresa.nome}}, {{empresa.endereco}} in any prompt
+// with values from organization_knowledge. Missing values become "[não informado]".
+function buildCompanyKnowledgeMap(k: any | null): Record<string, string> {
+  if (!k) return {};
+  const faqsText = Array.isArray(k.faqs) && k.faqs.length > 0
+    ? k.faqs
+        .map((f: any) => `• ${f?.question || ''}\n  ${f?.answer || ''}`)
+        .join('\n')
+    : '';
+  return {
+    'empresa.nome': k.company_name || '',
+    'empresa.site': k.website || '',
+    'empresa.telefone': k.phone || '',
+    'empresa.email': k.email || '',
+    'empresa.endereco': k.address || '',
+    'empresa.horario': k.hours || '',
+    'empresa.pagamentos': k.payment_methods || '',
+    'empresa.tom': k.tone_of_voice || '',
+    'empresa.diferenciais': k.differentials || '',
+    'empresa.sobre': k.about || '',
+    'empresa.faqs': faqsText,
+  };
+}
+
+function interpolateCompanyKnowledge(text: string, knowledge: any | null): string {
+  if (!text) return text;
+  const map = buildCompanyKnowledgeMap(knowledge);
+  // Custom fields support: {{empresa.custom.X}}
+  const customFields = knowledge?.custom_fields && typeof knowledge.custom_fields === 'object'
+    ? knowledge.custom_fields
+    : {};
+  return text.replace(/\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}/g, (full, key) => {
+    if (key in map) return map[key] || '[não informado]';
+    if (key.startsWith('empresa.custom.')) {
+      const fieldName = key.replace('empresa.custom.', '');
+      return customFields[fieldName] ?? '[não informado]';
+    }
+    return full; // unknown placeholders preserved
+  });
+}
+
+function buildCompanyKnowledgeBlock(knowledge: any | null): string {
+  if (!knowledge) return '';
+  const lines: string[] = [];
+  if (knowledge.company_name) lines.push(`- Nome: ${knowledge.company_name}`);
+  if (knowledge.website) lines.push(`- Site: ${knowledge.website}`);
+  if (knowledge.phone) lines.push(`- Telefone: ${knowledge.phone}`);
+  if (knowledge.email) lines.push(`- Email: ${knowledge.email}`);
+  if (knowledge.address) lines.push(`- Endereço: ${knowledge.address}`);
+  if (knowledge.hours) lines.push(`- Horário: ${knowledge.hours}`);
+  if (knowledge.payment_methods) lines.push(`- Formas de pagamento: ${knowledge.payment_methods}`);
+  if (knowledge.tone_of_voice) lines.push(`- Tom de voz: ${knowledge.tone_of_voice}`);
+  if (knowledge.differentials) lines.push(`- Diferenciais: ${knowledge.differentials}`);
+  if (knowledge.about) lines.push(`- Sobre: ${knowledge.about}`);
+  if (Array.isArray(knowledge.faqs) && knowledge.faqs.length > 0) {
+    lines.push(`- FAQs:`);
+    for (const f of knowledge.faqs) {
+      lines.push(`  • ${f?.question || ''} → ${f?.answer || ''}`);
+    }
+  }
+  if (lines.length === 0) return '';
+  return `# DADOS DA EMPRESA (use sempre que precisar dessas informações):\n${lines.join('\n')}\n\n---\n\n`;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -340,6 +405,17 @@ Deno.serve(async (req) => {
       if (orgRow?.timezone) organizationTimezone = orgRow.timezone;
     } catch (_e) { /* keep default */ }
 
+    // Load company knowledge for prompt interpolation ({{empresa.*}})
+    let organizationKnowledge: any = null;
+    try {
+      const { data: knowRow } = await supabase
+        .from('organization_knowledge')
+        .select('*')
+        .eq('organization_id', organizationId)
+        .maybeSingle();
+      organizationKnowledge = knowRow || null;
+    } catch (_e) { /* knowledge optional */ }
+
     const context = {
       conversationId, contactId, organizationId, conversation,
       messages, agents, allTags, contactTags, pipelines, pipelinePositions,
@@ -349,6 +425,7 @@ Deno.serve(async (req) => {
       forceResponse, // PASS TO CONTEXT
       additionalContext, // NEW: Pass the payload additionalContext
       organizationTimezone, // NEW: For temporal context block in prompts
+      organizationKnowledge, // NEW: For {{empresa.*}} placeholder injection
     };
 
     // 4. Resolve flow_id from available sources
@@ -450,7 +527,7 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
   if (!organizationId) return { error: 'organizationId is required for simulation' };
 
   // Load context from DB (same as production)
-  const [agentsResult, tagsResult, pipelinesResult, trainingRulesResult, qualificationRulesResult, integrationConfigResult, organizationResult] = await Promise.all([
+  const [agentsResult, tagsResult, pipelinesResult, trainingRulesResult, qualificationRulesResult, integrationConfigResult, organizationResult, knowledgeResult] = await Promise.all([
     supabase.from('ai_agents').select('*').eq('organization_id', organizationId).eq('is_active', true),
     supabase.from('tags').select('*').eq('organization_id', organizationId),
     supabase.from('pipelines').select('*, columns:pipeline_columns!pipeline_columns_pipeline_id_fkey(*)').eq('organization_id', organizationId),
@@ -458,7 +535,9 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
     supabase.from('agent_qualification_rules').select('*').eq('organization_id', organizationId).eq('is_active', true),
     resolveIntegrationConfig(supabase, organizationId),
     supabase.from('organizations').select('timezone').eq('id', organizationId).maybeSingle(),
+    supabase.from('organization_knowledge').select('*').eq('organization_id', organizationId).maybeSingle(),
   ]);
+  const organizationKnowledge = knowledgeResult?.data || null;
 
   const agents = agentsResult.data || [];
   const allTags = tagsResult.data || [];
@@ -492,6 +571,9 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
   if (masterPromptContent) {
     systemPrompt += `# REGRAS GERAIS E PERSONALIDADE:\n${cleanPrompt(masterPromptContent)}\n\n`;
   }
+
+  // 1.5. DADOS DA EMPRESA (Base de conhecimento)
+  systemPrompt += buildCompanyKnowledgeBlock(organizationKnowledge);
 
   // 2. IDENTIDADE E PROMPT BASE (AGENTE)
   systemPrompt += `# SUA IDENTIDADE:\n`;
@@ -588,7 +670,7 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
   console.log(`[SIMULATION] System prompt length: ${systemPrompt.length} chars, history: ${trimmedHistory.length}/${history.length} messages`);
   
   const aiMessages: any[] = [
-    { role: 'system', content: systemPrompt },
+    { role: 'system', content: interpolateCompanyKnowledge(systemPrompt, organizationKnowledge) },
     ...trimmedHistory,
   ];
 
@@ -1225,6 +1307,9 @@ async function invokeAgentAI(
     systemPrompt += `# REGRAS GERAIS E PERSONALIDADE:\n${cleanPrompt(ctx.masterPrompt.content)}\n\n`;
   }
 
+  // 1.5. DADOS DA EMPRESA (Base de conhecimento)
+  systemPrompt += buildCompanyKnowledgeBlock(ctx.organizationKnowledge);
+
   // 2. IDENTIDADE E PROMPT BASE (AGENTE) - Medium priority
   systemPrompt += `# SUA IDENTIDADE:\n`;
   systemPrompt += `Você é o agente "${agent?.name || 'Assistente'}" neste momento da conversa.\n\n`;
@@ -1340,7 +1425,7 @@ async function invokeAgentAI(
 
   // Build messages
   const aiMessages: any[] = [
-    { role: 'system', content: systemPrompt },
+    { role: 'system', content: interpolateCompanyKnowledge(systemPrompt, ctx.organizationKnowledge) },
     ...ctx.messages.map((m: any) => ({
       role: m.direction === 'inbound' ? 'user' : 'assistant',
       content: m.content || '[mídia]',
@@ -1670,6 +1755,9 @@ async function invokeDocumentAgentAI(
     systemPrompt += `# REGRAS GERAIS E PERSONALIDADE:\n${cleanPrompt(ctx.masterPrompt.content)}\n\n`;
   }
 
+  // 1.5. DADOS DA EMPRESA (Base de conhecimento)
+  systemPrompt += buildCompanyKnowledgeBlock(ctx.organizationKnowledge);
+
   // 2. IDENTIDADE E PROMPT BASE (AGENTE)
   systemPrompt += `# SUA IDENTIDADE:\n`;
   systemPrompt += `Você é o agente "${agent?.name || 'Assistente'}" neste momento da conversa.\n\n`;
@@ -1765,7 +1853,7 @@ async function invokeDocumentAgentAI(
 
   // Build messages
   const aiMessages: any[] = [
-    { role: 'system', content: systemPrompt },
+    { role: 'system', content: interpolateCompanyKnowledge(systemPrompt, ctx.organizationKnowledge) },
     ...ctx.messages.map((m: any) => ({
       role: m.direction === 'inbound' ? 'user' : 'assistant',
       content: m.content || '[mídia]',
@@ -2234,7 +2322,7 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
 
   const systemPrompt = buildLegacySystemPrompt(ctx);
   const aiMessages: any[] = [
-    { role: 'system', content: systemPrompt },
+    { role: 'system', content: interpolateCompanyKnowledge(systemPrompt, ctx.organizationKnowledge) },
     ...ctx.messages.map((m: any) => ({
       role: m.direction === 'inbound' ? 'user' : 'assistant',
       content: m.content || '[mídia]',
