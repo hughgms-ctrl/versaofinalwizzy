@@ -145,43 +145,38 @@ export function SignersManager({ signers, onChange }: SignersManagerProps) {
           </div>
 
           <div className="border-t pt-3">
-            <Label className="text-[11px] font-semibold text-muted-foreground mb-2 block">Autenticação</Label>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-              <label className="flex items-center gap-2 text-xs cursor-pointer">
-                <Checkbox
-                  checked={signer.auth_methods?.manuscrita ?? true}
-                  onCheckedChange={(v) => updateAuth(idx, 'manuscrita', !!v)}
-                />
-                ✍️ Assinatura manuscrita
-              </label>
-              <label className="flex items-center gap-2 text-xs cursor-pointer">
-                <Checkbox
-                  checked={signer.auth_methods?.otp_email ?? false}
-                  onCheckedChange={(v) => updateAuth(idx, 'otp_email', !!v)}
-                />
-                📧 Código por e-mail
-              </label>
-              <label className="flex items-center gap-2 text-xs cursor-pointer">
-                <Checkbox
-                  checked={signer.auth_methods?.otp_whatsapp ?? false}
-                  onCheckedChange={(v) => updateAuth(idx, 'otp_whatsapp', !!v)}
-                />
-                💬 Código por WhatsApp
-              </label>
-              <label className="flex items-center gap-2 text-xs cursor-pointer">
-                <Checkbox
-                  checked={signer.auth_methods?.selfie ?? false}
-                  onCheckedChange={(v) => updateAuth(idx, 'selfie', !!v)}
-                />
-                📸 Selfie
-              </label>
-              <label className="flex items-center gap-2 text-xs cursor-pointer">
-                <Checkbox
-                  checked={signer.auth_methods?.cpf_simples ?? false}
-                  onCheckedChange={(v) => updateAuth(idx, 'cpf_simples', !!v)}
-                />
-                🆔 Validação de CPF
-              </label>
+            <div className="flex items-center gap-1.5 mb-2.5">
+              <Shield className="h-3 w-3 text-muted-foreground" />
+              <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Métodos de autenticação</Label>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-1.5">
+              {[
+                { key: 'manuscrita', label: 'Assinatura manuscrita', icon: '✍️', default: true },
+                { key: 'otp_email', label: 'Código por e-mail', icon: '📧', default: false },
+                { key: 'otp_whatsapp', label: 'Código por WhatsApp', icon: '💬', default: false },
+                { key: 'selfie', label: 'Selfie', icon: '📸', default: false },
+                { key: 'cpf_simples', label: 'Validação de CPF', icon: '🆔', default: false },
+              ].map((method) => {
+                const checked = signer.auth_methods?.[method.key as keyof typeof signer.auth_methods] ?? method.default;
+                return (
+                  <label
+                    key={method.key}
+                    className={`flex items-center gap-2 text-xs cursor-pointer rounded-md border px-2.5 py-2 transition-colors ${
+                      checked
+                        ? 'border-primary/40 bg-primary/5 text-foreground'
+                        : 'border-border bg-background hover:bg-muted/50 text-muted-foreground'
+                    }`}
+                  >
+                    <Checkbox
+                      checked={checked}
+                      onCheckedChange={(v) => updateAuth(idx, method.key, !!v)}
+                      className="h-3.5 w-3.5"
+                    />
+                    <span className="text-sm leading-none">{method.icon}</span>
+                    <span className="truncate">{method.label}</span>
+                  </label>
+                );
+              })}
             </div>
           </div>
         </Card>
