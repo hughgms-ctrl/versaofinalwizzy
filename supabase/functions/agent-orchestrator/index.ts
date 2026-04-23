@@ -1307,6 +1307,9 @@ async function invokeAgentAI(
     systemPrompt += `# REGRAS GERAIS E PERSONALIDADE:\n${cleanPrompt(ctx.masterPrompt.content)}\n\n`;
   }
 
+  // 1.5. DADOS DA EMPRESA (Base de conhecimento)
+  systemPrompt += buildCompanyKnowledgeBlock(ctx.organizationKnowledge);
+
   // 2. IDENTIDADE E PROMPT BASE (AGENTE) - Medium priority
   systemPrompt += `# SUA IDENTIDADE:\n`;
   systemPrompt += `Você é o agente "${agent?.name || 'Assistente'}" neste momento da conversa.\n\n`;
@@ -1422,7 +1425,7 @@ async function invokeAgentAI(
 
   // Build messages
   const aiMessages: any[] = [
-    { role: 'system', content: systemPrompt },
+    { role: 'system', content: interpolateCompanyKnowledge(systemPrompt, ctx.organizationKnowledge) },
     ...ctx.messages.map((m: any) => ({
       role: m.direction === 'inbound' ? 'user' : 'assistant',
       content: m.content || '[mídia]',
@@ -1752,6 +1755,9 @@ async function invokeDocumentAgentAI(
     systemPrompt += `# REGRAS GERAIS E PERSONALIDADE:\n${cleanPrompt(ctx.masterPrompt.content)}\n\n`;
   }
 
+  // 1.5. DADOS DA EMPRESA (Base de conhecimento)
+  systemPrompt += buildCompanyKnowledgeBlock(ctx.organizationKnowledge);
+
   // 2. IDENTIDADE E PROMPT BASE (AGENTE)
   systemPrompt += `# SUA IDENTIDADE:\n`;
   systemPrompt += `Você é o agente "${agent?.name || 'Assistente'}" neste momento da conversa.\n\n`;
@@ -1847,7 +1853,7 @@ async function invokeDocumentAgentAI(
 
   // Build messages
   const aiMessages: any[] = [
-    { role: 'system', content: systemPrompt },
+    { role: 'system', content: interpolateCompanyKnowledge(systemPrompt, ctx.organizationKnowledge) },
     ...ctx.messages.map((m: any) => ({
       role: m.direction === 'inbound' ? 'user' : 'assistant',
       content: m.content || '[mídia]',
@@ -2316,7 +2322,7 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
 
   const systemPrompt = buildLegacySystemPrompt(ctx);
   const aiMessages: any[] = [
-    { role: 'system', content: systemPrompt },
+    { role: 'system', content: interpolateCompanyKnowledge(systemPrompt, ctx.organizationKnowledge) },
     ...ctx.messages.map((m: any) => ({
       role: m.direction === 'inbound' ? 'user' : 'assistant',
       content: m.content || '[mídia]',
