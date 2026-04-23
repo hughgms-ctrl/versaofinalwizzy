@@ -673,11 +673,18 @@ export default function PublicSignaturePage() {
                   </div>
                   {d.pdf_url ? (
                     <div className="border rounded-lg overflow-hidden bg-muted">
-                      <iframe
-                        src={`${d.pdf_url}#toolbar=1&view=FitH`}
-                        className="w-full h-[600px]"
-                        title={d.name}
-                      />
+                      {previewLoading[d.id] && !previewUrls[d.id] ? (
+                        <div className="h-[600px] flex flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
+                          <Loader2 className="h-5 w-5 animate-spin" />
+                          <p>Carregando pré-visualização…</p>
+                        </div>
+                      ) : (
+                        <iframe
+                          src={`${previewUrls[d.id] || d.pdf_url}#toolbar=1&view=FitH`}
+                          className="w-full h-[600px]"
+                          title={d.name}
+                        />
+                      )}
                     </div>
                   ) : (
                     <div className="border rounded-lg p-6 text-center text-xs text-muted-foreground space-y-2">
