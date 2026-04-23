@@ -751,18 +751,31 @@ export default function PublicSignaturePage() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  <div className="relative">
-                    <img src={selfieImage} alt="Selfie" className="w-full rounded-lg border" />
-                    <Badge className="absolute top-2 right-2 gap-1" variant="secondary">
-                      <Check className="h-3 w-3" /> Capturada
-                    </Badge>
+                  <div className="rounded-lg border-2 border-primary/30 bg-muted/30 p-3">
+                    <p className="text-xs text-muted-foreground mb-2 text-center">
+                      Confira a foto. Se não estiver boa, exclua e tire outra.
+                    </p>
+                    <div className="relative">
+                      <img
+                        src={selfieImage}
+                        alt="Selfie capturada"
+                        className="w-full rounded-lg border bg-white"
+                      />
+                      <Badge className="absolute top-2 right-2 gap-1" variant="secondary">
+                        <Check className="h-3 w-3" /> Capturada
+                      </Badge>
+                    </div>
                   </div>
-                  <div className="flex gap-2">
-                    <Button variant="outline" onClick={retakeSelfie} className="flex-1 gap-2">
-                      <RotateCcw className="h-4 w-4" /> Nova foto
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <Button
+                      variant="destructive"
+                      onClick={retakeSelfie}
+                      className="flex-1 gap-2"
+                    >
+                      <RotateCcw className="h-4 w-4" /> Excluir e tirar outra
                     </Button>
                     <Button onClick={() => setStep('signature')} className="flex-1 gap-2">
-                      Continuar <ChevronRight className="h-4 w-4" />
+                      Confirmar foto <ChevronRight className="h-4 w-4" />
                     </Button>
                   </div>
                 </div>
