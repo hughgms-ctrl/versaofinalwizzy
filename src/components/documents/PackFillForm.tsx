@@ -203,9 +203,30 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature 
     return <Input value={values[field.name] || ''} onChange={(e) => setValues((prev) => ({ ...prev, [field.name]: e.target.value }))} placeholder={`Digite ${field.label}`} />;
   };
 
+  // Internal pack: docs generated, show signer links
+  if (generatedDocIds.length > 0 && !publicLink) {
+    return (
+      <div className="space-y-6 max-w-2xl mx-auto">
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" onClick={onBack}><ArrowLeft className="h-5 w-5" /></Button>
+          <div>
+            <h2 className="text-lg font-semibold">{generatedDocIds.length} documentos gerados</h2>
+            <p className="text-sm text-muted-foreground">Envie o link de assinatura para cada signatário</p>
+          </div>
+        </div>
+        <Card>
+          <CardContent className="pt-6">
+            <SignerLinksList documentIds={generatedDocIds} />
+          </CardContent>
+        </Card>
+        <Button onClick={onBack} variant="outline" className="w-full">Concluir</Button>
+      </div>
+    );
+  }
+
   if (publicLink) {
     return (
-      <div className="space-y-6 max-w-xl mx-auto">
+      <div className="space-y-6 max-w-2xl mx-auto">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" onClick={onBack}><ArrowLeft className="h-5 w-5" /></Button>
           <div>
@@ -215,6 +236,7 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature 
         </div>
         <Card>
           <CardContent className="pt-6 space-y-4">
+            <Label className="text-xs text-muted-foreground">Link para o cliente preencher</Label>
             <div className="flex gap-2">
               <Input value={publicLink} readOnly className="font-mono text-xs" />
               <Button onClick={copyLink} className="gap-2 shrink-0">
@@ -222,17 +244,28 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature 
                 {copied ? 'Copiado' : 'Copiar'}
               </Button>
             </div>
-            <div className="bg-muted/50 rounded-lg p-4 text-xs text-muted-foreground">
-              <p className="font-semibold text-foreground mb-2">Como funciona:</p>
-              <ol className="space-y-1 list-decimal pl-4">
-                <li>O cliente abre o link e preenche os campos uma única vez</li>
-                <li>Os dados são aplicados aos {templates.length} documentos do pack</li>
-                <li>Cada documento segue para os {signers.length} signatário(s)</li>
-              </ol>
+            <div className="bg-muted/50 rounded-lg p-3 text-xs text-muted-foreground">
+              Após o cliente preencher, cada signatário receberá automaticamente seu link único de assinatura.
             </div>
-            <Button onClick={onBack} variant="outline" className="w-full">Concluir</Button>
           </CardContent>
         </Card>
+
+        {generatedDocIds.length > 0 && (
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">Links dos signatários (já disponíveis)</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <SignerLinksList
+                documentIds={generatedDocIds}
+                title=""
+                description="Você pode enviar agora ou aguardar o cliente preencher os dados."
+              />
+            </CardContent>
+          </Card>
+        )}
+
+        <Button onClick={onBack} variant="outline" className="w-full">Concluir</Button>
       </div>
     );
   }
