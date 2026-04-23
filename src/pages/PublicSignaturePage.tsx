@@ -47,6 +47,7 @@ export default function PublicSignaturePage() {
   const { token } = useParams<{ token: string }>();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const previewUrlsRef = useRef<Record<string, string>>({});
   const [step, setStep] = useState<Step>('loading');
   const [documentData, setDocumentData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
