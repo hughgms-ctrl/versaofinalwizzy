@@ -126,6 +126,7 @@ export function ConversationFilters({
     const map: Record<string, string> = {
       aberto: 'Aberto',
       em_andamento: 'Em andamento',
+      encerrada: 'Encerradas',
       archived: 'Arquivados',
     };
     return map[filters.statusFilter] || null;
@@ -274,6 +275,7 @@ export function ConversationFilters({
                     { value: 'all', label: 'Todos' },
                     { value: 'aberto', label: 'Aberto' },
                     { value: 'em_andamento', label: 'Em andamento' },
+                    { value: 'encerrada', label: 'Encerradas' },
                     { value: 'archived', label: 'Arquivado' },
                   ].map((status) => (
                     <Button
