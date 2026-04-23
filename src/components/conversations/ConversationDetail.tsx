@@ -571,7 +571,7 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
               }}
             />
 
-            {/* Archive Button */}
+            {/* Encerrar / Arquivar Button */}
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -580,29 +580,35 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
                   className="h-8 gap-1.5 text-xs hidden sm:flex"
                   onClick={async () => {
                     try {
+                      const isClosed = (conversation as any).status === 'closed' || !!(conversation as any).closed_at;
+                      const patch: any = isClosed
+                        ? { status: 'open', closed_at: null }
+                        : { status: 'closed', closed_at: new Date().toISOString() };
                       await supabase
                         .from('conversations')
-                        .update({ status: 'archived' })
+                        .update(patch)
                         .eq('id', conversation.id);
                       queryClient.invalidateQueries({ queryKey: ['conversations'] });
                       toast({
-                        title: 'Conversa arquivada',
-                        description: 'A conversa foi movida para o arquivo.',
+                        title: isClosed ? 'Atendimento reaberto' : 'Atendimento encerrado',
+                        description: isClosed
+                          ? 'A conversa voltou para a caixa principal.'
+                          : 'A conversa saiu da caixa. Reabre automaticamente se o cliente responder.',
                       });
                     } catch (error) {
-                      toast({
-                        title: 'Erro',
-                        description: 'Não foi possível arquivar a conversa',
-                        variant: 'destructive',
-                      });
+                      toast({ title: 'Erro', variant: 'destructive' });
                     }
                   }}
                 >
                   <Archive className="h-3.5 w-3.5" />
-                  Arquivar Ticket
+                  {((conversation as any).status === 'closed' || !!(conversation as any).closed_at) ? 'Reabrir' : 'Encerrar'}
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Arquivar conversa</TooltipContent>
+              <TooltipContent>
+                {((conversation as any).status === 'closed' || !!(conversation as any).closed_at)
+                  ? 'Reabrir atendimento'
+                  : 'Encerrar atendimento (reabre se o cliente responder)'}
+              </TooltipContent>
             </Tooltip>
 
             {/* AI Toggle with Pause Duration */}
