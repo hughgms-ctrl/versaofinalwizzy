@@ -558,20 +558,33 @@ export default function PublicSignaturePage() {
                       />
                     </div>
                   ) : (
-                    <div className="border rounded-lg p-6 text-center text-xs text-muted-foreground">
-                      Pré-visualização indisponível.
+                    <div className="border rounded-lg p-6 text-center text-xs text-muted-foreground space-y-2">
+                      <p>O documento ainda está sendo preparado.</p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => loadDocument()}
+                        className="gap-2"
+                      >
+                        <RotateCcw className="h-3.5 w-3.5" /> Atualizar
+                      </Button>
                     </div>
                   )}
                 </Card>
               ))}
 
-              {documentData?.signer_name && (
-                <Card className="p-3">
-                  <p className="text-xs text-muted-foreground">Signatário</p>
-                  <p className="font-medium text-sm">{documentData.signer_name}</p>
-                  {documentData.signer_email && <p className="text-xs text-muted-foreground">{documentData.signer_email}</p>}
-                </Card>
-              )}
+              <Card className="p-3">
+                <p className="text-xs text-muted-foreground">Signatário</p>
+                <p className="font-medium text-sm">
+                  {documentData?.signer_name || 'Não informado'}
+                </p>
+                {documentData?.signer_email && (
+                  <p className="text-xs text-muted-foreground">{documentData.signer_email}</p>
+                )}
+                {documentData?.signer_phone && (
+                  <p className="text-xs text-muted-foreground">{documentData.signer_phone}</p>
+                )}
+              </Card>
 
               <Button
                 onClick={() => setStep(documentData?.signing_method === 'internal' ? 'otp_send' : 'signature')}

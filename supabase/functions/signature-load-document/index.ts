@@ -25,12 +25,34 @@ serve(async (req) => {
       return errorResponse("Documento não encontrado ou link expirado", 410);
     }
 
+    // Helper: ensure a generated_document has a usable pdf_url.
+    // If missing but the doc is already filled, ask generate-document-pdf to build it.
+    const ensurePdf = async (d: any) => {
+      if (!d || d.pdf_url) return d;
+      if (!d.is_filled) return d;
+      try {
+        await (supabase as any).functions.invoke("generate-document-pdf", {
+          body: { generated_document_id: d.id },
+        });
+        const { data: refreshed } = await supabase
+          .from("generated_documents")
+          .select("id, name, pdf_url, status, pack_id, is_filled")
+          .eq("id", d.id)
+          .maybeSingle();
+        return refreshed || d;
+      } catch (err) {
+        console.warn("[signature-load-document] PDF generation fallback failed for", d.id, err);
+        return d;
+      }
+    };
+
     // Load the related generated document for preview
-    const { data: doc } = await supabase
+    const { data: docRaw } = await supabase
       .from("generated_documents")
-      .select("id, name, pdf_url, status, pack_id")
+      .select("id, name, pdf_url, status, pack_id, is_filled")
       .eq("id", resolved.generated_document_id)
       .maybeSingle();
+    const doc = await ensurePdf(docRaw);
 
     // If this document belongs to a pack, load all sibling documents in that pack
     // so the signer can review every document before signing.
@@ -46,10 +68,11 @@ serve(async (req) => {
 
       const { data: siblings } = await supabase
         .from("generated_documents")
-        .select("id, name, pdf_url, status")
+        .select("id, name, pdf_url, status, is_filled")
         .eq("pack_id", doc.pack_id)
         .order("created_at", { ascending: true });
-      packDocuments = (siblings || []).filter((d: any) => !!d.pdf_url);
+      const ensured = await Promise.all((siblings || []).map((d: any) => ensurePdf(d)));
+      packDocuments = ensured.filter((d: any) => !!d.pdf_url);
     }
 
     const signature = {

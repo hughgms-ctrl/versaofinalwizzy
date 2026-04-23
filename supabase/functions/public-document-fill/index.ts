@@ -149,6 +149,22 @@ serve(async (req) => {
         console.warn("Could not auto-fill form signers:", e);
       }
 
+      // Generate PDFs for every filled doc so signers can preview them.
+      // Run in parallel; ignore individual failures (signature page also has a fallback).
+      try {
+        await Promise.all(
+          docIds.map((id) =>
+            (supabase as any).functions
+              .invoke("generate-document-pdf", { body: { generated_document_id: id } })
+              .catch((err: any) =>
+                console.warn("PDF generation failed for", id, err?.message),
+              ),
+          ),
+        );
+      } catch (e) {
+        console.warn("Batch PDF generation error:", e);
+      }
+
       // Decide where to send the user next.
       // Priority:
       //   1. If the filler matches a "form" signer → use that signer's token.
