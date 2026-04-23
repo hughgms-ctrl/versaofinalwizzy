@@ -50,6 +50,7 @@ import DeadlinesCalendarPage from "./pages/DeadlinesCalendarPage";
 import CaseTemplatesPage from "./pages/CaseTemplatesPage";
 import LandingPage from "./pages/LandingPage";
 import PlansPage from "./pages/PlansPage";
+import OnboardingPage from "./pages/OnboardingPage";
 import AdminPage from "./pages/AdminPage";
 import AdminLoginPage from "./pages/AdminLoginPage";
 import AdminClientsPage from "./pages/admin/AdminClientsPage";
@@ -81,6 +82,7 @@ const App = () => (
                     <Route path="/landing" element={<LandingPage />} />
                     <Route path="/auth" element={<AuthPage />} />
                     <Route path="/" element={<LandingPage />} />
+                    <Route path="/onboarding" element={<ProtectedRoute><OnboardingPage /></ProtectedRoute>} />
                     <Route path="/dashboard" element={<ProtectedRoute><Index /></ProtectedRoute>} />
                     <Route path="/conversations" element={<ProtectedRoute><ConversationsPage /></ProtectedRoute>} />
                     <Route path="/contacts" element={<ProtectedRoute><ContactsPage /></ProtectedRoute>} />
