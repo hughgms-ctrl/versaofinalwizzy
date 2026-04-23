@@ -483,16 +483,16 @@ export function ConversationActionsMenu({ conversation, onShowMediaGallery }: Co
 
         <DropdownMenuSeparator />
 
-        {/* Status Actions */}
-        {(conversation.status === 'archived' || conversation.status === 'resolved') ? (
+        {/* Status Actions: archive / unarchive */}
+        {conversation.status === 'archived' ? (
           <DropdownMenuItem onClick={() => handleStatusChange('open')}>
             <RefreshCw className="h-4 w-4 mr-2 text-blue-500" />
-            Reabrir conversa
+            Desarquivar conversa
           </DropdownMenuItem>
         ) : (
-          <DropdownMenuItem onClick={() => handleStatusChange('resolved')}>
-            <CheckCircle className="h-4 w-4 mr-2 text-green-500" />
-            Resolver/Finalizar
+          <DropdownMenuItem onClick={() => handleStatusChange('archived')}>
+            <Archive className="h-4 w-4 mr-2" />
+            Arquivar conversa
           </DropdownMenuItem>
         )}
         <DropdownMenuItem onClick={handleTogglePriority}>

@@ -41,6 +41,7 @@ import { AIFeedbackDialog } from './AIFeedbackDialog';
 import { ChatFollowUpDialog } from './ChatFollowUpDialog';
 import { useFollowUpStatus } from '@/hooks/useFollowUpStatus';
 import { ContactAvatar } from './ContactAvatar';
+import { getDerivedStatusInfo } from '@/lib/conversationStatus';
 
 interface ConversationDetailProps {
   conversation: DbConversation;
@@ -75,11 +76,7 @@ async function cancelPendingFollowUps(conversationId: string, reason: string) {
   await base().eq('variables->>source', 'chat_follow_up');
 }
 
-const statusLabels: Record<string, string> = {
-  open: 'Aberto',
-  resolved: 'Resolvido',
-  archived: 'Arquivado',
-};
+// Status labels removidos: agora usamos getDerivedStatusInfo do helper conversationStatus.
 
 export function ConversationDetail({ conversation, headerActions }: ConversationDetailProps) {
   const { session } = useAuth();
@@ -522,16 +519,18 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1 md:gap-2 flex-wrap">
                 <h3 data-sensitive className="font-semibold text-foreground text-sm md:text-base truncate max-w-[120px] md:max-w-none">{getDisplayName()}</h3>
-                <span className={cn(
-                  "status-badge text-[9px] md:text-[10px] hidden xs:inline-flex",
-                  (isTyping || isRecording) ? "bg-green-500/10 text-green-500 animate-pulse" : 
-                  conversation.status === 'open' ? "status-open" :
-                  conversation.status === 'resolved' ? "bg-blue-500/10 text-blue-500" :
-                  conversation.status === 'archived' ? "bg-muted text-muted-foreground" : 
-                  "bg-muted/50 text-muted-foreground"
-                )}>
-                  {isTyping ? 'Digitando...' : isRecording ? 'Gravando áudio...' : statusLabels[conversation.status]}
-                </span>
+                {(() => {
+                  const info = getDerivedStatusInfo(conversation);
+                  const presenceClass = (isTyping || isRecording) ? 'bg-green-500/10 text-green-500 animate-pulse' : info.className;
+                  return (
+                    <span className={cn(
+                      "status-badge text-[9px] md:text-[10px] hidden xs:inline-flex",
+                      presenceClass,
+                    )}>
+                      {isTyping ? 'Digitando...' : isRecording ? 'Gravando áudio...' : info.label}
+                    </span>
+                  );
+                })()}
                 {/* Quick Note Badge - Hidden on very small screens */}
                 {(() => {
                   const metadata = conversation.contact?.metadata as { note?: string } | null;

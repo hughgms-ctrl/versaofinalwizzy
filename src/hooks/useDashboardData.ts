@@ -119,9 +119,10 @@ export function useDashboardMetrics() {
       const { count: conversationsToday } = await buildConvQuery()
         .gte('created_at', todayStart);
 
-      // Resolved today
+      // "Resolvidos hoje" foi substituído por "Arquivados hoje" (mantém o mesmo
+      // contrato da métrica para compatibilidade com a UI existente).
       const { count: resolvedToday } = await buildConvQuery()
-        .eq('status', 'resolved')
+        .eq('status', 'archived')
         .gte('updated_at', todayStart);
 
       // Open conversations
@@ -282,9 +283,9 @@ export function useResolutionData() {
 
       let query = supabase
         .from('conversations')
-        .select('status', { count: 'exact' })
+        .select('id, status, last_message_at')
         .eq('organization_id', profile.organization_id);
-      
+
       if (wsConvIds !== null) {
         if (wsConvIds.length === 0) {
           return [{ name: 'Sem dados', value: 100, color: 'hsl(220 9% 46%)' }];
@@ -292,31 +293,55 @@ export function useResolutionData() {
         query = query.in('id', wsConvIds);
       }
 
-      const { data: conversations, count: total } = await query;
+      const { data: conversations } = await query;
+      const total = conversations?.length || 0;
 
       if (!conversations || total === 0) {
         return [{ name: 'Sem dados', value: 100, color: 'hsl(220 9% 46%)' }];
       }
 
-      const statusCounts: Record<string, number> = { open: 0, resolved: 0, pending: 0, archived: 0 };
+      // Para calcular o status derivado precisamos saber a direção da última mensagem
+      const convIds = conversations.map(c => c.id);
+      const { data: lastMsgs } = await (supabase as any)
+        .from('messages')
+        .select('conversation_id, direction, created_at')
+        .in('conversation_id', convIds)
+        .order('created_at', { ascending: false });
 
-      conversations.forEach(c => {
-        if (statusCounts[c.status] !== undefined) {
-          statusCounts[c.status]++;
+      const lastDirByConv = new Map<string, 'inbound' | 'outbound'>();
+      (lastMsgs || []).forEach((m: any) => {
+        if (!lastDirByConv.has(m.conversation_id)) {
+          lastDirByConv.set(m.conversation_id, m.direction);
+        }
+      });
+
+      const counts = { aberto: 0, em_andamento: 0, archived: 0 };
+      conversations.forEach((c: any) => {
+        if (c.status === 'archived') {
+          counts.archived++;
+          return;
+        }
+        const dir = lastDirByConv.get(c.id);
+        if (!dir) {
+          counts.em_andamento++;
+        } else if (dir === 'inbound') {
+          counts.aberto++;
+        } else {
+          counts.em_andamento++;
         }
       });
 
       const result: ResolutionData[] = [];
-      
-      if (statusCounts.resolved > 0) {
-        result.push({ name: 'Resolvido', value: Math.round((statusCounts.resolved / total!) * 100), color: 'hsl(142 71% 45%)' });
+      if (counts.aberto > 0) {
+        result.push({ name: 'Aberto', value: Math.round((counts.aberto / total) * 100), color: 'hsl(0 84% 60%)' });
       }
-      if (statusCounts.open > 0) {
-        result.push({ name: 'Em Aberto', value: Math.round((statusCounts.open / total!) * 100), color: 'hsl(234 89% 54%)' });
+      if (counts.em_andamento > 0) {
+        result.push({ name: 'Em andamento', value: Math.round((counts.em_andamento / total) * 100), color: 'hsl(142 71% 45%)' });
       }
-      // Removed pending from rendering since it's no longer considered a valid status
-      // If there are legacy pending statuses, they just won't show in the chart
-      
+      if (counts.archived > 0) {
+        result.push({ name: 'Arquivado', value: Math.round((counts.archived / total) * 100), color: 'hsl(220 9% 46%)' });
+      }
+
       return result.length > 0 ? result : [{ name: 'Sem dados', value: 100, color: 'hsl(220 9% 46%)' }];
     },
     enabled: !!profile?.organization_id,

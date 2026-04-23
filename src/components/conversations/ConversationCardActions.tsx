@@ -251,19 +251,17 @@ export function ConversationCardActions({
         </DropdownMenuItem>
 
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={(e) => handleStatusChange('resolved', e)}>
-          <CheckCircle className="h-4 w-4 mr-2 text-green-500" />
-          Marcar resolvida
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={(e) => handleStatusChange('pending', e)}>
-          <Star className="h-4 w-4 mr-2 text-amber-500" />
-          Marcar pendente
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={(e) => handleStatusChange('archived', e)}>
-          <Archive className="h-4 w-4 mr-2" />
-          Arquivar
-        </DropdownMenuItem>
-        
+        {conversation.status === 'archived' ? (
+          <DropdownMenuItem onClick={(e) => handleStatusChange('open', e)}>
+            <CheckCircle className="h-4 w-4 mr-2 text-blue-500" />
+            Desarquivar
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuItem onClick={(e) => handleStatusChange('archived', e)}>
+            <Archive className="h-4 w-4 mr-2" />
+            Arquivar
+          </DropdownMenuItem>
+        )}
         <DropdownMenuSeparator />
 
         {/* Transfer between pipelines */}

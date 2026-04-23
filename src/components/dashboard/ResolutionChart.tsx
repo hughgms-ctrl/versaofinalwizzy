@@ -11,7 +11,7 @@ export function ResolutionChart() {
       <div className="relative h-full">
         <div className="mb-4">
           <h3 className="text-lg font-semibold text-foreground">Status das Conversas</h3>
-          <p className="text-sm text-muted-foreground">Distribuição por status</p>
+          <p className="text-sm text-muted-foreground">Aberto, em andamento e arquivado</p>
         </div>
         
         {isLoading ? (
