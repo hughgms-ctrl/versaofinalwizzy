@@ -527,7 +527,7 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
   if (!organizationId) return { error: 'organizationId is required for simulation' };
 
   // Load context from DB (same as production)
-  const [agentsResult, tagsResult, pipelinesResult, trainingRulesResult, qualificationRulesResult, integrationConfigResult, organizationResult] = await Promise.all([
+  const [agentsResult, tagsResult, pipelinesResult, trainingRulesResult, qualificationRulesResult, integrationConfigResult, organizationResult, knowledgeResult] = await Promise.all([
     supabase.from('ai_agents').select('*').eq('organization_id', organizationId).eq('is_active', true),
     supabase.from('tags').select('*').eq('organization_id', organizationId),
     supabase.from('pipelines').select('*, columns:pipeline_columns!pipeline_columns_pipeline_id_fkey(*)').eq('organization_id', organizationId),
@@ -535,7 +535,9 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
     supabase.from('agent_qualification_rules').select('*').eq('organization_id', organizationId).eq('is_active', true),
     resolveIntegrationConfig(supabase, organizationId),
     supabase.from('organizations').select('timezone').eq('id', organizationId).maybeSingle(),
+    supabase.from('organization_knowledge').select('*').eq('organization_id', organizationId).maybeSingle(),
   ]);
+  const organizationKnowledge = knowledgeResult?.data || null;
 
   const agents = agentsResult.data || [];
   const allTags = tagsResult.data || [];
@@ -569,6 +571,9 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
   if (masterPromptContent) {
     systemPrompt += `# REGRAS GERAIS E PERSONALIDADE:\n${cleanPrompt(masterPromptContent)}\n\n`;
   }
+
+  // 1.5. DADOS DA EMPRESA (Base de conhecimento)
+  systemPrompt += buildCompanyKnowledgeBlock(organizationKnowledge);
 
   // 2. IDENTIDADE E PROMPT BASE (AGENTE)
   systemPrompt += `# SUA IDENTIDADE:\n`;
