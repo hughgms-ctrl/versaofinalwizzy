@@ -84,25 +84,26 @@ serve(async (req) => {
 
     // Send OTP based on channel
     if (otpChannel === 'whatsapp') {
-      // Send via UAZAPI (WhatsApp)
+      // Send via UAZAPI (WhatsApp) — same pattern as zapi-send-message
       const UAZAPI_BASE_URL = Deno.env.get("UAZAPI_BASE_URL");
-      const UAZAPI_ADMIN_TOKEN = Deno.env.get("UAZAPI_ADMIN_TOKEN");
 
-      if (!UAZAPI_BASE_URL || !UAZAPI_ADMIN_TOKEN) {
-        console.error("UAZAPI not configured");
+      if (!UAZAPI_BASE_URL) {
+        console.error("UAZAPI_BASE_URL not configured");
         await cleanupOtp();
         return errorResponse("Serviço WhatsApp não configurado", 500);
       }
 
+      // Find a connected instance for this org (same query as zapi-send-message fallback)
       const { data: instance } = await supabase
         .from("whatsapp_instances")
-        .select("instance_name, api_token")
+        .select("*")
         .eq("organization_id", signature.organization_id)
-        .eq("is_active", true)
+        .eq("status", "connected")
+        .order("created_at", { ascending: true })
         .limit(1)
-        .single();
+        .maybeSingle();
 
-      if (!instance) {
+      if (!instance || !instance.zapi_token) {
         await cleanupOtp();
         return errorResponse("Nenhuma instância WhatsApp ativa encontrada", 500);
       }
@@ -111,15 +112,16 @@ serve(async (req) => {
       const cleanPhone = targetPhone!.replace(/\D/g, '');
       const whatsappPhone = cleanPhone.startsWith('55') ? cleanPhone : `55${cleanPhone}`;
 
-      const waResponse = await fetch(`${UAZAPI_BASE_URL}/${instance.instance_name}/messages/chat`, {
+      const baseUrl = UAZAPI_BASE_URL.endsWith('/') ? UAZAPI_BASE_URL.slice(0, -1) : UAZAPI_BASE_URL;
+      const waResponse = await fetch(`${baseUrl}/send/text`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${instance.api_token}`,
+          "token": instance.zapi_token,
         },
         body: JSON.stringify({
-          phone: whatsappPhone,
-          message: `🔐 *Código de Verificação*\n\nSeu código para assinatura do documento: *${code}*\n\nEste código expira em 5 minutos.\n\n_Se você não solicitou, ignore esta mensagem._`,
+          number: whatsappPhone,
+          text: `🔐 *Código de Verificação*\n\nSeu código para assinatura do documento: *${code}*\n\nEste código expira em 5 minutos.\n\n_Se você não solicitou, ignore esta mensagem._`,
         }),
       });
 
