@@ -24,7 +24,8 @@ import {
 } from '@/components/ui/select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Building2, Plus, Pencil, Trash2, Loader2, Users, Tag } from 'lucide-react';
-import { useWorkspaces, useCreateWorkspace, useUpdateWorkspace, useWorkspaceMembers, useManageWorkspaceMembers, Workspace } from '@/hooks/useWorkspaces';
+import { useAllWorkspaces, useCreateWorkspace, useUpdateWorkspace, useWorkspaceMembers, useManageWorkspaceMembers, Workspace } from '@/hooks/useWorkspaces';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useTags, Tag as TagType } from '@/hooks/useTags';
 import { useTeamMembers } from '@/hooks/useTeamMembers';
 import { useToast } from '@/hooks/use-toast';
