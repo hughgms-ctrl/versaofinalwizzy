@@ -58,7 +58,7 @@ export function PipelineBoard({ onConversationClick }: PipelineBoardProps) {
       try {
         const { error } = await supabase
           .from('conversations')
-          .update({ status: columnId as DbConversation['status'] })
+          .update({ status: columnId as any })
           .eq('id', draggedCard);
 
         if (error) throw error;

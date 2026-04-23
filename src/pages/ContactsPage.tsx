@@ -220,6 +220,7 @@ const ContactsPage = () => {
                   assigned_to: null,
                    ai_agent_id: null,
                    metadata: null,
+                   closed_at: null,
                   created_at: selectedContact.created_at,
                   updated_at: selectedContact.updated_at,
                   contact: {
