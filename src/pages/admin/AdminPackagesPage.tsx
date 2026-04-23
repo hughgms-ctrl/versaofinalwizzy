@@ -39,7 +39,8 @@ import {
   useDeletePlatformPackage,
   PlatformPackage,
 } from '@/hooks/usePlatformPackages';
-import { Plus, Pencil, Trash2, Package, Layers, Loader2 } from 'lucide-react';
+import { Plus, Pencil, Trash2, Package, Layers, Loader2, FolderInput } from 'lucide-react';
+import { ExportWorkspaceDialog } from '@/components/settings/ExportWorkspaceDialog';
 
 const EMPTY_PKG: Partial<PlatformPackage> = {
   kind: 'area',
@@ -54,6 +55,9 @@ const EMPTY_PKG: Partial<PlatformPackage> = {
   tags_template: [],
   pipeline_template: {},
   is_published: false,
+  is_locked: false,
+  is_clonable: true,
+  allow_post_edit: true,
   sort_order: 0,
   version: 1,
   parent_package_id: null,
