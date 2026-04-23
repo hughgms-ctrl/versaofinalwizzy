@@ -133,17 +133,9 @@ export function SignersManager({ signers, onChange, availableFields = [] }: Sign
       {signers.length === 0 && (
         <Card className="p-6 text-center border-dashed">
           <User className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
-          <p className="text-sm text-muted-foreground mb-3">Nenhum signatário adicionado</p>
-          <div className="flex gap-2 justify-center">
-            <Button type="button" size="sm" onClick={() => addSigner('manual')} className="gap-1.5">
-              <UserCog className="h-3.5 w-3.5" /> Eu preencho
-            </Button>
-            {hasFormFields && (
-              <Button type="button" size="sm" variant="outline" onClick={() => addSigner('form')} className="gap-1.5">
-                <FormInput className="h-3.5 w-3.5" /> Cliente preenche
-              </Button>
-            )}
-          </div>
+          <p className="text-sm text-muted-foreground">
+            Nenhum signatário adicionado. Use os botões acima para incluir.
+          </p>
         </Card>
       )}
 
