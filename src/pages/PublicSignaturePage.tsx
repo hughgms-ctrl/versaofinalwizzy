@@ -54,6 +54,7 @@ export default function PublicSignaturePage() {
   // Config from metadata
   const [requireSelfie, setRequireSelfie] = useState(true);
   const [otpChannel, setOtpChannel] = useState<'email' | 'whatsapp'>('email');
+  const [otpChannels, setOtpChannels] = useState<Array<'email' | 'whatsapp'>>(['email']);
 
   // OTP state
   const [otpEmail, setOtpEmail] = useState('');
