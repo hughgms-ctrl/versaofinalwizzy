@@ -2476,6 +2476,107 @@ export type Database = {
           },
         ]
       }
+      document_signers: {
+        Row: {
+          auth_methods: Json
+          created_at: string
+          created_by: string | null
+          generated_document_id: string
+          id: string
+          metadata: Json
+          order: number
+          organization_id: string
+          pack_id: string | null
+          sent_at: string | null
+          signature_id: string | null
+          signature_token: string | null
+          signed_at: string | null
+          signer_cpf: string | null
+          signer_email: string | null
+          signer_name: string
+          signer_phone: string | null
+          signer_role: string | null
+          signing_method: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          auth_methods?: Json
+          created_at?: string
+          created_by?: string | null
+          generated_document_id: string
+          id?: string
+          metadata?: Json
+          order?: number
+          organization_id: string
+          pack_id?: string | null
+          sent_at?: string | null
+          signature_id?: string | null
+          signature_token?: string | null
+          signed_at?: string | null
+          signer_cpf?: string | null
+          signer_email?: string | null
+          signer_name: string
+          signer_phone?: string | null
+          signer_role?: string | null
+          signing_method?: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          auth_methods?: Json
+          created_at?: string
+          created_by?: string | null
+          generated_document_id?: string
+          id?: string
+          metadata?: Json
+          order?: number
+          organization_id?: string
+          pack_id?: string | null
+          sent_at?: string | null
+          signature_id?: string | null
+          signature_token?: string | null
+          signed_at?: string | null
+          signer_cpf?: string | null
+          signer_email?: string | null
+          signer_name?: string
+          signer_phone?: string | null
+          signer_role?: string | null
+          signing_method?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "document_signers_generated_document_id_fkey"
+            columns: ["generated_document_id"]
+            isOneToOne: false
+            referencedRelation: "generated_documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "document_signers_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "document_signers_pack_id_fkey"
+            columns: ["pack_id"]
+            isOneToOne: false
+            referencedRelation: "document_packs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "document_signers_signature_id_fkey"
+            columns: ["signature_id"]
+            isOneToOne: false
+            referencedRelation: "document_signatures"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       document_templates: {
         Row: {
           auto_send_whatsapp: boolean | null
@@ -2994,12 +3095,16 @@ export type Database = {
           conversation_id: string | null
           created_at: string
           created_by: string | null
+          fill_mode: string
           filled_data: Json
           id: string
+          is_filled: boolean
           name: string
           organization_id: string
           pack_id: string | null
           pdf_url: string | null
+          public_fill_token: string | null
+          signature_config: Json | null
           signing_method: string | null
           signing_status: string | null
           status: string
@@ -3013,12 +3118,16 @@ export type Database = {
           conversation_id?: string | null
           created_at?: string
           created_by?: string | null
+          fill_mode?: string
           filled_data?: Json
           id?: string
+          is_filled?: boolean
           name: string
           organization_id: string
           pack_id?: string | null
           pdf_url?: string | null
+          public_fill_token?: string | null
+          signature_config?: Json | null
           signing_method?: string | null
           signing_status?: string | null
           status?: string
@@ -3032,12 +3141,16 @@ export type Database = {
           conversation_id?: string | null
           created_at?: string
           created_by?: string | null
+          fill_mode?: string
           filled_data?: Json
           id?: string
+          is_filled?: boolean
           name?: string
           organization_id?: string
           pack_id?: string | null
           pdf_url?: string | null
+          public_fill_token?: string | null
+          signature_config?: Json | null
           signing_method?: string | null
           signing_status?: string | null
           status?: string
