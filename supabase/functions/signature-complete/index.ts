@@ -41,6 +41,43 @@ function generateVerificationCode(): string {
   return out;
 }
 
+// Robust base64 decoder for data-URL images coming from <canvas>/<img>.
+// Strips the data: prefix, removes whitespace, validates content, and pads.
+function decodeDataUrlImage(dataUrl: string): { buffer: Uint8Array; contentType: string } {
+  if (!dataUrl || typeof dataUrl !== "string") {
+    throw new Error("Imagem vazia");
+  }
+
+  // Extract content type if present (default png)
+  let contentType = "image/png";
+  const headerMatch = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,/);
+  if (headerMatch) {
+    contentType = headerMatch[1];
+  }
+
+  // Strip data URL prefix and any whitespace/newlines
+  let b64 = dataUrl.replace(/^data:[^;]+;base64,/, "").replace(/\s+/g, "");
+  // Keep only valid base64 chars (defensive)
+  b64 = b64.replace(/[^A-Za-z0-9+/=]/g, "");
+  // Pad to length % 4 == 0
+  while (b64.length % 4 !== 0) b64 += "=";
+
+  if (b64.length === 0) {
+    throw new Error("Imagem vazia (base64 sem conteúdo)");
+  }
+
+  try {
+    const bin = atob(b64);
+    const buffer = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+    if (buffer.byteLength < 100) {
+      throw new Error("Imagem muito pequena ou vazia");
+    }
+    return { buffer, contentType };
+  } catch (e: any) {
+    throw new Error(`Falha ao decodificar imagem: ${e?.message || "base64 inválido"}`);
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
