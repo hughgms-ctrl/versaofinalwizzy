@@ -411,6 +411,8 @@ export default function AdminPackagesPage() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        <ExportWorkspaceDialog asPlatform open={importOpen} onOpenChange={setImportOpen} />
       </div>
     </AdminLayout>
   );
