@@ -74,6 +74,7 @@ export default function PublicSignaturePage() {
 
   // Result state
   const [result, setResult] = useState<any>(null);
+  const [geolocation, setGeolocation] = useState<{ lat: number; lng: number; accuracy?: number } | null>(null);
 
   useEffect(() => {
     loadDocument();

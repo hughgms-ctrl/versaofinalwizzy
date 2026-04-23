@@ -4402,8 +4402,10 @@ export type Database = {
         Row: {
           created_at: string
           document_hash: string
+          geolocation: Json | null
           id: string
           metadata: Json | null
+          original_pdf_url: string | null
           otp_verified_at: string | null
           receipt_pdf_url: string | null
           selfie_url: string | null
@@ -4412,12 +4414,15 @@ export type Database = {
           signer_device: string | null
           signer_ip: string | null
           signer_location: string | null
+          verification_code: string | null
         }
         Insert: {
           created_at?: string
           document_hash: string
+          geolocation?: Json | null
           id?: string
           metadata?: Json | null
+          original_pdf_url?: string | null
           otp_verified_at?: string | null
           receipt_pdf_url?: string | null
           selfie_url?: string | null
@@ -4426,12 +4431,15 @@ export type Database = {
           signer_device?: string | null
           signer_ip?: string | null
           signer_location?: string | null
+          verification_code?: string | null
         }
         Update: {
           created_at?: string
           document_hash?: string
+          geolocation?: Json | null
           id?: string
           metadata?: Json | null
+          original_pdf_url?: string | null
           otp_verified_at?: string | null
           receipt_pdf_url?: string | null
           selfie_url?: string | null
@@ -4440,6 +4448,7 @@ export type Database = {
           signer_device?: string | null
           signer_ip?: string | null
           signer_location?: string | null
+          verification_code?: string | null
         }
         Relationships: [
           {

@@ -38,6 +38,7 @@ import PublicFormPage from "./pages/PublicFormPage";
 import PublicPackFormPage from "./pages/PublicPackFormPage";
 import SignaturePage from "./pages/SignaturePage";
 import PublicSignaturePage from "./pages/PublicSignaturePage";
+import PublicVerificationPage from "./pages/PublicVerificationPage";
 import PublicBookingPage from "./pages/PublicBookingPage";
 import NotFound from "./pages/NotFound";
 import CampaignsPage from "./pages/CampaignsPage";
@@ -107,6 +108,8 @@ const App = () => (
                     <Route path="/q/:token" element={<PublicQuizPage />} />
                     <Route path="/signature/:documentId" element={<SignaturePage />} />
                     <Route path="/sign/:token" element={<PublicSignaturePage />} />
+                    <Route path="/verificar" element={<PublicVerificationPage />} />
+                    <Route path="/verificar/:codigo" element={<PublicVerificationPage />} />
                     <Route path="/agendar/:slug" element={<PublicBookingPage />} />
                     <Route path="/campaigns" element={<ProtectedRoute><CampaignsPage /></ProtectedRoute>} />
                     <Route path="/calendar" element={<ProtectedRoute><CalendarPage /></ProtectedRoute>} />
