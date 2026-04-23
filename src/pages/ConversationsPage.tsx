@@ -8,7 +8,7 @@ import { useConversations, DbConversation } from '@/hooks/useConversations';
 import { useWhatsAppStatus } from '@/hooks/useWhatsAppStatus';
 import { supabase } from '@/integrations/supabase/client';
 import { isWithinInterval, parseISO } from 'date-fns';
-import { MessageSquare, Loader2, Inbox, Search, X, Smartphone, Settings, ArrowLeft, Archive, EyeOff, MessageSquarePlus } from 'lucide-react';
+import { MessageSquare, Loader2, Inbox, Search, X, Smartphone, Settings, ArrowLeft, EyeOff, MessageSquarePlus } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
