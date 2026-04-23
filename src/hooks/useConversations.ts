@@ -62,14 +62,16 @@ export interface DbMessage {
   metadata?: any;
 }
 
-export function useConversations(options?: { includeArchived?: boolean; onlyArchived?: boolean }) {
+export function useConversations(options?: { includeArchived?: boolean; onlyArchived?: boolean; includeClosed?: boolean; onlyClosed?: boolean }) {
   const { session } = useAuth();
   const queryClient = useQueryClient();
   const includeArchived = options?.includeArchived ?? false;
   const onlyArchived = options?.onlyArchived ?? false;
+  const includeClosed = options?.includeClosed ?? false;
+  const onlyClosed = options?.onlyClosed ?? false;
 
   const query = useQuery({
-    queryKey: ['conversations', { includeArchived, onlyArchived }],
+    queryKey: ['conversations', { includeArchived, onlyArchived, includeClosed, onlyClosed }],
     queryFn: async (): Promise<DbConversation[]> => {
       let query = supabase
         .from('conversations')
@@ -83,11 +85,14 @@ export function useConversations(options?: { includeArchived?: boolean; onlyArch
         .limit(1, { referencedTable: 'messages' });
 
       if (onlyArchived) {
-        // Show only archived conversations
         query = query.eq('status', 'archived');
-      } else if (!includeArchived) {
-        // Exclude archived conversations
-        query = query.neq('status', 'archived');
+      } else if (onlyClosed) {
+        query = query.eq('status', 'closed' as any);
+      } else {
+        // Hide archived by default
+        if (!includeArchived) query = query.neq('status', 'archived');
+        // Hide closed by default
+        if (!includeClosed) query = query.neq('status', 'closed' as any);
       }
 
       const { data, error } = await query;
