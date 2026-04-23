@@ -367,6 +367,7 @@ const ConversationsPage = () => {
               filters={filters}
               onFiltersChange={setFilters}
               showCount={false}
+              serviceModeCounts={serviceModeCounts}
             />
           </div>
 
@@ -418,6 +419,7 @@ const ConversationsPage = () => {
                   filters={filters}
                   onFiltersChange={setFilters}
                   showCount={false}
+                  serviceModeCounts={serviceModeCounts}
                 />
               </div>
             </div>
