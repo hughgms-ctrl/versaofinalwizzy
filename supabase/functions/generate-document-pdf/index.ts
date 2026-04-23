@@ -518,7 +518,7 @@ serve(async (req) => {
 
   try {
     const body = await req.json();
-    const {
+    let {
       template_content,
       template_content_html,
       filled_data,
@@ -526,6 +526,54 @@ serve(async (req) => {
       document_name,
       logo_url,
     } = body;
+    const generatedDocumentId: string | undefined = body.generated_document_id;
+
+    // Service client (also used for the "load by id" shortcut)
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // Shortcut: when only generated_document_id is provided, hydrate from DB.
+    // Used by public-document-fill and signature-load-document fallback.
+    if (generatedDocumentId && !template_content && !template_content_html) {
+      const { data: gd, error: gdErr } = await supabase
+        .from("generated_documents")
+        .select("id, name, filled_data, template_id, pdf_url")
+        .eq("id", generatedDocumentId)
+        .maybeSingle();
+      if (gdErr || !gd) {
+        return new Response(JSON.stringify({ error: "generated_document not found" }), {
+          status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      // If already generated, just return the existing URL.
+      if (gd.pdf_url) {
+        return new Response(JSON.stringify({ pdf_url: gd.pdf_url, cached: true }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      if (!gd.template_id) {
+        return new Response(JSON.stringify({ error: "document has no template" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const { data: tpl } = await supabase
+        .from("document_templates")
+        .select("name, content, content_html, fields, logo_url")
+        .eq("id", gd.template_id)
+        .maybeSingle();
+      if (!tpl) {
+        return new Response(JSON.stringify({ error: "template not found" }), {
+          status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      template_content = tpl.content;
+      template_content_html = tpl.content_html;
+      filled_data = gd.filled_data || {};
+      fields = tpl.fields || [];
+      document_name = gd.name || tpl.name || "documento";
+      logo_url = tpl.logo_url || logo_url;
+    }
 
     // Determine HTML source: prefer rich HTML, fall back to plain text wrapped in <p>
     let rawHtml = "";
