@@ -1,76 +1,90 @@
 
 
-## Simplificar status de conversa: só "Aberto" e "Em andamento"
+## Melhorar status: adicionar "Encerrada" + clarificar "Não lidas"
 
-### Conceito atual (confuso)
-Hoje a conversa tem **dois eixos sobrepostos** que se confundem:
+### Conceito final (3 status + 1 filtro independente)
 
-1. **`status`** (modelo de helpdesk): `open` / `pending` / `resolved` / `archived` — herdado de sistemas de ticket.
-2. **`service_mode`** (quem controla): `pendente` (Fila) / `ativo` (Humano) / `ia` (IA).
+**Status do atendimento** (derivado/manual):
 
-Resultado: aparecem badges como "Aberto", "Pendente", "Resolvido" e ações tipo *"Resolver/Finalizar"* que não fazem sentido em um chat contínuo de WhatsApp.
-
-### Conceito novo (proposto)
-Manter **apenas dois status reais** baseados no que importa: *já foi atendido ou não?*
-
-| Status | Quando aplicar | Cor sugerida |
+| Status | Cor | Quando |
 |---|---|---|
-| **Aberto** | Última mensagem é do contato (inbound) e ninguém respondeu ainda. É um lead/atendimento ainda não tocado. | Vermelho/laranja (chama atenção) |
-| **Em andamento** | Já houve pelo menos uma resposta (humano ou IA) após a última inbound. Está sendo conduzido. | Verde |
-| **Arquivado** *(mantido à parte)* | Conversa removida da caixa principal manualmente. Não é status de fluxo, é uma "gaveta". | Cinza |
+| **Aberto** | 🔴 Vermelho | Última msg do cliente, sem resposta. Precisa atenção. |
+| **Em andamento** | 🟢 Verde | Você (humano/IA) respondeu por último. Bola com o cliente. |
+| **Encerrada** | ⚪ Cinza claro | Atendimento finalizado (manual ou auto por inatividade). Sai da caixa principal mas o histórico fica acessível. Se cliente mandar nova msg, **reabre automaticamente** como "Aberto". |
+| **Arquivada** | ⚫ Cinza escuro | Conversa removida da caixa por decisão manual (spam, engano). Diferente de encerrada — não reabre sozinha. |
 
-**Eliminados:** `pending` e `resolved` da camada de status. Quem quiser marcar conclusão usa **arquivar** ou as **etapas do Pipeline** (que já existem para isso).
+**Filtro independente:**
+- **Não lidas** = `unread_count > 0`. Mostra um **contador no badge** ("3 não lidas") e pode ser ativado em cima de qualquer status. Não é um status, é uma lente.
 
-**"Não lidas"** continua como filtro rápido independente — refere-se a `unread_count > 0` (mensagens que o operador ainda não abriu), não ao status do atendimento.
+### Como funciona "Encerrada" na prática
 
-### Como o status será calculado
-Status passa a ser **derivado automaticamente** da última mensagem, sem campo manual:
+1. **Encerramento manual**: botão "Encerrar atendimento" no menu da conversa. Útil quando o cliente se despede.
+2. **Encerramento automático** (configurável por organização):
+   - Padrão: 24 horas sem nova mensagem após resposta nossa → auto-encerra.
+   - Configurável em Settings: "Encerrar atendimento após X horas de inatividade" (ou desligar).
+3. **Reabertura automática**: se o cliente mandar nova mensagem em conversa encerrada, ela volta para "Aberto" automaticamente. O operador é notificado normalmente.
+4. **Não some do banco**: filtro padrão da caixa esconde encerradas, mas há toggle "Mostrar encerradas" e elas aparecem na busca.
 
-```text
-última msg = inbound (do contato)  → "Aberto"
-última msg = outbound (humano/IA)  → "Em andamento"
-status = 'archived' no banco       → "Arquivado"
-```
+### Diferença Encerrada × Arquivada
 
-Isso resolve o problema central: você consegue ver na hora **quem ainda não foi atendido**.
+| | Encerrada | Arquivada |
+|---|---|---|
+| Por quê? | Atendimento concluído | Conversa indesejada (spam, teste) |
+| Reabre se cliente escrever? | ✅ Sim, vira Aberta | ❌ Não, fica arquivada |
+| Aparece em métricas? | ✅ Sim ("Atendimentos encerrados hoje") | ❌ Não |
+| Frequência esperada | Maioria das conversas vai pra cá | Raro |
 
-### Mudanças na interface
+### Mudanças técnicas
 
-1. **Badge na lista de conversas (`ConversationList.tsx`)**
-   - Remover badges "Pendente" e "Resolvido".
-   - Mostrar **"Aberto" (vermelho)** quando última mensagem for inbound sem resposta.
-   - Mostrar **"Em andamento" (verde)** quando já houve resposta.
-   - Manter **"Arquivado"** quando aplicável.
+**1. Banco** (`conversations`)
+- Adicionar campo `closed_at timestamptz` (NULL = não encerrada). Não criar coluna nova de status — o `status` existente vira `'closed'` quando encerrada manualmente, e mantemos `'archived'` para arquivada.
+- Trigger: ao inserir nova mensagem `inbound` em conversa com `status='closed'`, voltar para `status='open'` e zerar `closed_at`.
 
-2. **Filtros (`ConversationFilters.tsx`)**
-   - Submenu "Status" agora só lista: **Todos / Aberto / Em andamento / Arquivado**.
-   - Filtro funciona em cima do status derivado, não do campo bruto.
+**2. Helper** (`src/lib/conversationStatus.ts`)
+- Novo status derivado `'encerrada'` quando `status='closed'` ou `closed_at < now() - autocloseHours`.
+- Ordem de prioridade: `archived > closed > derivado(inbound/outbound)`.
 
-3. **Menu de ações da conversa (`ConversationActionsMenu.tsx` e `ConversationCardActions.tsx`)**
-   - Remover item *"Resolver/Finalizar"* e *"Marcar resolvida"*.
-   - Manter apenas: **Arquivar** / **Desarquivar**.
-   - Reabrir conversa arquivada volta o status para o derivado natural (Aberto ou Em andamento).
+**3. UI**
+- **Lista (`ConversationList.tsx`)**: badge cinza "Encerrada" + esconde da view padrão.
+- **Filtros (`ConversationFilters.tsx`)**: submenu Status agora tem **Todos / Aberto / Em andamento / Encerradas / Arquivadas**. Adicionar checkbox separado **"Apenas não lidas"** que combina com qualquer status.
+- **Menu de ação**: adicionar **"Encerrar atendimento"** (e "Reabrir" quando já estiver encerrada). Manter "Arquivar" separado.
+- **Cabeçalho da conversa**: badge derivado + botão rápido "Encerrar" quando estiver "Em andamento".
 
-4. **Painel de contato (`ContactProfilePanel.tsx`) e detalhe (`ConversationDetail.tsx`)**
-   - Badge no cabeçalho passa a usar o status derivado.
+**4. Auto-encerramento**
+- Cron job (Edge Function `auto-close-conversations`) roda a cada hora.
+- Lê config da org (`organizations.auto_close_hours`, default `24`, `0 = desligado`).
+- Marca `status='closed'`, `closed_at=now()` para conversas onde:
+  - `status='open'`
+  - última msg é `outbound`
+  - última msg foi há mais de `auto_close_hours`.
+- Cria log/atividade discreta para o operador ver no histórico.
 
-5. **Dashboard (`useDashboardData.ts`)**
-   - Métricas que usavam `status='resolved'` (ex.: "Resolvidos hoje") passam a usar `status='archived'` arquivados hoje, OU são removidas se redundantes com o pipeline.
-   - Gráfico de Resolução (`ResolutionChart`) muda para "Aberto vs. Em andamento vs. Arquivado".
+**5. Configuração** (`SettingsPage.tsx` → seção "Atendimento")
+- Slider/select: "Encerrar conversas automaticamente após **[24h ▾]** sem resposta do cliente" (Off / 6h / 12h / 24h / 48h / 72h / 7 dias).
 
-### Compatibilidade com dados antigos
-Conversas existentes com `status='resolved'` ou `status='pending'` no banco serão tratadas no front como se fossem `'open'` (entram no cálculo derivado). Não precisa migrar dados — o campo continua existindo, mas a UI ignora esses dois valores. Os Edge Functions que escrevem `status:'open'` continuam corretos.
+**6. Dashboard**
+- Métrica nova: **"Atendimentos encerrados hoje"** (via `closed_at::date = today`).
+- Gráfico: Aberto / Em andamento / Encerradas / Arquivadas.
+- Tempo médio de atendimento = `closed_at - created_at` (ou primeiro outbound → closed_at).
 
-### Arquivos a modificar
-- `src/components/conversations/ConversationList.tsx` — badge derivado
-- `src/components/shared/ConversationFilters.tsx` — opções de status
-- `src/components/conversations/ConversationActionsMenu.tsx` — remover "Resolver"
-- `src/components/conversations/ConversationCardActions.tsx` — remover "Marcar resolvida"
-- `src/components/conversations/ContactProfilePanel.tsx` — badge derivado
-- `src/components/conversations/ConversationDetail.tsx` — badge derivado
-- `src/pages/ConversationsPage.tsx` — lógica do filtro statusFilter usar status derivado
-- `src/hooks/useDashboardData.ts` — ajustar contagens
-- `src/components/dashboard/ResolutionChart.tsx` — novos rótulos
+### O que NÃO muda
+- "Não lidas" continua sendo um **filtro/contador** independente, baseado em `unread_count`. Não vira status.
+- Service mode (Fila/Humano/IA) continua independente do status.
+- Pipeline continua sendo a ferramenta para "estágio comercial" (lead → proposta → fechado), separado do status do atendimento.
 
-Pequeno helper novo `src/lib/conversationStatus.ts` exportando `getDerivedStatus(conv)` para reaproveitar a regra em todos os lugares.
+### Arquivos a modificar/criar
+- **Migração SQL**: adicionar `closed_at` em `conversations`, `auto_close_hours` em `organizations`, trigger de reabertura ao receber inbound.
+- `src/lib/conversationStatus.ts` — incluir `'encerrada'`.
+- `src/components/conversations/ConversationList.tsx` — badge encerrada + esconder da view padrão.
+- `src/components/shared/ConversationFilters.tsx` — opções Encerrada/Arquivada separadas + checkbox "Apenas não lidas".
+- `src/components/conversations/ConversationActionsMenu.tsx` — ações "Encerrar" / "Reabrir".
+- `src/components/conversations/ConversationCardActions.tsx` — idem.
+- `src/components/conversations/ConversationDetail.tsx` — botão rápido "Encerrar" no header + badge.
+- `src/components/conversations/ContactProfilePanel.tsx` — badge derivado.
+- `src/pages/ConversationsPage.tsx` — lógica de filtro com encerradas + filtro "não lidas".
+- `src/pages/SettingsPage.tsx` (ou `WorkspacesSettings.tsx`) — config de horas para auto-encerramento.
+- `src/hooks/useDashboardData.ts` — métricas baseadas em `closed_at`.
+- `src/components/dashboard/ResolutionChart.tsx` — incluir "Encerradas".
+- `supabase/functions/auto-close-conversations/index.ts` (novo) — cron de auto-encerramento.
+- `supabase/config.toml` — agendar cron de hora em hora.
 
