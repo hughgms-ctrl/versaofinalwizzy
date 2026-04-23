@@ -50,12 +50,17 @@ export async function resolveSignatureByToken(
   if (!signer) return null;
 
   const authMethods = (signer.auth_methods || {}) as Record<string, boolean>;
-  // Determine OTP channel from auth_methods preferences
-  const otpChannel = authMethods.otp_whatsapp
-    ? "whatsapp"
-    : authMethods.otp_email
-      ? "email"
-      : "email";
+  // Build channel list from BOTH options if enabled (multi-channel support)
+  const otpChannels: string[] = [];
+  if (authMethods.otp_email) otpChannels.push("email");
+  if (authMethods.otp_whatsapp) otpChannels.push("whatsapp");
+  // Fallback to email if nothing was explicitly enabled but signer has email/phone
+  if (otpChannels.length === 0) {
+    if (signer.signer_email) otpChannels.push("email");
+    else if (signer.signer_phone) otpChannels.push("whatsapp");
+    else otpChannels.push("email");
+  }
+  const otpChannel = otpChannels[0]; // primary (kept for backward-compat)
   const requireSelfie = authMethods.selfie === true;
 
   // 3) Reuse existing linked signature, or create one
@@ -69,12 +74,29 @@ export async function resolveSignatureByToken(
       .maybeSingle();
     if (linked) {
       // Make sure token matches and metadata is up-to-date
+      const linkedMeta = (linked.metadata || {}) as Record<string, any>;
+      const updates: Record<string, any> = {};
       if (linked.signature_token !== signatureToken) {
+        updates.signature_token = signatureToken;
+      }
+      // Ensure metadata reflects latest auth_methods configuration
+      const newMeta = {
+        ...linkedMeta,
+        otp_channel: otpChannel,
+        otp_channels: otpChannels,
+        require_selfie: requireSelfie,
+        auth_methods: authMethods,
+        from_signer_id: signer.id,
+      };
+      const metaChanged = JSON.stringify(linkedMeta) !== JSON.stringify(newMeta);
+      if (metaChanged) updates.metadata = newMeta;
+
+      if (Object.keys(updates).length > 0) {
         await supabase
           .from("document_signatures")
-          .update({ signature_token: signatureToken })
+          .update(updates)
           .eq("id", linked.id);
-        linked.signature_token = signatureToken;
+        Object.assign(linked, updates);
       }
       return { ...linked, metadata: linked.metadata || {}, signer_id: signer.id } as ResolvedSignature;
     }
@@ -94,6 +116,7 @@ export async function resolveSignatureByToken(
     metadata: {
       ...(signer.metadata || {}),
       otp_channel: otpChannel,
+      otp_channels: otpChannels,
       require_selfie: requireSelfie,
       auth_methods: authMethods,
       from_signer_id: signer.id,

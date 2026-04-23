@@ -54,6 +54,7 @@ export default function PublicSignaturePage() {
   // Config from metadata
   const [requireSelfie, setRequireSelfie] = useState(true);
   const [otpChannel, setOtpChannel] = useState<'email' | 'whatsapp'>('email');
+  const [otpChannels, setOtpChannels] = useState<Array<'email' | 'whatsapp'>>(['email']);
 
   // OTP state
   const [otpEmail, setOtpEmail] = useState('');
@@ -127,9 +128,13 @@ export default function PublicSignaturePage() {
       // Read config from metadata
       const meta = signatureData.metadata || {};
       const selfieRequired = meta.require_selfie !== false; // default true
-      const channel = meta.otp_channel || 'email';
+      const channels: Array<'email' | 'whatsapp'> = Array.isArray(meta.otp_channels) && meta.otp_channels.length > 0
+        ? meta.otp_channels
+        : [meta.otp_channel || 'email'];
+      const primaryChannel = channels[0];
       setRequireSelfie(selfieRequired);
-      setOtpChannel(channel);
+      setOtpChannel(primaryChannel);
+      setOtpChannels(channels);
 
       if (signatureData.signing_method === 'internal') {
         setOtpEmail(signatureData.signer_email || '');
@@ -146,19 +151,23 @@ export default function PublicSignaturePage() {
 
   // ==================== OTP ====================
   const handleSendOtp = async () => {
-    if (otpChannel === 'email' && !otpEmail) {
+    if (otpChannels.includes('email') && !otpEmail) {
       toast.error('Informe seu e-mail');
       return;
     }
     setOtpSending(true);
     try {
-      const body: any = { signatureToken: token, channel: otpChannel };
-      if (otpChannel === 'email') body.email = otpEmail;
+      const body: any = {
+        signatureToken: token,
+        // 'all' tells the backend to use every channel saved in metadata
+        channel: otpChannels.length > 1 ? 'all' : otpChannels[0],
+      };
+      if (otpChannels.includes('email')) body.email = otpEmail;
 
       const { data, error } = await supabase.functions.invoke('signature-send-otp', { body });
       if (error) throw new Error(await extractEdgeFunctionError(error));
       if (data?.error) throw new Error(data.error);
-      
+
       setOtpSent(true);
       setStep('otp_verify');
       toast.success(data?.message || 'Código enviado!');
@@ -266,6 +275,8 @@ export default function PublicSignaturePage() {
   };
 
   // ==================== Signature Pad ====================
+  const [hasStrokes, setHasStrokes] = useState(false);
+
   const initCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -275,6 +286,9 @@ export default function PublicSignaturePage() {
     canvas.width = rect.width * window.devicePixelRatio;
     canvas.height = rect.height * window.devicePixelRatio;
     ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+    // White background so the exported PNG is opaque (avoids invisible stamp on PDFs)
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, rect.width, rect.height);
     ctx.strokeStyle = '#000';
     ctx.lineWidth = 2;
     ctx.lineCap = 'round';
@@ -317,11 +331,12 @@ export default function PublicSignaturePage() {
     const { x, y } = getCoordinates(e);
     ctx.lineTo(x, y);
     ctx.stroke();
+    if (!hasStrokes) setHasStrokes(true);
   };
 
   const stopDrawing = () => {
     setIsDrawing(false);
-    if (canvasRef.current) {
+    if (canvasRef.current && hasStrokes) {
       setSignatureImage(canvasRef.current.toDataURL('image/png'));
     }
   };
@@ -331,7 +346,11 @@ export default function PublicSignaturePage() {
     const ctx = canvas?.getContext('2d');
     if (!ctx || !canvas) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const rect = canvas.getBoundingClientRect();
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, rect.width, rect.height);
     setSignatureImage(null);
+    setHasStrokes(false);
   };
 
   // ==================== Submit ====================
@@ -574,7 +593,9 @@ export default function PublicSignaturePage() {
             <Card className="p-6">
               <div className="flex items-center gap-3 mb-4">
                 <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
-                  {otpChannel === 'whatsapp' ? (
+                  {otpChannels.length > 1 ? (
+                    <Shield className="h-5 w-5 text-primary" />
+                  ) : otpChannel === 'whatsapp' ? (
                     <MessageSquare className="h-5 w-5 text-primary" />
                   ) : (
                     <Mail className="h-5 w-5 text-primary" />
@@ -583,16 +604,18 @@ export default function PublicSignaturePage() {
                 <div>
                   <h2 className="font-semibold">Verificação de Identidade</h2>
                   <p className="text-xs text-muted-foreground">
-                    {otpChannel === 'whatsapp' 
-                      ? 'Enviaremos um código para seu WhatsApp' 
-                      : 'Enviaremos um código para seu e-mail'}
+                    {otpChannels.length > 1
+                      ? `Enviaremos o código por ${otpChannels.map(c => c === 'whatsapp' ? 'WhatsApp' : 'e-mail').join(' e ')}`
+                      : otpChannel === 'whatsapp'
+                        ? 'Enviaremos um código para seu WhatsApp'
+                        : 'Enviaremos um código para seu e-mail'}
                   </p>
                 </div>
               </div>
 
               {!otpSent ? (
                 <div className="space-y-3">
-                  {otpChannel === 'email' ? (
+                  {otpChannels.includes('email') && (
                     <div>
                       <label className="text-sm font-medium">E-mail</label>
                       <Input
@@ -607,7 +630,8 @@ export default function PublicSignaturePage() {
                         <p className="text-[10px] text-muted-foreground mt-1">E-mail pré-definido pelo remetente</p>
                       )}
                     </div>
-                  ) : (
+                  )}
+                  {otpChannels.includes('whatsapp') && (
                     <div>
                       <label className="text-sm font-medium">WhatsApp</label>
                       <Input
@@ -619,22 +643,25 @@ export default function PublicSignaturePage() {
                       <p className="text-[10px] text-muted-foreground mt-1">Número pré-definido pelo remetente</p>
                     </div>
                   )}
-                  <Button 
-                    onClick={handleSendOtp} 
-                    disabled={otpSending || (otpChannel === 'email' && !otpEmail)} 
+                  <Button
+                    onClick={handleSendOtp}
+                    disabled={otpSending || (otpChannels.includes('email') && !otpEmail)}
                     className="w-full gap-2"
                   >
-                    {otpSending ? <Loader2 className="h-4 w-4 animate-spin" /> : (
-                      otpChannel === 'whatsapp' ? <MessageSquare className="h-4 w-4" /> : <Mail className="h-4 w-4" />
-                    )}
-                    Enviar Código {otpChannel === 'whatsapp' ? 'via WhatsApp' : 'por E-mail'}
+                    {otpSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Shield className="h-4 w-4" />}
+                    {otpChannels.length > 1
+                      ? 'Enviar Código (e-mail + WhatsApp)'
+                      : otpChannel === 'whatsapp' ? 'Enviar Código via WhatsApp' : 'Enviar Código por E-mail'}
                   </Button>
                 </div>
               ) : (
                 <div className="space-y-3">
                   <p className="text-sm text-muted-foreground">
-                    Código enviado {otpChannel === 'whatsapp' ? 'via WhatsApp' : 'para '}
-                    {otpChannel === 'email' && <strong>{otpEmail.replace(/(.{2}).*(@.*)/, "$1***$2")}</strong>}
+                    Código enviado {otpChannels.length > 1
+                      ? `por ${otpChannels.map(c => c === 'whatsapp' ? 'WhatsApp' : 'e-mail').join(' e ')}. Use qualquer um dos códigos.`
+                      : otpChannel === 'whatsapp'
+                        ? 'via WhatsApp'
+                        : <>para <strong>{otpEmail.replace(/(.{2}).*(@.*)/, "$1***$2")}</strong></>}
                   </p>
                   <div>
                     <label className="text-sm font-medium">Código de 6 dígitos</label>
@@ -773,9 +800,35 @@ export default function PublicSignaturePage() {
               <div className="space-y-1 text-xs">
                 <p><strong>Documento:</strong> {documentData?.generated_document?.name}</p>
                 <p><strong>Signatário:</strong> {documentData?.signer_name || 'N/A'}</p>
-                <p><strong>Verificação:</strong> OTP por {otpChannel === 'whatsapp' ? 'WhatsApp' : 'e-mail'} ✅</p>
-                {requireSelfie && <p><strong>Selfie:</strong> {selfieImage ? '✅ Capturada' : '⏳ Pendente'}</p>}
-                <p><strong>Método:</strong> Assinatura Eletrônica Avançada (Lei 14.063/2020)</p>
+                <p>
+                  <strong>Verificação:</strong> OTP por {otpChannels.length > 1
+                    ? otpChannels.map(c => c === 'whatsapp' ? 'WhatsApp' : 'e-mail').join(' + ')
+                    : (otpChannel === 'whatsapp' ? 'WhatsApp' : 'e-mail')} ✅
+                </p>
+                {requireSelfie && (
+                  <div className="pt-1">
+                    <p className="mb-1.5"><strong>Selfie:</strong> {selfieImage ? '✅ Capturada' : '⏳ Pendente'}</p>
+                    {selfieImage && (
+                      <div className="flex items-center gap-2">
+                        <img
+                          src={selfieImage}
+                          alt="Selfie capturada"
+                          className="h-20 w-20 rounded-lg border border-border object-cover"
+                        />
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="gap-1 text-[11px] h-7"
+                          onClick={() => { setSelfieImage(null); setStep('selfie'); setTimeout(() => void startCamera(), 150); }}
+                        >
+                          <RotateCcw className="h-3 w-3" /> Refazer
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
+                <p className="pt-1"><strong>Método:</strong> Assinatura Eletrônica Avançada (Lei 14.063/2020)</p>
               </div>
             </Card>
 

@@ -41,6 +41,43 @@ function generateVerificationCode(): string {
   return out;
 }
 
+// Robust base64 decoder for data-URL images coming from <canvas>/<img>.
+// Strips the data: prefix, removes whitespace, validates content, and pads.
+function decodeDataUrlImage(dataUrl: string): { buffer: Uint8Array; contentType: string } {
+  if (!dataUrl || typeof dataUrl !== "string") {
+    throw new Error("Imagem vazia");
+  }
+
+  // Extract content type if present (default png)
+  let contentType = "image/png";
+  const headerMatch = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,/);
+  if (headerMatch) {
+    contentType = headerMatch[1];
+  }
+
+  // Strip data URL prefix and any whitespace/newlines
+  let b64 = dataUrl.replace(/^data:[^;]+;base64,/, "").replace(/\s+/g, "");
+  // Keep only valid base64 chars (defensive)
+  b64 = b64.replace(/[^A-Za-z0-9+/=]/g, "");
+  // Pad to length % 4 == 0
+  while (b64.length % 4 !== 0) b64 += "=";
+
+  if (b64.length === 0) {
+    throw new Error("Imagem vazia (base64 sem conteúdo)");
+  }
+
+  try {
+    const bin = atob(b64);
+    const buffer = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+    if (buffer.byteLength < 100) {
+      throw new Error("Imagem muito pequena ou vazia");
+    }
+    return { buffer, contentType };
+  } catch (e: any) {
+    throw new Error(`Falha ao decodificar imagem: ${e?.message || "base64 inválido"}`);
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -138,32 +175,44 @@ serve(async (req) => {
     // Selfie upload
     let selfieUrl: string | null = null;
     if (selfieImage) {
-      const selfieFileName = `signatures/${signature.id}/selfie_${Date.now()}.png`;
-      const selfieBase64 = selfieImage.replace(/^data:image\/\w+;base64,/, "");
-      const selfieBuffer = Uint8Array.from(atob(selfieBase64), (c) => c.charCodeAt(0));
-      const { error: selfieUploadError } = await supabase.storage
-        .from("contact-files")
-        .upload(selfieFileName, selfieBuffer, { contentType: "image/png", upsert: true });
-      if (selfieUploadError) {
-        console.error("Error uploading selfie:", selfieUploadError);
-        return errorResponse("Erro ao salvar selfie", 500);
+      try {
+        const { buffer: selfieBuffer, contentType: selfieType } = decodeDataUrlImage(selfieImage);
+        const ext = selfieType.split("/")[1] || "png";
+        const selfieFileName = `signatures/${signature.id}/selfie_${Date.now()}.${ext}`;
+        const { error: selfieUploadError } = await supabase.storage
+          .from("contact-files")
+          .upload(selfieFileName, selfieBuffer, { contentType: selfieType, upsert: true });
+        if (selfieUploadError) {
+          console.error("Error uploading selfie:", selfieUploadError);
+          return errorResponse("Erro ao salvar selfie", 500);
+        }
+        const { data: { publicUrl } } = supabase.storage.from("contact-files").getPublicUrl(selfieFileName);
+        selfieUrl = publicUrl;
+      } catch (e: any) {
+        console.error("Selfie decode failed:", e);
+        return errorResponse(`Selfie inválida: ${e?.message || "formato não reconhecido"}`, 400);
       }
-      const { data: { publicUrl } } = supabase.storage.from("contact-files").getPublicUrl(selfieFileName);
-      selfieUrl = publicUrl;
     }
 
     // Signature image upload
-    const sigFileName = `signatures/${signature.id}/signature_${Date.now()}.png`;
-    const sigBase64 = signatureImage.replace(/^data:image\/\w+;base64,/, "");
-    const sigBuffer = Uint8Array.from(atob(sigBase64), (c) => c.charCodeAt(0));
-    const { error: sigUploadError } = await supabase.storage
-      .from("contact-files")
-      .upload(sigFileName, sigBuffer, { contentType: "image/png", upsert: true });
-    if (sigUploadError) {
-      console.error("Error uploading signature:", sigUploadError);
-      return errorResponse("Erro ao salvar assinatura", 500);
+    let signatureUrl: string;
+    try {
+      const { buffer: sigBuffer, contentType: sigType } = decodeDataUrlImage(signatureImage);
+      const ext = sigType.split("/")[1] || "png";
+      const sigFileName = `signatures/${signature.id}/signature_${Date.now()}.${ext}`;
+      const { error: sigUploadError } = await supabase.storage
+        .from("contact-files")
+        .upload(sigFileName, sigBuffer, { contentType: sigType, upsert: true });
+      if (sigUploadError) {
+        console.error("Error uploading signature:", sigUploadError);
+        return errorResponse("Erro ao salvar assinatura", 500);
+      }
+      const { data: { publicUrl } } = supabase.storage.from("contact-files").getPublicUrl(sigFileName);
+      signatureUrl = publicUrl;
+    } catch (e: any) {
+      console.error("Signature decode failed:", e);
+      return errorResponse(`Assinatura inválida: ${e?.message || "desenhe sua assinatura antes de enviar"}`, 400);
     }
-    const { data: { publicUrl: signatureUrl } } = supabase.storage.from("contact-files").getPublicUrl(sigFileName);
 
     const signedAt = new Date().toISOString();
     const verificationCode = generateVerificationCode();
