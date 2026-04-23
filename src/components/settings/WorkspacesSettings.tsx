@@ -126,7 +126,7 @@ function WorkspaceCard({ workspace, onEdit }: { workspace: Workspace; onEdit: ()
   const workspaceTags = tags.filter(t => workspace.filter_tag_ids.includes(t.id));
 
   return (
-    <div className="flex items-center justify-between p-4 border rounded-lg bg-card hover:bg-muted/30 transition-colors">
+    <div className={`flex items-center justify-between p-4 border rounded-lg bg-card hover:bg-muted/30 transition-colors ${!workspace.is_active ? 'opacity-60' : ''}`}>
       <div className="flex items-center gap-3 flex-1 min-w-0">
         <div
           className="h-10 w-10 rounded-lg flex items-center justify-center flex-shrink-0"
@@ -138,7 +138,16 @@ function WorkspaceCard({ workspace, onEdit }: { workspace: Workspace; onEdit: ()
           <div className="flex items-center gap-2">
             <p className="font-medium text-foreground truncate">{workspace.name}</p>
             {!workspace.is_active && (
-              <Badge variant="secondary" className="text-xs">Inativo</Badge>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Badge variant="secondary" className="text-xs cursor-help">Inativo</Badge>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    Oculto da operação. Dados preservados. Reative no botão de edição.
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             )}
           </div>
           <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
