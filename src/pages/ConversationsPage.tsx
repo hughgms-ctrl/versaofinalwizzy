@@ -422,36 +422,6 @@ const ConversationsPage = () => {
               </div>
             </div>
 
-            {/* Service Mode Tabs */}
-            <div className="px-2 py-2 border-b border-border">
-              <ServiceModeTabs
-                value={serviceMode}
-                onChange={(mode) => {
-                  setServiceMode(mode);
-                  setShowArchived(false);
-                }}
-                counts={serviceModeCounts}
-              />
-              {/* Arquivados Button - Below tabs, discrete */}
-              <button
-                onClick={() => {
-                  setShowArchived(!showArchived);
-                  if (!showArchived) {
-                    setServiceMode('all');
-                  }
-                }}
-                className={cn(
-                  "flex items-center gap-1.5 text-xs mt-2 transition-colors",
-                  showArchived
-                    ? "text-primary font-medium"
-                    : "text-muted-foreground hover:text-foreground"
-                )}
-              >
-                <Archive className="h-3.5 w-3.5" />
-                Arquivados
-              </button>
-            </div>
-
             {/* List Content */}
             <div className="flex-1 overflow-y-auto overflow-x-hidden">
               {isLoading ? (
