@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, jsonResponse, errorResponse, createServiceClient, parseJsonBody } from "../_shared/middleware.ts";
+import { resolveSignatureByToken } from "../_shared/signerBridge.ts";
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -19,14 +20,10 @@ serve(async (req) => {
 
     const supabase = createServiceClient();
 
-    // Find signature by token
-    const { data: signature, error: sigError } = await supabase
-      .from("document_signatures")
-      .select("id, status, signer_email, signer_phone, metadata, organization_id")
-      .eq("signature_token", signatureToken)
-      .single();
+    // Find signature by token (supports both legacy + new signers table)
+    const signature = await resolveSignatureByToken(supabase, signatureToken);
 
-    if (sigError || !signature) {
+    if (!signature) {
       return errorResponse("Assinatura não encontrada", 404);
     }
 

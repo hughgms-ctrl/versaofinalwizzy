@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, jsonResponse, errorResponse, createServiceClient, parseJsonBody } from "../_shared/middleware.ts";
+import { resolveSignatureByToken, markSignerSigned } from "../_shared/signerBridge.ts";
 
 function getClientIp(req: Request): string {
   const forwarded = req.headers.get("x-forwarded-for");
