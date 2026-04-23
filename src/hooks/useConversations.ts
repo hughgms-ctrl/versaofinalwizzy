@@ -247,12 +247,12 @@ export function useCreateConversation() {
         contactId = newContact.id;
       }
 
-      // 3. Check for existing open/pending conversation
+      // 3. Check for existing open/pending/closed conversation
       const { data: existingConv } = await supabase
         .from('conversations')
         .select('*, contact:contacts(*)')
         .eq('contact_id', contactId)
-        .in('status', ['open', 'pending'])
+        .in('status', ['open', 'pending', 'closed'])
         .maybeSingle();
 
       if (existingConv) {
