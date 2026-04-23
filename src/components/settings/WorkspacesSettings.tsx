@@ -64,6 +64,12 @@ export function WorkspacesSettings() {
               <CardDescription>
                 Gerencie os workspaces da sua organização. Cada workspace isola leads, pipelines, fluxos e widgets por área de atuação.
               </CardDescription>
+              {allWorkspaces.length > 0 && (
+                <p className="text-xs text-muted-foreground mt-2">
+                  {activeCount} ativo{activeCount === 1 ? '' : 's'}
+                  {inactiveCount > 0 && ` · ${inactiveCount} inativo${inactiveCount === 1 ? '' : 's'}`}
+                </p>
+              )}
             </div>
             <Button onClick={() => setShowCreateDialog(true)} className="gap-2">
               <Plus className="h-4 w-4" />
