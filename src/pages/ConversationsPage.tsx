@@ -360,19 +360,8 @@ const ConversationsPage = () => {
             </Button>
           </div>
 
-          {/* Filters - centered */}
-          <div className="flex-1 flex items-center justify-center">
-            <ConversationFilters
-              conversations={conversations || []}
-              filters={filters}
-              onFiltersChange={setFilters}
-              showCount={false}
-              serviceModeCounts={serviceModeCounts}
-            />
-          </div>
-
-          {/* Spacer to balance layout */}
-          <div className="w-80 lg:w-96 flex-shrink-0" />
+          {/* Spacer for the rest of the header */}
+          <div className="flex-1" />
         </div>
 
         <div className="flex flex-1 overflow-hidden">
@@ -382,9 +371,9 @@ const ConversationsPage = () => {
             "w-full md:w-80 lg:w-96 md:min-w-[320px] md:max-w-96",
             selectedConversation && "hidden md:flex"
           )}>
-            {/* Mobile Search Bar + Filters */}
-            <div className="p-2 border-b border-border md:hidden flex flex-col gap-2">
-              <div className="flex gap-2">
+            {/* Search Bar (mobile only) + Filters (always visible) */}
+            <div className="p-2 border-b border-border flex flex-col gap-2">
+              <div className="flex gap-2 md:hidden">
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
