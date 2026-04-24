@@ -105,11 +105,27 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        // Process based on content type
+      // Process based on content type
+        let result: { successCount: number; failCount: number; lastError?: string } = { successCount: 0, failCount: 0 };
         if (scheduled.content_type === 'message') {
-          await sendMessageToContacts(supabase, scheduled, contacts, instance);
+          result = await sendMessageToContacts(supabase, scheduled, contacts, instance);
         } else if (scheduled.content_type === 'flow' && scheduled.flow_id) {
-          await executeFlowForContacts(supabase, scheduled, contacts);
+          result = await executeFlowForContacts(supabase, scheduled, contacts);
+        }
+
+        // If everything failed, mark this execution as failed (so user sees the real status)
+        if (result.successCount === 0 && result.failCount > 0) {
+          await supabase
+            .from('scheduled_messages')
+            .update({
+              status: 'failed',
+              error_message: result.lastError || 'Falha em todos os envios',
+              last_executed_at: new Date().toISOString(),
+              execution_count: (scheduled.execution_count || 0) + 1,
+            })
+            .eq('id', scheduled.id);
+          failed++;
+          continue;
         }
 
         // Update status and handle recurrence
@@ -198,10 +214,14 @@ async function sendMessageToContacts(
   scheduled: ScheduledMessage,
   contacts: Contact[],
   instance: { id: string; zapi_instance_id: string; zapi_token: string }
-) {
-  const uazapiBaseUrl = Deno.env.get('UAZAPI_BASE_URL')!;
+): Promise<{ successCount: number; failCount: number; lastError?: string }> {
+  const uazapiBaseUrl = (Deno.env.get('UAZAPI_BASE_URL') || '').replace(/\/$/, '');
   const delayMs = ((scheduled as any).delay_between_contacts || 0) * 1000;
-  
+
+  let successCount = 0;
+  let failCount = 0;
+  let lastError: string | undefined;
+
   for (let i = 0; i < contacts.length; i++) {
     const contact = contacts[i];
     try {
@@ -215,7 +235,7 @@ async function sendMessageToContacts(
         .from('conversations')
         .select('id')
         .eq('contact_id', contact.id)
-        .single();
+        .maybeSingle();
 
       if (!conversation) {
         const { data: newConv } = await supabase
@@ -232,29 +252,31 @@ async function sendMessageToContacts(
 
       if (!conversation) continue;
 
-      // Send via UAZAPI
+      // Send via UAZAPI v2 — endpoints are /send/text and /send/media
       const phone = contact.phone.replace(/\D/g, '');
-      let endpoint = 'send-text';
-      let body: any = { phone, message: scheduled.message_content };
+      let endpoint = '/send/text';
+      let body: any = { number: phone, text: scheduled.message_content };
 
       if (scheduled.media_url) {
+        endpoint = '/send/media';
         if (scheduled.media_type?.startsWith('image')) {
-          endpoint = 'send-image';
-          body = { phone, image: scheduled.media_url, caption: scheduled.message_content };
+          body = { number: phone, file: scheduled.media_url, type: 'image' };
+          if (scheduled.message_content) body.caption = scheduled.message_content;
         } else if (scheduled.media_type?.startsWith('audio')) {
-          endpoint = 'send-audio';
-          body = { phone, audio: scheduled.media_url };
+          body = { number: phone, file: scheduled.media_url, type: 'audio' };
         } else if (scheduled.media_type?.startsWith('video')) {
-          endpoint = 'send-video';
-          body = { phone, video: scheduled.media_url, caption: scheduled.message_content };
+          body = { number: phone, file: scheduled.media_url, type: 'video' };
+          if (scheduled.message_content) body.caption = scheduled.message_content;
         } else {
-          endpoint = 'send-document/pdf';
-          body = { phone, document: scheduled.media_url, fileName: 'documento.pdf' };
+          body = { number: phone, file: scheduled.media_url, type: 'document' };
+          if (scheduled.message_content) body.caption = scheduled.message_content;
         }
       }
 
+      console.log(`[scheduled ${scheduled.id}] POST ${uazapiBaseUrl}${endpoint} -> ${phone}`);
+
       const response = await fetch(
-        `${uazapiBaseUrl}/${endpoint}`,
+        `${uazapiBaseUrl}${endpoint}`,
         {
           method: 'POST',
           headers: {
@@ -265,10 +287,15 @@ async function sendMessageToContacts(
         }
       );
 
+      const responseText = await response.text();
+      let uazapiResult: any = null;
+      try { uazapiResult = JSON.parse(responseText); } catch { /* keep as text */ }
+
       if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`UAZAPI error: ${response.status} - ${errText}`);
+        throw new Error(`UAZAPI ${response.status}: ${responseText.slice(0, 300)}`);
       }
+
+      const zapiMsgId = uazapiResult?.messageId || uazapiResult?.id || uazapiResult?.ID || uazapiResult?.key?.id || null;
 
       // Save message to database
       await supabase.from('messages').insert({
@@ -278,6 +305,8 @@ async function sendMessageToContacts(
         media_url: scheduled.media_url,
         direction: 'outbound',
         is_from_bot: true,
+        zapi_message_id: zapiMsgId,
+        metadata: { source: 'scheduled_message', scheduled_id: scheduled.id, uazapi_response: uazapiResult },
       });
 
       // Update conversation
@@ -294,17 +323,23 @@ async function sendMessageToContacts(
           .eq('scheduled_message_id', scheduled.id)
           .eq('contact_id', contact.id);
       }
+
+      successCount++;
     } catch (err: any) {
-      console.error(`Error sending to contact ${contact.id}:`, err);
+      console.error(`Error sending to contact ${contact.id}:`, err?.message || err);
+      lastError = err?.message || String(err);
+      failCount++;
       if (scheduled.target_type === 'manual') {
         await supabase
           .from('scheduled_message_contacts')
-          .update({ status: 'failed', error_message: err.message })
+          .update({ status: 'failed', error_message: lastError })
           .eq('scheduled_message_id', scheduled.id)
           .eq('contact_id', contact.id);
       }
     }
   }
+
+  return { successCount, failCount, lastError };
 }
 
 async function executeFlowForContacts(
