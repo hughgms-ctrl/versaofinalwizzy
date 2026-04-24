@@ -352,6 +352,7 @@ export function useReorderColumns() {
       toast({ title: 'Erro ao reordenar colunas', variant: 'destructive' });
     },
   });
+}
 
 export function useDeleteColumn() {
   const queryClient = useQueryClient();
