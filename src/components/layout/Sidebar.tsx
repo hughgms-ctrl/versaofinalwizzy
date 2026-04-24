@@ -49,7 +49,6 @@ const navigation: NavItem[] = [
   { name: 'Contatos', href: '/contacts', icon: BookUser, module: 'conversations', planModule: 'contacts' },
   { name: 'Agenda', href: '/calendar', icon: Calendar, module: 'calendar', planModule: 'calendar' },
   { name: 'Pipeline', href: '/pipeline', icon: Kanban, module: 'pipeline', planModule: 'pipeline' },
-  { name: 'Operacional', href: '/operations', icon: Briefcase, module: 'operations', planModule: 'operations' },
   { name: 'Fluxos', href: '/flows', icon: Workflow, module: 'flows', planModule: 'flows' },
   { name: 'Campanhas', href: '/campaigns', icon: Megaphone, module: 'flows', planModule: 'campaigns' },
   { name: 'Ferramentas', href: '/tools', icon: MousePointerClick, module: 'flows', planModule: 'tools' },
