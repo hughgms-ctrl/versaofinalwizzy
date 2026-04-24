@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Trash2, GripVertical, Bell, BellOff, Briefcase } from 'lucide-react';
+import { Plus, Trash2, GripVertical, Bell, BellOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -45,7 +45,7 @@ import {
 import { useStageNotifications, useUpsertStageNotification } from '@/hooks/useStageHistory';
 import { useProfiles } from '@/hooks/useConversations';
 import { useAuth } from '@/hooks/useAuth';
-import { OperationsTriggerSection } from './OperationsTriggerSection';
+
 
 interface PipelineSettingsDialogProps {
   open: boolean;
@@ -147,7 +147,7 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
   const [completionColumnId, setCompletionColumnId] = useState<string>(pipeline.completion_column_id || 'last');
   const [defaultAssignedTo, setDefaultAssignedTo] = useState<string>(pipeline.default_assigned_to || 'none');
   const [deleteColumnId, setDeleteColumnId] = useState<string | null>(null);
-  const [activeSection, setActiveSection] = useState<'general' | 'notifications' | 'operations'>('general');
+  const [activeSection, setActiveSection] = useState<'general' | 'notifications'>('general');
 
   const { data: columns = [] } = usePipelineColumns(pipeline.id);
   const { data: allPipelines = [] } = usePipelines();
@@ -311,14 +311,6 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
             >
               <Bell className="h-4 w-4 mr-1" />
               Notificações
-            </Button>
-            <Button
-              variant={activeSection === 'operations' ? 'default' : 'ghost'}
-              size="sm"
-              onClick={() => setActiveSection('operations')}
-            >
-              <Briefcase className="h-4 w-4 mr-1" />
-              Operacional
             </Button>
           </div>
 
@@ -624,9 +616,6 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
               </div>
             )}
 
-            {activeSection === 'operations' && (
-              <OperationsTriggerSection pipelineId={pipeline.id} columns={columns} />
-            )}
           </div>
 
           <DialogFooter>

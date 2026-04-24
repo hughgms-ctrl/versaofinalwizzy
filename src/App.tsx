@@ -44,10 +44,6 @@ import PublicDocumentFillPage from "./pages/PublicDocumentFillPage";
 import NotFound from "./pages/NotFound";
 import CampaignsPage from "./pages/CampaignsPage";
 import CalendarPage from "./pages/CalendarPage";
-import OperationsPage from "./pages/OperationsPage";
-import MyTasksPage from "./pages/MyTasksPage";
-import DeadlinesCalendarPage from "./pages/DeadlinesCalendarPage";
-import CaseTemplatesPage from "./pages/CaseTemplatesPage";
 import LandingPage from "./pages/LandingPage";
 import PlansPage from "./pages/PlansPage";
 import AdminPage from "./pages/AdminPage";
@@ -115,10 +111,6 @@ const App = () => (
                     <Route path="/preencher-contrato/:token" element={<PublicDocumentFillPage />} />
                     <Route path="/campaigns" element={<ProtectedRoute><CampaignsPage /></ProtectedRoute>} />
                     <Route path="/calendar" element={<ProtectedRoute><CalendarPage /></ProtectedRoute>} />
-                    <Route path="/operations" element={<ProtectedRoute><OperationsPage /></ProtectedRoute>} />
-                    <Route path="/operations/tasks" element={<ProtectedRoute><MyTasksPage /></ProtectedRoute>} />
-                    <Route path="/operations/deadlines" element={<ProtectedRoute><DeadlinesCalendarPage /></ProtectedRoute>} />
-                    <Route path="/operations/templates" element={<ProtectedRoute><CaseTemplatesPage /></ProtectedRoute>} />
                     <Route path="/plans" element={<ProtectedRoute><PlansPage /></ProtectedRoute>} />
                     <Route path="/admin/login" element={<AdminLoginPage />} />
                     <Route path="/admin" element={<AdminProtectedRoute><AdminPage /></AdminProtectedRoute>} />
