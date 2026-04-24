@@ -291,6 +291,69 @@ export function useUpdateColumn() {
   });
 }
 
+/**
+ * Reorder pipeline columns by inserting the dragged column at a target position
+ * and shifting other columns up/down to make room (does NOT swap with target).
+ */
+export function useReorderColumns() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({
+      pipelineId,
+      sourceColumnId,
+      targetColumnId,
+    }: {
+      pipelineId: string;
+      sourceColumnId: string;
+      targetColumnId: string;
+    }) => {
+      // Fetch current ordered list
+      const { data: cols, error: fetchErr } = await (supabase as any)
+        .from('pipeline_columns')
+        .select('id, order')
+        .eq('pipeline_id', pipelineId)
+        .order('order', { ascending: true });
+      if (fetchErr) throw fetchErr;
+      if (!cols || cols.length === 0) return;
+
+      const ordered: { id: string }[] = cols.map((c: any) => ({ id: c.id }));
+      const fromIdx = ordered.findIndex((c) => c.id === sourceColumnId);
+      const toIdx = ordered.findIndex((c) => c.id === targetColumnId);
+      if (fromIdx === -1 || toIdx === -1 || fromIdx === toIdx) return;
+
+      // Move (insertion semantics — others shift)
+      const [moved] = ordered.splice(fromIdx, 1);
+      ordered.splice(toIdx, 0, moved);
+
+      // Two-phase update to avoid potential UNIQUE(pipeline_id, order) collisions:
+      // 1) push everyone to a high temp range
+      // 2) write final 1..N
+      const TEMP_OFFSET = 100000;
+      for (let i = 0; i < ordered.length; i++) {
+        const { error } = await (supabase as any)
+          .from('pipeline_columns')
+          .update({ order: TEMP_OFFSET + i })
+          .eq('id', ordered[i].id);
+        if (error) throw error;
+      }
+      for (let i = 0; i < ordered.length; i++) {
+        const { error } = await (supabase as any)
+          .from('pipeline_columns')
+          .update({ order: i + 1 })
+          .eq('id', ordered[i].id);
+        if (error) throw error;
+      }
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['pipeline-columns', variables.pipelineId] });
+    },
+    onError: () => {
+      toast({ title: 'Erro ao reordenar colunas', variant: 'destructive' });
+    },
+  });
+}
+
 export function useDeleteColumn() {
   const queryClient = useQueryClient();
 

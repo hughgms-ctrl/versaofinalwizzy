@@ -44,7 +44,7 @@ interface NavItem {
 }
 
 const navigation: NavItem[] = [
-  { name: 'Dashboard', href: '/', icon: LayoutDashboard, module: 'dashboard' },
+  { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, module: 'dashboard' },
   { name: 'Conversas', href: '/conversations', icon: MessageSquare, module: 'conversations', planModule: 'conversations' },
   { name: 'Contatos', href: '/contacts', icon: BookUser, module: 'conversations', planModule: 'contacts' },
   { name: 'Agenda', href: '/calendar', icon: Calendar, module: 'calendar', planModule: 'calendar' },
