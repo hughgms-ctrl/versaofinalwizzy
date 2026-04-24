@@ -21,7 +21,7 @@ import {
   Calendar,
   Lock,
   Crown,
-  Briefcase,
+  
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
