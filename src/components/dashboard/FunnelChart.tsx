@@ -22,15 +22,19 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { usePipelines, usePipelineColumns } from '@/hooks/usePipelines';
 import { useFunnelConfig, useSaveFunnelConfig } from '@/hooks/useFunnelConfig';
-import { useFunnelData, type FunnelPeriod } from '@/hooks/useFunnelData';
+import { useFunnelData, type FunnelPeriod, type FunnelPresetPeriod } from '@/hooks/useFunnelData';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { toast } from '@/hooks/use-toast';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Input } from '@/components/ui/input';
+import { format } from 'date-fns';
 
-const PERIOD_OPTIONS: { value: FunnelPeriod; label: string }[] = [
+const PERIOD_OPTIONS: { value: FunnelPresetPeriod | 'custom'; label: string }[] = [
   { value: 'today', label: 'Hoje' },
   { value: '7d', label: '7 dias' },
   { value: '30d', label: '30 dias' },
   { value: '90d', label: '90 dias' },
+  { value: 'custom', label: 'Personalizado' },
 ];
 
 export function FunnelChart() {
@@ -39,7 +43,13 @@ export function FunnelChart() {
   const { data: config, isLoading: loadingConfig } = useFunnelConfig();
   const saveConfig = useSaveFunnelConfig();
 
-  const [period, setPeriod] = useState<FunnelPeriod>('30d');
+  const [periodKind, setPeriodKind] = useState<FunnelPresetPeriod | 'custom'>('30d');
+  const today = format(new Date(), 'yyyy-MM-dd');
+  const [customFrom, setCustomFrom] = useState<string>(today);
+  const [customTo, setCustomTo] = useState<string>(today);
+  const period: FunnelPeriod = periodKind === 'custom'
+    ? { from: customFrom, to: customTo }
+    : periodKind;
   const [dialogOpen, setDialogOpen] = useState(false);
 
   // Filter pipelines strictly by selected workspace (or show all when "All workspaces")
