@@ -2,14 +2,15 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './useAuth';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
-import { startOfDay, subDays } from 'date-fns';
+import { startOfDay, subDays, endOfDay } from 'date-fns';
 
 export interface FunnelStageData {
   column_id: string;
   count: number;
 }
 
-export type FunnelPeriod = 'today' | '7d' | '30d' | '90d';
+export type FunnelPresetPeriod = 'today' | '7d' | '30d' | '90d';
+export type FunnelPeriod = FunnelPresetPeriod | { from: string; to: string };
 
 /**
  * Counts conversations that ENTERED each chosen column within the selected period.
@@ -24,6 +25,8 @@ export function useFunnelData(
   const { profile } = useAuth();
   const { selectedWorkspaceId, workspaces } = useWorkspaceContext();
 
+  const periodKey = typeof period === 'string' ? period : `custom:${period.from}:${period.to}`;
+
   return useQuery({
     queryKey: [
       'funnel-data',
@@ -31,17 +34,24 @@ export function useFunnelData(
       selectedWorkspaceId,
       pipelineId,
       columnIds.join(','),
-      period,
+      periodKey,
     ],
     queryFn: async (): Promise<FunnelStageData[]> => {
       if (!profile?.organization_id || !pipelineId || columnIds.length === 0) {
         return columnIds.map((id) => ({ column_id: id, count: 0 }));
       }
 
-      // Period → since date
-      const daysMap: Record<FunnelPeriod, number> = { today: 0, '7d': 7, '30d': 30, '90d': 90 };
-      const days = daysMap[period] ?? 7;
-      const since = days === 0 ? startOfDay(new Date()).toISOString() : subDays(new Date(), days).toISOString();
+      // Period → since/until ISO
+      let since: string;
+      let until: string | null = null;
+      if (typeof period === 'string') {
+        const daysMap: Record<FunnelPresetPeriod, number> = { today: 0, '7d': 7, '30d': 30, '90d': 90 };
+        const days = daysMap[period] ?? 7;
+        since = days === 0 ? startOfDay(new Date()).toISOString() : subDays(new Date(), days).toISOString();
+      } else {
+        since = startOfDay(new Date(period.from)).toISOString();
+        until = endOfDay(new Date(period.to)).toISOString();
+      }
 
       // Workspace filter: get allowed conversation IDs (or null = all)
       let allowedConvIds: string[] | null = null;
@@ -81,6 +91,8 @@ export function useFunnelData(
         .eq('pipeline_id', pipelineId)
         .in('to_column_id', columnIds)
         .gte('created_at', since);
+
+      if (until) query = query.lte('created_at', until);
 
       if (allowedConvIds) {
         query = query.in('conversation_id', allowedConvIds);
