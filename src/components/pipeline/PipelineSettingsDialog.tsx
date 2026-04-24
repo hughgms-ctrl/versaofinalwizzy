@@ -38,9 +38,10 @@ import {
   usePipelines,
   usePipelineColumns, 
   useUpdatePipeline, 
-  useCreateColumn, 
-  useUpdateColumn,
-  useDeleteColumn 
+ useCreateColumn, 
+ useUpdateColumn,
+ useDeleteColumn,
+ useReorderColumns 
 } from '@/hooks/usePipelines';
 import { useStageNotifications, useUpsertStageNotification } from '@/hooks/useStageHistory';
 import { useProfiles } from '@/hooks/useConversations';
@@ -158,6 +159,7 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
   const createColumn = useCreateColumn();
   const updateColumn = useUpdateColumn();
   const deleteColumn = useDeleteColumn();
+  const reorderColumns = useReorderColumns();
   const upsertNotification = useUpsertStageNotification();
   const { availableWorkspaces, isAdmin } = useWorkspaceContext();
 
@@ -234,19 +236,15 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
   };
 
   const handleColumnDrop = async (targetColumn: PipelineColumn) => {
-    if (!draggedColumnId || draggedColumnId === targetColumn.id) return;
-    const draggedCol = columns.find(c => c.id === draggedColumnId);
-    if (!draggedCol) return;
-
-    await updateColumn.mutateAsync({
-      id: draggedCol.id,
+    if (!draggedColumnId || draggedColumnId === targetColumn.id) {
+      setDraggedColumnId(null);
+      setDragOverColumnId(null);
+      return;
+    }
+    await reorderColumns.mutateAsync({
       pipelineId: pipeline.id,
-      order: targetColumn.order,
-    });
-    await updateColumn.mutateAsync({
-      id: targetColumn.id,
-      pipelineId: pipeline.id,
-      order: draggedCol.order,
+      sourceColumnId: draggedColumnId,
+      targetColumnId: targetColumn.id,
     });
     setDraggedColumnId(null);
     setDragOverColumnId(null);
