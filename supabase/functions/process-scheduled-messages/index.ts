@@ -346,9 +346,12 @@ async function executeFlowForContacts(
   supabase: any,
   scheduled: ScheduledMessage,
   contacts: Contact[]
-) {
+): Promise<{ successCount: number; failCount: number; lastError?: string }> {
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-  
+  let successCount = 0;
+  let failCount = 0;
+  let lastError: string | undefined;
+
   for (const contact of contacts) {
     try {
       // Get or create conversation
@@ -356,7 +359,7 @@ async function executeFlowForContacts(
         .from('conversations')
         .select('id')
         .eq('contact_id', contact.id)
-        .single();
+        .maybeSingle();
 
       if (!conversation) {
         const { data: newConv } = await supabase
@@ -374,7 +377,7 @@ async function executeFlowForContacts(
       if (!conversation) continue;
 
       // Call flow-execute function
-      await fetch(`${supabaseUrl}/functions/v1/flow-execute`, {
+      const r = await fetch(`${supabaseUrl}/functions/v1/flow-execute`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -386,6 +389,10 @@ async function executeFlowForContacts(
           organizationId: scheduled.organization_id,
         }),
       });
+      if (!r.ok) {
+        const t = await r.text();
+        throw new Error(`flow-execute ${r.status}: ${t.slice(0, 300)}`);
+      }
 
       // Update contact status in manual selection
       if (scheduled.target_type === 'manual') {
@@ -395,17 +402,22 @@ async function executeFlowForContacts(
           .eq('scheduled_message_id', scheduled.id)
           .eq('contact_id', contact.id);
       }
+      successCount++;
     } catch (err: any) {
-      console.error(`Error executing flow for contact ${contact.id}:`, err);
+      console.error(`Error executing flow for contact ${contact.id}:`, err?.message || err);
+      lastError = err?.message || String(err);
+      failCount++;
       if (scheduled.target_type === 'manual') {
         await supabase
           .from('scheduled_message_contacts')
-          .update({ status: 'failed', error_message: err.message })
+          .update({ status: 'failed', error_message: lastError })
           .eq('scheduled_message_id', scheduled.id)
           .eq('contact_id', contact.id);
       }
     }
   }
+
+  return { successCount, failCount, lastError };
 }
 
 function calculateNextExecution(scheduled: ScheduledMessage): Record<string, any> {
