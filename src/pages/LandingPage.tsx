@@ -22,52 +22,52 @@ import { Skeleton } from "@/components/ui/skeleton";
  * imobiliárias, estética, educação, agências…)
  * ============================================================ */
 
-const niches = [
-  { icon: Briefcase, label: "Advocacia" },
-  { icon: Stethoscope, label: "Clínicas & Saúde" },
-  { icon: Home, label: "Imobiliárias" },
-  { icon: Scissors, label: "Estética" },
-  { icon: GraduationCap, label: "Educação" },
-  { icon: Building2, label: "Agências" },
+const practiceAreas = [
+  { icon: Briefcase, label: "Trabalhista" },
+  { icon: Users, label: "Família" },
+  { icon: FileText, label: "Cível" },
+  { icon: Building2, label: "Empresarial" },
+  { icon: Shield, label: "Previdenciário" },
+  { icon: Scissors, label: "Tributário" },
 ];
 
 const pains = [
-  { icon: MessageSquare, title: "Leads perdidos no WhatsApp", desc: "Conversas espalhadas, sem follow-up, esfriando dia após dia." },
-  { icon: Clock, title: "Resposta lenta demais", desc: "Cliente pergunta às 22h, você responde no dia seguinte — e ele já fechou com o concorrente." },
-  { icon: LayoutGrid, title: "Pipeline na cabeça", desc: "Você não sabe quantos leads tem, em qual etapa, nem quem precisa de retorno hoje." },
-  { icon: FileText, title: "Contratos manuais", desc: "Word, Drive, e-mail, assinatura física — uma novela para cada cliente novo." },
-  { icon: BarChart, title: "Sem dados, sem decisão", desc: "Você não sabe qual canal traz mais clientes nem quanto vale cada lead." },
+  { icon: MessageSquare, title: "Leads que somem no WhatsApp", desc: "Cliente manda mensagem, vai pro arquivado, e o caso esfria sem ninguém retornar." },
+  { icon: Clock, title: "Resposta fora de hora", desc: "O cliente em pânico procura advogado às 22h — quem responde primeiro fecha o caso." },
+  { icon: LayoutGrid, title: "Casos descontrolados", desc: "Você não sabe quantos prospects estão em triagem, em proposta ou esperando contrato." },
+  { icon: FileText, title: "Contratos em Word e e-mail", desc: "Honorários no Word, envio por e-mail, impressão, assinatura física — uma novela para cada cliente." },
+  { icon: BarChart, title: "Sem visão do escritório", desc: "Você não sabe qual canal traz mais clientes, taxa de conversão nem ticket médio por área." },
 ];
 
 const flowSteps = [
-  { n: "01", icon: Link2, title: "Capture leads", desc: "WhatsApp, formulários, quiz, link na bio — tudo entra direto no Wizzy.", color: "from-pink-500 to-rose-500" },
-  { n: "02", icon: Filter, title: "Qualifique com IA", desc: "Agentes de IA atendem 24/7, qualificam o lead e organizam no pipeline certo.", color: "from-violet-500 to-purple-500" },
-  { n: "03", icon: LayoutGrid, title: "Organize no funil", desc: "Kanban visual com etapas customizadas para sua área de atuação.", color: "from-blue-500 to-cyan-500" },
-  { n: "04", icon: FileText, title: "Envie proposta/contrato", desc: "Documentos gerados automaticamente, com assinatura eletrônica nativa.", color: "from-emerald-500 to-teal-500" },
-  { n: "05", icon: Calendar, title: "Agende e atenda", desc: "Agenda integrada ao Google Calendar e Meet — agendamento pelo WhatsApp.", color: "from-amber-500 to-orange-500" },
-  { n: "06", icon: TrendingUp, title: "Meça e escale", desc: "Dashboards com conversão, receita por canal e desempenho de cada agente.", color: "from-fuchsia-500 to-pink-500" },
+  { n: "01", icon: Link2, title: "Capte o lead", desc: "WhatsApp, site, Google Ads, indicações, redes sociais — tudo entra direto no Wizzy.", color: "from-pink-500 to-rose-500" },
+  { n: "02", icon: Filter, title: "Triagem com IA", desc: "Agente jurídico de IA atende 24/7, identifica a área do caso e qualifica o cliente.", color: "from-violet-500 to-purple-500" },
+  { n: "03", icon: LayoutGrid, title: "Organize no funil", desc: "Pipeline jurídico: Triagem → Análise → Proposta → Contrato → Cliente ativo.", color: "from-blue-500 to-cyan-500" },
+  { n: "04", icon: FileText, title: "Envie o contrato", desc: "Contrato de honorários gerado automaticamente, com assinatura eletrônica (Lei 14.063).", color: "from-emerald-500 to-teal-500" },
+  { n: "05", icon: Calendar, title: "Agende a reunião", desc: "Agenda integrada ao Google Calendar e Meet — agendamento pelo próprio WhatsApp.", color: "from-amber-500 to-orange-500" },
+  { n: "06", icon: TrendingUp, title: "Meça e escale", desc: "Dashboards com conversão por área, ticket médio e desempenho de cada captador.", color: "from-fuchsia-500 to-pink-500" },
 ];
 
 const features = [
-  { icon: MessageSquare, title: "Atendimento centralizado", desc: "Todas as conversas do WhatsApp em uma única caixa de entrada, com fila, equipe e tags.", highlight: "DESTAQUE" },
-  { icon: Bot, title: "Agentes de IA", desc: "Atendentes virtuais que respondem, qualificam, agendam e transferem para humano quando preciso.", highlight: "IA" },
-  { icon: Workflow, title: "Fluxos automatizados", desc: "Construa automações visuais sem código — gatilhos, condições, mensagens, ações." },
-  { icon: LayoutGrid, title: "Pipeline visual (CRM)", desc: "Funis ilimitados com colunas customizáveis. Mova leads com drag-and-drop." },
-  { icon: FileText, title: "Documentos & Assinatura", desc: "Templates, packs, preenchimento por formulário e assinatura eletrônica avançada (Lei 14.063)." },
-  { icon: Calendar, title: "Agendamento online", desc: "Página pública de agendamento com Google Calendar e link automático do Meet." },
-  { icon: Megaphone, title: "Campanhas em massa", desc: "Disparos por tag ou seleção, com intervalo anti-bloqueio e mídia personalizada." },
-  { icon: BookOpen, title: "Base de conhecimento", desc: "Cadastre informações da sua empresa para a IA puxar respostas precisas." },
-  { icon: Bell, title: "Notificações em tempo real", desc: "Push no navegador para novos leads, pagamentos e tarefas — sem abrir o app." },
-  { icon: Users, title: "Equipe & permissões", desc: "Múltiplos workspaces, papéis e permissões granulares por módulo." },
-  { icon: BarChart3, title: "Dashboards completos", desc: "Conversão por etapa, receita por canal, desempenho por atendente, em tempo real.", highlight: "PRO" },
-  { icon: Tag, title: "Tags & segmentação", desc: "Organize contatos com tags ilimitadas e dispare ações por segmento." },
+  { icon: MessageSquare, title: "Atendimento jurídico centralizado", desc: "Todas as conversas do WhatsApp do escritório em uma só caixa, com fila, advogados e tags por área.", highlight: "DESTAQUE" },
+  { icon: Bot, title: "Agente jurídico de IA", desc: "IA treinada para advocacia: faz triagem, identifica a área, coleta dados do caso e agenda a consulta.", highlight: "IA" },
+  { icon: Workflow, title: "Fluxos automatizados", desc: "Automatize triagens, follow-ups e envio de contratos sem precisar mexer em código." },
+  { icon: LayoutGrid, title: "Pipeline jurídico", desc: "Funis por área (trabalhista, cível, família…) com etapas configuráveis e drag-and-drop." },
+  { icon: FileText, title: "Contratos com assinatura digital", desc: "Templates de honorários, procurações e contratos. Assinatura eletrônica avançada (Lei 14.063/2020)." },
+  { icon: Calendar, title: "Agendamento de consultas", desc: "Página pública de agendamento com Google Calendar e link automático do Meet." },
+  { icon: Megaphone, title: "Campanhas para a base", desc: "Comunique novidades, conteúdos e oportunidades para sua base de clientes e ex-clientes." },
+  { icon: BookOpen, title: "Base de conhecimento do escritório", desc: "Cadastre informações do escritório, áreas de atuação e valores — a IA responde com a sua voz." },
+  { icon: Bell, title: "Notificações em tempo real", desc: "Push no navegador para novos casos, mensagens e prazos — sem precisar abrir o app." },
+  { icon: Users, title: "Equipe & permissões", desc: "Múltiplos advogados e estagiários, com permissões granulares por área e por módulo." },
+  { icon: BarChart3, title: "Dashboards do escritório", desc: "Conversão por área, ticket médio, origem dos casos e desempenho de cada captador.", highlight: "PRO" },
+  { icon: Tag, title: "Tags & segmentação", desc: "Organize contatos por área, status processual ou qualquer critério do escritório." },
 ];
 
 const verticalPacks = [
-  { icon: Briefcase, title: "Advocacia", items: ["Captação de leads jurídicos", "Triagem por área (cível, trabalhista, etc.)", "Contratos de honorários", "LGPD-friendly"] },
-  { icon: Stethoscope, title: "Clínicas & Saúde", items: ["Pré-agendamento de consultas", "Confirmação automática", "Anamnese por formulário", "Lembretes 24h antes"] },
-  { icon: Home, title: "Imobiliárias", items: ["Qualificação de comprador/locador", "Agendamento de visitas", "Envio de fichas de imóveis", "Proposta digital"] },
-  { icon: Scissors, title: "Estética & Beleza", items: ["Agenda integrada", "Confirmação de horários", "Pacotes e fidelidade", "Recuperação de inativos"] },
+  { icon: Briefcase, title: "Trabalhista", items: ["Triagem de rescisão e verbas", "Cálculos preliminares", "Contrato de honorários ad exitum", "Follow-up de propostas"] },
+  { icon: Users, title: "Família & Sucessões", items: ["Acolhimento sensível ao caso", "Triagem de divórcio, guarda e pensão", "Coleta inicial de documentos", "Agendamento de consulta"] },
+  { icon: FileText, title: "Cível & Consumidor", items: ["Identificação do tipo de demanda", "Pré-análise de viabilidade", "Envio do contrato e procuração", "Acompanhamento do cliente"] },
+  { icon: Shield, title: "Previdenciário", items: ["Triagem de aposentadoria/benefícios", "Coleta de CNIS e documentos", "Envio de contrato com assinatura digital", "Lembretes automáticos"] },
 ];
 
 const integrations = [
@@ -80,12 +80,12 @@ const integrations = [
 ];
 
 const testimonials = [
-  { name: "Dra. Marina Costa", role: "Advogada Trabalhista", initials: "MC", quote: "A IA do Wizzy faz a triagem inicial dos casos. Eu só entro na conversa quando o lead já está pronto. Triplicou meu fechamento.", color: "from-pink-500 to-rose-500" },
-  { name: "Dr. Rafael Oliveira", role: "Clínica Odontológica", initials: "RO", quote: "Reduzi 70% das faltas com a confirmação automática. O agendamento pelo WhatsApp virou o coração da clínica.", color: "from-blue-500 to-cyan-500" },
-  { name: "Juliana Santos", role: "Corretora de Imóveis", initials: "JS", quote: "Antes eu perdia visitas por não responder a tempo. Agora a IA agenda, confirma e me passa o lead já qualificado.", color: "from-violet-500 to-purple-500" },
-  { name: "Lucas Ferreira", role: "Estúdio de Estética", initials: "LF", quote: "Os contratos com assinatura digital e a recuperação de clientes inativos pagaram a ferramenta no primeiro mês.", color: "from-emerald-500 to-teal-500" },
-  { name: "Carla Mendes", role: "Escola de Idiomas", initials: "CM", quote: "Cadastrei as informações da escola na base de conhecimento e a IA responde dúvidas como se fosse um atendente treinado.", color: "from-amber-500 to-orange-500" },
-  { name: "Pedro Almeida", role: "Agência de Marketing", initials: "PA", quote: "Gerencio 4 contas de clientes em workspaces separados. Cada uma com pipeline, equipe e relatórios próprios.", color: "from-fuchsia-500 to-pink-500" },
+  { name: "Dra. Marina Costa", role: "Advogada Trabalhista — São Paulo/SP", initials: "MC", quote: "A IA do Wizzy faz a triagem inicial dos casos. Eu só entro na conversa quando o lead já está pronto. Triplicou meu fechamento de honorários.", color: "from-pink-500 to-rose-500" },
+  { name: "Dr. Rafael Oliveira", role: "Direito de Família — Belo Horizonte/MG", initials: "RO", quote: "O acolhimento sensível dos casos de família, feito pela IA 24/7, mudou meu escritório. Cliente chega à consulta já confiando.", color: "from-blue-500 to-cyan-500" },
+  { name: "Dra. Juliana Santos", role: "Direito Cível — Curitiba/PR", initials: "JS", quote: "Antes eu perdia clientes por demora. Agora a IA atende, qualifica e me passa só os casos viáveis, com documentos já anexados.", color: "from-violet-500 to-purple-500" },
+  { name: "Dr. Lucas Ferreira", role: "Previdenciário — Porto Alegre/RS", initials: "LF", quote: "Os contratos de honorários com assinatura digital fecham em minutos, não em dias. Pagou a ferramenta na primeira semana.", color: "from-emerald-500 to-teal-500" },
+  { name: "Dra. Carla Mendes", role: "Direito Empresarial — Rio de Janeiro/RJ", initials: "CM", quote: "Cadastrei as áreas de atuação na base de conhecimento e a IA responde dúvidas como se fosse uma estagiária treinada.", color: "from-amber-500 to-orange-500" },
+  { name: "Dr. Pedro Almeida", role: "Sócio de banca — Brasília/DF", initials: "PA", quote: "Gerencio 6 advogados e 2 estagiários com permissões separadas. Cada área tem seu pipeline e seus relatórios.", color: "from-fuchsia-500 to-pink-500" },
 ];
 
 const moduleLabels: Record<string, string> = {
@@ -171,20 +171,19 @@ const LandingPage = () => {
         <div className="max-w-5xl mx-auto text-center">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-pink-500/30 bg-pink-500/10 text-pink-300 text-xs font-medium mb-7">
             <Sparkles className="w-3.5 h-3.5" />
-            Plataforma completa de atendimento, CRM e IA para WhatsApp
+            Plataforma de IA, atendimento e CRM feita para advogados
           </div>
 
           <h1 className="text-4xl sm:text-6xl lg:text-7xl font-bold tracking-tight leading-[1.05]">
             Transforme seu WhatsApp em uma{" "}
             <span className="bg-gradient-to-r from-pink-400 via-rose-400 to-orange-400 bg-clip-text text-transparent">
-              máquina de fechar clientes
+              máquina de fechar honorários
             </span>
           </h1>
 
           <p className="mt-7 text-lg sm:text-xl text-slate-400 max-w-3xl mx-auto leading-relaxed">
-            Atenda 24/7 com IA, organize leads em um pipeline visual, gere contratos com assinatura digital
-            e meça tudo em tempo real — feito para advogados, clínicas, imobiliárias, estética e quem vive
-            de prestar serviço.
+            Atenda 24/7 com IA jurídica, organize casos em um pipeline visual, envie contratos de honorários
+            com assinatura digital e meça a captação do escritório em tempo real — tudo em um só lugar.
           </p>
 
           <div className="mt-10 flex flex-col sm:flex-row gap-3 justify-center">
@@ -252,14 +251,14 @@ const LandingPage = () => {
         </div>
       </section>
 
-      {/* ===================== NICHOS ===================== */}
+      {/* ===================== ÁREAS DE ATUAÇÃO ===================== */}
       <section id="nichos" className="py-16 px-4">
         <div className="max-w-6xl mx-auto">
           <p className="text-center text-xs uppercase tracking-[0.2em] text-slate-500 mb-6">
-            Feito para prestadores de serviço
+            Configurado para as principais áreas da advocacia
           </p>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-            {niches.map((n) => (
+            {practiceAreas.map((n) => (
               <div
                 key={n.label}
                 className="flex flex-col items-center justify-center gap-2 py-5 rounded-xl border border-white/5 bg-white/[0.02] hover:bg-white/[0.04] hover:border-pink-500/20 transition-all"
@@ -277,11 +276,11 @@ const LandingPage = () => {
         <div className="max-w-6xl mx-auto">
           <div className="text-center max-w-3xl mx-auto">
             <h2 className="text-3xl sm:text-5xl font-bold leading-tight">
-              Profissionais perdem clientes <br className="hidden sm:block" />
+              Advogados perdem causas <br className="hidden sm:block" />
               por <span className="text-rose-400">falta de organização</span>
             </h2>
             <p className="mt-5 text-slate-400 text-lg">
-              Se você presta serviços, provavelmente já passou por isso:
+              Se você capta clientes pelo WhatsApp, provavelmente já passou por isso:
             </p>
           </div>
 
@@ -301,7 +300,7 @@ const LandingPage = () => {
           </div>
 
           <p className="mt-12 text-center text-slate-300">
-            Gerenciar tudo no improviso custa caro. <span className="text-white font-semibold">O Wizzy centraliza tudo em um só sistema.</span>
+            Captar no improviso custa caro. <span className="text-white font-semibold">O Wizzy organiza a captação do escritório em um só lugar.</span>
           </p>
         </div>
       </section>
@@ -313,7 +312,7 @@ const LandingPage = () => {
             <h2 className="text-3xl sm:text-5xl font-bold leading-tight">
               Um fluxo simples para gerenciar{" "}
               <span className="bg-gradient-to-r from-pink-400 via-violet-400 to-emerald-400 bg-clip-text text-transparent">
-                todo o seu negócio
+                a captação do seu escritório
               </span>
             </h2>
           </div>
@@ -343,13 +342,13 @@ const LandingPage = () => {
               POR QUE ESCOLHER O WIZZY?
             </Badge>
             <h2 className="text-3xl sm:text-5xl font-bold leading-tight">
-              Tudo para gerenciar seu negócio,{" "}
+              Tudo para gerenciar seu escritório,{" "}
               <span className="bg-gradient-to-r from-pink-400 to-rose-400 bg-clip-text text-transparent">
                 em um só lugar
               </span>
             </h2>
             <p className="mt-5 text-slate-400 text-lg">
-              12 funcionalidades que mudam a forma como você atende e vende
+              12 funcionalidades que mudam a forma como você atende e fecha honorários
             </p>
           </div>
 
@@ -394,13 +393,13 @@ const LandingPage = () => {
         <div className="max-w-7xl mx-auto">
           <div className="text-center max-w-3xl mx-auto mb-14">
             <h2 className="text-3xl sm:text-5xl font-bold leading-tight">
-              Pacotes prontos para{" "}
+              Pacotes prontos por{" "}
               <span className="bg-gradient-to-r from-pink-400 to-orange-400 bg-clip-text text-transparent">
-                sua área de atuação
+                área do Direito
               </span>
             </h2>
             <p className="mt-5 text-slate-400 text-lg">
-              Ative em 1 clique. Pipeline, fluxos, agentes de IA e templates já configurados.
+              Ative em 1 clique. Pipeline, fluxos, agente de IA jurídico e templates de contrato — tudo configurado.
             </p>
           </div>
 
@@ -429,7 +428,7 @@ const LandingPage = () => {
       <section className="py-24 px-4">
         <div className="max-w-4xl mx-auto">
           <h2 className="text-3xl sm:text-5xl font-bold text-center leading-tight">
-            <span className="text-slate-300">Planilhas & WhatsApp solto</span>{" "}
+            <span className="text-slate-300">WhatsApp solto</span>{" "}
             <span className="text-rose-400">vs</span>{" "}
             <span className="bg-gradient-to-r from-pink-400 to-rose-400 bg-clip-text text-transparent">Wizzy</span>
           </h2>
@@ -444,11 +443,11 @@ const LandingPage = () => {
               </div>
             </div>
             {[
-              ["Leads perdidos no WhatsApp", "Pipeline organizado com etapas claras"],
-              ["Resposta manual e lenta", "IA respondendo 24/7, com sua voz"],
-              ["Contratos por e-mail e Word", "Documentos com assinatura digital nativa"],
+              ["Casos perdidos no WhatsApp", "Pipeline jurídico organizado por etapas"],
+              ["Resposta manual e fora de hora", "Agente de IA jurídica respondendo 24/7"],
+              ["Contratos de honorários no Word", "Documentos com assinatura digital (Lei 14.063)"],
               ["Agendamento por mensagem", "Página pública + Google Calendar/Meet"],
-              ["Sem visão de conversão", "Dashboards de funil e desempenho"],
+              ["Sem visão de captação", "Dashboards de funil, ticket e conversão"],
               ["Relatórios manuais no fim do mês", "Métricas em tempo real, automatizadas"],
             ].map(([before, after], i) => (
               <div key={i} className="grid grid-cols-2 border-t border-white/5">
@@ -543,7 +542,7 @@ const LandingPage = () => {
           <div className="text-center max-w-3xl mx-auto mb-14">
             <Badge className="mb-5 bg-pink-500/10 text-pink-300 border border-pink-500/30 hover:bg-pink-500/15">
               <Star className="w-3 h-3 mr-1.5 fill-current" />
-              Amado por profissionais
+              Aprovado pela advocacia
             </Badge>
             <h2 className="text-3xl sm:text-5xl font-bold leading-tight">
               Quem usa,{" "}
@@ -552,7 +551,7 @@ const LandingPage = () => {
               </span>
             </h2>
             <p className="mt-5 text-slate-400 text-lg">
-              Veja o que advogados, clínicas, corretores e agências estão dizendo sobre o Wizzy
+              Veja o que advogados de várias áreas estão dizendo sobre o Wizzy
             </p>
           </div>
 
@@ -582,7 +581,7 @@ const LandingPage = () => {
           <div className="mt-14 grid grid-cols-3 gap-6 max-w-2xl mx-auto text-center">
             <div>
               <p className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-pink-400 to-rose-400 bg-clip-text text-transparent">2.400+</p>
-              <p className="text-xs text-slate-500 mt-1">Profissionais ativos</p>
+              <p className="text-xs text-slate-500 mt-1">Advogados ativos</p>
             </div>
             <div>
               <p className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-emerald-400 to-teal-400 bg-clip-text text-transparent">+340%</p>
@@ -731,7 +730,7 @@ const LandingPage = () => {
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(236,72,153,0.15),transparent_70%)]" />
         <div className="relative max-w-3xl mx-auto text-center">
           <h2 className="text-3xl sm:text-5xl font-bold text-white leading-tight">
-            Pronto para parar de perder clientes?
+            Pronto para parar de perder honorários?
           </h2>
           <p className="mt-5 text-slate-300 text-lg">
             Crie sua conta em menos de 2 minutos. Sem cartão. Sem compromisso.
