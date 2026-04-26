@@ -80,12 +80,12 @@ const integrations = [
 ];
 
 const testimonials = [
-  { name: "Dra. Marina Costa", role: "Advogada Trabalhista", initials: "MC", quote: "A IA do Wizzy faz a triagem inicial dos casos. Eu só entro na conversa quando o lead já está pronto. Triplicou meu fechamento.", color: "from-pink-500 to-rose-500" },
-  { name: "Dr. Rafael Oliveira", role: "Clínica Odontológica", initials: "RO", quote: "Reduzi 70% das faltas com a confirmação automática. O agendamento pelo WhatsApp virou o coração da clínica.", color: "from-blue-500 to-cyan-500" },
-  { name: "Juliana Santos", role: "Corretora de Imóveis", initials: "JS", quote: "Antes eu perdia visitas por não responder a tempo. Agora a IA agenda, confirma e me passa o lead já qualificado.", color: "from-violet-500 to-purple-500" },
-  { name: "Lucas Ferreira", role: "Estúdio de Estética", initials: "LF", quote: "Os contratos com assinatura digital e a recuperação de clientes inativos pagaram a ferramenta no primeiro mês.", color: "from-emerald-500 to-teal-500" },
-  { name: "Carla Mendes", role: "Escola de Idiomas", initials: "CM", quote: "Cadastrei as informações da escola na base de conhecimento e a IA responde dúvidas como se fosse um atendente treinado.", color: "from-amber-500 to-orange-500" },
-  { name: "Pedro Almeida", role: "Agência de Marketing", initials: "PA", quote: "Gerencio 4 contas de clientes em workspaces separados. Cada uma com pipeline, equipe e relatórios próprios.", color: "from-fuchsia-500 to-pink-500" },
+  { name: "Dra. Marina Costa", role: "Advogada Trabalhista — São Paulo/SP", initials: "MC", quote: "A IA do Wizzy faz a triagem inicial dos casos. Eu só entro na conversa quando o lead já está pronto. Triplicou meu fechamento de honorários.", color: "from-pink-500 to-rose-500" },
+  { name: "Dr. Rafael Oliveira", role: "Direito de Família — Belo Horizonte/MG", initials: "RO", quote: "O acolhimento sensível dos casos de família, feito pela IA 24/7, mudou meu escritório. Cliente chega à consulta já confiando.", color: "from-blue-500 to-cyan-500" },
+  { name: "Dra. Juliana Santos", role: "Direito Cível — Curitiba/PR", initials: "JS", quote: "Antes eu perdia clientes por demora. Agora a IA atende, qualifica e me passa só os casos viáveis, com documentos já anexados.", color: "from-violet-500 to-purple-500" },
+  { name: "Dr. Lucas Ferreira", role: "Previdenciário — Porto Alegre/RS", initials: "LF", quote: "Os contratos de honorários com assinatura digital fecham em minutos, não em dias. Pagou a ferramenta na primeira semana.", color: "from-emerald-500 to-teal-500" },
+  { name: "Dra. Carla Mendes", role: "Direito Empresarial — Rio de Janeiro/RJ", initials: "CM", quote: "Cadastrei as áreas de atuação na base de conhecimento e a IA responde dúvidas como se fosse uma estagiária treinada.", color: "from-amber-500 to-orange-500" },
+  { name: "Dr. Pedro Almeida", role: "Sócio de banca — Brasília/DF", initials: "PA", quote: "Gerencio 6 advogados e 2 estagiários com permissões separadas. Cada área tem seu pipeline e seus relatórios.", color: "from-fuchsia-500 to-pink-500" },
 ];
 
 const moduleLabels: Record<string, string> = {
