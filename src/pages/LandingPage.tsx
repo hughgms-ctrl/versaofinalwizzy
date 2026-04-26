@@ -22,52 +22,52 @@ import { Skeleton } from "@/components/ui/skeleton";
  * imobiliárias, estética, educação, agências…)
  * ============================================================ */
 
-const niches = [
-  { icon: Briefcase, label: "Advocacia" },
-  { icon: Stethoscope, label: "Clínicas & Saúde" },
-  { icon: Home, label: "Imobiliárias" },
-  { icon: Scissors, label: "Estética" },
-  { icon: GraduationCap, label: "Educação" },
-  { icon: Building2, label: "Agências" },
+const practiceAreas = [
+  { icon: Briefcase, label: "Trabalhista" },
+  { icon: Users, label: "Família" },
+  { icon: FileText, label: "Cível" },
+  { icon: Building2, label: "Empresarial" },
+  { icon: Shield, label: "Previdenciário" },
+  { icon: Scissors, label: "Tributário" },
 ];
 
 const pains = [
-  { icon: MessageSquare, title: "Leads perdidos no WhatsApp", desc: "Conversas espalhadas, sem follow-up, esfriando dia após dia." },
-  { icon: Clock, title: "Resposta lenta demais", desc: "Cliente pergunta às 22h, você responde no dia seguinte — e ele já fechou com o concorrente." },
-  { icon: LayoutGrid, title: "Pipeline na cabeça", desc: "Você não sabe quantos leads tem, em qual etapa, nem quem precisa de retorno hoje." },
-  { icon: FileText, title: "Contratos manuais", desc: "Word, Drive, e-mail, assinatura física — uma novela para cada cliente novo." },
-  { icon: BarChart, title: "Sem dados, sem decisão", desc: "Você não sabe qual canal traz mais clientes nem quanto vale cada lead." },
+  { icon: MessageSquare, title: "Leads que somem no WhatsApp", desc: "Cliente manda mensagem, vai pro arquivado, e o caso esfria sem ninguém retornar." },
+  { icon: Clock, title: "Resposta fora de hora", desc: "O cliente em pânico procura advogado às 22h — quem responde primeiro fecha o caso." },
+  { icon: LayoutGrid, title: "Casos descontrolados", desc: "Você não sabe quantos prospects estão em triagem, em proposta ou esperando contrato." },
+  { icon: FileText, title: "Contratos em Word e e-mail", desc: "Honorários no Word, envio por e-mail, impressão, assinatura física — uma novela para cada cliente." },
+  { icon: BarChart, title: "Sem visão do escritório", desc: "Você não sabe qual canal traz mais clientes, taxa de conversão nem ticket médio por área." },
 ];
 
 const flowSteps = [
-  { n: "01", icon: Link2, title: "Capture leads", desc: "WhatsApp, formulários, quiz, link na bio — tudo entra direto no Wizzy.", color: "from-pink-500 to-rose-500" },
-  { n: "02", icon: Filter, title: "Qualifique com IA", desc: "Agentes de IA atendem 24/7, qualificam o lead e organizam no pipeline certo.", color: "from-violet-500 to-purple-500" },
-  { n: "03", icon: LayoutGrid, title: "Organize no funil", desc: "Kanban visual com etapas customizadas para sua área de atuação.", color: "from-blue-500 to-cyan-500" },
-  { n: "04", icon: FileText, title: "Envie proposta/contrato", desc: "Documentos gerados automaticamente, com assinatura eletrônica nativa.", color: "from-emerald-500 to-teal-500" },
-  { n: "05", icon: Calendar, title: "Agende e atenda", desc: "Agenda integrada ao Google Calendar e Meet — agendamento pelo WhatsApp.", color: "from-amber-500 to-orange-500" },
-  { n: "06", icon: TrendingUp, title: "Meça e escale", desc: "Dashboards com conversão, receita por canal e desempenho de cada agente.", color: "from-fuchsia-500 to-pink-500" },
+  { n: "01", icon: Link2, title: "Capte o lead", desc: "WhatsApp, site, Google Ads, indicações, redes sociais — tudo entra direto no Wizzy.", color: "from-pink-500 to-rose-500" },
+  { n: "02", icon: Filter, title: "Triagem com IA", desc: "Agente jurídico de IA atende 24/7, identifica a área do caso e qualifica o cliente.", color: "from-violet-500 to-purple-500" },
+  { n: "03", icon: LayoutGrid, title: "Organize no funil", desc: "Pipeline jurídico: Triagem → Análise → Proposta → Contrato → Cliente ativo.", color: "from-blue-500 to-cyan-500" },
+  { n: "04", icon: FileText, title: "Envie o contrato", desc: "Contrato de honorários gerado automaticamente, com assinatura eletrônica (Lei 14.063).", color: "from-emerald-500 to-teal-500" },
+  { n: "05", icon: Calendar, title: "Agende a reunião", desc: "Agenda integrada ao Google Calendar e Meet — agendamento pelo próprio WhatsApp.", color: "from-amber-500 to-orange-500" },
+  { n: "06", icon: TrendingUp, title: "Meça e escale", desc: "Dashboards com conversão por área, ticket médio e desempenho de cada captador.", color: "from-fuchsia-500 to-pink-500" },
 ];
 
 const features = [
-  { icon: MessageSquare, title: "Atendimento centralizado", desc: "Todas as conversas do WhatsApp em uma única caixa de entrada, com fila, equipe e tags.", highlight: "DESTAQUE" },
-  { icon: Bot, title: "Agentes de IA", desc: "Atendentes virtuais que respondem, qualificam, agendam e transferem para humano quando preciso.", highlight: "IA" },
-  { icon: Workflow, title: "Fluxos automatizados", desc: "Construa automações visuais sem código — gatilhos, condições, mensagens, ações." },
-  { icon: LayoutGrid, title: "Pipeline visual (CRM)", desc: "Funis ilimitados com colunas customizáveis. Mova leads com drag-and-drop." },
-  { icon: FileText, title: "Documentos & Assinatura", desc: "Templates, packs, preenchimento por formulário e assinatura eletrônica avançada (Lei 14.063)." },
-  { icon: Calendar, title: "Agendamento online", desc: "Página pública de agendamento com Google Calendar e link automático do Meet." },
-  { icon: Megaphone, title: "Campanhas em massa", desc: "Disparos por tag ou seleção, com intervalo anti-bloqueio e mídia personalizada." },
-  { icon: BookOpen, title: "Base de conhecimento", desc: "Cadastre informações da sua empresa para a IA puxar respostas precisas." },
-  { icon: Bell, title: "Notificações em tempo real", desc: "Push no navegador para novos leads, pagamentos e tarefas — sem abrir o app." },
-  { icon: Users, title: "Equipe & permissões", desc: "Múltiplos workspaces, papéis e permissões granulares por módulo." },
-  { icon: BarChart3, title: "Dashboards completos", desc: "Conversão por etapa, receita por canal, desempenho por atendente, em tempo real.", highlight: "PRO" },
-  { icon: Tag, title: "Tags & segmentação", desc: "Organize contatos com tags ilimitadas e dispare ações por segmento." },
+  { icon: MessageSquare, title: "Atendimento jurídico centralizado", desc: "Todas as conversas do WhatsApp do escritório em uma só caixa, com fila, advogados e tags por área.", highlight: "DESTAQUE" },
+  { icon: Bot, title: "Agente jurídico de IA", desc: "IA treinada para advocacia: faz triagem, identifica a área, coleta dados do caso e agenda a consulta.", highlight: "IA" },
+  { icon: Workflow, title: "Fluxos automatizados", desc: "Automatize triagens, follow-ups e envio de contratos sem precisar mexer em código." },
+  { icon: LayoutGrid, title: "Pipeline jurídico", desc: "Funis por área (trabalhista, cível, família…) com etapas configuráveis e drag-and-drop." },
+  { icon: FileText, title: "Contratos com assinatura digital", desc: "Templates de honorários, procurações e contratos. Assinatura eletrônica avançada (Lei 14.063/2020)." },
+  { icon: Calendar, title: "Agendamento de consultas", desc: "Página pública de agendamento com Google Calendar e link automático do Meet." },
+  { icon: Megaphone, title: "Campanhas para a base", desc: "Comunique novidades, conteúdos e oportunidades para sua base de clientes e ex-clientes." },
+  { icon: BookOpen, title: "Base de conhecimento do escritório", desc: "Cadastre informações do escritório, áreas de atuação e valores — a IA responde com a sua voz." },
+  { icon: Bell, title: "Notificações em tempo real", desc: "Push no navegador para novos casos, mensagens e prazos — sem precisar abrir o app." },
+  { icon: Users, title: "Equipe & permissões", desc: "Múltiplos advogados e estagiários, com permissões granulares por área e por módulo." },
+  { icon: BarChart3, title: "Dashboards do escritório", desc: "Conversão por área, ticket médio, origem dos casos e desempenho de cada captador.", highlight: "PRO" },
+  { icon: Tag, title: "Tags & segmentação", desc: "Organize contatos por área, status processual ou qualquer critério do escritório." },
 ];
 
 const verticalPacks = [
-  { icon: Briefcase, title: "Advocacia", items: ["Captação de leads jurídicos", "Triagem por área (cível, trabalhista, etc.)", "Contratos de honorários", "LGPD-friendly"] },
-  { icon: Stethoscope, title: "Clínicas & Saúde", items: ["Pré-agendamento de consultas", "Confirmação automática", "Anamnese por formulário", "Lembretes 24h antes"] },
-  { icon: Home, title: "Imobiliárias", items: ["Qualificação de comprador/locador", "Agendamento de visitas", "Envio de fichas de imóveis", "Proposta digital"] },
-  { icon: Scissors, title: "Estética & Beleza", items: ["Agenda integrada", "Confirmação de horários", "Pacotes e fidelidade", "Recuperação de inativos"] },
+  { icon: Briefcase, title: "Trabalhista", items: ["Triagem de rescisão e verbas", "Cálculos preliminares", "Contrato de honorários ad exitum", "Follow-up de propostas"] },
+  { icon: Users, title: "Família & Sucessões", items: ["Acolhimento sensível ao caso", "Triagem de divórcio, guarda e pensão", "Coleta inicial de documentos", "Agendamento de consulta"] },
+  { icon: FileText, title: "Cível & Consumidor", items: ["Identificação do tipo de demanda", "Pré-análise de viabilidade", "Envio do contrato e procuração", "Acompanhamento do cliente"] },
+  { icon: Shield, title: "Previdenciário", items: ["Triagem de aposentadoria/benefícios", "Coleta de CNIS e documentos", "Envio de contrato com assinatura digital", "Lembretes automáticos"] },
 ];
 
 const integrations = [
