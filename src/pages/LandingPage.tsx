@@ -171,20 +171,19 @@ const LandingPage = () => {
         <div className="max-w-5xl mx-auto text-center">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full border border-pink-500/30 bg-pink-500/10 text-pink-300 text-xs font-medium mb-7">
             <Sparkles className="w-3.5 h-3.5" />
-            Plataforma completa de atendimento, CRM e IA para WhatsApp
+            Plataforma de IA, atendimento e CRM feita para advogados
           </div>
 
           <h1 className="text-4xl sm:text-6xl lg:text-7xl font-bold tracking-tight leading-[1.05]">
             Transforme seu WhatsApp em uma{" "}
             <span className="bg-gradient-to-r from-pink-400 via-rose-400 to-orange-400 bg-clip-text text-transparent">
-              máquina de fechar clientes
+              máquina de fechar honorários
             </span>
           </h1>
 
           <p className="mt-7 text-lg sm:text-xl text-slate-400 max-w-3xl mx-auto leading-relaxed">
-            Atenda 24/7 com IA, organize leads em um pipeline visual, gere contratos com assinatura digital
-            e meça tudo em tempo real — feito para advogados, clínicas, imobiliárias, estética e quem vive
-            de prestar serviço.
+            Atenda 24/7 com IA jurídica, organize casos em um pipeline visual, envie contratos de honorários
+            com assinatura digital e meça a captação do escritório em tempo real — tudo em um só lugar.
           </p>
 
           <div className="mt-10 flex flex-col sm:flex-row gap-3 justify-center">
