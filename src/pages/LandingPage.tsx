@@ -276,11 +276,11 @@ const LandingPage = () => {
         <div className="max-w-6xl mx-auto">
           <div className="text-center max-w-3xl mx-auto">
             <h2 className="text-3xl sm:text-5xl font-bold leading-tight">
-              Profissionais perdem clientes <br className="hidden sm:block" />
+              Advogados perdem causas <br className="hidden sm:block" />
               por <span className="text-rose-400">falta de organização</span>
             </h2>
             <p className="mt-5 text-slate-400 text-lg">
-              Se você presta serviços, provavelmente já passou por isso:
+              Se você capta clientes pelo WhatsApp, provavelmente já passou por isso:
             </p>
           </div>
 
@@ -300,7 +300,7 @@ const LandingPage = () => {
           </div>
 
           <p className="mt-12 text-center text-slate-300">
-            Gerenciar tudo no improviso custa caro. <span className="text-white font-semibold">O Wizzy centraliza tudo em um só sistema.</span>
+            Captar no improviso custa caro. <span className="text-white font-semibold">O Wizzy organiza a captação do escritório em um só lugar.</span>
           </p>
         </div>
       </section>
@@ -312,7 +312,7 @@ const LandingPage = () => {
             <h2 className="text-3xl sm:text-5xl font-bold leading-tight">
               Um fluxo simples para gerenciar{" "}
               <span className="bg-gradient-to-r from-pink-400 via-violet-400 to-emerald-400 bg-clip-text text-transparent">
-                todo o seu negócio
+                a captação do seu escritório
               </span>
             </h2>
           </div>
@@ -342,13 +342,13 @@ const LandingPage = () => {
               POR QUE ESCOLHER O WIZZY?
             </Badge>
             <h2 className="text-3xl sm:text-5xl font-bold leading-tight">
-              Tudo para gerenciar seu negócio,{" "}
+              Tudo para gerenciar seu escritório,{" "}
               <span className="bg-gradient-to-r from-pink-400 to-rose-400 bg-clip-text text-transparent">
                 em um só lugar
               </span>
             </h2>
             <p className="mt-5 text-slate-400 text-lg">
-              12 funcionalidades que mudam a forma como você atende e vende
+              12 funcionalidades que mudam a forma como você atende e fecha honorários
             </p>
           </div>
 
@@ -393,13 +393,13 @@ const LandingPage = () => {
         <div className="max-w-7xl mx-auto">
           <div className="text-center max-w-3xl mx-auto mb-14">
             <h2 className="text-3xl sm:text-5xl font-bold leading-tight">
-              Pacotes prontos para{" "}
+              Pacotes prontos por{" "}
               <span className="bg-gradient-to-r from-pink-400 to-orange-400 bg-clip-text text-transparent">
-                sua área de atuação
+                área do Direito
               </span>
             </h2>
             <p className="mt-5 text-slate-400 text-lg">
-              Ative em 1 clique. Pipeline, fluxos, agentes de IA e templates já configurados.
+              Ative em 1 clique. Pipeline, fluxos, agente de IA jurídico e templates de contrato — tudo configurado.
             </p>
           </div>
 
@@ -428,7 +428,7 @@ const LandingPage = () => {
       <section className="py-24 px-4">
         <div className="max-w-4xl mx-auto">
           <h2 className="text-3xl sm:text-5xl font-bold text-center leading-tight">
-            <span className="text-slate-300">Planilhas & WhatsApp solto</span>{" "}
+            <span className="text-slate-300">WhatsApp solto</span>{" "}
             <span className="text-rose-400">vs</span>{" "}
             <span className="bg-gradient-to-r from-pink-400 to-rose-400 bg-clip-text text-transparent">Wizzy</span>
           </h2>
@@ -443,11 +443,11 @@ const LandingPage = () => {
               </div>
             </div>
             {[
-              ["Leads perdidos no WhatsApp", "Pipeline organizado com etapas claras"],
-              ["Resposta manual e lenta", "IA respondendo 24/7, com sua voz"],
-              ["Contratos por e-mail e Word", "Documentos com assinatura digital nativa"],
+              ["Casos perdidos no WhatsApp", "Pipeline jurídico organizado por etapas"],
+              ["Resposta manual e fora de hora", "Agente de IA jurídica respondendo 24/7"],
+              ["Contratos de honorários no Word", "Documentos com assinatura digital (Lei 14.063)"],
               ["Agendamento por mensagem", "Página pública + Google Calendar/Meet"],
-              ["Sem visão de conversão", "Dashboards de funil e desempenho"],
+              ["Sem visão de captação", "Dashboards de funil, ticket e conversão"],
               ["Relatórios manuais no fim do mês", "Métricas em tempo real, automatizadas"],
             ].map(([before, after], i) => (
               <div key={i} className="grid grid-cols-2 border-t border-white/5">
@@ -542,7 +542,7 @@ const LandingPage = () => {
           <div className="text-center max-w-3xl mx-auto mb-14">
             <Badge className="mb-5 bg-pink-500/10 text-pink-300 border border-pink-500/30 hover:bg-pink-500/15">
               <Star className="w-3 h-3 mr-1.5 fill-current" />
-              Amado por profissionais
+              Aprovado pela advocacia
             </Badge>
             <h2 className="text-3xl sm:text-5xl font-bold leading-tight">
               Quem usa,{" "}
@@ -551,7 +551,7 @@ const LandingPage = () => {
               </span>
             </h2>
             <p className="mt-5 text-slate-400 text-lg">
-              Veja o que advogados, clínicas, corretores e agências estão dizendo sobre o Wizzy
+              Veja o que advogados de várias áreas estão dizendo sobre o Wizzy
             </p>
           </div>
 
