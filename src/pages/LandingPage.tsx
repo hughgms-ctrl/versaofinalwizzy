@@ -581,7 +581,7 @@ const LandingPage = () => {
           <div className="mt-14 grid grid-cols-3 gap-6 max-w-2xl mx-auto text-center">
             <div>
               <p className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-pink-400 to-rose-400 bg-clip-text text-transparent">2.400+</p>
-              <p className="text-xs text-slate-500 mt-1">Profissionais ativos</p>
+              <p className="text-xs text-slate-500 mt-1">Advogados ativos</p>
             </div>
             <div>
               <p className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-emerald-400 to-teal-400 bg-clip-text text-transparent">+340%</p>
@@ -730,7 +730,7 @@ const LandingPage = () => {
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(236,72,153,0.15),transparent_70%)]" />
         <div className="relative max-w-3xl mx-auto text-center">
           <h2 className="text-3xl sm:text-5xl font-bold text-white leading-tight">
-            Pronto para parar de perder clientes?
+            Pronto para parar de perder honorários?
           </h2>
           <p className="mt-5 text-slate-300 text-lg">
             Crie sua conta em menos de 2 minutos. Sem cartão. Sem compromisso.
