@@ -251,14 +251,14 @@ const LandingPage = () => {
         </div>
       </section>
 
-      {/* ===================== NICHOS ===================== */}
+      {/* ===================== ÁREAS DE ATUAÇÃO ===================== */}
       <section id="nichos" className="py-16 px-4">
         <div className="max-w-6xl mx-auto">
           <p className="text-center text-xs uppercase tracking-[0.2em] text-slate-500 mb-6">
-            Feito para prestadores de serviço
+            Configurado para as principais áreas da advocacia
           </p>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-            {niches.map((n) => (
+            {practiceAreas.map((n) => (
               <div
                 key={n.label}
                 className="flex flex-col items-center justify-center gap-2 py-5 rounded-xl border border-white/5 bg-white/[0.02] hover:bg-white/[0.04] hover:border-pink-500/20 transition-all"
