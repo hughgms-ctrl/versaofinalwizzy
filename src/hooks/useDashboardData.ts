@@ -278,12 +278,13 @@ export function useConversationsByHour() {
   });
 }
 
-export function useResolutionData() {
+export function useResolutionData(range?: DateRange) {
   const { profile } = useAuth();
   const { selectedWorkspaceId, workspaces } = useWorkspaceContext();
+  const rangeKey = range ? `${range.sinceISO}|${range.untilISO}` : 'all';
 
   return useQuery({
-    queryKey: ['resolution-data', profile?.organization_id, selectedWorkspaceId],
+    queryKey: ['resolution-data', profile?.organization_id, selectedWorkspaceId, rangeKey],
     queryFn: async (): Promise<ResolutionData[]> => {
       if (!profile?.organization_id) {
         return [{ name: 'Sem dados', value: 100, color: 'hsl(220 9% 46%)' }];
@@ -300,6 +301,10 @@ export function useResolutionData() {
         .select('id, status, last_message_at')
         .eq('organization_id', profile.organization_id);
 
+      if (range) {
+        query = query.gte('created_at', range.sinceISO).lte('created_at', range.untilISO);
+      }
+
       if (wsConvIds !== null) {
         if (wsConvIds.length === 0) {
           return [{ name: 'Sem dados', value: 100, color: 'hsl(220 9% 46%)' }];
@@ -313,6 +318,7 @@ export function useResolutionData() {
       if (!conversations || total === 0) {
         return [{ name: 'Sem dados', value: 100, color: 'hsl(220 9% 46%)' }];
       }
+
 
       // Para calcular o status derivado precisamos saber a direção da última mensagem
       const convIds = conversations.map(c => c.id);
