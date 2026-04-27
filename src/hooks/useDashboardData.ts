@@ -319,10 +319,14 @@ export function useResolutionData() {
         }
       });
 
-      const counts = { aberto: 0, em_andamento: 0, archived: 0 };
+      const counts = { aberto: 0, em_andamento: 0, encerrado: 0, archived: 0 };
       conversations.forEach((c: any) => {
         if (c.status === 'archived') {
           counts.archived++;
+          return;
+        }
+        if (c.status === 'closed') {
+          counts.encerrado++;
           return;
         }
         const dir = lastDirByConv.get(c.id);
@@ -341,6 +345,9 @@ export function useResolutionData() {
       }
       if (counts.em_andamento > 0) {
         result.push({ name: 'Em andamento', value: Math.round((counts.em_andamento / total) * 100), color: 'hsl(142 71% 45%)' });
+      }
+      if (counts.encerrado > 0) {
+        result.push({ name: 'Encerrado', value: Math.round((counts.encerrado / total) * 100), color: 'hsl(217 91% 60%)' });
       }
       if (counts.archived > 0) {
         result.push({ name: 'Arquivado', value: Math.round((counts.archived / total) * 100), color: 'hsl(220 9% 46%)' });
