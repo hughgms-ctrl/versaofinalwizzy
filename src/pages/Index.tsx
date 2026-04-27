@@ -73,8 +73,12 @@ const IndexInner = () => {
       title="Dashboard" 
       subtitle="Visão geral do seu atendimento"
       showSearch={true}
-      actions={<DashboardPeriodSelector />}
     >
+      {/* Global period selector */}
+      <div className="mb-4 flex items-center justify-end">
+        <DashboardPeriodSelector />
+      </div>
+
       {/* Metrics Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-4 md:mb-6">
         {isLoading ? (
