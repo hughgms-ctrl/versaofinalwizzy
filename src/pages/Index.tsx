@@ -250,4 +250,10 @@ const IndexInner = () => {
   );
 };
 
+const Index = () => (
+  <DashboardPeriodProvider>
+    <IndexInner />
+  </DashboardPeriodProvider>
+);
+
 export default Index;
