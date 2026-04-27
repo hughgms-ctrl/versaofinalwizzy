@@ -1,9 +1,10 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { PDFDocument, StandardFonts, rgb } from "https://esm.sh/pdf-lib@1.17.1";
+import { PDFDocument, StandardFonts, rgb, PDFFont } from "https://esm.sh/pdf-lib@1.17.1";
 import QRCode from "https://esm.sh/qrcode@1.5.3";
 import { corsHeaders, jsonResponse, errorResponse, createServiceClient, parseJsonBody } from "../_shared/middleware.ts";
 
 const PUBLIC_ORIGIN = "https://wizzybr.com";
+const LOGO_URL = "https://wizzybr.com/favicon.png";
 
 function safe(str: string | null | undefined): string {
   if (!str) return "";
@@ -11,13 +12,6 @@ function safe(str: string | null | undefined): string {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^\x20-\x7E]/g, "?");
-}
-
-function maskIp(ip: string | null | undefined): string {
-  if (!ip) return "N/A";
-  const parts = String(ip).split(".");
-  if (parts.length === 4) return `${parts[0]}.${parts[1]}.x.x`;
-  return "***";
 }
 
 async function fetchAsBytes(url: string | null | undefined): Promise<Uint8Array | null> {
@@ -36,6 +30,23 @@ async function embedImage(pdf: PDFDocument, bytes: Uint8Array | null) {
   try { return await pdf.embedPng(bytes); } catch {
     try { return await pdf.embedJpg(bytes); } catch { return null; }
   }
+}
+
+function wrapText(text: string, font: PDFFont, size: number, maxWidth: number): string[] {
+  const words = String(text).split(" ");
+  const lines: string[] = [];
+  let cur = "";
+  for (const w of words) {
+    const test = cur ? cur + " " + w : w;
+    if (font.widthOfTextAtSize(test, size) > maxWidth) {
+      if (cur) lines.push(cur);
+      cur = w;
+    } else {
+      cur = test;
+    }
+  }
+  if (cur) lines.push(cur);
+  return lines;
 }
 
 serve(async (req) => {
@@ -60,8 +71,10 @@ serve(async (req) => {
       signerBrowser,
       signerOs,
       deviceType,
+      signerDevice,
       otpChannel,
       geolocation,
+      createdAt,
     } = await parseJsonBody<Record<string, any>>(req);
 
     if (!signatureId) {
@@ -70,149 +83,322 @@ serve(async (req) => {
 
     const supabase = createServiceClient();
 
+    // Fetch signature creation date if not provided
+    let docCreatedAt = createdAt;
+    if (!docCreatedAt) {
+      const { data: sigRow } = await supabase
+        .from("document_signatures")
+        .select("created_at, generated_document:generated_documents(created_at)")
+        .eq("id", signatureId)
+        .maybeSingle();
+      docCreatedAt =
+        (sigRow as any)?.generated_document?.created_at ||
+        (sigRow as any)?.created_at ||
+        signedAt;
+    }
+
     const pdfDoc = await PDFDocument.create();
     const helv = await pdfDoc.embedFont(StandardFonts.Helvetica);
     const helvBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
     const page = pdfDoc.addPage([595.28, 841.89]);
     const { width: pw, height: ph } = page.getSize();
-    const margin = 40;
+    const margin = 36;
+    const innerW = pw - 2 * margin;
     let y = ph - margin;
 
-    const dark = rgb(0.1, 0.1, 0.1);
-    const muted = rgb(0.4, 0.4, 0.4);
-    const accent = rgb(0.15, 0.39, 0.92);
-    const line = rgb(0.85, 0.85, 0.85);
+    // ZapSign-like palette
+    const dark = rgb(0.13, 0.13, 0.13);
+    const text = rgb(0.2, 0.2, 0.22);
+    const muted = rgb(0.45, 0.45, 0.5);
+    const purple = rgb(0.55, 0.36, 0.96); // Wizzy purple
+    const greenBg = rgb(0.85, 0.96, 0.88);
+    const greenText = rgb(0.13, 0.55, 0.27);
+    const cardBg = rgb(1, 1, 1);
+    const cardBorder = rgb(0.88, 0.88, 0.9);
+    const cardHeaderBg = rgb(0.97, 0.97, 0.98);
 
-    // Header
-    page.drawText("WIZZY", { x: margin, y, size: 18, font: helvBold, color: accent });
-    const titleTxt = "COMPROVANTE DE ASSINATURA";
-    page.drawText(titleTxt, { x: pw - margin - helvBold.widthOfTextAtSize(titleTxt, 12), y: y + 3, size: 12, font: helvBold, color: dark });
-    y -= 12;
-    page.drawText("Assinatura eletronica avancada - MP 2.200-2/2001 + Lei 14.063/2020", { x: margin, y, size: 8, font: helv, color: muted });
-    y -= 22;
+    const dateFmt = (iso: string | null | undefined) => {
+      if (!iso) return "N/A";
+      const d = new Date(iso);
+      return d.toLocaleString("pt-BR", {
+        day: "2-digit", month: "long", year: "numeric",
+        hour: "2-digit", minute: "2-digit", second: "2-digit",
+        timeZone: "America/Sao_Paulo",
+      });
+    };
 
-    page.drawLine({ start: { x: margin, y }, end: { x: pw - margin, y }, thickness: 1.5, color: dark });
-    y -= 18;
-
-    // Document
-    page.drawText(safe(`Documento: ${documentName || "N/A"}`), { x: margin, y, size: 11, font: helvBold, color: dark });
-    y -= 16;
-    page.drawText("Hash SHA-256 do documento original:", { x: margin, y, size: 9, font: helv, color: muted });
-    y -= 12;
-    const hashFull = documentHash || "N/A";
-    page.drawText(safe(hashFull.substring(0, 64)), { x: margin, y, size: 8, font: helv, color: dark });
-    if (hashFull.length > 64) {
-      y -= 10;
-      page.drawText(safe(hashFull.substring(64)), { x: margin, y, size: 8, font: helv, color: dark });
-    }
-    y -= 18;
-
-    page.drawLine({ start: { x: margin, y }, end: { x: pw - margin, y }, thickness: 0.5, color: line });
-    y -= 16;
-
-    // Signer
-    page.drawText("SIGNATARIO", { x: margin, y, size: 9, font: helvBold, color: muted });
-    y -= 16;
-
-    const selfieBytes = await fetchAsBytes(selfieUrl);
-    const sigBytes = await fetchAsBytes(signatureUrl);
-    const selfieImg = await embedImage(pdfDoc, selfieBytes);
-    const sigImg = await embedImage(pdfDoc, sigBytes);
-
-    const imgsX = pw - margin - 180;
-    const imgY = y - 80;
-
-    let ty = y;
-    page.drawText(safe(signerName || "Nome nao informado"), { x: margin, y: ty, size: 12, font: helvBold, color: dark });
-    ty -= 14;
-    if (signerCpf) { page.drawText(safe(`CPF: ${signerCpf}`), { x: margin, y: ty, size: 9, font: helv, color: dark }); ty -= 11; }
-    if (signerEmail) { page.drawText(safe(`E-mail: ${signerEmail}`), { x: margin, y: ty, size: 9, font: helv, color: dark }); ty -= 11; }
-    if (signerPhone) { page.drawText(safe(`Telefone: ${signerPhone}`), { x: margin, y: ty, size: 9, font: helv, color: dark }); ty -= 11; }
-
-    if (sigImg) {
-      const sw = 80;
-      const sh = (sigImg.height / sigImg.width) * sw;
-      page.drawImage(sigImg, { x: imgsX, y: imgY + (80 - Math.min(sh, 60)) / 2, width: sw, height: Math.min(sh, 60) });
-      page.drawText("Assinatura", { x: imgsX, y: imgY - 10, size: 7, font: helv, color: muted });
-    }
-    if (selfieImg) {
-      page.drawImage(selfieImg, { x: imgsX + 90, y: imgY, width: 80, height: 80 });
-      page.drawText("Selfie", { x: imgsX + 90, y: imgY - 10, size: 7, font: helv, color: muted });
-    }
-
-    y = imgY - 28;
-
-    const signedDate = signedAt ? new Date(signedAt) : new Date();
-    const dateStr = signedDate.toLocaleString("pt-BR", {
-      day: "2-digit", month: "2-digit", year: "numeric",
+    const nowFmt = new Date().toLocaleString("pt-BR", {
+      day: "2-digit", month: "long", year: "numeric",
       hour: "2-digit", minute: "2-digit", second: "2-digit",
       timeZone: "America/Sao_Paulo",
     });
 
-    const channel = otpChannel === "whatsapp" ? "WhatsApp" : "E-mail";
-    const authLines = [
-      `Autenticado em: ${dateStr} (UTC-3)`,
-      `Metodo: OTP via ${channel} + ${selfieImg ? "Selfie + " : ""}Assinatura manuscrita`,
-      `IP: ${maskIp(signerIp)}`,
-      `Dispositivo: ${signerBrowser || "?"} / ${signerOs || "?"} / ${deviceType || "?"}`,
-    ];
-    if (geolocation && geolocation.lat && geolocation.lng) {
-      authLines.push(`Geolocalizacao: ${Number(geolocation.lat).toFixed(2)}, ${Number(geolocation.lng).toFixed(2)}`);
-    }
-    for (const al of authLines) {
-      page.drawText(safe(al), { x: margin, y, size: 9, font: helv, color: dark });
-      y -= 12;
-    }
-    y -= 8;
+    // ===== HEADER =====
+    page.drawText("Relatório de Assinaturas", {
+      x: margin, y: y - 14, size: 20, font: helvBold, color: dark,
+    });
+    page.drawText(safe("Datas e horarios em UTC-0300 ( America/Sao_Paulo)"), {
+      x: margin, y: y - 30, size: 9, font: helv, color: muted,
+    });
+    page.drawText(safe(`Ultima atualizacao em ${nowFmt}`), {
+      x: margin, y: y - 42, size: 9, font: helv, color: muted,
+    });
 
-    page.drawLine({ start: { x: margin, y }, end: { x: pw - margin, y }, thickness: 0.5, color: line });
-    y -= 16;
-
-    page.drawText("VALIDACAO JURIDICA", { x: margin, y, size: 9, font: helvBold, color: muted });
-    y -= 14;
-    const legalText = "Este documento foi assinado eletronicamente conforme MP 2.200-2/2001 (art. 10, paragrafo 2) e Lei 14.063/2020.";
-    const words = legalText.split(" ");
-    let curLine = "";
-    const maxW = pw - 2 * margin;
-    for (const w of words) {
-      const test = curLine ? curLine + " " + w : w;
-      if (helv.widthOfTextAtSize(test, 9) > maxW) {
-        page.drawText(safe(curLine), { x: margin, y, size: 9, font: helv, color: dark });
-        y -= 11;
-        curLine = w;
-      } else {
-        curLine = test;
-      }
+    // Wizzy Logo (top right)
+    const logoBytes = await fetchAsBytes(LOGO_URL);
+    const logoImg = await embedImage(pdfDoc, logoBytes);
+    if (logoImg) {
+      const lh = 36;
+      const lw = (logoImg.width / logoImg.height) * lh;
+      const maxLw = 110;
+      const finalLw = Math.min(lw, maxLw);
+      const finalLh = (logoImg.height / logoImg.width) * finalLw;
+      page.drawImage(logoImg, {
+        x: pw - margin - finalLw,
+        y: y - finalLh,
+        width: finalLw,
+        height: finalLh,
+      });
+      page.drawText("Wizzy", {
+        x: pw - margin - finalLw - 56,
+        y: y - 22,
+        size: 18,
+        font: helvBold,
+        color: purple,
+      });
+    } else {
+      page.drawText("Wizzy", {
+        x: pw - margin - 60, y: y - 22, size: 22, font: helvBold, color: purple,
+      });
     }
-    if (curLine) {
-      page.drawText(safe(curLine), { x: margin, y, size: 9, font: helv, color: dark });
-      y -= 11;
-    }
-    y -= 12;
 
-    // QR
-    const verifyUrl = verificationCode ? `${PUBLIC_ORIGIN}/verificar/${verificationCode}` : `${PUBLIC_ORIGIN}/verificar/${signatureId}`;
+    y -= 70;
+
+    // ===== DOCUMENT CARD =====
+    const docCardH = 110;
+    page.drawRectangle({
+      x: margin, y: y - docCardH, width: innerW, height: docCardH,
+      color: cardBg, borderColor: cardBorder, borderWidth: 1,
+    });
+
+    // QR code on the right
+    const verifyUrl = verificationCode
+      ? `${PUBLIC_ORIGIN}/verificar/${verificationCode}`
+      : `${PUBLIC_ORIGIN}/verificar/${signatureId}`;
     try {
-      const qrDataUrl = await QRCode.toDataURL(verifyUrl, { width: 220, margin: 1 });
+      const qrDataUrl = await QRCode.toDataURL(verifyUrl, { width: 240, margin: 0 });
       const qrBytes = Uint8Array.from(atob(qrDataUrl.split(",")[1]), c => c.charCodeAt(0));
       const qrImg = await pdfDoc.embedPng(qrBytes);
-      const qrSize = 90;
-      page.drawImage(qrImg, { x: margin, y: y - qrSize, width: qrSize, height: qrSize });
+      const qrSize = 80;
+      page.drawImage(qrImg, {
+        x: pw - margin - qrSize - 12,
+        y: y - docCardH + (docCardH - qrSize) / 2,
+        width: qrSize, height: qrSize,
+      });
+    } catch (e) { console.error("QR error:", e); }
 
-      page.drawText("Para verificar a autenticidade,", { x: margin + qrSize + 14, y: y - 18, size: 9, font: helv, color: dark });
-      page.drawText("acesse:", { x: margin + qrSize + 14, y: y - 30, size: 9, font: helv, color: dark });
-      page.drawText(safe(verifyUrl), { x: margin + qrSize + 14, y: y - 46, size: 10, font: helvBold, color: accent });
-      page.drawText("ou escaneie o QR Code ao lado.", { x: margin + qrSize + 14, y: y - 64, size: 8, font: helv, color: muted });
-    } catch (e) {
-      console.error("QR error:", e);
+    const docTextX = margin + 14;
+    const labelSize = 9;
+    const valueSize = 9;
+    let dy = y - 18;
+
+    const drawKV = (label: string, value: string) => {
+      const lblW = helvBold.widthOfTextAtSize(label, labelSize);
+      page.drawText(safe(label), { x: docTextX, y: dy, size: labelSize, font: helvBold, color: dark });
+      page.drawText(safe(value), { x: docTextX + lblW + 4, y: dy, size: valueSize, font: helv, color: text });
+      dy -= 13;
+    };
+
+    drawKV("Status:", "Assinado");
+    drawKV("Documento:", documentName || "N/A");
+    drawKV("Numero:", signatureId);
+    drawKV("Data da criacao:", dateFmt(docCreatedAt));
+    // Hash can be long - render label then wrapped value below
+    const hashLabel = "Hash do documento original (SHA256):";
+    page.drawText(safe(hashLabel), { x: docTextX, y: dy, size: labelSize, font: helvBold, color: dark });
+    const hashLabelW = helvBold.widthOfTextAtSize(hashLabel, labelSize);
+    const hashAvail = innerW - hashLabelW - 28 - 100; // leave room for QR
+    const hashFull = documentHash || "N/A";
+    const hashLines = wrapText(hashFull, helv, valueSize, hashAvail);
+    page.drawText(safe(hashLines[0] || ""), { x: docTextX + hashLabelW + 4, y: dy, size: valueSize, font: helv, color: text });
+    if (hashLines[1]) {
+      dy -= 11;
+      page.drawText(safe(hashLines[1]), { x: docTextX, y: dy, size: valueSize, font: helv, color: text });
     }
 
-    page.drawLine({ start: { x: margin, y: 60 }, end: { x: pw - margin, y: 60 }, thickness: 0.5, color: line });
-    page.drawText("Espaco reservado para futura camada de certificacao ICP-Brasil A1 - Wizzy LTDA", {
-      x: margin, y: 48, size: 7, font: helv, color: muted,
+    y -= docCardH + 22;
+
+    // ===== ASSINATURAS HEADING =====
+    page.drawText("Assinaturas", { x: margin, y, size: 14, font: helvBold, color: dark });
+    const countTxt = "1 de 1 Assinaturas";
+    page.drawText(safe(countTxt), {
+      x: pw - margin - helv.widthOfTextAtSize(countTxt, 9),
+      y: y + 3, size: 9, font: helv, color: muted,
     });
-    page.drawText(`ID assinatura: ${signatureId}`, { x: margin, y: 36, size: 7, font: helv, color: muted });
+    y -= 14;
+
+    // ===== SIGNER CARD =====
+    const cardH = 200;
+    const cardY = y - cardH;
+    page.drawRectangle({
+      x: margin, y: cardY, width: innerW, height: cardH,
+      color: cardBg, borderColor: cardBorder, borderWidth: 1,
+    });
+
+    // Status badges row
+    let bx = margin + 14;
+    const badgeY = y - 22;
+
+    // "Assinado" green pill
+    const pillTxt = "Assinado";
+    const pillTxtW = helv.widthOfTextAtSize(pillTxt, 9);
+    const pillW = pillTxtW + 18;
+    page.drawRectangle({ x: bx, y: badgeY - 4, width: pillW, height: 18, color: greenBg });
+    page.drawText(pillTxt, { x: bx + 9, y: badgeY, size: 9, font: helv, color: greenText });
+    bx += pillW + 10;
+
+    // "via Wizzy" pill (with check)
+    const viaTxt = "via Wizzy";
+    const viaTxtW = helv.widthOfTextAtSize(viaTxt, 9);
+    const viaW = viaTxtW + 26;
+    page.drawText("✓", { x: bx + 6, y: badgeY, size: 10, font: helvBold, color: purple });
+    page.drawText(viaTxt, { x: bx + 18, y: badgeY, size: 9, font: helv, color: text });
+
+    // Right column: "Assinatura" label + image
+    const rightColX = margin + innerW - 170;
+    page.drawText("Assinatura", { x: rightColX, y: y - 22, size: 9, font: helv, color: muted });
+
+    const sigBytes = await fetchAsBytes(signatureUrl);
+    const sigImg = await embedImage(pdfDoc, sigBytes);
+    if (sigImg) {
+      const sw = 130;
+      const sh = Math.min((sigImg.height / sigImg.width) * sw, 50);
+      page.drawImage(sigImg, {
+        x: rightColX, y: y - 80, width: sw, height: sh,
+      });
+    }
+    page.drawText(safe(signerName || "N/A"), {
+      x: rightColX, y: y - 95, size: 9, font: helv, color: text,
+    });
+
+    // Signer name (large)
+    let ly = badgeY - 22;
+    page.drawText(safe((signerName || "Nome nao informado").toUpperCase()), {
+      x: margin + 14, y: ly, size: 13, font: helvBold, color: dark,
+    });
+    ly -= 16;
+
+    page.drawText(safe(`Data e hora da assinatura: ${dateFmt(signedAt)}`), {
+      x: margin + 14, y: ly, size: 9, font: helv, color: text,
+    });
+    ly -= 12;
+    page.drawText(safe(`Token: ${signatureId}`), {
+      x: margin + 14, y: ly, size: 9, font: helv, color: text,
+    });
+    ly -= 18;
+
+    // Selfie thumbnail (if any) - small inline
+    const selfieBytes = await fetchAsBytes(selfieUrl);
+    const selfieImg = await embedImage(pdfDoc, selfieBytes);
+
+    // ===== Bottom section of signer card: 2 columns =====
+    const bottomY = cardY + 14;
+    const colGap = 20;
+    const colW = (innerW - 28 - colGap) / 2;
+    const col1X = margin + 14;
+    const col2X = col1X + colW + colGap;
+
+    // Column 1: Pontos de autenticacao
+    let c1y = bottomY + 78;
+    page.drawText("Pontos de autenticacao:", {
+      x: col1X, y: c1y, size: 10, font: helvBold, color: dark,
+    });
+    c1y -= 14;
+    page.drawText(safe(`Telefone: ${signerPhone || "N/A"}`), {
+      x: col1X, y: c1y, size: 9, font: helv, color: text,
+    });
+    c1y -= 12;
+    page.drawText(safe(`E-mail: ${signerEmail || "N/A"}`), {
+      x: col1X, y: c1y, size: 9, font: helv, color: text,
+    });
+    c1y -= 12;
+    if (signerCpf) {
+      page.drawText(safe(`CPF: ${signerCpf}`), {
+        x: col1X, y: c1y, size: 9, font: helv, color: text,
+      });
+      c1y -= 12;
+    }
+    const channel = otpChannel === "whatsapp" ? "WhatsApp"
+      : otpChannel === "sms" ? "SMS" : "E-mail";
+    page.drawText(safe(`Canal OTP: ${channel}`), {
+      x: col1X, y: c1y, size: 9, font: helv, color: text,
+    });
+
+    // Column 2: Localizacao + IP + Dispositivo
+    let c2y = bottomY + 78;
+    const geoTxt = (geolocation && geolocation.lat && geolocation.lng)
+      ? `${Number(geolocation.lat).toFixed(6)}, ${Number(geolocation.lng).toFixed(6)}`
+      : "Nao coletada";
+    page.drawText(safe(`Localizacao aproximada: ${geoTxt}`), {
+      x: col2X, y: c2y, size: 9, font: helv, color: text,
+    });
+    c2y -= 12;
+    page.drawText(safe(`IP: ${signerIp || "N/A"}`), {
+      x: col2X, y: c2y, size: 9, font: helv, color: text,
+    });
+    c2y -= 12;
+
+    const deviceFull = signerDevice
+      || `${signerBrowser || "?"} / ${signerOs || "?"} / ${deviceType || "?"}`;
+    const devLabel = "Dispositivo: ";
+    page.drawText(devLabel, { x: col2X, y: c2y, size: 9, font: helv, color: text });
+    const devLabelW = helv.widthOfTextAtSize(devLabel, 9);
+    const devLines = wrapText(deviceFull, helv, 9, colW - devLabelW);
+    if (devLines[0]) {
+      page.drawText(safe(devLines[0]), {
+        x: col2X + devLabelW, y: c2y, size: 9, font: helv, color: text,
+      });
+    }
+    for (let i = 1; i < devLines.length && i < 3; i++) {
+      c2y -= 11;
+      page.drawText(safe(devLines[i]), {
+        x: col2X, y: c2y, size: 9, font: helv, color: text,
+      });
+    }
+
+    // Optional selfie thumbnail (top-right corner of bottom area)
+    if (selfieImg) {
+      page.drawImage(selfieImg, {
+        x: rightColX + 90, y: bottomY + 4, width: 36, height: 36,
+      });
+      page.drawText("Selfie", {
+        x: rightColX + 90, y: bottomY - 6, size: 7, font: helv, color: muted,
+      });
+    }
+
+    y = cardY - 18;
+
+    // ===== Validacao juridica footer =====
+    page.drawLine({
+      start: { x: margin, y }, end: { x: pw - margin, y },
+      thickness: 0.5, color: cardBorder,
+    });
+    y -= 14;
+
+    const legalText =
+      "Este documento foi assinado eletronicamente conforme MP 2.200-2/2001 (art. 10, paragrafo 2) e Lei 14.063/2020. " +
+      "Para verificar a autenticidade, acesse: " + verifyUrl;
+    const legalLines = wrapText(legalText, helv, 8, innerW);
+    for (const l of legalLines) {
+      page.drawText(safe(l), { x: margin, y, size: 8, font: helv, color: muted });
+      y -= 10;
+    }
+
+    // Footer brand line
+    page.drawText(safe(`ID assinatura: ${signatureId}  |  Wizzy - wizzybr.com`), {
+      x: margin, y: 32, size: 7, font: helv, color: muted,
+    });
 
     const pdfBytes = await pdfDoc.save();
 
