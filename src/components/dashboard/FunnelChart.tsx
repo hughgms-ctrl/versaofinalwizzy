@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowRight, Settings2, Filter } from 'lucide-react';
+import { ArrowRight, Settings2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -22,20 +22,10 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { usePipelines, usePipelineColumns } from '@/hooks/usePipelines';
 import { useFunnelConfig, useSaveFunnelConfig } from '@/hooks/useFunnelConfig';
-import { useFunnelData, type FunnelPeriod, type FunnelPresetPeriod } from '@/hooks/useFunnelData';
+import { useFunnelData, type FunnelPeriod } from '@/hooks/useFunnelData';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { toast } from '@/hooks/use-toast';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Input } from '@/components/ui/input';
-import { format } from 'date-fns';
-
-const PERIOD_OPTIONS: { value: FunnelPresetPeriod | 'custom'; label: string }[] = [
-  { value: 'today', label: 'Hoje' },
-  { value: '7d', label: '7 dias' },
-  { value: '30d', label: '30 dias' },
-  { value: '90d', label: '90 dias' },
-  { value: 'custom', label: 'Personalizado' },
-];
+import { useDashboardPeriod } from '@/contexts/DashboardPeriodContext';
 
 export function FunnelChart() {
   const { data: allPipelines = [] } = usePipelines();
@@ -43,14 +33,11 @@ export function FunnelChart() {
   const { data: config, isLoading: loadingConfig } = useFunnelConfig();
   const saveConfig = useSaveFunnelConfig();
 
-  const [periodKind, setPeriodKind] = useState<FunnelPresetPeriod | 'custom'>('30d');
-  const today = format(new Date(), 'yyyy-MM-dd');
-  const [customFrom, setCustomFrom] = useState<string>(today);
-  const [customTo, setCustomTo] = useState<string>(today);
-  const period: FunnelPeriod = periodKind === 'custom'
-    ? { from: customFrom, to: customTo }
-    : periodKind;
+  // Period is taken from the global dashboard period selector
+  const { period: dashboardPeriod } = useDashboardPeriod();
+  const period: FunnelPeriod = dashboardPeriod as FunnelPeriod;
   const [dialogOpen, setDialogOpen] = useState(false);
+
 
   // Filter pipelines strictly by selected workspace (or show all when "All workspaces")
   const pipelines = useMemo(() => {
@@ -206,42 +193,6 @@ export function FunnelChart() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {isConfigured && (
-              <>
-                <Select value={periodKind} onValueChange={(v) => setPeriodKind(v as FunnelPresetPeriod | 'custom')}>
-                  <SelectTrigger className="h-9 w-[150px]">
-                    <Filter className="mr-1 h-3.5 w-3.5" />
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PERIOD_OPTIONS.map((p) => (
-                      <SelectItem key={p.value} value={p.value}>
-                        {p.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {periodKind === 'custom' && (
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" size="sm" className="h-9">
-                        {customFrom} → {customTo}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-3 space-y-2" align="end">
-                      <div className="space-y-1">
-                        <Label className="text-xs">De</Label>
-                        <Input type="date" value={customFrom} max={customTo} onChange={(e) => setCustomFrom(e.target.value)} />
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs">Até</Label>
-                        <Input type="date" value={customTo} min={customFrom} onChange={(e) => setCustomTo(e.target.value)} />
-                      </div>
-                    </PopoverContent>
-                  </Popover>
-                )}
-              </>
-            )}
 
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
               <DialogTrigger asChild>

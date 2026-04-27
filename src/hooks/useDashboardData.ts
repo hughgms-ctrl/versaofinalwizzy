@@ -68,12 +68,21 @@ async function getWorkspaceConversationIds(
   return conversations?.map((c: any) => c.id) || [];
 }
 
-export function useDashboardMetrics() {
+export interface DateRange {
+  sinceISO: string;
+  untilISO: string;
+}
+
+export function useDashboardMetrics(range?: DateRange) {
   const { profile } = useAuth();
   const { selectedWorkspaceId, workspaces } = useWorkspaceContext();
 
+  const sinceISO = range?.sinceISO ?? startOfDay(new Date()).toISOString();
+  const untilISO = range?.untilISO ?? null;
+  const rangeKey = `${sinceISO}|${untilISO ?? 'now'}`;
+
   return useQuery({
-    queryKey: ['dashboard-metrics', profile?.organization_id, selectedWorkspaceId],
+    queryKey: ['dashboard-metrics', profile?.organization_id, selectedWorkspaceId, rangeKey],
     queryFn: async (): Promise<DashboardMetrics> => {
       if (!profile?.organization_id) {
         return {
@@ -86,7 +95,6 @@ export function useDashboardMetrics() {
         };
       }
 
-      const todayStart = startOfDay(new Date()).toISOString();
       const wsConvIds = await getWorkspaceConversationIds(
         profile.organization_id,
         selectedWorkspaceId,
@@ -115,23 +123,23 @@ export function useDashboardMetrics() {
         return q;
       };
 
-      // Conversations today
-      const { count: conversationsToday } = await buildConvQuery()
-        .gte('created_at', todayStart);
+      // Conversations in range
+      let conversationsTodayQ = buildConvQuery().gte('created_at', sinceISO);
+      if (untilISO) conversationsTodayQ = conversationsTodayQ.lte('created_at', untilISO);
+      const { count: conversationsToday } = await conversationsTodayQ;
 
-      // "Resolvidos hoje" agora considera atendimentos encerrados hoje
-      // (ou arquivados hoje, como fallback) — mantém o mesmo contrato da UI.
-      const { count: closedTodayCount } = await buildConvQuery()
-        .eq('status', 'closed' as any)
-        .gte('closed_at', todayStart);
-      const { count: archivedTodayCount } = await buildConvQuery()
-        .eq('status', 'archived')
-        .gte('updated_at', todayStart);
+      // Resolved in range (closed + archived)
+      let closedQ = buildConvQuery().eq('status', 'closed' as any).gte('closed_at', sinceISO);
+      if (untilISO) closedQ = closedQ.lte('closed_at', untilISO);
+      const { count: closedTodayCount } = await closedQ;
+
+      let archivedQ = buildConvQuery().eq('status', 'archived').gte('updated_at', sinceISO);
+      if (untilISO) archivedQ = archivedQ.lte('updated_at', untilISO);
+      const { count: archivedTodayCount } = await archivedQ;
       const resolvedToday = (closedTodayCount || 0) + (archivedTodayCount || 0);
 
-      // Open conversations
-      const { count: openConversations } = await buildConvQuery()
-        .eq('status', 'open');
+      // Open conversations (current snapshot — independente do período)
+      const { count: openConversations } = await buildConvQuery().eq('status', 'open');
 
       // Get conversation IDs for message queries
       let convIdsForMessages: string[];
@@ -149,21 +157,23 @@ export function useDashboardMetrics() {
       let aiMessages = 0;
 
       if (convIdsForMessages.length > 0) {
-        const { count: msgCount } = await (supabase as any)
+        let msgQ = (supabase as any)
           .from('messages')
           .select('*', { count: 'exact', head: true })
           .in('conversation_id', convIdsForMessages)
-          .gte('created_at', todayStart);
-        
+          .gte('created_at', sinceISO);
+        if (untilISO) msgQ = msgQ.lte('created_at', untilISO);
+        const { count: msgCount } = await msgQ;
         totalMessages = msgCount || 0;
 
-        const { count: aiCount } = await (supabase as any)
+        let aiQ = (supabase as any)
           .from('messages')
           .select('*', { count: 'exact', head: true })
           .in('conversation_id', convIdsForMessages)
           .eq('is_from_bot', true)
-          .gte('created_at', todayStart);
-
+          .gte('created_at', sinceISO);
+        if (untilISO) aiQ = aiQ.lte('created_at', untilISO);
+        const { count: aiCount } = await aiQ;
         aiMessages = aiCount || 0;
       }
 
@@ -185,17 +195,38 @@ export function useDashboardMetrics() {
   });
 }
 
-export function useConversationsByHour() {
+export function useConversationsByHour(range?: DateRange) {
   const { profile } = useAuth();
   const { selectedWorkspaceId, workspaces } = useWorkspaceContext();
+  const rangeKey = range ? `${range.sinceISO}|${range.untilISO}` : '24h';
 
   return useQuery({
-    queryKey: ['conversations-by-hour', profile?.organization_id, selectedWorkspaceId],
+    queryKey: ['conversations-by-hour', profile?.organization_id, selectedWorkspaceId, rangeKey],
     queryFn: async (): Promise<ConversationsByHour[]> => {
       if (!profile?.organization_id) return [];
 
       const now = new Date();
-      const hours: ConversationsByHour[] = [];
+      const sinceDate = range ? new Date(range.sinceISO) : subHours(now, 24);
+      const untilDate = range ? new Date(range.untilISO) : now;
+      const spanMs = untilDate.getTime() - sinceDate.getTime();
+      const spanHours = spanMs / (1000 * 60 * 60);
+      const byDay = spanHours > 36;
+
+      const bucketMap: Record<string, { ai: number; human: number }> = {};
+
+      if (byDay) {
+        const days = Math.max(1, Math.ceil(spanHours / 24));
+        for (let i = days - 1; i >= 0; i--) {
+          const d = subDays(untilDate, i);
+          bucketMap[format(d, 'dd/MM')] = { ai: 0, human: 0 };
+        }
+      } else {
+        const hoursCount = Math.max(1, Math.ceil(spanHours));
+        for (let i = hoursCount - 1; i >= 0; i--) {
+          const h = subHours(untilDate, i);
+          bucketMap[format(h, 'HH:00')] = { ai: 0, human: 0 };
+        }
+      }
 
       const wsConvIds = await getWorkspaceConversationIds(
         profile.organization_id,
@@ -214,66 +245,50 @@ export function useConversationsByHour() {
         convIds = conversations?.map(c => c.id) || [];
       }
 
+      const buckets: ConversationsByHour[] = [];
       if (convIds.length === 0) {
-        for (let i = 23; i >= 0; i--) {
-          const hour = subHours(now, i);
-          hours.push({ time: format(hour, 'HH:00'), ai: 0, human: 0 });
-        }
-        return hours;
+        for (const key of Object.keys(bucketMap)) buckets.push({ time: key, ai: 0, human: 0 });
+        return buckets;
       }
 
-      const dayAgo = subHours(now, 24).toISOString();
       const { data: messages } = await (supabase as any)
         .from('messages')
         .select('created_at, is_from_bot, direction')
         .in('conversation_id', convIds)
-        .gte('created_at', dayAgo)
+        .gte('created_at', sinceDate.toISOString())
+        .lte('created_at', untilDate.toISOString())
         .eq('direction', 'outbound');
-
-      const hourlyData: Record<string, { ai: number; human: number }> = {};
-      
-      for (let i = 23; i >= 0; i--) {
-        const hour = subHours(now, i);
-        const key = format(hour, 'HH:00');
-        hourlyData[key] = { ai: 0, human: 0 };
-      }
 
       if (messages) {
         messages.forEach((msg: any) => {
-          const hour = format(new Date(msg.created_at), 'HH:00');
-          if (hourlyData[hour]) {
-            if (msg.is_from_bot) {
-              hourlyData[hour].ai++;
-            } else {
-              hourlyData[hour].human++;
-            }
+          const d = new Date(msg.created_at);
+          const key = byDay ? format(d, 'dd/MM') : format(d, 'HH:00');
+          if (bucketMap[key]) {
+            if (msg.is_from_bot) bucketMap[key].ai++;
+            else bucketMap[key].human++;
           }
         });
       }
 
-      for (let i = 23; i >= 0; i--) {
-        const hour = subHours(now, i);
-        const key = format(hour, 'HH:00');
-        hours.push({
-          time: key,
-          ai: hourlyData[key]?.ai || 0,
-          human: hourlyData[key]?.human || 0,
-        });
+      for (const [key, val] of Object.entries(bucketMap)) {
+        buckets.push({ time: key, ai: val.ai, human: val.human });
       }
 
-      return hours;
+      return buckets;
     },
     enabled: !!profile?.organization_id,
     refetchInterval: 60000,
   });
 }
 
-export function useResolutionData() {
+
+export function useResolutionData(range?: DateRange) {
   const { profile } = useAuth();
   const { selectedWorkspaceId, workspaces } = useWorkspaceContext();
+  const rangeKey = range ? `${range.sinceISO}|${range.untilISO}` : 'all';
 
   return useQuery({
-    queryKey: ['resolution-data', profile?.organization_id, selectedWorkspaceId],
+    queryKey: ['resolution-data', profile?.organization_id, selectedWorkspaceId, rangeKey],
     queryFn: async (): Promise<ResolutionData[]> => {
       if (!profile?.organization_id) {
         return [{ name: 'Sem dados', value: 100, color: 'hsl(220 9% 46%)' }];
@@ -290,6 +305,10 @@ export function useResolutionData() {
         .select('id, status, last_message_at')
         .eq('organization_id', profile.organization_id);
 
+      if (range) {
+        query = query.gte('created_at', range.sinceISO).lte('created_at', range.untilISO);
+      }
+
       if (wsConvIds !== null) {
         if (wsConvIds.length === 0) {
           return [{ name: 'Sem dados', value: 100, color: 'hsl(220 9% 46%)' }];
@@ -303,6 +322,7 @@ export function useResolutionData() {
       if (!conversations || total === 0) {
         return [{ name: 'Sem dados', value: 100, color: 'hsl(220 9% 46%)' }];
       }
+
 
       // Para calcular o status derivado precisamos saber a direção da última mensagem
       const convIds = conversations.map(c => c.id);
@@ -429,20 +449,28 @@ export function useRecentConversations(limit = 5) {
   });
 }
 
-export function useTeamPerformance(period: string = '7d') {
+export function useTeamPerformance(period: string = '7d', range?: DateRange) {
   const { profile } = useAuth();
   const { selectedWorkspaceId, workspaces } = useWorkspaceContext();
+  const rangeKey = range ? `${range.sinceISO}|${range.untilISO}` : period;
 
   return useQuery({
-    queryKey: ['team-performance', profile?.organization_id, selectedWorkspaceId, period],
+    queryKey: ['team-performance', profile?.organization_id, selectedWorkspaceId, rangeKey],
     queryFn: async () => {
       if (!profile?.organization_id) return [];
 
-      const daysMap: Record<string, number> = { today: 0, '7d': 7, '30d': 30, '90d': 90 };
-      const days = daysMap[period] ?? 7;
-      const since = days === 0
-        ? startOfDay(new Date()).toISOString()
-        : subDays(new Date(), days).toISOString();
+      let since: string;
+      let until: string | null = null;
+      if (range) {
+        since = range.sinceISO;
+        until = range.untilISO;
+      } else {
+        const daysMap: Record<string, number> = { today: 0, '7d': 7, '30d': 30, '90d': 90 };
+        const days = daysMap[period] ?? 7;
+        since = days === 0
+          ? startOfDay(new Date()).toISOString()
+          : subDays(new Date(), days).toISOString();
+      }
 
       const wsConvIds = await getWorkspaceConversationIds(
         profile.organization_id,
@@ -465,8 +493,10 @@ export function useTeamPerformance(period: string = '7d') {
         .select('id, intervened_by, assigned_to, intervened_at, updated_at')
         .eq('organization_id', profile.organization_id)
         .gte('updated_at', since);
+      if (until) convQuery = convQuery.lte('updated_at', until);
 
       if (wsConvIds) convQuery = convQuery.in('id', wsConvIds);
+
 
       const { data: convs } = await convQuery;
 

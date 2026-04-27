@@ -1,12 +1,21 @@
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useConversationsByHour } from '@/hooks/useDashboardData';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useDashboardPeriod } from '@/contexts/DashboardPeriodContext';
 
 export function ConversationsChart() {
-  const { data = [], isLoading } = useConversationsByHour();
+  const { range, periodKind } = useDashboardPeriod();
+  const { data = [], isLoading } = useConversationsByHour(range);
 
-  // Show only every 4th hour for cleaner labels
-  const displayData = data.filter((_, i) => i % 2 === 0);
+  const displayData = periodKind === 'today' ? data.filter((_, i) => i % 2 === 0) : data;
+
+  const subtitleMap: Record<string, string> = {
+    today: 'Mensagens enviadas por hora - Hoje',
+    '7d': 'Mensagens enviadas por dia - Últimos 7 dias',
+    '30d': 'Mensagens enviadas por dia - Últimos 30 dias',
+    '90d': 'Mensagens enviadas por dia - Últimos 90 dias',
+    custom: 'Mensagens enviadas no período selecionado',
+  };
 
   return (
     <div className="metric-card h-[400px]">
@@ -15,7 +24,7 @@ export function ConversationsChart() {
         <div className="mb-6 flex items-center justify-between">
           <div>
             <h3 className="text-lg font-semibold text-foreground">Volume de Mensagens</h3>
-            <p className="text-sm text-muted-foreground">Mensagens enviadas por hora - Últimas 24h</p>
+            <p className="text-sm text-muted-foreground">{subtitleMap[periodKind] || 'Mensagens enviadas'}</p>
           </div>
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">

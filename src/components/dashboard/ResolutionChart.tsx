@@ -1,9 +1,11 @@
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts';
 import { useResolutionData } from '@/hooks/useDashboardData';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useDashboardPeriod } from '@/contexts/DashboardPeriodContext';
 
 export function ResolutionChart() {
-  const { data = [], isLoading } = useResolutionData();
+  const { range } = useDashboardPeriod();
+  const { data = [], isLoading } = useResolutionData(range);
 
   return (
     <div className="metric-card h-[400px]">
@@ -13,6 +15,7 @@ export function ResolutionChart() {
           <h3 className="text-lg font-semibold text-foreground">Status das Conversas</h3>
           <p className="text-sm text-muted-foreground">Aberto, em andamento, encerradas e arquivadas</p>
         </div>
+
         
         {isLoading ? (
           <Skeleton className="w-full h-[300px]" />

@@ -25,10 +25,14 @@ import { Card } from '@/components/ui/card';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Zap } from 'lucide-react';
+import { DashboardPeriodProvider, useDashboardPeriod } from '@/contexts/DashboardPeriodContext';
+import { DashboardPeriodSelector } from '@/components/dashboard/DashboardPeriodSelector';
 
-const Index = () => {
+const IndexInner = () => {
   const { canAccess, isLoading: accessLoading } = useCanAccessModule('dashboard');
-  const { data: metrics, isLoading } = useDashboardMetrics();
+  const { range } = useDashboardPeriod();
+  const { data: metrics, isLoading } = useDashboardMetrics(range);
+
   const { data: allPipelines = [] } = usePipelines();
   const { selectedWorkspaceId } = useWorkspaceContext();
 
@@ -70,6 +74,11 @@ const Index = () => {
       subtitle="Visão geral do seu atendimento"
       showSearch={true}
     >
+      {/* Global period selector */}
+      <div className="mb-4 flex items-center justify-end">
+        <DashboardPeriodSelector />
+      </div>
+
       {/* Metrics Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-4 md:mb-6">
         {isLoading ? (
@@ -240,5 +249,11 @@ const Index = () => {
     </MainLayout>
   );
 };
+
+const Index = () => (
+  <DashboardPeriodProvider>
+    <IndexInner />
+  </DashboardPeriodProvider>
+);
 
 export default Index;
