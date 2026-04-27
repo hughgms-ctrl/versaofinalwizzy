@@ -449,20 +449,28 @@ export function useRecentConversations(limit = 5) {
   });
 }
 
-export function useTeamPerformance(period: string = '7d') {
+export function useTeamPerformance(period: string = '7d', range?: DateRange) {
   const { profile } = useAuth();
   const { selectedWorkspaceId, workspaces } = useWorkspaceContext();
+  const rangeKey = range ? `${range.sinceISO}|${range.untilISO}` : period;
 
   return useQuery({
-    queryKey: ['team-performance', profile?.organization_id, selectedWorkspaceId, period],
+    queryKey: ['team-performance', profile?.organization_id, selectedWorkspaceId, rangeKey],
     queryFn: async () => {
       if (!profile?.organization_id) return [];
 
-      const daysMap: Record<string, number> = { today: 0, '7d': 7, '30d': 30, '90d': 90 };
-      const days = daysMap[period] ?? 7;
-      const since = days === 0
-        ? startOfDay(new Date()).toISOString()
-        : subDays(new Date(), days).toISOString();
+      let since: string;
+      let until: string | null = null;
+      if (range) {
+        since = range.sinceISO;
+        until = range.untilISO;
+      } else {
+        const daysMap: Record<string, number> = { today: 0, '7d': 7, '30d': 30, '90d': 90 };
+        const days = daysMap[period] ?? 7;
+        since = days === 0
+          ? startOfDay(new Date()).toISOString()
+          : subDays(new Date(), days).toISOString();
+      }
 
       const wsConvIds = await getWorkspaceConversationIds(
         profile.organization_id,
