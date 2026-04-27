@@ -73,6 +73,7 @@ const IndexInner = () => {
       title="Dashboard" 
       subtitle="Visão geral do seu atendimento"
       showSearch={true}
+      actions={<DashboardPeriodSelector />}
     >
       {/* Metrics Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-4 md:mb-6">
