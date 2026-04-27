@@ -193,42 +193,6 @@ export function FunnelChart() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {isConfigured && (
-              <>
-                <Select value={periodKind} onValueChange={(v) => setPeriodKind(v as FunnelPresetPeriod | 'custom')}>
-                  <SelectTrigger className="h-9 w-[150px]">
-                    <Filter className="mr-1 h-3.5 w-3.5" />
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PERIOD_OPTIONS.map((p) => (
-                      <SelectItem key={p.value} value={p.value}>
-                        {p.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {periodKind === 'custom' && (
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" size="sm" className="h-9">
-                        {customFrom} → {customTo}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-3 space-y-2" align="end">
-                      <div className="space-y-1">
-                        <Label className="text-xs">De</Label>
-                        <Input type="date" value={customFrom} max={customTo} onChange={(e) => setCustomFrom(e.target.value)} />
-                      </div>
-                      <div className="space-y-1">
-                        <Label className="text-xs">Até</Label>
-                        <Input type="date" value={customTo} min={customFrom} onChange={(e) => setCustomTo(e.target.value)} />
-                      </div>
-                    </PopoverContent>
-                  </Popover>
-                )}
-              </>
-            )}
 
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
               <DialogTrigger asChild>
