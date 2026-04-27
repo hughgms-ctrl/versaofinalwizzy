@@ -195,17 +195,38 @@ export function useDashboardMetrics(range?: DateRange) {
   });
 }
 
-export function useConversationsByHour() {
+export function useConversationsByHour(range?: DateRange) {
   const { profile } = useAuth();
   const { selectedWorkspaceId, workspaces } = useWorkspaceContext();
+  const rangeKey = range ? `${range.sinceISO}|${range.untilISO}` : '24h';
 
   return useQuery({
-    queryKey: ['conversations-by-hour', profile?.organization_id, selectedWorkspaceId],
+    queryKey: ['conversations-by-hour', profile?.organization_id, selectedWorkspaceId, rangeKey],
     queryFn: async (): Promise<ConversationsByHour[]> => {
       if (!profile?.organization_id) return [];
 
       const now = new Date();
-      const hours: ConversationsByHour[] = [];
+      const sinceDate = range ? new Date(range.sinceISO) : subHours(now, 24);
+      const untilDate = range ? new Date(range.untilISO) : now;
+      const spanMs = untilDate.getTime() - sinceDate.getTime();
+      const spanHours = spanMs / (1000 * 60 * 60);
+      const byDay = spanHours > 36;
+
+      const bucketMap: Record<string, { ai: number; human: number }> = {};
+
+      if (byDay) {
+        const days = Math.max(1, Math.ceil(spanHours / 24));
+        for (let i = days - 1; i >= 0; i--) {
+          const d = subDays(untilDate, i);
+          bucketMap[format(d, 'dd/MM')] = { ai: 0, human: 0 };
+        }
+      } else {
+        const hoursCount = Math.max(1, Math.ceil(spanHours));
+        for (let i = hoursCount - 1; i >= 0; i--) {
+          const h = subHours(untilDate, i);
+          bucketMap[format(h, 'HH:00')] = { ai: 0, human: 0 };
+        }
+      }
 
       const wsConvIds = await getWorkspaceConversationIds(
         profile.organization_id,
@@ -224,59 +245,42 @@ export function useConversationsByHour() {
         convIds = conversations?.map(c => c.id) || [];
       }
 
+      const buckets: ConversationsByHour[] = [];
       if (convIds.length === 0) {
-        for (let i = 23; i >= 0; i--) {
-          const hour = subHours(now, i);
-          hours.push({ time: format(hour, 'HH:00'), ai: 0, human: 0 });
-        }
-        return hours;
+        for (const key of Object.keys(bucketMap)) buckets.push({ time: key, ai: 0, human: 0 });
+        return buckets;
       }
 
-      const dayAgo = subHours(now, 24).toISOString();
       const { data: messages } = await (supabase as any)
         .from('messages')
         .select('created_at, is_from_bot, direction')
         .in('conversation_id', convIds)
-        .gte('created_at', dayAgo)
+        .gte('created_at', sinceDate.toISOString())
+        .lte('created_at', untilDate.toISOString())
         .eq('direction', 'outbound');
-
-      const hourlyData: Record<string, { ai: number; human: number }> = {};
-      
-      for (let i = 23; i >= 0; i--) {
-        const hour = subHours(now, i);
-        const key = format(hour, 'HH:00');
-        hourlyData[key] = { ai: 0, human: 0 };
-      }
 
       if (messages) {
         messages.forEach((msg: any) => {
-          const hour = format(new Date(msg.created_at), 'HH:00');
-          if (hourlyData[hour]) {
-            if (msg.is_from_bot) {
-              hourlyData[hour].ai++;
-            } else {
-              hourlyData[hour].human++;
-            }
+          const d = new Date(msg.created_at);
+          const key = byDay ? format(d, 'dd/MM') : format(d, 'HH:00');
+          if (bucketMap[key]) {
+            if (msg.is_from_bot) bucketMap[key].ai++;
+            else bucketMap[key].human++;
           }
         });
       }
 
-      for (let i = 23; i >= 0; i--) {
-        const hour = subHours(now, i);
-        const key = format(hour, 'HH:00');
-        hours.push({
-          time: key,
-          ai: hourlyData[key]?.ai || 0,
-          human: hourlyData[key]?.human || 0,
-        });
+      for (const [key, val] of Object.entries(bucketMap)) {
+        buckets.push({ time: key, ai: val.ai, human: val.human });
       }
 
-      return hours;
+      return buckets;
     },
     enabled: !!profile?.organization_id,
     refetchInterval: 60000,
   });
 }
+
 
 export function useResolutionData(range?: DateRange) {
   const { profile } = useAuth();
