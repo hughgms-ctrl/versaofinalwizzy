@@ -493,8 +493,10 @@ export function useTeamPerformance(period: string = '7d', range?: DateRange) {
         .select('id, intervened_by, assigned_to, intervened_at, updated_at')
         .eq('organization_id', profile.organization_id)
         .gte('updated_at', since);
+      if (until) convQuery = convQuery.lte('updated_at', until);
 
       if (wsConvIds) convQuery = convQuery.in('id', wsConvIds);
+
 
       const { data: convs } = await convQuery;
 
