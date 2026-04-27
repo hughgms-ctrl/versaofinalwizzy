@@ -25,10 +25,14 @@ import { Card } from '@/components/ui/card';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Zap } from 'lucide-react';
+import { DashboardPeriodProvider, useDashboardPeriod } from '@/contexts/DashboardPeriodContext';
+import { DashboardPeriodSelector } from '@/components/dashboard/DashboardPeriodSelector';
 
-const Index = () => {
+const IndexInner = () => {
   const { canAccess, isLoading: accessLoading } = useCanAccessModule('dashboard');
-  const { data: metrics, isLoading } = useDashboardMetrics();
+  const { range } = useDashboardPeriod();
+  const { data: metrics, isLoading } = useDashboardMetrics(range);
+
   const { data: allPipelines = [] } = usePipelines();
   const { selectedWorkspaceId } = useWorkspaceContext();
 
