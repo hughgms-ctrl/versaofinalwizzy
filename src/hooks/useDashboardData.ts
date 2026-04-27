@@ -68,12 +68,21 @@ async function getWorkspaceConversationIds(
   return conversations?.map((c: any) => c.id) || [];
 }
 
-export function useDashboardMetrics() {
+export interface DateRange {
+  sinceISO: string;
+  untilISO: string;
+}
+
+export function useDashboardMetrics(range?: DateRange) {
   const { profile } = useAuth();
   const { selectedWorkspaceId, workspaces } = useWorkspaceContext();
 
+  const sinceISO = range?.sinceISO ?? startOfDay(new Date()).toISOString();
+  const untilISO = range?.untilISO ?? null;
+  const rangeKey = `${sinceISO}|${untilISO ?? 'now'}`;
+
   return useQuery({
-    queryKey: ['dashboard-metrics', profile?.organization_id, selectedWorkspaceId],
+    queryKey: ['dashboard-metrics', profile?.organization_id, selectedWorkspaceId, rangeKey],
     queryFn: async (): Promise<DashboardMetrics> => {
       if (!profile?.organization_id) {
         return {
@@ -86,7 +95,6 @@ export function useDashboardMetrics() {
         };
       }
 
-      const todayStart = startOfDay(new Date()).toISOString();
       const wsConvIds = await getWorkspaceConversationIds(
         profile.organization_id,
         selectedWorkspaceId,
@@ -115,23 +123,23 @@ export function useDashboardMetrics() {
         return q;
       };
 
-      // Conversations today
-      const { count: conversationsToday } = await buildConvQuery()
-        .gte('created_at', todayStart);
+      // Conversations in range
+      let conversationsTodayQ = buildConvQuery().gte('created_at', sinceISO);
+      if (untilISO) conversationsTodayQ = conversationsTodayQ.lte('created_at', untilISO);
+      const { count: conversationsToday } = await conversationsTodayQ;
 
-      // "Resolvidos hoje" agora considera atendimentos encerrados hoje
-      // (ou arquivados hoje, como fallback) — mantém o mesmo contrato da UI.
-      const { count: closedTodayCount } = await buildConvQuery()
-        .eq('status', 'closed' as any)
-        .gte('closed_at', todayStart);
-      const { count: archivedTodayCount } = await buildConvQuery()
-        .eq('status', 'archived')
-        .gte('updated_at', todayStart);
+      // Resolved in range (closed + archived)
+      let closedQ = buildConvQuery().eq('status', 'closed' as any).gte('closed_at', sinceISO);
+      if (untilISO) closedQ = closedQ.lte('closed_at', untilISO);
+      const { count: closedTodayCount } = await closedQ;
+
+      let archivedQ = buildConvQuery().eq('status', 'archived').gte('updated_at', sinceISO);
+      if (untilISO) archivedQ = archivedQ.lte('updated_at', untilISO);
+      const { count: archivedTodayCount } = await archivedQ;
       const resolvedToday = (closedTodayCount || 0) + (archivedTodayCount || 0);
 
-      // Open conversations
-      const { count: openConversations } = await buildConvQuery()
-        .eq('status', 'open');
+      // Open conversations (current snapshot — independente do período)
+      const { count: openConversations } = await buildConvQuery().eq('status', 'open');
 
       // Get conversation IDs for message queries
       let convIdsForMessages: string[];
@@ -149,21 +157,23 @@ export function useDashboardMetrics() {
       let aiMessages = 0;
 
       if (convIdsForMessages.length > 0) {
-        const { count: msgCount } = await (supabase as any)
+        let msgQ = (supabase as any)
           .from('messages')
           .select('*', { count: 'exact', head: true })
           .in('conversation_id', convIdsForMessages)
-          .gte('created_at', todayStart);
-        
+          .gte('created_at', sinceISO);
+        if (untilISO) msgQ = msgQ.lte('created_at', untilISO);
+        const { count: msgCount } = await msgQ;
         totalMessages = msgCount || 0;
 
-        const { count: aiCount } = await (supabase as any)
+        let aiQ = (supabase as any)
           .from('messages')
           .select('*', { count: 'exact', head: true })
           .in('conversation_id', convIdsForMessages)
           .eq('is_from_bot', true)
-          .gte('created_at', todayStart);
-
+          .gte('created_at', sinceISO);
+        if (untilISO) aiQ = aiQ.lte('created_at', untilISO);
+        const { count: aiCount } = await aiQ;
         aiMessages = aiCount || 0;
       }
 
