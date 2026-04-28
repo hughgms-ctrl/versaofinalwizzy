@@ -571,9 +571,40 @@ export default function PublicSignaturePage() {
   }
 
   if (step === 'done') {
+    const pendingSigners: number = result?.pendingSigners ?? 0;
+    const allSigned: boolean = result?.allSigned ?? (pendingSigners === 0);
+    const signedPdfUrl: string | null = result?.signedPdfUrl || null;
+
+    const handleDownloadSigned = async () => {
+      if (!signedPdfUrl) {
+        toast.error('Documento ainda não disponível para download.');
+        return;
+      }
+      if (!allSigned) {
+        const ok = window.confirm(
+          `Ainda ${pendingSigners === 1 ? 'falta 1 signatário' : `faltam ${pendingSigners} signatários`} assinar este documento. Deseja baixar mesmo assim a versão atual (parcialmente assinada)?`
+        );
+        if (!ok) return;
+      }
+      try {
+        const res = await fetch(signedPdfUrl);
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = (documentData?.generated_document?.name || 'documento-assinado') + '.pdf';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 1500);
+      } catch {
+        window.open(signedPdfUrl, '_blank', 'noopener,noreferrer');
+      }
+    };
+
     return (
       <div className="min-h-screen flex items-center justify-center bg-background p-4">
-        <Card className="p-8 max-w-md text-center">
+        <Card className="p-8 max-w-md w-full text-center">
           <div className="h-16 w-16 mx-auto bg-green-500/10 rounded-full flex items-center justify-center mb-4">
             <Check className="h-8 w-8 text-green-600" />
           </div>
@@ -581,18 +612,36 @@ export default function PublicSignaturePage() {
           <p className="text-muted-foreground mb-4">
             Seu documento foi assinado com sucesso conforme Lei 14.063/2020.
           </p>
-          
+
+          {!allSigned && (
+            <div className="text-left bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 text-xs mb-4 flex gap-2">
+              <AlertCircle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+              <p>
+                {pendingSigners === 1
+                  ? 'Ainda falta 1 signatário concluir a assinatura deste documento.'
+                  : `Ainda faltam ${pendingSigners} signatários concluir a assinatura deste documento.`}
+                {' '}Você pode baixar a versão atual (parcialmente assinada) ou aguardar a finalização.
+              </p>
+            </div>
+          )}
+
           <div className="text-left bg-muted/50 rounded-lg p-4 text-xs space-y-1 mb-4">
             <p><strong>Hash SHA-256:</strong></p>
             <p className="font-mono break-all">{result?.documentHash || 'N/A'}</p>
             <p className="mt-2"><strong>Assinado em:</strong> {result?.signedAt ? new Date(result.signedAt).toLocaleString('pt-BR') : 'N/A'}</p>
           </div>
 
-          <div className="flex gap-2 justify-center">
+          <div className="flex flex-col gap-2">
+            {signedPdfUrl && (
+              <Button onClick={handleDownloadSigned} size="lg" className="w-full gap-2">
+                <Download className="h-4 w-4" />
+                {allSigned ? 'Baixar documento assinado' : 'Baixar documento (parcial)'}
+              </Button>
+            )}
             {result?.receiptPdfUrl && (
-              <Button variant="outline" size="sm" className="gap-2" asChild>
+              <Button variant="outline" size="sm" className="w-full gap-2" asChild>
                 <a href={result.receiptPdfUrl} target="_blank" rel="noopener noreferrer">
-                  <Download className="h-4 w-4" /> Comprovante
+                  <Download className="h-4 w-4" /> Baixar comprovante
                 </a>
               </Button>
             )}
