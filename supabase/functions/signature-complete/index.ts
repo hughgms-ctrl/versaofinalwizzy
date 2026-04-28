@@ -406,6 +406,8 @@ serve(async (req) => {
       verificationCode,
       verificationUrl: `https://wizzybr.com/verificar/${verificationCode}`,
       signedAt,
+      pendingSigners: pendingSigners ?? 0,
+      allSigned: !pendingSigners || pendingSigners === 0,
     });
   } catch (error: any) {
     console.error("Error in signature-complete:", error);
