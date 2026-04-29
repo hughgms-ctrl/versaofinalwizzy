@@ -542,6 +542,14 @@ export default function PublicSignaturePage() {
           signatureImage,
           signerDevice: navigator.userAgent,
           requireSelfie,
+          geolocation: geolocation || null,
+          screenInfo: {
+            width: window.screen?.width,
+            height: window.screen?.height,
+            pixelRatio: window.devicePixelRatio,
+            language: navigator.language,
+            platform: (navigator as any).platform || null,
+          },
         },
       });
 
