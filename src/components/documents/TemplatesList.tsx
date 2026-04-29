@@ -107,7 +107,7 @@ export function TemplatesList({ onGeneratedForSignature }: { onGeneratedForSigna
 
   const handleCreateFolder = () => {
     if (newFolderName.trim()) {
-      createFolder.mutate({ name: newFolderName.trim(), workspaceId: folderWorkspaceId });
+      createFolder.mutate({ name: newFolderName.trim(), workspaceId: folderWorkspaceId, kind: 'template' });
       setNewFolderName('');
       setFolderWorkspaceId(null);
       setShowFolderDialog(false);
