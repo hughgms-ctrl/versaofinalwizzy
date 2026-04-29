@@ -209,11 +209,30 @@ export function SignaturesList() {
                       </Button>
                     )}
                     {sig.signed_pdf_url && (
-                      <Button variant="ghost" size="icon" className="h-8 w-8" asChild title="Baixar assinado">
+                      <Button variant="ghost" size="icon" className="h-8 w-8" asChild title="Baixar documento assinado">
                         <a href={sig.signed_pdf_url} target="_blank" rel="noopener noreferrer">
                           <Download className="h-4 w-4" />
                         </a>
                       </Button>
+                    )}
+                    {sig.status === 'signed' && (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-xs gap-1"
+                          onClick={() => regenerateReceipt(sig.id)}
+                          disabled={regeneratingId === sig.id}
+                          title="Gera novamente o relatório de assinatura com layout atualizado"
+                        >
+                          {regeneratingId === sig.id ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <RefreshCw className="h-3 w-3" />
+                          )}
+                          Regerar recibo
+                        </Button>
+                      </>
                     )}
                     {verificationCode && (
                       <Button variant="ghost" size="icon" className="h-8 w-8" asChild title="Verificar autenticidade">
