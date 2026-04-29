@@ -106,6 +106,15 @@ export function SignaturesList() {
 
           <div className="flex items-center gap-2">
             <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowArchived(v => !v)}
+              className="gap-2 border-white/10 bg-white/5 text-zinc-200 hover:bg-white/10"
+            >
+              {showArchived ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
+              {showArchived ? 'Ver ativas' : 'Ver arquivadas'}
+            </Button>
+            <Button
               onClick={() => setShowCreateDialog(true)}
               size="sm"
               className="gap-2 bg-gradient-to-r from-pink-500 to-rose-500 text-white shadow-lg shadow-pink-500/20 hover:from-pink-600 hover:to-rose-600"
