@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { FileSignature, Search, Send, ExternalLink, CheckCircle2, Clock, Eye, Copy, Download, ShieldCheck, User, Calendar } from 'lucide-react';
+import { FileSignature, Search, Send, ExternalLink, CheckCircle2, Clock, Eye, Copy, Download, ShieldCheck, User, Calendar, FileText, RefreshCw, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
@@ -10,6 +10,7 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { supabase } from '@/integrations/supabase/client';
 
 const STATUS_MAP: Record<string, { label: string; icon: any; pill: string; dot: string }> = {
   pending:  { label: 'Aguardando', icon: Clock,         pill: 'bg-amber-500/10 text-amber-400 border border-amber-500/30',  dot: 'bg-amber-400' },
