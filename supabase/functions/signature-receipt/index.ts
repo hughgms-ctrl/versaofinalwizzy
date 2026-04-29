@@ -301,11 +301,16 @@ serve(async (req) => {
     page.drawText(pillTxt, { x: bx + 9, y: badgeY, size: 9, font: helv, color: greenText });
     bx += pillW + 8;
 
-    // "via Wizzy" pill
+    // "via Wizzy" pill - estilo ZapSign (ícone redondo + texto)
     const viaTxt = "via Wizzy";
-    const viaW = helv.widthOfTextAtSize(viaTxt, 9) + 26;
-    page.drawRectangle({ x: bx, y: badgeY - 4, width: viaW, height: 18, color: rgb(0.95, 0.93, 1) });
-    page.drawText("v", { x: bx + 7, y: badgeY, size: 10, font: helvBold, color: purple });
+    const viaTxtW = helv.widthOfTextAtSize(viaTxt, 9);
+    const viaW = viaTxtW + 28;
+    page.drawRectangle({ x: bx, y: badgeY - 4, width: viaW, height: 18, color: rgb(0.94, 0.92, 1) });
+    // Círculo roxo com "v" (check) dentro
+    page.drawCircle({
+      x: bx + 9, y: badgeY + 4, size: 5.5, color: purple,
+    });
+    page.drawText("v", { x: bx + 6.5, y: badgeY + 1.5, size: 7.5, font: helvBold, color: rgb(1, 1, 1) });
     page.drawText(viaTxt, { x: bx + 19, y: badgeY, size: 9, font: helv, color: purple });
 
     // Signer name (large)
@@ -330,27 +335,27 @@ serve(async (req) => {
     const sigImg = await embedImage(pdfDoc, sigBytes);
     if (sigImg) {
       const sw = Math.min(rightColW - 8, 150);
-      const sh = Math.min((sigImg.height / sigImg.width) * sw, 60);
+      const sh = Math.min((sigImg.height / sigImg.width) * sw, 55);
       page.drawImage(sigImg, {
-        x: rightColX, y: y - 86, width: sw, height: sh,
+        x: rightColX, y: y - 88, width: sw, height: sh,
       });
     }
     page.drawText(safe(signerName || ""), {
-      x: rightColX, y: y - 100, size: 9, font: helv, color: text,
+      x: rightColX, y: y - 102, size: 9, font: helv, color: text,
     });
 
-    // Selfie thumbnail (if any) - inside right column lower area
+    // Selfie thumbnail - alinhada à esquerda da coluna direita (mesmo X da assinatura)
     const selfieBytes = await fetchAsBytes(selfieUrl);
     const selfieImg = await embedImage(pdfDoc, selfieBytes);
     if (selfieImg) {
-      const ssize = 54;
+      const ssize = 58;
       page.drawImage(selfieImg, {
-        x: rightColX + rightColW - ssize - 4,
-        y: cardY + 14,
+        x: rightColX,
+        y: cardY + 22,
         width: ssize, height: ssize,
       });
       page.drawText("Selfie", {
-        x: rightColX + rightColW - ssize - 4, y: cardY + 6, size: 8, font: helv, color: muted,
+        x: rightColX, y: cardY + 10, size: 8, font: helv, color: muted,
       });
     }
 
