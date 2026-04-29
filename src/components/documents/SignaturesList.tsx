@@ -36,12 +36,16 @@ const METHOD_MAP: Record<string, { label: string; cls: string }> = {
 };
 
 export function SignaturesList() {
-  const { data: signatures, isLoading } = useDocumentSignatures();
+  const [showArchived, setShowArchived] = useState(false);
+  const { data: signatures, isLoading } = useDocumentSignatures(showArchived);
   const { data: documents } = useGeneratedDocuments();
   const updateStatus = useUpdateSignatureStatus();
+  const archiveMut = useArchiveSignature();
+  const deleteMut = useDeleteSignature();
   const [search, setSearch] = useState('');
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const regenerateReceipt = async (signatureId: string) => {
     setRegeneratingId(signatureId);
