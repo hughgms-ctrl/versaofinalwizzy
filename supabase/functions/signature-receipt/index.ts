@@ -279,7 +279,7 @@ serve(async (req) => {
     const viaTxt = "via Wizzy";
     const viaW = helv.widthOfTextAtSize(viaTxt, 9) + 26;
     page.drawRectangle({ x: bx, y: badgeY - 4, width: viaW, height: 18, color: rgb(0.95, 0.93, 1) });
-    page.drawText("\u2713", { x: bx + 7, y: badgeY, size: 10, font: helvBold, color: purple });
+    page.drawText("v", { x: bx + 7, y: badgeY, size: 10, font: helvBold, color: purple });
     page.drawText(viaTxt, { x: bx + 19, y: badgeY, size: 9, font: helv, color: purple });
 
     // Signer name (large)
