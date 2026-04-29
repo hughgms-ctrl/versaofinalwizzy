@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { FileSignature, Search, Send, ExternalLink, CheckCircle2, Clock, Eye, Copy, Download, ShieldCheck, User, Calendar } from 'lucide-react';
+import { FileSignature, Search, Send, ExternalLink, CheckCircle2, Clock, Eye, Copy, Download, ShieldCheck, User, Calendar, FileText, RefreshCw, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
@@ -10,6 +10,7 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { supabase } from '@/integrations/supabase/client';
 
 const STATUS_MAP: Record<string, { label: string; icon: any; pill: string; dot: string }> = {
   pending:  { label: 'Aguardando', icon: Clock,         pill: 'bg-amber-500/10 text-amber-400 border border-amber-500/30',  dot: 'bg-amber-400' },
@@ -33,6 +34,27 @@ export function SignaturesList() {
   const updateStatus = useUpdateSignatureStatus();
   const [search, setSearch] = useState('');
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
+
+  const regenerateReceipt = async (signatureId: string) => {
+    setRegeneratingId(signatureId);
+    try {
+      const { data, error } = await supabase.functions.invoke('signature-receipt-regenerate', {
+        body: { signatureId },
+      });
+      if (error) throw error;
+      if (data?.receiptUrl) {
+        toast({ title: 'Recibo regerado', description: 'Abrindo nova versão...' });
+        window.open(data.receiptUrl + '?t=' + Date.now(), '_blank');
+      } else {
+        toast({ title: 'Recibo regerado' });
+      }
+    } catch (e: any) {
+      toast({ title: 'Erro ao regerar recibo', description: e.message, variant: 'destructive' });
+    } finally {
+      setRegeneratingId(null);
+    }
+  };
 
   const filtered = signatures?.filter(s => {
     const docName = s.generated_document?.name || '';
@@ -187,11 +209,30 @@ export function SignaturesList() {
                       </Button>
                     )}
                     {sig.signed_pdf_url && (
-                      <Button variant="ghost" size="icon" className="h-8 w-8" asChild title="Baixar assinado">
+                      <Button variant="ghost" size="icon" className="h-8 w-8" asChild title="Baixar documento assinado">
                         <a href={sig.signed_pdf_url} target="_blank" rel="noopener noreferrer">
                           <Download className="h-4 w-4" />
                         </a>
                       </Button>
+                    )}
+                    {sig.status === 'signed' && (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-xs gap-1"
+                          onClick={() => regenerateReceipt(sig.id)}
+                          disabled={regeneratingId === sig.id}
+                          title="Gera novamente o relatório de assinatura com layout atualizado"
+                        >
+                          {regeneratingId === sig.id ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <RefreshCw className="h-3 w-3" />
+                          )}
+                          Regerar recibo
+                        </Button>
+                      </>
                     )}
                     {verificationCode && (
                       <Button variant="ghost" size="icon" className="h-8 w-8" asChild title="Verificar autenticidade">
