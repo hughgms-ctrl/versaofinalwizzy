@@ -321,6 +321,31 @@ export function SignaturesList() {
         onOpenChange={setShowCreateDialog}
         documents={availableDocuments}
       />
+
+      <AlertDialog open={!!confirmDeleteId} onOpenChange={(o) => !o && setConfirmDeleteId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir assinatura permanentemente?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta ação não pode ser desfeita. Todas as evidências (selfie, IP, geolocalização, recibo) também serão removidas.
+              <br /><br />
+              <strong>Sugestão:</strong> se forem testes que você quer apenas esconder, prefira <em>Arquivar</em> — o histórico continua disponível para auditoria.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (confirmDeleteId) deleteMut.mutate(confirmDeleteId);
+                setConfirmDeleteId(null);
+              }}
+            >
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
