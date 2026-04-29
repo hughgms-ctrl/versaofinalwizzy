@@ -34,6 +34,27 @@ export function SignaturesList() {
   const updateStatus = useUpdateSignatureStatus();
   const [search, setSearch] = useState('');
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
+
+  const regenerateReceipt = async (signatureId: string) => {
+    setRegeneratingId(signatureId);
+    try {
+      const { data, error } = await supabase.functions.invoke('signature-receipt-regenerate', {
+        body: { signatureId },
+      });
+      if (error) throw error;
+      if (data?.receiptUrl) {
+        toast({ title: 'Recibo regerado', description: 'Abrindo nova versão...' });
+        window.open(data.receiptUrl + '?t=' + Date.now(), '_blank');
+      } else {
+        toast({ title: 'Recibo regerado' });
+      }
+    } catch (e: any) {
+      toast({ title: 'Erro ao regerar recibo', description: e.message, variant: 'destructive' });
+    } finally {
+      setRegeneratingId(null);
+    }
+  };
 
   const filtered = signatures?.filter(s => {
     const docName = s.generated_document?.name || '';
