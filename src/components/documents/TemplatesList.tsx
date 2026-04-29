@@ -50,7 +50,7 @@ import { cn } from '@/lib/utils';
 
 export function TemplatesList({ onGeneratedForSignature }: { onGeneratedForSignature?: (docId: string) => void } = {}) {
   const { data: templates, isLoading } = useDocumentTemplates();
-  const { data: folders = [] } = useDocumentFolders();
+  const { data: folders = [] } = useDocumentFolders('template');
   const deleteTemplate = useDeleteDocumentTemplate();
   const createTemplate = useCreateDocumentTemplate();
   const createFolder = useCreateDocumentFolder();
@@ -107,7 +107,7 @@ export function TemplatesList({ onGeneratedForSignature }: { onGeneratedForSigna
 
   const handleCreateFolder = () => {
     if (newFolderName.trim()) {
-      createFolder.mutate({ name: newFolderName.trim(), workspaceId: folderWorkspaceId });
+      createFolder.mutate({ name: newFolderName.trim(), workspaceId: folderWorkspaceId, kind: 'template' });
       setNewFolderName('');
       setFolderWorkspaceId(null);
       setShowFolderDialog(false);

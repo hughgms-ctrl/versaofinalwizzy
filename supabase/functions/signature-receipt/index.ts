@@ -329,7 +329,16 @@ serve(async (req) => {
     });
 
     // ===== Right column: Assinatura label + image + signer =====
-    page.drawText("Assinatura", { x: rightColX, y: y - 22, size: 9, font: helv, color: muted });
+    // Centro horizontal da coluna direita
+    const rightColCenterX = rightColX + rightColW / 2;
+
+    // Label "Assinatura" centralizado
+    const sigLabel = "Assinatura";
+    const sigLabelW = helv.widthOfTextAtSize(sigLabel, 9);
+    page.drawText(sigLabel, {
+      x: rightColCenterX - sigLabelW / 2,
+      y: y - 22, size: 9, font: helv, color: muted,
+    });
 
     const sigBytes = await fetchAsBytes(signatureUrl);
     const sigImg = await embedImage(pdfDoc, sigBytes);
@@ -337,25 +346,34 @@ serve(async (req) => {
       const sw = Math.min(rightColW - 8, 150);
       const sh = Math.min((sigImg.height / sigImg.width) * sw, 55);
       page.drawImage(sigImg, {
-        x: rightColX, y: y - 88, width: sw, height: sh,
+        x: rightColCenterX - sw / 2,
+        y: y - 88,
+        width: sw, height: sh,
       });
     }
-    page.drawText(safe(signerName || ""), {
-      x: rightColX, y: y - 102, size: 9, font: helv, color: text,
+    // Nome do assinante centralizado
+    const signerLabelText = signerName || "";
+    const signerLabelW = helv.widthOfTextAtSize(safe(signerLabelText), 9);
+    page.drawText(safe(signerLabelText), {
+      x: rightColCenterX - signerLabelW / 2,
+      y: y - 102, size: 9, font: helv, color: text,
     });
 
-    // Selfie thumbnail - alinhada à esquerda da coluna direita (mesmo X da assinatura)
+    // Selfie thumbnail - centralizada na coluna direita
     const selfieBytes = await fetchAsBytes(selfieUrl);
     const selfieImg = await embedImage(pdfDoc, selfieBytes);
     if (selfieImg) {
       const ssize = 58;
       page.drawImage(selfieImg, {
-        x: rightColX,
+        x: rightColCenterX - ssize / 2,
         y: cardY + 22,
         width: ssize, height: ssize,
       });
-      page.drawText("Selfie", {
-        x: rightColX, y: cardY + 10, size: 8, font: helv, color: muted,
+      const selfieLabel = "Selfie";
+      const selfieLabelW = helv.widthOfTextAtSize(selfieLabel, 8);
+      page.drawText(selfieLabel, {
+        x: rightColCenterX - selfieLabelW / 2,
+        y: cardY + 10, size: 8, font: helv, color: muted,
       });
     }
 

@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { FileSignature, Search, Send, ExternalLink, CheckCircle2, Clock, Eye, Copy, Download, ShieldCheck, User, Calendar, FileText, RefreshCw, Loader2 } from 'lucide-react';
+import { FileSignature, Search, Send, ExternalLink, CheckCircle2, Clock, Eye, Copy, Download, ShieldCheck, User, Calendar, FileText, RefreshCw, Loader2, Archive, ArchiveRestore, Trash2, MoreHorizontal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
-import { useDocumentSignatures, useUpdateSignatureStatus } from '@/hooks/useDocumentSignatures';
+import { useDocumentSignatures, useUpdateSignatureStatus, useArchiveSignature, useDeleteSignature } from '@/hooks/useDocumentSignatures';
 import { useGeneratedDocuments } from '@/hooks/useGeneratedDocuments';
 import { CreateSignatureDialog } from './CreateSignatureDialog';
 import { format } from 'date-fns';
@@ -11,6 +11,13 @@ import { ptBR } from 'date-fns/locale';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 const STATUS_MAP: Record<string, { label: string; icon: any; pill: string; dot: string }> = {
   pending:  { label: 'Aguardando', icon: Clock,         pill: 'bg-amber-500/10 text-amber-400 border border-amber-500/30',  dot: 'bg-amber-400' },
@@ -29,12 +36,16 @@ const METHOD_MAP: Record<string, { label: string; cls: string }> = {
 };
 
 export function SignaturesList() {
-  const { data: signatures, isLoading } = useDocumentSignatures();
+  const [showArchived, setShowArchived] = useState(false);
+  const { data: signatures, isLoading } = useDocumentSignatures(showArchived);
   const { data: documents } = useGeneratedDocuments();
   const updateStatus = useUpdateSignatureStatus();
+  const archiveMut = useArchiveSignature();
+  const deleteMut = useDeleteSignature();
   const [search, setSearch] = useState('');
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   const regenerateReceipt = async (signatureId: string) => {
     setRegeneratingId(signatureId);
@@ -94,6 +105,15 @@ export function SignaturesList() {
           </div>
 
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowArchived(v => !v)}
+              className="gap-2 border-white/10 bg-white/5 text-zinc-200 hover:bg-white/10"
+            >
+              {showArchived ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
+              {showArchived ? 'Ver ativas' : 'Ver arquivadas'}
+            </Button>
             <Button
               onClick={() => setShowCreateDialog(true)}
               size="sm"
@@ -265,6 +285,29 @@ export function SignaturesList() {
                         <Send className="h-3 w-3" /> Enviar
                       </Button>
                     )}
+
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-8 w-8" title="Mais ações">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-52">
+                        {(sig as any).archived_at ? (
+                          <DropdownMenuItem onClick={() => archiveMut.mutate({ id: sig.id, archive: false })}>
+                            <ArchiveRestore className="h-4 w-4 mr-2" /> Restaurar
+                          </DropdownMenuItem>
+                        ) : (
+                          <DropdownMenuItem onClick={() => archiveMut.mutate({ id: sig.id, archive: true })}>
+                            <Archive className="h-4 w-4 mr-2" /> Arquivar
+                          </DropdownMenuItem>
+                        )}
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem className="text-destructive" onClick={() => setConfirmDeleteId(sig.id)}>
+                          <Trash2 className="h-4 w-4 mr-2" /> Excluir permanentemente
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </div>
               </Card>
@@ -278,6 +321,31 @@ export function SignaturesList() {
         onOpenChange={setShowCreateDialog}
         documents={availableDocuments}
       />
+
+      <AlertDialog open={!!confirmDeleteId} onOpenChange={(o) => !o && setConfirmDeleteId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir assinatura permanentemente?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta ação não pode ser desfeita. Todas as evidências (selfie, IP, geolocalização, recibo) também serão removidas.
+              <br /><br />
+              <strong>Sugestão:</strong> se forem testes que você quer apenas esconder, prefira <em>Arquivar</em> — o histórico continua disponível para auditoria.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (confirmDeleteId) deleteMut.mutate(confirmDeleteId);
+                setConfirmDeleteId(null);
+              }}
+            >
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

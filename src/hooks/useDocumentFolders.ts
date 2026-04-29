@@ -3,25 +3,30 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './useAuth';
 import { toast } from 'sonner';
 
+export type DocumentFolderKind = 'template' | 'pack' | 'both';
+
 export interface DocumentFolder {
   id: string;
   organization_id: string;
   name: string;
   workspace_id: string | null;
   position: number;
+  kind: DocumentFolderKind;
   created_at: string;
   updated_at: string;
 }
 
-export function useDocumentFolders() {
+export function useDocumentFolders(kind?: DocumentFolderKind) {
   return useQuery({
-    queryKey: ['document-folders'],
+    queryKey: ['document-folders', kind || 'all'],
     queryFn: async () => {
-      const { data, error } = await (supabase as any)
+      let q = (supabase as any)
         .from('document_folders')
         .select('*')
         .order('position', { ascending: true })
         .order('name');
+      if (kind) q = q.in('kind', [kind, 'both']);
+      const { data, error } = await q;
 
       if (error) throw error;
       return (data || []) as DocumentFolder[];
@@ -34,13 +39,14 @@ export function useCreateDocumentFolder() {
   const { profile } = useAuth();
 
   return useMutation({
-    mutationFn: async ({ name, workspaceId }: { name: string; workspaceId?: string | null }) => {
+    mutationFn: async ({ name, workspaceId, kind = 'both' }: { name: string; workspaceId?: string | null; kind?: DocumentFolderKind }) => {
       const { data, error } = await (supabase as any)
         .from('document_folders')
         .insert({
           name,
           organization_id: profile!.organization_id,
           workspace_id: workspaceId || null,
+          kind,
         })
         .select()
         .single();

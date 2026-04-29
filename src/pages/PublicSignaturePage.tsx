@@ -48,6 +48,14 @@ export default function PublicSignaturePage() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const previewUrlsRef = useRef<Record<string, string>>({});
+
+  // Força tema escuro nesta página pública para garantir contraste/legibilidade
+  useEffect(() => {
+    const root = document.documentElement;
+    const had = root.classList.contains('dark');
+    root.classList.add('dark');
+    return () => { if (!had) root.classList.remove('dark'); };
+  }, []);
   const [step, setStep] = useState<Step>('loading');
   const [documentData, setDocumentData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
