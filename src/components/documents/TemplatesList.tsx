@@ -50,7 +50,7 @@ import { cn } from '@/lib/utils';
 
 export function TemplatesList({ onGeneratedForSignature }: { onGeneratedForSignature?: (docId: string) => void } = {}) {
   const { data: templates, isLoading } = useDocumentTemplates();
-  const { data: folders = [] } = useDocumentFolders();
+  const { data: folders = [] } = useDocumentFolders('template');
   const deleteTemplate = useDeleteDocumentTemplate();
   const createTemplate = useCreateDocumentTemplate();
   const createFolder = useCreateDocumentFolder();
