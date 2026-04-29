@@ -285,6 +285,29 @@ export function SignaturesList() {
                         <Send className="h-3 w-3" /> Enviar
                       </Button>
                     )}
+
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" className="h-8 w-8" title="Mais ações">
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-52">
+                        {(sig as any).archived_at ? (
+                          <DropdownMenuItem onClick={() => archiveMut.mutate({ id: sig.id, archive: false })}>
+                            <ArchiveRestore className="h-4 w-4 mr-2" /> Restaurar
+                          </DropdownMenuItem>
+                        ) : (
+                          <DropdownMenuItem onClick={() => archiveMut.mutate({ id: sig.id, archive: true })}>
+                            <Archive className="h-4 w-4 mr-2" /> Arquivar
+                          </DropdownMenuItem>
+                        )}
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem className="text-destructive" onClick={() => setConfirmDeleteId(sig.id)}>
+                          <Trash2 className="h-4 w-4 mr-2" /> Excluir permanentemente
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </div>
               </Card>
