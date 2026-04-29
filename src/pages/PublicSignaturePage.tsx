@@ -88,6 +88,32 @@ export default function PublicSignaturePage() {
     loadDocument();
   }, [token]);
 
+  // Coletar geolocalização assim que a página abre (obrigatório para o recibo)
+  useEffect(() => {
+    if (!('geolocation' in navigator)) {
+      console.warn('[Geo] Geolocation API indisponível neste dispositivo.');
+      return;
+    }
+    const requestGeo = () => {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setGeolocation({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            accuracy: pos.coords.accuracy,
+          });
+        },
+        (err) => {
+          console.warn('[Geo] Permissão negada ou erro:', err?.message);
+          // Se negar, mostramos toast e tentamos novamente uma vez
+          toast.message('Para validar sua assinatura, autorize o acesso à localização.');
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      );
+    };
+    requestGeo();
+  }, []);
+
   useEffect(() => {
     return () => {
       if (cameraStream) {
@@ -516,6 +542,14 @@ export default function PublicSignaturePage() {
           signatureImage,
           signerDevice: navigator.userAgent,
           requireSelfie,
+          geolocation: geolocation || null,
+          screenInfo: {
+            width: window.screen?.width,
+            height: window.screen?.height,
+            pixelRatio: window.devicePixelRatio,
+            language: navigator.language,
+            platform: (navigator as any).platform || null,
+          },
         },
       });
 

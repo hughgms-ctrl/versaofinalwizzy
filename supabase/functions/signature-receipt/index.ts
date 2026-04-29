@@ -158,61 +158,66 @@ serve(async (req) => {
       x: margin, y: y - 44, size: 9, font: helv, color: muted,
     });
 
-    // Logo Wizzy (top right)
+    // Logo Wizzy (top right) - padrão ZapSign, maior
     const logoImg = await loadLogo(pdfDoc);
     if (logoImg) {
-      const targetW = 130;
+      const targetW = 170;
       const ratio = logoImg.height / logoImg.width;
-      const targetH = Math.min(targetW * ratio, 44);
-      const finalW = targetH / ratio;
+      let finalW = targetW;
+      let finalH = targetW * ratio;
+      const maxH = 60;
+      if (finalH > maxH) {
+        finalH = maxH;
+        finalW = maxH / ratio;
+      }
       page.drawImage(logoImg, {
         x: pw - margin - finalW,
-        y: y - targetH - 2,
+        y: y - finalH + 6,
         width: finalW,
-        height: targetH,
+        height: finalH,
       });
     } else {
       page.drawText("Wizzy", {
-        x: pw - margin - 70, y: y - 26, size: 24, font: helvBold, color: purple,
+        x: pw - margin - 90, y: y - 28, size: 28, font: helvBold, color: purple,
       });
     }
 
     y -= 64;
 
     // ===== DOCUMENT CARD (with QR on the right) =====
-    const docCardH = 118;
+    const docCardH = 124;
     page.drawRectangle({
       x: margin, y: y - docCardH, width: innerW, height: docCardH,
       borderColor: cardBorder, borderWidth: 1,
     });
 
-    // QR code on the right
+    // QR code on the right (um pouco menor pra dar espaço ao hash)
     const verifyUrl = verificationCode
       ? `${PUBLIC_ORIGIN}/verificar/${verificationCode}`
       : `${PUBLIC_ORIGIN}/verificar/${signatureId}`;
-    const qrSize = 86;
+    const qrSize = 78;
     try {
       const qrDataUrl = await QRCode.toDataURL(verifyUrl, { width: 240, margin: 0 });
       const qrBytes = Uint8Array.from(atob(qrDataUrl.split(",")[1]), c => c.charCodeAt(0));
       const qrImg = await pdfDoc.embedPng(qrBytes);
       page.drawImage(qrImg, {
-        x: pw - margin - qrSize - 14,
+        x: pw - margin - qrSize - 12,
         y: y - docCardH + (docCardH - qrSize) / 2,
         width: qrSize, height: qrSize,
       });
     } catch (e) { console.error("QR error:", e); }
 
     const docTextX = margin + 14;
-    const docTextRight = pw - margin - qrSize - 30; // boundary before QR
-    const labelSize = 9;
-    const valueSize = 9;
+    const docTextRight = pw - margin - qrSize - 26; // boundary before QR
+    const labelSize = 8.5;
+    const valueSize = 8.5;
     let dy = y - 18;
 
     const drawKV = (label: string, value: string) => {
       const lblW = helvBold.widthOfTextAtSize(label, labelSize);
       page.drawText(safe(label), { x: docTextX, y: dy, size: labelSize, font: helvBold, color: dark });
       page.drawText(safe(value), { x: docTextX + lblW + 4, y: dy, size: valueSize, font: helv, color: text });
-      dy -= 14;
+      dy -= 13;
     };
 
     drawKV("Status:", "Assinado");
@@ -220,17 +225,38 @@ serve(async (req) => {
     drawKV("Numero:", signatureId);
     drawKV("Data da criacao:", dateFmt(docCreatedAt));
 
-    // Hash with proper wrapping (does not collide with QR)
+    // Hash com fonte adaptativa: tenta caber em 1 linha, senão quebra em 2
     const hashLabel = "Hash do documento original (SHA256):";
     page.drawText(safe(hashLabel), { x: docTextX, y: dy, size: labelSize, font: helvBold, color: dark });
     const hashLabelW = helvBold.widthOfTextAtSize(hashLabel, labelSize);
-    const hashAvail = docTextRight - docTextX - hashLabelW - 6;
     const hashFull = documentHash || "N/A";
-    const hashLines = wrapText(hashFull, helv, valueSize, hashAvail);
-    page.drawText(safe(hashLines[0] || ""), { x: docTextX + hashLabelW + 4, y: dy, size: valueSize, font: helv, color: text });
-    for (let i = 1; i < hashLines.length && i < 2; i++) {
+    const hashAvailFirstLine = docTextRight - docTextX - hashLabelW - 6;
+    const hashAvailFullLine = docTextRight - docTextX;
+
+    // Tenta encontrar fonte que caiba o hash inteiro na primeira linha
+    let hashSize = valueSize;
+    let hashFitsFirstLine = helv.widthOfTextAtSize(hashFull, hashSize) <= hashAvailFirstLine;
+    while (!hashFitsFirstLine && hashSize > 6.5) {
+      hashSize -= 0.5;
+      hashFitsFirstLine = helv.widthOfTextAtSize(hashFull, hashSize) <= hashAvailFirstLine;
+    }
+
+    if (hashFitsFirstLine) {
+      page.drawText(safe(hashFull), { x: docTextX + hashLabelW + 4, y: dy, size: hashSize, font: helv, color: text });
+    } else {
+      // Quebra em 2 linhas: parte 1 ao lado do label, parte 2 abaixo
+      hashSize = valueSize;
+      const half = Math.ceil(hashFull.length / 2);
+      // Encontra ponto de corte que caiba na primeira linha (ao lado do label)
+      let cut = half;
+      while (cut > 8 && helv.widthOfTextAtSize(hashFull.slice(0, cut), hashSize) > hashAvailFirstLine) {
+        cut -= 2;
+      }
+      const part1 = hashFull.slice(0, cut);
+      const part2 = hashFull.slice(cut);
+      page.drawText(safe(part1), { x: docTextX + hashLabelW + 4, y: dy, size: hashSize, font: helv, color: text });
       dy -= 11;
-      page.drawText(safe(hashLines[i]), { x: docTextX, y: dy, size: valueSize, font: helv, color: text });
+      page.drawText(safe(part2), { x: docTextX, y: dy, size: hashSize, font: helv, color: text });
     }
 
     y -= docCardH + 22;
@@ -275,11 +301,16 @@ serve(async (req) => {
     page.drawText(pillTxt, { x: bx + 9, y: badgeY, size: 9, font: helv, color: greenText });
     bx += pillW + 8;
 
-    // "via Wizzy" pill
+    // "via Wizzy" pill - estilo ZapSign (ícone redondo + texto)
     const viaTxt = "via Wizzy";
-    const viaW = helv.widthOfTextAtSize(viaTxt, 9) + 26;
-    page.drawRectangle({ x: bx, y: badgeY - 4, width: viaW, height: 18, color: rgb(0.95, 0.93, 1) });
-    page.drawText("v", { x: bx + 7, y: badgeY, size: 10, font: helvBold, color: purple });
+    const viaTxtW = helv.widthOfTextAtSize(viaTxt, 9);
+    const viaW = viaTxtW + 28;
+    page.drawRectangle({ x: bx, y: badgeY - 4, width: viaW, height: 18, color: rgb(0.94, 0.92, 1) });
+    // Círculo roxo com "v" (check) dentro
+    page.drawCircle({
+      x: bx + 9, y: badgeY + 4, size: 5.5, color: purple,
+    });
+    page.drawText("v", { x: bx + 6.5, y: badgeY + 1.5, size: 7.5, font: helvBold, color: rgb(1, 1, 1) });
     page.drawText(viaTxt, { x: bx + 19, y: badgeY, size: 9, font: helv, color: purple });
 
     // Signer name (large)
@@ -304,27 +335,27 @@ serve(async (req) => {
     const sigImg = await embedImage(pdfDoc, sigBytes);
     if (sigImg) {
       const sw = Math.min(rightColW - 8, 150);
-      const sh = Math.min((sigImg.height / sigImg.width) * sw, 60);
+      const sh = Math.min((sigImg.height / sigImg.width) * sw, 55);
       page.drawImage(sigImg, {
-        x: rightColX, y: y - 86, width: sw, height: sh,
+        x: rightColX, y: y - 88, width: sw, height: sh,
       });
     }
     page.drawText(safe(signerName || ""), {
-      x: rightColX, y: y - 100, size: 9, font: helv, color: text,
+      x: rightColX, y: y - 102, size: 9, font: helv, color: text,
     });
 
-    // Selfie thumbnail (if any) - inside right column lower area
+    // Selfie thumbnail - alinhada à esquerda da coluna direita (mesmo X da assinatura)
     const selfieBytes = await fetchAsBytes(selfieUrl);
     const selfieImg = await embedImage(pdfDoc, selfieBytes);
     if (selfieImg) {
-      const ssize = 54;
+      const ssize = 58;
       page.drawImage(selfieImg, {
-        x: rightColX + rightColW - ssize - 4,
-        y: cardY + 14,
+        x: rightColX,
+        y: cardY + 22,
         width: ssize, height: ssize,
       });
       page.drawText("Selfie", {
-        x: rightColX + rightColW - ssize - 4, y: cardY + 6, size: 8, font: helv, color: muted,
+        x: rightColX, y: cardY + 10, size: 8, font: helv, color: muted,
       });
     }
 
