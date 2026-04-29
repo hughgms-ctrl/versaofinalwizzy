@@ -158,22 +158,27 @@ serve(async (req) => {
       x: margin, y: y - 44, size: 9, font: helv, color: muted,
     });
 
-    // Logo Wizzy (top right)
+    // Logo Wizzy (top right) - padrão ZapSign, maior
     const logoImg = await loadLogo(pdfDoc);
     if (logoImg) {
-      const targetW = 130;
+      const targetW = 170;
       const ratio = logoImg.height / logoImg.width;
-      const targetH = Math.min(targetW * ratio, 44);
-      const finalW = targetH / ratio;
+      let finalW = targetW;
+      let finalH = targetW * ratio;
+      const maxH = 60;
+      if (finalH > maxH) {
+        finalH = maxH;
+        finalW = maxH / ratio;
+      }
       page.drawImage(logoImg, {
         x: pw - margin - finalW,
-        y: y - targetH - 2,
+        y: y - finalH + 6,
         width: finalW,
-        height: targetH,
+        height: finalH,
       });
     } else {
       page.drawText("Wizzy", {
-        x: pw - margin - 70, y: y - 26, size: 24, font: helvBold, color: purple,
+        x: pw - margin - 90, y: y - 28, size: 28, font: helvBold, color: purple,
       });
     }
 
