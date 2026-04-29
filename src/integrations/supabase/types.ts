@@ -2309,6 +2309,7 @@ export type Database = {
         Row: {
           created_at: string
           id: string
+          kind: string
           name: string
           organization_id: string
           position: number | null
@@ -2318,6 +2319,7 @@ export type Database = {
         Insert: {
           created_at?: string
           id?: string
+          kind?: string
           name: string
           organization_id: string
           position?: number | null
@@ -2327,6 +2329,7 @@ export type Database = {
         Update: {
           created_at?: string
           id?: string
+          kind?: string
           name?: string
           organization_id?: string
           position?: number | null
@@ -2422,6 +2425,7 @@ export type Database = {
       }
       document_signatures: {
         Row: {
+          archived_at: string | null
           contact_id: string | null
           conversation_id: string | null
           created_at: string
@@ -2446,6 +2450,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          archived_at?: string | null
           contact_id?: string | null
           conversation_id?: string | null
           created_at?: string
@@ -2470,6 +2475,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          archived_at?: string | null
           contact_id?: string | null
           conversation_id?: string | null
           created_at?: string
