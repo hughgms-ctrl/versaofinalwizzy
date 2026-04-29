@@ -185,39 +185,39 @@ serve(async (req) => {
     y -= 64;
 
     // ===== DOCUMENT CARD (with QR on the right) =====
-    const docCardH = 118;
+    const docCardH = 124;
     page.drawRectangle({
       x: margin, y: y - docCardH, width: innerW, height: docCardH,
       borderColor: cardBorder, borderWidth: 1,
     });
 
-    // QR code on the right
+    // QR code on the right (um pouco menor pra dar espaço ao hash)
     const verifyUrl = verificationCode
       ? `${PUBLIC_ORIGIN}/verificar/${verificationCode}`
       : `${PUBLIC_ORIGIN}/verificar/${signatureId}`;
-    const qrSize = 86;
+    const qrSize = 78;
     try {
       const qrDataUrl = await QRCode.toDataURL(verifyUrl, { width: 240, margin: 0 });
       const qrBytes = Uint8Array.from(atob(qrDataUrl.split(",")[1]), c => c.charCodeAt(0));
       const qrImg = await pdfDoc.embedPng(qrBytes);
       page.drawImage(qrImg, {
-        x: pw - margin - qrSize - 14,
+        x: pw - margin - qrSize - 12,
         y: y - docCardH + (docCardH - qrSize) / 2,
         width: qrSize, height: qrSize,
       });
     } catch (e) { console.error("QR error:", e); }
 
     const docTextX = margin + 14;
-    const docTextRight = pw - margin - qrSize - 30; // boundary before QR
-    const labelSize = 9;
-    const valueSize = 9;
+    const docTextRight = pw - margin - qrSize - 26; // boundary before QR
+    const labelSize = 8.5;
+    const valueSize = 8.5;
     let dy = y - 18;
 
     const drawKV = (label: string, value: string) => {
       const lblW = helvBold.widthOfTextAtSize(label, labelSize);
       page.drawText(safe(label), { x: docTextX, y: dy, size: labelSize, font: helvBold, color: dark });
       page.drawText(safe(value), { x: docTextX + lblW + 4, y: dy, size: valueSize, font: helv, color: text });
-      dy -= 14;
+      dy -= 13;
     };
 
     drawKV("Status:", "Assinado");
@@ -225,17 +225,38 @@ serve(async (req) => {
     drawKV("Numero:", signatureId);
     drawKV("Data da criacao:", dateFmt(docCreatedAt));
 
-    // Hash with proper wrapping (does not collide with QR)
+    // Hash com fonte adaptativa: tenta caber em 1 linha, senão quebra em 2
     const hashLabel = "Hash do documento original (SHA256):";
     page.drawText(safe(hashLabel), { x: docTextX, y: dy, size: labelSize, font: helvBold, color: dark });
     const hashLabelW = helvBold.widthOfTextAtSize(hashLabel, labelSize);
-    const hashAvail = docTextRight - docTextX - hashLabelW - 6;
     const hashFull = documentHash || "N/A";
-    const hashLines = wrapText(hashFull, helv, valueSize, hashAvail);
-    page.drawText(safe(hashLines[0] || ""), { x: docTextX + hashLabelW + 4, y: dy, size: valueSize, font: helv, color: text });
-    for (let i = 1; i < hashLines.length && i < 2; i++) {
+    const hashAvailFirstLine = docTextRight - docTextX - hashLabelW - 6;
+    const hashAvailFullLine = docTextRight - docTextX;
+
+    // Tenta encontrar fonte que caiba o hash inteiro na primeira linha
+    let hashSize = valueSize;
+    let hashFitsFirstLine = helv.widthOfTextAtSize(hashFull, hashSize) <= hashAvailFirstLine;
+    while (!hashFitsFirstLine && hashSize > 6.5) {
+      hashSize -= 0.5;
+      hashFitsFirstLine = helv.widthOfTextAtSize(hashFull, hashSize) <= hashAvailFirstLine;
+    }
+
+    if (hashFitsFirstLine) {
+      page.drawText(safe(hashFull), { x: docTextX + hashLabelW + 4, y: dy, size: hashSize, font: helv, color: text });
+    } else {
+      // Quebra em 2 linhas: parte 1 ao lado do label, parte 2 abaixo
+      hashSize = valueSize;
+      const half = Math.ceil(hashFull.length / 2);
+      // Encontra ponto de corte que caiba na primeira linha (ao lado do label)
+      let cut = half;
+      while (cut > 8 && helv.widthOfTextAtSize(hashFull.slice(0, cut), hashSize) > hashAvailFirstLine) {
+        cut -= 2;
+      }
+      const part1 = hashFull.slice(0, cut);
+      const part2 = hashFull.slice(cut);
+      page.drawText(safe(part1), { x: docTextX + hashLabelW + 4, y: dy, size: hashSize, font: helv, color: text });
       dy -= 11;
-      page.drawText(safe(hashLines[i]), { x: docTextX, y: dy, size: valueSize, font: helv, color: text });
+      page.drawText(safe(part2), { x: docTextX, y: dy, size: hashSize, font: helv, color: text });
     }
 
     y -= docCardH + 22;
