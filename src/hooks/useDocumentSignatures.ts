@@ -35,21 +35,63 @@ export interface DocumentSignature {
   };
 }
 
-export function useDocumentSignatures() {
+export function useDocumentSignatures(includeArchived = false) {
   const { profile } = useAuth();
   const orgId = profile?.organization_id;
 
   return useQuery({
-    queryKey: ['document-signatures', orgId],
+    queryKey: ['document-signatures', orgId, includeArchived],
     queryFn: async () => {
-      const { data, error } = await (supabase as any)
+      let q = (supabase as any)
         .from('document_signatures')
-        .select('*, generated_document:generated_documents(id, name, pdf_url, status)')
+        .select('*, generated_document:generated_documents(id, name, pdf_url, status), archived_at')
         .order('created_at', { ascending: false });
+      if (!includeArchived) q = q.is('archived_at', null);
+      const { data, error } = await q;
       if (error) throw error;
       return data as DocumentSignature[];
     },
     enabled: !!orgId,
+  });
+}
+
+export function useArchiveSignature() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  return useMutation({
+    mutationFn: async ({ id, archive }: { id: string; archive: boolean }) => {
+      const { error } = await (supabase as any)
+        .from('document_signatures')
+        .update({ archived_at: archive ? new Date().toISOString() : null })
+        .eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: (_d, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['document-signatures'] });
+      toast({ title: vars.archive ? 'Assinatura arquivada' : 'Assinatura restaurada' });
+    },
+    onError: (e: any) => toast({ title: 'Erro', description: e.message, variant: 'destructive' }),
+  });
+}
+
+export function useDeleteSignature() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      // Limpa evidências antes
+      await (supabase as any).from('signature_evidence').delete().eq('signature_id', id);
+      const { error } = await (supabase as any)
+        .from('document_signatures')
+        .delete()
+        .eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['document-signatures'] });
+      toast({ title: 'Assinatura excluída permanentemente' });
+    },
+    onError: (e: any) => toast({ title: 'Erro ao excluir', description: e.message, variant: 'destructive' }),
   });
 }
 
