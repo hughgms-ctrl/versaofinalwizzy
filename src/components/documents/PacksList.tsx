@@ -62,7 +62,7 @@ import { cn } from '@/lib/utils';
 export function PacksList({ onGeneratedForSignature }: { onGeneratedForSignature?: (docId: string) => void } = {}) {
   const { data: packs, isLoading } = useDocumentPacks();
   const { data: templates } = useDocumentTemplates();
-  const { data: folders = [] } = useDocumentFolders();
+  const { data: folders = [] } = useDocumentFolders('pack');
   const deletePack = useDeleteDocumentPack();
   const generateToken = useGeneratePackToken();
   const createFolder = useCreateDocumentFolder();
