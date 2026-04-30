@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { PDFDocument, StandardFonts, rgb } from "https://esm.sh/pdf-lib@1.17.1";
 import { corsHeaders, jsonResponse, errorResponse, createServiceClient, parseJsonBody } from "../_shared/middleware.ts";
-import { buildReceiptPdf } from "../signature-receipt/index.ts";
+import { buildReceiptPdf } from "../_shared/buildReceiptPdf.ts";
 
 const PUBLIC_ORIGIN = "https://wizzybr.com";
 
