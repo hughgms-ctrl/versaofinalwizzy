@@ -284,6 +284,7 @@ serve(async (req) => {
             deviceType: uaInfo.deviceType,
             otpChannel: meta.otp_channel || "email",
             geolocation,
+            signerDevice: signerUserAgent,
           }),
         });
         if (stampResp.ok) {
