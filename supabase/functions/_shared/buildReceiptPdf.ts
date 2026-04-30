@@ -182,23 +182,16 @@ export async function buildReceiptPdf(input: Record<string, any>): Promise<Uint8
 
   page.drawLine({ start: { x: rightColX - 8, y: cardY + 8 }, end: { x: rightColX - 8, y: y - 8 }, thickness: 0.5, color: sectionLine });
 
-  // Badges
-  let bx = margin + 14;
+  // Badge único verde
+  const bx = margin + 14;
   const badgeY = y - 22;
-  const pillTxt = "Assinado";
-  const pillTxtW = helv.widthOfTextAtSize(pillTxt, 9);
-  const pillW = pillTxtW + 18;
-  page.drawRectangle({ x: bx, y: badgeY - 4, width: pillW, height: 18, color: greenBg });
-  page.drawText(pillTxt, { x: bx + 9, y: badgeY, size: 9, font: helv, color: greenText });
-  bx += pillW + 8;
-
-  const viaTxt = "via Wizzy Sign";
-  const viaTxtW = helv.widthOfTextAtSize(viaTxt, 9);
-  const viaW = viaTxtW + 28;
-  page.drawRectangle({ x: bx, y: badgeY - 4, width: viaW, height: 18, color: greenBg });
-  page.drawCircle({ x: bx + 9, y: badgeY + 4, size: 5.5, color: greenSolid });
-  page.drawText("v", { x: bx + 6.5, y: badgeY + 1.5, size: 7.5, font: helvBold, color: rgb(1, 1, 1) });
-  page.drawText(viaTxt, { x: bx + 19, y: badgeY, size: 9, font: helv, color: greenText });
+  const badgeTxt = "Assinado via Wizzy Sign";
+  const badgeTxtW = helvBold.widthOfTextAtSize(badgeTxt, 9);
+  const badgeW = badgeTxtW + 32;
+  page.drawRectangle({ x: bx, y: badgeY - 4, width: badgeW, height: 18, color: greenBg });
+  page.drawCircle({ x: bx + 10, y: badgeY + 4, size: 5.5, color: greenSolid });
+  page.drawText("v", { x: bx + 7.5, y: badgeY + 1.5, size: 7.5, font: helvBold, color: rgb(1, 1, 1) });
+  page.drawText(badgeTxt, { x: bx + 20, y: badgeY, size: 9, font: helvBold, color: greenText });
 
   let ly = badgeY - 22;
   page.drawText(safe((signerName || "Nome nao informado").toUpperCase()), { x: margin + 14, y: ly, size: 13, font: helvBold, color: dark });
