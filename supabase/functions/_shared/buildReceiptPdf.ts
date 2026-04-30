@@ -207,20 +207,31 @@ export async function buildReceiptPdf(input: Record<string, any>): Promise<Uint8
 
   page.drawText("Pontos de autenticacao:", { x: colX, y: ly, size: 10, font: helvBold, color: dark });
   ly -= 14;
-  page.drawText(safe(`Telefone: ${signerPhone || "Nao informado"}`), { x: colX, y: ly, size: 9, font: helv, color: text });
+  const drawLabelValue = (label: string, value: string) => {
+    page.drawText(label, { x: colX, y: ly, size: 9, font: helvBold, color: dark });
+    const lw = helvBold.widthOfTextAtSize(label, 9);
+    page.drawText(safe(" " + value), { x: colX + lw, y: ly, size: 9, font: helv, color: text });
+    ly -= 12;
+  };
+
+  drawLabelValue("Telefone:", signerPhone || "Nao informado");
+  // E-mail (com wrap)
+  const emailLabel = "E-mail:";
+  const emailLabelW = helvBold.widthOfTextAtSize(emailLabel, 9);
+  page.drawText(emailLabel, { x: colX, y: ly, size: 9, font: helvBold, color: dark });
+  const emailLines = wrapText(` ${signerEmail || "Nao informado"}`, helv, 9, dataColW - emailLabelW);
+  page.drawText(safe(emailLines[0] || ""), { x: colX + emailLabelW, y: ly, size: 9, font: helv, color: text });
   ly -= 12;
-  const emailLines = wrapText(`E-mail: ${signerEmail || "Nao informado"}`, helv, 9, dataColW);
-  for (const l of emailLines.slice(0, 2)) {
+  for (const l of emailLines.slice(1, 2)) {
     page.drawText(safe(l), { x: colX, y: ly, size: 9, font: helv, color: text });
     ly -= 12;
   }
   if (signerCpf) {
-    page.drawText(safe(`CPF: ${signerCpf}`), { x: colX, y: ly, size: 9, font: helv, color: text });
-    ly -= 12;
+    drawLabelValue("CPF:", signerCpf);
   }
   const channel = otpChannel === "whatsapp" ? "WhatsApp" : otpChannel === "sms" ? "SMS" : "E-mail";
-  page.drawText(safe(`Canal OTP: ${channel}`), { x: colX, y: ly, size: 9, font: helv, color: text });
-  ly -= 18;
+  drawLabelValue("Canal OTP:", channel);
+  ly -= 6;
 
   // DADOS COLETADOS
   page.drawLine({ start: { x: colX, y: ly + 8 }, end: { x: dataLeftMaxX, y: ly + 8 }, thickness: 0.5, color: sectionLine });
@@ -230,10 +241,8 @@ export async function buildReceiptPdf(input: Record<string, any>): Promise<Uint8
   const geoTxt = (geolocation && geolocation.lat != null && geolocation.lng != null)
     ? `${Number(geolocation.lat).toFixed(6)}, ${Number(geolocation.lng).toFixed(6)}`
     : "Nao coletada";
-  page.drawText(safe(`Coordenada geografica: ${geoTxt}`), { x: colX, y: ly, size: 9, font: helv, color: text });
-  ly -= 12;
-  page.drawText(safe(`IP: ${signerIp || "Nao coletado"}`), { x: colX, y: ly, size: 9, font: helv, color: text });
-  ly -= 12;
+  drawLabelValue("Coordenada geografica:", geoTxt);
+  drawLabelValue("IP:", signerIp || "Nao coletado");
 
   const deviceFull = signerDevice && signerDevice.length > 5
     ? signerDevice
