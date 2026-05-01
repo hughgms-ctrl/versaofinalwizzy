@@ -730,7 +730,7 @@ const LandingPage = () => {
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(236,72,153,0.15),transparent_70%)]" />
         <div className="relative max-w-3xl mx-auto text-center">
           <h2 className="text-3xl sm:text-5xl font-bold text-white leading-tight">
-            Pronto para parar de perder honorários?
+            Pronto para parar de perder contratos?
           </h2>
           <p className="mt-5 text-slate-300 text-lg">
             Crie sua conta em menos de 2 minutos. Sem cartão. Sem compromisso.
