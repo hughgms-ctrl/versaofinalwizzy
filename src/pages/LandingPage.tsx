@@ -42,7 +42,7 @@ const pains = [
 const flowSteps = [
   { n: "01", icon: Link2, title: "Capte o lead", desc: "WhatsApp, site, Google Ads, indicações, redes sociais — tudo entra direto no Wizzy.", color: "from-pink-500 to-rose-500" },
   { n: "02", icon: Filter, title: "Triagem com IA", desc: "Agente jurídico de IA atende 24/7, identifica a área do caso e qualifica o cliente.", color: "from-violet-500 to-purple-500" },
-  { n: "03", icon: LayoutGrid, title: "Organize no funil", desc: "Pipeline jurídico: Triagem → Análise → Proposta → Contrato → Cliente ativo.", color: "from-blue-500 to-cyan-500" },
+  { n: "03", icon: LayoutGrid, title: "Organize no funil", desc: "Assinatura digital com validade jurídica: Triagem → Análise → Proposta → Contrato → Cliente ativo.", color: "from-blue-500 to-cyan-500" },
   { n: "04", icon: FileText, title: "Envie o contrato", desc: "Contrato de honorários gerado automaticamente, com assinatura eletrônica (Lei 14.063).", color: "from-emerald-500 to-teal-500" },
   { n: "05", icon: Calendar, title: "Agende a reunião", desc: "Agenda integrada ao Google Calendar e Meet — agendamento pelo próprio WhatsApp.", color: "from-amber-500 to-orange-500" },
   { n: "06", icon: TrendingUp, title: "Meça e escale", desc: "Dashboards com conversão por área, ticket médio e desempenho de cada captador.", color: "from-fuchsia-500 to-pink-500" },
@@ -52,7 +52,7 @@ const features = [
   { icon: MessageSquare, title: "Atendimento jurídico centralizado", desc: "Todas as conversas do WhatsApp do escritório em uma só caixa, com fila, advogados e tags por área.", highlight: "DESTAQUE" },
   { icon: Bot, title: "Agente jurídico de IA", desc: "IA treinada para advocacia: faz triagem, identifica a área, coleta dados do caso e agenda a consulta.", highlight: "IA" },
   { icon: Workflow, title: "Fluxos automatizados", desc: "Automatize triagens, follow-ups e envio de contratos sem precisar mexer em código." },
-  { icon: LayoutGrid, title: "Pipeline jurídico", desc: "Funis por área (trabalhista, cível, família…) com etapas configuráveis e drag-and-drop." },
+  { icon: LayoutGrid, title: "Assinatura digital com validade jurídica", desc: "Funis por área (trabalhista, cível, família…) com etapas configuráveis e drag-and-drop." },
   { icon: FileText, title: "Contratos com assinatura digital", desc: "Templates de honorários, procurações e contratos. Assinatura eletrônica avançada (Lei 14.063/2020)." },
   { icon: Calendar, title: "Agendamento de consultas", desc: "Página pública de agendamento com Google Calendar e link automático do Meet." },
   { icon: Megaphone, title: "Campanhas para a base", desc: "Comunique novidades, conteúdos e oportunidades para sua base de clientes e ex-clientes." },
@@ -182,8 +182,8 @@ const LandingPage = () => {
           </h1>
 
           <p className="mt-7 text-lg sm:text-xl text-slate-400 max-w-3xl mx-auto leading-relaxed">
-            Atenda 24/7 com IA jurídica, organize casos em um pipeline visual, envie contratos de honorários
-            com assinatura digital e meça a captação do escritório em tempo real — tudo em um só lugar.
+            Atenda 24/7 com IA, organize casos em um pipeline visual, colha assinaturas de forma digital
+            e meça a captação do escritório em tempo real — tudo em um só lugar.
           </p>
 
           <div className="mt-10 flex flex-col sm:flex-row gap-3 justify-center">
@@ -443,8 +443,8 @@ const LandingPage = () => {
               </div>
             </div>
             {[
-              ["Casos perdidos no WhatsApp", "Pipeline jurídico organizado por etapas"],
-              ["Resposta manual e fora de hora", "Agente de IA jurídica respondendo 24/7"],
+              ["Casos perdidos no WhatsApp", "Assinatura digital com validade jurídica"],
+              ["Resposta manual e fora de hora", "Agente de IA respondendo 24/7"],
               ["Contratos de honorários no Word", "Documentos com assinatura digital (Lei 14.063)"],
               ["Agendamento por mensagem", "Página pública + Google Calendar/Meet"],
               ["Sem visão de captação", "Dashboards de funil, ticket e conversão"],
@@ -730,7 +730,7 @@ const LandingPage = () => {
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(236,72,153,0.15),transparent_70%)]" />
         <div className="relative max-w-3xl mx-auto text-center">
           <h2 className="text-3xl sm:text-5xl font-bold text-white leading-tight">
-            Pronto para parar de perder honorários?
+            Pronto para parar de perder contratos?
           </h2>
           <p className="mt-5 text-slate-300 text-lg">
             Crie sua conta em menos de 2 minutos. Sem cartão. Sem compromisso.
