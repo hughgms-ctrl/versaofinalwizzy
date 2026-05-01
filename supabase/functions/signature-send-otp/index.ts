@@ -26,7 +26,7 @@ async function sendEmailOtp(args: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        from: "Assinatura Eletrônica <onboarding@resend.dev>",
+        from: "Wizzy Sign <no-reply@wizzybr.com>",
         to: [args.email],
         subject: `Código de verificação: ${args.code}`,
         html: `

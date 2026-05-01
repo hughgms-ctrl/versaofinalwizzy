@@ -189,8 +189,25 @@ export async function buildReceiptPdf(input: Record<string, any>): Promise<Uint8
   const badgeTxtW = helvBold.widthOfTextAtSize(badgeTxt, 9);
   const badgeW = badgeTxtW + 32;
   page.drawRectangle({ x: bx, y: badgeY - 4, width: badgeW, height: 18, color: greenBg });
-  page.drawCircle({ x: bx + 10, y: badgeY + 4, size: 5.5, color: greenSolid });
-  page.drawText("v", { x: bx + 7.5, y: badgeY + 1.5, size: 7.5, font: helvBold, color: rgb(1, 1, 1) });
+  // Escudo vetorial verde com check branco (estilo ZapSign)
+  const shieldCx = bx + 10;
+  const shieldCy = badgeY + 4;
+  // SVG path do escudo desenhado em torno de (0,0); pdf-lib aplica y invertido
+  const shieldPath = "M 0 -7 L 6 -4 L 6 2 C 6 5 3 7 0 8 C -3 7 -6 5 -6 2 L -6 -4 Z";
+  page.drawSvgPath(shieldPath, {
+    x: shieldCx,
+    y: shieldCy,
+    color: greenSolid,
+    scale: 1,
+  });
+  // Check branco dentro do escudo
+  const checkPath = "M -2.5 0 L -0.8 1.8 L 2.8 -2";
+  page.drawSvgPath(checkPath, {
+    x: shieldCx,
+    y: shieldCy + 0.5,
+    borderColor: rgb(1, 1, 1),
+    borderWidth: 1.4,
+  });
   page.drawText(badgeTxt, { x: bx + 20, y: badgeY, size: 9, font: helvBold, color: greenText });
 
   let ly = badgeY - 22;
@@ -244,31 +261,12 @@ export async function buildReceiptPdf(input: Record<string, any>): Promise<Uint8
   drawLabelValue("Coordenada geografica:", geoTxt);
   drawLabelValue("IP:", signerIp || "Nao coletado");
 
-  const deviceFull = signerDevice && signerDevice.length > 5
-    ? signerDevice
-    : `${signerBrowser || "Desconhecido"} / ${signerOs || "Desconhecido"} / ${deviceType || "desktop"}`;
+  // Mostra apenas os dados parseados (browser/OS/tipo) - nunca o User-Agent cru
+  const deviceFull = `${signerBrowser || "Desconhecido"} em ${signerOs || "Desconhecido"} (${deviceType || "desktop"})`;
   const devLabel = "Dispositivo: ";
   page.drawText(devLabel, { x: colX, y: ly, size: 9, font: helvBold, color: dark });
   const devLabelW = helvBold.widthOfTextAtSize(devLabel, 9);
-  const firstLineAvail = dataColW - devLabelW;
-  const restAvail = dataColW;
-  if (helv.widthOfTextAtSize(deviceFull, 9) <= firstLineAvail) {
-    page.drawText(safe(deviceFull), { x: colX + devLabelW, y: ly, size: 9, font: helv, color: text });
-  } else {
-    let remaining = deviceFull;
-    let cut = remaining.length;
-    while (cut > 1 && helv.widthOfTextAtSize(remaining.slice(0, cut), 9) > firstLineAvail) cut--;
-    page.drawText(safe(remaining.slice(0, cut)), { x: colX + devLabelW, y: ly, size: 9, font: helv, color: text });
-    remaining = remaining.slice(cut);
-    let lineCount = 1;
-    while (remaining && lineCount < 5) {
-      ly -= 11; lineCount++;
-      let c = remaining.length;
-      while (c > 1 && helv.widthOfTextAtSize(remaining.slice(0, c), 9) > restAvail) c--;
-      page.drawText(safe(remaining.slice(0, c)), { x: colX, y: ly, size: 9, font: helv, color: text });
-      remaining = remaining.slice(c);
-    }
-  }
+  page.drawText(safe(deviceFull), { x: colX + devLabelW, y: ly, size: 9, font: helv, color: text });
 
   // Right column
   const sigLabel = "Assinatura";
