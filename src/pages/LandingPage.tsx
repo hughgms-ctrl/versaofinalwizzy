@@ -52,7 +52,7 @@ const features = [
   { icon: MessageSquare, title: "Atendimento jurídico centralizado", desc: "Todas as conversas do WhatsApp do escritório em uma só caixa, com fila, advogados e tags por área.", highlight: "DESTAQUE" },
   { icon: Bot, title: "Agente jurídico de IA", desc: "IA treinada para advocacia: faz triagem, identifica a área, coleta dados do caso e agenda a consulta.", highlight: "IA" },
   { icon: Workflow, title: "Fluxos automatizados", desc: "Automatize triagens, follow-ups e envio de contratos sem precisar mexer em código." },
-  { icon: LayoutGrid, title: "Pipeline jurídico", desc: "Funis por área (trabalhista, cível, família…) com etapas configuráveis e drag-and-drop." },
+  { icon: LayoutGrid, title: "Assinatura digital com validade jurídica", desc: "Funis por área (trabalhista, cível, família…) com etapas configuráveis e drag-and-drop." },
   { icon: FileText, title: "Contratos com assinatura digital", desc: "Templates de honorários, procurações e contratos. Assinatura eletrônica avançada (Lei 14.063/2020)." },
   { icon: Calendar, title: "Agendamento de consultas", desc: "Página pública de agendamento com Google Calendar e link automático do Meet." },
   { icon: Megaphone, title: "Campanhas para a base", desc: "Comunique novidades, conteúdos e oportunidades para sua base de clientes e ex-clientes." },
