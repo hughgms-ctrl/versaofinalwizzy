@@ -182,8 +182,8 @@ const LandingPage = () => {
           </h1>
 
           <p className="mt-7 text-lg sm:text-xl text-slate-400 max-w-3xl mx-auto leading-relaxed">
-            Atenda 24/7 com IA jurídica, organize casos em um pipeline visual, envie contratos de honorários
-            com assinatura digital e meça a captação do escritório em tempo real — tudo em um só lugar.
+            Atenda 24/7 com IA, organize casos em um pipeline visual, colha assinaturas de forma digital
+            e meça a captação do escritório em tempo real — tudo em um só lugar.
           </p>
 
           <div className="mt-10 flex flex-col sm:flex-row gap-3 justify-center">
