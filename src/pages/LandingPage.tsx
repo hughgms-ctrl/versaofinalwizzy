@@ -443,7 +443,7 @@ const LandingPage = () => {
               </div>
             </div>
             {[
-              ["Casos perdidos no WhatsApp", "Pipeline jurídico organizado por etapas"],
+              ["Casos perdidos no WhatsApp", "Assinatura digital com validade jurídica"],
               ["Resposta manual e fora de hora", "Agente de IA jurídica respondendo 24/7"],
               ["Contratos de honorários no Word", "Documentos com assinatura digital (Lei 14.063)"],
               ["Agendamento por mensagem", "Página pública + Google Calendar/Meet"],
