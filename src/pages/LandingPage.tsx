@@ -42,7 +42,7 @@ const pains = [
 const flowSteps = [
   { n: "01", icon: Link2, title: "Capte o lead", desc: "WhatsApp, site, Google Ads, indicações, redes sociais — tudo entra direto no Wizzy.", color: "from-pink-500 to-rose-500" },
   { n: "02", icon: Filter, title: "Triagem com IA", desc: "Agente jurídico de IA atende 24/7, identifica a área do caso e qualifica o cliente.", color: "from-violet-500 to-purple-500" },
-  { n: "03", icon: LayoutGrid, title: "Organize no funil", desc: "Pipeline jurídico: Triagem → Análise → Proposta → Contrato → Cliente ativo.", color: "from-blue-500 to-cyan-500" },
+  { n: "03", icon: LayoutGrid, title: "Organize no funil", desc: "Assinatura digital com validade jurídica: Triagem → Análise → Proposta → Contrato → Cliente ativo.", color: "from-blue-500 to-cyan-500" },
   { n: "04", icon: FileText, title: "Envie o contrato", desc: "Contrato de honorários gerado automaticamente, com assinatura eletrônica (Lei 14.063).", color: "from-emerald-500 to-teal-500" },
   { n: "05", icon: Calendar, title: "Agende a reunião", desc: "Agenda integrada ao Google Calendar e Meet — agendamento pelo próprio WhatsApp.", color: "from-amber-500 to-orange-500" },
   { n: "06", icon: TrendingUp, title: "Meça e escale", desc: "Dashboards com conversão por área, ticket médio e desempenho de cada captador.", color: "from-fuchsia-500 to-pink-500" },
