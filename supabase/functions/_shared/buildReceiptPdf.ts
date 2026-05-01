@@ -244,31 +244,12 @@ export async function buildReceiptPdf(input: Record<string, any>): Promise<Uint8
   drawLabelValue("Coordenada geografica:", geoTxt);
   drawLabelValue("IP:", signerIp || "Nao coletado");
 
-  const deviceFull = signerDevice && signerDevice.length > 5
-    ? signerDevice
-    : `${signerBrowser || "Desconhecido"} / ${signerOs || "Desconhecido"} / ${deviceType || "desktop"}`;
+  // Mostra apenas os dados parseados (browser/OS/tipo) - nunca o User-Agent cru
+  const deviceFull = `${signerBrowser || "Desconhecido"} em ${signerOs || "Desconhecido"} (${deviceType || "desktop"})`;
   const devLabel = "Dispositivo: ";
   page.drawText(devLabel, { x: colX, y: ly, size: 9, font: helvBold, color: dark });
   const devLabelW = helvBold.widthOfTextAtSize(devLabel, 9);
-  const firstLineAvail = dataColW - devLabelW;
-  const restAvail = dataColW;
-  if (helv.widthOfTextAtSize(deviceFull, 9) <= firstLineAvail) {
-    page.drawText(safe(deviceFull), { x: colX + devLabelW, y: ly, size: 9, font: helv, color: text });
-  } else {
-    let remaining = deviceFull;
-    let cut = remaining.length;
-    while (cut > 1 && helv.widthOfTextAtSize(remaining.slice(0, cut), 9) > firstLineAvail) cut--;
-    page.drawText(safe(remaining.slice(0, cut)), { x: colX + devLabelW, y: ly, size: 9, font: helv, color: text });
-    remaining = remaining.slice(cut);
-    let lineCount = 1;
-    while (remaining && lineCount < 5) {
-      ly -= 11; lineCount++;
-      let c = remaining.length;
-      while (c > 1 && helv.widthOfTextAtSize(remaining.slice(0, c), 9) > restAvail) c--;
-      page.drawText(safe(remaining.slice(0, c)), { x: colX, y: ly, size: 9, font: helv, color: text });
-      remaining = remaining.slice(c);
-    }
-  }
+  page.drawText(safe(deviceFull), { x: colX + devLabelW, y: ly, size: 9, font: helv, color: text });
 
   // Right column
   const sigLabel = "Assinatura";
