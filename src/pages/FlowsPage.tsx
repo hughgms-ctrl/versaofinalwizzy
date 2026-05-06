@@ -166,10 +166,11 @@ const FlowsPage = () => {
       createFolder.mutate({
         name: newFolderName.trim(),
         parentId: currentFolderId,
-        workspaceId: folderWorkspaceId,
+        workspaceIds: folderWorkspaceIds,
       });
       setNewFolderName('');
       setFolderWorkspaceId(null);
+      setFolderWorkspaceIds([]);
       setShowFolderDialog(false);
     }
   };
@@ -179,10 +180,11 @@ const FlowsPage = () => {
       renameFolder.mutate({
         folderId: editingFolder.id,
         name: newFolderName.trim(),
-        workspaceId: folderWorkspaceId,
+        workspaceIds: folderWorkspaceIds,
       });
       setNewFolderName('');
       setFolderWorkspaceId(null);
+      setFolderWorkspaceIds([]);
       setEditingFolder(null);
       setShowRenameDialog(false);
     }
