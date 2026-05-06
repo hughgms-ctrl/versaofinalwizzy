@@ -21,6 +21,7 @@ export interface Flow {
   created_by: string | null;
   folder_id: string | null;
   workspace_id: string | null;
+  workspace_ids: string[];
   master_prompt?: string;
   is_master_active?: boolean;
   provider?: string | null;
