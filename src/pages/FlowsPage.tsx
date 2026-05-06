@@ -834,6 +834,7 @@ const FlowsPage = () => {
               setShowRenameDialog(false);
               setNewFolderName('');
               setFolderWorkspaceId(null);
+              setFolderWorkspaceIds([]);
               setEditingFolder(null);
             }} className="text-foreground hover:bg-muted/20 px-6 font-bold">
               Cancelar
