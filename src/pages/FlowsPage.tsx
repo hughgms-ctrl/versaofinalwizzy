@@ -871,6 +871,7 @@ const FlowsPage = () => {
               onClick={() => {
                 setCurrentFolderId(null);
                 setFolderWorkspaceId(selectedWorkspaceId);
+                setFolderWorkspaceIds(selectedWorkspaceId ? [selectedWorkspaceId] : []);
                 setShowFolderDialog(true);
               }}
             >
