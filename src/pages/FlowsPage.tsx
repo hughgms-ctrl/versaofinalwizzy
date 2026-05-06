@@ -210,31 +210,37 @@ const FlowsPage = () => {
 
   const handleMoveToFolder = (flowId: string, folderId: string | null) => {
     const folder = folders?.find(f => f.id === folderId);
-    moveFlow.mutate({ flowId, folderId, folderWorkspaceId: folder?.workspace_id || null });
+    moveFlow.mutate({
+      flowId,
+      folderId,
+      folderWorkspaceId: folder?.workspace_id || null,
+      folderWorkspaceIds: folder?.workspace_ids || null,
+    });
   };
 
-  const handleUpdateFlowWorkspace = (flowId: string, workspaceId: string | null) => {
-    // We use the same mutator from useFlows for saving a flow
+  const handleUpdateFlowWorkspaces = (flowId: string, workspaceIds: string[]) => {
     const flow = (flows as any[])?.find(f => f.id === flowId);
     if (flow) {
-      // Create a full save object as expected by useSaveFlow
       saveFlow.mutate({
         id: flowId,
         nodes: flow.nodes || [],
         edges: flow.edges || [],
-        workspace_id: workspaceId
+        workspace_ids: workspaceIds,
+        workspace_id: workspaceIds[0] || null,
       });
     }
   };
 
-  // Filter flows and folders by selected workspace
-  const matchesWorkspace = (wsId: string | null | undefined) => {
-    if (!selectedWorkspaceId) return true; // "Todos" - show all
-    return wsId === selectedWorkspaceId; // Strict: only show if matches selected
+  // Filter flows and folders by selected workspace (multi-workspace aware)
+  const matchesWorkspace = (wsIds?: string[] | null, legacyId?: string | null) => {
+    if (!selectedWorkspaceId) return true;
+    if (wsIds && wsIds.length > 0) return wsIds.includes(selectedWorkspaceId);
+    if (!legacyId) return false; // explicit empty = no workspace assigned -> hide when filtering
+    return legacyId === selectedWorkspaceId;
   };
 
-  const filteredFlows = (flows as Flow[] | undefined)?.filter(f => matchesWorkspace((f as any).workspace_id) && (f as any).trigger_type !== 'chat_follow_up') || [];
-  const filteredFolders = folders?.filter(f => matchesWorkspace(f.workspace_id)) || [];
+  const filteredFlows = (flows as Flow[] | undefined)?.filter(f => matchesWorkspace((f as any).workspace_ids, (f as any).workspace_id) && (f as any).trigger_type !== 'chat_follow_up') || [];
+  const filteredFolders = folders?.filter(f => matchesWorkspace((f as any).workspace_ids, f.workspace_id)) || [];
 
   // Get flows without folder (root level)
   const rootFlows = filteredFlows.filter(f => !f.folder_id);
