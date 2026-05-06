@@ -192,6 +192,7 @@ export function useSaveFlow() {
       if (data.trigger_type !== undefined) updateData.trigger_type = data.trigger_type;
       if (data.trigger_config !== undefined) updateData.trigger_config = data.trigger_config;
       if (data.workspace_id !== undefined) updateData.workspace_id = data.workspace_id;
+      if (data.workspace_ids !== undefined) updateData.workspace_ids = data.workspace_ids ?? [];
       if (data.master_prompt !== undefined) updateData.master_prompt = data.master_prompt;
       if (data.is_master_active !== undefined) updateData.is_master_active = data.is_master_active;
       if (data.provider !== undefined) updateData.provider = data.provider;
