@@ -61,6 +61,7 @@ import {
 } from '@/hooks/useFlowFolders';
 import { useSaveFlow } from '@/hooks/useFlows';
 import { CreateFlowDialog } from '@/components/flows/CreateFlowDialog';
+import { MultiWorkspaceSelector } from '@/components/shared/MultiWorkspaceSelector';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { Label } from '@/components/ui/label';
 import {
