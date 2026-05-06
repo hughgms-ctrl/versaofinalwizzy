@@ -196,11 +196,15 @@ export function useMoveFlowToFolder() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ flowId, folderId, folderWorkspaceId }: { flowId: string; folderId: string | null; folderWorkspaceId?: string | null }) => {
+    mutationFn: async ({ flowId, folderId, folderWorkspaceId, folderWorkspaceIds }: { flowId: string; folderId: string | null; folderWorkspaceId?: string | null; folderWorkspaceIds?: string[] | null }) => {
       const updateData: Record<string, unknown> = { folder_id: folderId };
-      // If the folder has a workspace, auto-assign the flow to it
-      if (folderWorkspaceId !== undefined && folderWorkspaceId !== null) {
+      // If the folder has workspaces, auto-assign the flow to them
+      if (folderWorkspaceIds && folderWorkspaceIds.length > 0) {
+        updateData.workspace_ids = folderWorkspaceIds;
+        updateData.workspace_id = folderWorkspaceIds[0];
+      } else if (folderWorkspaceId !== undefined && folderWorkspaceId !== null) {
         updateData.workspace_id = folderWorkspaceId;
+        updateData.workspace_ids = [folderWorkspaceId];
       }
 
       const { error } = await (supabase
