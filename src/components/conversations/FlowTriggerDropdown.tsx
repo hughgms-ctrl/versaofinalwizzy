@@ -29,10 +29,14 @@ export function FlowTriggerDropdown({ conversationId }: FlowTriggerDropdownProps
 
   const isLoading = loadingFlows || loadingFolders;
 
-  // Filter by workspace: show items with no workspace (global) or matching workspace
-  const matchesWorkspace = (wsId: string | null | undefined) => {
+  // Filter by workspace: show items global (no workspace assigned) or matching the selected workspace (legacy or multi)
+  const matchesWorkspace = (item: { workspace_id?: string | null; workspace_ids?: string[] | null }) => {
     if (!selectedWorkspaceId) return true;
-    return !wsId || wsId === selectedWorkspaceId;
+    const ids = item.workspace_ids && item.workspace_ids.length > 0
+      ? item.workspace_ids
+      : (item.workspace_id ? [item.workspace_id] : []);
+    if (ids.length === 0) return true; // global
+    return ids.includes(selectedWorkspaceId);
   };
 
   // Filter only active flows matching workspace and visible in chat, sort by position
