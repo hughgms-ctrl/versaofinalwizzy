@@ -50,7 +50,7 @@ export function useCreateFlowFolder() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ name, parentId, workspaceId }: { name: string; parentId?: string | null; workspaceId?: string | null }) => {
+    mutationFn: async ({ name, parentId, workspaceId, workspaceIds }: { name: string; parentId?: string | null; workspaceId?: string | null; workspaceIds?: string[] | null }) => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
 
@@ -62,13 +62,18 @@ export function useCreateFlowFolder() {
 
       if (!profile) throw new Error('Profile not found');
 
+      const wsIds = workspaceIds && workspaceIds.length > 0
+        ? workspaceIds
+        : (workspaceId ? [workspaceId] : []);
+
       const { data, error } = await supabase
         .from('flow_folders')
         .insert({
           name,
           organization_id: profile.organization_id,
           parent_id: parentId || null,
-          workspace_id: workspaceId || null,
+          workspace_id: wsIds[0] || null,
+          workspace_ids: wsIds,
         } as never)
         .select()
         .single();
