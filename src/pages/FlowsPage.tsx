@@ -817,27 +817,13 @@ const FlowsPage = () => {
             </div>
             {isAdmin && (
               <div className="grid gap-2">
-                <Label className="text-sm font-medium">Workspace</Label>
-                <Select
-                  value={folderWorkspaceId || 'all'}
-                  onValueChange={(val) => setFolderWorkspaceId(val === 'all' ? null : val)}
-                >
-                  <SelectTrigger className="bg-muted border-border h-11 rounded-lg">
-                    <SelectValue placeholder="Selecione" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-card border-border">
-                    <SelectItem value="all">Todos os Workspaces</SelectItem>
-                    {availableWorkspaces.map(ws => (
-                      <SelectItem key={ws.id} value={ws.id}>
-                        <div className="flex items-center gap-2">
-                          <div className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: ws.color }} />
-                          {ws.name}
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-[11px] text-muted-foreground/80 mt-1">Fluxos movidos para esta pasta herdarão o workspace selecionado.</p>
+                <Label className="text-sm font-medium">Workspaces</Label>
+                <MultiWorkspaceSelector
+                  workspaces={availableWorkspaces}
+                  value={folderWorkspaceIds}
+                  onChange={setFolderWorkspaceIds}
+                />
+                <p className="text-[11px] text-muted-foreground/80 mt-1">Selecione um ou mais workspaces. Vazio = aparece em todos. Fluxos movidos para esta pasta herdarão a seleção.</p>
               </div>
             )}
           </div>
