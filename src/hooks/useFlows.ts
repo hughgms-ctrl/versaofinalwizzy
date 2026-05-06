@@ -175,6 +175,7 @@ export function useSaveFlow() {
       trigger_type?: string;
       trigger_config?: Record<string, unknown>;
       workspace_id?: string | null;
+      workspace_ids?: string[] | null;
       master_prompt?: string;
       is_master_active?: boolean;
       provider?: string | null;
