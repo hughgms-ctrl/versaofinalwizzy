@@ -40,6 +40,7 @@ export function useFlowFolders() {
         ...folder,
         position: folder.position || 0,
         visible_in_chat: folder.visible_in_chat !== false,
+        workspace_ids: Array.isArray(folder.workspace_ids) ? folder.workspace_ids : [],
       })) as FlowFolder[];
     },
   });
