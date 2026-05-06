@@ -2897,6 +2897,7 @@ export type Database = {
           updated_at: string
           visible_in_chat: boolean | null
           workspace_id: string | null
+          workspace_ids: string[] | null
         }
         Insert: {
           created_at?: string
@@ -2908,6 +2909,7 @@ export type Database = {
           updated_at?: string
           visible_in_chat?: boolean | null
           workspace_id?: string | null
+          workspace_ids?: string[] | null
         }
         Update: {
           created_at?: string
@@ -2919,6 +2921,7 @@ export type Database = {
           updated_at?: string
           visible_in_chat?: boolean | null
           workspace_id?: string | null
+          workspace_ids?: string[] | null
         }
         Relationships: [
           {
@@ -3027,6 +3030,7 @@ export type Database = {
           variables: Json | null
           visible_in_chat: boolean | null
           workspace_id: string | null
+          workspace_ids: string[] | null
         }
         Insert: {
           created_at?: string
@@ -3049,6 +3053,7 @@ export type Database = {
           variables?: Json | null
           visible_in_chat?: boolean | null
           workspace_id?: string | null
+          workspace_ids?: string[] | null
         }
         Update: {
           created_at?: string
@@ -3071,6 +3076,7 @@ export type Database = {
           variables?: Json | null
           visible_in_chat?: boolean | null
           workspace_id?: string | null
+          workspace_ids?: string[] | null
         }
         Relationships: [
           {

@@ -61,6 +61,7 @@ import {
 } from '@/hooks/useFlowFolders';
 import { useSaveFlow } from '@/hooks/useFlows';
 import { CreateFlowDialog } from '@/components/flows/CreateFlowDialog';
+import { MultiWorkspaceSelector } from '@/components/shared/MultiWorkspaceSelector';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { Label } from '@/components/ui/label';
 import {
@@ -115,6 +116,7 @@ const FlowsPage = () => {
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [folderWorkspaceId, setFolderWorkspaceId] = useState<string | null>(null);
+  const [folderWorkspaceIds, setFolderWorkspaceIds] = useState<string[]>([]);
 
   const { data: flows, isLoading: flowsLoading } = useFlows();
   const { data: folders, isLoading: foldersLoading } = useFlowFolders();
@@ -165,10 +167,11 @@ const FlowsPage = () => {
       createFolder.mutate({
         name: newFolderName.trim(),
         parentId: currentFolderId,
-        workspaceId: folderWorkspaceId,
+        workspaceIds: folderWorkspaceIds,
       });
       setNewFolderName('');
       setFolderWorkspaceId(null);
+      setFolderWorkspaceIds([]);
       setShowFolderDialog(false);
     }
   };
@@ -178,10 +181,11 @@ const FlowsPage = () => {
       renameFolder.mutate({
         folderId: editingFolder.id,
         name: newFolderName.trim(),
-        workspaceId: folderWorkspaceId,
+        workspaceIds: folderWorkspaceIds,
       });
       setNewFolderName('');
       setFolderWorkspaceId(null);
+      setFolderWorkspaceIds([]);
       setEditingFolder(null);
       setShowRenameDialog(false);
     }
@@ -207,31 +211,37 @@ const FlowsPage = () => {
 
   const handleMoveToFolder = (flowId: string, folderId: string | null) => {
     const folder = folders?.find(f => f.id === folderId);
-    moveFlow.mutate({ flowId, folderId, folderWorkspaceId: folder?.workspace_id || null });
+    moveFlow.mutate({
+      flowId,
+      folderId,
+      folderWorkspaceId: folder?.workspace_id || null,
+      folderWorkspaceIds: folder?.workspace_ids || null,
+    });
   };
 
-  const handleUpdateFlowWorkspace = (flowId: string, workspaceId: string | null) => {
-    // We use the same mutator from useFlows for saving a flow
+  const handleUpdateFlowWorkspaces = (flowId: string, workspaceIds: string[]) => {
     const flow = (flows as any[])?.find(f => f.id === flowId);
     if (flow) {
-      // Create a full save object as expected by useSaveFlow
       saveFlow.mutate({
         id: flowId,
         nodes: flow.nodes || [],
         edges: flow.edges || [],
-        workspace_id: workspaceId
+        workspace_ids: workspaceIds,
+        workspace_id: workspaceIds[0] || null,
       });
     }
   };
 
-  // Filter flows and folders by selected workspace
-  const matchesWorkspace = (wsId: string | null | undefined) => {
-    if (!selectedWorkspaceId) return true; // "Todos" - show all
-    return wsId === selectedWorkspaceId; // Strict: only show if matches selected
+  // Filter flows and folders by selected workspace (multi-workspace aware)
+  const matchesWorkspace = (wsIds?: string[] | null, legacyId?: string | null) => {
+    if (!selectedWorkspaceId) return true;
+    if (wsIds && wsIds.length > 0) return wsIds.includes(selectedWorkspaceId);
+    if (!legacyId) return false; // explicit empty = no workspace assigned -> hide when filtering
+    return legacyId === selectedWorkspaceId;
   };
 
-  const filteredFlows = (flows as Flow[] | undefined)?.filter(f => matchesWorkspace((f as any).workspace_id) && (f as any).trigger_type !== 'chat_follow_up') || [];
-  const filteredFolders = folders?.filter(f => matchesWorkspace(f.workspace_id)) || [];
+  const filteredFlows = (flows as Flow[] | undefined)?.filter(f => matchesWorkspace((f as any).workspace_ids, (f as any).workspace_id) && (f as any).trigger_type !== 'chat_follow_up') || [];
+  const filteredFolders = folders?.filter(f => matchesWorkspace((f as any).workspace_ids, f.workspace_id)) || [];
 
   // Get flows without folder (root level)
   const rootFlows = filteredFlows.filter(f => !f.folder_id);
@@ -378,24 +388,32 @@ const FlowsPage = () => {
         </div>
       </div>
 
-      {/* Workspace Tag (for flows) */}
-      {(flow as any).workspace_id && (() => {
-        const ws = availableWorkspaces.find(w => w.id === (flow as any).workspace_id);
-        if (!ws) return null;
+      {/* Workspace Tags (for flows) */}
+      {(() => {
+        const ids: string[] = (flow as any).workspace_ids?.length
+          ? (flow as any).workspace_ids
+          : ((flow as any).workspace_id ? [(flow as any).workspace_id] : []);
+        if (ids.length === 0) return null;
         return (
-          <div
-            className="px-2 py-0.5 rounded-[4px] border shrink-0 hidden md:block"
-            style={{
-              backgroundColor: `${ws.color}15`,
-              borderColor: `${ws.color}30`
-            }}
-          >
-            <span
-              className="text-[10px] font-medium"
-              style={{ color: ws.color }}
-            >
-              {ws.name}
-            </span>
+          <div className="hidden md:flex items-center gap-1 shrink-0 max-w-[180px] overflow-hidden">
+            {ids.slice(0, 2).map(id => {
+              const ws = availableWorkspaces.find(w => w.id === id);
+              if (!ws) return null;
+              return (
+                <div
+                  key={ws.id}
+                  className="px-2 py-0.5 rounded-[4px] border shrink-0"
+                  style={{ backgroundColor: `${ws.color}15`, borderColor: `${ws.color}30` }}
+                >
+                  <span className="text-[10px] font-medium" style={{ color: ws.color }}>
+                    {ws.name}
+                  </span>
+                </div>
+              );
+            })}
+            {ids.length > 2 && (
+              <span className="text-[10px] text-muted-foreground">+{ids.length - 2}</span>
+            )}
           </div>
         );
       })()}
@@ -476,9 +494,13 @@ const FlowsPage = () => {
                   Raiz (sem pasta)
                 </DropdownMenuItem>
                 <DropdownMenuSeparator className="bg-muted" />
-                {folders?.filter(folder =>
-                  folder.workspace_id === (flow as any).workspace_id
-                ).map(folder => (
+                {folders?.filter(folder => {
+                  // Show folders whose workspaces overlap with the flow's workspaces (or both global)
+                  const flowIds: string[] = (flow as any).workspace_ids?.length ? (flow as any).workspace_ids : ((flow as any).workspace_id ? [(flow as any).workspace_id] : []);
+                  const folderIds: string[] = (folder as any).workspace_ids?.length ? (folder as any).workspace_ids : (folder.workspace_id ? [folder.workspace_id] : []);
+                  if (folderIds.length === 0 || flowIds.length === 0) return true;
+                  return folderIds.some(id => flowIds.includes(id));
+                }).map(folder => (
                   <DropdownMenuItem
                     key={folder.id}
                     onClick={() => handleMoveToFolder(flow.id, folder.id)}
@@ -493,27 +515,40 @@ const FlowsPage = () => {
             <DropdownMenuSub>
               <DropdownMenuSubTrigger>
                 <MapPinned className="h-4 w-4 mr-2" />
-                Workspace
+                Workspaces
               </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent className="bg-card border-border w-48">
-                <DropdownMenuItem onClick={() => handleUpdateFlowWorkspace(flow.id, null)}>
+              <DropdownMenuSubContent className="bg-card border-border w-56">
+                <DropdownMenuItem onClick={(e) => { e.preventDefault(); handleUpdateFlowWorkspaces(flow.id, []); }}>
                   <div className="flex items-center gap-2">
                     <div className="h-2.5 w-2.5 rounded-full border border-dashed border-muted-foreground shrink-0" />
-                    Nenhum (Todos)
+                    Todos os workspaces
                   </div>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator className="bg-muted" />
-                {availableWorkspaces.map(ws => (
-                  <DropdownMenuItem
-                    key={ws.id}
-                    onClick={() => handleUpdateFlowWorkspace(flow.id, ws.id)}
-                  >
-                    <div className="flex items-center gap-2">
-                      <div className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: ws.color }} />
-                      {ws.name}
-                    </div>
-                  </DropdownMenuItem>
-                ))}
+                {availableWorkspaces.map(ws => {
+                  const currentIds: string[] = (flow as any).workspace_ids?.length ? (flow as any).workspace_ids : ((flow as any).workspace_id ? [(flow as any).workspace_id] : []);
+                  const isSel = currentIds.includes(ws.id);
+                  return (
+                    <DropdownMenuItem
+                      key={ws.id}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        const next = isSel
+                          ? currentIds.filter(id => id !== ws.id)
+                          : [...currentIds, ws.id];
+                        handleUpdateFlowWorkspaces(flow.id, next);
+                      }}
+                    >
+                      <div className="flex items-center gap-2 w-full">
+                        <div className="w-3 flex justify-center">
+                          {isSel && <span className="text-primary text-xs">✓</span>}
+                        </div>
+                        <div className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: ws.color }} />
+                        <span className="flex-1 truncate">{ws.name}</span>
+                      </div>
+                    </DropdownMenuItem>
+                  );
+                })}
               </DropdownMenuSubContent>
             </DropdownMenuSub>
 
@@ -578,23 +613,29 @@ const FlowsPage = () => {
           </div>
 
           <div className="flex items-center gap-4 shrink-0 pr-2">
-            {folder.workspace_id && (() => {
-              const ws = availableWorkspaces.find(w => w.id === folder.workspace_id);
-              if (!ws) return null;
+            {(() => {
+              const ids: string[] = (folder as any).workspace_ids?.length ? (folder as any).workspace_ids : (folder.workspace_id ? [folder.workspace_id] : []);
+              if (ids.length === 0) return null;
               return (
-                <div
-                  className="px-2 py-0.5 rounded-[4px] border"
-                  style={{
-                    backgroundColor: `${ws.color}15`,
-                    borderColor: `${ws.color}30`
-                  }}
-                >
-                  <span
-                    className="text-[10px] font-medium"
-                    style={{ color: ws.color }}
-                  >
-                    {ws.name}
-                  </span>
+                <div className="flex items-center gap-1 max-w-[180px] overflow-hidden">
+                  {ids.slice(0, 2).map(id => {
+                    const ws = availableWorkspaces.find(w => w.id === id);
+                    if (!ws) return null;
+                    return (
+                      <div
+                        key={ws.id}
+                        className="px-2 py-0.5 rounded-[4px] border shrink-0"
+                        style={{ backgroundColor: `${ws.color}15`, borderColor: `${ws.color}30` }}
+                      >
+                        <span className="text-[10px] font-medium" style={{ color: ws.color }}>
+                          {ws.name}
+                        </span>
+                      </div>
+                    );
+                  })}
+                  {ids.length > 2 && (
+                    <span className="text-[10px] text-muted-foreground">+{ids.length - 2}</span>
+                  )}
                 </div>
               );
             })()}
@@ -615,6 +656,7 @@ const FlowsPage = () => {
                   setEditingFolder(folder);
                   setNewFolderName(folder.name);
                   setFolderWorkspaceId(folder.workspace_id || null);
+                  setFolderWorkspaceIds((folder as any).workspace_ids?.length ? (folder as any).workspace_ids : (folder.workspace_id ? [folder.workspace_id] : []));
                   setShowRenameDialog(true);
                 }}>
                   <Pencil className="h-4 w-4 mr-2" />
@@ -624,6 +666,7 @@ const FlowsPage = () => {
                   e.stopPropagation();
                   setCurrentFolderId(folder.id);
                   setFolderWorkspaceId(folder.workspace_id || null);
+                  setFolderWorkspaceIds((folder as any).workspace_ids?.length ? (folder as any).workspace_ids : (folder.workspace_id ? [folder.workspace_id] : []));
                   setShowFolderDialog(true);
                 }}>
                   <FolderPlus className="h-4 w-4 mr-2" />
@@ -726,27 +769,13 @@ const FlowsPage = () => {
             </div>
             {isAdmin && (
               <div className="grid gap-2">
-                <Label className="text-sm font-medium">Workspace</Label>
-                <Select
-                  value={folderWorkspaceId || 'all'}
-                  onValueChange={(val) => setFolderWorkspaceId(val === 'all' ? null : val)}
-                >
-                  <SelectTrigger className="bg-muted border-border h-11 rounded-lg">
-                    <SelectValue placeholder="Selecione" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-card border-border">
-                    <SelectItem value="all">Todos os Workspaces</SelectItem>
-                    {availableWorkspaces.map(ws => (
-                      <SelectItem key={ws.id} value={ws.id}>
-                        <div className="flex items-center gap-2">
-                          <div className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: ws.color }} />
-                          {ws.name}
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-[11px] text-muted-foreground/80 mt-1">Fluxos movidos para esta pasta herdarão o workspace selecionado.</p>
+                <Label className="text-sm font-medium">Workspaces</Label>
+                <MultiWorkspaceSelector
+                  workspaces={availableWorkspaces}
+                  value={folderWorkspaceIds}
+                  onChange={setFolderWorkspaceIds}
+                />
+                <p className="text-[11px] text-muted-foreground/80 mt-1">Selecione um ou mais workspaces. Vazio = aparece em todos. Fluxos movidos para esta pasta herdarão a seleção.</p>
               </div>
             )}
           </div>
@@ -756,6 +785,7 @@ const FlowsPage = () => {
               setNewFolderName('');
               setCurrentFolderId(null);
               setFolderWorkspaceId(null);
+              setFolderWorkspaceIds([]);
             }} className="text-foreground hover:bg-muted/20 px-6 font-bold">
               Cancelar
             </Button>
@@ -789,27 +819,13 @@ const FlowsPage = () => {
             </div>
             {isAdmin && (
               <div className="grid gap-2">
-                <Label className="text-sm font-medium">Workspace</Label>
-                <Select
-                  value={folderWorkspaceId || 'all'}
-                  onValueChange={(val) => setFolderWorkspaceId(val === 'all' ? null : val)}
-                >
-                  <SelectTrigger className="bg-muted border-border h-11 rounded-lg">
-                    <SelectValue placeholder="Selecione" />
-                  </SelectTrigger>
-                  <SelectContent className="bg-card border-border">
-                    <SelectItem value="all">Todos os Workspaces</SelectItem>
-                    {availableWorkspaces.map(ws => (
-                      <SelectItem key={ws.id} value={ws.id}>
-                        <div className="flex items-center gap-2">
-                          <div className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: ws.color }} />
-                          {ws.name}
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-[11px] text-muted-foreground/80 mt-1">Fluxos movidos para esta pasta herdarão o workspace selecionado.</p>
+                <Label className="text-sm font-medium">Workspaces</Label>
+                <MultiWorkspaceSelector
+                  workspaces={availableWorkspaces}
+                  value={folderWorkspaceIds}
+                  onChange={setFolderWorkspaceIds}
+                />
+                <p className="text-[11px] text-muted-foreground/80 mt-1">Selecione um ou mais workspaces. Vazio = aparece em todos. Fluxos movidos para esta pasta herdarão a seleção.</p>
               </div>
             )}
           </div>
@@ -818,6 +834,7 @@ const FlowsPage = () => {
               setShowRenameDialog(false);
               setNewFolderName('');
               setFolderWorkspaceId(null);
+              setFolderWorkspaceIds([]);
               setEditingFolder(null);
             }} className="text-foreground hover:bg-muted/20 px-6 font-bold">
               Cancelar
@@ -856,6 +873,7 @@ const FlowsPage = () => {
               onClick={() => {
                 setCurrentFolderId(null);
                 setFolderWorkspaceId(selectedWorkspaceId);
+                setFolderWorkspaceIds(selectedWorkspaceId ? [selectedWorkspaceId] : []);
                 setShowFolderDialog(true);
               }}
             >
