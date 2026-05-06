@@ -493,9 +493,13 @@ const FlowsPage = () => {
                   Raiz (sem pasta)
                 </DropdownMenuItem>
                 <DropdownMenuSeparator className="bg-muted" />
-                {folders?.filter(folder =>
-                  folder.workspace_id === (flow as any).workspace_id
-                ).map(folder => (
+                {folders?.filter(folder => {
+                  // Show folders whose workspaces overlap with the flow's workspaces (or both global)
+                  const flowIds: string[] = (flow as any).workspace_ids?.length ? (flow as any).workspace_ids : ((flow as any).workspace_id ? [(flow as any).workspace_id] : []);
+                  const folderIds: string[] = (folder as any).workspace_ids?.length ? (folder as any).workspace_ids : (folder.workspace_id ? [folder.workspace_id] : []);
+                  if (folderIds.length === 0 || flowIds.length === 0) return true;
+                  return folderIds.some(id => flowIds.includes(id));
+                }).map(folder => (
                   <DropdownMenuItem
                     key={folder.id}
                     onClick={() => handleMoveToFolder(flow.id, folder.id)}
@@ -510,27 +514,40 @@ const FlowsPage = () => {
             <DropdownMenuSub>
               <DropdownMenuSubTrigger>
                 <MapPinned className="h-4 w-4 mr-2" />
-                Workspace
+                Workspaces
               </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent className="bg-card border-border w-48">
-                <DropdownMenuItem onClick={() => handleUpdateFlowWorkspace(flow.id, null)}>
+              <DropdownMenuSubContent className="bg-card border-border w-56">
+                <DropdownMenuItem onClick={(e) => { e.preventDefault(); handleUpdateFlowWorkspaces(flow.id, []); }}>
                   <div className="flex items-center gap-2">
                     <div className="h-2.5 w-2.5 rounded-full border border-dashed border-muted-foreground shrink-0" />
-                    Nenhum (Todos)
+                    Todos os workspaces
                   </div>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator className="bg-muted" />
-                {availableWorkspaces.map(ws => (
-                  <DropdownMenuItem
-                    key={ws.id}
-                    onClick={() => handleUpdateFlowWorkspace(flow.id, ws.id)}
-                  >
-                    <div className="flex items-center gap-2">
-                      <div className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: ws.color }} />
-                      {ws.name}
-                    </div>
-                  </DropdownMenuItem>
-                ))}
+                {availableWorkspaces.map(ws => {
+                  const currentIds: string[] = (flow as any).workspace_ids?.length ? (flow as any).workspace_ids : ((flow as any).workspace_id ? [(flow as any).workspace_id] : []);
+                  const isSel = currentIds.includes(ws.id);
+                  return (
+                    <DropdownMenuItem
+                      key={ws.id}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        const next = isSel
+                          ? currentIds.filter(id => id !== ws.id)
+                          : [...currentIds, ws.id];
+                        handleUpdateFlowWorkspaces(flow.id, next);
+                      }}
+                    >
+                      <div className="flex items-center gap-2 w-full">
+                        <div className="w-3 flex justify-center">
+                          {isSel && <span className="text-primary text-xs">✓</span>}
+                        </div>
+                        <div className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: ws.color }} />
+                        <span className="flex-1 truncate">{ws.name}</span>
+                      </div>
+                    </DropdownMenuItem>
+                  );
+                })}
               </DropdownMenuSubContent>
             </DropdownMenuSub>
 
