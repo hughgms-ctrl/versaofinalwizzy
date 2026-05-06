@@ -8,6 +8,7 @@ export interface FlowFolder {
   name: string;
   parent_id: string | null;
   workspace_id: string | null;
+  workspace_ids: string[];
   created_at: string;
   updated_at: string;
   position: number;
