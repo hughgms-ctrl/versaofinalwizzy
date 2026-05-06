@@ -49,6 +49,7 @@ function mapRowToFlow(row: any): Flow {
     created_by: row.created_by,
     folder_id: row.folder_id || null,
     workspace_id: row.workspace_id || null,
+    workspace_ids: Array.isArray(row.workspace_ids) ? row.workspace_ids : [],
     master_prompt: row.master_prompt || '',
     is_master_active: row.is_master_active || false,
     provider: row.provider || null,
