@@ -612,23 +612,29 @@ const FlowsPage = () => {
           </div>
 
           <div className="flex items-center gap-4 shrink-0 pr-2">
-            {folder.workspace_id && (() => {
-              const ws = availableWorkspaces.find(w => w.id === folder.workspace_id);
-              if (!ws) return null;
+            {(() => {
+              const ids: string[] = (folder as any).workspace_ids?.length ? (folder as any).workspace_ids : (folder.workspace_id ? [folder.workspace_id] : []);
+              if (ids.length === 0) return null;
               return (
-                <div
-                  className="px-2 py-0.5 rounded-[4px] border"
-                  style={{
-                    backgroundColor: `${ws.color}15`,
-                    borderColor: `${ws.color}30`
-                  }}
-                >
-                  <span
-                    className="text-[10px] font-medium"
-                    style={{ color: ws.color }}
-                  >
-                    {ws.name}
-                  </span>
+                <div className="flex items-center gap-1 max-w-[180px] overflow-hidden">
+                  {ids.slice(0, 2).map(id => {
+                    const ws = availableWorkspaces.find(w => w.id === id);
+                    if (!ws) return null;
+                    return (
+                      <div
+                        key={ws.id}
+                        className="px-2 py-0.5 rounded-[4px] border shrink-0"
+                        style={{ backgroundColor: `${ws.color}15`, borderColor: `${ws.color}30` }}
+                      >
+                        <span className="text-[10px] font-medium" style={{ color: ws.color }}>
+                          {ws.name}
+                        </span>
+                      </div>
+                    );
+                  })}
+                  {ids.length > 2 && (
+                    <span className="text-[10px] text-muted-foreground">+{ids.length - 2}</span>
+                  )}
                 </div>
               );
             })()}
