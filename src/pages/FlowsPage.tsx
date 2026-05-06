@@ -115,6 +115,7 @@ const FlowsPage = () => {
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [folderWorkspaceId, setFolderWorkspaceId] = useState<string | null>(null);
+  const [folderWorkspaceIds, setFolderWorkspaceIds] = useState<string[]>([]);
 
   const { data: flows, isLoading: flowsLoading } = useFlows();
   const { data: folders, isLoading: foldersLoading } = useFlowFolders();
