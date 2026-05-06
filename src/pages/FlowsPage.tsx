@@ -655,6 +655,7 @@ const FlowsPage = () => {
                   setEditingFolder(folder);
                   setNewFolderName(folder.name);
                   setFolderWorkspaceId(folder.workspace_id || null);
+                  setFolderWorkspaceIds((folder as any).workspace_ids?.length ? (folder as any).workspace_ids : (folder.workspace_id ? [folder.workspace_id] : []));
                   setShowRenameDialog(true);
                 }}>
                   <Pencil className="h-4 w-4 mr-2" />
@@ -664,6 +665,7 @@ const FlowsPage = () => {
                   e.stopPropagation();
                   setCurrentFolderId(folder.id);
                   setFolderWorkspaceId(folder.workspace_id || null);
+                  setFolderWorkspaceIds((folder as any).workspace_ids?.length ? (folder as any).workspace_ids : (folder.workspace_id ? [folder.workspace_id] : []));
                   setShowFolderDialog(true);
                 }}>
                   <FolderPlus className="h-4 w-4 mr-2" />
