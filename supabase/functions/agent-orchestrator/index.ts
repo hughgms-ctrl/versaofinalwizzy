@@ -1309,6 +1309,13 @@ async function invokeAgentAI(
   systemPrompt += `- NUNCA produza texto entre parênteses como "(aguardando resposta)" ou pensamentos internos. Apenas use send_reply.\n`;
   systemPrompt += `- Se não precisa responder ao cliente, NÃO gere texto algum. Apenas execute as ferramentas necessárias.\n`;
   systemPrompt += `- COERÊNCIA REJEIÇÃO/QUALIFICAÇÃO: se você está REJEITANDO ou DESQUALIFICANDO o cliente nesta etapa, ao chamar finalizar_interacao use resultado="desqualificado" (ou o termo equivalente que aparecer nos outcomes deste nó, ex: "reprovado", "negado", "inapto"). NUNCA use um resultado positivo (qualificado/aprovado) quando a mensagem enviada for de rejeição/encerramento negativo. Se o nó não tiver outcome negativo configurado, apenas envie a mensagem de despedida com send_reply e NÃO chame finalizar_interacao — o sistema encerrará automaticamente.\n`;
+  {
+    const _outcomes = parseExpectedOutcomes(agentNode.data?.expectedOutcomes);
+    if (_outcomes.length > 0) {
+      systemPrompt += `\n🔀 SAÍDAS DESTE NÓ (use EXATAMENTE um destes valores no campo "resultado" da ferramenta finalizar_interacao):\n${_outcomes.map(o => `   - ${o}`).join('\n')}\n— Se a sua resposta ao cliente foi negativa/de despedida/de rejeição, escolha a saída negativa (desqualificado / reprovado / negado / inapto). Se foi positiva/avanço, escolha a saída positiva. NÃO invente valores fora desta lista.\n\n`;
+    }
+  }
+
 
   if (isFirstActivation) {
     systemPrompt += `\n⚠️ ATENÇÃO: Você ACABOU de ser ativado nesta etapa do fluxo.\n`;
