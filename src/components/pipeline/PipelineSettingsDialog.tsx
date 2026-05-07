@@ -46,6 +46,62 @@ import {
 import { useStageNotifications, useUpsertStageNotification } from '@/hooks/useStageHistory';
 import { useProfiles } from '@/hooks/useConversations';
 import { useAuth } from '@/hooks/useAuth';
+import { useTags } from '@/hooks/useTags';
+import { supabase } from '@/integrations/supabase/client';
+import { useQueryClient } from '@tanstack/react-query';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { ChevronDown } from 'lucide-react';
+
+function ColumnAutoTagsEditor({ columns, pipelineId }: { columns: any[]; pipelineId: string }) {
+  const { data: tags = [] } = useTags();
+  const qc = useQueryClient();
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const toggle = async (col: any, tagId: string) => {
+    const current: string[] = col.auto_add_tag_ids || [];
+    const next = current.includes(tagId) ? current.filter((t) => t !== tagId) : [...current, tagId];
+    setBusy(col.id);
+    await (supabase as any).from('pipeline_columns').update({ auto_add_tag_ids: next }).eq('id', col.id);
+    await qc.invalidateQueries({ queryKey: ['pipeline-columns', pipelineId] });
+    setBusy(null);
+  };
+
+  return (
+    <div className="space-y-2 max-h-[180px] overflow-y-auto">
+      {columns.map((col) => {
+        const selected: string[] = col.auto_add_tag_ids || [];
+        return (
+          <div key={col.id} className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: col.color }} />
+            <span className="text-sm flex-1 truncate">{col.name || 'Sem nome'}</span>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" disabled={busy === col.id} className="h-8 text-xs">
+                  {selected.length === 0 ? 'Nenhuma' : `${selected.length} tag(s)`}
+                  <ChevronDown className="h-3 w-3 ml-1" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-64 p-2 max-h-[240px] overflow-y-auto">
+                {tags.length === 0 ? (
+                  <p className="text-xs text-muted-foreground p-2">Nenhuma tag cadastrada.</p>
+                ) : (
+                  tags.map((t: any) => (
+                    <div key={t.id} className="flex items-center gap-2 p-1 hover:bg-muted rounded cursor-pointer" onClick={() => toggle(col, t.id)}>
+                      <Checkbox checked={selected.includes(t.id)} />
+                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: t.color || '#888' }} />
+                      <span className="text-sm">{t.name}</span>
+                    </div>
+                  ))
+                )}
+              </PopoverContent>
+            </Popover>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 
 
 interface PipelineSettingsDialogProps {
