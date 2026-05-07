@@ -2326,18 +2326,22 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
               const outcomeHandle = `outcome-${resultado}`;
               nextEdge = edges.find((e: any) => e.source === currentNodeId && e.sourceHandle === outcomeHandle);
               if (!nextEdge) {
-                // SAFETY NET: before falling back to default, check if the AI's
-                // reply was a rejection AND there is no negative outcome handle.
-                // If so, do NOT route through default (= qualified path).
+                // Try to map resultado to ANY configured outcome by inference
+                // (handles AI passing "concluido" when it actually rejected)
                 const inferred = inferOutcomeFromReply(replyText, configuredOutcomes);
                 if (inferred === NEGATIVE_NO_HANDLE_SENTINEL) {
                   console.log('[ORCHESTRATOR] finalizar_interacao with unmatched resultado AND rejection cue, but NO negative outcome handle — stopping flow');
                   stopOnRejection = true;
-                } else {
+                } else if (inferred) {
+                  // Use the inferred outcome handle (e.g. agent said "concluido" but reply is a rejection → use "desqualificado")
+                  const inferredHandle = `outcome-${inferred}`;
+                  nextEdge = edges.find((e: any) => e.source === currentNodeId && e.sourceHandle === inferredHandle);
+                  console.log(`[ORCHESTRATOR] finalizar_interacao remapped resultado="${resultado}" → inferred="${inferred}"`);
+                }
+                if (!nextEdge && !stopOnRejection) {
                   // Fallback to default handle
                   nextEdge = edges.find((e: any) => e.source === currentNodeId && e.sourceHandle === 'outcome-default');
                   if (!nextEdge) {
-                    // Last fallback: any edge from this node
                     nextEdge = edges.find((e: any) => e.source === currentNodeId);
                   }
                 }
