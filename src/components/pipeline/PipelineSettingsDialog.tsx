@@ -46,6 +46,62 @@ import {
 import { useStageNotifications, useUpsertStageNotification } from '@/hooks/useStageHistory';
 import { useProfiles } from '@/hooks/useConversations';
 import { useAuth } from '@/hooks/useAuth';
+import { useTags } from '@/hooks/useTags';
+import { supabase } from '@/integrations/supabase/client';
+import { useQueryClient } from '@tanstack/react-query';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { ChevronDown } from 'lucide-react';
+
+function ColumnAutoTagsEditor({ columns, pipelineId }: { columns: any[]; pipelineId: string }) {
+  const { data: tags = [] } = useTags();
+  const qc = useQueryClient();
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const toggle = async (col: any, tagId: string) => {
+    const current: string[] = col.auto_add_tag_ids || [];
+    const next = current.includes(tagId) ? current.filter((t) => t !== tagId) : [...current, tagId];
+    setBusy(col.id);
+    await (supabase as any).from('pipeline_columns').update({ auto_add_tag_ids: next }).eq('id', col.id);
+    await qc.invalidateQueries({ queryKey: ['pipeline-columns', pipelineId] });
+    setBusy(null);
+  };
+
+  return (
+    <div className="space-y-2 max-h-[180px] overflow-y-auto">
+      {columns.map((col) => {
+        const selected: string[] = col.auto_add_tag_ids || [];
+        return (
+          <div key={col.id} className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: col.color }} />
+            <span className="text-sm flex-1 truncate">{col.name || 'Sem nome'}</span>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" size="sm" disabled={busy === col.id} className="h-8 text-xs">
+                  {selected.length === 0 ? 'Nenhuma' : `${selected.length} tag(s)`}
+                  <ChevronDown className="h-3 w-3 ml-1" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-64 p-2 max-h-[240px] overflow-y-auto">
+                {tags.length === 0 ? (
+                  <p className="text-xs text-muted-foreground p-2">Nenhuma tag cadastrada.</p>
+                ) : (
+                  tags.map((t: any) => (
+                    <div key={t.id} className="flex items-center gap-2 p-1 hover:bg-muted rounded cursor-pointer" onClick={() => toggle(col, t.id)}>
+                      <Checkbox checked={selected.includes(t.id)} />
+                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: t.color || '#888' }} />
+                      <span className="text-sm">{t.name}</span>
+                    </div>
+                  ))
+                )}
+              </PopoverContent>
+            </Popover>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 
 
 interface PipelineSettingsDialogProps {
@@ -250,16 +306,22 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
     setDragOverColumnId(null);
   };
 
+  // notifWorkspaceId per column. null = global default.
+  const [notifWorkspaceByCol, setNotifWorkspaceByCol] = useState<Record<string, string | null>>({});
+
   const getNotificationForColumn = (columnId: string) => {
-    return notifications.find((n: any) => n.column_id === columnId);
+    const wsId = notifWorkspaceByCol[columnId] ?? null;
+    return notifications.find((n: any) => n.column_id === columnId && (n.workspace_id || null) === wsId);
   };
 
   const handleToggleNotification = async (columnId: string, currentlyActive: boolean) => {
     if (!profile?.organization_id) return;
     const existing = getNotificationForColumn(columnId);
+    const wsId = notifWorkspaceByCol[columnId] ?? null;
     await upsertNotification.mutateAsync({
       pipelineId: pipeline.id,
       columnId,
+      workspaceId: wsId,
       notifyUserIds: existing?.notify_user_ids || [],
       messageTemplate: existing?.message_template || undefined,
       isActive: !currentlyActive,
@@ -270,6 +332,7 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
   const handleToggleUserNotification = async (columnId: string, userId: string) => {
     if (!profile?.organization_id) return;
     const existing = getNotificationForColumn(columnId);
+    const wsId = notifWorkspaceByCol[columnId] ?? null;
     const currentUsers: string[] = existing?.notify_user_ids || [];
     const newUsers = currentUsers.includes(userId)
       ? currentUsers.filter(id => id !== userId)
@@ -278,6 +341,7 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
     await upsertNotification.mutateAsync({
       pipelineId: pipeline.id,
       columnId,
+      workspaceId: wsId,
       notifyUserIds: newUsers,
       messageTemplate: existing?.message_template || undefined,
       isActive: existing?.is_active ?? true,
@@ -412,6 +476,15 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
                   </div>
                 </div>
 
+                {/* Tags automáticas por coluna */}
+                <div className="space-y-2">
+                  <Label>Tags ao entrar na coluna:</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Selecione tags que serão adicionadas ao contato automaticamente quando o lead entrar em cada coluna (não remove tags existentes).
+                  </p>
+                  <ColumnAutoTagsEditor columns={columns} pipelineId={pipeline.id} />
+                </div>
+
                 {/* Responsável padrão do pipeline */}
                 <div className="space-y-2">
                   <Label>Responsável padrão:</Label>
@@ -543,6 +616,7 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
                       const isActive = notif?.is_active ?? false;
                       const notifyUserIds: string[] = notif?.notify_user_ids || [];
 
+                      const currentWsId = notifWorkspaceByCol[col.id] ?? null;
                       return (
                         <div key={col.id} className="border rounded-lg p-3 space-y-2">
                           <div className="flex items-center justify-between">
@@ -559,6 +633,32 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
                             />
                           </div>
 
+                          <div className="space-y-1">
+                            <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">Configuração para:</Label>
+                            <Select
+                              value={currentWsId ?? '__global__'}
+                              onValueChange={(v) => setNotifWorkspaceByCol(prev => ({ ...prev, [col.id]: v === '__global__' ? null : v }))}
+                            >
+                              <SelectTrigger className="h-8 text-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__global__">Padrão (todos os workspaces)</SelectItem>
+                                {availableWorkspaces.map(ws => (
+                                  <SelectItem key={ws.id} value={ws.id}>
+                                    <span className="flex items-center gap-2">
+                                      <span className="h-2 w-2 rounded-full inline-block" style={{ backgroundColor: ws.color }} />
+                                      {ws.name}
+                                    </span>
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <p className="text-[10px] text-muted-foreground">
+                              Cada workspace pode ter sua própria lista de pessoas a notificar para esta coluna.
+                            </p>
+                          </div>
+
                           {isActive && (
                             <div className="pl-5 space-y-3">
                               <div className="space-y-1.5">
@@ -570,6 +670,7 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
                                     upsertNotification.mutate({
                                       pipelineId: pipeline.id,
                                       columnId: col.id,
+                                      workspaceId: currentWsId,
                                       notifyUserIds: notifyUserIds,
                                       messageTemplate: e.target.value,
                                       isActive: true,

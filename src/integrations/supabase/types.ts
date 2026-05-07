@@ -4035,6 +4035,7 @@ export type Database = {
       }
       pipeline_columns: {
         Row: {
+          auto_add_tag_ids: string[]
           color: string
           created_at: string
           id: string
@@ -4044,6 +4045,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          auto_add_tag_ids?: string[]
           color?: string
           created_at?: string
           id?: string
@@ -4053,6 +4055,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          auto_add_tag_ids?: string[]
           color?: string
           created_at?: string
           id?: string
@@ -4839,6 +4842,7 @@ export type Database = {
           organization_id: string
           pipeline_id: string
           updated_at: string
+          workspace_id: string | null
         }
         Insert: {
           column_id: string
@@ -4850,6 +4854,7 @@ export type Database = {
           organization_id: string
           pipeline_id: string
           updated_at?: string
+          workspace_id?: string | null
         }
         Update: {
           column_id?: string
@@ -4861,6 +4866,7 @@ export type Database = {
           organization_id?: string
           pipeline_id?: string
           updated_at?: string
+          workspace_id?: string | null
         }
         Relationships: [
           {
@@ -4882,6 +4888,13 @@ export type Database = {
             columns: ["pipeline_id"]
             isOneToOne: false
             referencedRelation: "pipelines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "stage_notifications_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
             referencedColumns: ["id"]
           },
         ]

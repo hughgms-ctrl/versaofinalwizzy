@@ -671,7 +671,7 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
     console.log(`[SIMULATION] Agent AI Round ${round}`);
 
     const abortController = new AbortController();
-    const timeoutId = setTimeout(() => abortController.abort(), 25000); // 25s timeout
+    const timeoutId = setTimeout(() => abortController.abort(), 40000); // 25s timeout
 
     let aiResponse: Response;
     try {
@@ -1309,6 +1309,13 @@ async function invokeAgentAI(
   systemPrompt += `- NUNCA produza texto entre parênteses como "(aguardando resposta)" ou pensamentos internos. Apenas use send_reply.\n`;
   systemPrompt += `- Se não precisa responder ao cliente, NÃO gere texto algum. Apenas execute as ferramentas necessárias.\n`;
   systemPrompt += `- COERÊNCIA REJEIÇÃO/QUALIFICAÇÃO: se você está REJEITANDO ou DESQUALIFICANDO o cliente nesta etapa, ao chamar finalizar_interacao use resultado="desqualificado" (ou o termo equivalente que aparecer nos outcomes deste nó, ex: "reprovado", "negado", "inapto"). NUNCA use um resultado positivo (qualificado/aprovado) quando a mensagem enviada for de rejeição/encerramento negativo. Se o nó não tiver outcome negativo configurado, apenas envie a mensagem de despedida com send_reply e NÃO chame finalizar_interacao — o sistema encerrará automaticamente.\n`;
+  {
+    const _outcomes = parseExpectedOutcomes(agentNode.data?.expectedOutcomes);
+    if (_outcomes.length > 0) {
+      systemPrompt += `\n🔀 SAÍDAS DESTE NÓ (use EXATAMENTE um destes valores no campo "resultado" da ferramenta finalizar_interacao):\n${_outcomes.map(o => `   - ${o}`).join('\n')}\n— Se a sua resposta ao cliente foi negativa/de despedida/de rejeição, escolha a saída negativa (desqualificado / reprovado / negado / inapto). Se foi positiva/avanço, escolha a saída positiva. NÃO invente valores fora desta lista.\n\n`;
+    }
+  }
+
 
   if (isFirstActivation) {
     systemPrompt += `\n⚠️ ATENÇÃO: Você ACABOU de ser ativado nesta etapa do fluxo.\n`;
@@ -1459,7 +1466,7 @@ async function invokeAgentAI(
     const agentConfig = resolveAgentConfig(ctx, agent, ctx.integrationConfig);
     lastAgentConfig = agentConfig;
     const abortCtrl = new AbortController();
-    const tid = setTimeout(() => abortCtrl.abort(), 25000);
+    const tid = setTimeout(() => abortCtrl.abort(), 40000);
     let aiResponse: Response;
     try {
       aiResponse = await fetch(agentConfig.endpoint, {
@@ -1852,7 +1859,7 @@ async function invokeDocumentAgentAI(
     console.log(`--- Document Agent AI Round ${round} ---`);
 
     const abortCtrl = new AbortController();
-    const tid = setTimeout(() => abortCtrl.abort(), 25000);
+    const tid = setTimeout(() => abortCtrl.abort(), 40000);
     let aiResponse: Response;
     try {
       aiResponse = await fetch(ctx.aiEndpoint, {
@@ -2253,7 +2260,7 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
   while (round < MAX_TOOL_ROUNDS) {
     round++;
     const abortCtrl = new AbortController();
-    const tid = setTimeout(() => abortCtrl.abort(), 25000);
+    const tid = setTimeout(() => abortCtrl.abort(), 40000);
     let aiResponse: Response;
     try {
       aiResponse = await fetch(ctx.aiEndpoint, {
@@ -2326,18 +2333,22 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
               const outcomeHandle = `outcome-${resultado}`;
               nextEdge = edges.find((e: any) => e.source === currentNodeId && e.sourceHandle === outcomeHandle);
               if (!nextEdge) {
-                // SAFETY NET: before falling back to default, check if the AI's
-                // reply was a rejection AND there is no negative outcome handle.
-                // If so, do NOT route through default (= qualified path).
+                // Try to map resultado to ANY configured outcome by inference
+                // (handles AI passing "concluido" when it actually rejected)
                 const inferred = inferOutcomeFromReply(replyText, configuredOutcomes);
                 if (inferred === NEGATIVE_NO_HANDLE_SENTINEL) {
                   console.log('[ORCHESTRATOR] finalizar_interacao with unmatched resultado AND rejection cue, but NO negative outcome handle — stopping flow');
                   stopOnRejection = true;
-                } else {
+                } else if (inferred) {
+                  // Use the inferred outcome handle (e.g. agent said "concluido" but reply is a rejection → use "desqualificado")
+                  const inferredHandle = `outcome-${inferred}`;
+                  nextEdge = edges.find((e: any) => e.source === currentNodeId && e.sourceHandle === inferredHandle);
+                  console.log(`[ORCHESTRATOR] finalizar_interacao remapped resultado="${resultado}" → inferred="${inferred}"`);
+                }
+                if (!nextEdge && !stopOnRejection) {
                   // Fallback to default handle
                   nextEdge = edges.find((e: any) => e.source === currentNodeId && e.sourceHandle === 'outcome-default');
                   if (!nextEdge) {
-                    // Last fallback: any edge from this node
                     nextEdge = edges.find((e: any) => e.source === currentNodeId);
                   }
                 }
@@ -2858,7 +2869,7 @@ function inferOutcomeFromReply(reply: string | null, configuredOutcomes: string[
     return /(qualif|aprov|prosseguir|seguir|continuar|concluido)/.test(normalizedOutcome);
   });
 
-  const hasNegativeCue = /(infelizmente|nao\s+sera\s+possivel|nao\s+poderemos|nao\s+podemos\s+prosseguir|nao\s+atende|nao\s+cumpre|nao\s+conseguimos\s+prosseguir|nao\s+conseguiremos\s+prosseguir|nao\s+podemos\s+seguir|fora\s+dos\s+criterios|nao\s+se\s+enquadra|nao\s+atende\s+aos\s+requisitos|encerrar\s+o\s+atendimento|encerrar\s+atendimento|encerrar\s+a\s+interacao|ja\s+possui\s+advogado|ja\s+tem\s+advogado|nunca\s+contribuiu|sem\s+contribuicao|pelas\s+regras\s+do\s+inss\s+nao)/.test(normalizedReply);
+  const hasNegativeCue = /(infelizmente|nao\s+sera\s+possivel|nao\s+poderemos|nao\s+podemos\s+prosseguir|nao\s+atende|nao\s+cumpre|nao\s+conseguimos\s+prosseguir|nao\s+conseguiremos\s+prosseguir|nao\s+podemos\s+seguir|fora\s+dos\s+criterios|nao\s+se\s+enquadra|nao\s+atende\s+aos\s+requisitos|nao\s+preenche\s+os?\s+requisitos|encerrar\s+o\s+atendimento|encerrar\s+atendimento|encerrar\s+a\s+interacao|ja\s+possui\s+advogado|ja\s+tem\s+advogado|nunca\s+contribuiu|sem\s+contribuicao|pelas\s+regras\s+do\s+inss\s+nao|agradecemos\s+(o\s+|seu\s+)?contato|desejamos\s+sucesso|sucesso\s+em\s+sua\s+jornada|nao\s+possuimos\s+(como|forma\s+de)|nao\s+temos\s+como\s+ajudar)/.test(normalizedReply);
   if (hasNegativeCue && negativeOutcome) return negativeOutcome;
 
   const hasPositiveCue = /(podemos\s+seguir|vamos\s+seguir|proxima\s+etapa|proximo\s+passo|dar\s+continuidade|encaminhar\s+para\s+proxima\s+etapa|seguiremos\s+com\s+o\s+atendimento)/.test(normalizedReply);
