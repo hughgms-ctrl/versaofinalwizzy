@@ -420,6 +420,15 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
                   </div>
                 </div>
 
+                {/* Tags automáticas por coluna */}
+                <div className="space-y-2">
+                  <Label>Tags ao entrar na coluna:</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Selecione tags que serão adicionadas ao contato automaticamente quando o lead entrar em cada coluna (não remove tags existentes).
+                  </p>
+                  <ColumnAutoTagsEditor columns={columns} pipelineId={pipeline.id} />
+                </div>
+
                 {/* Responsável padrão do pipeline */}
                 <div className="space-y-2">
                   <Label>Responsável padrão:</Label>
