@@ -139,15 +139,7 @@ export function useUpsertStageNotification() {
       isActive: boolean;
       organizationId: string;
     }) => {
-      // Manual upsert: PostgREST cannot use partial unique indexes for ON CONFLICT
-      const { data: existing } = await (supabase as any)
-        .from('stage_notifications')
-        .select('id')
-        .eq('pipeline_id', pipelineId)
-        .eq('column_id', columnId)
-        .is('workspace_id', workspaceId ?? null as any);
-
-      // Workaround: PostgREST .is() requires literal null; for non-null compare via .eq
+      // Lookup existing config matching (pipeline, column, workspace)
       let existingRow: any = null;
       if (workspaceId) {
         const { data } = await (supabase as any)
