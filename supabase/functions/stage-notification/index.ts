@@ -17,7 +17,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { conversationId, columnId, organizationId } = await req.json();
+    const { conversationId, columnId, organizationId, workspaceId: explicitWorkspaceId } = await req.json();
 
     if (!conversationId || !columnId || !organizationId) {
       return new Response(
@@ -31,17 +31,32 @@ Deno.serve(async (req) => {
     const uazapiBaseUrl = Deno.env.get("UAZAPI_BASE_URL")!;
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
-    // Get notification config for this column
-    const { data: notification } = await supabase
+    // Resolve workspaceId from conversation if not provided
+    let workspaceId: string | null = explicitWorkspaceId || null;
+    if (!workspaceId) {
+      const { data: convWs } = await supabase
+        .from("conversations")
+        .select("workspace_id")
+        .eq("id", conversationId)
+        .maybeSingle();
+      workspaceId = convWs?.workspace_id || null;
+    }
+
+    // Load all notification configs for this column; prefer the one matching the workspace,
+    // fall back to the global one (workspace_id is null).
+    const { data: configs } = await supabase
       .from("stage_notifications")
       .select("*")
       .eq("column_id", columnId)
       .eq("organization_id", organizationId)
-      .eq("is_active", true)
-      .maybeSingle();
+      .eq("is_active", true);
 
-    if (!notification || notification.notify_user_ids.length === 0) {
-      console.log("No notification configured for column", columnId);
+    const notification = (configs || []).find((c: any) => c.workspace_id === workspaceId)
+      || (configs || []).find((c: any) => c.workspace_id === null)
+      || null;
+
+    if (!notification || !notification.notify_user_ids || notification.notify_user_ids.length === 0) {
+      console.log("No notification configured for column", columnId, "workspace", workspaceId);
       return new Response(
         JSON.stringify({ message: "No notification configured" }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
