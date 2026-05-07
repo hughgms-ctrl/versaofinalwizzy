@@ -125,6 +125,7 @@ export function useUpsertStageNotification() {
     mutationFn: async ({
       pipelineId,
       columnId,
+      workspaceId,
       notifyUserIds,
       messageTemplate,
       isActive,
@@ -132,23 +133,64 @@ export function useUpsertStageNotification() {
     }: {
       pipelineId: string;
       columnId: string;
+      workspaceId?: string | null;
       notifyUserIds: string[];
       messageTemplate?: string;
       isActive: boolean;
       organizationId: string;
     }) => {
-      const { error } = await (supabase as any)
+      // Manual upsert: PostgREST cannot use partial unique indexes for ON CONFLICT
+      const { data: existing } = await (supabase as any)
         .from('stage_notifications')
-        .upsert({
-          pipeline_id: pipelineId,
-          column_id: columnId,
-          notify_user_ids: notifyUserIds,
-          message_template: messageTemplate || null,
-          is_active: isActive,
-          organization_id: organizationId,
-        }, { onConflict: 'pipeline_id,column_id' });
+        .select('id')
+        .eq('pipeline_id', pipelineId)
+        .eq('column_id', columnId)
+        .is('workspace_id', workspaceId ?? null as any);
 
-      if (error) throw error;
+      // Workaround: PostgREST .is() requires literal null; for non-null compare via .eq
+      let existingRow: any = null;
+      if (workspaceId) {
+        const { data } = await (supabase as any)
+          .from('stage_notifications')
+          .select('id')
+          .eq('pipeline_id', pipelineId)
+          .eq('column_id', columnId)
+          .eq('workspace_id', workspaceId)
+          .maybeSingle();
+        existingRow = data;
+      } else {
+        const { data } = await (supabase as any)
+          .from('stage_notifications')
+          .select('id')
+          .eq('pipeline_id', pipelineId)
+          .eq('column_id', columnId)
+          .is('workspace_id', null)
+          .maybeSingle();
+        existingRow = data;
+      }
+
+      const payload = {
+        pipeline_id: pipelineId,
+        column_id: columnId,
+        workspace_id: workspaceId || null,
+        notify_user_ids: notifyUserIds,
+        message_template: messageTemplate || null,
+        is_active: isActive,
+        organization_id: organizationId,
+      };
+
+      if (existingRow?.id) {
+        const { error } = await (supabase as any)
+          .from('stage_notifications')
+          .update(payload)
+          .eq('id', existingRow.id);
+        if (error) throw error;
+      } else {
+        const { error } = await (supabase as any)
+          .from('stage_notifications')
+          .insert(payload);
+        if (error) throw error;
+      }
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['stage-notifications', variables.pipelineId] });
