@@ -551,6 +551,7 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
                       const isActive = notif?.is_active ?? false;
                       const notifyUserIds: string[] = notif?.notify_user_ids || [];
 
+                      const currentWsId = notifWorkspaceByCol[col.id] ?? null;
                       return (
                         <div key={col.id} className="border rounded-lg p-3 space-y-2">
                           <div className="flex items-center justify-between">
@@ -565,6 +566,32 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
                               checked={isActive}
                               onCheckedChange={() => handleToggleNotification(col.id, isActive)}
                             />
+                          </div>
+
+                          <div className="space-y-1">
+                            <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">Configuração para:</Label>
+                            <Select
+                              value={currentWsId ?? '__global__'}
+                              onValueChange={(v) => setNotifWorkspaceByCol(prev => ({ ...prev, [col.id]: v === '__global__' ? null : v }))}
+                            >
+                              <SelectTrigger className="h-8 text-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__global__">Padrão (todos os workspaces)</SelectItem>
+                                {availableWorkspaces.map(ws => (
+                                  <SelectItem key={ws.id} value={ws.id}>
+                                    <span className="flex items-center gap-2">
+                                      <span className="h-2 w-2 rounded-full inline-block" style={{ backgroundColor: ws.color }} />
+                                      {ws.name}
+                                    </span>
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <p className="text-[10px] text-muted-foreground">
+                              Cada workspace pode ter sua própria lista de pessoas a notificar para esta coluna.
+                            </p>
                           </div>
 
                           {isActive && (
