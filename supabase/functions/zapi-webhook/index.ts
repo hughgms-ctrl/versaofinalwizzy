@@ -1355,12 +1355,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
           messageId: savedMessage.id // Pass messageId for hydration
         };
 
-        const agentPromise = fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/agent-orchestrator`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
-          body: JSON.stringify(orchestratorBody),
-        });
-        runBackground(agentPromise);
+        scheduleDebouncedOrchestrator(supabase, conversation.id, serviceRoleKey, orchestratorBody, triggerText || '[mídia]');
       }
     }
   }
