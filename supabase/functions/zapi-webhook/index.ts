@@ -11,6 +11,90 @@ function runBackground(promise: Promise<any>) {
   }
 }
 
+// 8 seconds debounce window — coalesces fragmented inbound messages so AI sees one input.
+const AI_DEBOUNCE_MS = 8000;
+
+/**
+ * Schedule (or reschedule) an orchestrator trigger after a debounce window.
+ * Each call writes a new token to conversations.metadata.pending_ai_trigger.
+ * After the wait, we reread the conversation; if our token still matches, we proceed,
+ * concatenating the inbound messages received during the window. Otherwise we abort
+ * (a newer message took over).
+ */
+function scheduleDebouncedOrchestrator(
+  supabase: any,
+  conversationId: string,
+  serviceRoleKey: string,
+  orchestratorBody: Record<string, unknown>,
+  initialMessageContent: string,
+) {
+  const token = crypto.randomUUID();
+  const scheduledFor = new Date(Date.now() + AI_DEBOUNCE_MS).toISOString();
+
+  const task = (async () => {
+    try {
+      // 1. Tag conversation with our pending trigger token
+      const { data: convNow } = await supabase
+        .from('conversations')
+        .select('metadata')
+        .eq('id', conversationId)
+        .single();
+      const meta = { ...(convNow?.metadata || {}) };
+      meta.pending_ai_trigger = { token, scheduled_for: scheduledFor };
+      await supabase.from('conversations').update({ metadata: meta }).eq('id', conversationId);
+
+      // 2. Wait the debounce window
+      await new Promise(r => setTimeout(r, AI_DEBOUNCE_MS));
+
+      // 3. Reread — only proceed if we are still the most recent trigger
+      const { data: convAfter } = await supabase
+        .from('conversations')
+        .select('metadata, last_message_at')
+        .eq('id', conversationId)
+        .single();
+      const currentToken = convAfter?.metadata?.pending_ai_trigger?.token;
+      if (currentToken !== token) {
+        console.log(`[DEBOUNCE] Token mismatch for conv ${conversationId} — newer trigger took over, skipping`);
+        return;
+      }
+
+      // 4. Aggregate recent inbound messages (within window + small buffer)
+      const sinceIso = new Date(Date.now() - AI_DEBOUNCE_MS - 5000).toISOString();
+      const { data: recentMsgs } = await supabase
+        .from('messages')
+        .select('content, created_at, direction')
+        .eq('conversation_id', conversationId)
+        .eq('direction', 'inbound')
+        .gte('created_at', sinceIso)
+        .order('created_at', { ascending: true });
+
+      const combined = (recentMsgs || [])
+        .map((m: any) => (m.content || '').trim())
+        .filter(Boolean)
+        .join('\n');
+      const finalContent = combined || initialMessageContent || '[mídia]';
+
+      // 5. Clear the pending trigger marker
+      const cleanedMeta = { ...(convAfter?.metadata || {}) };
+      delete cleanedMeta.pending_ai_trigger;
+      await supabase.from('conversations').update({ metadata: cleanedMeta }).eq('id', conversationId);
+
+      // 6. Fire the orchestrator
+      const finalBody = { ...orchestratorBody, messageContent: finalContent };
+      console.log(`[DEBOUNCE] Firing orchestrator for ${conversationId} with ${(recentMsgs || []).length} aggregated msgs`);
+      await fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/agent-orchestrator`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
+        body: JSON.stringify(finalBody),
+      });
+    } catch (e) {
+      console.error(`[DEBOUNCE] Error in scheduled orchestrator for ${conversationId}:`, e);
+    }
+  })();
+
+  runBackground(task);
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
