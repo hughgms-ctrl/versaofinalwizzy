@@ -671,7 +671,7 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
     console.log(`[SIMULATION] Agent AI Round ${round}`);
 
     const abortController = new AbortController();
-    const timeoutId = setTimeout(() => abortController.abort(), 25000); // 25s timeout
+    const timeoutId = setTimeout(() => abortController.abort(), 40000); // 25s timeout
 
     let aiResponse: Response;
     try {
@@ -1466,7 +1466,7 @@ async function invokeAgentAI(
     const agentConfig = resolveAgentConfig(ctx, agent, ctx.integrationConfig);
     lastAgentConfig = agentConfig;
     const abortCtrl = new AbortController();
-    const tid = setTimeout(() => abortCtrl.abort(), 25000);
+    const tid = setTimeout(() => abortCtrl.abort(), 40000);
     let aiResponse: Response;
     try {
       aiResponse = await fetch(agentConfig.endpoint, {
@@ -1859,7 +1859,7 @@ async function invokeDocumentAgentAI(
     console.log(`--- Document Agent AI Round ${round} ---`);
 
     const abortCtrl = new AbortController();
-    const tid = setTimeout(() => abortCtrl.abort(), 25000);
+    const tid = setTimeout(() => abortCtrl.abort(), 40000);
     let aiResponse: Response;
     try {
       aiResponse = await fetch(ctx.aiEndpoint, {
@@ -2260,7 +2260,7 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
   while (round < MAX_TOOL_ROUNDS) {
     round++;
     const abortCtrl = new AbortController();
-    const tid = setTimeout(() => abortCtrl.abort(), 25000);
+    const tid = setTimeout(() => abortCtrl.abort(), 40000);
     let aiResponse: Response;
     try {
       aiResponse = await fetch(ctx.aiEndpoint, {
