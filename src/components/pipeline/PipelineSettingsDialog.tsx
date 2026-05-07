@@ -250,16 +250,22 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
     setDragOverColumnId(null);
   };
 
+  // notifWorkspaceId per column. null = global default.
+  const [notifWorkspaceByCol, setNotifWorkspaceByCol] = useState<Record<string, string | null>>({});
+
   const getNotificationForColumn = (columnId: string) => {
-    return notifications.find((n: any) => n.column_id === columnId);
+    const wsId = notifWorkspaceByCol[columnId] ?? null;
+    return notifications.find((n: any) => n.column_id === columnId && (n.workspace_id || null) === wsId);
   };
 
   const handleToggleNotification = async (columnId: string, currentlyActive: boolean) => {
     if (!profile?.organization_id) return;
     const existing = getNotificationForColumn(columnId);
+    const wsId = notifWorkspaceByCol[columnId] ?? null;
     await upsertNotification.mutateAsync({
       pipelineId: pipeline.id,
       columnId,
+      workspaceId: wsId,
       notifyUserIds: existing?.notify_user_ids || [],
       messageTemplate: existing?.message_template || undefined,
       isActive: !currentlyActive,
@@ -270,6 +276,7 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
   const handleToggleUserNotification = async (columnId: string, userId: string) => {
     if (!profile?.organization_id) return;
     const existing = getNotificationForColumn(columnId);
+    const wsId = notifWorkspaceByCol[columnId] ?? null;
     const currentUsers: string[] = existing?.notify_user_ids || [];
     const newUsers = currentUsers.includes(userId)
       ? currentUsers.filter(id => id !== userId)
@@ -278,6 +285,7 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
     await upsertNotification.mutateAsync({
       pipelineId: pipeline.id,
       columnId,
+      workspaceId: wsId,
       notifyUserIds: newUsers,
       messageTemplate: existing?.message_template || undefined,
       isActive: existing?.is_active ?? true,
