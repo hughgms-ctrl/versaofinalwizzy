@@ -605,6 +605,7 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
                                     upsertNotification.mutate({
                                       pipelineId: pipeline.id,
                                       columnId: col.id,
+                                      workspaceId: currentWsId,
                                       notifyUserIds: notifyUserIds,
                                       messageTemplate: e.target.value,
                                       isActive: true,
