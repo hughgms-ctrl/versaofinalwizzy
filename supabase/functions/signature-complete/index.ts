@@ -255,48 +255,9 @@ serve(async (req) => {
       return errorResponse("Erro ao registrar evidência", 500);
     }
 
-    // Stamp PDF (footer + signatures page + QR)
+    // We update this signature row FIRST so the consolidated stamp call
+    // (which reads ALL signatures+signers) sees this assinatura as "signed".
     let signedPdfUrl: string | null = null;
-    if (originalPdfUrl) {
-      try {
-        const stampResp = await fetch(`${SUPABASE_URL}/functions/v1/signature-stamp-pdf`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${SERVICE_KEY}`,
-          },
-          body: JSON.stringify({
-            signatureId: signature.id,
-            pdfUrl: originalPdfUrl,
-            signerName: signature.signer_name,
-            signerEmail: signature.signer_email,
-            signerPhone: signature.signer_phone,
-            signerCpf: signature.signer_cpf,
-            documentName: signature.generated_document?.name,
-            documentHash,
-            verificationCode,
-            selfieUrl,
-            signatureImageUrl: signatureUrl,
-            signedAt,
-            signerIp,
-            signerBrowser: uaInfo.browser,
-            signerOs: uaInfo.os,
-            deviceType: uaInfo.deviceType,
-            otpChannel: meta.otp_channel || "email",
-            geolocation,
-            signerDevice: signerUserAgent,
-          }),
-        });
-        if (stampResp.ok) {
-          const stampData = await stampResp.json();
-          signedPdfUrl = stampData.signedPdfUrl;
-        } else {
-          console.error("stamp-pdf failed:", await stampResp.text());
-        }
-      } catch (e) {
-        console.error("Error stamping PDF:", e);
-      }
-    }
 
     // Update signature record
     await supabase
