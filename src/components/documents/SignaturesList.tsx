@@ -1,11 +1,13 @@
-import { useState } from 'react';
-import { FileSignature, Search, Send, ExternalLink, CheckCircle2, Clock, Eye, Copy, Download, ShieldCheck, User, Calendar, FileText, RefreshCw, Loader2, Archive, ArchiveRestore, Trash2, MoreHorizontal } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { FileSignature, Search, Send, ExternalLink, CheckCircle2, Clock, Eye, Copy, Download, ShieldCheck, User, Calendar, FileText, RefreshCw, Loader2, Archive, ArchiveRestore, Trash2, MoreHorizontal, ChevronDown, ChevronRight, Link2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { useDocumentSignatures, useUpdateSignatureStatus, useArchiveSignature, useDeleteSignature } from '@/hooks/useDocumentSignatures';
 import { useGeneratedDocuments } from '@/hooks/useGeneratedDocuments';
 import { CreateSignatureDialog } from './CreateSignatureDialog';
+import { SignerLinksList } from './SignerLinksList';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from '@/hooks/use-toast';
