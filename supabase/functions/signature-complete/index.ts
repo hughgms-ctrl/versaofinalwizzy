@@ -255,23 +255,20 @@ serve(async (req) => {
       return errorResponse("Erro ao registrar evidência", 500);
     }
 
-    // We update this signature row FIRST so the consolidated stamp call
-    // (which reads ALL signatures+signers) sees this assinatura as "signed".
-    let signedPdfUrl: string | null = null;
-
-    // Update signature record
+    // Mark THIS signature as signed BEFORE stamping so the consolidated
+    // stamp call (which reads ALL signatures) sees it as signed.
     await supabase
       .from("document_signatures")
       .update({
         status: "signed",
         signed_at: signedAt,
         signature_url: signatureUrl,
-        signed_pdf_url: signedPdfUrl,
         metadata: {
           ...meta,
           document_hash: documentHash,
           verification_code: verificationCode,
           selfie_url: selfieUrl,
+          signature_url: signatureUrl,
           signer_ip: signerIp,
           signer_device: signerUserAgent,
           signer_browser: uaInfo.browser,
@@ -286,22 +283,40 @@ serve(async (req) => {
     // Propagate to document_signers row (if this signature originated from one)
     await markSignerSigned(supabase, signature.id, signedAt);
 
-    // Only mark the generated_document as fully signed when there are no
-    // remaining pending signers. Multi-signer documents need every signer.
     const { count: pendingSigners } = await supabase
       .from("document_signers")
       .select("id", { count: "exact", head: true })
       .eq("generated_document_id", signature.generated_document_id)
       .neq("status", "signed");
 
-    if (!pendingSigners || pendingSigners === 0) {
-      await supabase
-        .from("generated_documents")
-        .update({
-          signing_status: "signed",
-          status: "signed",
-        })
-        .eq("id", signature.generated_document_id);
+    // Generate / regenerate the CONSOLIDATED stamped PDF for the document.
+    // The stamp function reads ALL signers/signatures, so multiple signers
+    // share the same final PDF (with pending ones shown faded).
+    let signedPdfUrl: string | null = null;
+    if (originalPdfUrl) {
+      try {
+        const stampResp = await fetch(`${SUPABASE_URL}/functions/v1/signature-stamp-pdf`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${SERVICE_KEY}`,
+          },
+          body: JSON.stringify({
+            signatureId: signature.id,
+            generatedDocumentId: signature.generated_document_id,
+            documentHash,
+            verificationCode,
+          }),
+        });
+        if (stampResp.ok) {
+          const stampData = await stampResp.json();
+          signedPdfUrl = stampData.signedPdfUrl;
+        } else {
+          console.error("stamp-pdf failed:", await stampResp.text());
+        }
+      } catch (e) {
+        console.error("Error stamping PDF:", e);
+      }
     }
 
     // Receipt
