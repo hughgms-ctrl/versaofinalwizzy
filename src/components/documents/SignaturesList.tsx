@@ -48,6 +48,10 @@ export function SignaturesList() {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [expandedDocs, setExpandedDocs] = useState<Set<string>>(new Set());
+  const toggleExpand = (id: string) => setExpandedDocs(prev => {
+    const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n;
+  });
 
   const regenerateReceipt = async (signatureId: string) => {
     setRegeneratingId(signatureId);
