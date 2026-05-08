@@ -3171,6 +3171,8 @@ export type Database = {
           pdf_url: string | null
           public_fill_token: string | null
           signature_config: Json | null
+          signed_at: string | null
+          signed_pdf_url: string | null
           signing_method: string | null
           signing_status: string | null
           status: string
@@ -3194,6 +3196,8 @@ export type Database = {
           pdf_url?: string | null
           public_fill_token?: string | null
           signature_config?: Json | null
+          signed_at?: string | null
+          signed_pdf_url?: string | null
           signing_method?: string | null
           signing_status?: string | null
           status?: string
@@ -3217,6 +3221,8 @@ export type Database = {
           pdf_url?: string | null
           public_fill_token?: string | null
           signature_config?: Json | null
+          signed_at?: string | null
+          signed_pdf_url?: string | null
           signing_method?: string | null
           signing_status?: string | null
           status?: string
