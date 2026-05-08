@@ -76,6 +76,30 @@ export function SignaturesList() {
     return docName.toLowerCase().includes(q) || signerName.toLowerCase().includes(q);
   }) || [];
 
+  // Group signatures by generated_document_id so multiple signers of the same
+  // document appear together. The same final PDF is shared across them.
+  const grouped = useMemo(() => {
+    const map = new Map<string, { docId: string; docName: string; signedPdfUrl: string | null; createdAt: string; signatures: typeof filtered }>();
+    for (const sig of filtered) {
+      const docId = (sig as any).generated_document_id;
+      if (!docId) continue;
+      const existing = map.get(docId);
+      if (existing) {
+        existing.signatures.push(sig);
+        if (!existing.signedPdfUrl && sig.signed_pdf_url) existing.signedPdfUrl = sig.signed_pdf_url;
+      } else {
+        map.set(docId, {
+          docId,
+          docName: sig.generated_document?.name || 'Documento',
+          signedPdfUrl: sig.signed_pdf_url,
+          createdAt: sig.created_at,
+          signatures: [sig],
+        });
+      }
+    }
+    return Array.from(map.values()).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  }, [filtered]);
+
   const pendingCount = signatures?.filter(s => s.status === 'pending' || s.status === 'sent' || s.status === 'opened').length || 0;
   const signedCount = signatures?.filter(s => s.status === 'signed').length || 0;
   const totalCount = signatures?.length || 0;
