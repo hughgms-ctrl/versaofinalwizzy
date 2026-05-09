@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { FileSignature, Search, Send, ExternalLink, CheckCircle2, Clock, Eye, Copy, Download, ShieldCheck, User, Calendar, FileText, RefreshCw, Loader2, Archive, ArchiveRestore, Trash2, MoreHorizontal, Link2, ArrowLeft } from 'lucide-react';
+import { FileSignature, Search, Send, CheckCircle2, Clock, Eye, Download, ShieldCheck, User, Calendar, RefreshCw, Loader2, Archive, ArchiveRestore, Trash2, MoreHorizontal, Link2, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
@@ -104,11 +104,6 @@ export function SignaturesList() {
   const pendingCount = signatures?.filter(s => s.status === 'pending' || s.status === 'sent' || s.status === 'opened').length || 0;
   const signedCount = signatures?.filter(s => s.status === 'signed').length || 0;
   const totalCount = signatures?.length || 0;
-
-  const copyLink = (url: string) => {
-    navigator.clipboard.writeText(url);
-    toast({ title: 'Link copiado!' });
-  };
 
   const availableDocuments = documents?.filter(d => d.pdf_url && d.status !== 'draft') || [];
   const selectedGroup = selectedDocId ? grouped.find(group => group.docId === selectedDocId) : null;
