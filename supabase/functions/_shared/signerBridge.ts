@@ -91,7 +91,6 @@ export async function resolveSignatureByToken(
 
   if (!signer) return null;
 
-  const authMethods = (signer.auth_methods || {}) as Record<string, boolean>;
   const signerMeta = authMetadataFromSigner(signer);
 
   // 3) Reuse existing linked signature, or create one
