@@ -45,6 +45,8 @@ serve(async (req) => {
           fill_mode
         `)
         .eq("public_fill_token", token)
+        .order("created_at", { ascending: true })
+        .limit(1)
         .maybeSingle();
 
       if (error || !doc) return errorResponse("Documento não encontrado", 404);
@@ -105,6 +107,8 @@ serve(async (req) => {
         .from("generated_documents")
         .select("id, pack_id, is_filled, organization_id, signature_config")
         .eq("public_fill_token", body.token)
+        .order("created_at", { ascending: true })
+        .limit(1)
         .maybeSingle();
 
       if (fetchErr || !doc) return errorResponse("Documento não encontrado", 404);
