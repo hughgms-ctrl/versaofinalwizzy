@@ -340,10 +340,8 @@ export function SignaturesList() {
             const totalSigners = docSignatures.length;
             const signedSigners = docSignatures.filter(s => s.status === 'signed').length;
             const allSigned = signedSigners === totalSigners;
-            const isExpanded = expandedDocs.has(group.docId);
             const firstMethod = METHOD_MAP[docSignatures[0].signing_method] || METHOD_MAP.manual;
             const verificationCode = (docSignatures.find(s => (s.metadata as any)?.verification_code)?.metadata as any)?.verification_code;
-            const docIds = [group.docId];
 
             return (
               <Card key={group.docId} className="group relative overflow-hidden border-white/5 bg-gradient-to-br from-zinc-950/60 via-zinc-900/40 to-zinc-950/60">
@@ -352,10 +350,9 @@ export function SignaturesList() {
                 <div className="flex flex-col gap-3 pl-3 p-4 md:flex-row md:items-center md:justify-between">
                   <button
                     type="button"
-                    onClick={() => toggleExpand(group.docId)}
+                    onClick={() => setSelectedDocId(group.docId)}
                     className="flex min-w-0 items-center gap-3 text-left flex-1"
                   >
-                    {isExpanded ? <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" /> : <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />}
                     <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-pink-500/20 to-violet-500/20 ring-1 ring-pink-500/20">
                       <FileSignature className="h-5 w-5 text-pink-300" />
                     </div>
@@ -412,68 +409,6 @@ export function SignaturesList() {
                     )}
                   </div>
                 </div>
-
-                {isExpanded && (
-                  <div className="border-t border-white/5 px-4 py-4 space-y-4">
-                    {/* Cada signatário com link copiável */}
-                    <SignerLinksList
-                      documentIds={docIds}
-                      title="Links dos signatários"
-                      description="Copie ou reenvie o link de cada signatário a qualquer momento."
-                    />
-
-                    {/* Lista detalhada de status */}
-                    <div className="space-y-1.5">
-                      <h4 className="text-xs font-semibold text-muted-foreground">Status detalhado</h4>
-                      {docSignatures.map(sig => {
-                        const status = STATUS_MAP[sig.status] || STATUS_MAP.pending;
-                        const StatusIcon = status.icon;
-                        return (
-                          <div key={sig.id} className="flex items-center justify-between gap-2 rounded border border-white/5 bg-zinc-950/40 px-3 py-2">
-                            <div className="flex items-center gap-2 min-w-0">
-                              <User className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                              <span className="text-xs truncate">{sig.signer_name || 'Sem nome'}</span>
-                              {sig.signer_email && <span className="text-[10px] text-muted-foreground truncate">· {sig.signer_email}</span>}
-                            </div>
-                            <div className="flex items-center gap-2 shrink-0">
-                              <span className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium', status.pill)}>
-                                {StatusIcon && <StatusIcon className="h-2.5 w-2.5" />}
-                                {status.label}
-                              </span>
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" size="icon" className="h-6 w-6">
-                                    <MoreHorizontal className="h-3 w-3" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end" className="w-44">
-                                  {sig.status === 'pending' && sig.signing_method === 'manual' && (
-                                    <DropdownMenuItem onClick={() => updateStatus.mutate({ id: sig.id, status: 'signed' })}>
-                                      <CheckCircle2 className="h-3.5 w-3.5 mr-2" /> Marcar assinado
-                                    </DropdownMenuItem>
-                                  )}
-                                  {(sig as any).archived_at ? (
-                                    <DropdownMenuItem onClick={() => archiveMut.mutate({ id: sig.id, archive: false })}>
-                                      <ArchiveRestore className="h-3.5 w-3.5 mr-2" /> Restaurar
-                                    </DropdownMenuItem>
-                                  ) : (
-                                    <DropdownMenuItem onClick={() => archiveMut.mutate({ id: sig.id, archive: true })}>
-                                      <Archive className="h-3.5 w-3.5 mr-2" /> Arquivar
-                                    </DropdownMenuItem>
-                                  )}
-                                  <DropdownMenuSeparator />
-                                  <DropdownMenuItem className="text-destructive" onClick={() => setConfirmDeleteId(sig.id)}>
-                                    <Trash2 className="h-3.5 w-3.5 mr-2" /> Excluir
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
               </Card>
             );
           })}
