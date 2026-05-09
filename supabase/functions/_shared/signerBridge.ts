@@ -57,25 +57,24 @@ export async function resolveSignatureByToken(
 
   if (legacy) {
     const legacyMeta = (legacy.metadata || {}) as Record<string, any>;
-    if (legacyMeta.from_signer_id) {
-      const { data: signer } = await supabase
-        .from("document_signers")
-        .select("id, status, signer_name, signer_email, signer_phone, signer_cpf, metadata, auth_methods")
-        .eq("id", legacyMeta.from_signer_id)
-        .maybeSingle();
+    const signerQuery = supabase
+      .from("document_signers")
+      .select("id, status, signer_name, signer_email, signer_phone, signer_cpf, metadata, auth_methods");
+    const { data: signer } = legacyMeta.from_signer_id
+      ? await signerQuery.eq("id", legacyMeta.from_signer_id).maybeSingle()
+      : await signerQuery.or(`signature_id.eq.${legacy.id},signature_token.eq.${signatureToken}`).maybeSingle();
 
-      if (signer) {
-        const updates: Record<string, any> = {
-          signer_name: signer.signer_name || legacy.signer_name,
-          signer_email: signer.signer_email || legacy.signer_email,
-          signer_phone: signer.signer_phone || legacy.signer_phone,
-          signer_cpf: signer.signer_cpf || legacy.signer_cpf,
-          metadata: authMetadataFromSigner(signer, legacyMeta),
-        };
-        if (signer.status === "signed" && legacy.status !== "signed") updates.status = "signed";
-        await supabase.from("document_signatures").update(updates).eq("id", legacy.id);
-        Object.assign(legacy, updates);
-      }
+    if (signer) {
+      const updates: Record<string, any> = {
+        signer_name: signer.signer_name || legacy.signer_name,
+        signer_email: signer.signer_email || legacy.signer_email,
+        signer_phone: signer.signer_phone || legacy.signer_phone,
+        signer_cpf: signer.signer_cpf || legacy.signer_cpf,
+        metadata: authMetadataFromSigner(signer, legacyMeta),
+      };
+      if (signer.status === "signed" && legacy.status !== "signed") updates.status = "signed";
+      await supabase.from("document_signatures").update(updates).eq("id", legacy.id);
+      Object.assign(legacy, updates);
     }
     return { ...legacy, metadata: legacy.metadata || {}, signer_id: null } as ResolvedSignature;
   }
