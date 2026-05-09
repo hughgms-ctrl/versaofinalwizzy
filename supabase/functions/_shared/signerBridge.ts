@@ -21,6 +21,27 @@ export interface ResolvedSignature {
   signer_id?: string | null;
 }
 
+function authMetadataFromSigner(signer: any, existingMeta: Record<string, any> = {}) {
+  const authMethods = (signer.auth_methods || {}) as Record<string, boolean>;
+  const otpChannels: string[] = [];
+  if (authMethods.otp_email) otpChannels.push("email");
+  if (authMethods.otp_whatsapp) otpChannels.push("whatsapp");
+  if (otpChannels.length === 0) {
+    if (signer.signer_email) otpChannels.push("email");
+    else if (signer.signer_phone) otpChannels.push("whatsapp");
+    else otpChannels.push("email");
+  }
+  return {
+    ...existingMeta,
+    ...(signer.metadata || {}),
+    otp_channel: otpChannels[0],
+    otp_channels: otpChannels,
+    require_selfie: authMethods.selfie === true,
+    auth_methods: authMethods,
+    from_signer_id: signer.id,
+  };
+}
+
 export async function resolveSignatureByToken(
   supabase: any,
   signatureToken: string,
@@ -35,6 +56,27 @@ export async function resolveSignatureByToken(
     .maybeSingle();
 
   if (legacy) {
+    const legacyMeta = (legacy.metadata || {}) as Record<string, any>;
+    if (legacyMeta.from_signer_id) {
+      const { data: signer } = await supabase
+        .from("document_signers")
+        .select("id, status, signer_name, signer_email, signer_phone, signer_cpf, metadata, auth_methods")
+        .eq("id", legacyMeta.from_signer_id)
+        .maybeSingle();
+
+      if (signer) {
+        const updates: Record<string, any> = {
+          signer_name: signer.signer_name || legacy.signer_name,
+          signer_email: signer.signer_email || legacy.signer_email,
+          signer_phone: signer.signer_phone || legacy.signer_phone,
+          signer_cpf: signer.signer_cpf || legacy.signer_cpf,
+          metadata: authMetadataFromSigner(signer, legacyMeta),
+        };
+        if (signer.status === "signed" && legacy.status !== "signed") updates.status = "signed";
+        await supabase.from("document_signatures").update(updates).eq("id", legacy.id);
+        Object.assign(legacy, updates);
+      }
+    }
     return { ...legacy, metadata: legacy.metadata || {}, signer_id: null } as ResolvedSignature;
   }
 
@@ -50,18 +92,7 @@ export async function resolveSignatureByToken(
   if (!signer) return null;
 
   const authMethods = (signer.auth_methods || {}) as Record<string, boolean>;
-  // Build channel list from BOTH options if enabled (multi-channel support)
-  const otpChannels: string[] = [];
-  if (authMethods.otp_email) otpChannels.push("email");
-  if (authMethods.otp_whatsapp) otpChannels.push("whatsapp");
-  // Fallback to email if nothing was explicitly enabled but signer has email/phone
-  if (otpChannels.length === 0) {
-    if (signer.signer_email) otpChannels.push("email");
-    else if (signer.signer_phone) otpChannels.push("whatsapp");
-    else otpChannels.push("email");
-  }
-  const otpChannel = otpChannels[0]; // primary (kept for backward-compat)
-  const requireSelfie = authMethods.selfie === true;
+  const signerMeta = authMetadataFromSigner(signer);
 
   // 3) Reuse existing linked signature, or create one
   if (signer.signature_id) {
@@ -73,21 +104,16 @@ export async function resolveSignatureByToken(
       .eq("id", signer.signature_id)
       .maybeSingle();
     if (linked) {
-      // Make sure token matches and metadata is up-to-date
+      // Make sure token, signer data and metadata reflect the latest form submission
       const linkedMeta = (linked.metadata || {}) as Record<string, any>;
       const updates: Record<string, any> = {};
       if (linked.signature_token !== signatureToken) {
         updates.signature_token = signatureToken;
       }
-      // Ensure metadata reflects latest auth_methods configuration
-      const newMeta = {
-        ...linkedMeta,
-        otp_channel: otpChannel,
-        otp_channels: otpChannels,
-        require_selfie: requireSelfie,
-        auth_methods: authMethods,
-        from_signer_id: signer.id,
-      };
+      for (const key of ["signer_name", "signer_email", "signer_phone", "signer_cpf"] as const) {
+        if (signer[key] && linked[key] !== signer[key]) updates[key] = signer[key];
+      }
+      const newMeta = authMetadataFromSigner(signer, linkedMeta);
       const metaChanged = JSON.stringify(linkedMeta) !== JSON.stringify(newMeta);
       if (metaChanged) updates.metadata = newMeta;
 
@@ -113,14 +139,7 @@ export async function resolveSignatureByToken(
     signer_cpf: signer.signer_cpf,
     signature_token: signatureToken,
     status: signer.status === "signed" ? "signed" : "pending",
-    metadata: {
-      ...(signer.metadata || {}),
-      otp_channel: otpChannel,
-      otp_channels: otpChannels,
-      require_selfie: requireSelfie,
-      auth_methods: authMethods,
-      from_signer_id: signer.id,
-    },
+    metadata: signerMeta,
   };
 
   const { data: created, error: createErr } = await supabase
