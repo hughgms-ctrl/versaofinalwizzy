@@ -1,6 +1,25 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, jsonResponse, errorResponse, createServiceClient, parseJsonBody } from "../_shared/middleware.ts";
 
+const normalizeKey = (value: string) =>
+  String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+
+function pickSubmittedValue(data: Record<string, any>, mappedKey?: string, aliases: string[] = []) {
+  if (mappedKey && data[mappedKey] != null && String(data[mappedKey]).trim()) return String(data[mappedKey]).trim();
+  const wanted = aliases.map(normalizeKey);
+  for (const [key, value] of Object.entries(data || {})) {
+    const text = String(value ?? "").trim();
+    if (!text) continue;
+    const normalized = normalizeKey(key);
+    if (wanted.some((alias) => normalized.includes(alias) || alias.includes(normalized))) return text;
+  }
+  return "";
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -132,15 +151,25 @@ serve(async (req) => {
         for (const s of formSigners || []) {
           const m = s.field_mapping || {};
           const patch: Record<string, any> = {};
-          if (m.name && mergedData[m.name]) patch.signer_name = String(mergedData[m.name]);
-          if (m.email && mergedData[m.email]) patch.signer_email = String(mergedData[m.email]);
-          if (m.phone && mergedData[m.phone]) patch.signer_phone = String(mergedData[m.phone]);
-          if (m.cpf && mergedData[m.cpf]) patch.signer_cpf = String(mergedData[m.cpf]);
+          const name = pickSubmittedValue(mergedData, m.name, ["nome completo", "nome", "cliente", "contratante", "signatario"]);
+          const email = pickSubmittedValue(mergedData, m.email, ["email", "e-mail", "correio eletronico"]);
+          const phone = pickSubmittedValue(mergedData, m.phone, ["whatsapp", "telefone", "celular", "phone"]);
+          const cpf = pickSubmittedValue(mergedData, m.cpf, ["cpf", "documento", "doc"]);
+          if (name) patch.signer_name = name;
+          if (email) patch.signer_email = email;
+          if (phone) patch.signer_phone = phone;
+          if (cpf) patch.signer_cpf = cpf;
           if (Object.keys(patch).length > 0) {
             await (supabase as any)
               .from("document_signers")
               .update(patch)
               .eq("id", s.id);
+            if (s.signature_id) {
+              await (supabase as any)
+                .from("document_signatures")
+                .update(patch)
+                .eq("id", s.signature_id);
+            }
             // The first form-signer that received data IS the person filling.
             if (!fillerSignerToken) fillerSignerToken = s.signature_token;
           }
