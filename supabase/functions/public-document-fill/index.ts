@@ -144,7 +144,7 @@ serve(async (req) => {
       try {
         const { data: formSigners } = await (supabase as any)
           .from("document_signers")
-          .select("id, signature_token, field_mapping, signer_name, signer_email, signer_phone, signer_cpf")
+          .select("id, signature_token, signature_id, field_mapping, signer_name, signer_email, signer_phone, signer_cpf")
           .in("generated_document_id", docIds)
           .eq("data_source", "form");
 
