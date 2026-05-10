@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { useCreateDocumentTemplate, useUpdateDocumentTemplate, DocumentTemplate } from '@/hooks/useDocumentTemplates';
 import { RichTextEditor } from '@/components/documents/RichTextEditor';
+import { TemplateFixedSignersCard } from '@/components/documents/TemplateFixedSignersCard';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
@@ -263,6 +264,9 @@ export function TemplateEditor({ template, onBack }: TemplateEditorProps) {
               }}
             />
           </Card>
+
+          {/* Signatários fixos */}
+          <TemplateFixedSignersCard templateId={template?.id || null} />
 
           {/* Fields */}
           <Card className="p-4">
