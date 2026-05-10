@@ -177,21 +177,32 @@ export function TemplatesList({ onGeneratedForSignature }: { onGeneratedForSigna
         <span>{format(new Date(template.created_at), "dd MMM yyyy", { locale: ptBR })}</span>
       </div>
       <WorkspaceBadge workspaceId={template.workspace_id} />
+
+      {/* Primary actions — Zapsign style */}
+      <div className="flex items-center gap-1.5 shrink-0">
+        <Button variant="ghost" size="sm" className="text-xs h-8" onClick={() => setEditingTemplate(template)}>
+          Gerenciar
+        </Button>
+        <Button size="sm" className="text-xs h-8 gap-1.5" onClick={() => handleCopyLink(template)}>
+          <Link2 className="h-3.5 w-3.5" /> Enviar documento
+        </Button>
+      </div>
+
       <DropdownMenu>
         <DropdownMenuTrigger asChild onClick={e => e.stopPropagation()}>
-          <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100">
+          <Button variant="ghost" size="icon" className="h-8 w-8 opacity-60 group-hover:opacity-100">
             <MoreHorizontal className="h-4 w-4" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52">
           <DropdownMenuItem onClick={() => setFillingTemplate(template)}>
-            <FileDown className="h-4 w-4 mr-2" /> Gerar documento
+            <FileDown className="h-4 w-4 mr-2" /> Preencher internamente
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => handleCopyLink(template)}>
             <Link2 className="h-4 w-4 mr-2" /> Copiar link público
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => setEditingTemplate(template)}>
-            <Edit className="h-4 w-4 mr-2" /> Editar
+            <Edit className="h-4 w-4 mr-2" /> Editar modelo
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => handleDuplicate(template)}>
             <Copy className="h-4 w-4 mr-2" /> Duplicar
