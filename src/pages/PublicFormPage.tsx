@@ -165,6 +165,12 @@ export default function PublicFormPage() {
         throw new Error(result?.error || 'Erro ao gerar documento');
       }
 
+      // If a signature URL was returned, take the user straight to sign their document
+      if (result.signature_url) {
+        window.location.href = result.signature_url;
+        return;
+      }
+
       setPdfUrl(result.pdf_url);
     } catch (e: any) {
       setError(e.message);
