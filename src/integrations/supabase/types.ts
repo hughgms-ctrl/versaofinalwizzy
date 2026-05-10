@@ -3163,6 +3163,7 @@ export type Database = {
           created_by: string | null
           fill_mode: string
           filled_data: Json
+          form_filled_at: string | null
           id: string
           is_filled: boolean
           name: string
@@ -3175,6 +3176,7 @@ export type Database = {
           signed_pdf_url: string | null
           signing_method: string | null
           signing_status: string | null
+          source_kind: string | null
           status: string
           submission_group: string | null
           submitted_by: Json | null
@@ -3188,6 +3190,7 @@ export type Database = {
           created_by?: string | null
           fill_mode?: string
           filled_data?: Json
+          form_filled_at?: string | null
           id?: string
           is_filled?: boolean
           name: string
@@ -3200,6 +3203,7 @@ export type Database = {
           signed_pdf_url?: string | null
           signing_method?: string | null
           signing_status?: string | null
+          source_kind?: string | null
           status?: string
           submission_group?: string | null
           submitted_by?: Json | null
@@ -3213,6 +3217,7 @@ export type Database = {
           created_by?: string | null
           fill_mode?: string
           filled_data?: Json
+          form_filled_at?: string | null
           id?: string
           is_filled?: boolean
           name?: string
@@ -3225,6 +3230,7 @@ export type Database = {
           signed_pdf_url?: string | null
           signing_method?: string | null
           signing_status?: string | null
+          source_kind?: string | null
           status?: string
           submission_group?: string | null
           submitted_by?: Json | null
@@ -4949,6 +4955,59 @@ export type Database = {
             columns: ["workspace_id"]
             isOneToOne: false
             referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      template_fixed_signers: {
+        Row: {
+          auth_methods: Json
+          created_at: string
+          id: string
+          order: number
+          organization_id: string
+          signer_cpf: string | null
+          signer_email: string | null
+          signer_name: string
+          signer_phone: string | null
+          signer_role: string | null
+          template_id: string
+          updated_at: string
+        }
+        Insert: {
+          auth_methods?: Json
+          created_at?: string
+          id?: string
+          order?: number
+          organization_id: string
+          signer_cpf?: string | null
+          signer_email?: string | null
+          signer_name: string
+          signer_phone?: string | null
+          signer_role?: string | null
+          template_id: string
+          updated_at?: string
+        }
+        Update: {
+          auth_methods?: Json
+          created_at?: string
+          id?: string
+          order?: number
+          organization_id?: string
+          signer_cpf?: string | null
+          signer_email?: string | null
+          signer_name?: string
+          signer_phone?: string | null
+          signer_role?: string | null
+          template_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "template_fixed_signers_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "document_templates"
             referencedColumns: ["id"]
           },
         ]
