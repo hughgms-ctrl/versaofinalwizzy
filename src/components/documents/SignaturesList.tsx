@@ -360,7 +360,12 @@ export function SignaturesList() {
                     </div>
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="truncate text-sm font-semibold text-foreground">{group.docName}</h3>
+                        <h3 className="truncate text-sm font-semibold text-foreground">
+                          {group.docName}
+                          {group.fillerName && (
+                            <span className="ml-1 font-normal text-muted-foreground">— {group.fillerName}</span>
+                          )}
+                        </h3>
                         <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium', firstMethod.cls)}>{firstMethod.label}</span>
                         <Badge variant="secondary" className="text-[10px]">{signedSigners}/{totalSigners} assinado{totalSigners > 1 ? 's' : ''}</Badge>
                       </div>
