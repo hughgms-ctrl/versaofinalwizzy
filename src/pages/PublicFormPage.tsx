@@ -114,30 +114,11 @@ export default function PublicFormPage() {
     setGenerating(true);
 
     try {
-      // Upload logo if present
-      let logoUrl: string | null = null;
-      if (logoFile) {
-        const safeName = logoFile.name
-          .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-          .replace(/[^a-zA-Z0-9._-]/g, '_');
-        const logoPath = `public-logos/${Date.now()}-${safeName}`;
-        const { error: uploadError } = await supabase.storage
-          .from('contact-files')
-          .upload(logoPath, logoFile);
-        if (!uploadError) {
-          const { data: urlData } = supabase.storage
-            .from('contact-files')
-            .getPublicUrl(logoPath);
-          logoUrl = urlData.publicUrl;
-        }
-      }
-
       const { data: result, error: submitError } = await supabase.functions.invoke('public-form-submit', {
         body: {
           template_id: template.id,
           filled_data: formData,
           document_name: documentName,
-          logo_url: logoUrl,
           auto_send_whatsapp: template.auto_send_whatsapp || false,
           signer_name: signerName.trim(),
           signer_phone: signerPhone.replace(/\D/g, ''),
