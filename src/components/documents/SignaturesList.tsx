@@ -440,6 +440,14 @@ export function SignaturesList() {
         documents={availableDocuments}
       />
 
+      {editingDocId && (
+        <EditFilledDataDialog
+          open={!!editingDocId}
+          onOpenChange={(o) => !o && setEditingDocId(null)}
+          documentId={editingDocId}
+        />
+      )}
+
       <AlertDialog open={!!confirmDeleteId} onOpenChange={(o) => !o && setConfirmDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
