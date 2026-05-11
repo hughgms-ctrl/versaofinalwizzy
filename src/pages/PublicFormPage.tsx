@@ -224,7 +224,7 @@ export default function PublicFormPage() {
           </div>
         )}
 
-        <div className="grid gap-6 lg:grid-cols-2">
+        <div className="max-w-2xl mx-auto">
           {/* Form */}
           <div className="space-y-4">
             <Card>
