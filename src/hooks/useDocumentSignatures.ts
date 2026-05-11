@@ -44,7 +44,7 @@ export function useDocumentSignatures(includeArchived = false) {
     queryFn: async () => {
       let q = (supabase as any)
         .from('document_signatures')
-        .select('*, generated_document:generated_documents(id, name, pdf_url, status), archived_at')
+        .select('*, generated_document:generated_documents(id, name, pdf_url, status, submitted_by), archived_at')
         .order('created_at', { ascending: false });
       if (!includeArchived) q = q.is('archived_at', null);
       const { data, error } = await q;
