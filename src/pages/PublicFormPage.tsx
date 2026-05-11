@@ -267,23 +267,6 @@ export default function PublicFormPage() {
                     </div>
                   </Card>
                 )}
-                <div>
-                  <Label>Logo (cabeçalho)</Label>
-                  {logoPreview ? (
-                    <div className="mt-1 flex items-center gap-3 p-3 border rounded-lg">
-                      <img src={logoPreview} alt="Logo" className="h-12 w-auto max-w-[200px] object-contain" />
-                      <Button variant="ghost" size="icon" onClick={removeLogo}>
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ) : (
-                    <label className="mt-1 border-2 border-dashed border-border rounded-lg p-4 text-center block cursor-pointer hover:border-primary/50 transition-colors relative">
-                      <ImageIcon className="h-6 w-6 mx-auto text-muted-foreground mb-1" />
-                      <p className="text-xs text-muted-foreground">Clique para selecionar</p>
-                      <input type="file" accept="image/*" onChange={handleLogoChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
-                    </label>
-                  )}
-                </div>
               </CardContent>
             </Card>
 
@@ -339,23 +322,6 @@ export default function PublicFormPage() {
               )}
             </Button>
           </div>
-
-          {/* Preview */}
-          <Card className="lg:sticky lg:top-4 h-fit hidden lg:block">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Preview</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {logoPreview && (
-                <div className="mb-4 pb-3 border-b">
-                  <img src={logoPreview} alt="Logo" className="h-10 w-auto object-contain" />
-                </div>
-              )}
-              <div className="max-h-[60vh] overflow-y-auto text-xs font-mono whitespace-pre-wrap bg-muted p-4 rounded-lg leading-relaxed">
-                {filledContent}
-              </div>
-            </CardContent>
-          </Card>
         </div>
       </main>
     </div>
