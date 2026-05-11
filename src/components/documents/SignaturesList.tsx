@@ -51,6 +51,7 @@ export function SignaturesList() {
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
+  const [editingDocId, setEditingDocId] = useState<string | null>(null);
 
   const regenerateReceipt = async (signatureId: string) => {
     setRegeneratingId(signatureId);
