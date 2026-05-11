@@ -40,8 +40,6 @@ export default function PublicFormPage() {
 
   const [formData, setFormData] = useState<Record<string, string>>({});
   const [documentName, setDocumentName] = useState('');
-  const [logoFile, setLogoFile] = useState<File | null>(null);
-  const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [signerName, setSignerName] = useState('');
