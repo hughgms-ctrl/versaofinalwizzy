@@ -150,6 +150,11 @@ export function SignaturesList() {
               {allSigned ? <CheckCircle2 className="h-3 w-3" /> : <Clock className="h-3 w-3" />}
               {allSigned ? 'Concluído' : 'Em andamento'}
             </span>
+            {signedSigners === 0 && (
+              <Button variant="outline" size="sm" className="gap-1" onClick={() => setEditingDocId(selectedGroup.docId)}>
+                <Pencil className="h-3.5 w-3.5" /> Editar dados
+              </Button>
+            )}
             {selectedGroup.signedPdfUrl && (
               <Button variant="outline" size="sm" className="gap-1" asChild>
                 <a href={selectedGroup.signedPdfUrl} target="_blank" rel="noopener noreferrer">
