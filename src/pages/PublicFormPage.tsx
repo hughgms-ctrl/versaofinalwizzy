@@ -79,20 +79,7 @@ export default function PublicFormPage() {
     setFormData(prev => ({ ...prev, [fieldName]: value }));
   };
 
-  const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setLogoFile(file);
-      const reader = new FileReader();
-      reader.onload = (ev) => setLogoPreview(ev.target?.result as string);
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const removeLogo = () => {
-    setLogoFile(null);
-    setLogoPreview(null);
-  };
+  const getInputTypeNoop = () => null;
 
   const getInputType = (fieldType: string) => {
     switch (fieldType) {
