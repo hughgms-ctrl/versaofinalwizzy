@@ -2360,6 +2360,9 @@ export type Database = {
           created_by: string | null
           description: string | null
           field_config: Json | null
+          filler_auth_methods: Json
+          filler_field_mapping: Json
+          filler_signs: boolean
           folder_id: string | null
           id: string
           name: string
@@ -2375,6 +2378,9 @@ export type Database = {
           created_by?: string | null
           description?: string | null
           field_config?: Json | null
+          filler_auth_methods?: Json
+          filler_field_mapping?: Json
+          filler_signs?: boolean
           folder_id?: string | null
           id?: string
           name: string
@@ -2390,6 +2396,9 @@ export type Database = {
           created_by?: string | null
           description?: string | null
           field_config?: Json | null
+          filler_auth_methods?: Json
+          filler_field_mapping?: Json
+          filler_signs?: boolean
           folder_id?: string | null
           id?: string
           name?: string
@@ -2648,6 +2657,9 @@ export type Database = {
           default_signing_method: string | null
           description: string | null
           fields: Json
+          filler_auth_methods: Json
+          filler_field_mapping: Json
+          filler_signs: boolean
           folder_id: string | null
           id: string
           logo_url: string | null
@@ -2667,6 +2679,9 @@ export type Database = {
           default_signing_method?: string | null
           description?: string | null
           fields?: Json
+          filler_auth_methods?: Json
+          filler_field_mapping?: Json
+          filler_signs?: boolean
           folder_id?: string | null
           id?: string
           logo_url?: string | null
@@ -2686,6 +2701,9 @@ export type Database = {
           default_signing_method?: string | null
           description?: string | null
           fields?: Json
+          filler_auth_methods?: Json
+          filler_field_mapping?: Json
+          filler_signs?: boolean
           folder_id?: string | null
           id?: string
           logo_url?: string | null
@@ -4044,6 +4062,59 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      pack_fixed_signers: {
+        Row: {
+          auth_methods: Json
+          created_at: string
+          id: string
+          order: number
+          organization_id: string
+          pack_id: string
+          signer_cpf: string | null
+          signer_email: string | null
+          signer_name: string
+          signer_phone: string | null
+          signer_role: string | null
+          updated_at: string
+        }
+        Insert: {
+          auth_methods?: Json
+          created_at?: string
+          id?: string
+          order?: number
+          organization_id: string
+          pack_id: string
+          signer_cpf?: string | null
+          signer_email?: string | null
+          signer_name: string
+          signer_phone?: string | null
+          signer_role?: string | null
+          updated_at?: string
+        }
+        Update: {
+          auth_methods?: Json
+          created_at?: string
+          id?: string
+          order?: number
+          organization_id?: string
+          pack_id?: string
+          signer_cpf?: string | null
+          signer_email?: string | null
+          signer_name?: string
+          signer_phone?: string | null
+          signer_role?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pack_fixed_signers_pack_id_fkey"
+            columns: ["pack_id"]
+            isOneToOne: false
+            referencedRelation: "document_packs"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       pipeline_columns: {
         Row: {
