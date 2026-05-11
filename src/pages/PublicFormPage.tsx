@@ -1,14 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Loader2, FileDown, Image as ImageIcon, X, CheckCircle, FileText, Phone, User, MessageCircle } from 'lucide-react';
+import { Loader2, FileDown, CheckCircle, FileText, Phone, User, MessageCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { supabase } from '@/integrations/supabase/client';
-import { DatePicker } from '@/components/ui/date-picker';
-import { fillTemplate } from '@/lib/documentFormatters';
 
 interface TemplateField {
   name: string;
@@ -42,8 +40,6 @@ export default function PublicFormPage() {
 
   const [formData, setFormData] = useState<Record<string, string>>({});
   const [documentName, setDocumentName] = useState('');
-  const [logoFile, setLogoFile] = useState<File | null>(null);
-  const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [signerName, setSignerName] = useState('');
@@ -83,20 +79,7 @@ export default function PublicFormPage() {
     setFormData(prev => ({ ...prev, [fieldName]: value }));
   };
 
-  const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setLogoFile(file);
-      const reader = new FileReader();
-      reader.onload = (ev) => setLogoPreview(ev.target?.result as string);
-      reader.readAsDataURL(file);
-    }
-  };
-
-  const removeLogo = () => {
-    setLogoFile(null);
-    setLogoPreview(null);
-  };
+  const getInputTypeNoop = () => null;
 
   const getInputType = (fieldType: string) => {
     switch (fieldType) {
@@ -131,30 +114,11 @@ export default function PublicFormPage() {
     setGenerating(true);
 
     try {
-      // Upload logo if present
-      let logoUrl: string | null = null;
-      if (logoFile) {
-        const safeName = logoFile.name
-          .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-          .replace(/[^a-zA-Z0-9._-]/g, '_');
-        const logoPath = `public-logos/${Date.now()}-${safeName}`;
-        const { error: uploadError } = await supabase.storage
-          .from('contact-files')
-          .upload(logoPath, logoFile);
-        if (!uploadError) {
-          const { data: urlData } = supabase.storage
-            .from('contact-files')
-            .getPublicUrl(logoPath);
-          logoUrl = urlData.publicUrl;
-        }
-      }
-
       const { data: result, error: submitError } = await supabase.functions.invoke('public-form-submit', {
         body: {
           template_id: template.id,
           filled_data: formData,
           document_name: documentName,
-          logo_url: logoUrl,
           auto_send_whatsapp: template.auto_send_whatsapp || false,
           signer_name: signerName.trim(),
           signer_phone: signerPhone.replace(/\D/g, ''),
@@ -260,7 +224,7 @@ export default function PublicFormPage() {
           </div>
         )}
 
-        <div className="grid gap-6 lg:grid-cols-2">
+        <div className="max-w-2xl mx-auto">
           {/* Form */}
           <div className="space-y-4">
             <Card>
@@ -303,23 +267,6 @@ export default function PublicFormPage() {
                     </div>
                   </Card>
                 )}
-                <div>
-                  <Label>Logo (cabeçalho)</Label>
-                  {logoPreview ? (
-                    <div className="mt-1 flex items-center gap-3 p-3 border rounded-lg">
-                      <img src={logoPreview} alt="Logo" className="h-12 w-auto max-w-[200px] object-contain" />
-                      <Button variant="ghost" size="icon" onClick={removeLogo}>
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ) : (
-                    <label className="mt-1 border-2 border-dashed border-border rounded-lg p-4 text-center block cursor-pointer hover:border-primary/50 transition-colors relative">
-                      <ImageIcon className="h-6 w-6 mx-auto text-muted-foreground mb-1" />
-                      <p className="text-xs text-muted-foreground">Clique para selecionar</p>
-                      <input type="file" accept="image/*" onChange={handleLogoChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
-                    </label>
-                  )}
-                </div>
               </CardContent>
             </Card>
 
@@ -375,23 +322,6 @@ export default function PublicFormPage() {
               )}
             </Button>
           </div>
-
-          {/* Preview */}
-          <Card className="lg:sticky lg:top-4 h-fit hidden lg:block">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base">Preview</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {logoPreview && (
-                <div className="mb-4 pb-3 border-b">
-                  <img src={logoPreview} alt="Logo" className="h-10 w-auto object-contain" />
-                </div>
-              )}
-              <div className="max-h-[60vh] overflow-y-auto text-xs font-mono whitespace-pre-wrap bg-muted p-4 rounded-lg leading-relaxed">
-                {filledContent}
-              </div>
-            </CardContent>
-          </Card>
         </div>
       </main>
     </div>

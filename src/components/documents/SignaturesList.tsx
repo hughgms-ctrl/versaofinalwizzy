@@ -8,6 +8,8 @@ import { useDocumentSignatures, useUpdateSignatureStatus, useArchiveSignature, u
 import { useGeneratedDocuments } from '@/hooks/useGeneratedDocuments';
 import { CreateSignatureDialog } from './CreateSignatureDialog';
 import { SignerLinksList } from './SignerLinksList';
+import { EditFilledDataDialog } from './EditFilledDataDialog';
+import { Pencil } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from '@/hooks/use-toast';
@@ -49,6 +51,7 @@ export function SignaturesList() {
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
+  const [editingDocId, setEditingDocId] = useState<string | null>(null);
 
   const regenerateReceipt = async (signatureId: string) => {
     setRegeneratingId(signatureId);
@@ -80,18 +83,22 @@ export function SignaturesList() {
   // Group signatures by generated_document_id so multiple signers of the same
   // document appear together. The same final PDF is shared across them.
   const grouped = useMemo(() => {
-    const map = new Map<string, { docId: string; docName: string; signedPdfUrl: string | null; createdAt: string; signatures: typeof filtered }>();
+    const map = new Map<string, { docId: string; docName: string; fillerName: string | null; signedPdfUrl: string | null; createdAt: string; signatures: typeof filtered }>();
     for (const sig of filtered) {
       const docId = (sig as any).generated_document_id;
       if (!docId) continue;
+      const submittedBy = (sig as any).generated_document?.submitted_by;
+      const fillerName = submittedBy?.name || null;
       const existing = map.get(docId);
       if (existing) {
         existing.signatures.push(sig);
         if (!existing.signedPdfUrl && sig.signed_pdf_url) existing.signedPdfUrl = sig.signed_pdf_url;
+        if (!existing.fillerName && fillerName) existing.fillerName = fillerName;
       } else {
         map.set(docId, {
           docId,
           docName: sig.generated_document?.name || 'Documento',
+          fillerName,
           signedPdfUrl: sig.signed_pdf_url,
           createdAt: sig.created_at,
           signatures: [sig],
@@ -125,7 +132,12 @@ export function SignaturesList() {
             </Button>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <h2 className="truncate text-lg font-semibold">{selectedGroup.docName}</h2>
+                <h2 className="truncate text-lg font-semibold">
+                  {selectedGroup.docName}
+                  {selectedGroup.fillerName && (
+                    <span className="ml-1 font-normal text-muted-foreground">— {selectedGroup.fillerName}</span>
+                  )}
+                </h2>
                 <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium', firstMethod.cls)}>{firstMethod.label}</span>
                 <Badge variant="secondary" className="text-[10px]">{signedSigners}/{totalSigners} assinado{totalSigners > 1 ? 's' : ''}</Badge>
               </div>
@@ -138,6 +150,11 @@ export function SignaturesList() {
               {allSigned ? <CheckCircle2 className="h-3 w-3" /> : <Clock className="h-3 w-3" />}
               {allSigned ? 'Concluído' : 'Em andamento'}
             </span>
+            {signedSigners === 0 && (
+              <Button variant="outline" size="sm" className="gap-1" onClick={() => setEditingDocId(selectedGroup.docId)}>
+                <Pencil className="h-3.5 w-3.5" /> Editar dados
+              </Button>
+            )}
             {selectedGroup.signedPdfUrl && (
               <Button variant="outline" size="sm" className="gap-1" asChild>
                 <a href={selectedGroup.signedPdfUrl} target="_blank" rel="noopener noreferrer">
@@ -353,7 +370,12 @@ export function SignaturesList() {
                     </div>
                     <div className="min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="truncate text-sm font-semibold text-foreground">{group.docName}</h3>
+                        <h3 className="truncate text-sm font-semibold text-foreground">
+                          {group.docName}
+                          {group.fillerName && (
+                            <span className="ml-1 font-normal text-muted-foreground">— {group.fillerName}</span>
+                          )}
+                        </h3>
                         <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium', firstMethod.cls)}>{firstMethod.label}</span>
                         <Badge variant="secondary" className="text-[10px]">{signedSigners}/{totalSigners} assinado{totalSigners > 1 ? 's' : ''}</Badge>
                       </div>
@@ -374,6 +396,18 @@ export function SignaturesList() {
                       {allSigned ? <CheckCircle2 className="h-3 w-3" /> : <Clock className="h-3 w-3" />}
                       {allSigned ? 'Concluído' : 'Em andamento'}
                     </span>
+
+                    {signedSigners === 0 && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-xs gap-1"
+                        onClick={() => setEditingDocId(group.docId)}
+                        title="Editar dados antes da assinatura"
+                      >
+                        <Pencil className="h-3 w-3" /> Editar dados
+                      </Button>
+                    )}
 
                     {group.signedPdfUrl && (
                       <Button variant="ghost" size="icon" className="h-8 w-8" asChild title="Baixar PDF assinado consolidado">
@@ -415,6 +449,14 @@ export function SignaturesList() {
         onOpenChange={setShowCreateDialog}
         documents={availableDocuments}
       />
+
+      {editingDocId && (
+        <EditFilledDataDialog
+          open={!!editingDocId}
+          onOpenChange={(o) => !o && setEditingDocId(null)}
+          documentId={editingDocId}
+        />
+      )}
 
       <AlertDialog open={!!confirmDeleteId} onOpenChange={(o) => !o && setConfirmDeleteId(null)}>
         <AlertDialogContent>
