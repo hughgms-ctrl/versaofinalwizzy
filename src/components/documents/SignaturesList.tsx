@@ -8,6 +8,8 @@ import { useDocumentSignatures, useUpdateSignatureStatus, useArchiveSignature, u
 import { useGeneratedDocuments } from '@/hooks/useGeneratedDocuments';
 import { CreateSignatureDialog } from './CreateSignatureDialog';
 import { SignerLinksList } from './SignerLinksList';
+import { EditFilledDataDialog } from './EditFilledDataDialog';
+import { Pencil } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from '@/hooks/use-toast';
