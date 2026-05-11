@@ -82,18 +82,22 @@ export function SignaturesList() {
   // Group signatures by generated_document_id so multiple signers of the same
   // document appear together. The same final PDF is shared across them.
   const grouped = useMemo(() => {
-    const map = new Map<string, { docId: string; docName: string; signedPdfUrl: string | null; createdAt: string; signatures: typeof filtered }>();
+    const map = new Map<string, { docId: string; docName: string; fillerName: string | null; signedPdfUrl: string | null; createdAt: string; signatures: typeof filtered }>();
     for (const sig of filtered) {
       const docId = (sig as any).generated_document_id;
       if (!docId) continue;
+      const submittedBy = (sig as any).generated_document?.submitted_by;
+      const fillerName = submittedBy?.name || null;
       const existing = map.get(docId);
       if (existing) {
         existing.signatures.push(sig);
         if (!existing.signedPdfUrl && sig.signed_pdf_url) existing.signedPdfUrl = sig.signed_pdf_url;
+        if (!existing.fillerName && fillerName) existing.fillerName = fillerName;
       } else {
         map.set(docId, {
           docId,
           docName: sig.generated_document?.name || 'Documento',
+          fillerName,
           signedPdfUrl: sig.signed_pdf_url,
           createdAt: sig.created_at,
           signatures: [sig],
