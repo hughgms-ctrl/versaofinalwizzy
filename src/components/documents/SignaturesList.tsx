@@ -387,6 +387,18 @@ export function SignaturesList() {
                       {allSigned ? 'Concluído' : 'Em andamento'}
                     </span>
 
+                    {signedSigners === 0 && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-xs gap-1"
+                        onClick={() => setEditingDocId(group.docId)}
+                        title="Editar dados antes da assinatura"
+                      >
+                        <Pencil className="h-3 w-3" /> Editar dados
+                      </Button>
+                    )}
+
                     {group.signedPdfUrl && (
                       <Button variant="ghost" size="icon" className="h-8 w-8" asChild title="Baixar PDF assinado consolidado">
                         <a href={group.signedPdfUrl} target="_blank" rel="noopener noreferrer">
