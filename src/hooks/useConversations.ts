@@ -81,6 +81,7 @@ export function useConversations(options?: { includeArchived?: boolean; onlyArch
           last_message:messages(id, content, type, direction, is_from_bot, read_at, delivered_at)
         `)
         .order('last_message_at', { ascending: false, nullsFirst: false })
+        .range(0, 4999)
         .order('created_at', { referencedTable: 'messages', ascending: false })
         .limit(1, { referencedTable: 'messages' });
 
