@@ -12,7 +12,7 @@ export interface DocumentTemplate {
   content: string;
   content_html?: string | null;
   logo_url?: string | null;
-  fields: Array<{ name: string; label: string; type: string; required: boolean }>;
+  fields: Array<{ name: string; label: string; type: string; required: boolean; hint?: string }>;
   original_file_url: string | null;
   folder_id: string | null;
   workspace_id: string | null;

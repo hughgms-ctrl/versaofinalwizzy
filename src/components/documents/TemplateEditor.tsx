@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { ArrowLeft, Save, Plus, X, Tag, MessageCircle, Image as ImageIcon } from 'lucide-react';
+import { ArrowLeft, Save, Plus, X, Tag, MessageCircle, Image as ImageIcon, ChevronDown, ChevronUp, MessageSquare, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -70,7 +70,7 @@ export function TemplateEditor({ template, onBack }: TemplateEditorProps) {
   const [contentHtml, setContentHtml] = useState<string>(initialHtml);
   const [logoUrl, setLogoUrl] = useState<string | null>(template?.logo_url || null);
   const [orgLogoUrl, setOrgLogoUrl] = useState<string | null>(null);
-  const [fields, setFields] = useState<Array<{ name: string; label: string; type: string; required: boolean }>>(
+  const [fields, setFields] = useState<Array<{ name: string; label: string; type: string; required: boolean; hint?: string }>>(
     template?.fields || [],
   );
   const [autoSendWhatsApp, setAutoSendWhatsApp] = useState(template?.auto_send_whatsapp || false);
@@ -107,6 +107,14 @@ export function TemplateEditor({ template, onBack }: TemplateEditorProps) {
 
   const handleChangeFieldType = (fieldName: string, type: string) => {
     setFields((prev) => prev.map((f) => (f.name === fieldName ? { ...f, type } : f)));
+  };
+
+  const handleChangeFieldLabel = (fieldName: string, label: string) => {
+    setFields((prev) => prev.map((f) => (f.name === fieldName ? { ...f, label } : f)));
+  };
+
+  const handleChangeFieldHint = (fieldName: string, hint: string) => {
+    setFields((prev) => prev.map((f) => (f.name === fieldName ? { ...f, hint: hint || undefined } : f)));
   };
 
   const handleLogoUpload = async (file: File) => {
@@ -300,30 +308,15 @@ export function TemplateEditor({ template, onBack }: TemplateEditorProps) {
             </div>
             <div className="space-y-2">
               {fields.map((field) => (
-                <div key={field.name} className="flex items-center gap-2 p-2 rounded-md border bg-muted/40">
-                  <Tag className="h-3 w-3 text-muted-foreground shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-xs font-medium truncate">{field.label}</div>
-                    <div className="text-[10px] text-muted-foreground font-mono truncate">
-                      {`{{${field.name}}}`}
-                    </div>
-                  </div>
-                  <Select value={field.type} onValueChange={(v) => handleChangeFieldType(field.name, v)}>
-                    <SelectTrigger className="h-7 text-xs w-[110px]">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {FIELD_TYPES.map((t) => (
-                        <SelectItem key={t.value} value={t.value} className="text-xs">
-                          {t.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleRemoveField(field.name)}>
-                    <X className="h-3 w-3" />
-                  </Button>
-                </div>
+                <FieldEditorRow
+                  key={field.name}
+                  field={field}
+                  fieldTypes={FIELD_TYPES}
+                  onChangeLabel={(v) => handleChangeFieldLabel(field.name, v)}
+                  onChangeType={(v) => handleChangeFieldType(field.name, v)}
+                  onChangeHint={(v) => handleChangeFieldHint(field.name, v)}
+                  onRemove={() => handleRemoveField(field.name)}
+                />
               ))}
             </div>
             {fields.length === 0 && (
@@ -364,6 +357,109 @@ export function TemplateEditor({ template, onBack }: TemplateEditorProps) {
           </Card>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─── Field editor row ─────────────────────────────────────────────────────────
+interface FieldEditorRowProps {
+  field: { name: string; label: string; type: string; required: boolean; hint?: string };
+  fieldTypes: Array<{ value: string; label: string }>;
+  onChangeLabel: (v: string) => void;
+  onChangeType: (v: string) => void;
+  onChangeHint: (v: string) => void;
+  onRemove: () => void;
+}
+
+function FieldEditorRow({ field, fieldTypes, onChangeLabel, onChangeType, onChangeHint, onRemove }: FieldEditorRowProps) {
+  const [hintOpen, setHintOpen] = useState(false);
+  const [editingLabel, setEditingLabel] = useState(false);
+  const [labelDraft, setLabelDraft] = useState(field.label);
+
+  const commitLabel = () => {
+    const trimmed = labelDraft.trim();
+    if (trimmed) onChangeLabel(trimmed);
+    else setLabelDraft(field.label);
+    setEditingLabel(false);
+  };
+
+  return (
+    <div className="rounded-md border bg-muted/40 overflow-hidden">
+      {/* Main row */}
+      <div className="flex items-center gap-2 px-2 py-1.5">
+        <Tag className="h-3 w-3 text-muted-foreground shrink-0" />
+
+        {/* Label editable */}
+        <div className="flex-1 min-w-0">
+          {editingLabel ? (
+            <input
+              autoFocus
+              className="w-full bg-transparent text-xs font-medium outline-none border-b border-primary pb-0.5"
+              value={labelDraft}
+              onChange={(e) => setLabelDraft(e.target.value)}
+              onBlur={commitLabel}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitLabel();
+                if (e.key === 'Escape') { setLabelDraft(field.label); setEditingLabel(false); }
+              }}
+            />
+          ) : (
+            <button
+              type="button"
+              className="flex items-center gap-1 group text-left w-full"
+              onClick={() => { setLabelDraft(field.label); setEditingLabel(true); }}
+            >
+              <span className="text-xs font-medium truncate">{field.label}</span>
+              <Pencil className="h-2.5 w-2.5 text-muted-foreground opacity-0 group-hover:opacity-100 shrink-0 transition-opacity" />
+            </button>
+          )}
+          <div className="text-[10px] text-muted-foreground font-mono">{`{{${field.name}}}`}</div>
+        </div>
+
+        {/* Type selector */}
+        <Select value={field.type} onValueChange={onChangeType}>
+          <SelectTrigger className="h-7 text-xs w-[100px] shrink-0">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {fieldTypes.map((t) => (
+              <SelectItem key={t.value} value={t.value} className="text-xs">{t.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {/* Hint toggle */}
+        <button
+          type="button"
+          title="Observação / ajuda de preenchimento"
+          onClick={() => setHintOpen((o) => !o)}
+          className={`shrink-0 rounded p-1 transition-colors ${
+            field.hint ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          <MessageSquare className="h-3.5 w-3.5" />
+        </button>
+
+        {/* Remove */}
+        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={onRemove}>
+          <X className="h-3 w-3" />
+        </Button>
+      </div>
+
+      {/* Hint row — collapsible */}
+      {hintOpen && (
+        <div className="px-3 pb-2.5 pt-1 border-t bg-background/60">
+          <label className="flex items-center gap-1 text-[10px] text-muted-foreground mb-1">
+            <MessageSquare className="h-2.5 w-2.5" /> Observação (exibida como dica ao preencher)
+          </label>
+          <input
+            className="w-full rounded-md border bg-muted/50 px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-primary/50"
+            placeholder="Ex: Informe o CPF somente números"
+            value={field.hint || ''}
+            onChange={(e) => onChangeHint(e.target.value)}
+          />
+        </div>
+      )}
     </div>
   );
 }

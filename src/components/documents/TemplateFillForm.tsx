@@ -337,6 +337,9 @@ export function TemplateFillForm({ template, onBack, onGeneratedForSignature }: 
                   ) : (
                     <Input type={getInputType(field.type)} value={formData[field.name] || ''} onChange={(e) => handleFieldChange(field.name, e.target.value)} className="text-sm" />
                   )}
+                  {field.hint && (
+                    <p className="text-[10px] text-muted-foreground mt-0.5">{field.hint}</p>
+                  )}
                 </div>
               ))}
             </CardContent>
