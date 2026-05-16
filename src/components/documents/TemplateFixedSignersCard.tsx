@@ -188,6 +188,10 @@ export function TemplateFixedSignersCard({ templateId }: Props) {
             <div className="rounded-md border p-3 space-y-2">
               <p className="text-xs font-medium">Autenticação exigida</p>
               <div className="flex items-center justify-between">
+                <Label className="text-xs">Assinatura manuscrita</Label>
+                <Switch checked={!!form.auth_methods.manuscrita} onCheckedChange={(v) => setAuth('manuscrita', v)} />
+              </div>
+              <div className="flex items-center justify-between">
                 <Label className="text-xs">Código por e-mail</Label>
                 <Switch checked={!!form.auth_methods.otp_email} onCheckedChange={(v) => setAuth('otp_email', v)} />
               </div>

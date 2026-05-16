@@ -10,6 +10,8 @@ import { Switch } from '@/components/ui/switch';
 import { useCreateDocumentTemplate, useUpdateDocumentTemplate, DocumentTemplate } from '@/hooks/useDocumentTemplates';
 import { RichTextEditor } from '@/components/documents/RichTextEditor';
 import { TemplateFixedSignersCard } from '@/components/documents/TemplateFixedSignersCard';
+import { SignersManager } from '@/components/documents/SignersManager';
+import { SignerInput } from '@/hooks/useDocumentSigners';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
@@ -73,6 +75,9 @@ export function TemplateEditor({ template, onBack }: TemplateEditorProps) {
     template?.fields || [],
   );
   const [autoSendWhatsApp, setAutoSendWhatsApp] = useState(template?.auto_send_whatsapp || false);
+  const [defaultSigners, setDefaultSigners] = useState<SignerInput[]>(
+    (template?.default_signers as SignerInput[]) || []
+  );
   const [newFieldName, setNewFieldName] = useState('');
   const logoInputRef = useRef<HTMLInputElement>(null);
 
@@ -132,6 +137,7 @@ export function TemplateEditor({ template, onBack }: TemplateEditorProps) {
       logo_url: logoUrl,
       fields,
       auto_send_whatsapp: autoSendWhatsApp,
+      default_signers: defaultSigners,
     } as any;
 
     if (isEditing) {
@@ -267,6 +273,19 @@ export function TemplateEditor({ template, onBack }: TemplateEditorProps) {
 
           {/* Signatários fixos */}
           <TemplateFixedSignersCard templateId={template?.id || null} />
+
+          {/* Signatários padrão */}
+          <Card className="p-4">
+            <h3 className="font-medium text-sm mb-3">Signatários padrão</h3>
+            <p className="text-[11px] text-muted-foreground mb-3">
+              Configuração padrão de quem assina. Será carregada automaticamente ao gerar um documento.
+            </p>
+            <SignersManager
+              signers={defaultSigners}
+              onChange={setDefaultSigners}
+              availableFields={fields.map((f) => ({ name: f.name, label: f.label, type: f.type }))}
+            />
+          </Card>
 
           {/* Fields */}
           <Card className="p-4">

@@ -33,7 +33,9 @@ export function TemplateFillForm({ template, onBack, onGeneratedForSignature }: 
   const [fillMode, setFillMode] = useState<FillMode>('internal');
   const [formData, setFormData] = useState<Record<string, string>>({});
   const [documentName, setDocumentName] = useState(template.name);
-  const [signers, setSigners] = useState<SignerInput[]>([]);
+  const [signers, setSigners] = useState<SignerInput[]>(
+    (template.default_signers as SignerInput[]) || []
+  );
   const [generating, setGenerating] = useState(false);
   const [publicLink, setPublicLink] = useState<string | null>(null);
   const [generatedDocId, setGeneratedDocId] = useState<string | null>(null);
