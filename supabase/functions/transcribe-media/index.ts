@@ -275,6 +275,27 @@ Deno.serve(async (req) => {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
+
+      // Check cache by media_url (same audio reused across messages/flows)
+      const { data: cachedByUrl } = await supabase
+        .from('media_transcriptions')
+        .select('transcription')
+        .eq('media_url', mediaUrl)
+        .maybeSingle();
+
+      if (cachedByUrl?.transcription) {
+        console.log(`Cache hit by media_url for message ${messageId}`);
+        // Save association for this message_id too
+        await supabase.from('media_transcriptions').upsert({
+          message_id: messageId,
+          media_url: mediaUrl,
+          media_type: mediaType,
+          transcription: cachedByUrl.transcription,
+        }, { onConflict: 'message_id' });
+        return new Response(JSON.stringify({ transcription: cachedByUrl.transcription, cached: true }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
     } else {
       console.log(`Force transcription for message ${messageId}`);
       await supabase.from('media_transcriptions').delete().eq('message_id', messageId);
