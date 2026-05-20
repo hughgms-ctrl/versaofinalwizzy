@@ -129,7 +129,7 @@ Deno.serve(async (req) => {
     const instanceToken = instance.zapi_token;
     console.log("Using instance:", instance.name, "to send notifications to", profilesToNotify.length, "users");
 
-    // Send notifications directly via UAZAPI (bypassing zapi-send-message which requires user auth)
+    // Send notifications directly via UAZAPI (bypassing whatsapp-send-message which requires user auth)
     const results = [];
     for (const profile of profilesToNotify) {
       if (!profile.phone) {

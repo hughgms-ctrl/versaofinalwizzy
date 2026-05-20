@@ -149,7 +149,7 @@ Deno.serve(async (req) => {
     }
 
     // Configure webhook on UAZAPI
-    const webhookUrl = `${supabaseUrl}/functions/v1/zapi-webhook`;
+    const webhookUrl = `${supabaseUrl}/functions/v1/whatsapp-webhook`;
     console.log(`Configuring webhook URL: ${webhookUrl}`);
 
     try {

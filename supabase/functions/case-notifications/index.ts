@@ -37,9 +37,9 @@ async function sendWhatsAppNotification(
     return false;
   }
 
-  // Chama a edge function zapi-send-message
+  // Chama a edge function whatsapp-send-message
   try {
-    const { error } = await supabase.functions.invoke('zapi-send-message', {
+    const { error } = await supabase.functions.invoke('whatsapp-send-message', {
       body: {
         instance_id: instance.id,
         phone: recipientPhone,

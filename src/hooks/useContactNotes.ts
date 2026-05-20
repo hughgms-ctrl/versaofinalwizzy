@@ -72,7 +72,7 @@ export function useAddContactNote() {
       // Sync to Uazapi Storage (Dual CRM)
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        await supabase.functions.invoke('zapi-crm', {
+        await supabase.functions.invoke('whatsapp-crm', {
           body: { action: 'save', contactId, data: { content } },
           headers: { Authorization: `Bearer ${session?.access_token}` }
         });
@@ -117,7 +117,7 @@ export function useUpdateContactNote() {
       // Sync to Uazapi Storage (Dual CRM)
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        await supabase.functions.invoke('zapi-crm', {
+        await supabase.functions.invoke('whatsapp-crm', {
           body: { action: 'save', contactId, data: { content } },
           headers: { Authorization: `Bearer ${session?.access_token}` }
         });

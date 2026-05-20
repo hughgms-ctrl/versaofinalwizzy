@@ -143,7 +143,7 @@ export default function SettingsPage() {
 
   const getWebhookUrl = () => {
     const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
-    return `https://${projectId}.supabase.co/functions/v1/zapi-webhook`;
+    return `https://${projectId}.supabase.co/functions/v1/whatsapp-webhook`;
   };
 
   // Sync chats - can be called automatically or manually
@@ -186,7 +186,7 @@ export default function SettingsPage() {
 
     try {
       console.log(`Starting ${isFirstConnection ? 'first connection' : manual ? 'manual' : 'automatic'} chat sync...`);
-      const response = await supabase.functions.invoke('zapi-sync-chats', {
+      const response = await supabase.functions.invoke('whatsapp-sync-chats', {
         headers: { Authorization: `Bearer ${session.access_token}` },
       });
 
@@ -252,7 +252,7 @@ export default function SettingsPage() {
     if (!session?.access_token) return;
 
     try {
-      const response = await supabase.functions.invoke('zapi-check-status', {
+      const response = await supabase.functions.invoke('whatsapp-check-status', {
         headers: { Authorization: `Bearer ${session.access_token}` }
       });
 
@@ -332,7 +332,7 @@ export default function SettingsPage() {
     setIsLoading(true);
 
     try {
-      const response = await supabase.functions.invoke('zapi-save-credentials', {
+      const response = await supabase.functions.invoke('whatsapp-save-credentials', {
         headers: { Authorization: `Bearer ${session.access_token}` },
         body: {
           instanceId: manualCredentials.instanceId.trim(),
@@ -367,7 +367,7 @@ export default function SettingsPage() {
 
     try {
       // Get QR code directly (credentials already saved)
-      const qrResponse = await supabase.functions.invoke('zapi-get-qrcode', {
+      const qrResponse = await supabase.functions.invoke('whatsapp-get-qrcode', {
         headers: { Authorization: `Bearer ${session.access_token}` }
       });
 
@@ -411,7 +411,7 @@ export default function SettingsPage() {
     setIsLoading(true);
 
     try {
-      const response = await supabase.functions.invoke('zapi-disconnect', {
+      const response = await supabase.functions.invoke('whatsapp-disconnect', {
         headers: { Authorization: `Bearer ${session.access_token}` }
       });
 

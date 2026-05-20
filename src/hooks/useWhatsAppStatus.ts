@@ -30,7 +30,7 @@ export function useWhatsAppStatus() {
     console.log('Auto-syncing chats after reconnection...');
 
     try {
-      const { data, error } = await supabase.functions.invoke('zapi-sync-chats', {
+      const { data, error } = await supabase.functions.invoke('whatsapp-sync-chats', {
         headers: { Authorization: `Bearer ${session.access_token}` }
       });
 
@@ -65,7 +65,7 @@ export function useWhatsAppStatus() {
     }
 
     try {
-      const response = await supabase.functions.invoke('zapi-check-status', {
+      const response = await supabase.functions.invoke('whatsapp-check-status', {
         headers: { Authorization: `Bearer ${session?.access_token}` }
       });
 

@@ -163,12 +163,12 @@ async function bootstrapConnectedInstance(
   instanceId: string,
 ) {
   try {
-    await fetch(`${supabaseUrl}/functions/v1/zapi-configure-webhook`, {
+    await fetch(`${supabaseUrl}/functions/v1/whatsapp-configure-webhook`, {
       method: 'POST',
       headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
     });
 
-    await fetch(`${supabaseUrl}/functions/v1/zapi-sync-chats?instanceId=${instanceId}`, {
+    await fetch(`${supabaseUrl}/functions/v1/whatsapp-sync-chats?instanceId=${instanceId}`, {
       method: 'POST',
       headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
     });
@@ -184,7 +184,7 @@ async function bootstrapConnectedInstance(
 
     await Promise.allSettled(
       recentConversations.slice(0, 25).map((conversation: { id: string }) =>
-        fetch(`${supabaseUrl}/functions/v1/zapi-sync-messages`, {
+        fetch(`${supabaseUrl}/functions/v1/whatsapp-sync-messages`, {
           method: 'POST',
           headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
           body: JSON.stringify({ conversationId: conversation.id, amount: 50 }),
@@ -400,7 +400,7 @@ async function checkSingleInstance(
       })
       .eq('id', instance.id);
 
-    fetch(`${supabaseUrl}/functions/v1/zapi-configure-webhook`, {
+    fetch(`${supabaseUrl}/functions/v1/whatsapp-configure-webhook`, {
       method: 'POST',
       headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
     }).catch((error) => console.error('Webhook ensure error:', error));

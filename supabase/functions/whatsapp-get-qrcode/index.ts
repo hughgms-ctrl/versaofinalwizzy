@@ -139,7 +139,7 @@ Deno.serve(async (req) => {
       connectData = {};
     }
 
-    // Ultra-permissive connection detection (Matching zapi-check-status logic)
+    // Ultra-permissive connection detection (Matching whatsapp-check-status logic)
     const getConnectionState = (payload: any): string => {
       return String(
         payload?.state ??

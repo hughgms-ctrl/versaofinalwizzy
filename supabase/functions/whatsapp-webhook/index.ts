@@ -243,7 +243,7 @@ Deno.serve(async (req) => {
       const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
       const baseUrl = Deno.env.get('SUPABASE_URL')!;
 
-      const syncPromise = fetch(`${baseUrl}/functions/v1/zapi-sync-chats`, {
+      const syncPromise = fetch(`${baseUrl}/functions/v1/whatsapp-sync-chats`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
         body: JSON.stringify({ 
@@ -765,7 +765,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
   //   - If conversation is in IA mode, the orchestrator/flow-execute already saves the message
   //     to the DB with is_from_bot=true. The webhook echo arrives later (race condition).
   //     We must SKIP to avoid duplicates. Wait briefly and re-check dedup.
-  //   - If conversation is NOT in IA mode, the message was sent by a human via zapi-send-message
+  //   - If conversation is NOT in IA mode, the message was sent by a human via whatsapp-send-message
   //     which saves synchronously before the echo. Dedup above should catch it, but as safety:
   let finalIsFromBot = false;
   if (fromMe) {
@@ -788,7 +788,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
       console.log(`[WEBHOOK] IA mode outbound not found after wait — saving as bot message.`);
     } else {
       // Not in IA mode — this echo is from a human-sent message.
-      // zapi-send-message saves synchronously, so dedup above should have caught it.
+      // whatsapp-send-message saves synchronously, so dedup above should have caught it.
       // If we reach here, it means the message wasn't found by zapi_message_id dedup.
       // Check by sent_by as extra safety.
       if (msgId) {

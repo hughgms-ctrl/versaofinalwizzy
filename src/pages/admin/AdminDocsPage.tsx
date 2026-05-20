@@ -193,7 +193,7 @@ export default function AdminDocsPage() {
                     <FunctionCategory 
                       title="WhatsApp (Z-API)"
                       count={18}
-                      functions={['zapi-webhook', 'zapi-send-message', 'zapi-sync-chats', 'zapi-get-qrcode', 'zapi-create-instance']}
+                      functions={['whatsapp-webhook', 'whatsapp-send-message', 'whatsapp-sync-chats', 'whatsapp-get-qrcode', 'whatsapp-create-instance']}
                     />
                     <FunctionCategory 
                       title="IA & Agentes"
