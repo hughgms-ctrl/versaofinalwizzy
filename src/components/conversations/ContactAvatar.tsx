@@ -85,7 +85,7 @@ export function ContactAvatar({
     const t = setTimeout(() => {
       if (inflightRefetch.has(contactId)) return;
       const p = supabase.functions
-        .invoke('whatsapp-contact-profile', {
+        .invoke('zapi-contact-profile', {
           body: { contactId, instanceId: instanceId || undefined },
           headers: { Authorization: `Bearer ${session.access_token}` },
         })
@@ -112,7 +112,7 @@ export function ContactAvatar({
     if (inflightRefetch.has(contactId)) return;
 
     const p = supabase.functions
-      .invoke('whatsapp-contact-profile', {
+      .invoke('zapi-contact-profile', {
         body: { contactId, instanceId: instanceId || undefined },
         headers: { Authorization: `Bearer ${session.access_token}` },
       })

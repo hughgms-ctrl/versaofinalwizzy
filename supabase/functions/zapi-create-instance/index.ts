@@ -186,7 +186,7 @@ Deno.serve(async (req) => {
     console.log(`Instance created: id=${uazapiInstanceId}`);
 
     // Configure webhook
-    const webhookUrl = `${supabaseUrl}/functions/v1/whatsapp-webhook`;
+    const webhookUrl = `${supabaseUrl}/functions/v1/zapi-webhook`;
     try {
       await fetch(`${uazapiBaseUrl}/webhook`, {
         method: 'POST',

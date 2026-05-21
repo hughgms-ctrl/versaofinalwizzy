@@ -58,7 +58,7 @@ Deno.serve(async (req) => {
 
             // Trigger profile fetch if name is missing
             if (!contact.name || contact.name.includes('Unknown') || /^\d+$/.test(contact.name)) {
-                fetch(`${supabaseUrl}/functions/v1/whatsapp-contact-profile`, {
+                fetch(`${supabaseUrl}/functions/v1/zapi-contact-profile`, {
                     method: 'POST',
                     headers: { 'Authorization': req.headers.get('Authorization')!, 'Content-Type': 'application/json' },
                     body: JSON.stringify({ contactId: contact.id, phone: formatted }),

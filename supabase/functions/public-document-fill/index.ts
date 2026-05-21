@@ -65,12 +65,14 @@ serve(async (req) => {
 
       // For pack: collect all docs with same pack_id and same fill token group
       let packDocs: any[] = [];
+      let pack: any = null;
       if (doc.pack_id) {
-        const { data: pack } = await (supabase as any)
+        const { data: packData } = await (supabase as any)
           .from("document_packs")
-          .select("name, template_ids")
+          .select("name, template_ids, field_config")
           .eq("id", doc.pack_id)
           .maybeSingle();
+        pack = packData;
 
         const { data: docs } = await (supabase as any)
           .from("generated_documents")
@@ -93,7 +95,7 @@ serve(async (req) => {
 
       return jsonResponse({
         success: true,
-        document: { ...doc, template },
+        document: { ...doc, template, pack_field_config: pack?.field_config || [] },
         pack_documents: packDocs,
       });
     }

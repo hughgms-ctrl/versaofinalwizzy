@@ -10,7 +10,14 @@ import { DatePicker } from '@/components/ui/date-picker';
 import { FileText, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
-interface FieldDef { name: string; label: string; type: string; required?: boolean }
+interface FieldDef {
+  name: string;
+  label: string;
+  type: string;
+  required?: boolean;
+  hint?: string;
+  mappedFields?: Array<{ fieldName: string; templateId: string }>;
+}
 
 export default function PublicDocumentFillPage() {
   const { token } = useParams<{ token: string }>();
@@ -50,6 +57,17 @@ export default function PublicDocumentFillPage() {
   const allFields = useMemo<FieldDef[]>(() => {
     if (!doc) return [];
     if (packDocs.length > 0) {
+      const configured = (doc.pack_field_config || []) as FieldDef[];
+      if (configured.length > 0) {
+        return configured.map((f: any) => ({
+          name: f.originalName || f.name,
+          label: f.label || f.originalName || f.name,
+          type: f.type || 'text',
+          required: f.required ?? true,
+          hint: f.description || f.hint,
+          mappedFields: f.mappedFields || [],
+        }));
+      }
       // unique fields across pack
       const map = new Map<string, FieldDef>();
       packDocs.forEach((d) => {
@@ -80,7 +98,11 @@ export default function PublicDocumentFillPage() {
           const fd: Record<string, string> = {};
           fs.forEach((f: any) => {
             const key = f.name || f;
-            fd[key] = values[key] || '';
+            const configured = allFields.find((field) => {
+              if (field.mappedFields?.some((m) => m.templateId === d.template_id && m.fieldName === key)) return true;
+              return field.name === key;
+            });
+            fd[key] = values[configured?.name || key] || '';
           });
           body.pack_filled_data[d.id] = fd;
         });
@@ -184,6 +206,7 @@ export default function PublicDocumentFillPage() {
                     className="mt-1"
                   />
                 )}
+                {field.hint && <p className="text-[10px] text-muted-foreground mt-0.5">{field.hint}</p>}
               </div>
             ))}
           </CardContent>

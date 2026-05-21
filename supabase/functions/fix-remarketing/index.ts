@@ -13,7 +13,7 @@ const corsHeaders = {
  * - "reactivate": Reactivate wrongly completed executions (requires flowId + completedAfter)
  * 
  * This tool does NOT auto-cancel. Cancellation logic is handled ONLY by:
- * 1. whatsapp-webhook (when contact responds)
+ * 1. zapi-webhook (when contact responds)
  * 2. process-flow-timeouts (safety check before each send)
  */
 Deno.serve(async (req) => {

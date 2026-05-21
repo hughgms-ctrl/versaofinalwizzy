@@ -18,7 +18,7 @@ export function useWhatsAppPresence() {
     }
 
     try {
-      const { data, error } = await supabase.functions.invoke('whatsapp-send-presence', {
+      const { data, error } = await supabase.functions.invoke('zapi-send-presence', {
         headers: { Authorization: `Bearer ${session.access_token}` },
         body: { phone, presence, duration },
       });

@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { ArrowLeft, FileText, Send, Loader2, Users, Copy, Check } from 'lucide-react';
+import { ArrowLeft, FileText, Send, Loader2, Users, Copy, Check, Printer, MessageCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,6 +16,7 @@ import { SignersManager } from './SignersManager';
 import { SignerLinksList } from './SignerLinksList';
 import { SignerInput, useCreateSigners } from '@/hooks/useDocumentSigners';
 import { getPublicAppOrigin } from '@/lib/publicOrigin';
+import { cn } from '@/lib/utils';
 
 interface PackFillFormProps {
   pack: DocumentPack;
@@ -28,8 +29,11 @@ interface FieldInfo {
   name: string;
   label: string;
   type: string;
+  required?: boolean;
+  hint?: string;
   templateIds: string[];
   templateNames: string[];
+  mappedFields?: Array<{ fieldName: string; templateId: string }>;
 }
 
 export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature }: PackFillFormProps) {
@@ -37,9 +41,12 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature 
   const { profile } = useAuth();
   const createSigners = useCreateSigners();
 
+  const [outputMode, setOutputMode] = useState<'print' | 'sign'>('print');
   const [fillMode, setFillMode] = useState<FillMode>('internal');
   const [values, setValues] = useState<Record<string, string>>({});
-  const [signers, setSigners] = useState<SignerInput[]>([]);
+  const [signers, setSigners] = useState<SignerInput[]>(
+    ((pack as any).default_signers as SignerInput[]) || []
+  );
   const [isGenerating, setIsGenerating] = useState(false);
   const [publicLink, setPublicLink] = useState<string | null>(null);
   const [generatedDocIds, setGeneratedDocIds] = useState<string[]>([]);
@@ -51,12 +58,38 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature 
   }, [allTemplates, pack.template_ids]);
 
   const { sharedFields, uniqueFields, allFields } = useMemo(() => {
+    const configured = ((pack as any).field_config || []) as any[];
+    if (configured.length > 0) {
+      const fields = configured.map((field) => {
+        const mappedFields = (field.mappedFields || []) as Array<{ fieldName: string; templateId: string }>;
+        const templateIds = mappedFields.length > 0
+          ? [...new Set(mappedFields.map((m) => m.templateId))]
+          : field.sourceTemplateIds || [];
+        const templateNames = templateIds.map((id) => templates.find((t) => t.id === id)?.name || 'Documento');
+        return {
+          name: field.originalName,
+          label: field.label || field.originalName,
+          type: field.type || 'text',
+          required: field.required ?? true,
+          hint: field.description,
+          templateIds,
+          templateNames,
+          mappedFields,
+        } as FieldInfo;
+      });
+      return {
+        sharedFields: fields.filter((f) => f.templateIds.length > 1),
+        uniqueFields: fields.filter((f) => f.templateIds.length <= 1),
+        allFields: fields,
+      };
+    }
+
     const fieldMap = new Map<string, FieldInfo>();
     templates.forEach((template) => {
       const fs = (template.fields as any[]) || [];
       fs.forEach((field: any) => {
         const name = field.name || field;
-        if (!fieldMap.has(name)) fieldMap.set(name, { name, label: field.label || name, type: field.type || 'text', templateIds: [], templateNames: [] });
+        if (!fieldMap.has(name)) fieldMap.set(name, { name, label: field.label || name, type: field.type || 'text', required: field.required ?? true, hint: field.hint, templateIds: [], templateNames: [] });
         const info = fieldMap.get(name)!;
         if (!info.templateIds.includes(template.id)) {
           info.templateIds.push(template.id);
@@ -68,7 +101,15 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature 
     const unique: FieldInfo[] = [];
     fieldMap.forEach((info) => (info.templateIds.length > 1 ? shared.push(info) : unique.push(info)));
     return { sharedFields: shared, uniqueFields: unique, allFields: Array.from(fieldMap.values()) };
-  }, [templates]);
+  }, [templates, pack]);
+
+  const getValueForTemplateField = (templateId: string, fieldName: string) => {
+    const configured = allFields.find((field) => {
+      if (field.mappedFields?.some((m) => m.templateId === templateId && m.fieldName === fieldName)) return true;
+      return field.name === fieldName;
+    });
+    return values[configured?.name || fieldName] || '';
+  };
 
   const handleGenerateInternal = async (advanceToSignature = false) => {
     if (!profile?.organization_id) return;
@@ -82,8 +123,21 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature 
         const filledData: Record<string, string> = {};
         templateFields.forEach((field: any) => {
           const name = field.name || field;
-          filledData[name] = values[name] || '';
+          filledData[name] = getValueForTemplateField(template.id, name);
         });
+
+        const { data: pdfData, error: pdfError } = await supabase.functions.invoke('generate-document-pdf', {
+          body: {
+            template_content: template.content,
+            template_content_html: template.content_html,
+            fields: templateFields,
+            filled_data: filledData,
+            document_name: `${pack.name} - ${template.name}`,
+            logo_url: template.logo_url || null,
+            template_id: template.id,
+          },
+        });
+        if (pdfError) throw pdfError;
 
         const { data: docData, error } = await (supabase as any)
           .from('generated_documents')
@@ -93,6 +147,7 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature 
             pack_id: pack.id,
             name: `${pack.name} - ${template.name}`,
             filled_data: filledData,
+            pdf_url: pdfData?.pdf_url || null,
             status: 'generated',
             signing_method: 'internal',
             fill_mode: 'internal',
@@ -109,11 +164,11 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature 
       }
 
       // Apply signers to all docs in pack
-      if (signers.length > 0 && docIds.length > 0) {
+      if (outputMode === 'sign' && signers.length > 0 && docIds.length > 0) {
         await createSigners.mutateAsync({ documentIds: docIds, packId: pack.id, signers, signing_method: 'internal' });
       }
 
-      if (signers.length > 0 && docIds.length > 0) {
+      if (outputMode === 'sign' && signers.length > 0 && docIds.length > 0) {
         setGeneratedDocIds(docIds);
         toast.success(`${templates.length} documentos gerados! Envie os links abaixo.`);
         return;
@@ -137,7 +192,7 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature 
 
   const handleGeneratePublicLink = async () => {
     if (!profile?.organization_id) return;
-    if (signers.length === 0) {
+    if (outputMode === 'sign' && signers.length === 0) {
       toast.error('Adicione ao menos 1 signatário');
       return;
     }
@@ -204,7 +259,7 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature 
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const allFieldsFilled = useMemo(() => allFields.every((f) => values[f.name]?.trim()), [allFields, values]);
+  const allFieldsFilled = useMemo(() => allFields.every((f) => !f.required || values[f.name]?.trim()), [allFields, values]);
 
   const renderFieldInput = (field: FieldInfo) => {
     if (field.type === 'date') {
@@ -296,11 +351,61 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature 
         ))}
       </div>
 
-      {/* Step 1: Mode */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-sm flex items-center gap-2">
             <span className="h-6 w-6 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center">1</span>
+            O que você quer gerar?
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <Card
+              className={cn('p-4 cursor-pointer transition-all border-2', outputMode === 'print' ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50')}
+              onClick={() => {
+                setOutputMode('print');
+                setFillMode('internal');
+              }}
+            >
+              <div className="flex items-start gap-3">
+                <div className={cn('h-9 w-9 rounded-lg flex items-center justify-center shrink-0', outputMode === 'print' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground')}>
+                  <Printer className="h-5 w-5" />
+                </div>
+                <div>
+                  <h4 className="font-semibold text-sm mb-1">Arquivos para imprimir</h4>
+                  <p className="text-[11px] text-muted-foreground leading-snug">
+                    Preencha uma vez e gere os PDFs individuais do pack sem assinatura digital.
+                  </p>
+                </div>
+              </div>
+            </Card>
+
+            <Card
+              className={cn('p-4 cursor-pointer transition-all border-2', outputMode === 'sign' ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50')}
+              onClick={() => setOutputMode('sign')}
+            >
+              <div className="flex items-start gap-3">
+                <div className={cn('h-9 w-9 rounded-lg flex items-center justify-center shrink-0', outputMode === 'sign' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground')}>
+                  <MessageCircle className="h-5 w-5" />
+                </div>
+                <div>
+                  <h4 className="font-semibold text-sm mb-1">Assinar no Wizzy Chat</h4>
+                  <p className="text-[11px] text-muted-foreground leading-snug">
+                    Use os mesmos signatários em todos os documentos, mantendo relatórios individuais.
+                  </p>
+                </div>
+              </div>
+            </Card>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Step 2: Mode */}
+      {outputMode === 'sign' && (
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <span className="h-6 w-6 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center">2</span>
             Quem preenche os dados?
           </CardTitle>
         </CardHeader>
@@ -308,6 +413,7 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature 
           <FillModeStep value={fillMode} onChange={setFillMode} />
         </CardContent>
       </Card>
+      )}
 
       {fillMode === 'internal' && (
         <div className="grid gap-6 lg:grid-cols-2">
@@ -358,10 +464,11 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature 
       )}
 
       {/* Signers */}
+      {outputMode === 'sign' && (
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-sm flex items-center gap-2">
-            <span className="h-6 w-6 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center">{fillMode === 'internal' ? 3 : 2}</span>
+            <span className="h-6 w-6 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center">{fillMode === 'internal' ? 4 : 3}</span>
             <Users className="h-4 w-4" /> Signatários (válidos para todos os documentos do pack)
           </CardTitle>
         </CardHeader>
@@ -373,9 +480,15 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature 
           />
         </CardContent>
       </Card>
+      )}
 
       <div className="flex flex-col sm:flex-row gap-2 sticky bottom-4 bg-background/80 backdrop-blur p-3 rounded-lg border shadow-lg">
-        {fillMode === 'internal' ? (
+        {outputMode === 'print' ? (
+          <Button onClick={() => handleGenerateInternal(false)} disabled={!allFieldsFilled || isGenerating} className="flex-1" size="lg">
+            {isGenerating ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Printer className="h-4 w-4 mr-2" />}
+            Gerar PDFs para imprimir
+          </Button>
+        ) : fillMode === 'internal' ? (
           <>
             <Button onClick={() => handleGenerateInternal(false)} disabled={!allFieldsFilled || isGenerating} className="flex-1" size="lg">
               {isGenerating ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Send className="h-4 w-4 mr-2" />}

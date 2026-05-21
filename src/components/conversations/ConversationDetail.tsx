@@ -140,7 +140,7 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
       // Auto-fetch contact profile picture from UAZAPI
       const contactId = conversation.contact?.id;
       if (contactId && session?.access_token) {
-        supabase.functions.invoke('whatsapp-contact-profile', {
+        supabase.functions.invoke('zapi-contact-profile', {
           body: { contactId, instanceId: (conversation as any).whatsapp_instance_id },
           headers: { Authorization: `Bearer ${session.access_token}` }
         }).then(({ data }) => {

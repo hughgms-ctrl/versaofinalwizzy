@@ -1,5 +1,4 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { getProviderConfig, sendWhatsAppMessage, sendPresence } from '../_shared/whatsappProvider.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -14,6 +13,12 @@ interface SendMessageRequest {
   quotedMessageId?: string;
   quotedContent?: string;
   quotedSender?: string;
+}
+
+// Build UAZAPI URL with token as query parameter
+function uazapiUrl(baseUrl: string, path: string): string {
+  const base = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+  return `${base}${path}`;
 }
 
 function normalizeReplyMessageId(messageId: string | null | undefined): string | null {
@@ -45,6 +50,7 @@ Deno.serve(async (req) => {
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const uazapiBaseUrl = Deno.env.get('UAZAPI_BASE_URL')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const token = authHeader.replace(/^Bearer\s+/i, '');
@@ -129,6 +135,25 @@ Deno.serve(async (req) => {
     const phone = conversation.contact.phone;
     const normalizedPhone = phone.replace(/\D/g, '');
 
+    // Typing/Recording presence via UAZAPI (Fire and forget, no delay)
+    try {
+      const presenceType = type === 'audio' ? 'recording' : 'composing';
+      fetch(uazapiUrl(uazapiBaseUrl, '/message/presence'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'token': instanceToken
+        },
+        body: JSON.stringify({
+          number: normalizedPhone,
+          presence: presenceType,
+          delay: 5000
+        }),
+      });
+    } catch (e) {
+      console.log('Presence update failed:', e);
+    }
+
     // Look up the zapi_message_id for the quoted message (for WhatsApp reply)
     let zapiQuotedMsgId: string | null = null;
     if (quotedMessageId) {
@@ -141,60 +166,82 @@ Deno.serve(async (req) => {
       console.log(`Quoted message lookup: id=${quotedMessageId}, raw_zapi_id=${quotedMsg?.zapi_message_id || null}, reply_id=${zapiQuotedMsgId}`);
     }
 
-    const providerConfig = getProviderConfig();
+    let endpoint: string;
+    let body: Record<string, any>;
 
-    // Presence (fire and forget)
-    sendPresence(
-      normalizedPhone,
-      type === 'audio' ? 'recording' : 'composing',
-      providerConfig,
-      instanceToken,
-      instance.zapi_instance_id
-    );
-
-    // Enviar mensagem
-    const sendResponse = await sendWhatsAppMessage({
-      instanceToken,
-      instanceName: instance.zapi_instance_id,
-      phone: normalizedPhone,
-      type,
-      content,
-      mediaUrl,
-      quotedMsgId: zapiQuotedMsgId || undefined,
-    }, providerConfig);
-
-    if (!sendResponse.ok) {
-      const errText = await sendResponse.text();
-      console.error('Send error:', sendResponse.status, errText);
-      if (sendResponse.status === 429) {
-        return new Response(JSON.stringify({ error: 'Limite de requisições. Tente novamente.' }), {
-          status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-      return new Response(JSON.stringify({ error: 'Erro ao enviar mensagem' }), {
-        status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    const providerResult = await sendResponse.json();
-    const zapiMsgId = providerResult.messageId || providerResult.id || providerResult.ID || providerResult.key?.id || null;
-
-    // Manual check since we don't have UNIQUE constraint yet
-    if (zapiMsgId) {
-      const { data: existing } = await supabase
-        .from('messages')
-        .select('id')
-        .eq('zapi_message_id', zapiMsgId)
-        .maybeSingle();
-      if (existing) {
-        return new Response(JSON.stringify({ success: true, messageId: existing.id, zapiMessageId: zapiMsgId }), {
+    switch (type) {
+      case 'text':
+        endpoint = uazapiUrl(uazapiBaseUrl, '/send/text');
+        body = { number: normalizedPhone, text: content };
+        if (zapiQuotedMsgId) body.replyid = zapiQuotedMsgId;
+        break;
+      case 'image':
+        endpoint = uazapiUrl(uazapiBaseUrl, '/send/media');
+        body = { number: normalizedPhone, file: mediaUrl, type: 'image' };
+        if (content) body.caption = content;
+        if (zapiQuotedMsgId) body.replyid = zapiQuotedMsgId;
+        break;
+      case 'audio':
+        endpoint = uazapiUrl(uazapiBaseUrl, '/send/media');
+        body = { number: normalizedPhone, file: mediaUrl, type: 'audio' };
+        if (zapiQuotedMsgId) body.replyid = zapiQuotedMsgId;
+        break;
+      case 'document':
+        endpoint = uazapiUrl(uazapiBaseUrl, '/send/media');
+        body = { number: normalizedPhone, file: mediaUrl, caption: content, type: 'document' };
+        if (zapiQuotedMsgId) body.replyid = zapiQuotedMsgId;
+        break;
+      default:
+        return new Response(JSON.stringify({ error: 'Invalid message type' }), {
+          status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
+    }
+
+    console.log('UAZAPI send URL:', endpoint.replace(instanceToken, '***'));
+    console.log('UAZAPI send body:', JSON.stringify(body));
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'token': instanceToken
+      },
+      body: JSON.stringify(body),
+    });
+
+    let uazapiResult: any = null;
+    let zapiMsgId: string | null = null;
+    let sendFailed = false;
+    let sendErrorText = '';
+
+    if (!response.ok) {
+      sendErrorText = await response.text();
+      console.error('UAZAPI send error (will save to DB anyway):', sendErrorText);
+      sendFailed = true;
+    } else {
+      uazapiResult = await response.json();
+      zapiMsgId = uazapiResult.messageId || uazapiResult.id || uazapiResult.ID || uazapiResult.key?.id || null;
+
+      // Manual check since we don't have UNIQUE constraint yet
+      if (zapiMsgId) {
+        const { data: existing } = await supabase
+          .from('messages')
+          .select('id')
+          .eq('zapi_message_id', zapiMsgId)
+          .maybeSingle();
+        if (existing) {
+          return new Response(JSON.stringify({ success: true, messageId: existing.id, zapiMessageId: zapiMsgId }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
       }
     }
 
-    // Build metadata with quoted message info and provider response
-    const messageMetadata: Record<string, any> = { provider_response: providerResult };
+    // Build metadata with quoted message info and UAZAPI response
+    const messageMetadata: Record<string, any> = sendFailed
+      ? { send_error: sendErrorText, failed_at: new Date().toISOString() }
+      : { uazapi_response: uazapiResult };
 
     if (quotedMessageId) {
       messageMetadata.quoted_message = {
@@ -204,6 +251,7 @@ Deno.serve(async (req) => {
       };
     }
 
+    // ALWAYS save message to DB — even on UAZAPI failure — so nothing is lost
     const { data: message, error: msgError } = await supabase
       .from('messages')
       .insert({
@@ -216,6 +264,7 @@ Deno.serve(async (req) => {
         media_url: mediaUrl || null,
         zapi_message_id: zapiMsgId,
         metadata: messageMetadata,
+        ...(sendFailed ? { failed_at: new Date().toISOString(), error_message: sendErrorText } : {}),
       })
       .select()
       .maybeSingle();
@@ -229,10 +278,22 @@ Deno.serve(async (req) => {
       .update({ last_message_at: new Date().toISOString(), status: 'open' })
       .eq('id', conversationId);
 
+    if (sendFailed) {
+      return new Response(JSON.stringify({
+        success: false,
+        error: 'Failed to send message via WhatsApp, but message was saved',
+        messageId: message?.id || `failed-${Date.now()}`,
+        details: sendErrorText,
+      }), {
+        status: 503,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     return new Response(JSON.stringify({
       success: true,
       messageId: message?.id || `sent-${Date.now()}`,
-      zapiMessageId: zapiMsgId || providerResult?.messageId || providerResult?.key?.id,
+      zapiMessageId: zapiMsgId || uazapiResult?.messageId || uazapiResult?.key?.id,
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

@@ -18,7 +18,7 @@ export function useSendMessage() {
 
   return useMutation({
     mutationFn: async ({ conversationId, content, type = 'text', mediaUrl, quotedMessageId, quotedContent, quotedSender }: SendMessageParams) => {
-      const { data, error } = await supabase.functions.invoke('whatsapp-send-message', {
+      const { data, error } = await supabase.functions.invoke('zapi-send-message', {
         body: { conversationId, content, type, mediaUrl, quotedMessageId, quotedContent, quotedSender },
         headers: { Authorization: `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}` }
       });

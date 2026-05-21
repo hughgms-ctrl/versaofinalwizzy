@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
-import { ArrowLeft, Save, Link2, GripVertical, Pencil, Info, Sparkles, Loader2, MessageCircle } from 'lucide-react';
+import { ArrowLeft, Save, Link2, GripVertical, Pencil, Info, Sparkles, Loader2, MessageCircle, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,9 +10,12 @@ import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useCreateDocumentPack, useUpdateDocumentPack, DocumentPack } from '@/hooks/useDocumentPacks';
-import { useDocumentTemplates } from '@/hooks/useDocumentTemplates';
+import { useDocumentTemplates, DocumentTemplate } from '@/hooks/useDocumentTemplates';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
+import { SignersManager } from '@/components/documents/SignersManager';
+import { SignerInput } from '@/hooks/useDocumentSigners';
+import { TemplateEditor } from '@/components/documents/TemplateEditor';
 import {
   DndContext,
   closestCenter,
@@ -63,6 +66,10 @@ export function PackEditor({ pack, onBack }: PackEditorProps) {
   const [expandedField, setExpandedField] = useState<string | null>(null);
   const [isUnifying, setIsUnifying] = useState(false);
   const [autoSendWhatsApp, setAutoSendWhatsApp] = useState((pack as any)?.auto_send_whatsapp || false);
+  const [defaultSigners, setDefaultSigners] = useState<SignerInput[]>(
+    ((pack as any)?.default_signers as SignerInput[]) || []
+  );
+  const [editingTemplate, setEditingTemplate] = useState<DocumentTemplate | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -238,6 +245,7 @@ export function PackEditor({ pack, onBack }: PackEditorProps) {
       template_ids: selectedIds,
       field_config: finalConfigs,
       auto_send_whatsapp: autoSendWhatsApp,
+      default_signers: defaultSigners,
     };
 
     if (isEditing) {
@@ -256,6 +264,10 @@ export function PackEditor({ pack, onBack }: PackEditorProps) {
     return uniqueTemplates <= 1 && (f.mappedFields?.length ? true : f.count <= 1);
   });
 
+  if (editingTemplate) {
+    return <TemplateEditor template={editingTemplate} onBack={() => setEditingTemplate(null)} />;
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -267,34 +279,35 @@ export function PackEditor({ pack, onBack }: PackEditorProps) {
         </Button>
       </div>
 
-      <div className="grid gap-4 max-w-lg">
-        <div>
-          <Label>Nome do pack</Label>
-          <Input value={name} onChange={e => setName(e.target.value)} placeholder="Ex: Pack Auxílio Reclusão" />
-        </div>
-        <div>
-          <Label>Descrição (opcional)</Label>
-          <Input value={description} onChange={e => setDescription(e.target.value)} placeholder="Breve descrição" />
-        </div>
-      </div>
-
-      {/* Auto-send WhatsApp toggle */}
-      <Card className="p-4 flex items-center justify-between max-w-lg">
-        <div className="flex items-center gap-3">
-          <MessageCircle className="h-5 w-5 text-green-600 shrink-0" />
-          <div>
-            <p className="text-sm font-medium">Enviar automaticamente pelo WhatsApp</p>
-            <p className="text-xs text-muted-foreground">
-              Ao preencher o formulário, os documentos serão enviados automaticamente pelo WhatsApp
-            </p>
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="lg:col-span-2 space-y-4">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <Label>Nome do pack</Label>
+              <Input value={name} onChange={e => setName(e.target.value)} placeholder="Ex: Pack Auxílio Reclusão" />
+            </div>
+            <div>
+              <Label>Descrição (opcional)</Label>
+              <Input value={description} onChange={e => setDescription(e.target.value)} placeholder="Breve descrição" />
+            </div>
           </div>
-        </div>
-        <Switch checked={autoSendWhatsApp} onCheckedChange={setAutoSendWhatsApp} />
-      </Card>
 
-      <div className="grid gap-6 lg:grid-cols-2">
-        <div>
-          <Label>Selecione os templates</Label>
+          <Card className="p-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <MessageCircle className="h-5 w-5 text-primary shrink-0" />
+                <div>
+                  <p className="text-sm font-medium">Enviar automaticamente pelo WhatsApp</p>
+                  <p className="text-xs text-muted-foreground">
+                    No formulário público do pack, envia os documentos automaticamente ao finalizar.
+                  </p>
+                </div>
+              </div>
+              <Switch checked={autoSendWhatsApp} onCheckedChange={setAutoSendWhatsApp} />
+            </div>
+          </Card>
+
+          <Label>Documentos do pack</Label>
           <div className="grid gap-2 mt-2">
             {templates?.map(t => (
               <Card
@@ -304,10 +317,25 @@ export function PackEditor({ pack, onBack }: PackEditorProps) {
               >
                 <div className="flex items-center gap-3">
                   <Checkbox checked={selectedIds.includes(t.id)} />
-                  <div>
+                  <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium">{t.name}</p>
                     <p className="text-xs text-muted-foreground">{(t.fields as any[])?.length || 0} campos</p>
                   </div>
+                  {selectedIds.includes(t.id) && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 gap-1.5 text-xs"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingTemplate(t);
+                      }}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                      Editar modelo
+                    </Button>
+                  )}
                 </div>
               </Card>
             )) || (
@@ -316,9 +344,35 @@ export function PackEditor({ pack, onBack }: PackEditorProps) {
           </div>
         </div>
 
+        <div className="space-y-4">
+          <Card className="p-4">
+            <h3 className="font-medium text-sm mb-3">Signatários padrão</h3>
+            <p className="text-[11px] text-muted-foreground mb-3">
+              Estes signatários serão aplicados a todos os documentos gerados pelo pack.
+            </p>
+            <SignersManager
+              signers={defaultSigners}
+              onChange={setDefaultSigners}
+              availableFields={mergedFields.map((f) => ({ name: f.originalName, label: f.label, type: f.type }))}
+            />
+          </Card>
+
+          <Card className="p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <FileText className="h-4 w-4 text-muted-foreground" />
+              <h3 className="font-medium text-sm">Resumo</h3>
+            </div>
+            <div className="text-xs text-muted-foreground space-y-1">
+              <p>Documentos: {selectedIds.length}</p>
+              <p>Campos variáveis: {mergedFields.length}</p>
+              <p>Signatários padrão: {defaultSigners.length}</p>
+            </div>
+          </Card>
+        </div>
+
         {/* Field Configuration Panel */}
         {selectedIds.length >= 1 && (
-          <div>
+          <div className="lg:col-span-3">
             <div className="flex items-center justify-between mb-1">
               <Label>Configuração dos campos ({mergedFields.length})</Label>
               <Button

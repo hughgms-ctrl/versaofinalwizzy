@@ -1,8 +1,7 @@
 import { useState } from 'react';
-import { Package, Plus, Edit, Trash2, MoreHorizontal, Search, FileText, ClipboardList, Link2, Copy, Check, Folder, FolderPlus, ChevronRight, ChevronDown, Pencil, FolderInput, MapPinned } from 'lucide-react';
+import { Package, Plus, Edit, Trash2, MoreHorizontal, Search, ClipboardList, Link2, Copy, Check, Folder, FolderPlus, ChevronRight, ChevronDown, Pencil, FolderInput, MapPinned } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import {
@@ -40,7 +39,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { useDocumentPacks, useDeleteDocumentPack, useGeneratePackToken, DocumentPack } from '@/hooks/useDocumentPacks';
+import { useDocumentPacks, useDeleteDocumentPack, useGeneratePackToken, useCreateDocumentPack, DocumentPack } from '@/hooks/useDocumentPacks';
 import { useDocumentTemplates } from '@/hooks/useDocumentTemplates';
 import {
   useDocumentFolders,
@@ -64,6 +63,7 @@ export function PacksList({ onGeneratedForSignature }: { onGeneratedForSignature
   const { data: templates } = useDocumentTemplates();
   const { data: folders = [] } = useDocumentFolders('pack');
   const deletePack = useDeleteDocumentPack();
+  const createPack = useCreateDocumentPack();
   const generateToken = useGeneratePackToken();
   const createFolder = useCreateDocumentFolder();
   const deleteFolder = useDeleteDocumentFolder();
@@ -98,8 +98,6 @@ export function PacksList({ onGeneratedForSignature }: { onGeneratedForSignature
   const filteredFolders = folders.filter(f => matchesWorkspace(f.workspace_id));
   const rootPacks = filtered.filter(p => !(p as any).folder_id);
   const getPacksInFolder = (folderId: string) => filtered.filter(p => (p as any).folder_id === folderId);
-
-  const getTemplateNames = (ids: string[]) => ids.map(id => templates?.find(t => t.id === id)?.name || 'Template removido');
 
   const handleCopyLink = async (pack: DocumentPack) => {
     let token = pack.public_token;
@@ -157,6 +155,17 @@ export function PacksList({ onGeneratedForSignature }: { onGeneratedForSignature
     moveToFolder.mutate({ type: 'pack', itemId: packId, folderId, folderWorkspaceId: folder?.workspace_id || null });
   };
 
+  const handleDuplicate = (pack: DocumentPack) => {
+    createPack.mutate({
+      name: `${pack.name} (cópia)`,
+      description: pack.description || null,
+      template_ids: pack.template_ids,
+      field_config: pack.field_config || [],
+      default_signers: (pack as any).default_signers || [],
+      auto_send_whatsapp: (pack as any).auto_send_whatsapp || false,
+    });
+  };
+
   const WorkspaceBadge = ({ workspaceId }: { workspaceId: string | null }) => {
     if (!workspaceId) return null;
     const ws = availableWorkspaces.find(w => w.id === workspaceId);
@@ -183,35 +192,39 @@ export function PacksList({ onGeneratedForSignature }: { onGeneratedForSignature
         <h3 className="font-medium text-foreground text-sm">{pack.name}</h3>
         <p className="text-[11px] text-muted-foreground">{pack.template_ids.length} templates</p>
       </div>
-      <div className="hidden md:flex items-center gap-2 text-xs text-muted-foreground">
+      <div className="hidden md:flex items-center gap-2 text-muted-foreground text-xs">
+        <span>{pack.template_ids.length} templates</span>
+        <span>•</span>
         <span>{format(new Date(pack.created_at), "dd MMM yyyy", { locale: ptBR })}</span>
-        {pack.public_token && (
-          <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-primary border-primary/30">
-            <Link2 className="h-2.5 w-2.5 mr-0.5" /> Link ativo
-          </Badge>
-        )}
       </div>
       <WorkspaceBadge workspaceId={pack.workspace_id} />
-      <Button size="sm" variant="outline" onClick={() => setFillingPack(pack)} className="shrink-0">
-        <ClipboardList className="h-3.5 w-3.5 mr-1.5" /> Preencher
-      </Button>
+      <div className="flex items-center gap-1.5 shrink-0">
+        <Button variant="ghost" size="sm" className="text-xs h-8" onClick={() => setEditingPack(pack)}>
+          Gerenciar
+        </Button>
+        <Button size="sm" className="text-xs h-8 gap-1.5" onClick={() => handleCopyLink(pack)}>
+          <Link2 className="h-3.5 w-3.5" /> Enviar documento
+        </Button>
+      </div>
       <DropdownMenu>
         <DropdownMenuTrigger asChild onClick={e => e.stopPropagation()}>
-          <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100">
+          <Button variant="ghost" size="icon" className="h-8 w-8 opacity-60 group-hover:opacity-100">
             <MoreHorizontal className="h-4 w-4" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52">
           <DropdownMenuItem onClick={() => setFillingPack(pack)}>
-            <ClipboardList className="h-4 w-4 mr-2" /> Preencher
+            <ClipboardList className="h-4 w-4 mr-2" /> Preencher internamente
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => handleCopyLink(pack)}>
             {copiedId === pack.id ? <Check className="h-4 w-4 mr-2 text-primary" /> : <Link2 className="h-4 w-4 mr-2" />}
             Copiar link público
           </DropdownMenuItem>
-          <DropdownMenuSeparator />
           <DropdownMenuItem onClick={() => setEditingPack(pack)}>
-            <Edit className="h-4 w-4 mr-2" /> Editar
+            <Edit className="h-4 w-4 mr-2" /> Editar modelo
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => handleDuplicate(pack)}>
+            <Copy className="h-4 w-4 mr-2" /> Duplicar
           </DropdownMenuItem>
 
           <DropdownMenuSub>
@@ -387,7 +400,6 @@ export function PacksList({ onGeneratedForSignature }: { onGeneratedForSignature
             <div className="flex-1">Nome</div>
             <div className="hidden md:block w-40 text-right">Detalhes</div>
             <div className="w-24 text-center">Workspace</div>
-            <div className="w-32" />
             <div className="w-10" />
           </div>
           {filteredFolders.map(f => <FolderSection key={f.id} folder={f} />)}

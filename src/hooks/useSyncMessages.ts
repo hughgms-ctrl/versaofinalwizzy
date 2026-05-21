@@ -29,7 +29,7 @@ export function useSyncMessages(conversationId: string | null) {
 
     setIsSyncing(true);
     try {
-      const { data, error } = await supabase.functions.invoke('whatsapp-sync-messages', {
+      const { data, error } = await supabase.functions.invoke('zapi-sync-messages', {
         body: { conversationId, amount: 30 },
         headers: { Authorization: `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}` }
       });
@@ -58,7 +58,7 @@ export function useSyncMessages(conversationId: string | null) {
 
     setIsLoadingOlder(true);
     try {
-      const { data, error } = await supabase.functions.invoke('whatsapp-load-older-messages', {
+      const { data, error } = await supabase.functions.invoke('zapi-load-older-messages', {
         body: { conversationId, lastMessageId, amount: 30 },
         headers: { Authorization: `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}` }
       });

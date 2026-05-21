@@ -10,6 +10,8 @@ export interface DocumentPack {
   description: string | null;
   template_ids: string[];
   field_config: any[];
+  default_signers?: any[];
+  auto_send_whatsapp?: boolean;
   public_token: string | null;
   folder_id: string | null;
   workspace_id: string | null;
@@ -42,7 +44,14 @@ export function useCreateDocumentPack() {
   const { toast } = useToast();
 
   return useMutation({
-    mutationFn: async (pack: { name: string; description?: string; template_ids: string[]; field_config?: any[] }) => {
+    mutationFn: async (pack: {
+      name: string;
+      description?: string | null;
+      template_ids: string[];
+      field_config?: any[];
+      default_signers?: any[];
+      auto_send_whatsapp?: boolean;
+    }) => {
       const { data, error } = await (supabase as any)
         .from('document_packs')
         .insert({

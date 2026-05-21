@@ -598,7 +598,7 @@ Deno.serve(async (req) => {
           status: 'partial',
           description: 'Segurança para endpoints públicos e webhooks.',
           content: `Webhooks públicos DEVEM usar tokens únicos para autenticação. Valide e sanitize TODOS os dados recebidos. Nunca confie em headers como x-forwarded-for para autenticação. Rate limiting deve ser implementado. Dados sensíveis nunca devem ser logados no console.`,
-          related_files: ['supabase/functions/whatsapp-webhook/index.ts', 'supabase/functions/widget-submit/index.ts'],
+          related_files: ['supabase/functions/zapi-webhook/index.ts', 'supabase/functions/widget-submit/index.ts'],
         },
         {
           name: 'Proteção de Secrets e API Keys',
