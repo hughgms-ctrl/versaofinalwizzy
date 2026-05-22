@@ -187,31 +187,35 @@ Deno.serve(async (req) => {
         });
       }
 
-      if (!signer_name || !signer_phone) {
-        return new Response(JSON.stringify({ error: "Nome e telefone sao obrigatorios" }), {
+      const configuredSigners = Array.isArray((pack as any).default_signers) ? (pack as any).default_signers : [];
+      if (configuredSigners.length === 0 && (!signer_name || !signer_phone)) {
+        return new Response(JSON.stringify({ error: "Configure os signatarios do pack antes de usar o link publico" }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
       const normalizedPhone = normalizePhone(signer_phone);
-      const submissionGroup = `${pack.id}_${signer_name.trim().replace(/\s+/g, "_")}_${Date.now()}`;
+      const fillerName = signer_name?.trim() || pickSubmittedValue(filled_data, undefined, ["nome completo", "nome", "cliente", "contratante", "signatario"]);
+      const submissionGroup = `${pack.id}_${Date.now()}`;
       const nowIso = new Date().toISOString();
       const submittedBy = {
-        name: signer_name.trim(),
-        phone: normalizedPhone,
+        name: fillerName || null,
+        phone: normalizedPhone || null,
         submitted_at: nowIso,
       };
 
       let contactId: string | null = null;
       let conversationId: string | null = null;
 
-      const { data: existingContact } = await supabase
-        .from("contacts")
-        .select("id")
-        .eq("organization_id", pack.organization_id)
-        .eq("phone", normalizedPhone)
-        .maybeSingle();
+      const { data: existingContact } = normalizedPhone
+        ? await supabase
+          .from("contacts")
+          .select("id")
+          .eq("organization_id", pack.organization_id)
+          .eq("phone", normalizedPhone)
+          .maybeSingle()
+        : { data: null };
 
       if (existingContact) {
         contactId = existingContact.id;
@@ -264,7 +268,7 @@ Deno.serve(async (req) => {
           templateData[name] = tplMap?.get(name) ?? filled_data[name] ?? "";
         });
 
-        const docName = `${pack.name} - ${template.name} - ${signer_name.trim()}`;
+        const docName = `${pack.name} - ${template.name}${fillerName ? ` - ${fillerName}` : ""}`;
 
         const { data: doc, error: docErr } = await supabase
           .from("generated_documents")
@@ -329,7 +333,6 @@ Deno.serve(async (req) => {
         });
       }
 
-      const configuredSigners = Array.isArray((pack as any).default_signers) ? (pack as any).default_signers : [];
       const baseSigners = configuredSigners.length > 0
         ? configuredSigners
         : [{
@@ -347,7 +350,7 @@ Deno.serve(async (req) => {
           const source = s.data_source || "manual";
           const mapping = s.field_mapping || {};
           const signerName = source === "form"
-            ? pickSubmittedValue(filled_data, mapping.name, ["nome completo", "nome", "cliente", "contratante", "signatario"]) || signer_name.trim()
+            ? pickSubmittedValue(filled_data, mapping.name, ["nome completo", "nome", "cliente", "contratante", "signatario"]) || signer_name?.trim()
             : s.signer_name;
           const signerEmail = source === "form"
             ? pickSubmittedValue(filled_data, mapping.email, ["email", "e-mail", "correio eletronico"]) || s.signer_email || null
@@ -389,7 +392,7 @@ Deno.serve(async (req) => {
         const { data: insertedSigners, error: signerErr } = await supabase
           .from("document_signers")
           .insert(signerRows)
-          .select("id, generated_document_id, signature_token, signer_name, signer_email, signer_phone, signer_cpf, auth_methods, metadata, order");
+          .select("id, generated_document_id, signature_token, signer_name, signer_email, signer_phone, signer_cpf, auth_methods, metadata, order, data_source");
 
         if (signerErr) {
           console.error("Error creating pack signers:", signerErr);
@@ -404,7 +407,8 @@ Deno.serve(async (req) => {
         const firstDocSigners = (insertedSigners || [])
           .filter((s: any) => s.generated_document_id === firstDocId)
           .sort((a: any, b: any) => (a.order || 0) - (b.order || 0));
-        signatureToken = firstDocSigners[0]?.signature_token || (insertedSigners || [])[0]?.signature_token || null;
+        const firstFormSigner = firstDocSigners.find((s: any) => s.data_source === "form");
+        signatureToken = firstFormSigner?.signature_token || firstDocSigners[0]?.signature_token || (insertedSigners || [])[0]?.signature_token || null;
       }
 
       const signatureUrl = signatureToken ? `${PUBLIC_APP_ORIGIN}/sign/${signatureToken}` : null;
@@ -414,8 +418,8 @@ Deno.serve(async (req) => {
           const docNames = results.map((r) => `- ${r.template_name}`).join("\n");
           const internalMessage =
             `Formulario de pack preenchido\n\n` +
-            `Nome: ${signer_name.trim()}\n` +
-            `Telefone: ${normalizedPhone}\n` +
+            `Nome: ${fillerName || "-"}\n` +
+            `Telefone: ${normalizedPhone || "-"}\n` +
             `Pack: ${pack.name}\n\n` +
             `Documentos preparados para assinatura:\n${docNames}`;
 
@@ -429,8 +433,8 @@ Deno.serve(async (req) => {
               type: "pack_form_submitted",
               pack_id: pack.id,
               pack_name: pack.name,
-              signer_name: signer_name.trim(),
-              signer_phone: normalizedPhone,
+              signer_name: fillerName || null,
+              signer_phone: normalizedPhone || null,
               document_ids: results.map((r) => r.id),
               submission_group: submissionGroup,
               signature_url: signatureUrl,
@@ -445,7 +449,7 @@ Deno.serve(async (req) => {
       }
 
       let whatsappSentCount = 0;
-      if (auto_send_whatsapp && signatureUrl) {
+      if (auto_send_whatsapp && signatureUrl && normalizedPhone) {
         const instance = await getWhatsAppInstance(pack.organization_id);
         if (instance?.zapi_token) {
           const sent = await sendSignatureLinkViaWhatsApp(normalizedPhone, pack.name, signatureUrl, instance.zapi_token);

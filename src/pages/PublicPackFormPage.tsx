@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Loader2, CheckCircle, FileText, Send, Info, MessageCircle, Phone, User, PenLine } from 'lucide-react';
+import { Loader2, CheckCircle, FileText, Send, Info, MessageCircle, Phone, PenLine } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -49,10 +49,6 @@ export default function PublicPackFormPage() {
   const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [signatureUrl, setSignatureUrl] = useState<string | null>(null);
 
-  // Fixed identification fields
-  const [signerName, setSignerName] = useState('');
-  const [signerPhone, setSignerPhone] = useState('');
-
   // WhatsApp send state
   const [showWhatsAppInput, setShowWhatsAppInput] = useState(false);
   const [whatsappPhone, setWhatsappPhone] = useState('');
@@ -95,16 +91,6 @@ export default function PublicPackFormPage() {
   const handleSubmit = async () => {
     if (!packData || !token) return;
 
-    // Validate fixed fields
-    if (!signerName.trim()) {
-      setError('Informe seu nome completo.');
-      return;
-    }
-    if (!signerPhone.trim() || signerPhone.replace(/\D/g, '').length < 10) {
-      setError('Informe um número de telefone válido.');
-      return;
-    }
-
     const fields = packData.field_config || [];
     const missing = fields.filter(f => f.required && !formData[f.originalName]?.trim());
     if (missing.length > 0) {
@@ -121,8 +107,6 @@ export default function PublicPackFormPage() {
           action: 'submit',
           token,
           filled_data: formData,
-          signer_name: signerName.trim(),
-          signer_phone: signerPhone.replace(/\D/g, ''),
           auto_send_whatsapp: packData.auto_send_whatsapp || false,
         },
       });
@@ -134,8 +118,6 @@ export default function PublicPackFormPage() {
       setGeneratedDocs(data.documents || []);
       setOrganizationId(data.organization_id || null);
       setSignatureUrl(data.signature_url || null);
-      // Pre-fill WhatsApp phone with the signer's phone
-      setWhatsappPhone(signerPhone);
       // If auto-sent, mark as sent
       if (data.whatsapp_sent > 0) {
         setWhatsappSent(true);
@@ -214,7 +196,7 @@ export default function PublicPackFormPage() {
             <CheckCircle className="h-12 w-12 mx-auto text-primary mb-3" />
             <h2 className="text-xl font-semibold">Documentos prontos para assinatura</h2>
             <p className="text-sm text-muted-foreground mt-1">
-              {generatedDocs.length} documento{generatedDocs.length > 1 ? 's foram preparados' : ' foi preparado'} para <strong>{signerName}</strong>
+              {generatedDocs.length} documento{generatedDocs.length > 1 ? 's foram preparados' : ' foi preparado'} para assinatura
             </p>
           </div>
 
@@ -367,43 +349,6 @@ export default function PublicPackFormPage() {
             {error}
           </div>
         )}
-
-        {/* Fixed identification fields */}
-        <Card className="mb-4">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <User className="h-4 w-4" />
-              Identificação
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <Label className="text-sm">
-                Nome completo <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                value={signerName}
-                onChange={e => setSignerName(e.target.value)}
-                placeholder="Seu nome completo"
-              />
-            </div>
-            <div>
-              <Label className="text-sm">
-                Telefone (WhatsApp) <span className="text-destructive">*</span>
-              </Label>
-              <div className="relative">
-                <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  type="tel"
-                  value={signerPhone}
-                  onChange={e => setSignerPhone(e.target.value)}
-                  placeholder="(11) 99999-9999"
-                  className="pl-9"
-                />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
 
         {/* Dynamic fields from pack */}
         <Card>
