@@ -150,6 +150,63 @@ function uniquePhones(values: Array<string | null | undefined>): string[] {
   return Array.from(new Set(values.filter((value): value is string => !!value && value.length >= 8)));
 }
 
+function firstString(...values: any[]): string | null {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+function extractMediaUrlFromObject(media: any): string | null {
+  if (!media || typeof media !== 'object') return null;
+  return firstString(
+    media.url,
+    media.URL,
+    media.mediaUrl,
+    media.mediaURL,
+    media.media_url,
+    media.fileUrl,
+    media.fileURL,
+    media.file_url,
+    media.downloadUrl,
+    media.downloadURL,
+    media.link,
+    media.media?.url,
+    media.media?.URL,
+    media.media?.fileUrl,
+    media.media?.fileURL,
+  );
+}
+
+function extractBase64FromObject(media: any): string | null {
+  if (!media || typeof media !== 'object') return null;
+  const value = firstString(
+    media.base64,
+    media.Base64,
+    media.base64Data,
+    media.data?.base64,
+    media.data?.base64Data,
+    media.media?.base64,
+    media.media?.base64Data,
+    media.media,
+  );
+  if (!value) return null;
+  if (value.startsWith('http://') || value.startsWith('https://')) return null;
+  return value;
+}
+
+function extractMimeTypeFromObject(media: any): string | null {
+  if (!media || typeof media !== 'object') return null;
+  return firstString(
+    media.mimetype,
+    media.mimeType,
+    media.MimeType,
+    media.mime_type,
+    media.media?.mimetype,
+    media.media?.mimeType,
+  );
+}
+
 function withCountryCode(phone: string): string {
   const clean = phone.replace(/\D/g, '');
   if (!clean) return '';
@@ -635,18 +692,23 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
   } else if (imageMsg) {
     messageType = 'image';
     textContent = imageMsg.caption || imageMsg.Caption || null;
+    mediaUrl = extractMediaUrlFromObject(imageMsg);
   } else if (audioMsg) {
     messageType = 'audio';
+    mediaUrl = extractMediaUrlFromObject(audioMsg);
     console.log('[DEBUG] Audio message detected:', JSON.stringify(audioMsg));
   } else if (videoMsg) {
     messageType = 'video';
     textContent = videoMsg.caption || videoMsg.Caption || null;
+    mediaUrl = extractMediaUrlFromObject(videoMsg);
   } else if (documentMsg) {
     messageType = 'document';
     textContent = documentMsg.fileName || documentMsg.FileName || documentMsg.title || null;
+    mediaUrl = extractMediaUrlFromObject(documentMsg);
     console.log('[DEBUG] Document message detected:', JSON.stringify(documentMsg));
   } else if (stickerMsg) {
     messageType = 'sticker';
+    mediaUrl = extractMediaUrlFromObject(stickerMsg);
   } else if (locationMsg) {
     messageType = 'location';
     const lat = locationMsg.degreesLatitude || locationMsg.DegreesLatitude || 0;
@@ -769,12 +831,14 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
   if (!base64Data && payload.message?.base64) base64Data = payload.message.base64;
   if (!base64Data && payload.data?.base64) base64Data = payload.data.base64;
   if (!base64Data && eventMessage?.base64) base64Data = eventMessage.base64;
+  if (!base64Data) base64Data = extractBase64FromObject(imageMsg) || extractBase64FromObject(audioMsg) || extractBase64FromObject(videoMsg) || extractBase64FromObject(documentMsg) || extractBase64FromObject(stickerMsg);
 
   let mimeType = payload.mimeType || payload.MimeType || payload.mimetype || null;
   if (!mimeType) mimeType = payload.data?.message?.mimetype || payload.message?.mimetype || payload.data?.mimetype;
   if (!mimeType) mimeType = documentMsg?.mimetype || audioMsg?.mimetype || videoMsg?.mimetype || imageMsg?.mimetype || null;
+  if (!mimeType) mimeType = extractMimeTypeFromObject(documentMsg) || extractMimeTypeFromObject(audioMsg) || extractMimeTypeFromObject(videoMsg) || extractMimeTypeFromObject(imageMsg) || extractMimeTypeFromObject(stickerMsg);
 
-  let directMediaUrl = payload.mediaUrl || payload.MediaUrl || msg.mediaUrl || msg.media?.url || null;
+  let directMediaUrl = mediaUrl || payload.mediaUrl || payload.MediaUrl || msg.mediaUrl || msg.media?.url || null;
 
   // Fetch WhatsApp Instance early for API calls
   // Robust lookup: try zapi_instance_id first, then fallback to zapi_token
@@ -856,7 +920,73 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
     }
   }
 
+  // Evolution webhooks often include only the WhatsApp media stub. Convert it
+  // to base64 through Evolution before falling back to a temporary URL.
+  if (!base64Data && isMediaType && whatsappInstance && msgId && whatsappInstance.provider === 'evolution') {
+    try {
+      const evolutionBaseUrl = (Deno.env.get('EVOLUTION_BASE_URL') || '').replace(/\/+$/, '');
+      const evolutionApiKey = whatsappInstance.evolution_api_key || Deno.env.get('EVOLUTION_API_KEY') || '';
+      const evolutionInstanceName = whatsappInstance.evolution_instance_name || instanceName || whatsappInstance.zapi_instance_id;
+      if (evolutionBaseUrl && evolutionApiKey && evolutionInstanceName) {
+        console.log(`[WEBHOOK] Fetching decrypted media via Evolution for ID: ${msgId}...`);
+        const resp = await fetch(`${evolutionBaseUrl}/chat/getBase64FromMediaMessage/${evolutionInstanceName}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'apikey': evolutionApiKey,
+          },
+          body: JSON.stringify({
+            message: {
+              key: {
+                id: msgId,
+                remoteJid: evolutionKey.remoteJid || chatJid,
+                fromMe,
+              },
+              message: evolutionMessage || eventMessage || {},
+            },
+            convertToMp4: false,
+          }),
+        });
+
+        if (resp.ok) {
+          const data = await resp.json();
+          base64Data = firstString(
+            data.base64,
+            data.base64Data,
+            data.data?.base64,
+            data.data?.base64Data,
+            data.media?.base64,
+            data.media?.base64Data,
+          ) || base64Data;
+          mimeType = mimeType || firstString(
+            data.mimetype,
+            data.mimeType,
+            data.MimeType,
+            data.data?.mimetype,
+            data.data?.mimeType,
+          );
+          directMediaUrl = directMediaUrl || firstString(data.fileUrl, data.fileURL, data.url, data.data?.url);
+          console.log(`[WEBHOOK] Evolution media result: hasBase64=${!!base64Data}, mimeType=${mimeType || 'none'}, hasUrl=${!!directMediaUrl}`);
+        } else {
+          console.error(`[WEBHOOK] Evolution media download failed: ${resp.status} ${await resp.text()}`);
+        }
+      } else {
+        console.warn('[WEBHOOK] Evolution media download skipped: missing base URL, API key, or instance name');
+      }
+    } catch (e) {
+      console.error('[WEBHOOK] Evolution media download exception:', e);
+    }
+  }
+
   console.log(`[WEBHOOK] Media check: hasBase64=${!!base64Data} (${base64Data ? base64Data.length + ' chars' : '0'}), mimeType=${mimeType}, directUrl=${!!directMediaUrl}`);
+
+  if (base64Data && !mimeType) {
+    if (messageType === 'audio') mimeType = 'audio/ogg';
+    else if (messageType === 'image') mimeType = 'image/jpeg';
+    else if (messageType === 'video') mimeType = 'video/mp4';
+    else if (messageType === 'sticker') mimeType = 'image/webp';
+    else mimeType = 'application/octet-stream';
+  }
 
   if (base64Data && mimeType) {
     try {

@@ -1276,6 +1276,20 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
       );
     }
 
+    if (type === 'audio' && !media_url) {
+      return (
+        <div className="flex min-w-[200px] items-center gap-3 rounded-lg border border-dashed border-border/70 bg-background/30 p-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted">
+            <Mic className="h-5 w-5 text-muted-foreground" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-medium">Áudio recebido</p>
+            <p className="text-xs text-muted-foreground">Arquivo de áudio ainda não disponível.</p>
+          </div>
+        </div>
+      );
+    }
+
     if (type === 'video' && media_url) {
       return (
         <div className="mb-2">
