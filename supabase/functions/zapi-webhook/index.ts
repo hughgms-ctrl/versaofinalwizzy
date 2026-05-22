@@ -210,7 +210,7 @@ function receiptPatchFromStatus(statusValue: any) {
   const ack = Number(statusValue);
   const patch: any = {};
 
-  if (ack >= 2 || ['delivery_ack', 'delivered', 'delivery', 'server_ack'].includes(status)) {
+  if (ack >= 2 || ['delivery_ack', 'delivered', 'delivery'].includes(status)) {
     patch.delivered_at = now;
   }
 
