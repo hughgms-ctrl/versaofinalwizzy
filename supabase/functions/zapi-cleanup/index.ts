@@ -317,11 +317,26 @@ async function diagnoseWhatsApp(supabase: any, organizationIds: string[], queryT
             .order('created_at', { ascending: false })
             .limit(20);
 
+        const { data: recentOutboundMessages } = await supabase
+            .from('messages')
+            .select('id, conversation_id, content, direction, created_at, zapi_message_id, delivered_at, read_at, metadata, conversations!inner(organization_id, contact:contacts(id, name, phone))')
+            .eq('conversations.organization_id', organizationId)
+            .eq('direction', 'outbound')
+            .order('created_at', { ascending: false })
+            .limit(30);
+
+        const { data: recentPresence } = await supabase
+            .from('contact_presence')
+            .select('id, contact_id, presence_type, started_at, expires_at, contacts!inner(organization_id, name, phone)')
+            .eq('contacts.organization_id', organizationId)
+            .order('started_at', { ascending: false })
+            .limit(30);
+
         let matchedMessages: any[] = [];
         if (queryText) {
             const { data } = await supabase
                 .from('messages')
-                .select('id, conversation_id, content, direction, created_at, zapi_message_id, conversations!inner(organization_id, whatsapp_instance_id, contact:contacts(id, name, phone, metadata))')
+                .select('id, conversation_id, content, direction, created_at, zapi_message_id, delivered_at, read_at, metadata, conversations!inner(organization_id, whatsapp_instance_id, contact:contacts(id, name, phone, metadata))')
                 .eq('conversations.organization_id', organizationId)
                 .ilike('content', `%${queryText}%`)
                 .order('created_at', { ascending: false })
@@ -346,6 +361,8 @@ async function diagnoseWhatsApp(supabase: any, organizationIds: string[], queryT
             instances: instances || [],
             evolutionProbes,
             recentWebhookLogs: recentWebhookLogs || [],
+            recentOutboundMessages: recentOutboundMessages || [],
+            recentPresence: recentPresence || [],
             recentConversations: recentConversations || [],
             matchedMessages,
             duplicateContactGroups: Array.from(duplicateGroups.entries())

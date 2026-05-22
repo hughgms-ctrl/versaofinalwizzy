@@ -227,17 +227,25 @@ function receiptPatchFromStatus(statusValue: any) {
 }
 
 async function updateMessageReceiptByProviderId(supabase: any, msgId: any, statusValue: any) {
+  const rawId = String(msgId || '').trim();
   const normalizedId = normalizeProviderMessageId(msgId);
   if (!normalizedId) return false;
 
   const updateData = receiptPatchFromStatus(statusValue);
   if (Object.keys(updateData).length === 0) return false;
 
+  const idCandidates = Array.from(new Set([
+    rawId,
+    normalizedId,
+    `true_${normalizedId}`,
+    `false_${normalizedId}`,
+  ].filter(Boolean)));
+
   if (updateData.metadata) {
     const { data: existing } = await supabase
       .from('messages')
       .select('metadata')
-      .eq('zapi_message_id', normalizedId)
+      .in('zapi_message_id', idCandidates)
       .maybeSingle();
     updateData.metadata = { ...(existing?.metadata || {}), ...updateData.metadata };
   }
@@ -245,7 +253,7 @@ async function updateMessageReceiptByProviderId(supabase: any, msgId: any, statu
   const { error } = await supabase
     .from('messages')
     .update(updateData)
-    .eq('zapi_message_id', normalizedId);
+    .in('zapi_message_id', idCandidates);
 
   if (error) {
     console.error('[RECEIPT] Failed to update message receipt:', error);
@@ -1566,9 +1574,11 @@ async function handleReadReceipt(supabase: any, payload: any) {
     msg.msgid ||
     msg.id ||
     key.id ||
+    data.keyId ||
     data.id ||
     payload.id ||
     payload.messageId ||
+    data.messageId ||
     payload.msgid;
 
   const status =
