@@ -10,6 +10,24 @@ function uazapiUrl(baseUrl: string, path: string): string {
   return `${base}${path}`;
 }
 
+function normalizeBaseUrl(value?: string | null): string {
+  return (value || '').trim().replace(/\/$/, '');
+}
+
+async function loadConnectionSettings(supabase: any) {
+  const { data: row } = await supabase
+    .from('platform_settings')
+    .select('value')
+    .eq('key', 'whatsapp_connection_settings')
+    .maybeSingle();
+  const value = row?.value || {};
+  return {
+    uazapiBaseUrl: normalizeBaseUrl(value.uazapi_base_url || Deno.env.get('UAZAPI_BASE_URL')),
+    evolutionBaseUrl: normalizeBaseUrl(value.evolution_base_url || Deno.env.get('EVOLUTION_BASE_URL')),
+    evolutionApiKey: value.evolution_api_key || Deno.env.get('EVOLUTION_API_KEY') || '',
+  };
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -25,8 +43,8 @@ Deno.serve(async (req) => {
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const uazapiBaseUrl = Deno.env.get('UAZAPI_BASE_URL')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
+    const connectionSettings = await loadConnectionSettings(supabase);
 
     const token = authHeader.replace(/^Bearer\s+/i, '');
     const { data: { user }, error: userError } = await supabase.auth.getUser(token);
@@ -92,7 +110,7 @@ Deno.serve(async (req) => {
       const result = await checkSingleInstance(
         supabase,
         instance,
-        uazapiBaseUrl,
+        connectionSettings,
         sanitizePhone,
         authHeader,
         supabaseUrl,
@@ -120,7 +138,7 @@ Deno.serve(async (req) => {
     const primaryResult = await checkSingleInstance(
       supabase,
       primaryInstance,
-      uazapiBaseUrl,
+      connectionSettings,
       sanitizePhone,
       authHeader,
       supabaseUrl,
@@ -134,7 +152,7 @@ Deno.serve(async (req) => {
         const r = await checkSingleInstance(
           supabase,
           inst,
-          uazapiBaseUrl,
+          connectionSettings,
           sanitizePhone,
           authHeader,
           supabaseUrl,
@@ -196,16 +214,129 @@ async function bootstrapConnectedInstance(
   }
 }
 
+async function checkEvolutionInstance(
+  supabase: any,
+  instance: any,
+  connectionSettings: { evolutionBaseUrl: string; evolutionApiKey: string },
+  sanitizePhone: (v: unknown) => string | null,
+) {
+  const instanceName = instance.evolution_instance_name || instance.zapi_instance_id;
+  if (!connectionSettings.evolutionBaseUrl || !connectionSettings.evolutionApiKey || !instanceName) {
+    return {
+      status: instance.status || 'pending',
+      connected: false,
+      phoneNumber: instance.phone_number,
+      hasCredentials: true,
+      provider: 'evolution',
+    };
+  }
+
+  const readEvolution = async (path: string) => {
+    try {
+      const response = await fetch(`${connectionSettings.evolutionBaseUrl}${path}`, {
+        headers: { apikey: connectionSettings.evolutionApiKey },
+      });
+      const raw = await response.text();
+      if (!response.ok) {
+        console.error(`Evolution status failed: ${response.status}`, raw);
+        return null;
+      }
+      try { return raw ? JSON.parse(raw) : {}; } catch { return {}; }
+    } catch (error) {
+      console.error('Evolution status fetch error:', error);
+      return null;
+    }
+  };
+
+  const statusData =
+    await readEvolution(`/instance/connectionState/${instanceName}`) ||
+    await readEvolution(`/instance/fetchInstances`);
+
+  if (!statusData) {
+    return {
+      status: instance.status,
+      connected: instance.status === 'connected',
+      phoneNumber: instance.phone_number,
+      hasCredentials: true,
+      provider: 'evolution',
+    };
+  }
+
+  const matched = Array.isArray(statusData)
+    ? statusData.find((item: any) => item?.name === instanceName || item?.instance?.instanceName === instanceName)
+    : statusData;
+
+  const state = String(
+    matched?.instance?.state ??
+    matched?.state ??
+    matched?.status ??
+    matched?.data?.state ??
+    ''
+  ).toLowerCase();
+  const connected = ['open', 'connected', 'online'].includes(state) || matched?.connected === true;
+  const jid =
+    matched?.instance?.ownerJid ||
+    matched?.instance?.profileName ||
+    matched?.ownerJid ||
+    matched?.jid ||
+    matched?.number ||
+    '';
+  const connectedPhone = typeof jid === 'string' ? sanitizePhone(jid.split('@')[0]) : null;
+
+  if (connected) {
+    await supabase
+      .from('whatsapp_instances')
+      .update({
+        status: 'connected',
+        is_active: true,
+        connected_at: instance.status !== 'connected' ? new Date().toISOString() : instance.connected_at,
+        disconnected_at: null,
+        phone_number: connectedPhone ?? instance.phone_number,
+      })
+      .eq('id', instance.id);
+
+    return {
+      status: 'connected',
+      connected: true,
+      phoneNumber: connectedPhone ?? instance.phone_number,
+      hasCredentials: true,
+      provider: 'evolution',
+    };
+  }
+
+  const nextStatus = ['connecting', 'qrcode', 'pairing'].includes(state) ? 'connecting' : 'disconnected';
+  await supabase
+    .from('whatsapp_instances')
+    .update({
+      status: nextStatus,
+      is_active: nextStatus === 'connecting',
+      disconnected_at: nextStatus === 'disconnected' ? new Date().toISOString() : instance.disconnected_at,
+    })
+    .eq('id', instance.id);
+
+  return {
+    status: nextStatus,
+    connected: false,
+    phoneNumber: instance.phone_number,
+    hasCredentials: true,
+    provider: 'evolution',
+  };
+}
+
 async function checkSingleInstance(
   supabase: any,
   instance: any,
-  uazapiBaseUrl: string,
+  connectionSettings: { uazapiBaseUrl: string; evolutionBaseUrl: string; evolutionApiKey: string },
   sanitizePhone: (v: unknown) => string | null,
   authHeader: string,
   supabaseUrl: string,
 ) {
   if (!instance.zapi_token) {
     return { status: 'pending', connected: false, hasCredentials: false };
+  }
+
+  if ((instance.provider || 'uazapi') === 'evolution') {
+    return checkEvolutionInstance(supabase, instance, connectionSettings, sanitizePhone);
   }
 
   const instanceToken = String(instance.zapi_token).trim();
@@ -216,14 +347,14 @@ async function checkSingleInstance(
     context: string,
   ): Promise<any | null> => {
     try {
-      let response = await fetch(uazapiUrl(uazapiBaseUrl, path), init);
+      let response = await fetch(uazapiUrl(connectionSettings.uazapiBaseUrl, path), init);
 
       // SELF-HEALING: If 401/403, try to recover the token and retry once
       if ((response.status === 401 || response.status === 403) && Deno.env.get('UAZAPI_ADMIN_TOKEN')) {
         console.warn(`[SELF-HEALING] ${context} failed with ${response.status}. Attempting token recovery...`);
         try {
           const instanceName = `wizzy-org-${instance.organization_id.substring(0, 10)}`;
-          const listResp = await fetch(uazapiUrl(uazapiBaseUrl, '/instance/list'), {
+          const listResp = await fetch(uazapiUrl(connectionSettings.uazapiBaseUrl, '/instance/list'), {
             method: 'GET',
             headers: { admintoken: Deno.env.get('UAZAPI_ADMIN_TOKEN')! },
           });
@@ -243,7 +374,7 @@ async function checkSingleInstance(
 
                 // Retry the original request with the new token
                 const newInit = { ...init, headers: { ...init.headers, 'token': newToken } };
-                response = await fetch(uazapiUrl(uazapiBaseUrl, path), newInit);
+                response = await fetch(uazapiUrl(connectionSettings.uazapiBaseUrl, path), newInit);
               }
             }
           }
@@ -365,7 +496,7 @@ async function checkSingleInstance(
   if (isConnected && !connectedPhone) {
     try {
       const profileResponse = await fetch(
-        uazapiUrl(uazapiBaseUrl, '/instance/profile'),
+        uazapiUrl(connectionSettings.uazapiBaseUrl, '/instance/profile'),
         {
           method: 'GET',
           headers: { token: instanceToken }

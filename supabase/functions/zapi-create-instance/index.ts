@@ -5,6 +5,193 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
 
+type Provider = 'evolution' | 'uazapi';
+
+function normalizeBaseUrl(value?: string | null) {
+  return (value || '').trim().replace(/\/$/, '');
+}
+
+function defaultProviderSettings() {
+  return {
+    rejectCall: true,
+    msgCall: 'No momento não atendemos chamadas por WhatsApp. Envie uma mensagem de texto.',
+    groupsIgnore: true,
+    alwaysOnline: false,
+    readMessages: false,
+    readStatus: false,
+    syncFullHistory: false,
+  };
+}
+
+function extractInstances(payload: any): any[] {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload?.instances)) return payload.instances;
+  return [];
+}
+
+function extractQr(data: any): string | null {
+  return (
+    data?.qrcode?.base64 ||
+    data?.qrcode?.code ||
+    data?.qrcode ||
+    data?.qr ||
+    data?.base64 ||
+    data?.code ||
+    data?.instance?.qrcode ||
+    data?.data?.qrcode ||
+    data?.data?.qr ||
+    null
+  );
+}
+
+async function loadWhatsAppPlatformConfig(supabase: any, supabaseUrl: string) {
+  const { data: settingsRows } = await supabase
+    .from('platform_settings')
+    .select('key, value')
+    .in('key', ['whatsapp_provider_strategy', 'whatsapp_connection_settings']);
+
+  const strategy = (settingsRows || []).find((s: any) => s.key === 'whatsapp_provider_strategy')?.value || {};
+  const connection = (settingsRows || []).find((s: any) => s.key === 'whatsapp_connection_settings')?.value || {};
+
+  const primary = (strategy.primary_provider || 'evolution') as Provider;
+  const backup = (strategy.backup_provider || 'uazapi') as Provider;
+  const evolutionEnabled = strategy.evolution_enabled ?? true;
+  const uazapiEnabled = strategy.uazapi_enabled ?? true;
+  const provider: Provider =
+    primary === 'evolution' && evolutionEnabled ? 'evolution' :
+    primary === 'uazapi' && uazapiEnabled ? 'uazapi' :
+    backup === 'evolution' && evolutionEnabled ? 'evolution' :
+    backup === 'uazapi' && uazapiEnabled ? 'uazapi' :
+    'evolution';
+
+  return {
+    provider,
+    webhookUrl: String(connection.webhook_url || `${supabaseUrl}/functions/v1/zapi-webhook`).trim(),
+    uazapiBaseUrl: normalizeBaseUrl(connection.uazapi_base_url || Deno.env.get('UAZAPI_BASE_URL')),
+    uazapiAdminToken: connection.uazapi_admin_token || Deno.env.get('UAZAPI_ADMIN_TOKEN') || '',
+    evolutionBaseUrl: normalizeBaseUrl(connection.evolution_base_url || Deno.env.get('EVOLUTION_BASE_URL')),
+    evolutionApiKey: connection.evolution_api_key || Deno.env.get('EVOLUTION_API_KEY') || '',
+  };
+}
+
+async function createUazapiInstance(config: any, instanceName: string) {
+  if (!config.uazapiBaseUrl || !config.uazapiAdminToken) {
+    throw new Error('UAZAPI não configurada no painel admin');
+  }
+
+  let endpoint = '/instance/init';
+  let response = await fetch(`${config.uazapiBaseUrl}${endpoint}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', admintoken: config.uazapiAdminToken },
+    body: JSON.stringify({ name: instanceName }),
+  });
+
+  if (response.status === 404) {
+    endpoint = '/instance/create';
+    response = await fetch(`${config.uazapiBaseUrl}${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', admintoken: config.uazapiAdminToken },
+      body: JSON.stringify({ name: instanceName }),
+    });
+  }
+
+  const raw = await response.text();
+  if (!response.ok && response.status !== 409) {
+    throw new Error(`Falha ao criar instância UAZAPI: ${raw}`);
+  }
+
+  let payload: any = {};
+  try { payload = raw ? JSON.parse(raw) : {}; } catch (_) {}
+
+  const data = payload.instance || payload.data || payload;
+  let externalId = data.id || data.name || data.instanceId || instanceName;
+  let token = payload.token || data.token || data.key;
+
+  if (response.status === 409 || !token) {
+    const listResp = await fetch(`${config.uazapiBaseUrl}/instance/list`, {
+      headers: { admintoken: config.uazapiAdminToken },
+    });
+    if (listResp.ok) {
+      const listPayload = await listResp.json();
+      const matched = extractInstances(listPayload).find((i: any) =>
+        i.name === instanceName || i.instanceName === instanceName || i.id === externalId
+      );
+      if (matched) {
+        token = matched.token || matched.key || matched.instanceToken;
+        externalId = matched.id || matched.name || externalId;
+      }
+    }
+  }
+
+  if (!token) throw new Error('UAZAPI não retornou token da instância');
+
+  await fetch(`${config.uazapiBaseUrl}/webhook`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', token },
+    body: JSON.stringify({ url: config.webhookUrl, enabled: true }),
+  }).catch((err) => console.error('UAZAPI webhook config error:', err));
+
+  return { externalId, token, qrCode: null };
+}
+
+async function createEvolutionInstance(config: any, instanceName: string) {
+  if (!config.evolutionBaseUrl || !config.evolutionApiKey) {
+    throw new Error('Evolution API não configurada no painel admin');
+  }
+
+  const settings = defaultProviderSettings();
+  const body = {
+    instanceName,
+    integration: 'WHATSAPP-BAILEYS',
+    qrcode: true,
+    ...settings,
+    webhook: {
+      url: config.webhookUrl,
+      byEvents: false,
+      base64: true,
+      events: ['QRCODE_UPDATED', 'CONNECTION_UPDATE', 'MESSAGES_UPSERT', 'SEND_MESSAGE'],
+    },
+  };
+
+  const response = await fetch(`${config.evolutionBaseUrl}/instance/create`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', apikey: config.evolutionApiKey },
+    body: JSON.stringify(body),
+  });
+
+  const raw = await response.text();
+  if (!response.ok && response.status !== 409) {
+    throw new Error(`Falha ao criar instância Evolution: ${raw}`);
+  }
+
+  let payload: any = {};
+  try { payload = raw ? JSON.parse(raw) : {}; } catch (_) {}
+
+  const instance = payload.instance || payload.data?.instance || payload.data || payload;
+  const hash = payload.hash || payload.data?.hash || {};
+  const externalId = instance.instanceId || instance.id || instance.name || instanceName;
+  const instanceApiKey = hash.apikey || instance.apikey || config.evolutionApiKey;
+  let qrCode = extractQr(payload);
+
+  if (!qrCode) {
+    try {
+      const connectResp = await fetch(`${config.evolutionBaseUrl}/instance/connect/${instanceName}`, {
+        method: 'GET',
+        headers: { apikey: config.evolutionApiKey },
+      });
+      if (connectResp.ok) {
+        const connectPayload = await connectResp.json();
+        qrCode = extractQr(connectPayload);
+      }
+    } catch (err) {
+      console.error('Evolution QR fetch after create failed:', err);
+    }
+  }
+
+  return { externalId, token: instanceApiKey, qrCode };
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -21,22 +208,10 @@ Deno.serve(async (req) => {
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const uazapiBaseUrl = (Deno.env.get('UAZAPI_BASE_URL') || '').replace(/\/$/, '');
-    const uazapiAdminToken = Deno.env.get('UAZAPI_ADMIN_TOKEN') || '';
-
-    // Forced redeploy to refresh secrets - 2026-02-27
-
-    if (!uazapiBaseUrl || !uazapiAdminToken) {
-      return new Response(JSON.stringify({ error: 'UAZAPI not configured' }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
     const supabase = createClient(supabaseUrl, serviceRoleKey);
+
     const token = authHeader.replace(/^Bearer\s+/i, '');
     const { data: { user }, error: userError } = await supabase.auth.getUser(token);
-
     if (userError || !user) {
       return new Response(JSON.stringify({ error: 'Invalid token' }), {
         status: 401,
@@ -57,206 +232,62 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Check if there's an existing instance with a valid token we can reuse
-    const { data: existingInstance } = await supabase
+    const body = req.method === 'POST' ? await req.json().catch(() => ({})) : {};
+    const requestedProvider = body.provider as Provider | undefined;
+    const config = await loadWhatsAppPlatformConfig(supabase, supabaseUrl);
+    const provider = requestedProvider || config.provider;
+    const settings = defaultProviderSettings();
+    const instanceName = `wizzy-${provider}-${profile.organization_id.slice(0, 8)}-${crypto.randomUUID().slice(0, 8)}`;
+    const label = body.label || `Número ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+
+    const created = provider === 'evolution'
+      ? await createEvolutionInstance(config, instanceName)
+      : await createUazapiInstance(config, instanceName);
+
+    const insertPayload: Record<string, any> = {
+      organization_id: profile.organization_id,
+      provider,
+      zapi_instance_id: created.externalId || instanceName,
+      zapi_token: created.token,
+      status: 'pending',
+      label,
+      is_active: false,
+      provider_settings: settings,
+    };
+
+    if (provider === 'evolution') {
+      insertPayload.evolution_instance_name = instanceName;
+      insertPayload.evolution_instance_id = created.externalId;
+      insertPayload.evolution_api_key = created.token;
+    }
+
+    const { data: newInstance, error: insertError } = await supabase
       .from('whatsapp_instances')
-      .select('*')
-      .eq('organization_id', profile.organization_id)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .insert(insertPayload)
+      .select('id')
+      .single();
 
-    if (existingInstance?.zapi_token && existingInstance.zapi_instance_id) {
-      // Validate the existing token
-      try {
-        const statusResp = await fetch(`${uazapiBaseUrl}/instance/status`, {
-          method: 'GET',
-          headers: { token: existingInstance.zapi_token },
-        });
-        if (statusResp.ok) {
-          console.log('Reusing existing instance:', existingInstance.id);
-          return new Response(JSON.stringify({
-            success: true,
-            instanceId: existingInstance.id,
-            status: existingInstance.status,
-            reused: true,
-          }), {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
-        }
-      } catch (e) {
-        console.log('Existing token validation failed, creating new instance');
-      }
-    }
-
-    // Create or reuse instance via UAZAPI using a FIXED name per organization
-    // This prevents creating dozens of instances and getting charged for them
-    const instanceName = `wizzy-org-${profile.organization_id.substring(0, 10)}`;
-    let createEndpoint = '/instance/init';
-    console.log(`[DEBUG] Ensuring instance with name: ${instanceName} via ${createEndpoint}...`);
-
-    let initResponse = await fetch(`${uazapiBaseUrl}${createEndpoint}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        admintoken: uazapiAdminToken,
-      },
-      body: JSON.stringify({ name: instanceName }),
-    });
-
-    // Fallback and probe logic for /instance/create
-    if (initResponse.status === 404) {
-      console.log(`[DEBUG] ${createEndpoint} failed with 404. Trying /instance/create...`);
-      createEndpoint = '/instance/create';
-      initResponse = await fetch(`${uazapiBaseUrl}${createEndpoint}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          admintoken: uazapiAdminToken,
-        },
-        body: JSON.stringify({ name: instanceName }),
-      });
-    }
-
-    const initRaw = await initResponse.text();
-    console.log(`UAZAPI create/init response (${createEndpoint}): ${initResponse.status}`, initRaw);
-
-    // If already exists (409) or success (2xx), proceed to extract data
-    if (!initResponse.ok && initResponse.status !== 409) {
-      return new Response(JSON.stringify({
-        error: 'Failed to create UAZAPI instance',
-        details: initRaw,
-        statusCode: initResponse.status,
-        endpoint: createEndpoint
-      }), {
+    if (insertError) {
+      return new Response(JSON.stringify({ error: 'Failed to create instance', details: insertError.message }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
-    }
-
-    let initData;
-    try {
-      initData = JSON.parse(initRaw);
-    } catch {
-      initData = {};
-    }
-
-    // Extract instance data - UAZAPI V2 returns { instance: { id, token, ... }, token: "..." }
-    const instanceData = initData.instance || initData.data || initData;
-    let uazapiInstanceId = instanceData.id || instanceData.name || instanceData.instanceId || instanceName;
-    let uazapiToken = initData.token || instanceData.token || instanceData.key;
-
-    // SELF-HEALING: If already exists (409) or token is missing, fetch it via admin list
-    if (initResponse.status === 409 || !uazapiToken) {
-      console.log(`[SELF-HEALING] Instance exists or token missing. Fetching current token from UAZAPI list...`);
-      try {
-        const listResp = await fetch(`${uazapiBaseUrl}/instance/list`, {
-          method: 'GET',
-          headers: { admintoken: uazapiAdminToken },
-        });
-        if (listResp.ok) {
-          const listData = await listResp.json();
-          const instancesArray = Array.isArray(listData) ? listData : (listData.data || listData.instances || []);
-          const matched = instancesArray.find((i: any) =>
-            (i.name === instanceName) || (i.instanceName === instanceName) || (i.id === uazapiInstanceId)
-          );
-
-          if (matched) {
-            uazapiToken = matched.token || matched.key || matched.instanceToken;
-            uazapiInstanceId = matched.id || matched.name || uazapiInstanceId;
-            console.log(`[SELF-HEALING] Token recovered for ${instanceName}`);
-          }
-        }
-      } catch (e) {
-        console.error('[SELF-HEALING ERROR] Failed to recover token:', e);
-      }
-    }
-
-    if (!uazapiToken) {
-      return new Response(JSON.stringify({
-        error: 'No token returned from UAZAPI',
-        details: initData,
-        statusCode: initResponse.status
-      }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    console.log(`Instance created: id=${uazapiInstanceId}`);
-
-    // Configure webhook
-    const webhookUrl = `${supabaseUrl}/functions/v1/zapi-webhook`;
-    try {
-      await fetch(`${uazapiBaseUrl}/webhook`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          token: uazapiToken,
-        },
-        body: JSON.stringify({ url: webhookUrl, enabled: true }),
-      });
-      console.log('Webhook configured:', webhookUrl);
-    } catch (err) {
-      console.error('Webhook config error (non-blocking):', err);
-    }
-
-    // Save to database - update existing pending instance or create new one
-    let dbInstanceId: string;
-
-    if (existingInstance && (!existingInstance.zapi_instance_id || existingInstance.status === 'disconnected' || existingInstance.status === 'pending')) {
-      const { error: updateError } = await supabase
-        .from('whatsapp_instances')
-        .update({
-          zapi_instance_id: uazapiInstanceId,
-          zapi_token: uazapiToken,
-          status: 'pending',
-          disconnected_at: null,
-          connected_at: null,
-          is_active: false,
-        })
-        .eq('id', existingInstance.id);
-
-      if (updateError) {
-        return new Response(JSON.stringify({ error: 'Failed to save instance', details: updateError.message }), {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-      dbInstanceId = existingInstance.id;
-    } else {
-      const { data: newInstance, error: insertError } = await supabase
-        .from('whatsapp_instances')
-        .insert({
-          organization_id: profile.organization_id,
-          zapi_instance_id: uazapiInstanceId,
-          zapi_token: uazapiToken,
-          status: 'pending',
-          label: `Número ${Date.now().toString().slice(-4)}`,
-        })
-        .select('id')
-        .single();
-
-      if (insertError) {
-        return new Response(JSON.stringify({ error: 'Failed to create instance', details: insertError.message }), {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-      dbInstanceId = newInstance.id;
     }
 
     return new Response(JSON.stringify({
       success: true,
-      instanceId: dbInstanceId,
+      provider,
+      instanceId: newInstance.id,
+      externalInstanceId: created.externalId,
       status: 'pending',
-      reused: false,
+      qrCode: created.qrCode,
+      settings,
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error:', error);
-    return new Response(JSON.stringify({ error: 'Internal server error', details: String(error) }), {
+    return new Response(JSON.stringify({ error: error?.message || 'Internal server error', details: String(error) }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

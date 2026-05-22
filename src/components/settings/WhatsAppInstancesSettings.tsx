@@ -459,6 +459,9 @@ export function WhatsAppInstancesSettings() {
                             ) : (
                               <Badge variant="outline" className="text-[10px]">Pendente</Badge>
                             )}
+                            <Badge variant="outline" className="text-[10px] uppercase">
+                              {instance.provider === 'evolution' ? 'Evolution' : 'UAZAPI'}
+                            </Badge>
                           </div>
                           <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
                             {instance.phone_number && <span>{instance.phone_number}</span>}

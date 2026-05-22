@@ -8,6 +8,8 @@ const corsHeaders = {
 function extractQr(data: Record<string, any> | null): string | null {
   if (!data) return null;
   return (
+    data?.qrcode?.base64 ||
+    data?.qrcode?.code ||
     data.qrcode ||
     data.qr ||
     data.value ||
@@ -17,6 +19,46 @@ function extractQr(data: Record<string, any> | null): string | null {
     data?.data?.qrcode ||
     data?.data?.qr ||
     null
+  );
+}
+
+function normalizeBaseUrl(value?: string | null) {
+  return (value || '').trim().replace(/\/$/, '');
+}
+
+async function loadConnectionSettings(supabase: any) {
+  const { data: row } = await supabase
+    .from('platform_settings')
+    .select('value')
+    .eq('key', 'whatsapp_connection_settings')
+    .maybeSingle();
+  const value = row?.value || {};
+  return {
+    uazapiBaseUrl: normalizeBaseUrl(value.uazapi_base_url || Deno.env.get('UAZAPI_BASE_URL')),
+    evolutionBaseUrl: normalizeBaseUrl(value.evolution_base_url || Deno.env.get('EVOLUTION_BASE_URL')),
+    evolutionApiKey: value.evolution_api_key || Deno.env.get('EVOLUTION_API_KEY') || '',
+  };
+}
+
+function isPayloadConnected(payload: any): boolean {
+  const state = String(
+    payload?.state ??
+    payload?.status ??
+    payload?.instance?.state ??
+    payload?.instance?.status ??
+    payload?.data?.state ??
+    payload?.data?.status ??
+    ''
+  ).toLowerCase();
+  return (
+    payload?.connected === true ||
+    payload?.instance?.connected === true ||
+    payload?.data?.connected === true ||
+    state === 'connected' ||
+    state === 'open' ||
+    state === 'online' ||
+    payload?.loggedIn === true ||
+    payload?.instance?.loggedIn === true
   );
 }
 
@@ -36,8 +78,8 @@ Deno.serve(async (req) => {
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const uazapiBaseUrl = (Deno.env.get('UAZAPI_BASE_URL') || '').replace(/\/$/, '');
     const supabase = createClient(supabaseUrl, supabaseKey);
+    const connectionSettings = await loadConnectionSettings(supabase);
 
     const token = authHeader.replace(/^Bearer\s+/i, '');
     const { data: { user }, error: userError } = await supabase.auth.getUser(token);
@@ -107,10 +149,88 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Step 1: Call /instance/connect with the instance token
-    console.log(`[DEBUG] Connecting instance ${instance.id} via ${uazapiBaseUrl}/instance/connect`);
+    const provider = instance.provider || 'uazapi';
 
-    const connectResp = await fetch(`${uazapiBaseUrl}/instance/connect`, {
+    if (provider === 'evolution') {
+      const evolutionBaseUrl = connectionSettings.evolutionBaseUrl;
+      const evolutionApiKey = connectionSettings.evolutionApiKey;
+      const instanceName = instance.evolution_instance_name || instance.zapi_instance_id;
+
+      if (!evolutionBaseUrl || !evolutionApiKey || !instanceName) {
+        return new Response(JSON.stringify({ error: 'Evolution API not configured' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      console.log(`[DEBUG] Connecting Evolution instance ${instanceName}`);
+      const connectResp = await fetch(`${evolutionBaseUrl}/instance/connect/${instanceName}`, {
+        method: 'GET',
+        headers: { apikey: evolutionApiKey },
+      });
+      const connectRaw = await connectResp.text();
+
+      if (!connectResp.ok) {
+        return new Response(JSON.stringify({
+          error: 'Failed to connect Evolution instance',
+          code: connectResp.status,
+          details: connectRaw,
+        }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      let connectData: any = {};
+      try { connectData = connectRaw ? JSON.parse(connectRaw) : {}; } catch (_) {}
+
+      if (isPayloadConnected(connectData)) {
+        await supabase
+          .from('whatsapp_instances')
+          .update({
+            status: 'connected',
+            is_active: true,
+            connected_at: new Date().toISOString(),
+            disconnected_at: null,
+          })
+          .eq('id', instance.id);
+
+        return new Response(JSON.stringify({ connected: true, instanceId: instance.id, provider }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const qrCode = extractQr(connectData);
+      if (!qrCode) {
+        return new Response(JSON.stringify({
+          error: 'No QR code available',
+          details: connectData,
+          note: 'A instância Evolution pode estar inicializando. Tente novamente em instantes.',
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      await supabase
+        .from('whatsapp_instances')
+        .update({ status: 'connecting', is_active: true })
+        .eq('id', instance.id);
+
+      return new Response(JSON.stringify({
+        qrCode,
+        connected: false,
+        instanceId: instance.id,
+        provider,
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Step 1: Call /instance/connect with the instance token
+    console.log(`[DEBUG] Connecting instance ${instance.id} via ${connectionSettings.uazapiBaseUrl}/instance/connect`);
+
+    const connectResp = await fetch(`${connectionSettings.uazapiBaseUrl}/instance/connect`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -138,34 +258,6 @@ Deno.serve(async (req) => {
     } catch {
       connectData = {};
     }
-
-    // Ultra-permissive connection detection (Matching zapi-check-status logic)
-    const getConnectionState = (payload: any): string => {
-      return String(
-        payload?.state ??
-        payload?.status ??
-        payload?.instance?.state ??
-        payload?.instance?.status ??
-        payload?.data?.state ??
-        payload?.data?.status ??
-        ''
-      ).toLowerCase();
-    };
-
-    const isPayloadConnected = (payload: any): boolean => {
-      const state = getConnectionState(payload);
-      return (
-        payload?.connected === true ||
-        payload?.instance?.connected === true ||
-        payload?.data?.connected === true ||
-        state === 'connected' ||
-        state === 'open' ||
-        state === 'online' ||
-        payload?.loggedIn === true ||
-        payload?.loggedIn === 'true' ||
-        payload?.instance?.loggedIn === true
-      );
-    };
 
     const isConnected = isPayloadConnected(connectData);
 
@@ -196,7 +288,7 @@ Deno.serve(async (req) => {
       for (const endpoint of qrEndpoints) {
         if (qrCode) break;
         try {
-          const qrResp = await fetch(`${uazapiBaseUrl}${endpoint}`, {
+            const qrResp = await fetch(`${connectionSettings.uazapiBaseUrl}${endpoint}`, {
             method: 'GET',
             headers: { token: instance.zapi_token },
           });
@@ -241,6 +333,7 @@ Deno.serve(async (req) => {
       qrCode,
       connected: false,
       instanceId: instance.id,
+      provider,
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

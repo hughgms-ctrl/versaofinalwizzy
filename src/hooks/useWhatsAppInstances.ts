@@ -10,6 +10,11 @@ export interface WhatsAppInstance {
   phone_number: string | null;
   zapi_instance_id: string | null;
   zapi_token: string | null;
+  provider?: 'uazapi' | 'evolution';
+  evolution_instance_name?: string | null;
+  evolution_instance_id?: string | null;
+  evolution_api_key?: string | null;
+  provider_settings?: Record<string, unknown>;
   is_active: boolean;
   connected_at: string | null;
   disconnected_at: string | null;
