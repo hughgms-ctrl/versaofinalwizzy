@@ -365,9 +365,10 @@ export default function AdminWhatsAppIntegrationsPage() {
                       <TableCell>
                         <div className="font-medium">{instance.label || 'WhatsApp'}</div>
                         <div className="text-xs text-muted-foreground">
-                          {instance.provider === 'evolution'
-                            ? (instance.evolution_instance_name || instance.zapi_instance_id || 'sem id externo')
-                            : (instance.zapi_instance_id || 'sem id externo')}
+                          {[
+                            instance.providers?.uazapi?.external_id ? `UAZAPI: ${instance.providers.uazapi.external_id}` : null,
+                            instance.providers?.evolution?.external_id ? `Evolution: ${instance.providers.evolution.external_id}` : null,
+                          ].filter(Boolean).join(' | ') || 'sem id externo'}
                         </div>
                       </TableCell>
                       <TableCell>{instance.phone_number || '-'}</TableCell>

@@ -15,6 +15,44 @@ function normalizeBaseUrl(value?: string | null) {
   return (value || '').trim().replace(/\/$/, '')
 }
 
+function onlyDigits(value?: string | null) {
+  return (value || '').replace(/\D/g, '')
+}
+
+function phoneVariants(raw?: string | null): string[] {
+  const clean = onlyDigits(raw)
+  if (!clean) return []
+  const values = new Set<string>()
+  const add = (value: string) => {
+    if (!value) return
+    values.add(value)
+    if (value.startsWith('55')) values.add(value.slice(2))
+    if (!value.startsWith('55') && value.length >= 10 && value.length <= 11) values.add(`55${value}`)
+  }
+  add(clean)
+  const local = clean.startsWith('55') ? clean.slice(2) : clean
+  if (local.length === 10) add(`${local.slice(0, 2)}9${local.slice(2)}`)
+  if (local.length === 11 && local[2] === '9') add(`${local.slice(0, 2)}${local.slice(3)}`)
+  if (local.length > 11) add(local.slice(0, -1))
+  if (clean.startsWith('55') && local.length > 11) add(`55${local.slice(0, -1)}`)
+  return Array.from(values).filter(Boolean)
+}
+
+function canonicalPhone(raw?: string | null) {
+  const variants = phoneVariants(raw)
+  return variants.find((v) => v.startsWith('55') && v.length >= 12 && v.length <= 13) || variants[0] || ''
+}
+
+function normalizeLabel(value?: string | null) {
+  return (value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .replace(/\([^)]*\)/g, '')
+    .replace(/\b(evolution|backup|uazapi|principal|numero|número)\b/g, '')
+    .replace(/[^a-z0-9]+/g, '')
+}
+
 async function fetchJsonWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 6000) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
@@ -408,6 +446,8 @@ Deno.serve(async (req) => {
       const enrichedInstances = (instances || []).map((instance: any) => ({
         ...instance,
         organization: orgMap.get(instance.organization_id) || null,
+        logical_phone: canonicalPhone(instance.phone_number),
+        label_key: normalizeLabel(instance.label),
         providers: {
           uazapi: {
             configured: (instance.provider || 'uazapi') === 'uazapi' && (!!instance.zapi_token || !!instance.zapi_instance_id),
@@ -424,11 +464,78 @@ Deno.serve(async (req) => {
         },
       }))
 
+      const groupedInstances: any[] = []
+      const groupByKey = new Map<string, any>()
+      const backupCandidates = enrichedInstances.filter((instance: any) => (instance.provider || 'uazapi') === 'uazapi')
+
+      const mergeIntoGroup = (group: any, instance: any) => {
+        const provider = instance.provider === 'evolution' ? 'evolution' : 'uazapi'
+        group.source_instances.push(instance)
+        group.updated_at = !group.updated_at || new Date(instance.updated_at) > new Date(group.updated_at)
+          ? instance.updated_at
+          : group.updated_at
+        group.phone_number = group.phone_number || instance.logical_phone || instance.phone_number || null
+        group.label = group.label || instance.label
+        group.id = group.id || instance.id
+        group.status = group.status === 'connected' || instance.status === 'connected' ? 'connected' : (group.status || instance.status)
+        group.is_active = group.is_active || instance.is_active
+        group.providers[provider] = {
+          configured: true,
+          status: instance.status,
+          active: instance.is_active,
+          external_id: provider === 'evolution'
+            ? (instance.evolution_instance_name || instance.evolution_instance_id || instance.zapi_instance_id)
+            : instance.zapi_instance_id,
+          instance_id: instance.id,
+          label: instance.label,
+          phone_number: instance.phone_number,
+        }
+      }
+
+      for (const instance of enrichedInstances) {
+        let key = instance.logical_phone
+          ? `${instance.organization_id}:phone:${instance.logical_phone}`
+          : `${instance.organization_id}:id:${instance.id}`
+
+        if (instance.provider === 'evolution' && !instance.logical_phone && instance.label_key) {
+          const match = backupCandidates.find((candidate: any) =>
+            candidate.organization_id === instance.organization_id &&
+            candidate.label_key &&
+            (candidate.label_key === instance.label_key || candidate.label_key.includes(instance.label_key) || instance.label_key.includes(candidate.label_key))
+          )
+          if (match?.logical_phone) {
+            key = `${instance.organization_id}:phone:${match.logical_phone}`
+          }
+        }
+
+        let group = groupByKey.get(key)
+        if (!group) {
+          group = {
+            id: key,
+            organization_id: instance.organization_id,
+            organization: instance.organization,
+            label: instance.label,
+            phone_number: instance.logical_phone || instance.phone_number || null,
+            status: instance.status,
+            is_active: instance.is_active,
+            updated_at: instance.updated_at,
+            source_instances: [],
+            providers: {
+              uazapi: { configured: false, status: 'not_configured', active: false, external_id: null },
+              evolution: { configured: false, status: 'not_configured', active: false, external_id: null },
+            },
+          }
+          groupByKey.set(key, group)
+          groupedInstances.push(group)
+        }
+        mergeIntoGroup(group, instance)
+      }
+
       const summary = {
-        total_instances: enrichedInstances.length,
-        active_instances: enrichedInstances.filter((i: any) => i.is_active).length,
-        connected_instances: enrichedInstances.filter((i: any) => i.status === 'connected').length,
-        disconnected_instances: enrichedInstances.filter((i: any) => i.status === 'disconnected').length,
+        total_instances: groupedInstances.length,
+        active_instances: groupedInstances.filter((i: any) => i.is_active).length,
+        connected_instances: groupedInstances.filter((i: any) => i.status === 'connected').length,
+        disconnected_instances: groupedInstances.filter((i: any) => i.status === 'disconnected').length,
       }
       const [uazapiStatus, evolutionStatus] = await Promise.all([
         checkUazapiStatus(rawConnection.uazapi_base_url, rawConnection.uazapi_admin_token),
@@ -443,7 +550,7 @@ Deno.serve(async (req) => {
           evolution: evolutionStatus,
         },
         summary,
-        instances: enrichedInstances,
+        instances: groupedInstances,
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
