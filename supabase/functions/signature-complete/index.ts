@@ -330,9 +330,7 @@ serve(async (req) => {
         const samePersonSigners = (siblingSigners || []).filter((s: any) => {
           const siblingMeta = (s.metadata || {}) as Record<string, any>;
           if (packSignerKey) return siblingMeta.pack_signer_key === packSignerKey;
-          return Number(s.order || 0) === Number(currentSigner.order || 0)
-            && String(s.signer_phone || "") === String(currentSigner.signer_phone || "")
-            && String(s.signer_email || "") === String(currentSigner.signer_email || "");
+          return Number(s.order || 0) === Number(currentSigner.order || 0);
         });
 
         for (const siblingSigner of samePersonSigners) {
@@ -421,14 +419,18 @@ serve(async (req) => {
                   verificationCode: siblingVerificationCode,
                 }),
               });
-              if (!stampResp.ok) console.error("sibling stamp-pdf failed:", await stampResp.text());
+              if (!stampResp.ok) {
+                console.error("sibling stamp-pdf failed:", await stampResp.text());
+              } else {
+                await stampResp.json().catch(() => null);
+              }
             } catch (e) {
               console.error("Error stamping sibling PDF:", e);
             }
           }
 
           try {
-            await fetch(`${SUPABASE_URL}/functions/v1/signature-receipt`, {
+            const siblingReceiptResp = await fetch(`${SUPABASE_URL}/functions/v1/signature-receipt`, {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
@@ -455,6 +457,9 @@ serve(async (req) => {
                 geolocation,
               }),
             });
+            if (!siblingReceiptResp.ok) {
+              console.error("sibling receipt failed:", await siblingReceiptResp.text());
+            }
           } catch (e) {
             console.error("Error generating sibling receipt:", e);
           }
@@ -552,6 +557,58 @@ serve(async (req) => {
       }
     }
 
+    let packSignedDocuments: any[] = [];
+    if (currentSigner && currentDoc?.pack_id && currentDoc?.submission_group) {
+      try {
+        const { data: packDocsForDownload } = await supabase
+          .from("generated_documents")
+          .select("id, name, signed_pdf_url")
+          .eq("pack_id", currentDoc.pack_id)
+          .eq("submission_group", currentDoc.submission_group)
+          .order("created_at", { ascending: true });
+
+        const packDocIds = (packDocsForDownload || []).map((doc: any) => doc.id);
+        const { data: packSignersForDownload } = packDocIds.length > 0
+          ? await supabase
+            .from("document_signers")
+            .select("generated_document_id, signature_id")
+            .in("generated_document_id", packDocIds)
+            .eq("order", currentSigner.order || 0)
+          : { data: [] };
+
+        const signatureIds = (packSignersForDownload || [])
+          .map((signer: any) => signer.signature_id)
+          .filter(Boolean);
+        const { data: receipts } = signatureIds.length > 0
+          ? await supabase
+            .from("signature_evidence")
+            .select("signature_id, receipt_pdf_url")
+            .in("signature_id", signatureIds)
+          : { data: [] };
+
+        const signatureByDoc = new Map<string, string>();
+        for (const signer of packSignersForDownload || []) {
+          if (signer.signature_id) signatureByDoc.set(signer.generated_document_id, signer.signature_id);
+        }
+        const receiptBySignature = new Map<string, string>();
+        for (const receipt of receipts || []) {
+          if (receipt.receipt_pdf_url) receiptBySignature.set(receipt.signature_id, receipt.receipt_pdf_url);
+        }
+
+        packSignedDocuments = (packDocsForDownload || []).map((doc: any) => {
+          const sigId = signatureByDoc.get(doc.id);
+          return {
+            id: doc.id,
+            name: doc.name,
+            signedPdfUrl: doc.signed_pdf_url || null,
+            receiptPdfUrl: sigId ? (receiptBySignature.get(sigId) || null) : null,
+          };
+        });
+      } catch (e) {
+        console.error("Error loading pack signed documents:", e);
+      }
+    }
+
     return jsonResponse({
       success: true,
       signatureUrl,
@@ -564,6 +621,7 @@ serve(async (req) => {
       signedAt,
       pendingSigners: pendingSigners ?? 0,
       allSigned: !pendingSigners || pendingSigners === 0,
+      packSignedDocuments,
     });
   } catch (error: any) {
     console.error("Error in signature-complete:", error);

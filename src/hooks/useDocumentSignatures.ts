@@ -31,7 +31,10 @@ export interface DocumentSignature {
     id: string;
     name: string;
     pdf_url: string | null;
+    signed_pdf_url?: string | null;
     status: string;
+    pack_id?: string | null;
+    submission_group?: string | null;
   };
 }
 
@@ -44,7 +47,7 @@ export function useDocumentSignatures(includeArchived = false) {
     queryFn: async () => {
       let q = (supabase as any)
         .from('document_signatures')
-        .select('*, generated_document:generated_documents(id, name, pdf_url, status, submitted_by), archived_at')
+        .select('*, generated_document:generated_documents(id, name, pdf_url, signed_pdf_url, status, submitted_by, pack_id, submission_group), archived_at')
         .order('created_at', { ascending: false });
       if (!includeArchived) q = q.is('archived_at', null);
       const { data, error } = await q;

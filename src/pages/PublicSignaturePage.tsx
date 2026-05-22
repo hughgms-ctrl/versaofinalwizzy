@@ -368,7 +368,7 @@ export default function PublicSignaturePage() {
     setCameraError(null);
 
     if (!navigator.mediaDevices?.getUserMedia) {
-      setCameraError('Seu navegador não suporta captura de câmera. Use o envio pela galeria.');
+      setCameraError('Seu navegador não suporta captura de câmera neste dispositivo.');
       return;
     }
 
@@ -385,7 +385,7 @@ export default function PublicSignaturePage() {
       // Attach asynchronously so React mounts the <video> first
       void attachStreamToVideo(stream);
     } catch (err) {
-      setCameraError('Não foi possível abrir a câmera. Você pode continuar enviando uma foto da galeria.');
+      setCameraError('Não foi possível abrir a câmera. Verifique a permissão do navegador e tente novamente.');
       toast.error('Não foi possível acessar a câmera. Verifique as permissões.');
     }
   };
@@ -425,6 +425,16 @@ export default function PublicSignaturePage() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     ctx.drawImage(video, 0, 0, w, h);
+    ctx.save();
+    ctx.translate(w / 2, h / 2);
+    ctx.rotate(-Math.PI / 6);
+    ctx.globalAlpha = 0.16;
+    ctx.fillStyle = '#000000';
+    ctx.font = `700 ${Math.max(28, Math.floor(w / 12))}px Arial, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('WIZZY sign', 0, 0);
+    ctx.restore();
     // Use JPEG to keep payload reasonable and ensure non-empty bytes
     const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
 
@@ -441,16 +451,6 @@ export default function PublicSignaturePage() {
       setCameraStream(null);
     }
     setCameraActive(false);
-  };
-
-  const handleSelfieFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      setSelfieImage(reader.result as string);
-    };
-    reader.readAsDataURL(file);
   };
 
   const retakeSelfie = () => {
@@ -618,9 +618,20 @@ export default function PublicSignaturePage() {
     const pendingSigners: number = result?.pendingSigners ?? 0;
     const allSigned: boolean = result?.allSigned ?? (pendingSigners === 0);
     const signedPdfUrl: string | null = result?.signedPdfUrl || null;
+    const packSignedDocuments = Array.isArray(result?.packSignedDocuments) ? result.packSignedDocuments : [];
+    const downloadItems = packSignedDocuments.length > 0
+      ? packSignedDocuments
+      : signedPdfUrl
+        ? [{
+          id: documentData?.generated_document?.id || 'current',
+          name: documentData?.generated_document?.name || 'Documento assinado',
+          signedPdfUrl,
+          receiptPdfUrl: result?.receiptPdfUrl || null,
+        }]
+        : [];
 
-    const handleDownloadSigned = async () => {
-      if (!signedPdfUrl) {
+    const handleDownloadUrl = async (urlToDownload: string | null, fileName: string) => {
+      if (!urlToDownload) {
         toast.error('Documento ainda não disponível para download.');
         return;
       }
@@ -631,18 +642,18 @@ export default function PublicSignaturePage() {
         if (!ok) return;
       }
       try {
-        const res = await fetch(signedPdfUrl);
+        const res = await fetch(urlToDownload);
         const blob = await res.blob();
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = (documentData?.generated_document?.name || 'documento-assinado') + '.pdf';
+        a.download = `${fileName || 'documento-assinado'}.pdf`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         setTimeout(() => URL.revokeObjectURL(url), 1500);
       } catch {
-        window.open(signedPdfUrl, '_blank', 'noopener,noreferrer');
+        window.open(urlToDownload, '_blank', 'noopener,noreferrer');
       }
     };
 
@@ -676,18 +687,33 @@ export default function PublicSignaturePage() {
           </div>
 
           <div className="flex flex-col gap-2">
-            {signedPdfUrl && (
-              <Button onClick={handleDownloadSigned} size="lg" className="w-full gap-2">
-                <Download className="h-4 w-4" />
-                {allSigned ? 'Baixar documento assinado' : 'Baixar documento (parcial)'}
-              </Button>
-            )}
-            {result?.receiptPdfUrl && (
-              <Button variant="outline" size="sm" className="w-full gap-2" asChild>
-                <a href={result.receiptPdfUrl} target="_blank" rel="noopener noreferrer">
-                  <Download className="h-4 w-4" /> Baixar comprovante
-                </a>
-              </Button>
+            {downloadItems.length > 0 && (
+              <div className="space-y-2 text-left">
+                {downloadItems.map((item: any, idx: number) => (
+                  <div key={item.id || idx} className="rounded-lg border border-border bg-muted/30 p-3">
+                    <p className="mb-2 truncate text-xs font-semibold">{item.name || `Documento ${idx + 1}`}</p>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {item.signedPdfUrl && (
+                        <Button
+                          onClick={() => handleDownloadUrl(item.signedPdfUrl, item.name || `documento-${idx + 1}`)}
+                          size="sm"
+                          className="w-full gap-2"
+                        >
+                          <Download className="h-4 w-4" />
+                          {allSigned ? 'PDF assinado' : 'PDF parcial'}
+                        </Button>
+                      )}
+                      {item.receiptPdfUrl && (
+                        <Button variant="outline" size="sm" className="w-full gap-2" asChild>
+                          <a href={item.receiptPdfUrl} target="_blank" rel="noopener noreferrer">
+                            <Download className="h-4 w-4" /> Comprovante
+                          </a>
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
 
@@ -1017,23 +1043,6 @@ export default function PublicSignaturePage() {
                       {cameraError && (
                         <p className="text-xs text-muted-foreground text-center">{cameraError}</p>
                       )}
-                      <div className="relative">
-                        <div className="text-center text-xs text-muted-foreground py-2">ou</div>
-                        <label className="block">
-                          <Button variant="outline" className="w-full gap-2" asChild>
-                            <span>
-                              <Eye className="h-4 w-4" /> Enviar foto da galeria
-                              <input
-                                type="file"
-                                accept="image/*"
-                                capture="user"
-                                className="sr-only"
-                                onChange={handleSelfieFileUpload}
-                              />
-                            </span>
-                          </Button>
-                        </label>
-                      </div>
                     </div>
                   )}
                 </div>

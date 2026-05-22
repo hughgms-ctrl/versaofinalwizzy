@@ -15,6 +15,7 @@ import { ptBR } from 'date-fns/locale';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
+import JSZip from 'jszip';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
@@ -83,23 +84,26 @@ export function SignaturesList() {
   // Group signatures by generated_document_id so multiple signers of the same
   // document appear together. The same final PDF is shared across them.
   const grouped = useMemo(() => {
-    const map = new Map<string, { docId: string; docName: string; fillerName: string | null; signedPdfUrl: string | null; createdAt: string; signatures: typeof filtered }>();
+    const map = new Map<string, { docId: string; docName: string; fillerName: string | null; signedPdfUrl: string | null; packId: string | null; submissionGroup: string | null; createdAt: string; signatures: typeof filtered }>();
     for (const sig of filtered) {
       const docId = (sig as any).generated_document_id;
       if (!docId) continue;
       const submittedBy = (sig as any).generated_document?.submitted_by;
       const fillerName = submittedBy?.name || null;
+      const docSignedPdfUrl = (sig as any).generated_document?.signed_pdf_url || sig.signed_pdf_url || null;
       const existing = map.get(docId);
       if (existing) {
         existing.signatures.push(sig);
-        if (!existing.signedPdfUrl && sig.signed_pdf_url) existing.signedPdfUrl = sig.signed_pdf_url;
+        if (!existing.signedPdfUrl && docSignedPdfUrl) existing.signedPdfUrl = docSignedPdfUrl;
         if (!existing.fillerName && fillerName) existing.fillerName = fillerName;
       } else {
         map.set(docId, {
           docId,
           docName: sig.generated_document?.name || 'Documento',
           fillerName,
-          signedPdfUrl: sig.signed_pdf_url,
+          signedPdfUrl: docSignedPdfUrl,
+          packId: (sig as any).generated_document?.pack_id || null,
+          submissionGroup: (sig as any).generated_document?.submission_group || null,
           createdAt: sig.created_at,
           signatures: [sig],
         });
@@ -122,6 +126,37 @@ export function SignaturesList() {
     const allSigned = signedSigners === totalSigners;
     const firstMethod = METHOD_MAP[docSignatures[0].signing_method] || METHOD_MAP.manual;
     const verificationCode = (docSignatures.find(s => (s.metadata as any)?.verification_code)?.metadata as any)?.verification_code;
+    const selectedPackGroups = selectedGroup.packId && selectedGroup.submissionGroup
+      ? grouped.filter(group => group.packId === selectedGroup.packId && group.submissionGroup === selectedGroup.submissionGroup)
+      : [selectedGroup];
+    const downloadablePackGroups = selectedPackGroups.filter(group => !!group.signedPdfUrl);
+
+    const downloadPackZip = async () => {
+      if (downloadablePackGroups.length === 0) {
+        toast({ title: 'Nenhum PDF assinado disponível', variant: 'destructive' });
+        return;
+      }
+      try {
+        const zip = new JSZip();
+        for (const group of downloadablePackGroups) {
+          const res = await fetch(group.signedPdfUrl!);
+          const blob = await res.blob();
+          const safeName = group.docName.replace(/[\\/:*?"<>|]+/g, '-').slice(0, 120) || group.docId;
+          zip.file(`${safeName}.pdf`, blob);
+        }
+        const content = await zip.generateAsync({ type: 'blob' });
+        const url = URL.createObjectURL(content);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${(selectedGroup.fillerName || selectedGroup.docName || 'documentos-assinados').replace(/[\\/:*?"<>|]+/g, '-')}.zip`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 1500);
+      } catch (e: any) {
+        toast({ title: 'Erro ao gerar ZIP', description: e.message || 'Tente novamente.', variant: 'destructive' });
+      }
+    };
 
     return (
       <div className="space-y-5">
@@ -161,6 +196,30 @@ export function SignaturesList() {
                   <Download className="h-3.5 w-3.5" /> PDF assinado
                 </a>
               </Button>
+            )}
+            {downloadablePackGroups.length > 1 && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="sm" className="gap-1">
+                    <Download className="h-3.5 w-3.5" /> Baixar pack
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-64">
+                  {downloadablePackGroups.map(group => (
+                    <DropdownMenuItem key={group.docId} asChild>
+                      <a href={group.signedPdfUrl!} target="_blank" rel="noopener noreferrer">
+                        <Download className="h-3.5 w-3.5 mr-2" />
+                        <span className="truncate">{group.docName}</span>
+                      </a>
+                    </DropdownMenuItem>
+                  ))}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={downloadPackZip}>
+                    <Download className="h-3.5 w-3.5 mr-2" />
+                    Baixar todos em ZIP
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
             {signedSigners > 0 && (
               <Button
