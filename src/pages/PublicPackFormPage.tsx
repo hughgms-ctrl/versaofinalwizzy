@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Loader2, CheckCircle, FileText, Send, Info, Download, MessageCircle, Phone, User } from 'lucide-react';
+import { Loader2, CheckCircle, FileText, Send, Info, MessageCircle, Phone, User, PenLine } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -47,6 +47,7 @@ export default function PublicPackFormPage() {
   const [submitting, setSubmitting] = useState(false);
   const [generatedDocs, setGeneratedDocs] = useState<GeneratedDoc[] | null>(null);
   const [organizationId, setOrganizationId] = useState<string | null>(null);
+  const [signatureUrl, setSignatureUrl] = useState<string | null>(null);
 
   // Fixed identification fields
   const [signerName, setSignerName] = useState('');
@@ -126,8 +127,13 @@ export default function PublicPackFormPage() {
         },
       });
       if (fnError || data?.error) throw new Error(data?.error || 'Erro ao enviar');
+      if (data.signature_url) {
+        window.location.href = data.signature_url;
+        return;
+      }
       setGeneratedDocs(data.documents || []);
       setOrganizationId(data.organization_id || null);
+      setSignatureUrl(data.signature_url || null);
       // Pre-fill WhatsApp phone with the signer's phone
       setWhatsappPhone(signerPhone);
       // If auto-sent, mark as sent
@@ -156,6 +162,7 @@ export default function PublicPackFormPage() {
         },
       });
       if (fnError || data?.error) throw new Error(data?.error || 'Erro ao enviar');
+      if (data.signature_url) setSignatureUrl(data.signature_url);
       setWhatsappSent(true);
     } catch (e: any) {
       setError(e.message);
@@ -205,9 +212,9 @@ export default function PublicPackFormPage() {
         <main className="max-w-2xl mx-auto p-4 md:p-6">
           <div className="text-center mb-6">
             <CheckCircle className="h-12 w-12 mx-auto text-primary mb-3" />
-            <h2 className="text-xl font-semibold">Documentos gerados com sucesso!</h2>
+            <h2 className="text-xl font-semibold">Documentos prontos para assinatura</h2>
             <p className="text-sm text-muted-foreground mt-1">
-              {generatedDocs.length} documento{generatedDocs.length > 1 ? 's foram gerados' : ' foi gerado'} para <strong>{signerName}</strong>
+              {generatedDocs.length} documento{generatedDocs.length > 1 ? 's foram preparados' : ' foi preparado'} para <strong>{signerName}</strong>
             </p>
           </div>
 
@@ -228,23 +235,20 @@ export default function PublicPackFormPage() {
                       <p className="text-xs text-muted-foreground">{doc.name}</p>
                     </div>
                   </div>
-                  {doc.pdf_url ? (
-                    <a
-                      href={doc.pdf_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
-                    >
-                      <Download className="h-4 w-4" />
-                      Baixar PDF
-                    </a>
-                  ) : (
-                    <Badge variant="secondary" className="text-xs">Processando...</Badge>
-                  )}
+                  <Badge variant="secondary" className="text-xs">Assinatura pendente</Badge>
                 </div>
               </Card>
             ))}
           </div>
+
+          {signatureUrl && (
+            <Button asChild className="w-full mb-4 gap-2" size="lg">
+              <a href={signatureUrl}>
+                <PenLine className="h-4 w-4" />
+                Assinar agora
+              </a>
+            </Button>
+          )}
 
           {/* WhatsApp section */}
           <Card className="p-5">
@@ -252,9 +256,9 @@ export default function PublicPackFormPage() {
               {!showWhatsAppInput && !whatsappSent && (
                 <>
                   <MessageCircle className="h-8 w-8 mx-auto text-green-600 mb-2" />
-                  <h3 className="text-base font-semibold mb-1">Receber documentos para assinatura</h3>
+                  <h3 className="text-base font-semibold mb-1">Receber link de assinatura</h3>
                   <p className="text-sm text-muted-foreground mb-4">
-                    Clique abaixo para receber os documentos diretamente no seu WhatsApp
+                    Clique abaixo para receber o link de assinatura diretamente no seu WhatsApp
                   </p>
                   <Button
                     onClick={() => setShowWhatsAppInput(true)}
@@ -310,9 +314,9 @@ export default function PublicPackFormPage() {
               {whatsappSent && (
                 <div className="space-y-2">
                   <CheckCircle className="h-8 w-8 mx-auto text-green-600" />
-                  <h3 className="text-base font-semibold">Documentos enviados!</h3>
+                  <h3 className="text-base font-semibold">Link enviado!</h3>
                   <p className="text-sm text-muted-foreground">
-                    Verifique seu WhatsApp para receber os documentos.
+                    Verifique seu WhatsApp para abrir a assinatura.
                   </p>
                 </div>
               )}
@@ -448,12 +452,12 @@ export default function PublicPackFormPage() {
           {submitting ? (
             <>
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              Gerando documentos...
+              Preparando assinatura...
             </>
           ) : (
             <>
               <Send className="h-4 w-4 mr-2" />
-              Enviar formulário
+              Enviar para assinatura
             </>
           )}
         </Button>

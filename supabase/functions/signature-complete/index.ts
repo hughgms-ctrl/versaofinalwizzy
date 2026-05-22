@@ -78,6 +78,28 @@ function decodeDataUrlImage(dataUrl: string): { buffer: Uint8Array; contentType:
   }
 }
 
+async function computeDocumentHash(pdfUrl: string | null, fallbackData: any): Promise<string> {
+  if (pdfUrl) {
+    try {
+      const pdfResponse = await fetch(pdfUrl);
+      const pdfBuffer = await pdfResponse.arrayBuffer();
+      const hashBuffer = await crypto.subtle.digest("SHA-256", pdfBuffer);
+      return Array.from(new Uint8Array(hashBuffer))
+        .map(b => b.toString(16).padStart(2, "0"))
+        .join("");
+    } catch (e) {
+      console.error("Error hashing PDF:", e);
+    }
+  }
+
+  const encoder = new TextEncoder();
+  const data = encoder.encode(JSON.stringify(fallbackData || {}));
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(hashBuffer))
+    .map(b => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -156,27 +178,8 @@ serve(async (req) => {
       return errorResponse(`Verificação OTP pendente: ${missingChannels.map((c) => c === 'whatsapp' ? 'WhatsApp' : 'e-mail').join(' e ')}`, 400);
     }
 
-    // Document hash from original PDF
-    let documentHash = "";
     const originalPdfUrl: string | null = signature.generated_document?.pdf_url || null;
-    if (originalPdfUrl) {
-      try {
-        const pdfResponse = await fetch(originalPdfUrl);
-        const pdfBuffer = await pdfResponse.arrayBuffer();
-        const hashBuffer = await crypto.subtle.digest("SHA-256", pdfBuffer);
-        documentHash = Array.from(new Uint8Array(hashBuffer))
-          .map(b => b.toString(16).padStart(2, "0"))
-          .join("");
-      } catch (e) {
-        console.error("Error hashing PDF:", e);
-        const encoder = new TextEncoder();
-        const data = encoder.encode(JSON.stringify(signature.generated_document?.filled_data || {}));
-        const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-        documentHash = Array.from(new Uint8Array(hashBuffer))
-          .map(b => b.toString(16).padStart(2, "0"))
-          .join("");
-      }
-    }
+    const documentHash = await computeDocumentHash(originalPdfUrl, signature.generated_document?.filled_data || {});
 
     // Selfie upload
     let selfieUrl: string | null = null;
@@ -282,6 +285,182 @@ serve(async (req) => {
 
     // Propagate to document_signers row (if this signature originated from one)
     await markSignerSigned(supabase, signature.id, signedAt);
+
+    // Pack public links show one review/signing flow, but each document still
+    // needs its own signer row, evidence, stamped PDF and receipt. When the
+    // signer is part of a pack submission, mirror the same signing act to the
+    // matching signer on every sibling document from that submission.
+    const { data: currentSigner } = meta.from_signer_id
+      ? await supabase
+        .from("document_signers")
+        .select("id, order, signer_name, signer_email, signer_phone, signer_cpf, metadata")
+        .eq("id", meta.from_signer_id)
+        .maybeSingle()
+      : await supabase
+        .from("document_signers")
+        .select("id, order, signer_name, signer_email, signer_phone, signer_cpf, metadata")
+        .eq("signature_id", signature.id)
+        .maybeSingle();
+
+    const { data: currentDoc } = await supabase
+      .from("generated_documents")
+      .select("id, pack_id, submission_group")
+      .eq("id", signature.generated_document_id)
+      .maybeSingle();
+
+    if (currentSigner && currentDoc?.pack_id && currentDoc?.submission_group) {
+      const currentSignerMeta = (currentSigner.metadata || {}) as Record<string, any>;
+      const packSignerKey = currentSignerMeta.pack_signer_key || null;
+
+      const { data: siblingDocs } = await supabase
+        .from("generated_documents")
+        .select("id")
+        .eq("pack_id", currentDoc.pack_id)
+        .eq("submission_group", currentDoc.submission_group);
+
+      const siblingDocIds = (siblingDocs || []).map((d: any) => d.id).filter((id: string) => id !== signature.generated_document_id);
+
+      if (siblingDocIds.length > 0) {
+        const { data: siblingSigners } = await supabase
+          .from("document_signers")
+          .select("id, generated_document_id, signature_token, signature_id, status, order, signer_name, signer_email, signer_phone, signer_cpf, metadata")
+          .in("generated_document_id", siblingDocIds)
+          .neq("status", "signed");
+
+        const samePersonSigners = (siblingSigners || []).filter((s: any) => {
+          const siblingMeta = (s.metadata || {}) as Record<string, any>;
+          if (packSignerKey) return siblingMeta.pack_signer_key === packSignerKey;
+          return Number(s.order || 0) === Number(currentSigner.order || 0)
+            && String(s.signer_phone || "") === String(currentSigner.signer_phone || "")
+            && String(s.signer_email || "") === String(currentSigner.signer_email || "");
+        });
+
+        for (const siblingSigner of samePersonSigners) {
+          if (!siblingSigner.signature_token) continue;
+          const siblingResolved = await resolveSignatureByToken(supabase, siblingSigner.signature_token);
+          if (!siblingResolved || siblingResolved.status === "signed") continue;
+
+          const { data: siblingSignature } = await supabase
+            .from("document_signatures")
+            .select("*, generated_document:generated_documents(id, name, pdf_url, filled_data)")
+            .eq("id", siblingResolved.id)
+            .maybeSingle();
+          if (!siblingSignature) continue;
+
+          const siblingMeta = (siblingSignature.metadata || {}) as Record<string, any>;
+          const siblingOriginalPdfUrl: string | null = siblingSignature.generated_document?.pdf_url || null;
+          const siblingDocumentHash = await computeDocumentHash(
+            siblingOriginalPdfUrl,
+            siblingSignature.generated_document?.filled_data || {},
+          );
+          const siblingVerificationCode = generateVerificationCode();
+
+          await supabase.from("signature_evidence").insert({
+            signature_id: siblingSignature.id,
+            document_hash: siblingDocumentHash,
+            signer_ip: signerIp,
+            signer_device: signerUserAgent,
+            selfie_url: selfieUrl,
+            otp_verified_at: otpVerifiedAt,
+            signed_at: signedAt,
+            verification_code: siblingVerificationCode,
+            geolocation: geolocation || null,
+            original_pdf_url: siblingOriginalPdfUrl,
+            metadata: {
+              user_agent: signerUserAgent,
+              browser: uaInfo.browser,
+              os: uaInfo.os,
+              device_type: uaInfo.deviceType,
+              signature_method: selfieRequired ? "internal_advanced" : "internal_otp_only",
+              law_reference: "MP 2.200-2/2001 + Lei 14.063/2020",
+              require_selfie: selfieRequired,
+              otp_channel: siblingMeta.otp_channel || meta.otp_channel || "email",
+              otp_channels: siblingMeta.otp_channels || configuredChannels,
+              pack_signed_from_signature_id: signature.id,
+            },
+          });
+
+          await supabase
+            .from("document_signatures")
+            .update({
+              status: "signed",
+              signed_at: signedAt,
+              signature_url: signatureUrl,
+              metadata: {
+                ...siblingMeta,
+                document_hash: siblingDocumentHash,
+                verification_code: siblingVerificationCode,
+                selfie_url: selfieUrl,
+                signature_url: signatureUrl,
+                signer_ip: signerIp,
+                signer_device: signerUserAgent,
+                signer_browser: uaInfo.browser,
+                signer_os: uaInfo.os,
+                signer_device_type: uaInfo.deviceType,
+                geolocation: geolocation || null,
+                signing_method_detail: selfieRequired ? "internal_advanced_otp_selfie" : "internal_otp_only",
+                pack_signed_from_signature_id: signature.id,
+              },
+            })
+            .eq("id", siblingSignature.id);
+
+          await markSignerSigned(supabase, siblingSignature.id, signedAt);
+
+          if (siblingOriginalPdfUrl) {
+            try {
+              const stampResp = await fetch(`${SUPABASE_URL}/functions/v1/signature-stamp-pdf`, {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  "Authorization": `Bearer ${SERVICE_KEY}`,
+                },
+                body: JSON.stringify({
+                  signatureId: siblingSignature.id,
+                  generatedDocumentId: siblingSignature.generated_document_id,
+                  documentHash: siblingDocumentHash,
+                  verificationCode: siblingVerificationCode,
+                }),
+              });
+              if (!stampResp.ok) console.error("sibling stamp-pdf failed:", await stampResp.text());
+            } catch (e) {
+              console.error("Error stamping sibling PDF:", e);
+            }
+          }
+
+          try {
+            await fetch(`${SUPABASE_URL}/functions/v1/signature-receipt`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${SERVICE_KEY}`,
+              },
+              body: JSON.stringify({
+                signatureId: siblingSignature.id,
+                signerName: siblingSignature.signer_name,
+                signerEmail: siblingSignature.signer_email,
+                signerPhone: siblingSignature.signer_phone,
+                signerCpf: siblingSignature.signer_cpf,
+                documentName: siblingSignature.generated_document?.name,
+                documentHash: siblingDocumentHash,
+                verificationCode: siblingVerificationCode,
+                selfieUrl,
+                signatureUrl,
+                signedAt,
+                signerIp,
+                signerDevice: signerUserAgent,
+                signerBrowser: uaInfo.browser,
+                signerOs: uaInfo.os,
+                deviceType: uaInfo.deviceType,
+                otpChannel: siblingMeta.otp_channel || meta.otp_channel || "email",
+                geolocation,
+              }),
+            });
+          } catch (e) {
+            console.error("Error generating sibling receipt:", e);
+          }
+        }
+      }
+    }
 
     const { count: pendingSigners } = await supabase
       .from("document_signers")

@@ -36,7 +36,7 @@ serve(async (req) => {
         });
         const { data: refreshed } = await supabase
           .from("generated_documents")
-          .select("id, name, pdf_url, status, pack_id, is_filled")
+          .select("id, name, pdf_url, status, pack_id, is_filled, submission_group")
           .eq("id", d.id)
           .maybeSingle();
         return refreshed || d;
@@ -49,7 +49,7 @@ serve(async (req) => {
     // Load the related generated document for preview
     const { data: docRaw } = await supabase
       .from("generated_documents")
-      .select("id, name, pdf_url, status, pack_id, is_filled")
+      .select("id, name, pdf_url, status, pack_id, is_filled, submission_group")
       .eq("id", resolved.generated_document_id)
       .maybeSingle();
     const doc = await ensurePdf(docRaw);
@@ -66,11 +66,15 @@ serve(async (req) => {
         .maybeSingle();
       packName = pack?.name || null;
 
-      const { data: siblings } = await supabase
+      let siblingsQuery = supabase
         .from("generated_documents")
-        .select("id, name, pdf_url, status, is_filled")
+        .select("id, name, pdf_url, status, is_filled, submission_group")
         .eq("pack_id", doc.pack_id)
         .order("created_at", { ascending: true });
+      if (doc.submission_group) {
+        siblingsQuery = siblingsQuery.eq("submission_group", doc.submission_group);
+      }
+      const { data: siblings } = await siblingsQuery;
       const ensured = await Promise.all((siblings || []).map((d: any) => ensurePdf(d)));
       packDocuments = ensured.filter((d: any) => !!d.pdf_url);
     }

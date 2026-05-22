@@ -5,6 +5,48 @@ const corsHeaders = {
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+const PUBLIC_APP_ORIGIN = "https://wizzybr.com";
+
+const normalizeKey = (value: string) =>
+  String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+
+function pickSubmittedValue(data: Record<string, any>, mappedKey?: string, aliases: string[] = []) {
+  if (mappedKey && data[mappedKey] != null && String(data[mappedKey]).trim()) {
+    return String(data[mappedKey]).trim();
+  }
+  const wanted = aliases.map(normalizeKey);
+  for (const [key, value] of Object.entries(data || {})) {
+    const text = String(value ?? "").trim();
+    if (!text) continue;
+    const normalized = normalizeKey(key);
+    if (wanted.some((alias) => normalized.includes(alias) || alias.includes(normalized))) return text;
+  }
+  return "";
+}
+
+function normalizePhone(value: string | null | undefined) {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (!digits) return "";
+  return digits.startsWith("55") ? digits : `55${digits}`;
+}
+
+function otpChannelsForSigner(signer: any) {
+  const auth = (signer.auth_methods || {}) as Record<string, boolean>;
+  const channels: string[] = [];
+  if (auth.otp_email) channels.push("email");
+  if (auth.otp_whatsapp) channels.push("whatsapp");
+  if (channels.length === 0) {
+    if (signer.signer_email) channels.push("email");
+    else if (signer.signer_phone) channels.push("whatsapp");
+    else channels.push("email");
+  }
+  return channels;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -17,27 +59,25 @@ Deno.serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     if (!token) {
-      return new Response(JSON.stringify({ error: "Token é obrigatório" }), {
+      return new Response(JSON.stringify({ error: "Token e obrigatorio" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // Fetch pack by public_token
     const { data: pack, error: packErr } = await supabase
       .from("document_packs")
-      .select("id, name, description, template_ids, field_config, organization_id")
+      .select("id, name, description, template_ids, field_config, organization_id, default_signers")
       .eq("public_token", token)
       .maybeSingle();
 
     if (packErr || !pack) {
-      return new Response(JSON.stringify({ error: "Formulário não encontrado" }), {
+      return new Response(JSON.stringify({ error: "Formulario nao encontrado" }), {
         status: 404,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // GET action: return pack info for the form
     if (action === "get") {
       const { data: org } = await supabase
         .from("organizations")
@@ -45,7 +85,6 @@ Deno.serve(async (req) => {
         .eq("id", pack.organization_id)
         .maybeSingle();
 
-      // Check if auto_send_whatsapp is enabled
       const { data: fullPack } = await supabase
         .from("document_packs")
         .select("auto_send_whatsapp")
@@ -66,7 +105,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Helper: get active WhatsApp instance and token for org
     async function getWhatsAppInstance(orgId: string) {
       const { data: instance } = await supabase
         .from("whatsapp_instances")
@@ -78,16 +116,15 @@ Deno.serve(async (req) => {
       return instance;
     }
 
-    // Helper: send document via UAZAPI directly
-    async function sendDocumentViaWhatsApp(
+    async function sendSignatureLinkViaWhatsApp(
       phone: string,
-      docName: string,
-      pdfUrl: string,
-      instanceToken: string
+      packName: string,
+      signatureUrl: string,
+      instanceToken: string,
     ): Promise<boolean> {
       try {
-        const baseUrl = uazapiBaseUrl.endsWith('/') ? uazapiBaseUrl.slice(0, -1) : uazapiBaseUrl;
-        const response = await fetch(`${baseUrl}/send/media`, {
+        const baseUrl = uazapiBaseUrl.endsWith("/") ? uazapiBaseUrl.slice(0, -1) : uazapiBaseUrl;
+        const response = await fetch(`${baseUrl}/send/text`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -95,57 +132,77 @@ Deno.serve(async (req) => {
           },
           body: JSON.stringify({
             number: phone,
-            file: pdfUrl,
-            caption: `📄 *${docName}*\n\nSegue seu documento:`,
-            type: "document",
+            text: `Assinatura solicitada - ${packName}\n\nRevise e assine seus documentos neste link:\n${signatureUrl}`,
           }),
         });
 
         if (!response.ok) {
-          const errText = await response.text();
-          console.error("UAZAPI send error:", errText);
+          console.error("UAZAPI signature-link error:", await response.text());
           return false;
         }
         return true;
       } catch (e) {
-        console.error("UAZAPI send error:", e);
+        console.error("UAZAPI signature-link error:", e);
         return false;
       }
     }
 
-    // SUBMIT action: generate documents
+    async function createSignatureForSigner(signer: any, docId: string) {
+      const channels = otpChannelsForSigner(signer);
+      const { data: sig } = await supabase
+        .from("document_signatures")
+        .insert({
+          organization_id: pack.organization_id,
+          generated_document_id: docId,
+          signing_method: "internal",
+          signer_name: signer.signer_name,
+          signer_email: signer.signer_email || null,
+          signer_phone: signer.signer_phone || null,
+          signer_cpf: signer.signer_cpf || null,
+          signature_token: signer.signature_token,
+          status: "pending",
+          metadata: {
+            ...(signer.metadata || {}),
+            require_selfie: signer.auth_methods?.selfie === true,
+            otp_channel: channels[0],
+            otp_channels: channels,
+            auth_methods: signer.auth_methods || { manuscrita: true },
+            from_signer_id: signer.id,
+          },
+        })
+        .select("id")
+        .single();
+
+      if (sig?.id) {
+        await supabase.from("document_signers").update({ signature_id: sig.id }).eq("id", signer.id);
+      }
+    }
+
     if (action === "submit") {
       const { filled_data, signer_name, signer_phone, auto_send_whatsapp } = body;
       if (!filled_data) {
-        return new Response(JSON.stringify({ error: "Dados do formulário são obrigatórios" }), {
+        return new Response(JSON.stringify({ error: "Dados do formulario sao obrigatorios" }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
       if (!signer_name || !signer_phone) {
-        return new Response(JSON.stringify({ error: "Nome e telefone são obrigatórios" }), {
+        return new Response(JSON.stringify({ error: "Nome e telefone sao obrigatorios" }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      // Normalize phone
-      let normalizedPhone = signer_phone.replace(/\D/g, '');
-      if (!normalizedPhone.startsWith('55')) {
-        normalizedPhone = '55' + normalizedPhone;
-      }
-
-      // Create a submission group ID for grouping docs together
-      const submissionGroup = `${pack.id}_${signer_name.trim().replace(/\s+/g, '_')}_${Date.now()}`;
-
+      const normalizedPhone = normalizePhone(signer_phone);
+      const submissionGroup = `${pack.id}_${signer_name.trim().replace(/\s+/g, "_")}_${Date.now()}`;
+      const nowIso = new Date().toISOString();
       const submittedBy = {
         name: signer_name.trim(),
         phone: normalizedPhone,
-        submitted_at: new Date().toISOString(),
+        submitted_at: nowIso,
       };
 
-      // Try to find existing contact by phone
       let contactId: string | null = null;
       let conversationId: string | null = null;
 
@@ -158,8 +215,6 @@ Deno.serve(async (req) => {
 
       if (existingContact) {
         contactId = existingContact.id;
-
-        // Find conversation for this contact
         const { data: conv } = await supabase
           .from("conversations")
           .select("id")
@@ -168,44 +223,36 @@ Deno.serve(async (req) => {
           .order("last_message_at", { ascending: false })
           .limit(1)
           .maybeSingle();
-
-        if (conv) {
-          conversationId = conv.id;
-        }
+        conversationId = conv?.id || null;
       }
 
-      // Get templates
       const { data: templates } = await supabase
         .from("document_templates")
         .select("id, name, fields, content, content_html, logo_url")
         .in("id", pack.template_ids || []);
 
       if (!templates || templates.length === 0) {
-        return new Response(JSON.stringify({ error: "Templates não encontrados" }), {
+        return new Response(JSON.stringify({ error: "Templates nao encontrados" }), {
           status: 404,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      // Build mapping from field_config
       const fieldConfig = (pack.field_config as any[]) || [];
       const fieldValueMap = new Map<string, Map<string, string>>();
 
       for (const fc of fieldConfig) {
-        const formValue = filled_data[fc.originalName] || '';
+        const formValue = filled_data[fc.originalName] || "";
         const mappings = fc.mappedFields && fc.mappedFields.length > 0
           ? fc.mappedFields
           : (fc.sourceTemplateIds || []).map((tid: string) => ({ fieldName: fc.originalName, templateId: tid }));
 
         for (const m of mappings) {
-          if (!fieldValueMap.has(m.templateId)) {
-            fieldValueMap.set(m.templateId, new Map());
-          }
+          if (!fieldValueMap.has(m.templateId)) fieldValueMap.set(m.templateId, new Map());
           fieldValueMap.get(m.templateId)!.set(m.fieldName, formValue);
         }
       }
 
-      // Generate a document for each template
       const results = [];
       for (const template of templates) {
         const templateFields = (template.fields as any[]) || [];
@@ -214,7 +261,7 @@ Deno.serve(async (req) => {
 
         templateFields.forEach((field: any) => {
           const name = field.name || field;
-          templateData[name] = tplMap?.get(name) ?? filled_data[name] ?? '';
+          templateData[name] = tplMap?.get(name) ?? filled_data[name] ?? "";
         });
 
         const docName = `${pack.name} - ${template.name} - ${signer_name.trim()}`;
@@ -230,113 +277,179 @@ Deno.serve(async (req) => {
             name: docName,
             filled_data: templateData,
             status: "generated",
-            signing_method: "manual",
+            signing_status: "pending",
+            signing_method: "internal",
+            fill_mode: "public",
+            is_filled: true,
+            source_kind: "pack_public_link",
+            form_filled_at: nowIso,
             submitted_by: submittedBy,
             submission_group: submissionGroup,
           })
-          .select()
+          .select("id")
           .single();
 
-        if (docErr) {
+        if (docErr || !doc) {
           console.error("Error creating document:", docErr);
-        } else {
-          let pdfUrl: string | null = null;
-
-          try {
-            const pdfResp = await fetch(`${supabaseUrl}/functions/v1/generate-document-pdf`, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${supabaseKey}`,
-              },
-              body: JSON.stringify({
-                template_content: template.content,
-                template_content_html: (template as any).content_html ?? null,
-                fields: (template as any).fields ?? [],
-                filled_data: templateData,
-                document_name: docName,
-                logo_url: (template as any).logo_url ?? null,
-              }),
-            });
-
-            const pdfData = await pdfResp.json();
-            if (pdfResp.ok && pdfData.pdf_url) {
-              pdfUrl = pdfData.pdf_url;
-              await supabase
-                .from("generated_documents")
-                .update({ pdf_url: pdfUrl })
-                .eq("id", doc.id);
-            }
-          } catch (pdfErr) {
-            console.error("PDF generation error:", pdfErr);
-          }
-
-          results.push({
-            id: doc.id,
-            name: docName,
-            pdf_url: pdfUrl,
-            template_name: template.name,
-          });
+          continue;
         }
+
+        let pdfUrl: string | null = null;
+        try {
+          const pdfResp = await fetch(`${supabaseUrl}/functions/v1/generate-document-pdf`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${supabaseKey}`,
+            },
+            body: JSON.stringify({
+              template_content: template.content,
+              template_content_html: (template as any).content_html ?? null,
+              fields: (template as any).fields ?? [],
+              filled_data: templateData,
+              document_name: docName,
+              logo_url: (template as any).logo_url ?? null,
+            }),
+          });
+
+          const pdfData = await pdfResp.json();
+          if (pdfResp.ok && pdfData.pdf_url) {
+            pdfUrl = pdfData.pdf_url;
+            await supabase.from("generated_documents").update({ pdf_url: pdfUrl }).eq("id", doc.id);
+          }
+        } catch (pdfErr) {
+          console.error("PDF generation error:", pdfErr);
+        }
+
+        results.push({
+          id: doc.id,
+          name: docName,
+          pdf_url: pdfUrl,
+          template_name: template.name,
+        });
       }
 
-      // Send internal message to conversation if linked
+      const configuredSigners = Array.isArray((pack as any).default_signers) ? (pack as any).default_signers : [];
+      const baseSigners = configuredSigners.length > 0
+        ? configuredSigners
+        : [{
+          signer_name: signer_name.trim(),
+          signer_phone: normalizedPhone,
+          signer_role: "Quem preencheu",
+          auth_methods: { manuscrita: true, otp_whatsapp: true, selfie: true },
+          data_source: "form",
+          field_mapping: {},
+        }];
+
+      const signerRows: any[] = [];
+      for (const doc of results) {
+        baseSigners.forEach((s: any, idx: number) => {
+          const source = s.data_source || "manual";
+          const mapping = s.field_mapping || {};
+          const signerName = source === "form"
+            ? pickSubmittedValue(filled_data, mapping.name, ["nome completo", "nome", "cliente", "contratante", "signatario"]) || signer_name.trim()
+            : s.signer_name;
+          const signerEmail = source === "form"
+            ? pickSubmittedValue(filled_data, mapping.email, ["email", "e-mail", "correio eletronico"]) || s.signer_email || null
+            : s.signer_email || null;
+          const signerPhone = source === "form"
+            ? pickSubmittedValue(filled_data, mapping.phone, ["whatsapp", "telefone", "celular", "phone"]) || normalizedPhone
+            : s.signer_phone || null;
+          const signerCpf = source === "form"
+            ? pickSubmittedValue(filled_data, mapping.cpf, ["cpf", "documento", "doc"]) || s.signer_cpf || null
+            : s.signer_cpf || null;
+
+          signerRows.push({
+            organization_id: pack.organization_id,
+            generated_document_id: doc.id,
+            pack_id: pack.id,
+            signer_name: signerName || "Signatario",
+            signer_email: signerEmail,
+            signer_phone: signerPhone ? normalizePhone(String(signerPhone)) : null,
+            signer_cpf: signerCpf,
+            signer_role: s.signer_role || "Assinar",
+            signing_method: "internal",
+            auth_methods: s.auth_methods || { manuscrita: true, otp_whatsapp: true, selfie: true },
+            signature_token: crypto.randomUUID(),
+            order: idx,
+            status: "pending",
+            data_source: source,
+            field_mapping: mapping,
+            metadata: {
+              ...(s.metadata || {}),
+              pack_submission_group: submissionGroup,
+              pack_signer_key: `pack:${pack.id}:submission:${submissionGroup}:signer:${idx}`,
+            },
+          });
+        });
+      }
+
+      let signatureToken: string | null = null;
+      if (signerRows.length > 0) {
+        const { data: insertedSigners, error: signerErr } = await supabase
+          .from("document_signers")
+          .insert(signerRows)
+          .select("id, generated_document_id, signature_token, signer_name, signer_email, signer_phone, signer_cpf, auth_methods, metadata, order");
+
+        if (signerErr) {
+          console.error("Error creating pack signers:", signerErr);
+          throw new Error("Falha ao criar assinaturas do pack");
+        }
+
+        for (const s of insertedSigners || []) {
+          await createSignatureForSigner(s, s.generated_document_id);
+        }
+
+        const firstDocId = results[0]?.id;
+        const firstDocSigners = (insertedSigners || [])
+          .filter((s: any) => s.generated_document_id === firstDocId)
+          .sort((a: any, b: any) => (a.order || 0) - (b.order || 0));
+        signatureToken = firstDocSigners[0]?.signature_token || (insertedSigners || [])[0]?.signature_token || null;
+      }
+
+      const signatureUrl = signatureToken ? `${PUBLIC_APP_ORIGIN}/sign/${signatureToken}` : null;
+
       if (conversationId) {
         try {
-          const docNames = results.map(r => `• ${r.template_name}`).join('\n');
-          const internalMessage = `📋 *Formulário de pack preenchido*\n\n` +
-            `👤 *Nome:* ${signer_name.trim()}\n` +
-            `📱 *Telefone:* ${normalizedPhone}\n` +
-            `📦 *Pack:* ${pack.name}\n\n` +
-            `📄 *Documentos gerados:*\n${docNames}\n\n` +
-            `_${results.length} documento(s) gerado(s) automaticamente via formulário público._`;
+          const docNames = results.map((r) => `- ${r.template_name}`).join("\n");
+          const internalMessage =
+            `Formulario de pack preenchido\n\n` +
+            `Nome: ${signer_name.trim()}\n` +
+            `Telefone: ${normalizedPhone}\n` +
+            `Pack: ${pack.name}\n\n` +
+            `Documentos preparados para assinatura:\n${docNames}`;
 
-          await supabase
-            .from("messages")
-            .insert({
-              conversation_id: conversationId,
-              content: internalMessage,
-              direction: "outbound",
-              is_from_bot: true,
-              type: "text",
-              metadata: {
-                type: "pack_form_submitted",
-                pack_id: pack.id,
-                pack_name: pack.name,
-                signer_name: signer_name.trim(),
-                signer_phone: normalizedPhone,
-                document_ids: results.map(r => r.id),
-                submission_group: submissionGroup,
-                is_internal_note: true,
-              },
-            });
+          await supabase.from("messages").insert({
+            conversation_id: conversationId,
+            content: internalMessage,
+            direction: "outbound",
+            is_from_bot: true,
+            type: "text",
+            metadata: {
+              type: "pack_form_submitted",
+              pack_id: pack.id,
+              pack_name: pack.name,
+              signer_name: signer_name.trim(),
+              signer_phone: normalizedPhone,
+              document_ids: results.map((r) => r.id),
+              submission_group: submissionGroup,
+              signature_url: signatureUrl,
+              is_internal_note: true,
+            },
+          });
 
-          // Update conversation last_message_at
-          await supabase
-            .from("conversations")
-            .update({ last_message_at: new Date().toISOString() })
-            .eq("id", conversationId);
+          await supabase.from("conversations").update({ last_message_at: new Date().toISOString() }).eq("id", conversationId);
         } catch (msgErr) {
           console.error("Error sending internal message:", msgErr);
         }
       }
 
-      // Auto-send via WhatsApp if enabled
       let whatsappSentCount = 0;
-      if (auto_send_whatsapp) {
+      if (auto_send_whatsapp && signatureUrl) {
         const instance = await getWhatsAppInstance(pack.organization_id);
         if (instance?.zapi_token) {
-          for (const doc of results) {
-            if (doc.pdf_url) {
-              const sent = await sendDocumentViaWhatsApp(
-                normalizedPhone,
-                doc.name,
-                doc.pdf_url,
-                instance.zapi_token
-              );
-              if (sent) whatsappSentCount++;
-            }
-          }
+          const sent = await sendSignatureLinkViaWhatsApp(normalizedPhone, pack.name, signatureUrl, instance.zapi_token);
+          if (sent) whatsappSentCount = 1;
         }
       }
 
@@ -346,75 +459,76 @@ Deno.serve(async (req) => {
         documents: results,
         organization_id: pack.organization_id,
         submission_group: submissionGroup,
+        signature_url: signatureUrl,
+        signature_token: signatureToken,
         whatsapp_sent: whatsappSentCount,
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    // SEND_WHATSAPP action: send document PDFs via WhatsApp using UAZAPI directly
     if (action === "send_whatsapp") {
       const { phone, document_ids } = body;
 
       if (!phone || !document_ids || document_ids.length === 0) {
-        return new Response(JSON.stringify({ error: "Telefone e documentos são obrigatórios" }), {
+        return new Response(JSON.stringify({ error: "Telefone e documentos sao obrigatorios" }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      // Normalize phone
-      let normalizedPhone = phone.replace(/\D/g, '');
-      if (!normalizedPhone.startsWith('55')) {
-        normalizedPhone = '55' + normalizedPhone;
-      }
+      const normalizedPhone = normalizePhone(phone);
 
-      // Get documents with PDF URLs
       const { data: docs } = await supabase
         .from("generated_documents")
-        .select("id, name, pdf_url")
+        .select("id, name")
         .in("id", document_ids)
         .eq("organization_id", pack.organization_id);
 
       if (!docs || docs.length === 0) {
-        return new Response(JSON.stringify({ error: "Documentos não encontrados" }), {
+        return new Response(JSON.stringify({ error: "Documentos nao encontrados" }), {
           status: 404,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      // Get active WhatsApp instance
       const instance = await getWhatsAppInstance(pack.organization_id);
-
       if (!instance?.zapi_token) {
-        return new Response(JSON.stringify({ error: "Nenhuma instância WhatsApp conectada" }), {
+        return new Response(JSON.stringify({ error: "Nenhuma instancia WhatsApp conectada" }), {
           status: 400,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
 
-      // Send each document via UAZAPI directly
-      let sentCount = 0;
-      for (const doc of docs) {
-        if (!doc.pdf_url) continue;
-        const sent = await sendDocumentViaWhatsApp(
-          normalizedPhone,
-          doc.name,
-          doc.pdf_url,
-          instance.zapi_token
-        );
-        if (sent) sentCount++;
+      const { data: signer } = await supabase
+        .from("document_signers")
+        .select("signature_token")
+        .in("generated_document_id", document_ids)
+        .neq("status", "signed")
+        .order("order", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      if (!signer?.signature_token) {
+        return new Response(JSON.stringify({ error: "Nenhum link de assinatura pendente encontrado" }), {
+          status: 404,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
       }
+
+      const signatureUrl = `${PUBLIC_APP_ORIGIN}/sign/${signer.signature_token}`;
+      const sent = await sendSignatureLinkViaWhatsApp(normalizedPhone, pack.name, signatureUrl, instance.zapi_token);
 
       return new Response(JSON.stringify({
         success: true,
-        sent_count: sentCount,
+        sent_count: sent ? 1 : 0,
+        signature_url: signatureUrl,
       }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    return new Response(JSON.stringify({ error: "Ação inválida" }), {
+    return new Response(JSON.stringify({ error: "Acao invalida" }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
@@ -422,7 +536,7 @@ Deno.serve(async (req) => {
     console.error("public-pack-form error:", e);
     return new Response(
       JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }
 });
