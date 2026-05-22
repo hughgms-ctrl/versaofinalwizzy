@@ -253,6 +253,110 @@ async function cleanupDuplicateContacts(supabase: any, organizationId: string) {
     return { mergedCount: merged.length, merged };
 }
 
+async function diagnoseWhatsApp(supabase: any, organizationIds: string[], queryText?: string | null) {
+    const { data: settingsRow } = await supabase
+        .from('platform_settings')
+        .select('value')
+        .eq('key', 'whatsapp_connection_settings')
+        .maybeSingle();
+    const connectionSettings = settingsRow?.value || {};
+    const evolutionBaseUrl = String(connectionSettings.evolution_base_url || Deno.env.get('EVOLUTION_BASE_URL') || '').replace(/\/$/, '');
+    const evolutionApiKey = connectionSettings.evolution_api_key || Deno.env.get('EVOLUTION_API_KEY') || '';
+
+    async function readEvolution(path: string, apiKey: string) {
+        if (!evolutionBaseUrl || !apiKey) return { ok: false, skipped: true, reason: 'Evolution settings missing' };
+        try {
+            const response = await fetch(`${evolutionBaseUrl}${path}`, {
+                headers: { apikey: apiKey },
+            });
+            const raw = await response.text();
+            let json: any = null;
+            try { json = raw ? JSON.parse(raw) : null; } catch (_) {}
+            return { ok: response.ok, status: response.status, json, raw: json ? undefined : raw };
+        } catch (error) {
+            return { ok: false, error: String(error) };
+        }
+    }
+
+    const diagnostics = [];
+
+    for (const organizationId of organizationIds) {
+        const { data: instances } = await supabase
+            .from('whatsapp_instances')
+            .select('id, label, provider, status, is_active, phone_number, zapi_instance_id, evolution_instance_name, evolution_instance_id, connected_at, disconnected_at, updated_at')
+            .eq('organization_id', organizationId)
+            .order('updated_at', { ascending: false });
+
+        const evolutionProbes = [];
+        for (const instance of instances || []) {
+            if (instance.provider !== 'evolution') continue;
+            const instanceName = instance.evolution_instance_name || instance.zapi_instance_id;
+            const apiKey = instance.evolution_api_key || evolutionApiKey;
+            evolutionProbes.push({
+                instanceId: instance.id,
+                instanceName,
+                connectionState: await readEvolution(`/instance/connectionState/${instanceName}`, apiKey),
+                webhook: await readEvolution(`/webhook/find/${instanceName}`, apiKey),
+            });
+        }
+
+        const { data: recentConversations } = await supabase
+            .from('conversations')
+            .select('id, status, last_message_at, unread_count, whatsapp_instance_id, contact:contacts(id, name, phone, metadata), last_message:messages(id, content, direction, created_at, zapi_message_id)')
+            .eq('organization_id', organizationId)
+            .order('last_message_at', { ascending: false, nullsFirst: false })
+            .limit(10)
+            .order('created_at', { referencedTable: 'messages', ascending: false })
+            .limit(1, { referencedTable: 'messages' });
+
+        const { data: recentWebhookLogs } = await supabase
+            .from('whatsapp_connection_logs')
+            .select('id, instance_id, event_type, phone_number, details, created_at')
+            .eq('organization_id', organizationId)
+            .in('event_type', ['webhook_received', 'connected', 'pairsuccess', 'connection_update'])
+            .order('created_at', { ascending: false })
+            .limit(20);
+
+        let matchedMessages: any[] = [];
+        if (queryText) {
+            const { data } = await supabase
+                .from('messages')
+                .select('id, conversation_id, content, direction, created_at, zapi_message_id, conversations!inner(organization_id, whatsapp_instance_id, contact:contacts(id, name, phone, metadata))')
+                .eq('conversations.organization_id', organizationId)
+                .ilike('content', `%${queryText}%`)
+                .order('created_at', { ascending: false })
+                .limit(20);
+            matchedMessages = data || [];
+        }
+
+        const duplicateGroups = new Map<string, any[]>();
+        const { data: contacts } = await supabase
+            .from('contacts')
+            .select('id, phone, name, metadata, updated_at')
+            .eq('organization_id', organizationId);
+        for (const contact of contacts || []) {
+            const key = phoneMatchKey(contact.phone);
+            if (!key) continue;
+            if (!duplicateGroups.has(key)) duplicateGroups.set(key, []);
+            duplicateGroups.get(key)!.push(contact);
+        }
+
+        diagnostics.push({
+            organizationId,
+            instances: instances || [],
+            evolutionProbes,
+            recentWebhookLogs: recentWebhookLogs || [],
+            recentConversations: recentConversations || [],
+            matchedMessages,
+            duplicateContactGroups: Array.from(duplicateGroups.entries())
+                .filter(([, group]) => group.length > 1)
+                .map(([phoneKey, group]) => ({ phoneKey, contacts: group })),
+        });
+    }
+
+    return diagnostics;
+}
+
 Deno.serve(async (req) => {
     if (req.method === 'OPTIONS') {
         return new Response(null, { headers: corsHeaders });
@@ -313,7 +417,17 @@ Deno.serve(async (req) => {
         let totalMergedContacts = 0;
 
         for (const currentOrganizationId of organizationIds) {
-            // 1. Find ALL messages that have a duplicate zapi_message_id across ALL conversations in the org
+        const url = new URL(req.url);
+        const action = url.searchParams.get('action') || 'cleanup';
+        if (action === 'diagnose') {
+            const queryText = url.searchParams.get('queryText');
+            const diagnostics = await diagnoseWhatsApp(supabase, organizationIds, queryText);
+            return new Response(JSON.stringify({ success: true, diagnostics }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+        }
+
+        // 1. Find ALL messages that have a duplicate zapi_message_id across ALL conversations in the org
             const { data: allDuplicates, error: dupError } = await supabase
                 .from('messages')
                 .select('id, zapi_message_id, conversation_id, conversations!inner(organization_id)')

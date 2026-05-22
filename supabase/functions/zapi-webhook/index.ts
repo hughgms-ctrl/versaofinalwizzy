@@ -268,6 +268,45 @@ Deno.serve(async (req) => {
     console.log('=== UAZAPI WEBHOOK ===');
     console.log('EventType:', eventType, '| InstanceId:', instanceId, '| InstanceName:', instanceName);
 
+    if (lookupIdentifier) {
+      try {
+        const auditFilters = [];
+        if (instanceId) auditFilters.push(`zapi_instance_id.eq.${instanceId}`);
+        if (instanceName) auditFilters.push(`zapi_instance_id.eq.${instanceName}`);
+        if (instanceName) auditFilters.push(`evolution_instance_name.eq.${instanceName}`);
+        if (instanceId) auditFilters.push(`evolution_instance_id.eq.${instanceId}`);
+
+        if (auditFilters.length > 0) {
+          const { data: auditInstance } = await supabase
+            .from('whatsapp_instances')
+            .select('id, organization_id, phone_number')
+            .or(auditFilters.join(','))
+            .maybeSingle();
+
+          if (auditInstance) {
+            await supabase.from('whatsapp_connection_logs').insert({
+              organization_id: auditInstance.organization_id,
+              instance_id: auditInstance.id,
+              event_type: 'webhook_received',
+              phone_number: auditInstance.phone_number,
+              details: {
+                eventType,
+                instanceId,
+                instanceName,
+                payloadKeys: Object.keys(payload || {}),
+                dataKeys: payload?.data ? Object.keys(payload.data) : [],
+                messageKeys: payload?.data?.message ? Object.keys(payload.data.message) : [],
+                key: payload?.data?.key || null,
+                received_at: new Date().toISOString(),
+              },
+            });
+          }
+        }
+      } catch (auditError) {
+        console.error('[WEBHOOK_AUDIT] Failed to record webhook receipt:', auditError);
+      }
+    }
+
     // System events to ignore
     if (['connectfailure', 'qr', 'qrtimeout', 'historysync',
       'notification', 'e2e_notification', 'ciphertext', 'revoked', 'protocol'].includes(eventType)) {
@@ -421,17 +460,20 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
   const chat = payload.chat || {};
 
   // --- Extract phone (JID -> phone) ---
-  const chatJid = msgSource.Chat || msgSource.chat || eventInfo.Chat || eventInfo.chat || evolutionKey.remoteJid || '';
-  const senderJid = msgSource.Sender || msgSource.sender || eventInfo.Sender || eventInfo.sender || evolutionKey.participant || '';
+  const evolutionRemoteJidAlt = evolutionKey.remoteJidAlt || evolutionKey.remoteJid_alt || evolutionKey.remoteJidAlternative || '';
+  const evolutionParticipantAlt = evolutionKey.participantAlt || evolutionKey.participant_alt || '';
+  const evolutionRemoteJid = evolutionRemoteJidAlt || evolutionKey.remoteJid || '';
+  const chatJid = msgSource.Chat || msgSource.chat || eventInfo.Chat || eventInfo.chat || evolutionRemoteJid || '';
+  const senderJid = msgSource.Sender || msgSource.sender || eventInfo.Sender || eventInfo.sender || evolutionParticipantAlt || evolutionKey.participant || '';
   const chatid = msg.chatid || chat.wa_chatid || chatJid || '';
 
   if (isGroupChat(chatid) || chatid.includes('@g.us')) {
     return respond({ success: true, ignored: true, reason: 'group_message' });
   }
 
-  // Skip LID identifiers
-  if (chatid.includes('@lid') || senderJid.includes('@lid')) {
-    console.log('Skipping @lid message');
+  // Skip LID identifiers only when Evolution did not provide the real WhatsApp JID alternative.
+  if ((chatid.includes('@lid') && !evolutionRemoteJidAlt) || (senderJid.includes('@lid') && !evolutionParticipantAlt && !evolutionRemoteJidAlt)) {
+    console.log('Skipping @lid message without alternate WhatsApp JID');
     return respond({ success: true, ignored: true, reason: 'lid_message' });
   }
 
@@ -444,6 +486,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
   if (!phone && chat.phone) phone = cleanPhone(chat.phone);
   if (!phone && chatid) phone = cleanPhone(chatid);
   if (!phone && msg.phone) phone = cleanPhone(msg.phone);
+  if (!phone && evolutionRemoteJidAlt) phone = cleanPhone(evolutionRemoteJidAlt);
   if (!phone && evolutionKey.remoteJid) phone = cleanPhone(evolutionKey.remoteJid);
 
   if (!phone || !isValidPhoneNumber(phone)) {
