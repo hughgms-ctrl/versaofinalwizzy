@@ -267,13 +267,15 @@ Deno.serve(async (req) => {
 
     // Look up the zapi_message_id for the quoted message (for WhatsApp reply)
     let zapiQuotedMsgId: string | null = null;
+    let zapiQuotedFromMe = false;
     if (quotedMessageId) {
       const { data: quotedMsg } = await supabase
         .from('messages')
-        .select('zapi_message_id')
+        .select('zapi_message_id, direction')
         .eq('id', quotedMessageId)
         .maybeSingle();
       zapiQuotedMsgId = normalizeReplyMessageId(quotedMsg?.zapi_message_id);
+      zapiQuotedFromMe = quotedMsg?.direction === 'outbound';
       console.log(`Quoted message lookup: id=${quotedMessageId}, raw_zapi_id=${quotedMsg?.zapi_message_id || null}, reply_id=${zapiQuotedMsgId}`);
     }
 
@@ -319,7 +321,11 @@ Deno.serve(async (req) => {
 
       if (zapiQuotedMsgId) {
         body.quoted = {
-          key: { id: zapiQuotedMsgId },
+          key: {
+            remoteJid: `${normalizedPhone}@s.whatsapp.net`,
+            fromMe: zapiQuotedFromMe,
+            id: zapiQuotedMsgId,
+          },
           message: { conversation: quotedContent || '' },
         };
       }

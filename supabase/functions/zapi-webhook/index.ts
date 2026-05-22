@@ -199,6 +199,61 @@ function canonicalPhone(raw: string): string {
   return preserved || clean;
 }
 
+function normalizeProviderMessageId(value: any): string {
+  if (!value) return '';
+  return String(value).replace(/^\s+|\s+$/g, '').replace(/^true_/, '').replace(/^false_/, '');
+}
+
+function receiptPatchFromStatus(statusValue: any) {
+  const now = new Date().toISOString();
+  const status = String(statusValue ?? '').toLowerCase();
+  const ack = Number(statusValue);
+  const patch: any = {};
+
+  if (ack >= 2 || ['delivery_ack', 'delivered', 'delivery', 'server_ack'].includes(status)) {
+    patch.delivered_at = now;
+  }
+
+  if (ack >= 3 || ['read', 'read_ack', 'played', 'played_ack'].includes(status)) {
+    patch.delivered_at = now;
+    patch.read_at = now;
+  }
+
+  if (ack >= 4 || ['played', 'played_ack'].includes(status)) {
+    patch.metadata = { played_at: now };
+  }
+
+  return patch;
+}
+
+async function updateMessageReceiptByProviderId(supabase: any, msgId: any, statusValue: any) {
+  const normalizedId = normalizeProviderMessageId(msgId);
+  if (!normalizedId) return false;
+
+  const updateData = receiptPatchFromStatus(statusValue);
+  if (Object.keys(updateData).length === 0) return false;
+
+  if (updateData.metadata) {
+    const { data: existing } = await supabase
+      .from('messages')
+      .select('metadata')
+      .eq('zapi_message_id', normalizedId)
+      .maybeSingle();
+    updateData.metadata = { ...(existing?.metadata || {}), ...updateData.metadata };
+  }
+
+  const { error } = await supabase
+    .from('messages')
+    .update(updateData)
+    .eq('zapi_message_id', normalizedId);
+
+  if (error) {
+    console.error('[RECEIPT] Failed to update message receipt:', error);
+    return false;
+  }
+  return true;
+}
+
 function isGroupChat(chatid: string): boolean {
   return chatid?.includes('@g.us') || chatid?.includes('@broadcast') || false;
 }
@@ -369,6 +424,18 @@ Deno.serve(async (req) => {
       return respond({ success: true, message: 'connection_handled' });
     }
 
+    // Handle read receipts / message status updates before generic message events.
+    const receiptEventTypes = ['readreceipt', 'ack', 'messages.update', 'messages_update', 'messages-update', 'message.update', 'message_update', 'status.update', 'status_update', 'message_status'];
+    if (receiptEventTypes.includes(eventType)) {
+      return await handleReadReceipt(supabase, payload);
+    }
+
+    // Handle presence
+    const presenceEventTypes = ['presence', 'chatpresence', 'presence.update', 'presence_update', 'presence-update', 'presences'];
+    if (presenceEventTypes.includes(eventType)) {
+      return await handlePresence(supabase, payload, instanceId, instanceName);
+    }
+
     // Handle message and media events - catch ALL possible UAZAPI event types for messages/media
     const messageEventTypes = ['messages', 'message', 'media', 'document', 'audio', 'video', 'image', 'sticker', 'location', 'contact', 'ptt', 'messages-upsert', 'messages.upsert', 'messages_upsert', 'send_message'];
     if (messageEventTypes.includes(eventType)) {
@@ -378,16 +445,6 @@ Deno.serve(async (req) => {
         console.error('[WEBHOOK] handleMessage crashed but returning 200 to prevent retry loop:', msgError);
         return respond({ success: false, error: 'message_handler_error', detail: String(msgError) });
       }
-    }
-
-    // Handle read receipts
-    if (eventType === 'readreceipt' || eventType === 'ack') {
-      return await handleReadReceipt(supabase, payload);
-    }
-
-    // Handle presence
-    if (eventType === 'presence' || eventType === 'chatpresence' || eventType === 'presence.update' || eventType === 'presences') {
-      return await handlePresence(supabase, payload, instanceId, instanceName);
     }
 
     // Handle call events
@@ -873,6 +930,11 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
       console.log(`[WEBHOOK] Duplicate message detected (msgId: ${msgId}). Updating status only.`);
 
       // If it exists, just update timestamps/metadata if needed and skip insert
+      await updateMessageReceiptByProviderId(
+        supabase,
+        msgId,
+        evolutionData.status || evolutionData.message?.status || msg.ack || payload.ack || payload.status,
+      );
       if (fromMe) {
         // If it's an eco and we already have it, it's definitely the one we sent.
         return respond({ success: true, duplicate: true });
@@ -903,6 +965,11 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
           .eq('zapi_message_id', msgId).maybeSingle();
         if (nowExists) {
           console.log(`[WEBHOOK] IA mode echo dedup (after wait): msgId=${msgId} already saved by orchestrator.`);
+          await updateMessageReceiptByProviderId(
+            supabase,
+            msgId,
+            evolutionData.status || evolutionData.message?.status || msg.ack || payload.ack || payload.status,
+          );
           return respond({ success: true, duplicate: true, ia_echo: true });
         }
       }
@@ -923,6 +990,11 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
           .maybeSingle();
         if (existingSentByHuman) {
           console.log(`[WEBHOOK] Human echo dedup: msgId=${msgId}, sent_by=${existingSentByHuman.sent_by}`);
+          await updateMessageReceiptByProviderId(
+            supabase,
+            msgId,
+            evolutionData.status || evolutionData.message?.status || msg.ack || payload.ack || payload.status,
+          );
           return respond({ success: true, duplicate: true, human_sent: true });
         }
       }
@@ -1486,37 +1558,57 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
 }
 
 async function handleReadReceipt(supabase: any, payload: any) {
-    const msg = payload.message || {};
-    const msgId = msg.msgid || msg.id;
-    if (!msgId) return respond({ success: true, ignored: true });
+  const data = payload.data || {};
+  const key = data.key || payload.key || {};
+  const msg = payload.message || data.message || {};
 
-    const ack = msg.ack || payload.ack || 0; // Update status
-    const updateData: any = {};
-    if (ack >= 1) updateData.sent_at = updateData.sent_at || new Date().toISOString();
-    if (ack >= 2) updateData.delivered_at = updateData.delivered_at || new Date().toISOString();
-    if (ack >= 3) updateData.read_at = updateData.read_at || new Date().toISOString();
+  const msgId =
+    msg.msgid ||
+    msg.id ||
+    key.id ||
+    data.id ||
+    payload.id ||
+    payload.messageId ||
+    payload.msgid;
 
-    if (ack >= 4) {
-      // Audio played status
-      updateData.metadata = {
-        ...(msg.metadata || {}),
-        played_at: msg.metadata?.played_at || new Date().toISOString()
-      };
-      // Ensure it's marked as read too
-      updateData.read_at = updateData.read_at || new Date().toISOString();
-    }
+  const status =
+    msg.ack ??
+    data.ack ??
+    payload.ack ??
+    data.status ??
+    payload.status ??
+    payload.statusMessage ??
+    payload.update?.status;
 
-    if (Object.keys(updateData).length > 0) {
-      await supabase.from('messages').update(updateData).eq('zapi_message_id', msgId);
-    }
+  if (!msgId) return respond({ success: true, ignored: true, reason: 'receipt_without_message_id' });
 
-    return respond({ success: true });
-  }
+  const updated = await updateMessageReceiptByProviderId(supabase, msgId, status);
+  return respond({ success: true, updated, msgId: normalizeProviderMessageId(msgId), status });
+}
 
 async function handlePresence(supabase: any, payload: any, instanceId: string, instanceName: string) {
   const chat = payload.chat || {};
-  // Fallback to chatId, sender or number if phone is missing
-  const rawPhone = chat.phone || chat.wa_chatid || payload.chatId || payload.sender || payload.number || '';
+  const data = payload.data || {};
+  const key = data.key || {};
+  const presences = data.presences || payload.presences || {};
+  const presenceJid = Object.keys(presences || {})[0];
+  const presenceNode = presenceJid ? presences[presenceJid] : null;
+
+  const rawPhone =
+    chat.phone ||
+    chat.wa_chatid ||
+    payload.chatId ||
+    payload.sender ||
+    payload.number ||
+    data.id ||
+    data.remoteJid ||
+    data.jid ||
+    data.participant ||
+    key.remoteJidAlt ||
+    key.participantAlt ||
+    key.remoteJid ||
+    presenceJid ||
+    '';
   const phone = cleanPhone(rawPhone);
 
   if (!phone) {
@@ -1528,7 +1620,12 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
   const { data: whatsappInstance, error: presenceInstanceError } = await supabase
     .from('whatsapp_instances')
     .select('*')
-    .or(`zapi_instance_id.eq.${instanceId},zapi_instance_id.eq.${instanceName}`)
+    .or([
+      instanceId ? `zapi_instance_id.eq.${instanceId}` : '',
+      instanceName ? `zapi_instance_id.eq.${instanceName}` : '',
+      instanceName ? `evolution_instance_name.eq.${instanceName}` : '',
+      instanceId ? `evolution_instance_id.eq.${instanceId}` : '',
+    ].filter(Boolean).join(','))
     .maybeSingle();
 
   if (presenceInstanceError || !whatsappInstance) {
@@ -1544,12 +1641,23 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
       .maybeSingle();
     if (!contact) return respond({ success: true });
 
-    const state = (payload.state || payload.presenceType || payload.presence || '').toLowerCase();
+    const state = String(
+      payload.state ||
+      payload.presenceType ||
+      payload.presence ||
+      data.presence ||
+      data.lastKnownPresence ||
+      data.status ||
+      presenceNode?.lastKnownPresence ||
+      presenceNode?.presence ||
+      presenceNode?.status ||
+      ''
+    ).toLowerCase();
     let presenceType: string;
     switch (state) {
       case 'composing': case 'typing': presenceType = 'typing'; break;
       case 'recording': presenceType = 'recording'; break;
-      case 'online': case 'available': case 'active': presenceType = 'online'; break;
+      case 'online': case 'available': case 'active': case 'composing_online': presenceType = 'online'; break;
       default: presenceType = 'offline';
     }
 

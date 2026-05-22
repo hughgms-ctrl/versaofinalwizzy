@@ -78,6 +78,31 @@ async function cancelPendingFollowUps(conversationId: string, reason: string) {
 
 // Status labels removidos: agora usamos getDerivedStatusInfo do helper conversationStatus.
 
+function PresenceDot({ isOnline, isTyping, isRecording }: { isOnline: boolean; isTyping: boolean; isRecording: boolean }) {
+  const label = isTyping ? 'digitando' : isRecording ? 'gravando audio' : isOnline ? 'online' : 'offline';
+  return (
+    <span
+      className={cn(
+        "inline-flex h-1.5 w-1.5 rounded-full flex-shrink-0",
+        isTyping ? "bg-blue-500 animate-pulse" :
+          isRecording ? "bg-red-500 animate-pulse" :
+            isOnline ? "bg-green-500" : "bg-muted-foreground/40"
+      )}
+      title={label}
+    />
+  );
+}
+
+function MessageStatusTicks({ readAt, deliveredAt, playedAt }: { readAt?: string | null; deliveredAt?: string | null; playedAt?: string | null }) {
+  if (playedAt || readAt) {
+    return <CheckCheck className="h-3 w-3 stroke-[3] text-[#53bdeb]" />;
+  }
+  if (deliveredAt) {
+    return <CheckCheck className="h-3 w-3 stroke-[3] text-current" />;
+  }
+  return <Check className="h-3 w-3 opacity-70 stroke-[2.5]" />;
+}
+
 export function ConversationDetail({ conversation, headerActions }: ConversationDetailProps) {
   const { session } = useAuth();
   const { sendPresence, sendRecording } = useWhatsAppPresence();
@@ -286,12 +311,16 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
           content: caption || (attachedMedia.type === 'document' ? attachedMedia.file.name : ''),
           type: attachedMedia.type,
           mediaUrl: result.url,
+          quotedMessageId: replyingTo?.id,
+          quotedContent: replyingTo?.content || undefined,
+          quotedSender: replyingTo ? (replyingTo.direction === 'inbound' ? (conversation.contact?.name || 'Contato') : 'Você') : undefined,
         });
 
         // Clear attached media and message
         URL.revokeObjectURL(attachedMedia.previewUrl);
         setAttachedMedia(null);
         setNewMessage('');
+        setReplyingTo(null);
 
         toast({
           title: 'Mídia enviada',
@@ -550,9 +579,7 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
               </div>
               <p data-sensitive className="text-[10px] md:text-xs text-muted-foreground truncate flex items-center gap-2">
                 {conversation.contact?.phone || 'Sem número'}
-                {isOnline && !isTyping && !isRecording && (
-                  <span className="flex h-1.5 w-1.5 rounded-full bg-green-500" />
-                )}
+                <PresenceDot isOnline={isOnline} isTyping={isTyping} isRecording={isRecording} />
               </p>
             </div>
           </div>
@@ -1505,13 +1532,7 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
               const isRead = !!message.read_at;
               const isDelivered = !!message.delivered_at;
  
-              if (isPlayed || isRead) {
-                return <CheckCheck className={cn("h-3 w-3 stroke-[3]", isPlayed ? "text-blue-500" : "text-blue-400")} />;
-              }
-              if (isDelivered) {
-                return <CheckCheck className="h-3 w-3 stroke-[2]" />;
-              }
-              return <Check className="h-3 w-3 opacity-70 stroke-[2]" />;
+              return <MessageStatusTicks readAt={isRead ? message.read_at : null} deliveredAt={isDelivered ? message.delivered_at : null} playedAt={isPlayed || null} />;
             })()
           )}
         </div>
