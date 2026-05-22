@@ -56,6 +56,7 @@ import AdminSecurityPage from "./pages/admin/AdminSecurityPage";
 import AdminHistoryPage from "./pages/admin/AdminHistoryPage";
 import AdminMonitoringPage from "./pages/admin/AdminMonitoringPage";
 import AdminDocsPage from "./pages/admin/AdminDocsPage";
+import AdminWhatsAppIntegrationsPage from "./pages/admin/AdminWhatsAppIntegrationsPage";
 import { AdminProtectedRoute } from "@/components/admin/AdminProtectedRoute";
 
 const queryClient = new QueryClient();
@@ -117,6 +118,7 @@ const App = () => (
                     <Route path="/admin/clients" element={<AdminProtectedRoute><AdminClientsPage /></AdminProtectedRoute>} />
                     <Route path="/admin/plans" element={<AdminProtectedRoute><AdminPlansPage /></AdminProtectedRoute>} />
                     <Route path="/admin/api" element={<AdminProtectedRoute><AdminApiPage /></AdminProtectedRoute>} />
+                    <Route path="/admin/whatsapp-apis" element={<AdminProtectedRoute><AdminWhatsAppIntegrationsPage /></AdminProtectedRoute>} />
                     <Route path="/admin/governance" element={<AdminProtectedRoute><AdminGovernancePage /></AdminProtectedRoute>} />
                     <Route path="/admin/security" element={<AdminProtectedRoute><AdminSecurityPage /></AdminProtectedRoute>} />
                     <Route path="/admin/monitoring" element={<AdminProtectedRoute><AdminMonitoringPage /></AdminProtectedRoute>} />

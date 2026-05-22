@@ -76,6 +76,50 @@ export function useAdminApi() {
   });
 }
 
+export function useAdminWhatsAppIntegrations() {
+  return useQuery({
+    queryKey: ['admin', 'whatsapp-integrations'],
+    queryFn: () => adminFetch('whatsapp_integrations'),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useUpdateWhatsAppStrategy() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (strategy: {
+      primary_provider: 'evolution' | 'uazapi';
+      backup_provider: 'evolution' | 'uazapi';
+      evolution_enabled: boolean;
+      uazapi_enabled: boolean;
+      auto_fallback_enabled: boolean;
+    }) => adminFetch('update_whatsapp_strategy', strategy),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'whatsapp-integrations'] });
+      toast.success('Estratégia de WhatsApp salva');
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+}
+
+export function useUpdateWhatsAppConnectionSettings() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (settings: {
+      uazapi_base_url?: string;
+      uazapi_admin_token?: string;
+      evolution_base_url?: string;
+      evolution_api_key?: string;
+      webhook_url?: string;
+    }) => adminFetch('update_whatsapp_connection_settings', settings),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'whatsapp-integrations'] });
+      toast.success('Configurações de conexão salvas');
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+}
+
 export function useUpdatePlan() {
   const queryClient = useQueryClient();
   return useMutation({

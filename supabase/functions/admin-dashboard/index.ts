@@ -5,6 +5,88 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+function maskSecret(value?: string | null) {
+  if (!value) return ''
+  if (value.length <= 8) return '••••••••'
+  return `${value.slice(0, 4)}••••••••${value.slice(-4)}`
+}
+
+function normalizeBaseUrl(value?: string | null) {
+  return (value || '').trim().replace(/\/$/, '')
+}
+
+async function fetchJsonWithTimeout(url: string, options: RequestInit = {}, timeoutMs = 6000) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal })
+    const text = await response.text()
+    let json: any = null
+    try { json = text ? JSON.parse(text) : null } catch (_) {}
+    return { ok: response.ok, status: response.status, text, json }
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+async function checkUazapiStatus(baseUrl: string, adminToken: string) {
+  if (!baseUrl || !adminToken) {
+    return { provider: 'uazapi', configured: false, online: false, instance_count: 0, message: 'Configuração ausente' }
+  }
+
+  try {
+    const result = await fetchJsonWithTimeout(`${baseUrl}/instance/list`, {
+      headers: { admintoken: adminToken },
+    })
+    const instances = Array.isArray(result.json)
+      ? result.json
+      : Array.isArray(result.json?.instances)
+        ? result.json.instances
+        : Array.isArray(result.json?.data)
+          ? result.json.data
+          : []
+    return {
+      provider: 'uazapi',
+      configured: true,
+      online: result.ok,
+      http_status: result.status,
+      instance_count: instances.length,
+      message: result.ok ? 'Conectado na API geral' : (result.text || 'Falha ao consultar UAZAPI').slice(0, 180),
+    }
+  } catch (err: any) {
+    return { provider: 'uazapi', configured: true, online: false, instance_count: 0, message: err?.message || 'Falha ao consultar UAZAPI' }
+  }
+}
+
+async function checkEvolutionStatus(baseUrl: string, apiKey: string) {
+  if (!baseUrl || !apiKey) {
+    return { provider: 'evolution', configured: false, online: false, instance_count: 0, message: 'Configuração ausente' }
+  }
+
+  try {
+    const result = await fetchJsonWithTimeout(`${baseUrl}/instance/fetchInstances`, {
+      headers: { apikey: apiKey },
+    })
+    const instances = Array.isArray(result.json)
+      ? result.json
+      : Array.isArray(result.json?.instances)
+        ? result.json.instances
+        : Array.isArray(result.json?.data)
+          ? result.json.data
+          : []
+    return {
+      provider: 'evolution',
+      configured: true,
+      online: result.ok,
+      http_status: result.status,
+      instance_count: instances.length,
+      message: result.ok ? 'Conectado na API geral' : (result.text || 'Falha ao consultar Evolution API').slice(0, 180),
+    }
+  } catch (err: any) {
+    return { provider: 'evolution', configured: true, online: false, instance_count: 0, message: err?.message || 'Falha ao consultar Evolution API' }
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
@@ -272,6 +354,195 @@ Deno.serve(async (req) => {
         total_requests_30d: execCount || 0,
         usage_by_org: usageByOrg,
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    if (action === 'whatsapp_integrations') {
+      const { data: settingsRows } = await adminClient
+        .from('platform_settings')
+        .select('key, value')
+        .in('key', ['whatsapp_provider_strategy', 'whatsapp_connection_settings'])
+
+      const savedStrategy = (settingsRows || []).find((s: any) => s.key === 'whatsapp_provider_strategy')?.value || {}
+      const savedConnection = (settingsRows || []).find((s: any) => s.key === 'whatsapp_connection_settings')?.value || {}
+      const webhookUrl = savedConnection.webhook_url || `${supabaseUrl}/functions/v1/zapi-webhook`
+      const rawConnection = {
+        uazapi_base_url: normalizeBaseUrl(savedConnection.uazapi_base_url || Deno.env.get('UAZAPI_BASE_URL')),
+        uazapi_admin_token: savedConnection.uazapi_admin_token || Deno.env.get('UAZAPI_ADMIN_TOKEN') || '',
+        evolution_base_url: normalizeBaseUrl(savedConnection.evolution_base_url || Deno.env.get('EVOLUTION_BASE_URL')),
+        evolution_api_key: savedConnection.evolution_api_key || Deno.env.get('EVOLUTION_API_KEY') || '',
+        webhook_url: webhookUrl,
+      }
+      const connection = {
+        uazapi_base_url: rawConnection.uazapi_base_url,
+        uazapi_admin_token_masked: maskSecret(rawConnection.uazapi_admin_token),
+        uazapi_admin_token_configured: !!rawConnection.uazapi_admin_token,
+        evolution_base_url: rawConnection.evolution_base_url,
+        evolution_api_key_masked: maskSecret(rawConnection.evolution_api_key),
+        evolution_api_key_configured: !!rawConnection.evolution_api_key,
+        webhook_url: rawConnection.webhook_url,
+      }
+      const strategy = {
+        primary_provider: savedStrategy.primary_provider || 'evolution',
+        backup_provider: savedStrategy.backup_provider || 'uazapi',
+        evolution_enabled: savedStrategy.evolution_enabled ?? true,
+        uazapi_enabled: savedStrategy.uazapi_enabled ?? true,
+        auto_fallback_enabled: savedStrategy.auto_fallback_enabled ?? false,
+        updated_at: savedStrategy.updated_at || null,
+        updated_by: savedStrategy.updated_by || null,
+      }
+
+      const { data: instances, error: instancesError } = await adminClient
+        .from('whatsapp_instances')
+        .select('id, organization_id, label, phone_number, status, is_active, connected_at, disconnected_at, updated_at, zapi_instance_id')
+        .order('updated_at', { ascending: false })
+
+      if (instancesError) throw instancesError
+
+      const orgIds = [...new Set((instances || []).map((i: any) => i.organization_id).filter(Boolean))]
+      const { data: orgs } = await adminClient
+        .from('organizations')
+        .select('id, name, slug')
+        .in('id', orgIds.length > 0 ? orgIds : ['00000000-0000-0000-0000-000000000000'])
+
+      const orgMap = new Map((orgs || []).map((org: any) => [org.id, org]))
+      const enrichedInstances = (instances || []).map((instance: any) => ({
+        ...instance,
+        organization: orgMap.get(instance.organization_id) || null,
+        providers: {
+          uazapi: {
+            configured: !!instance.zapi_token || !!instance.zapi_instance_id,
+            status: instance.status,
+            active: instance.is_active,
+            external_id: instance.zapi_instance_id,
+          },
+          evolution: {
+            configured: false,
+            status: 'not_configured',
+            active: false,
+            external_id: null,
+          },
+        },
+      }))
+
+      const summary = {
+        total_instances: enrichedInstances.length,
+        active_instances: enrichedInstances.filter((i: any) => i.is_active).length,
+        connected_instances: enrichedInstances.filter((i: any) => i.status === 'connected').length,
+        disconnected_instances: enrichedInstances.filter((i: any) => i.status === 'disconnected').length,
+      }
+      const [uazapiStatus, evolutionStatus] = await Promise.all([
+        checkUazapiStatus(rawConnection.uazapi_base_url, rawConnection.uazapi_admin_token),
+        checkEvolutionStatus(rawConnection.evolution_base_url, rawConnection.evolution_api_key),
+      ])
+
+      return new Response(JSON.stringify({
+        strategy,
+        connection,
+        provider_status: {
+          uazapi: uazapiStatus,
+          evolution: evolutionStatus,
+        },
+        summary,
+        instances: enrichedInstances,
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    if (action === 'update_whatsapp_strategy') {
+      const body = await req.json()
+      const allowedProviders = ['evolution', 'uazapi']
+      const primaryProvider = body.primary_provider
+      const backupProvider = body.backup_provider
+
+      if (!allowedProviders.includes(primaryProvider) || !allowedProviders.includes(backupProvider)) {
+        throw new Error('Invalid WhatsApp provider')
+      }
+
+      if (primaryProvider === backupProvider) {
+        throw new Error('Primary and backup providers must be different')
+      }
+
+      const strategy = {
+        primary_provider: primaryProvider,
+        backup_provider: backupProvider,
+        evolution_enabled: Boolean(body.evolution_enabled),
+        uazapi_enabled: Boolean(body.uazapi_enabled),
+        auto_fallback_enabled: Boolean(body.auto_fallback_enabled),
+        updated_at: new Date().toISOString(),
+        updated_by: user.id,
+      }
+
+      const { error } = await adminClient
+        .from('platform_settings')
+        .upsert({
+          key: 'whatsapp_provider_strategy',
+          value: strategy,
+          updated_at: new Date().toISOString(),
+          updated_by: user.id,
+        }, { onConflict: 'key' })
+
+      if (error) throw error
+
+      await adminClient.from('admin_audit_logs').insert({
+        action: 'update_whatsapp_strategy',
+        entity_type: 'platform',
+        performed_by: user.id,
+        details: strategy,
+      })
+
+      return new Response(JSON.stringify({ strategy }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    if (action === 'update_whatsapp_connection_settings') {
+      const body = await req.json()
+      const { data: existingRow } = await adminClient
+        .from('platform_settings')
+        .select('value')
+        .eq('key', 'whatsapp_connection_settings')
+        .maybeSingle()
+
+      const existing = existingRow?.value || {}
+      const keepSecret = (next: unknown, previous: string | undefined) => {
+        const value = String(next || '').trim()
+        if (!value || value.includes('•')) return previous || ''
+        return value
+      }
+      const connectionSettings = {
+        uazapi_base_url: normalizeBaseUrl(body.uazapi_base_url ?? existing.uazapi_base_url ?? Deno.env.get('UAZAPI_BASE_URL')),
+        uazapi_admin_token: keepSecret(body.uazapi_admin_token, existing.uazapi_admin_token || Deno.env.get('UAZAPI_ADMIN_TOKEN')),
+        evolution_base_url: normalizeBaseUrl(body.evolution_base_url ?? existing.evolution_base_url ?? Deno.env.get('EVOLUTION_BASE_URL')),
+        evolution_api_key: keepSecret(body.evolution_api_key, existing.evolution_api_key || Deno.env.get('EVOLUTION_API_KEY')),
+        webhook_url: String(body.webhook_url || existing.webhook_url || `${supabaseUrl}/functions/v1/zapi-webhook`).trim(),
+        updated_at: new Date().toISOString(),
+        updated_by: user.id,
+      }
+
+      const { error } = await adminClient
+        .from('platform_settings')
+        .upsert({
+          key: 'whatsapp_connection_settings',
+          value: connectionSettings,
+          updated_at: new Date().toISOString(),
+          updated_by: user.id,
+        }, { onConflict: 'key' })
+
+      if (error) throw error
+
+      await adminClient.from('admin_audit_logs').insert({
+        action: 'update_whatsapp_connection_settings',
+        entity_type: 'platform',
+        performed_by: user.id,
+        details: {
+          ...connectionSettings,
+          uazapi_admin_token: maskSecret(connectionSettings.uazapi_admin_token),
+          evolution_api_key: maskSecret(connectionSettings.evolution_api_key),
+        },
+      })
+
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
     }
 
     if (action === 'update_plan') {
