@@ -88,8 +88,28 @@ Deno.serve(async (req) => {
 
     const sanitizePhone = (value: unknown): string | null => {
       if (typeof value !== 'string') return null;
-      const cleaned = ensureCountryCode(value);
-      if (cleaned.length >= 8 && cleaned.length <= 15) return cleaned;
+      const raw = value.replace(/@.*$/, '').replace(/\D/g, '');
+      const candidates = new Set<string>();
+      const add = (candidate: string) => {
+        if (!candidate) return;
+        candidates.add(candidate);
+        if (!candidate.startsWith('55') && candidate.length >= 10 && candidate.length <= 11) {
+          candidates.add(`55${candidate}`);
+        }
+        if (candidate.startsWith('55')) candidates.add(candidate.slice(2));
+      };
+
+      add(raw);
+      const local = raw.startsWith('55') ? raw.slice(2) : raw;
+      if (local.length === 10) add(`${local.slice(0, 2)}9${local.slice(2)}`);
+      if (local.length === 11 && local[2] === '9') add(`${local.slice(0, 2)}${local.slice(3)}`);
+      if (local.length > 11) add(local.slice(0, -1));
+      if (raw.startsWith('55') && local.length > 11) add(`55${local.slice(0, -1)}`);
+
+      for (const candidate of candidates) {
+        const cleaned = ensureCountryCode(candidate);
+        if (cleaned.length >= 12 && cleaned.length <= 13) return cleaned;
+      }
       return null;
     };
 

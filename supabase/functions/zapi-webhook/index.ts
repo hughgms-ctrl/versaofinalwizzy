@@ -124,13 +124,17 @@ const VALID_DDDS = new Set([
 function isValidPhoneNumber(phone: string): boolean {
   if (!phone) return false;
   const clean = phone.replace(/\D/g, '');
-  if (clean.length < 12 || clean.length > 15) return false;
 
   if (clean.startsWith('55')) {
+    if (clean.length < 12 || clean.length > 13) return false;
     const ddd = parseInt(clean.substring(2, 4), 10);
     if (!VALID_DDDS.has(ddd)) return false;
     const numberPart = clean.substring(4);
     if (numberPart.length < 8 || numberPart.length > 9) return false;
+  } else {
+    if (clean.length < 10 || clean.length > 11) return false;
+    const ddd = parseInt(clean.substring(0, 2), 10);
+    if (!VALID_DDDS.has(ddd)) return false;
   }
   return true;
 }
@@ -138,9 +142,69 @@ function isValidPhoneNumber(phone: string): boolean {
 function cleanPhone(raw: string): string {
   if (!raw) return '';
   const stripped = raw.replace(/@.*$/, '').replace(/[:\s\-\+\(\)]/g, '').replace(/\D/g, '');
-  const phone = ensureCountryCode(stripped);
-  if (!phone || !isValidPhoneNumber(phone)) return '';
-  return phone;
+  const candidates = uniquePhones([ensureCountryCode(stripped), ...phoneVariants(stripped)]);
+  return candidates.find(isValidPhoneNumber) || '';
+}
+
+function uniquePhones(values: Array<string | null | undefined>): string[] {
+  return Array.from(new Set(values.filter((value): value is string => !!value && value.length >= 8)));
+}
+
+function withCountryCode(phone: string): string {
+  const clean = phone.replace(/\D/g, '');
+  if (!clean) return '';
+  if (clean.startsWith('55')) return clean;
+  if (clean.length >= 10 && clean.length <= 11) return `55${clean}`;
+  return clean;
+}
+
+function withoutCountryCode(phone: string): string {
+  const clean = phone.replace(/\D/g, '');
+  return clean.startsWith('55') ? clean.slice(2) : clean;
+}
+
+function phoneVariants(raw: string): string[] {
+  const clean = raw.replace(/@.*$/, '').replace(/\D/g, '');
+  if (!clean) return [];
+
+  const variants = new Set<string>();
+  const add = (value: string) => {
+    if (!value) return;
+    variants.add(value);
+    const with55 = withCountryCode(value);
+    if (with55) variants.add(with55);
+    const no55 = withoutCountryCode(value);
+    if (no55) variants.add(no55);
+  };
+
+  add(clean);
+
+  const local = withoutCountryCode(clean);
+  if (local.length === 10) {
+    // DDD + 8 digits -> possible mobile form with 9 after DDD
+    add(`${local.slice(0, 2)}9${local.slice(2)}`);
+  }
+  if (local.length === 11 && local[2] === '9') {
+    // DDD + 9 + 8 digits -> legacy form without 9
+    add(`${local.slice(0, 2)}${local.slice(3)}`);
+  }
+
+  // Defensive fallback for provider glitches that append one trailing digit.
+  // We only use this to find an existing contact, never to mutate blindly.
+  if (local.length > 11) {
+    add(local.slice(0, -1));
+  }
+  if (clean.startsWith('55') && local.length > 11) {
+    add(`55${local.slice(0, -1)}`);
+  }
+
+  return uniquePhones(Array.from(variants));
+}
+
+function canonicalPhone(raw: string): string {
+  const variants = phoneVariants(raw);
+  const with55 = variants.find(v => v.startsWith('55') && v.length >= 12 && v.length <= 13);
+  return with55 || cleanPhone(raw) || raw.replace(/\D/g, '');
 }
 
 function isGroupChat(chatid: string): boolean {
@@ -339,13 +403,16 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
   const event = payload.event || {};
   const eventInfo = event.Info || event.info || {};
   const eventMessage = event.Message || event.message || {};
+  const evolutionData = payload.data || {};
+  const evolutionKey = evolutionData.key || {};
+  const evolutionMessage = evolutionData.message || {};
   const msgSource = eventInfo.MessageSource || eventInfo.messageSource || eventInfo;
   const msg = payload.message || {};
   const chat = payload.chat || {};
 
   // --- Extract phone (JID -> phone) ---
-  const chatJid = msgSource.Chat || msgSource.chat || eventInfo.Chat || eventInfo.chat || '';
-  const senderJid = msgSource.Sender || msgSource.sender || eventInfo.Sender || eventInfo.sender || '';
+  const chatJid = msgSource.Chat || msgSource.chat || eventInfo.Chat || eventInfo.chat || evolutionKey.remoteJid || '';
+  const senderJid = msgSource.Sender || msgSource.sender || eventInfo.Sender || eventInfo.sender || evolutionKey.participant || '';
   const chatid = msg.chatid || chat.wa_chatid || chatJid || '';
 
   if (isGroupChat(chatid) || chatid.includes('@g.us')) {
@@ -367,6 +434,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
   if (!phone && chat.phone) phone = cleanPhone(chat.phone);
   if (!phone && chatid) phone = cleanPhone(chatid);
   if (!phone && msg.phone) phone = cleanPhone(msg.phone);
+  if (!phone && evolutionKey.remoteJid) phone = cleanPhone(evolutionKey.remoteJid);
 
   if (!phone || !isValidPhoneNumber(phone)) {
     console.log('Skipping invalid phone:', phone, 'chatJid:', chatJid, 'chatid:', chatid);
@@ -374,9 +442,9 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
   }
 
   // --- Extract fromMe, msgId, pushName ---
-  const fromMe = (eventInfo.IsFromMe ?? eventInfo.isFromMe) || msg.fromMe === true || msg.fromMe === 'true' || payload.data?.key?.fromMe === true;
-  const msgId = eventInfo.ID || eventInfo.Id || eventInfo.id || msg.msgid || msg.id || msg.key?.id || payload.data?.key?.id || '';
-  const pushName = eventInfo.PushName || eventInfo.pushName || chat.wa_contactName || chat.name || chat.wa_name || msg.senderName || payload.data?.pushName || '';
+  const fromMe = (eventInfo.IsFromMe ?? eventInfo.isFromMe) || msg.fromMe === true || msg.fromMe === 'true' || evolutionKey.fromMe === true;
+  const msgId = eventInfo.ID || eventInfo.Id || eventInfo.id || msg.msgid || msg.id || msg.key?.id || evolutionKey.id || '';
+  const pushName = eventInfo.PushName || eventInfo.pushName || chat.wa_contactName || chat.name || chat.wa_name || msg.senderName || evolutionData.pushName || '';
 
   // --- Determine message type and content ---
   let textContent: string | null = null;
@@ -384,15 +452,15 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
   let mediaUrl: string | null = null;
 
   // Check UAZAPI native format first (payload.event.Message sub-objects)
-  const conversationText = eventMessage.conversation || eventMessage.Conversation;
-  const extendedText = eventMessage.extendedTextMessage || eventMessage.ExtendedTextMessage;
-  const imageMsg = eventMessage.imageMessage || eventMessage.ImageMessage;
-  const audioMsg = eventMessage.audioMessage || eventMessage.AudioMessage;
-  const videoMsg = eventMessage.videoMessage || eventMessage.VideoMessage;
-  const documentMsg = eventMessage.documentMessage || eventMessage.DocumentMessage;
-  const stickerMsg = eventMessage.stickerMessage || eventMessage.StickerMessage;
-  const locationMsg = eventMessage.locationMessage || eventMessage.LocationMessage;
-  const contactMsg = eventMessage.contactMessage || eventMessage.ContactMessage;
+  const conversationText = eventMessage.conversation || eventMessage.Conversation || evolutionMessage.conversation;
+  const extendedText = eventMessage.extendedTextMessage || eventMessage.ExtendedTextMessage || evolutionMessage.extendedTextMessage;
+  const imageMsg = eventMessage.imageMessage || eventMessage.ImageMessage || evolutionMessage.imageMessage;
+  const audioMsg = eventMessage.audioMessage || eventMessage.AudioMessage || evolutionMessage.audioMessage;
+  const videoMsg = eventMessage.videoMessage || eventMessage.VideoMessage || evolutionMessage.videoMessage;
+  const documentMsg = eventMessage.documentMessage || eventMessage.DocumentMessage || evolutionMessage.documentMessage;
+  const stickerMsg = eventMessage.stickerMessage || eventMessage.StickerMessage || evolutionMessage.stickerMessage;
+  const locationMsg = eventMessage.locationMessage || eventMessage.LocationMessage || evolutionMessage.locationMessage;
+  const contactMsg = eventMessage.contactMessage || eventMessage.ContactMessage || evolutionMessage.contactMessage;
 
   if (conversationText) {
     messageType = 'text';
@@ -555,6 +623,8 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
     const orFilters = [];
     if (instanceId) orFilters.push(`zapi_instance_id.eq.${instanceId}`);
     if (instanceName) orFilters.push(`zapi_instance_id.eq.${instanceName}`);
+    if (instanceName) orFilters.push(`evolution_instance_name.eq.${instanceName}`);
+    if (instanceId) orFilters.push(`evolution_instance_id.eq.${instanceId}`);
     const { data, error } = await supabase
       .from('whatsapp_instances')
       .select('*')
@@ -583,7 +653,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
   }
 
   // Fetch missing Base64 directly from UAZAPI if not in payload
-  if (!base64Data && isMediaType && whatsappInstance && msgId) {
+  if (!base64Data && isMediaType && whatsappInstance && msgId && (whatsappInstance.provider || 'uazapi') === 'uazapi') {
     try {
       console.log(`[WEBHOOK] Fetching decrypted media via /message/download for ID: ${msgId}...`);
       const uazapiBaseUrl = Deno.env.get('UAZAPI_BASE_URL')!;
@@ -1413,8 +1483,12 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
     return respond({ success: true, ignored: true, reason: 'instance_not_found' });
   }
 
+    const variants = phoneVariants(phone);
     const { data: contact } = await supabase.from('contacts').select('id')
-      .eq('phone', phone).eq('organization_id', whatsappInstance.organization_id).maybeSingle();
+      .eq('organization_id', whatsappInstance.organization_id)
+      .in('phone', variants.length > 0 ? variants : [phone])
+      .limit(1)
+      .maybeSingle();
     if (!contact) return respond({ success: true });
 
     const state = (payload.state || payload.presenceType || payload.presence || '').toLowerCase();
@@ -1438,40 +1512,41 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
 // ========== HELPERS ==========
 
   async function findOrCreateContact(supabase: any, phone: string, organizationId: string, name: string | null, avatarUrl: string | null) {
-    // Try exact phone match
+    const variants = phoneVariants(phone);
+    const canonical = canonicalPhone(phone);
+
+    // Try any known representation first. Providers sometimes disagree about:
+    // country code, the Brazilian ninth digit, or append a transient trailing digit.
     const { data: existing } = await supabase
       .from('contacts').select('*')
-      .eq('phone', phone).eq('organization_id', organizationId).maybeSingle();
+      .eq('organization_id', organizationId)
+      .in('phone', variants.length > 0 ? variants : [phone])
+      .limit(1)
+      .maybeSingle();
 
     if (existing) {
       const updateData: any = {};
       if (name && !existing.name) updateData.name = name;
       if (avatarUrl && !existing.avatar_url) updateData.avatar_url = avatarUrl;
+      const metadata = { ...(existing.metadata || {}) };
+      const aliases = uniquePhones([...(metadata.phone_aliases || []), phone, canonical, ...variants]);
+      updateData.metadata = { ...metadata, phone_aliases: aliases, canonical_phone: canonical };
       if (Object.keys(updateData).length > 0) {
         await supabase.from('contacts').update(updateData).eq('id', existing.id);
       }
       return { ...existing, ...updateData };
     }
 
-    // Try without country code (legacy)
-    const shortPhone = phone.replace(/^55/, '');
-    if (shortPhone !== phone) {
-      const { data: shortContact } = await supabase
-        .from('contacts').select('*')
-        .eq('phone', shortPhone).eq('organization_id', organizationId).maybeSingle();
-      if (shortContact) {
-        const updateData: any = { phone };
-        if (name && !shortContact.name) updateData.name = name;
-        if (avatarUrl && !shortContact.avatar_url) updateData.avatar_url = avatarUrl;
-        await supabase.from('contacts').update(updateData).eq('id', shortContact.id);
-        return { ...shortContact, ...updateData };
-      }
-    }
-
     // Create new
     const { data: newContact, error } = await supabase
       .from('contacts')
-      .insert({ phone, name: name || null, avatar_url: avatarUrl || null, organization_id: organizationId })
+      .insert({
+        phone: canonical,
+        name: name || null,
+        avatar_url: avatarUrl || null,
+        organization_id: organizationId,
+        metadata: { phone_aliases: uniquePhones([phone, canonical, ...variants]), canonical_phone: canonical },
+      })
       .select().single();
     if (error) throw error;
     return newContact;
