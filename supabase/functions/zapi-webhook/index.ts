@@ -126,13 +126,11 @@ function isValidPhoneNumber(phone: string): boolean {
   const clean = phone.replace(/\D/g, '');
 
   if (clean.startsWith('55')) {
-    if (clean.length < 12 || clean.length > 13) return false;
+    if (clean.length < 12 || clean.length > 15) return false;
     const ddd = parseInt(clean.substring(2, 4), 10);
     if (!VALID_DDDS.has(ddd)) return false;
-    const numberPart = clean.substring(4);
-    if (numberPart.length < 8 || numberPart.length > 9) return false;
   } else {
-    if (clean.length < 10 || clean.length > 11) return false;
+    if (clean.length < 10 || clean.length > 13) return false;
     const ddd = parseInt(clean.substring(0, 2), 10);
     if (!VALID_DDDS.has(ddd)) return false;
   }
@@ -142,8 +140,10 @@ function isValidPhoneNumber(phone: string): boolean {
 function cleanPhone(raw: string): string {
   if (!raw) return '';
   const stripped = raw.replace(/@.*$/, '').replace(/[:\s\-\+\(\)]/g, '').replace(/\D/g, '');
+  const preserved = withCountryCode(stripped);
+  if (preserved && isValidPhoneNumber(preserved)) return preserved;
   const candidates = uniquePhones([ensureCountryCode(stripped), ...phoneVariants(stripped)]);
-  return candidates.find(isValidPhoneNumber) || '';
+  return candidates.find(isValidPhoneNumber) || preserved || stripped || '';
 }
 
 function uniquePhones(values: Array<string | null | undefined>): string[] {
@@ -189,22 +189,14 @@ function phoneVariants(raw: string): string[] {
     add(`${local.slice(0, 2)}${local.slice(3)}`);
   }
 
-  // Defensive fallback for provider glitches that append one trailing digit.
-  // We only use this to find an existing contact, never to mutate blindly.
-  if (local.length > 11) {
-    add(local.slice(0, -1));
-  }
-  if (clean.startsWith('55') && local.length > 11) {
-    add(`55${local.slice(0, -1)}`);
-  }
-
   return uniquePhones(Array.from(variants));
 }
 
 function canonicalPhone(raw: string): string {
-  const variants = phoneVariants(raw);
-  const with55 = variants.find(v => v.startsWith('55') && v.length >= 12 && v.length <= 13);
-  return with55 || cleanPhone(raw) || raw.replace(/\D/g, '');
+  const clean = raw.replace(/@.*$/, '').replace(/\D/g, '');
+  if (!clean) return '';
+  const preserved = withCountryCode(clean);
+  return preserved || clean;
 }
 
 function isGroupChat(chatid: string): boolean {

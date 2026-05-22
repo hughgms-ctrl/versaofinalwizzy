@@ -21,6 +21,54 @@ function uazapiUrl(baseUrl: string, path: string): string {
   return `${base}${path}`;
 }
 
+function normalizeBaseUrl(value?: string | null): string {
+  return (value || '').trim().replace(/\/$/, '');
+}
+
+async function loadConnectionSettings(supabase: any) {
+  const { data: row } = await supabase
+    .from('platform_settings')
+    .select('value')
+    .eq('key', 'whatsapp_connection_settings')
+    .maybeSingle();
+  const value = row?.value || {};
+  return {
+    uazapiBaseUrl: normalizeBaseUrl(value.uazapi_base_url || Deno.env.get('UAZAPI_BASE_URL')),
+    evolutionBaseUrl: normalizeBaseUrl(value.evolution_base_url || Deno.env.get('EVOLUTION_BASE_URL')),
+    evolutionApiKey: value.evolution_api_key || Deno.env.get('EVOLUTION_API_KEY') || '',
+  };
+}
+
+function guessMimeType(type: string, mediaUrl?: string): string {
+  const lower = (mediaUrl || '').toLowerCase();
+  if (type === 'image') {
+    if (lower.includes('.png')) return 'image/png';
+    if (lower.includes('.webp')) return 'image/webp';
+    return 'image/jpeg';
+  }
+  if (type === 'audio') {
+    if (lower.includes('.ogg')) return 'audio/ogg';
+    if (lower.includes('.mpeg') || lower.includes('.mp3')) return 'audio/mpeg';
+    return 'audio/mp4';
+  }
+  if (type === 'document') {
+    if (lower.includes('.pdf')) return 'application/pdf';
+    return 'application/octet-stream';
+  }
+  return 'application/octet-stream';
+}
+
+function fileNameFromUrl(mediaUrl?: string, fallback = 'arquivo') {
+  if (!mediaUrl) return fallback;
+  try {
+    const pathname = new URL(mediaUrl).pathname;
+    const name = pathname.split('/').filter(Boolean).pop();
+    return name || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 function normalizeReplyMessageId(messageId: string | null | undefined): string | null {
   if (!messageId) return null;
   const trimmed = messageId.trim();
@@ -50,8 +98,8 @@ Deno.serve(async (req) => {
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const uazapiBaseUrl = Deno.env.get('UAZAPI_BASE_URL')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
+    const connectionSettings = await loadConnectionSettings(supabase);
 
     const token = authHeader.replace(/^Bearer\s+/i, '');
     const { data: { user }, error: userError } = await supabase.auth.getUser(token);
@@ -131,27 +179,30 @@ Deno.serve(async (req) => {
       });
     }
 
+    const provider = instance.provider === 'evolution' ? 'evolution' : 'uazapi';
     const instanceToken = instance.zapi_token;
     const phone = conversation.contact.phone;
     const normalizedPhone = phone.replace(/\D/g, '');
 
-    // Typing/Recording presence via UAZAPI (Fire and forget, no delay)
-    try {
-      const presenceType = type === 'audio' ? 'recording' : 'composing';
-      fetch(uazapiUrl(uazapiBaseUrl, '/message/presence'), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'token': instanceToken
-        },
-        body: JSON.stringify({
-          number: normalizedPhone,
-          presence: presenceType,
-          delay: 5000
-        }),
-      });
-    } catch (e) {
-      console.log('Presence update failed:', e);
+    if (provider === 'uazapi') {
+      // Typing/Recording presence via UAZAPI (Fire and forget, no delay)
+      try {
+        const presenceType = type === 'audio' ? 'recording' : 'composing';
+        fetch(uazapiUrl(connectionSettings.uazapiBaseUrl, '/message/presence'), {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'token': instanceToken
+          },
+          body: JSON.stringify({
+            number: normalizedPhone,
+            presence: presenceType,
+            delay: 5000
+          }),
+        });
+      } catch (e) {
+        console.log('Presence update failed:', e);
+      }
     }
 
     // Look up the zapi_message_id for the quoted message (for WhatsApp reply)
@@ -166,28 +217,174 @@ Deno.serve(async (req) => {
       console.log(`Quoted message lookup: id=${quotedMessageId}, raw_zapi_id=${quotedMsg?.zapi_message_id || null}, reply_id=${zapiQuotedMsgId}`);
     }
 
+    if (provider === 'evolution') {
+      const evolutionBaseUrl = connectionSettings.evolutionBaseUrl;
+      const evolutionApiKey = instance.evolution_api_key || connectionSettings.evolutionApiKey || instanceToken;
+      const instanceName = instance.evolution_instance_name || instance.zapi_instance_id;
+
+      if (!evolutionBaseUrl || !evolutionApiKey || !instanceName) {
+        return new Response(JSON.stringify({ error: 'Evolution API not configured for this instance' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      let endpoint = `${evolutionBaseUrl}/message/sendText/${instanceName}`;
+      let body: Record<string, any> = {
+        number: normalizedPhone,
+        text: content,
+        delay: 1000,
+        linkPreview: true,
+      };
+
+      if (type !== 'text') {
+        if (!mediaUrl) {
+          return new Response(JSON.stringify({ error: 'mediaUrl is required for media messages' }), {
+            status: 400,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+        endpoint = `${evolutionBaseUrl}/message/sendMedia/${instanceName}`;
+        body = {
+          number: normalizedPhone,
+          mediatype: type,
+          mimetype: guessMimeType(type, mediaUrl),
+          caption: type === 'audio' ? undefined : content,
+          media: mediaUrl,
+          fileName: fileNameFromUrl(mediaUrl, `${type}-${Date.now()}`),
+          delay: 1000,
+          linkPreview: true,
+        };
+      }
+
+      if (zapiQuotedMsgId) {
+        body.quoted = {
+          key: { id: zapiQuotedMsgId },
+          message: { conversation: quotedContent || '' },
+        };
+      }
+
+      console.log('Evolution send URL:', endpoint);
+      console.log('Evolution send body:', JSON.stringify({ ...body, media: body.media ? '[media]' : undefined }));
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: evolutionApiKey,
+        },
+        body: JSON.stringify(body),
+      });
+
+      let evolutionResult: any = null;
+      let zapiMsgId: string | null = null;
+      let sendFailed = false;
+      let sendErrorText = '';
+
+      const raw = await response.text();
+      if (!response.ok) {
+        sendErrorText = raw;
+        console.error('Evolution send error (will save to DB anyway):', sendErrorText);
+        sendFailed = true;
+      } else {
+        try { evolutionResult = raw ? JSON.parse(raw) : {}; } catch { evolutionResult = { raw }; }
+        zapiMsgId = evolutionResult.messageId || evolutionResult.id || evolutionResult.key?.id || null;
+
+        if (zapiMsgId) {
+          const { data: existing } = await supabase
+            .from('messages')
+            .select('id')
+            .eq('zapi_message_id', zapiMsgId)
+            .maybeSingle();
+          if (existing) {
+            return new Response(JSON.stringify({ success: true, messageId: existing.id, zapiMessageId: zapiMsgId }), {
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+          }
+        }
+      }
+
+      const messageMetadata: Record<string, any> = sendFailed
+        ? { provider, send_error: sendErrorText, failed_at: new Date().toISOString() }
+        : { provider, evolution_response: evolutionResult };
+
+      if (quotedMessageId) {
+        messageMetadata.quoted_message = {
+          id: quotedMessageId,
+          content: quotedContent || null,
+          sender: quotedSender || null,
+        };
+      }
+
+      const { data: message, error: msgError } = await supabase
+        .from('messages')
+        .insert({
+          conversation_id: conversationId,
+          content,
+          type,
+          direction: 'outbound',
+          is_from_bot: false,
+          sent_by: user.id,
+          media_url: mediaUrl || null,
+          zapi_message_id: zapiMsgId,
+          metadata: messageMetadata,
+          ...(sendFailed ? { failed_at: new Date().toISOString(), error_message: sendErrorText } : {}),
+        })
+        .select()
+        .maybeSingle();
+
+      if (msgError) {
+        console.error('Error saving message to DB:', msgError);
+      }
+
+      await supabase
+        .from('conversations')
+        .update({ last_message_at: new Date().toISOString(), status: 'open' })
+        .eq('id', conversationId);
+
+      if (sendFailed) {
+        return new Response(JSON.stringify({
+          success: false,
+          error: 'Failed to send message via Evolution, but message was saved',
+          messageId: message?.id || `failed-${Date.now()}`,
+          details: sendErrorText,
+        }), {
+          status: 503,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response(JSON.stringify({
+        success: true,
+        messageId: message?.id || `sent-${Date.now()}`,
+        zapiMessageId: zapiMsgId || evolutionResult?.messageId || evolutionResult?.key?.id,
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     let endpoint: string;
     let body: Record<string, any>;
 
     switch (type) {
       case 'text':
-        endpoint = uazapiUrl(uazapiBaseUrl, '/send/text');
+        endpoint = uazapiUrl(connectionSettings.uazapiBaseUrl, '/send/text');
         body = { number: normalizedPhone, text: content };
         if (zapiQuotedMsgId) body.replyid = zapiQuotedMsgId;
         break;
       case 'image':
-        endpoint = uazapiUrl(uazapiBaseUrl, '/send/media');
+        endpoint = uazapiUrl(connectionSettings.uazapiBaseUrl, '/send/media');
         body = { number: normalizedPhone, file: mediaUrl, type: 'image' };
         if (content) body.caption = content;
         if (zapiQuotedMsgId) body.replyid = zapiQuotedMsgId;
         break;
       case 'audio':
-        endpoint = uazapiUrl(uazapiBaseUrl, '/send/media');
+        endpoint = uazapiUrl(connectionSettings.uazapiBaseUrl, '/send/media');
         body = { number: normalizedPhone, file: mediaUrl, type: 'audio' };
         if (zapiQuotedMsgId) body.replyid = zapiQuotedMsgId;
         break;
       case 'document':
-        endpoint = uazapiUrl(uazapiBaseUrl, '/send/media');
+        endpoint = uazapiUrl(connectionSettings.uazapiBaseUrl, '/send/media');
         body = { number: normalizedPhone, file: mediaUrl, caption: content, type: 'document' };
         if (zapiQuotedMsgId) body.replyid = zapiQuotedMsgId;
         break;

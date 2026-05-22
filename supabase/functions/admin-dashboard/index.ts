@@ -33,14 +33,14 @@ function phoneVariants(raw?: string | null): string[] {
   const local = clean.startsWith('55') ? clean.slice(2) : clean
   if (local.length === 10) add(`${local.slice(0, 2)}9${local.slice(2)}`)
   if (local.length === 11 && local[2] === '9') add(`${local.slice(0, 2)}${local.slice(3)}`)
-  if (local.length > 11) add(local.slice(0, -1))
-  if (clean.startsWith('55') && local.length > 11) add(`55${local.slice(0, -1)}`)
   return Array.from(values).filter(Boolean)
 }
 
 function canonicalPhone(raw?: string | null) {
-  const variants = phoneVariants(raw)
-  return variants.find((v) => v.startsWith('55') && v.length >= 12 && v.length <= 13) || variants[0] || ''
+  const clean = onlyDigits(raw)
+  if (!clean) return ''
+  if (clean.startsWith('55')) return clean
+  return clean.length >= 10 && clean.length <= 13 ? `55${clean}` : clean
 }
 
 function normalizeLabel(value?: string | null) {
@@ -474,7 +474,7 @@ Deno.serve(async (req) => {
         group.updated_at = !group.updated_at || new Date(instance.updated_at) > new Date(group.updated_at)
           ? instance.updated_at
           : group.updated_at
-        group.phone_number = group.phone_number || instance.logical_phone || instance.phone_number || null
+        group.phone_number = group.phone_number || instance.phone_number || instance.logical_phone || null
         group.label = group.label || instance.label
         group.id = group.id || instance.id
         group.status = group.status === 'connected' || instance.status === 'connected' ? 'connected' : (group.status || instance.status)
@@ -515,7 +515,7 @@ Deno.serve(async (req) => {
             organization_id: instance.organization_id,
             organization: instance.organization,
             label: instance.label,
-            phone_number: instance.logical_phone || instance.phone_number || null,
+            phone_number: instance.phone_number || instance.logical_phone || null,
             status: instance.status,
             is_active: instance.is_active,
             updated_at: instance.updated_at,
