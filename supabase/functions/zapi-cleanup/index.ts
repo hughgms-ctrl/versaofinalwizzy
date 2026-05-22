@@ -263,11 +263,13 @@ async function diagnoseWhatsApp(supabase: any, organizationIds: string[], queryT
     const evolutionBaseUrl = String(connectionSettings.evolution_base_url || Deno.env.get('EVOLUTION_BASE_URL') || '').replace(/\/$/, '');
     const evolutionApiKey = connectionSettings.evolution_api_key || Deno.env.get('EVOLUTION_API_KEY') || '';
 
-    async function readEvolution(path: string, apiKey: string) {
+    async function readEvolution(path: string, apiKey: string, options: { method?: string; body?: any } = {}) {
         if (!evolutionBaseUrl || !apiKey) return { ok: false, skipped: true, reason: 'Evolution settings missing' };
         try {
             const response = await fetch(`${evolutionBaseUrl}${path}`, {
-                headers: { apikey: apiKey },
+                method: options.method || 'GET',
+                headers: { 'Content-Type': 'application/json', apikey: apiKey },
+                ...(options.body ? { body: JSON.stringify(options.body) } : {}),
             });
             const raw = await response.text();
             let json: any = null;
@@ -374,6 +376,67 @@ async function diagnoseWhatsApp(supabase: any, organizationIds: string[], queryT
     return diagnostics;
 }
 
+async function probeEvolutionPresence(supabase: any, organizationId: string, phone: string) {
+    const { data: settingsRow } = await supabase
+        .from('platform_settings')
+        .select('value')
+        .eq('key', 'whatsapp_connection_settings')
+        .maybeSingle();
+    const connectionSettings = settingsRow?.value || {};
+    const evolutionBaseUrl = String(connectionSettings.evolution_base_url || Deno.env.get('EVOLUTION_BASE_URL') || '').replace(/\/$/, '');
+    const evolutionApiKey = connectionSettings.evolution_api_key || Deno.env.get('EVOLUTION_API_KEY') || '';
+
+    const normalizedPhone = onlyDigits(phone);
+    if (!normalizedPhone) return { ok: false, error: 'phone_required' };
+
+    async function callEvolution(path: string, apiKey: string, method = 'GET', body?: any) {
+        if (!evolutionBaseUrl || !apiKey) return { ok: false, skipped: true, reason: 'Evolution settings missing' };
+        try {
+            const response = await fetch(`${evolutionBaseUrl}${path}`, {
+                method,
+                headers: { 'Content-Type': 'application/json', apikey: apiKey },
+                ...(body ? { body: JSON.stringify(body) } : {}),
+            });
+            const raw = await response.text();
+            let json: any = null;
+            try { json = raw ? JSON.parse(raw) : null; } catch (_) {}
+            return { ok: response.ok, status: response.status, json, raw: json ? undefined : raw };
+        } catch (error) {
+            return { ok: false, error: String(error) };
+        }
+    }
+
+    const { data: instances } = await supabase
+        .from('whatsapp_instances')
+        .select('*')
+        .eq('organization_id', organizationId)
+        .eq('provider', 'evolution')
+        .eq('status', 'connected');
+
+    const probes = [];
+    for (const instance of instances || []) {
+        const instanceName = instance.evolution_instance_name || instance.zapi_instance_id;
+        const apiKey = instance.evolution_api_key || evolutionApiKey;
+        probes.push({
+            instanceId: instance.id,
+            instanceName,
+            setInstanceAvailable: await callEvolution(`/instance/setPresence/${instanceName}`, apiKey, 'POST', { presence: 'available' }),
+            whatsappNumbers: await callEvolution(`/chat/whatsappNumbers/${instanceName}`, apiKey, 'POST', { numbers: [normalizedPhone] }),
+            findContactById: await callEvolution(`/chat/findContacts/${instanceName}`, apiKey, 'POST', { where: { id: `${normalizedPhone}@s.whatsapp.net` }, take: 1 }),
+            findChatById: await callEvolution(`/chat/findChats/${instanceName}`, apiKey, 'POST', { where: { id: `${normalizedPhone}@s.whatsapp.net` }, take: 1 }),
+            sendPausedPresence: await callEvolution(`/chat/sendPresence/${instanceName}`, apiKey, 'POST', { number: normalizedPhone, presence: 'paused', delay: 300 }),
+        });
+    }
+
+    const { data: contacts } = await supabase
+        .from('contacts')
+        .select('id, name, phone, contact_presence(presence_type, started_at, expires_at)')
+        .eq('organization_id', organizationId)
+        .in('phone', [normalizedPhone, normalizedPhone.startsWith('55') ? normalizedPhone.slice(2) : `55${normalizedPhone}`]);
+
+    return { ok: true, normalizedPhone, probes, contacts: contacts || [] };
+}
+
 Deno.serve(async (req) => {
     if (req.method === 'OPTIONS') {
         return new Response(null, { headers: corsHeaders });
@@ -440,6 +503,13 @@ Deno.serve(async (req) => {
             const queryText = url.searchParams.get('queryText');
             const diagnostics = await diagnoseWhatsApp(supabase, organizationIds, queryText);
             return new Response(JSON.stringify({ success: true, diagnostics }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+        }
+        if (action === 'presence-probe') {
+            const phone = url.searchParams.get('phone') || '';
+            const result = await probeEvolutionPresence(supabase, currentOrganizationId, phone);
+            return new Response(JSON.stringify({ success: true, result }), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
             });
         }

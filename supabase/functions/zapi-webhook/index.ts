@@ -262,6 +262,52 @@ async function updateMessageReceiptByProviderId(supabase: any, msgId: any, statu
   return true;
 }
 
+async function upsertContactPresenceByPhone(
+  supabase: any,
+  rawPhone: string,
+  instanceId: string,
+  instanceName: string,
+  presenceType = 'online',
+  ttlMs = 60000,
+) {
+  const phone = cleanPhone(rawPhone);
+  if (!phone) return false;
+
+  const { data: whatsappInstance } = await supabase
+    .from('whatsapp_instances')
+    .select('id, organization_id')
+    .or([
+      instanceId ? `zapi_instance_id.eq.${instanceId}` : '',
+      instanceName ? `zapi_instance_id.eq.${instanceName}` : '',
+      instanceName ? `evolution_instance_name.eq.${instanceName}` : '',
+      instanceId ? `evolution_instance_id.eq.${instanceId}` : '',
+    ].filter(Boolean).join(','))
+    .maybeSingle();
+
+  if (!whatsappInstance) return false;
+
+  const variants = phoneVariants(phone);
+  const { data: contact } = await supabase
+    .from('contacts')
+    .select('id')
+    .eq('organization_id', whatsappInstance.organization_id)
+    .in('phone', variants.length > 0 ? variants : [phone])
+    .limit(1)
+    .maybeSingle();
+
+  if (!contact) return false;
+
+  await supabase.from('contact_presence').upsert({
+    contact_id: contact.id,
+    organization_id: whatsappInstance.organization_id,
+    presence_type: presenceType,
+    started_at: new Date().toISOString(),
+    expires_at: new Date(Date.now() + ttlMs).toISOString(),
+  }, { onConflict: 'contact_id' });
+
+  return true;
+}
+
 function isGroupChat(chatid: string): boolean {
   return chatid?.includes('@g.us') || chatid?.includes('@broadcast') || false;
 }
@@ -377,9 +423,9 @@ Deno.serve(async (req) => {
     }
 
     // Handle connection events
-    if (eventType === 'connected' || eventType === 'pairsuccess' || eventType === 'connection_update') {
+    if (eventType === 'connected' || eventType === 'pairsuccess' || eventType === 'connection_update' || eventType === 'connection.update') {
       const connectionState = String(payload.data?.state || payload.state || payload.status || '').toLowerCase();
-      if (eventType === 'connection_update' && !['open', 'connected', 'online'].includes(connectionState)) {
+      if ((eventType === 'connection_update' || eventType === 'connection.update') && !['open', 'connected', 'online'].includes(connectionState)) {
         if (['close', 'closed', 'disconnected', 'loggedout'].includes(connectionState) && (instanceId || instanceName)) {
           await supabase
             .from('whatsapp_instances')
@@ -927,6 +973,16 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
 
   // Find or create conversation for THIS specific contact
   const conversation = await findOrCreateConversation(supabase, contact.id, organizationId, whatsappInstance.id, whatsappInstance.phone_number);
+
+  if (!fromMe) {
+    await supabase.from('contact_presence').upsert({
+      contact_id: contact.id,
+      organization_id: organizationId,
+      presence_type: 'online',
+      started_at: new Date().toISOString(),
+      expires_at: new Date(Date.now() + 60000).toISOString(),
+    }, { onConflict: 'contact_id' });
+  }
 
   // Check for duplicate message (Deduplication)
   if (msgId) {
@@ -1569,6 +1625,8 @@ async function handleReadReceipt(supabase: any, payload: any) {
   const data = payload.data || {};
   const key = data.key || payload.key || {};
   const msg = payload.message || data.message || {};
+  const instanceId = payload.instanceId || data.instanceId || '';
+  const instanceName = payload.instanceName || payload.userID || payload.instance || data.instance || '';
 
   const msgId =
     msg.msgid ||
@@ -1593,6 +1651,11 @@ async function handleReadReceipt(supabase: any, payload: any) {
   if (!msgId) return respond({ success: true, ignored: true, reason: 'receipt_without_message_id' });
 
   const updated = await updateMessageReceiptByProviderId(supabase, msgId, status);
+  const normalizedStatus = String(status || '').toLowerCase();
+  const remoteJid = data.remoteJid || key.remoteJidAlt || key.remoteJid || payload.remoteJid || '';
+  if (remoteJid && ['read', 'read_ack', 'played', 'played_ack'].includes(normalizedStatus)) {
+    await upsertContactPresenceByPhone(supabase, remoteJid, instanceId, instanceName, 'online', 60000);
+  }
   return respond({ success: true, updated, msgId: normalizeProviderMessageId(msgId), status });
 }
 
