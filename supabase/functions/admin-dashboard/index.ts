@@ -49,7 +49,7 @@ function normalizeLabel(value?: string | null) {
     .normalize('NFD')
     .replace(/\p{Diacritic}/gu, '')
     .replace(/\([^)]*\)/g, '')
-    .replace(/\b(evolution|backup|uazapi|principal|numero|número)\b/g, '')
+    .replace(/\b(evolution|backup|uazapi)\b/g, '')
     .replace(/[^a-z0-9]+/g, '')
 }
 
