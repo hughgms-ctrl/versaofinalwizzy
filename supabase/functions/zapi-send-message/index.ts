@@ -137,6 +137,13 @@ async function resolveSendInstance(
     ? instances.find((item: any) => item.id === conversationInstanceId)
     : null;
 
+  if (
+    conversationInstance &&
+    providerEnabled((conversationInstance.provider || 'uazapi') === 'evolution' ? 'evolution' : 'uazapi', strategy)
+  ) {
+    return conversationInstance;
+  }
+
   for (const provider of preferredProviders) {
     const providerInstance = instances.find((item: any) => (item.provider || 'uazapi') === provider);
     if (providerInstance) {

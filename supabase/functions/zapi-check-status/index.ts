@@ -368,7 +368,15 @@ async function checkSingleInstance(
   }
 
   if ((instance.provider || 'uazapi') === 'evolution') {
-    return checkEvolutionInstance(supabase, instance, connectionSettings, sanitizePhone);
+    const result = await checkEvolutionInstance(supabase, instance, connectionSettings, sanitizePhone);
+    if (result.connected) {
+      fetch(`${supabaseUrl}/functions/v1/zapi-configure-webhook`, {
+        method: 'POST',
+        headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ instanceId: instance.id }),
+      }).catch((error) => console.error('Evolution webhook ensure error:', error));
+    }
+    return result;
   }
 
   const instanceToken = String(instance.zapi_token).trim();

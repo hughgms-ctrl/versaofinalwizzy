@@ -275,7 +275,23 @@ Deno.serve(async (req) => {
     }
 
     // Handle connection events
-    if (eventType === 'connected' || eventType === 'pairsuccess') {
+    if (eventType === 'connected' || eventType === 'pairsuccess' || eventType === 'connection_update') {
+      const connectionState = String(payload.data?.state || payload.state || payload.status || '').toLowerCase();
+      if (eventType === 'connection_update' && !['open', 'connected', 'online'].includes(connectionState)) {
+        if (['close', 'closed', 'disconnected', 'loggedout'].includes(connectionState) && (instanceId || instanceName)) {
+          await supabase
+            .from('whatsapp_instances')
+            .update({ status: 'disconnected', is_active: false, disconnected_at: new Date().toISOString() })
+            .or([
+              instanceId ? `zapi_instance_id.eq.${instanceId}` : '',
+              instanceName ? `zapi_instance_id.eq.${instanceName}` : '',
+              instanceName ? `evolution_instance_name.eq.${instanceName}` : '',
+              instanceId ? `evolution_instance_id.eq.${instanceId}` : '',
+            ].filter(Boolean).join(','));
+        }
+        return respond({ success: true, ignored: true, reason: 'connection_not_open', state: connectionState });
+      }
+
       console.log(`[BOOTSTRAP] Instance ${instanceName} connected. Triggering sync...`);
 
       // Update instance status in background
@@ -287,6 +303,8 @@ Deno.serve(async (req) => {
         const orFilters = [];
         if (instanceId) orFilters.push(`zapi_instance_id.eq.${instanceId}`);
         if (instanceName) orFilters.push(`zapi_instance_id.eq.${instanceName}`);
+        if (instanceName) orFilters.push(`evolution_instance_name.eq.${instanceName}`);
+        if (instanceId) orFilters.push(`evolution_instance_id.eq.${instanceId}`);
         if (payloadTokenConn) orFilters.push(`zapi_token.eq.${payloadTokenConn}`);
         
         updateQuery.or(orFilters.join(','))
@@ -313,7 +331,7 @@ Deno.serve(async (req) => {
     }
 
     // Handle message and media events - catch ALL possible UAZAPI event types for messages/media
-    const messageEventTypes = ['messages', 'message', 'media', 'document', 'audio', 'video', 'image', 'sticker', 'location', 'contact', 'ptt', 'messages-upsert', 'messages.upsert'];
+    const messageEventTypes = ['messages', 'message', 'media', 'document', 'audio', 'video', 'image', 'sticker', 'location', 'contact', 'ptt', 'messages-upsert', 'messages.upsert', 'messages_upsert', 'send_message'];
     if (messageEventTypes.includes(eventType)) {
       try {
         return await handleMessage(supabase, payload, instanceId, instanceName, eventType);
@@ -1509,14 +1527,35 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
 
     // Try any known representation first. Providers sometimes disagree about:
     // country code, the Brazilian ninth digit, or append a transient trailing digit.
-    const { data: existing } = await supabase
+    const { data: existingContacts } = await supabase
       .from('contacts').select('*')
       .eq('organization_id', organizationId)
       .in('phone', variants.length > 0 ? variants : [phone])
-      .limit(1)
-      .maybeSingle();
+      .order('updated_at', { ascending: false })
+      .limit(20);
+
+    const existing = (existingContacts || []).sort((a: any, b: any) => {
+      const aPhone = canonicalPhone(a.phone || '');
+      const bPhone = canonicalPhone(b.phone || '');
+      const aCanonical = aPhone === canonical || a.metadata?.canonical_phone === canonical;
+      const bCanonical = bPhone === canonical || b.metadata?.canonical_phone === canonical;
+      if (aCanonical !== bCanonical) return aCanonical ? -1 : 1;
+      const aHasCountryCode = String(a.phone || '').replace(/\D/g, '').startsWith('55');
+      const bHasCountryCode = String(b.phone || '').replace(/\D/g, '').startsWith('55');
+      if (aHasCountryCode !== bHasCountryCode) return aHasCountryCode ? -1 : 1;
+      return new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime();
+    })[0];
 
     if (existing) {
+      if ((existingContacts || []).length > 1) {
+        await mergeDuplicateContactConversations(
+          supabase,
+          organizationId,
+          existing,
+          (existingContacts || []).filter((contact: any) => contact.id !== existing.id),
+        );
+      }
+
       const updateData: any = {};
       if (name && !existing.name) updateData.name = name;
       if (avatarUrl && !existing.avatar_url) updateData.avatar_url = avatarUrl;
@@ -1542,6 +1581,101 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
       .select().single();
     if (error) throw error;
     return newContact;
+  }
+
+  async function mergeDuplicateContactConversations(
+    supabase: any,
+    organizationId: string,
+    keeperContact: any,
+    duplicateContacts: any[],
+  ) {
+    if (!duplicateContacts.length) return;
+
+    try {
+      const { data: keeperConversation } = await supabase
+        .from('conversations')
+        .select('*')
+        .eq('organization_id', organizationId)
+        .eq('contact_id', keeperContact.id)
+        .order('last_message_at', { ascending: false, nullsFirst: false })
+        .limit(1)
+        .maybeSingle();
+
+      let targetConversation = keeperConversation;
+
+      for (const duplicateContact of duplicateContacts) {
+        const { data: duplicateConversations } = await supabase
+          .from('conversations')
+          .select('*')
+          .eq('organization_id', organizationId)
+          .eq('contact_id', duplicateContact.id)
+          .order('last_message_at', { ascending: false, nullsFirst: false });
+
+        for (const duplicateConversation of duplicateConversations || []) {
+          if (!targetConversation) {
+            const { data: movedConversation, error: moveError } = await supabase
+              .from('conversations')
+              .update({
+                contact_id: keeperContact.id,
+                metadata: {
+                  ...(duplicateConversation.metadata || {}),
+                  merged_from_contact_ids: [duplicateContact.id],
+                },
+              })
+              .eq('id', duplicateConversation.id)
+              .select()
+              .maybeSingle();
+            if (!moveError && movedConversation) targetConversation = movedConversation;
+            continue;
+          }
+
+          if (duplicateConversation.id === targetConversation.id) continue;
+
+          await supabase
+            .from('messages')
+            .update({ conversation_id: targetConversation.id })
+            .eq('conversation_id', duplicateConversation.id);
+
+          const mergedIds = [
+            ...((targetConversation.metadata || {}).merged_conversation_ids || []),
+            duplicateConversation.id,
+          ];
+
+          const newestLastMessage =
+            new Date(duplicateConversation.last_message_at || 0).getTime() >
+            new Date(targetConversation.last_message_at || 0).getTime()
+              ? duplicateConversation.last_message_at
+              : targetConversation.last_message_at;
+
+          await supabase
+            .from('conversations')
+            .update({
+              last_message_at: newestLastMessage || new Date().toISOString(),
+              unread_count: (targetConversation.unread_count || 0) + (duplicateConversation.unread_count || 0),
+              metadata: {
+                ...(targetConversation.metadata || {}),
+                merged_conversation_ids: Array.from(new Set(mergedIds)),
+              },
+            })
+            .eq('id', targetConversation.id);
+
+          await supabase
+            .from('conversations')
+            .delete()
+            .eq('id', duplicateConversation.id);
+        }
+
+        const duplicateMetadata = { ...(duplicateContact.metadata || {}) };
+        duplicateMetadata.merged_into_contact_id = keeperContact.id;
+        duplicateMetadata.merged_at = new Date().toISOString();
+        await supabase
+          .from('contacts')
+          .update({ metadata: duplicateMetadata })
+          .eq('id', duplicateContact.id);
+      }
+    } catch (error) {
+      console.error('[CONTACT_MERGE] Failed to merge duplicate contact conversations:', error);
+    }
   }
 
   async function findOrCreateConversation(supabase: any, contactId: string, organizationId: string, whatsappInstanceId: string, sourcePhone?: string) {
