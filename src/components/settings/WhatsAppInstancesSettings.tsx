@@ -149,8 +149,13 @@ export function WhatsAppInstancesSettings() {
           setConnectingInstanceId(null);
           setQrCode(null);
           queryClient.invalidateQueries({ queryKey: ['whatsapp-instances'] });
-          toast({ title: '✅ WhatsApp conectado!', description: 'Sincronizando conversas...' });
-          handleSync(connectingInstanceId);
+          const provider = inst?.provider || 'uazapi';
+          if (provider === 'uazapi') {
+            toast({ title: '✅ WhatsApp conectado!', description: 'Sincronizando conversas...' });
+            handleSync(connectingInstanceId);
+          } else {
+            toast({ title: '✅ WhatsApp conectado!', description: 'Evolution API ativo. Novas conversas chegarão pelo webhook.' });
+          }
         }
       } catch (err) {
         console.error('[UAZAPI Polling Error]', err);
@@ -476,9 +481,11 @@ export function WhatsAppInstancesSettings() {
                       <div className="flex items-center gap-1">
                         {isConnected && (
                           <>
-                            <Button variant="ghost" size="sm" onClick={() => handleSync(instance.id)} disabled={!!isSyncing} title="Sincronizar">
-                              <Download className="h-4 w-4" />
-                            </Button>
+                            {instance.provider !== 'evolution' && (
+                              <Button variant="ghost" size="sm" onClick={() => handleSync(instance.id)} disabled={!!isSyncing} title="Sincronizar">
+                                <Download className="h-4 w-4" />
+                              </Button>
+                            )}
                             <Button variant="ghost" size="sm" onClick={() => handleDisconnect(instance.id)} disabled={isActionLoading === instance.id}>
                               {isActionLoading === instance.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
                             </Button>
