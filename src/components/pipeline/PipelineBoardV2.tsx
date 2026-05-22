@@ -326,6 +326,22 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
     return text.replace(/[*_~`]/g, '');
   };
 
+  const getPresenceLabel = (isOnline: boolean, isTyping: boolean, isRecording: boolean) => {
+    if (isTyping) return 'digitando';
+    if (isRecording) return 'gravando audio';
+    return isOnline ? 'online' : 'offline';
+  };
+
+  const renderMessageStatus = (lastMessage: NonNullable<DbConversation['last_message']>[number]) => {
+    if (lastMessage.read_at) {
+      return <CheckCheck className="text-[#53bdeb] h-3 w-3 stroke-[3]" />;
+    }
+    if (lastMessage.delivered_at) {
+      return <CheckCheck className="text-muted-foreground/70 h-3 w-3 stroke-[3]" />;
+    }
+    return <Check className="text-muted-foreground/70 h-3 w-3 stroke-[3]" />;
+  };
+
   const getLastMessagePreview = (conversation: DbConversation) => {
     const lastMessage = conversation.last_message?.[0];
     if (!lastMessage) return null;
@@ -431,13 +447,15 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
                 {getInitials(contactName || null, contactPhone)}
               </span>
 
-              {/* Online Status Dot - only show when presence is active */}
-              {isOnline && (
-                <div className={cn(
+              <div
+                className={cn(
                   "absolute top-0 right-0 h-2.5 w-2.5 rounded-full ring-2 ring-card",
-                  isTyping ? "bg-blue-500 animate-pulse" : isRecording ? "bg-red-500 animate-pulse" : "bg-green-500"
-                )} />
-              )}
+                  isTyping ? "bg-blue-500 animate-pulse" :
+                    isRecording ? "bg-red-500 animate-pulse" :
+                      isOnline ? "bg-green-500" : "bg-muted-foreground/40"
+                )}
+                title={getPresenceLabel(isOnline, isTyping, isRecording)}
+              />
             </div>
 
             <div className={cn(
@@ -532,13 +550,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
             <div className="flex items-center gap-1 mt-1">
               {lastMessage?.direction === 'outbound' && (
                 <span className="flex-shrink-0 flex items-center">
-                  {lastMessage.read_at ? (
-                    <CheckCheck className="text-blue-500 h-3 w-3 stroke-[3]" />
-                  ) : (lastMessage.delivered_at || lastMessage.read_at) ? (
-                    <CheckCheck className="text-muted-foreground/60 h-3 w-3 stroke-[3]" />
-                  ) : (
-                    <Check className="text-muted-foreground/60 h-3 w-3 stroke-[3]" />
-                  )}
+                  {renderMessageStatus(lastMessage)}
                 </span>
               )}
               {isTyping || isRecording ? (
