@@ -264,6 +264,14 @@ export function SignaturesList() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        {editingDocId && (
+          <EditFilledDataDialog
+            open={!!editingDocId}
+            onOpenChange={(o) => !o && setEditingDocId(null)}
+            documentId={editingDocId}
+          />
+        )}
       </div>
     );
   }

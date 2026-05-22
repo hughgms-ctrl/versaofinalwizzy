@@ -117,6 +117,7 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature 
     try {
       let firstDocId: string | null = null;
       const docIds: string[] = [];
+      const submissionGroup = crypto.randomUUID();
 
       for (const template of templates) {
         const templateFields = (template.fields as any[]) || [];
@@ -152,6 +153,7 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature 
             signing_method: 'internal',
             fill_mode: 'internal',
             is_filled: true,
+            submission_group: submissionGroup,
             created_by: profile.id,
           })
           .select('id')
@@ -222,6 +224,7 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature 
             fill_mode: 'public',
             is_filled: false,
             public_fill_token: fillToken,
+            submission_group: fillToken,
             signature_config: { signing_method: 'internal', signers },
             created_by: profile.id,
           })

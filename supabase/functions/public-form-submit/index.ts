@@ -45,7 +45,7 @@ Deno.serve(async (req) => {
 
     const { data: template, error: tErr } = await supabase
       .from("document_templates")
-      .select("content, content_html, logo_url, fields, organization_id, name, auto_send_whatsapp")
+      .select("content, content_html, logo_url, fields, organization_id, name, auto_send_whatsapp, default_signers")
       .eq("id", template_id)
       .maybeSingle();
 
@@ -155,8 +155,11 @@ Deno.serve(async (req) => {
 
     const rows: SignerRow[] = [];
     let fillerToken: string | null = null;
+    const configuredSigners = Array.isArray((template as any).default_signers)
+      ? (template as any).default_signers
+      : [];
 
-    if (fillerName || fillerEmail || fillerPhone) {
+    if (configuredSigners.length === 0 && (fillerName || fillerEmail || fillerPhone)) {
       fillerToken = crypto.randomUUID();
       rows.push({
         organization_id: template.organization_id,
@@ -180,7 +183,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    (fixedSigners || []).forEach((fs: any, idx: number) => {
+    if (configuredSigners.length === 0) (fixedSigners || []).forEach((fs: any, idx: number) => {
       rows.push({
         organization_id: template.organization_id,
         generated_document_id: documentId,
@@ -195,6 +198,41 @@ Deno.serve(async (req) => {
         order: (rows.length > 0 ? 1 : 0) + idx,
         status: "pending",
         data_source: "manual",
+      });
+    });
+
+    configuredSigners.forEach((s: any, idx: number) => {
+      const source = s.data_source || "manual";
+      const mapping = s.field_mapping || {};
+      const signerToken = crypto.randomUUID();
+      if (source === "form" && !fillerToken) fillerToken = signerToken;
+      const mappedName = source === "form"
+        ? pickValue(filled_data, mapping.name ? [mapping.name] : ["nome completo", "nome", "cliente", "contratante", "signatario"])
+        : s.signer_name;
+      const mappedEmail = source === "form"
+        ? pickValue(filled_data, mapping.email ? [mapping.email] : ["email", "e-mail", "correio eletronico"])
+        : s.signer_email;
+      const mappedPhone = source === "form"
+        ? pickValue(filled_data, mapping.phone ? [mapping.phone] : ["whatsapp", "telefone", "celular", "phone"])
+        : s.signer_phone;
+      const mappedCpf = source === "form"
+        ? pickValue(filled_data, mapping.cpf ? [mapping.cpf] : ["cpf", "documento", "doc"])
+        : s.signer_cpf;
+
+      rows.push({
+        organization_id: template.organization_id,
+        generated_document_id: documentId,
+        signer_name: mappedName || s.signer_name || "Signatario",
+        signer_email: mappedEmail || null,
+        signer_phone: mappedPhone ? String(mappedPhone).replace(/\D/g, "") : null,
+        signer_cpf: mappedCpf || null,
+        signer_role: s.signer_role || "Assinar",
+        signing_method: "internal",
+        auth_methods: s.auth_methods || { manuscrita: true, otp_email: true, selfie: true },
+        signature_token: signerToken,
+        order: idx,
+        status: "pending",
+        data_source: source,
       });
     });
 
@@ -279,14 +317,15 @@ Deno.serve(async (req) => {
       }
     }
 
-    const signatureUrl = fillerToken ? `${PUBLIC_APP_ORIGIN}/sign/${fillerToken}` : null;
+    const signatureToken = fillerToken || rows[0]?.signature_token || null;
+    const signatureUrl = signatureToken ? `${PUBLIC_APP_ORIGIN}/sign/${signatureToken}` : null;
 
     return new Response(JSON.stringify({
       pdf_url: pdfData.pdf_url,
       whatsapp_sent: whatsappSent,
       document_id: documentId,
       signature_url: signatureUrl,
-      signature_token: fillerToken,
+      signature_token: signatureToken,
     }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

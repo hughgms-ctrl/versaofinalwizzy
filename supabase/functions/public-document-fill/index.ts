@@ -20,6 +20,71 @@ function pickSubmittedValue(data: Record<string, any>, mappedKey?: string, alias
   return "";
 }
 
+function otpChannelsForSigner(signer: any) {
+  const auth = (signer.auth_methods || {}) as Record<string, boolean>;
+  const channels: string[] = [];
+  if (auth.otp_email) channels.push("email");
+  if (auth.otp_whatsapp) channels.push("whatsapp");
+  if (channels.length === 0) {
+    if (signer.signer_email) channels.push("email");
+    else if (signer.signer_phone) channels.push("whatsapp");
+    else channels.push("email");
+  }
+  return channels;
+}
+
+async function ensureSignatureForSigner(supabase: any, signer: any) {
+  const channels = otpChannelsForSigner(signer);
+  const metadata = {
+    ...(signer.metadata || {}),
+    require_selfie: signer.auth_methods?.selfie === true,
+    otp_channel: channels[0],
+    otp_channels: channels,
+    auth_methods: signer.auth_methods || { manuscrita: true },
+    from_signer_id: signer.id,
+  };
+
+  const patch = {
+    signer_name: signer.signer_name,
+    signer_email: signer.signer_email || null,
+    signer_phone: signer.signer_phone || null,
+    signer_cpf: signer.signer_cpf || null,
+    metadata,
+  };
+
+  if (signer.signature_id) {
+    await supabase
+      .from("document_signatures")
+      .update(patch)
+      .eq("id", signer.signature_id);
+    return signer.signature_id;
+  }
+
+  const { data: created, error } = await supabase
+    .from("document_signatures")
+    .insert({
+      organization_id: signer.organization_id,
+      generated_document_id: signer.generated_document_id,
+      signing_method: signer.signing_method || "internal",
+      signature_token: signer.signature_token,
+      status: signer.status === "signed" ? "signed" : "pending",
+      ...patch,
+    })
+    .select("id")
+    .single();
+
+  if (error || !created) {
+    console.error("Could not create bridged signature:", error);
+    return null;
+  }
+
+  await supabase
+    .from("document_signers")
+    .update({ signature_id: created.id })
+    .eq("id", signer.id);
+  return created.id;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -182,6 +247,23 @@ serve(async (req) => {
         }
       } catch (e) {
         console.warn("Could not auto-fill form signers:", e);
+      }
+
+      // Ensure every configured signer has a document_signatures row now.
+      // The dashboard is based on document_signatures, so without this only the
+      // signer who opens /sign would appear.
+      try {
+        const { data: allSigners } = await (supabase as any)
+          .from("document_signers")
+          .select("id, organization_id, generated_document_id, signature_token, signature_id, signing_method, status, signer_name, signer_email, signer_phone, signer_cpf, auth_methods, metadata")
+          .in("generated_document_id", docIds)
+          .order("order", { ascending: true });
+
+        for (const signer of allSigners || []) {
+          await ensureSignatureForSigner(supabase, signer);
+        }
+      } catch (e) {
+        console.warn("Could not ensure signatures for signers:", e);
       }
 
       // Generate PDFs for every filled doc so signers can preview them.
