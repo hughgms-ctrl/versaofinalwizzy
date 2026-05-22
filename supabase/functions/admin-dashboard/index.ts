@@ -393,7 +393,7 @@ Deno.serve(async (req) => {
 
       const { data: instances, error: instancesError } = await adminClient
         .from('whatsapp_instances')
-        .select('id, organization_id, label, phone_number, status, is_active, connected_at, disconnected_at, updated_at, zapi_instance_id')
+        .select('id, organization_id, label, phone_number, status, is_active, connected_at, disconnected_at, updated_at, zapi_instance_id, provider, evolution_instance_name, evolution_instance_id')
         .order('updated_at', { ascending: false })
 
       if (instancesError) throw instancesError
@@ -410,16 +410,16 @@ Deno.serve(async (req) => {
         organization: orgMap.get(instance.organization_id) || null,
         providers: {
           uazapi: {
-            configured: !!instance.zapi_token || !!instance.zapi_instance_id,
-            status: instance.status,
-            active: instance.is_active,
-            external_id: instance.zapi_instance_id,
+            configured: (instance.provider || 'uazapi') === 'uazapi' && (!!instance.zapi_token || !!instance.zapi_instance_id),
+            status: (instance.provider || 'uazapi') === 'uazapi' ? instance.status : 'not_configured',
+            active: (instance.provider || 'uazapi') === 'uazapi' ? instance.is_active : false,
+            external_id: (instance.provider || 'uazapi') === 'uazapi' ? instance.zapi_instance_id : null,
           },
           evolution: {
-            configured: false,
-            status: 'not_configured',
-            active: false,
-            external_id: null,
+            configured: instance.provider === 'evolution' && (!!instance.evolution_instance_name || !!instance.zapi_instance_id),
+            status: instance.provider === 'evolution' ? instance.status : 'not_configured',
+            active: instance.provider === 'evolution' ? instance.is_active : false,
+            external_id: instance.provider === 'evolution' ? (instance.evolution_instance_name || instance.zapi_instance_id) : null,
           },
         },
       }))

@@ -364,14 +364,18 @@ export default function AdminWhatsAppIntegrationsPage() {
                       </TableCell>
                       <TableCell>
                         <div className="font-medium">{instance.label || 'WhatsApp'}</div>
-                        <div className="text-xs text-muted-foreground">{instance.zapi_instance_id || 'sem id externo'}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {instance.provider === 'evolution'
+                            ? (instance.evolution_instance_name || instance.zapi_instance_id || 'sem id externo')
+                            : (instance.zapi_instance_id || 'sem id externo')}
+                        </div>
                       </TableCell>
                       <TableCell>{instance.phone_number || '-'}</TableCell>
                       <TableCell>
-                        <InstanceStatusBadge status={instance.providers?.uazapi?.status || instance.status} active={instance.is_active} />
+                        <InstanceStatusBadge status={instance.providers?.uazapi?.status || 'not_configured'} active={!!instance.providers?.uazapi?.active} />
                       </TableCell>
                       <TableCell>
-                        <InstanceStatusBadge status={instance.providers?.evolution?.status || 'not_configured'} active={false} />
+                        <InstanceStatusBadge status={instance.providers?.evolution?.status || 'not_configured'} active={!!instance.providers?.evolution?.active} />
                       </TableCell>
                       <TableCell className="text-right text-muted-foreground">
                         {instance.updated_at ? new Date(instance.updated_at).toLocaleString('pt-BR') : '-'}
