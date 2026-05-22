@@ -207,6 +207,43 @@ function extractMimeTypeFromObject(media: any): string | null {
   );
 }
 
+function normalizeBaseUrl(value?: string | null): string {
+  return (value || '').trim().replace(/\/+$/, '');
+}
+
+async function loadConnectionSettings(supabase: any) {
+  const { data: row } = await supabase
+    .from('platform_settings')
+    .select('value')
+    .eq('key', 'whatsapp_connection_settings')
+    .maybeSingle();
+  const value = row?.value || {};
+  return {
+    uazapiBaseUrl: normalizeBaseUrl(value.uazapi_base_url || Deno.env.get('UAZAPI_BASE_URL')),
+    evolutionBaseUrl: normalizeBaseUrl(value.evolution_base_url || Deno.env.get('EVOLUTION_BASE_URL')),
+    evolutionApiKey: value.evolution_api_key || Deno.env.get('EVOLUTION_API_KEY') || '',
+  };
+}
+
+function isEncryptedWhatsAppMediaUrl(url?: string | null): boolean {
+  if (!url) return false;
+  const lower = url.toLowerCase();
+  return lower.includes('mmg.whatsapp.net')
+    || lower.includes('whatsapp.net')
+    || lower.includes('/mms/')
+    || lower.includes('enc=')
+    || lower.includes('media-key')
+    || lower.includes('mediakey');
+}
+
+function isProbablyBase64(value?: string | null): boolean {
+  if (!value) return false;
+  const trimmed = value.trim();
+  if (trimmed.startsWith('data:')) return trimmed.includes('base64,');
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) return false;
+  return /^[A-Za-z0-9+/=_-]{80,}$/.test(trimmed.replace(/\s+/g, ''));
+}
+
 function withCountryCode(phone: string): string {
   const clean = phone.replace(/\D/g, '');
   if (!clean) return '';
@@ -839,6 +876,13 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
   if (!mimeType) mimeType = extractMimeTypeFromObject(documentMsg) || extractMimeTypeFromObject(audioMsg) || extractMimeTypeFromObject(videoMsg) || extractMimeTypeFromObject(imageMsg) || extractMimeTypeFromObject(stickerMsg);
 
   let directMediaUrl = mediaUrl || payload.mediaUrl || payload.MediaUrl || msg.mediaUrl || msg.media?.url || null;
+  if (directMediaUrl && isEncryptedWhatsAppMediaUrl(directMediaUrl)) {
+    console.log(`[WEBHOOK] Ignoring encrypted WhatsApp media URL; will download/decrypt before saving: ${directMediaUrl.substring(0, 80)}`);
+    directMediaUrl = null;
+    mediaUrl = null;
+  }
+
+  const connectionSettings = await loadConnectionSettings(supabase);
 
   // Fetch WhatsApp Instance early for API calls
   // Robust lookup: try zapi_instance_id first, then fallback to zapi_token
@@ -884,7 +928,8 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
   if (!base64Data && isMediaType && whatsappInstance && msgId && (whatsappInstance.provider || 'uazapi') === 'uazapi') {
     try {
       console.log(`[WEBHOOK] Fetching decrypted media via /message/download for ID: ${msgId}...`);
-      const uazapiBaseUrl = Deno.env.get('UAZAPI_BASE_URL')!;
+      const uazapiBaseUrl = connectionSettings.uazapiBaseUrl;
+      if (!uazapiBaseUrl) throw new Error('UAZAPI base URL not configured');
       // Documentation at https://docs.uazapi.com/endpoint/post/message~download
       const resp = await fetch(`${uazapiBaseUrl}/message/download`, {
         method: 'POST',
@@ -902,11 +947,19 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
 
       if (resp.ok) {
         const data = await resp.json();
-        if (data && data.base64Data) {
-          base64Data = data.base64Data;
-          if (!mimeType) mimeType = data.mimetype || null;
+        const candidateBase64 = firstString(
+          data?.base64Data,
+          data?.base64,
+          data?.data?.base64Data,
+          data?.data?.base64,
+          data?.media?.base64Data,
+          data?.media?.base64,
+        );
+        if (isProbablyBase64(candidateBase64)) {
+          base64Data = candidateBase64;
+          if (!mimeType) mimeType = firstString(data.mimetype, data.mimeType, data.data?.mimetype, data.data?.mimeType);
           console.log(`[WEBHOOK] Successfully downloaded media: ${base64Data.length} chars, mimeType=${mimeType}`);
-        } else if (data && data.fileURL && !base64Data) {
+        } else if (data && data.fileURL && !base64Data && !isEncryptedWhatsAppMediaUrl(data.fileURL)) {
           // If only link is returned but no base64, we can use the link directly
           directMediaUrl = data.fileURL;
           console.log(`[WEBHOOK] Using temporary decrypted URL from API: ${directMediaUrl}`);
@@ -924,8 +977,8 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
   // to base64 through Evolution before falling back to a temporary URL.
   if (!base64Data && isMediaType && whatsappInstance && msgId && whatsappInstance.provider === 'evolution') {
     try {
-      const evolutionBaseUrl = (Deno.env.get('EVOLUTION_BASE_URL') || '').replace(/\/+$/, '');
-      const evolutionApiKey = whatsappInstance.evolution_api_key || Deno.env.get('EVOLUTION_API_KEY') || '';
+      const evolutionBaseUrl = connectionSettings.evolutionBaseUrl;
+      const evolutionApiKey = whatsappInstance.evolution_api_key || connectionSettings.evolutionApiKey;
       const evolutionInstanceName = whatsappInstance.evolution_instance_name || instanceName || whatsappInstance.zapi_instance_id;
       if (evolutionBaseUrl && evolutionApiKey && evolutionInstanceName) {
         console.log(`[WEBHOOK] Fetching decrypted media via Evolution for ID: ${msgId}...`);
@@ -949,23 +1002,31 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
         });
 
         if (resp.ok) {
-          const data = await resp.json();
-          base64Data = firstString(
+          const raw = await resp.text();
+          let data: any = null;
+          try { data = raw ? JSON.parse(raw) : {}; } catch { data = { base64: raw }; }
+          const candidateBase64 = firstString(
             data.base64,
             data.base64Data,
             data.data?.base64,
             data.data?.base64Data,
             data.media?.base64,
             data.media?.base64Data,
-          ) || base64Data;
+            data.result?.base64,
+            data.result?.base64Data,
+          );
+          if (isProbablyBase64(candidateBase64)) base64Data = candidateBase64;
           mimeType = mimeType || firstString(
             data.mimetype,
             data.mimeType,
             data.MimeType,
             data.data?.mimetype,
             data.data?.mimeType,
+            data.result?.mimetype,
+            data.result?.mimeType,
           );
-          directMediaUrl = directMediaUrl || firstString(data.fileUrl, data.fileURL, data.url, data.data?.url);
+          directMediaUrl = directMediaUrl || firstString(data.fileUrl, data.fileURL, data.url, data.data?.url, data.result?.url);
+          if (directMediaUrl && isEncryptedWhatsAppMediaUrl(directMediaUrl)) directMediaUrl = null;
           console.log(`[WEBHOOK] Evolution media result: hasBase64=${!!base64Data}, mimeType=${mimeType || 'none'}, hasUrl=${!!directMediaUrl}`);
         } else {
           console.error(`[WEBHOOK] Evolution media download failed: ${resp.status} ${await resp.text()}`);
@@ -979,6 +1040,11 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
   }
 
   console.log(`[WEBHOOK] Media check: hasBase64=${!!base64Data} (${base64Data ? base64Data.length + ' chars' : '0'}), mimeType=${mimeType}, directUrl=${!!directMediaUrl}`);
+
+  if (base64Data && !mimeType && base64Data.startsWith('data:')) {
+    const match = base64Data.match(/^data:([^;,]+)[;,]/i);
+    if (match?.[1]) mimeType = match[1];
+  }
 
   if (base64Data && !mimeType) {
     if (messageType === 'audio') mimeType = 'audio/ogg';
