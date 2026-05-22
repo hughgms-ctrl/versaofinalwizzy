@@ -88,8 +88,6 @@ function isValidPhoneNumber(phone: string): boolean {
   if (clean.startsWith('55')) {
     const ddd = parseInt(clean.substring(2, 4), 10);
     if (!VALID_DDDS.has(ddd)) return false;
-    const numberPart = clean.substring(4);
-    if (numberPart.length < 8 || numberPart.length > 9) return false;
   }
   return true;
 }

@@ -38,8 +38,6 @@ function isValidPhoneNumber(phone: string): boolean {
   if (clean.startsWith('55')) {
     const ddd = parseInt(clean.substring(2, 4), 10);
     if (!VALID_DDDS.has(ddd)) return false;
-    const numberPart = clean.substring(4);
-    if (numberPart.length < 8 || numberPart.length > 9) return false;
   }
   return true;
 }
@@ -236,15 +234,16 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      // Aggressive cleaning for remoteJid (remove device suffix)
       const remoteDigits = remoteJid.split('@')[0].split(':')[0].split('.')[0].replace(/\D/g, '');
-      const cleanRemote = (remoteDigits.startsWith('55') && remoteDigits.length > 13) ? remoteDigits.substring(0, 13) : remoteDigits;
 
       const digitsOnly = contactPhone.replace(/\D/g, '');
-      const cleanDigits = (digitsOnly.startsWith('55') && digitsOnly.length > 13) ? digitsOnly.substring(0, 13) : digitsOnly;
+      const samePhoneIdentity =
+        remoteDigits === digitsOnly ||
+        (remoteDigits.length >= 10 && digitsOnly.length >= 10 && remoteDigits.endsWith(digitsOnly)) ||
+        (remoteDigits.length >= 10 && digitsOnly.length >= 10 && digitsOnly.endsWith(remoteDigits));
 
       const isMatch = remoteDigits === digitsOnly ||
-        cleanRemote === cleanDigits ||
+        samePhoneIdentity ||
         remoteJid === expectedJid ||
         (expectedLid && remoteJid === expectedLid);
 
@@ -255,7 +254,7 @@ Deno.serve(async (req) => {
 
         if (!startsWithMatch) {
           if (syncedCount === 0 && skippedCount < 3) {
-            console.log(`[SECURITY] Skipping ${remoteJid} for chat ${contactPhone} (Clean: ${cleanRemote} vs ${cleanDigits})`);
+            console.log(`[SECURITY] Skipping ${remoteJid} for chat ${contactPhone} (${remoteDigits} vs ${digitsOnly})`);
           }
           skippedCount++;
           continue;

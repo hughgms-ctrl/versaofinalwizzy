@@ -25,8 +25,6 @@ function isValidPhoneNumber(phone: string): boolean {
     if (clean.startsWith('55')) {
         const ddd = parseInt(clean.substring(2, 4));
         if (ddd < 11 || ddd > 99) return false;
-        const numberPart = clean.substring(4);
-        if (numberPart.length < 8 || numberPart.length > 9) return false;
     }
     return true;
 }

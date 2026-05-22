@@ -216,6 +216,35 @@ async function bootstrapConnectedInstance(
   }
 }
 
+function digitsOnly(value: unknown): string {
+  return typeof value === 'string' ? value.replace(/\D/g, '') : '';
+}
+
+function isShortenedPhoneIdentity(previous: unknown, next: unknown): boolean {
+  const oldDigits = digitsOnly(previous);
+  const newDigits = digitsOnly(next);
+  return Boolean(
+    oldDigits &&
+    newDigits &&
+    oldDigits !== newDigits &&
+    oldDigits.length > newDigits.length &&
+    oldDigits.length - newDigits.length <= 3 &&
+    oldDigits.startsWith(newDigits)
+  );
+}
+
+function preservePhoneNumber(currentPhone: unknown, providerPhone: unknown): string | null {
+  const current = digitsOnly(currentPhone);
+  const next = digitsOnly(providerPhone);
+  if (!current) return next || null;
+  if (!next) return current;
+  if (isShortenedPhoneIdentity(current, next)) {
+    console.warn(`[PHONE_GUARD] Preserving stored phone ${current}; provider returned shortened ${next}`);
+    return current;
+  }
+  return next;
+}
+
 async function checkEvolutionInstance(
   supabase: any,
   instance: any,
@@ -284,6 +313,7 @@ async function checkEvolutionInstance(
     matched?.number ||
     '';
   const connectedPhone = typeof jid === 'string' ? sanitizePhone(jid.split('@')[0]) : null;
+  const safePhoneNumber = preservePhoneNumber(instance.phone_number, connectedPhone);
 
   if (connected) {
     await supabase
@@ -293,14 +323,14 @@ async function checkEvolutionInstance(
         is_active: true,
         connected_at: instance.status !== 'connected' ? new Date().toISOString() : instance.connected_at,
         disconnected_at: null,
-        phone_number: connectedPhone ?? instance.phone_number,
+        phone_number: safePhoneNumber,
       })
       .eq('id', instance.id);
 
     return {
       status: 'connected',
       connected: true,
-      phoneNumber: connectedPhone ?? instance.phone_number,
+      phoneNumber: safePhoneNumber,
       hasCredentials: true,
       provider: 'evolution',
     };
@@ -518,7 +548,13 @@ async function checkSingleInstance(
   }
 
   const previousPhone = sanitizePhone(instance.phone_number);
-  const phoneChanged = !!(previousPhone && connectedPhone && previousPhone !== connectedPhone);
+  const safePhoneNumber = preservePhoneNumber(instance.phone_number, connectedPhone);
+  const phoneChanged = !!(
+    previousPhone &&
+    connectedPhone &&
+    previousPhone !== connectedPhone &&
+    !isShortenedPhoneIdentity(previousPhone, connectedPhone)
+  );
 
   if (isConnected) {
     const wasDisconnected = instance.status !== 'connected';
@@ -529,7 +565,7 @@ async function checkSingleInstance(
       .update({
         status: 'connected', is_active: true,
         connected_at: wasDisconnected ? new Date().toISOString() : instance.connected_at,
-        phone_number: connectedPhone ?? sanitizePhone(instance.phone_number),
+        phone_number: safePhoneNumber,
       })
       .eq('id', instance.id);
 
@@ -552,7 +588,7 @@ async function checkSingleInstance(
 
     return {
       status: 'connected', connected: true,
-      phoneNumber: connectedPhone ?? sanitizePhone(instance.phone_number),
+      phoneNumber: safePhoneNumber,
       hasCredentials: true, phoneChanged, isReconnection, needsSync: isReconnection,
     };
   }
