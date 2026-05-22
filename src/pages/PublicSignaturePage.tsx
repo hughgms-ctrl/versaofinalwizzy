@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { 
   FileText, RotateCcw, Check, Loader2, AlertCircle, Camera, 
-  Shield, Mail, KeyRound, ChevronRight, Eye, Download, User, MessageSquare
+  Shield, Mail, KeyRound, ChevronRight, ChevronDown, Eye, Download, User, MessageSquare
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -77,6 +77,7 @@ export default function PublicSignaturePage() {
   // PDF preview state
   const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
   const [previewLoading, setPreviewLoading] = useState<Record<string, boolean>>({});
+  const [expandedDocId, setExpandedDocId] = useState<string | null>(null);
 
   // Selfie state
   const [selfieImage, setSelfieImage] = useState<string | null>(null);
@@ -222,6 +223,7 @@ export default function PublicSignaturePage() {
           void loadPreviewBlob(doc.id, doc.pdf_url);
         }
       });
+      setExpandedDocId(docsToPreview[0]?.id || null);
       
       // Read config from metadata
       const meta = signatureData.metadata || {};
@@ -765,9 +767,21 @@ export default function PublicSignaturePage() {
                 </Card>
               )}
 
-              {docsToShow.map((d, idx) => (
-                <Card key={d.id} className="p-4">
-                  <div className="flex items-center gap-3 mb-3">
+              <div className="space-y-2">
+              {docsToShow.map((d, idx) => {
+                const isExpanded = expandedDocId === d.id;
+                const previewSrc = previewUrls[d.id] || d.pdf_url || '';
+                return (
+                <Card key={d.id} className="overflow-hidden">
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setExpandedDocId(isExpanded ? null : d.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') setExpandedDocId(isExpanded ? null : d.id);
+                    }}
+                    className="w-full flex items-center gap-3 p-4 text-left"
+                  >
                     <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
                       <FileText className="h-4 w-4 text-primary" />
                     </div>
@@ -778,10 +792,13 @@ export default function PublicSignaturePage() {
                         )}
                         {d.name}
                       </h3>
-                      <p className="text-xs text-muted-foreground">Revise o documento abaixo antes de prosseguir</p>
+                      <p className="text-xs text-muted-foreground">
+                        {isExpanded ? 'Prévia aberta abaixo' : 'Toque para abrir a prévia sem sair da página'}
+                      </p>
                     </div>
+                    <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
                     {d.pdf_url && (
-                      <Button size="sm" variant="ghost" asChild className="gap-1 shrink-0">
+                      <Button size="sm" variant="ghost" asChild className="gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
                         <a href={d.pdf_url} target="_blank" rel="noopener noreferrer">
                           <Eye className="h-3.5 w-3.5" />
                           <span className="hidden sm:inline">Abrir</span>
@@ -789,19 +806,28 @@ export default function PublicSignaturePage() {
                       </Button>
                     )}
                   </div>
-                  {d.pdf_url ? (
+                  {isExpanded && (d.pdf_url ? (
                     <div className="border rounded-lg overflow-hidden bg-muted">
                       {previewLoading[d.id] && !previewUrls[d.id] ? (
-                        <div className="h-[600px] flex flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
+                        <div className="h-[420px] flex flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
                           <Loader2 className="h-5 w-5 animate-spin" />
                           <p>Carregando pré-visualização…</p>
                         </div>
                       ) : (
-                        <iframe
-                          src={`${previewUrls[d.id] || d.pdf_url}#toolbar=1&view=FitH`}
-                          className="w-full h-[600px]"
-                          title={d.name}
-                        />
+                        <object
+                          data={`${previewSrc}#toolbar=0&navpanes=0&view=FitH`}
+                          type="application/pdf"
+                          className="w-full h-[420px]"
+                          aria-label={d.name}
+                        >
+                          <div className="h-[260px] flex flex-col items-center justify-center gap-3 p-6 text-center text-sm text-muted-foreground">
+                            <FileText className="h-8 w-8" />
+                            <p>Não foi possível mostrar a prévia neste navegador.</p>
+                            <Button asChild size="sm" variant="outline">
+                              <a href={d.pdf_url} target="_blank" rel="noopener noreferrer">Abrir documento</a>
+                            </Button>
+                          </div>
+                        </object>
                       )}
                     </div>
                   ) : (
@@ -816,9 +842,11 @@ export default function PublicSignaturePage() {
                         <RotateCcw className="h-3.5 w-3.5" /> Atualizar
                       </Button>
                     </div>
-                  )}
+                  ))}
                 </Card>
-              ))}
+                );
+              })}
+              </div>
 
               <Card className="p-3">
                 <p className="text-xs text-muted-foreground">Signatário</p>
@@ -875,7 +903,7 @@ export default function PublicSignaturePage() {
 
               {!otpSent ? (
                 <div className="space-y-3">
-                  {otpChannels.includes('email') && (
+                  {(otpChannels[otpStepIndex] || otpChannel) === 'email' && (
                     <div>
                       <label className="text-sm font-medium">E-mail</label>
                       <Input
@@ -891,7 +919,7 @@ export default function PublicSignaturePage() {
                       )}
                     </div>
                   )}
-                  {otpChannels.includes('whatsapp') && (
+                  {(otpChannels[otpStepIndex] || otpChannel) === 'whatsapp' && (
                     <div>
                       <label className="text-sm font-medium">WhatsApp</label>
                       <Input
@@ -905,7 +933,7 @@ export default function PublicSignaturePage() {
                   )}
                   <Button
                     onClick={handleSendOtp}
-                    disabled={otpSending || (otpChannels.includes('email') && !otpEmail)}
+                    disabled={otpSending || ((otpChannels[otpStepIndex] || otpChannel) === 'email' && !otpEmail)}
                     className="w-full gap-2"
                   >
                     {otpSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Shield className="h-4 w-4" />}
