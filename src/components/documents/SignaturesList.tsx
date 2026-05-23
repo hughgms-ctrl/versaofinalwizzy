@@ -51,7 +51,7 @@ export function SignaturesList() {
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
-  const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
+  const [selectedGroupKey, setSelectedGroupKey] = useState<string | null>(null);
   const [editingDocId, setEditingDocId] = useState<string | null>(null);
 
   const regenerateReceipt = async (signatureId: string) => {
@@ -81,29 +81,54 @@ export function SignaturesList() {
     return docName.toLowerCase().includes(q) || signerName.toLowerCase().includes(q);
   }) || [];
 
-  // Group signatures by generated_document_id so multiple signers of the same
-  // document appear together. The same final PDF is shared across them.
+  // Group signatures by pack submission when available, otherwise by document.
+  // Packs generate several documents at once, but should appear as one signing job.
   const grouped = useMemo(() => {
-    const map = new Map<string, { docId: string; docName: string; fillerName: string | null; signedPdfUrl: string | null; packId: string | null; submissionGroup: string | null; createdAt: string; signatures: typeof filtered }>();
+    const map = new Map<string, {
+      key: string;
+      docId: string;
+      docIds: string[];
+      docName: string;
+      fillerName: string | null;
+      signedPdfUrl: string | null;
+      signedPdfUrls: string[];
+      packId: string | null;
+      submissionGroup: string | null;
+      createdAt: string;
+      signatures: typeof filtered;
+    }>();
+
     for (const sig of filtered) {
       const docId = (sig as any).generated_document_id;
       if (!docId) continue;
       const submittedBy = (sig as any).generated_document?.submitted_by;
       const fillerName = submittedBy?.name || null;
       const docSignedPdfUrl = (sig as any).generated_document?.signed_pdf_url || sig.signed_pdf_url || null;
-      const existing = map.get(docId);
+      const packId = (sig as any).generated_document?.pack_id || null;
+      const submissionGroup = (sig as any).generated_document?.submission_group || null;
+      const groupKey = packId && submissionGroup ? `pack:${packId}:${submissionGroup}` : `doc:${docId}`;
+      const rawDocName = sig.generated_document?.name || 'Documento';
+      const displayName = packId && submissionGroup ? rawDocName.split(' - ')[0] || rawDocName : rawDocName;
+      const existing = map.get(groupKey);
+
       if (existing) {
         existing.signatures.push(sig);
+        if (!existing.docIds.includes(docId)) existing.docIds.push(docId);
         if (!existing.signedPdfUrl && docSignedPdfUrl) existing.signedPdfUrl = docSignedPdfUrl;
+        if (docSignedPdfUrl && !existing.signedPdfUrls.includes(docSignedPdfUrl)) existing.signedPdfUrls.push(docSignedPdfUrl);
         if (!existing.fillerName && fillerName) existing.fillerName = fillerName;
+        if (sig.created_at < existing.createdAt) existing.createdAt = sig.created_at;
       } else {
-        map.set(docId, {
+        map.set(groupKey, {
+          key: groupKey,
           docId,
-          docName: sig.generated_document?.name || 'Documento',
+          docIds: [docId],
+          docName: displayName,
           fillerName,
           signedPdfUrl: docSignedPdfUrl,
-          packId: (sig as any).generated_document?.pack_id || null,
-          submissionGroup: (sig as any).generated_document?.submission_group || null,
+          signedPdfUrls: docSignedPdfUrl ? [docSignedPdfUrl] : [],
+          packId,
+          submissionGroup,
           createdAt: sig.created_at,
           signatures: [sig],
         });
@@ -117,19 +142,30 @@ export function SignaturesList() {
   const totalCount = signatures?.length || 0;
 
   const availableDocuments = documents?.filter(d => d.pdf_url && d.status !== 'draft') || [];
-  const selectedGroup = selectedDocId ? grouped.find(group => group.docId === selectedDocId) : null;
+  const selectedGroup = selectedGroupKey ? grouped.find(group => group.key === selectedGroupKey) : null;
 
   if (selectedGroup) {
     const docSignatures = selectedGroup.signatures;
-    const totalSigners = docSignatures.length;
-    const signedSigners = docSignatures.filter(s => s.status === 'signed').length;
+    const signerBuckets = new Map<string, typeof docSignatures>();
+    for (const sig of docSignatures) {
+      const key = sig.signer_email || sig.signer_phone || sig.signer_name || sig.id;
+      const bucket = signerBuckets.get(key) || [];
+      bucket.push(sig);
+      signerBuckets.set(key, bucket);
+    }
+    const totalSigners = signerBuckets.size || docSignatures.length;
+    const signedSigners = Array.from(signerBuckets.values()).filter(items => items.some(s => s.status === 'signed')).length;
     const allSigned = signedSigners === totalSigners;
     const firstMethod = METHOD_MAP[docSignatures[0].signing_method] || METHOD_MAP.manual;
     const verificationCode = (docSignatures.find(s => (s.metadata as any)?.verification_code)?.metadata as any)?.verification_code;
     const selectedPackGroups = selectedGroup.packId && selectedGroup.submissionGroup
       ? grouped.filter(group => group.packId === selectedGroup.packId && group.submissionGroup === selectedGroup.submissionGroup)
       : [selectedGroup];
-    const downloadablePackGroups = selectedPackGroups.filter(group => !!group.signedPdfUrl);
+    const downloadablePackGroups = selectedGroup.signedPdfUrls.map((url, index) => ({
+      docId: `${selectedGroup.docId}-${index}`,
+      docName: `${selectedGroup.docName}-${index + 1}`,
+      signedPdfUrl: url,
+    }));
 
     const downloadPackZip = async () => {
       if (downloadablePackGroups.length === 0) {
@@ -162,7 +198,7 @@ export function SignaturesList() {
       <div className="space-y-5">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="flex min-w-0 items-center gap-3">
-            <Button variant="ghost" size="icon" onClick={() => setSelectedDocId(null)} className="shrink-0">
+            <Button variant="ghost" size="icon" onClick={() => setSelectedGroupKey(null)} className="shrink-0">
               <ArrowLeft className="h-4 w-4" />
             </Button>
             <div className="min-w-0">
@@ -245,7 +281,7 @@ export function SignaturesList() {
 
         <Card className="p-4">
           <SignerLinksList
-            documentIds={[selectedGroup.docId]}
+            documentIds={selectedGroup.docIds}
             title="Links dos signatários"
             description="Copie ou reenvie o link de cada signatário a qualquer momento."
           />
@@ -416,20 +452,27 @@ export function SignaturesList() {
         <div className="space-y-2.5">
           {grouped.map(group => {
             const docSignatures = group.signatures;
-            const totalSigners = docSignatures.length;
-            const signedSigners = docSignatures.filter(s => s.status === 'signed').length;
+            const signerBuckets = new Map<string, typeof docSignatures>();
+            for (const sig of docSignatures) {
+              const key = sig.signer_email || sig.signer_phone || sig.signer_name || sig.id;
+              const bucket = signerBuckets.get(key) || [];
+              bucket.push(sig);
+              signerBuckets.set(key, bucket);
+            }
+            const totalSigners = signerBuckets.size || docSignatures.length;
+            const signedSigners = Array.from(signerBuckets.values()).filter(items => items.some(s => s.status === 'signed')).length;
             const allSigned = signedSigners === totalSigners;
             const firstMethod = METHOD_MAP[docSignatures[0].signing_method] || METHOD_MAP.manual;
             const verificationCode = (docSignatures.find(s => (s.metadata as any)?.verification_code)?.metadata as any)?.verification_code;
 
             return (
-              <Card key={group.docId} className="group relative overflow-hidden border-white/5 bg-gradient-to-br from-zinc-950/60 via-zinc-900/40 to-zinc-950/60">
+              <Card key={group.key} className="group relative overflow-hidden border-white/5 bg-gradient-to-br from-zinc-950/60 via-zinc-900/40 to-zinc-950/60">
                 <span className={cn('absolute inset-y-0 left-0 w-1', allSigned ? 'bg-emerald-400' : 'bg-amber-400')} />
 
                 <div className="flex flex-col gap-3 pl-3 p-4 md:flex-row md:items-center md:justify-between">
                   <button
                     type="button"
-                    onClick={() => setSelectedDocId(group.docId)}
+                    onClick={() => setSelectedGroupKey(group.key)}
                     className="flex min-w-0 items-center gap-3 text-left flex-1"
                   >
                     <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-pink-500/20 to-violet-500/20 ring-1 ring-pink-500/20">
@@ -443,6 +486,9 @@ export function SignaturesList() {
                             <span className="ml-1 font-normal text-muted-foreground">— {group.fillerName}</span>
                           )}
                         </h3>
+                        {group.docIds.length > 1 && (
+                          <Badge variant="outline" className="text-[10px]">{group.docIds.length} documentos</Badge>
+                        )}
                         <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium', firstMethod.cls)}>{firstMethod.label}</span>
                         <Badge variant="secondary" className="text-[10px]">{signedSigners}/{totalSigners} assinado{totalSigners > 1 ? 's' : ''}</Badge>
                       </div>
