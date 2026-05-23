@@ -32,6 +32,7 @@ export interface DocumentSignature {
     name: string;
     pdf_url: string | null;
     signed_pdf_url?: string | null;
+    submitted_by?: Record<string, any> | null;
     status: string;
     pack_id?: string | null;
     submission_group?: string | null;

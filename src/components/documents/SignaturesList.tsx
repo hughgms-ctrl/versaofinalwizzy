@@ -89,6 +89,7 @@ export function SignaturesList() {
       docId: string;
       docIds: string[];
       docName: string;
+      documents: Array<{ id: string; name: string; originalUrl: string | null; signedUrl: string | null }>;
       fillerName: string | null;
       signedPdfUrl: string | null;
       signedPdfUrls: string[];
@@ -108,12 +109,16 @@ export function SignaturesList() {
       const submissionGroup = (sig as any).generated_document?.submission_group || null;
       const groupKey = packId && submissionGroup ? `pack:${packId}:${submissionGroup}` : `doc:${docId}`;
       const rawDocName = sig.generated_document?.name || 'Documento';
+      const docOriginalPdfUrl = sig.generated_document?.pdf_url || null;
       const displayName = packId && submissionGroup ? rawDocName.split(' - ')[0] || rawDocName : rawDocName;
       const existing = map.get(groupKey);
 
       if (existing) {
         existing.signatures.push(sig);
-        if (!existing.docIds.includes(docId)) existing.docIds.push(docId);
+        if (!existing.docIds.includes(docId)) {
+          existing.docIds.push(docId);
+          existing.documents.push({ id: docId, name: rawDocName, originalUrl: docOriginalPdfUrl, signedUrl: docSignedPdfUrl });
+        }
         if (!existing.signedPdfUrl && docSignedPdfUrl) existing.signedPdfUrl = docSignedPdfUrl;
         if (docSignedPdfUrl && !existing.signedPdfUrls.includes(docSignedPdfUrl)) existing.signedPdfUrls.push(docSignedPdfUrl);
         if (!existing.fillerName && fillerName) existing.fillerName = fillerName;
@@ -124,6 +129,7 @@ export function SignaturesList() {
           docId,
           docIds: [docId],
           docName: displayName,
+          documents: [{ id: docId, name: rawDocName, originalUrl: docOriginalPdfUrl, signedUrl: docSignedPdfUrl }],
           fillerName,
           signedPdfUrl: docSignedPdfUrl,
           signedPdfUrls: docSignedPdfUrl ? [docSignedPdfUrl] : [],
@@ -166,6 +172,12 @@ export function SignaturesList() {
       docName: `${selectedGroup.docName}-${index + 1}`,
       signedPdfUrl: url,
     }));
+    const detailRows = Array.from(signerBuckets.entries()).map(([key, items]) => {
+      const signed = items.some(s => s.status === 'signed');
+      const primary = items.find(s => s.status === 'signed') || items[0];
+      const waitingCount = items.filter(s => s.status !== 'signed').length;
+      return { key, items, primary, signed, waitingCount };
+    });
 
     const downloadPackZip = async () => {
       if (downloadablePackGroups.length === 0) {
@@ -226,37 +238,48 @@ export function SignaturesList() {
                 <Pencil className="h-3.5 w-3.5" /> Editar dados
               </Button>
             )}
-            {selectedGroup.signedPdfUrl && (
-              <Button variant="outline" size="sm" className="gap-1" asChild>
-                <a href={selectedGroup.signedPdfUrl} target="_blank" rel="noopener noreferrer">
-                  <Download className="h-3.5 w-3.5" /> PDF assinado
-                </a>
-              </Button>
-            )}
-            {downloadablePackGroups.length > 1 && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" className="gap-1">
-                    <Download className="h-3.5 w-3.5" /> Baixar pack
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-64">
-                  {downloadablePackGroups.map(group => (
-                    <DropdownMenuItem key={group.docId} asChild>
-                      <a href={group.signedPdfUrl!} target="_blank" rel="noopener noreferrer">
-                        <Download className="h-3.5 w-3.5 mr-2" />
-                        <span className="truncate">{group.docName}</span>
-                      </a>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="gap-1">
+                  <Download className="h-3.5 w-3.5" /> Baixar PDF
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-80">
+                {selectedGroup.documents.map((doc, index) => (
+                  <div key={doc.id}>
+                    {index > 0 && <DropdownMenuSeparator />}
+                    <div className="px-2 py-1.5 text-[11px] font-medium text-muted-foreground truncate">{doc.name}</div>
+                    {doc.originalUrl && (
+                      <DropdownMenuItem asChild>
+                        <a href={doc.originalUrl} target="_blank" rel="noopener noreferrer">
+                          <Download className="h-3.5 w-3.5 mr-2" /> Original
+                        </a>
+                      </DropdownMenuItem>
+                    )}
+                    {doc.signedUrl ? (
+                      <DropdownMenuItem asChild>
+                        <a href={doc.signedUrl} target="_blank" rel="noopener noreferrer">
+                          <ShieldCheck className="h-3.5 w-3.5 mr-2" /> Assinado
+                        </a>
+                      </DropdownMenuItem>
+                    ) : (
+                      <DropdownMenuItem disabled>
+                        <ShieldCheck className="h-3.5 w-3.5 mr-2" /> Assinado indisponivel
+                      </DropdownMenuItem>
+                    )}
+                  </div>
+                ))}
+                {downloadablePackGroups.length > 1 && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={downloadPackZip}>
+                      <Download className="h-3.5 w-3.5 mr-2" />
+                      Baixar assinados em ZIP
                     </DropdownMenuItem>
-                  ))}
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={downloadPackZip}>
-                    <Download className="h-3.5 w-3.5 mr-2" />
-                    Baixar todos em ZIP
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
             {signedSigners > 0 && (
               <Button
                 variant="outline"
@@ -289,15 +312,17 @@ export function SignaturesList() {
 
         <Card className="p-4 space-y-2">
           <h3 className="text-sm font-semibold">Status detalhado</h3>
-          {docSignatures.map(sig => {
-            const status = STATUS_MAP[sig.status] || STATUS_MAP.pending;
+          {detailRows.map(row => {
+            const sig = row.primary;
+            const status = row.signed ? STATUS_MAP.signed : (STATUS_MAP[sig.status] || STATUS_MAP.pending);
             const StatusIcon = status.icon;
             return (
-              <div key={sig.id} className="flex items-center justify-between gap-2 rounded border border-border bg-muted/30 px-3 py-2">
+              <div key={row.key} className="flex items-center justify-between gap-2 rounded border border-border bg-muted/30 px-3 py-2">
                 <div className="flex items-center gap-2 min-w-0">
                   <User className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                   <span className="text-xs truncate">{sig.signer_name || 'Sem nome'}</span>
                   {sig.signer_email && <span className="text-[10px] text-muted-foreground truncate">· {sig.signer_email}</span>}
+                  {row.items.length > 1 && <Badge variant="outline" className="text-[10px]">{row.items.length} documentos</Badge>}
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
                   <span className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium', status.pill)}>
