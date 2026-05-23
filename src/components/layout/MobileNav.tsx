@@ -10,11 +10,12 @@ import {
   BarChart3,
   Workflow,
   CalendarClock,
+  Calendar,
   LogOut,
   Menu,
-  X,
   BookUser,
-  Megaphone
+  Megaphone,
+  MousePointerClick
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -37,9 +38,11 @@ const navigation: NavItem[] = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard, module: 'dashboard' },
   { name: 'Conversas', href: '/conversations', icon: MessageSquare, module: 'conversations' },
   { name: 'Contatos', href: '/contacts', icon: BookUser, module: 'conversations' },
+  { name: 'Agenda', href: '/calendar', icon: Calendar, module: 'calendar' },
   { name: 'Pipeline', href: '/pipeline', icon: Kanban, module: 'pipeline' },
   { name: 'Fluxos', href: '/flows', icon: Workflow, module: 'flows' },
   { name: 'Campanhas', href: '/campaigns', icon: Megaphone, module: 'flows' },
+  { name: 'Ferramentas', href: '/tools', icon: MousePointerClick, module: 'flows' },
   { name: 'Agendamentos', href: '/scheduled', icon: CalendarClock, module: 'scheduled' },
   { name: 'Agentes IA', href: '/agents', icon: Bot, module: 'agents' },
   { name: 'Equipe', href: '/team', icon: Users, module: 'team' },

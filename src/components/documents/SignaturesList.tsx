@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { FileSignature, Search, Send, CheckCircle2, Clock, Eye, Download, ShieldCheck, User, Calendar, RefreshCw, Loader2, Archive, ArchiveRestore, Trash2, MoreHorizontal, Link2, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -47,10 +48,12 @@ export function SignaturesList() {
   const updateStatus = useUpdateSignatureStatus();
   const archiveMut = useArchiveSignature();
   const deleteMut = useDeleteSignature();
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [confirmDeleteGroup, setConfirmDeleteGroup] = useState<{ ids: string[]; label: string } | null>(null);
   const [selectedGroupKey, setSelectedGroupKey] = useState<string | null>(null);
   const [editingDocId, setEditingDocId] = useState<string | null>(null);
 
@@ -71,6 +74,24 @@ export function SignaturesList() {
       toast({ title: 'Erro ao regerar recibo', description: e.message, variant: 'destructive' });
     } finally {
       setRegeneratingId(null);
+    }
+  };
+
+  const deleteSignatureGroup = async () => {
+    if (!confirmDeleteGroup) return;
+    try {
+      const { error } = await (supabase as any)
+        .from('document_signatures')
+        .delete()
+        .in('id', confirmDeleteGroup.ids);
+      if (error) throw error;
+      await queryClient.invalidateQueries({ queryKey: ['document-signatures'] });
+      toast({ title: 'Assinaturas excluídas' });
+      if (selectedGroupKey) setSelectedGroupKey(null);
+    } catch (e: any) {
+      toast({ title: 'Erro ao excluir', description: e.message, variant: 'destructive' });
+    } finally {
+      setConfirmDeleteGroup(null);
     }
   };
 
@@ -299,6 +320,15 @@ export function SignaturesList() {
                 </a>
               </Button>
             )}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive"
+              onClick={() => setConfirmDeleteGroup({ ids: docSignatures.map(sig => sig.id), label: selectedGroup.docName })}
+              title="Excluir assinaturas"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
           </div>
         </div>
 
@@ -378,6 +408,26 @@ export function SignaturesList() {
                   if (confirmDeleteId) deleteMut.mutate(confirmDeleteId);
                   setConfirmDeleteId(null);
                 }}
+              >
+                Excluir
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        <AlertDialog open={!!confirmDeleteGroup} onOpenChange={(o) => !o && setConfirmDeleteGroup(null)}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Excluir este envio?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Esta ação remove os registros de assinatura deste envio. Os documentos gerados continuam disponíveis na aba de documentos.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={deleteSignatureGroup}
               >
                 Excluir
               </AlertDialogAction>
@@ -574,6 +624,15 @@ export function SignaturesList() {
                         </a>
                       </Button>
                     )}
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                      onClick={() => setConfirmDeleteGroup({ ids: docSignatures.map(sig => sig.id), label: group.docName })}
+                      title="Excluir envio"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
                   </div>
                 </div>
               </Card>
@@ -614,6 +673,26 @@ export function SignaturesList() {
                 if (confirmDeleteId) deleteMut.mutate(confirmDeleteId);
                 setConfirmDeleteId(null);
               }}
+            >
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!confirmDeleteGroup} onOpenChange={(o) => !o && setConfirmDeleteGroup(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir este envio?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta ação remove os registros de assinatura deste envio. Os documentos gerados continuam disponíveis na aba de documentos.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={deleteSignatureGroup}
             >
               Excluir
             </AlertDialogAction>
