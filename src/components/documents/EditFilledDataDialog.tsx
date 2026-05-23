@@ -50,6 +50,7 @@ export function EditFilledDataDialog({ open, onOpenChange, documentId, onSaved }
   const [doc, setDoc] = useState<DocData | null>(null);
   const [filled, setFilled] = useState<Record<string, string>>({});
   const [signers, setSigners] = useState<SignerRow[]>([]);
+  const [originalSigners, setOriginalSigners] = useState<SignerRow[]>([]);
   const [hasSigned, setHasSigned] = useState(false);
 
   useEffect(() => {
@@ -84,6 +85,7 @@ export function EditFilledDataDialog({ open, onOpenChange, documentId, onSaved }
           .eq('generated_document_id', documentId)
           .order('order', { ascending: true });
         setSigners(s || []);
+        setOriginalSigners(s || []);
         setHasSigned((s || []).some((x: SignerRow) => !!x.signed_at));
       } catch (e: any) {
         toast({ title: 'Não foi possível carregar', description: e.message, variant: 'destructive' });
@@ -104,9 +106,51 @@ export function EditFilledDataDialog({ open, onOpenChange, documentId, onSaved }
       )
     );
 
+  const applyValueReplacements = (
+    currentFilled: Record<string, string>,
+    oldValue?: string | null,
+    newValue?: string | null,
+    options: { phone?: boolean } = {},
+  ) => {
+    const oldRaw = String(oldValue || '').trim();
+    const newRaw = String(newValue || '').trim();
+    if (!oldRaw || !newRaw || oldRaw === newRaw) return currentFilled;
+
+    const replacements: Array<[string, string]> = [[oldRaw, newRaw]];
+    if (options.phone) {
+      const oldDigits = oldRaw.replace(/\D/g, '');
+      const newDigits = newRaw.replace(/\D/g, '');
+      if (oldDigits && newDigits && oldDigits !== newDigits) {
+        replacements.unshift([`+${oldDigits}`, `+${newDigits}`]);
+        replacements.push([oldDigits, newDigits]);
+      }
+    }
+
+    const next = { ...currentFilled };
+    for (const [fieldName, value] of Object.entries(next)) {
+      if (typeof value !== 'string') continue;
+      let updated = value;
+      for (const [from, to] of replacements) {
+        updated = updated.split(from).join(to);
+      }
+
+      if (options.phone) {
+        const oldDigits = oldRaw.replace(/\D/g, '');
+        const newDigits = newRaw.replace(/\D/g, '');
+        if (oldDigits && newDigits && value.replace(/\D/g, '') === oldDigits) {
+          updated = value.trim().startsWith('+') ? `+${newDigits}` : newDigits;
+        }
+      }
+
+      next[fieldName] = updated;
+    }
+    return next;
+  };
+
   const applySignerMappings = (baseFilled: Record<string, string>) => {
     const next = { ...baseFilled };
     for (const s of signers) {
+      const original = originalSigners.find((item) => item.id === s.id);
       const mapping = s.field_mapping || {};
       const values: Record<string, string | null> = {
         name: s.signer_name || null,
@@ -119,6 +163,11 @@ export function EditFilledDataDialog({ open, onOpenChange, documentId, onSaved }
         const fieldName = mapping[key];
         if (fieldName && value !== null) next[fieldName] = value;
       }
+
+      Object.assign(next, applyValueReplacements(next, original?.signer_name, s.signer_name));
+      Object.assign(next, applyValueReplacements(next, original?.signer_email, s.signer_email));
+      Object.assign(next, applyValueReplacements(next, original?.signer_cpf, s.signer_cpf));
+      Object.assign(next, applyValueReplacements(next, original?.signer_phone, s.signer_phone, { phone: true }));
     }
     return next;
   };
@@ -205,6 +254,8 @@ export function EditFilledDataDialog({ open, onOpenChange, documentId, onSaved }
       }
 
       toast({ title: 'Dados atualizados', description: 'PDF regerado com as novas informações.' });
+      setFilled(nextFilled);
+      setOriginalSigners(signers);
       onSaved?.();
       onOpenChange(false);
     } catch (e: any) {
