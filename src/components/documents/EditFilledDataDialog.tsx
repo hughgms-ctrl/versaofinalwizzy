@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
+import { Switch } from '@/components/ui/switch';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 
@@ -37,6 +38,10 @@ interface SignerRow {
   signer_cpf: string | null;
   signed_at: string | null;
   signature_id: string | null;
+  signature_token: string | null;
+  signing_method: string;
+  auth_methods: Record<string, boolean>;
+  field_mapping: Record<string, string>;
 }
 
 export function EditFilledDataDialog({ open, onOpenChange, documentId, onSaved }: Props) {
@@ -75,7 +80,7 @@ export function EditFilledDataDialog({ open, onOpenChange, documentId, onSaved }
 
         const { data: s } = await (supabase as any)
           .from('document_signers')
-          .select('id, signer_name, signer_email, signer_phone, signer_cpf, signed_at, signature_id')
+          .select('id, signer_name, signer_email, signer_phone, signer_cpf, signed_at, signature_id, signature_token, signing_method, auth_methods, field_mapping')
           .eq('generated_document_id', documentId)
           .order('order', { ascending: true });
         setSigners(s || []);
@@ -92,18 +97,61 @@ export function EditFilledDataDialog({ open, onOpenChange, documentId, onSaved }
   const updateSigner = (id: string, patch: Partial<SignerRow>) =>
     setSigners((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
 
+  const updateAuthMethod = (id: string, key: string, value: boolean) =>
+    setSigners((prev) =>
+      prev.map((s) =>
+        s.id === id ? { ...s, auth_methods: { ...(s.auth_methods || {}), [key]: value } } : s
+      )
+    );
+
+  const applySignerMappings = (baseFilled: Record<string, string>) => {
+    const next = { ...baseFilled };
+    for (const s of signers) {
+      const mapping = s.field_mapping || {};
+      const values: Record<string, string | null> = {
+        name: s.signer_name || null,
+        email: s.signer_email || null,
+        phone: s.signer_phone ? s.signer_phone.replace(/\D/g, '') : null,
+        cpf: s.signer_cpf || null,
+      };
+
+      for (const [key, value] of Object.entries(values)) {
+        const fieldName = mapping[key];
+        if (fieldName && value !== null) next[fieldName] = value;
+      }
+    }
+    return next;
+  };
+
+  const buildSignatureMetadata = (s: SignerRow) => {
+    const auth = s.auth_methods || {};
+    const otpChannels = [
+      auth.otp_email ? 'email' : null,
+      auth.otp_whatsapp ? 'whatsapp' : null,
+    ].filter(Boolean);
+
+    return {
+      require_selfie: auth.selfie === true,
+      auth_methods: auth,
+      otp_channel: otpChannels[0] || (s.signer_email ? 'email' : 'whatsapp'),
+      otp_channels: otpChannels.length > 0 ? otpChannels : [s.signer_email ? 'email' : 'whatsapp'],
+      from_signer_id: s.id,
+    };
+  };
+
   const save = async () => {
     if (!doc || hasSigned) return;
     setSaving(true);
     try {
+      const nextFilled = applySignerMappings(filled);
+
       // 1) Regenerate PDF
-      const { data: supabaseUrl } = { data: import.meta.env.VITE_SUPABASE_URL as string };
       const pdfResp = await supabase.functions.invoke('generate-document-pdf', {
         body: {
           template_content: doc.template_content,
           template_content_html: doc.template_content_html,
           fields: doc.template_fields,
-          filled_data: filled,
+          filled_data: nextFilled,
           document_name: doc.name,
           logo_url: doc.template_logo,
         },
@@ -114,31 +162,45 @@ export function EditFilledDataDialog({ open, onOpenChange, documentId, onSaved }
       // 2) Update document
       await (supabase as any)
         .from('generated_documents')
-        .update({ filled_data: filled, pdf_url: newPdfUrl })
+        .update({ filled_data: nextFilled, pdf_url: newPdfUrl })
         .eq('id', doc.id);
 
       // 3) Update signers
       for (const s of signers) {
+        const cleanPhone = s.signer_phone ? s.signer_phone.replace(/\D/g, '') : null;
+        const metadata = buildSignatureMetadata(s);
+
         await (supabase as any)
           .from('document_signers')
           .update({
             signer_name: s.signer_name,
             signer_email: s.signer_email || null,
-            signer_phone: s.signer_phone ? s.signer_phone.replace(/\D/g, '') : null,
+            signer_phone: cleanPhone,
             signer_cpf: s.signer_cpf || null,
+            signing_method: s.signing_method || 'internal',
+            auth_methods: s.auth_methods || { manuscrita: true },
           })
           .eq('id', s.id);
+
+        const signaturePatch = {
+          signer_name: s.signer_name,
+          signer_email: s.signer_email || null,
+          signer_phone: cleanPhone,
+          signer_cpf: s.signer_cpf || null,
+          signing_method: s.signing_method || 'internal',
+          metadata,
+        };
 
         if (s.signature_id) {
           await (supabase as any)
             .from('document_signatures')
-            .update({
-              signer_name: s.signer_name,
-              signer_email: s.signer_email || null,
-              signer_phone: s.signer_phone ? s.signer_phone.replace(/\D/g, '') : null,
-              signer_cpf: s.signer_cpf || null,
-            })
+            .update(signaturePatch)
             .eq('id', s.signature_id);
+        } else if (s.signature_token) {
+          await (supabase as any)
+            .from('document_signatures')
+            .update(signaturePatch)
+            .eq('signature_token', s.signature_token);
         }
       }
 
@@ -212,6 +274,22 @@ export function EditFilledDataDialog({ open, onOpenChange, documentId, onSaved }
                         <Label className="text-xs">WhatsApp</Label>
                         <Input value={s.signer_phone || ''} onChange={(e) => updateSigner(s.id, { signer_phone: e.target.value })} placeholder="(11) 99999-0000" />
                       </div>
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {[
+                        ['manuscrita', 'Assinatura manuscrita'],
+                        ['otp_email', 'Codigo por e-mail'],
+                        ['otp_whatsapp', 'Codigo por WhatsApp'],
+                        ['selfie', 'Selfie'],
+                      ].map(([key, label]) => (
+                        <label key={key} className="flex items-center justify-between rounded-md border bg-background px-3 py-2 text-xs">
+                          <span>{label}</span>
+                          <Switch
+                            checked={!!s.auth_methods?.[key]}
+                            onCheckedChange={(value) => updateAuthMethod(s.id, key, value)}
+                          />
+                        </label>
+                      ))}
                     </div>
                   </div>
                 ))

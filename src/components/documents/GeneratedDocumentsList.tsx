@@ -1,4 +1,4 @@
-import { FileText, Download, Search, Trash2, User, FolderOpen, ChevronDown, ChevronRight, RefreshCw, Archive } from 'lucide-react';
+import { FileText, Download, Search, Trash2, User, FolderOpen, ChevronDown, ChevronRight, RefreshCw, Archive, Pencil } from 'lucide-react';
 import { useState, useMemo } from 'react';
 import JSZip from 'jszip';
 import { Button } from '@/components/ui/button';
@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { useGeneratedDocuments, useDeleteGeneratedDocument, useRegenerateDocumentPdf } from '@/hooks/useGeneratedDocuments';
+import { EditFilledDataDialog } from './EditFilledDataDialog';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import {
@@ -34,7 +35,7 @@ interface SubmittedBy {
   submitted_at?: string;
 }
 
-function DocCard({ doc, onDelete, onRegenerate, onDownload, isRegenerating }: { doc: any; onDelete: (id: string) => void; onRegenerate: (doc: any) => void; onDownload: (doc: any) => void; isRegenerating: boolean }) {
+function DocCard({ doc, onDelete, onRegenerate, onDownload, onEdit, isRegenerating }: { doc: any; onDelete: (id: string) => void; onRegenerate: (doc: any) => void; onDownload: (doc: any) => void; onEdit: (id: string) => void; isRegenerating: boolean }) {
   const isMissingPdf = !doc.pdf_url && doc.status === 'generated';
   const status = isMissingPdf 
     ? { label: 'PDF falhou', variant: 'destructive' as const }
@@ -81,6 +82,9 @@ function DocCard({ doc, onDelete, onRegenerate, onDownload, isRegenerating }: { 
               <Download className="h-4 w-4" />
             </Button>
           )}
+          <Button variant="ghost" size="icon" onClick={() => onEdit(doc.id)} title="Editar dados e assinatura">
+            <Pencil className="h-4 w-4" />
+          </Button>
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive">
@@ -114,6 +118,7 @@ export function GeneratedDocumentsList() {
   const regeneratePdf = useRegenerateDocumentPdf();
   const [search, setSearch] = useState('');
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [editingDocId, setEditingDocId] = useState<string | null>(null);
 
   const handleDelete = (id: string) => {
     deleteDocument.mutate(id, {
@@ -305,7 +310,7 @@ export function GeneratedDocumentsList() {
                 {!isCollapsed && (
                   <div className="border-t px-4 pb-3 pt-2 space-y-2">
                     {docs.map(doc => (
-                      <DocCard key={doc.id} doc={doc} onDelete={handleDelete} onRegenerate={(d) => regeneratePdf.mutate(d)} onDownload={handleDownload} isRegenerating={regeneratePdf.isPending} />
+                      <DocCard key={doc.id} doc={doc} onDelete={handleDelete} onRegenerate={(d) => regeneratePdf.mutate(d)} onDownload={handleDownload} onEdit={setEditingDocId} isRegenerating={regeneratePdf.isPending} />
                     ))}
                   </div>
                 )}
@@ -315,9 +320,16 @@ export function GeneratedDocumentsList() {
 
           {/* Standalone documents */}
           {standalone.map(doc => (
-            <DocCard key={doc.id} doc={doc} onDelete={handleDelete} onRegenerate={(d) => regeneratePdf.mutate(d)} onDownload={handleDownload} isRegenerating={regeneratePdf.isPending} />
+            <DocCard key={doc.id} doc={doc} onDelete={handleDelete} onRegenerate={(d) => regeneratePdf.mutate(d)} onDownload={handleDownload} onEdit={setEditingDocId} isRegenerating={regeneratePdf.isPending} />
           ))}
         </div>
+      )}
+      {editingDocId && (
+        <EditFilledDataDialog
+          open={!!editingDocId}
+          onOpenChange={(open) => !open && setEditingDocId(null)}
+          documentId={editingDocId}
+        />
       )}
     </div>
   );

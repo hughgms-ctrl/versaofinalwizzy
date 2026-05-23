@@ -11,6 +11,24 @@ function uazapiUrl(baseUrl: string, path: string): string {
   return `${base}${path}`;
 }
 
+function normalizeBaseUrl(value?: string | null): string {
+  return (value || "").trim().replace(/\/$/, "");
+}
+
+async function loadConnectionSettings(supabase: any) {
+  const { data: row } = await supabase
+    .from("platform_settings")
+    .select("value")
+    .eq("key", "whatsapp_connection_settings")
+    .maybeSingle();
+  const value = row?.value || {};
+  return {
+    uazapiBaseUrl: normalizeBaseUrl(value.uazapi_base_url || Deno.env.get("UAZAPI_BASE_URL")),
+    evolutionBaseUrl: normalizeBaseUrl(value.evolution_base_url || Deno.env.get("EVOLUTION_BASE_URL")),
+    evolutionApiKey: value.evolution_api_key || Deno.env.get("EVOLUTION_API_KEY") || "",
+  };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -28,8 +46,8 @@ Deno.serve(async (req) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const uazapiBaseUrl = Deno.env.get("UAZAPI_BASE_URL")!;
     const supabase = createClient(supabaseUrl, serviceRoleKey);
+    const connectionSettings = await loadConnectionSettings(supabase);
 
     // Resolve workspaceId from conversation if not provided
     let workspaceId: string | null = explicitWorkspaceId || null;
@@ -111,12 +129,14 @@ Deno.serve(async (req) => {
     }
 
     // Get active WhatsApp instance for this org
-    const { data: instance } = await supabase
+    const { data: instances } = await supabase
       .from("whatsapp_instances")
       .select("*")
       .eq("organization_id", organizationId)
       .eq("is_active", true)
-      .maybeSingle();
+      .order("created_at", { ascending: false });
+
+    const instance = (instances || []).find((item: any) => item.status === "connected") || (instances || [])[0] || null;
 
     if (!instance) {
       console.log("No active WhatsApp instance for org", organizationId);
@@ -126,10 +146,11 @@ Deno.serve(async (req) => {
       );
     }
 
+    const provider = instance.provider === "evolution" ? "evolution" : "uazapi";
     const instanceToken = instance.zapi_token;
-    console.log("Using instance:", instance.name, "to send notifications to", profilesToNotify.length, "users");
+    console.log("Using instance:", instance.label || instance.id, provider, "to send notifications to", profilesToNotify.length, "users");
 
-    // Send notifications directly via UAZAPI (bypassing zapi-send-message which requires user auth)
+    // Send notifications directly through the configured provider.
     const results = [];
     for (const profile of profilesToNotify) {
       if (!profile.phone) {
@@ -147,26 +168,55 @@ Deno.serve(async (req) => {
       console.log("Sending notification to", profile.full_name, "at", normalizedPhone);
 
       try {
-        const endpoint = uazapiUrl(uazapiBaseUrl, '/send/text');
+        let endpoint = "";
+        let headers: Record<string, string> = { "Content-Type": "application/json" };
+        let body: Record<string, unknown> = { number: normalizedPhone, text: message };
+
+        if (provider === "evolution") {
+          const evolutionApiKey = instance.evolution_api_key || connectionSettings.evolutionApiKey || instanceToken;
+          const instanceName = instance.evolution_instance_name || instance.zapi_instance_id;
+
+          if (!connectionSettings.evolutionBaseUrl || !evolutionApiKey || !instanceName) {
+            throw new Error("Evolution API not configured for stage notification");
+          }
+
+          endpoint = `${connectionSettings.evolutionBaseUrl}/message/sendText/${instanceName}`;
+          headers = {
+            ...headers,
+            apikey: evolutionApiKey,
+          };
+          body = {
+            ...body,
+            delay: 1000,
+            linkPreview: false,
+          };
+        } else {
+          if (!connectionSettings.uazapiBaseUrl || !instanceToken) {
+            throw new Error("UAZAPI not configured for stage notification");
+          }
+
+          endpoint = uazapiUrl(connectionSettings.uazapiBaseUrl, "/send/text");
+          headers = {
+            ...headers,
+            token: instanceToken,
+          };
+        }
+
         const response = await fetch(endpoint, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "token": instanceToken,
-          },
-          body: JSON.stringify({
-            number: normalizedPhone,
-            text: message,
-          }),
+          headers,
+          body: JSON.stringify(body),
         });
 
         const responseText = await response.text();
-        console.log("UAZAPI response for", profile.full_name, ":", response.status, responseText);
+        console.log(`${provider} response for`, profile.full_name, ":", response.status, responseText);
 
         results.push({
           userId: profile.user_id,
           name: profile.full_name,
           success: response.ok,
+          status: response.status,
+          error: response.ok ? undefined : responseText,
         });
       } catch (err) {
         console.error("Error sending to", profile.full_name, ":", err);
