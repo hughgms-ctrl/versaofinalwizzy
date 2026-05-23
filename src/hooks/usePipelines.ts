@@ -546,6 +546,14 @@ export function useMoveConversation() {
                   organization_id: profile.organization_id,
                 });
 
+              supabase.functions.invoke('stage-notification', {
+                body: {
+                  conversationId,
+                  columnId: firstNextColumn.id,
+                  organizationId: profile.organization_id,
+                },
+              }).catch(() => {});
+
               // Auto-assign responsible from next pipeline
               const { data: nextPipelineData } = await (supabase as any)
                 .from('pipelines')

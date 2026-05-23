@@ -259,6 +259,16 @@ function isLocalStorageUrl(url?: string | null): boolean {
   return url.includes('/storage/v1/object/public/chat-media/');
 }
 
+function normalizeBase64Candidate(value?: string | null): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.startsWith('http://') || trimmed.startsWith('https://')) return null;
+  if (trimmed.startsWith('data:') && trimmed.includes('base64,')) {
+    return trimmed.split('base64,')[1] || null;
+  }
+  return trimmed;
+}
+
 function withCountryCode(phone: string): string {
   const clean = phone.replace(/\D/g, '');
   if (!clean) return '';
@@ -997,54 +1007,99 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
       const evolutionInstanceName = whatsappInstance.evolution_instance_name || instanceName || whatsappInstance.zapi_instance_id;
       if (evolutionBaseUrl && evolutionApiKey && evolutionInstanceName) {
         console.log(`[WEBHOOK] Fetching decrypted media via Evolution for ID: ${msgId}...`);
-        const resp = await fetch(`${evolutionBaseUrl}/chat/getBase64FromMediaMessage/${evolutionInstanceName}`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'apikey': evolutionApiKey,
-          },
-          body: JSON.stringify({
+        const mediaMessage = evolutionMessage || eventMessage || {};
+        const mediaKey = {
+          id: msgId,
+          remoteJid: evolutionKey.remoteJid || chatJid,
+          fromMe,
+          participant: evolutionKey.participant || senderJid || undefined,
+        };
+        const bodyCandidates = [
+          {
             message: {
-              key: {
-                id: msgId,
-                remoteJid: evolutionKey.remoteJid || chatJid,
-                fromMe,
-              },
-              message: evolutionMessage || eventMessage || {},
+              key: mediaKey,
+              message: mediaMessage,
             },
             convertToMp4: false,
-          }),
-        });
+          },
+          {
+            key: mediaKey,
+            message: mediaMessage,
+            convertToMp4: false,
+          },
+          {
+            messageId: msgId,
+            key: mediaKey,
+            convertToMp4: false,
+          },
+        ];
 
-        if (resp.ok) {
+        for (const requestBody of bodyCandidates) {
+          const resp = await fetch(`${evolutionBaseUrl}/chat/getBase64FromMediaMessage/${evolutionInstanceName}`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'apikey': evolutionApiKey,
+            },
+            body: JSON.stringify(requestBody),
+          });
+
+          if (!resp.ok) {
+            console.error(`[WEBHOOK] Evolution media download failed: ${resp.status} ${await resp.text()}`);
+            continue;
+          }
+
           const raw = await resp.text();
           let data: any = null;
           try { data = raw ? JSON.parse(raw) : {}; } catch { data = { base64: raw }; }
           const candidateBase64 = firstString(
             data.base64,
             data.base64Data,
+            data.base64Url,
             data.data?.base64,
             data.data?.base64Data,
+            data.data?.base64Url,
             data.media?.base64,
             data.media?.base64Data,
+            data.media?.base64Url,
             data.result?.base64,
             data.result?.base64Data,
+            data.result?.base64Url,
           );
-          if (isProbablyBase64(candidateBase64)) base64Data = candidateBase64;
+          const normalizedBase64 = normalizeBase64Candidate(candidateBase64);
+          if (isProbablyBase64(normalizedBase64)) base64Data = normalizedBase64;
           mimeType = mimeType || firstString(
             data.mimetype,
             data.mimeType,
             data.MimeType,
+            data.type,
             data.data?.mimetype,
             data.data?.mimeType,
+            data.data?.type,
             data.result?.mimetype,
             data.result?.mimeType,
+            data.result?.type,
           );
-          directMediaUrl = directMediaUrl || firstString(data.fileUrl, data.fileURL, data.url, data.data?.url, data.result?.url);
+          directMediaUrl = directMediaUrl || firstString(
+            data.fileUrl,
+            data.fileURL,
+            data.downloadUrl,
+            data.mediaUrl,
+            data.url,
+            data.data?.fileUrl,
+            data.data?.fileURL,
+            data.data?.downloadUrl,
+            data.data?.mediaUrl,
+            data.data?.url,
+            data.result?.fileUrl,
+            data.result?.fileURL,
+            data.result?.downloadUrl,
+            data.result?.mediaUrl,
+            data.result?.url,
+          );
           if (directMediaUrl && isEncryptedWhatsAppMediaUrl(directMediaUrl)) directMediaUrl = null;
           console.log(`[WEBHOOK] Evolution media result: hasBase64=${!!base64Data}, mimeType=${mimeType || 'none'}, hasUrl=${!!directMediaUrl}`);
-        } else {
-          console.error(`[WEBHOOK] Evolution media download failed: ${resp.status} ${await resp.text()}`);
+          if (base64Data || directMediaUrl) break;
         }
       } else {
         console.warn('[WEBHOOK] Evolution media download skipped: missing base URL, API key, or instance name');
@@ -1179,12 +1234,20 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
   }
 
   const organizationId = whatsappInstance.organization_id;
+  const fallbackWorkspaceId = await resolveWorkspaceForInstance(supabase, organizationId, whatsappInstance.id);
 
   // Find or create contact
   // If the message is fromMe, pushName is our own pushName, not the client's.
   // We should pass null so we don't accidentally rename the client's profile.
   const contactNameToSave = fromMe ? null : pushName;
-  let contact = await findOrCreateContact(supabase, phone, organizationId, contactNameToSave, chat.imagePreview || chat.image || null);
+  let contact = await findOrCreateContact(
+    supabase,
+    phone,
+    organizationId,
+    contactNameToSave,
+    chat.imagePreview || chat.image || null,
+    fallbackWorkspaceId,
+  );
 
   // Fetch profile from UAZAPI if no name
   if (!contact.name && phone) {
@@ -1213,7 +1276,14 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
   }
 
   // Find or create conversation for THIS specific contact
-  const conversation = await findOrCreateConversation(supabase, contact.id, organizationId, whatsappInstance.id, whatsappInstance.phone_number);
+  const conversation = await findOrCreateConversation(
+    supabase,
+    contact.id,
+    organizationId,
+    whatsappInstance.id,
+    whatsappInstance.phone_number,
+    contact.workspace_id || fallbackWorkspaceId,
+  );
 
   if (!fromMe) {
     await supabase.from('contact_presence').upsert({
@@ -1986,7 +2056,29 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
 
 // ========== HELPERS ==========
 
-  async function findOrCreateContact(supabase: any, phone: string, organizationId: string, name: string | null, avatarUrl: string | null) {
+  async function resolveWorkspaceForInstance(supabase: any, organizationId: string, whatsappInstanceId?: string | null): Promise<string | null> {
+    if (whatsappInstanceId) {
+      const { data: instanceWorkspace } = await supabase
+        .from('workspaces')
+        .select('id')
+        .eq('organization_id', organizationId)
+        .eq('whatsapp_instance_id', whatsappInstanceId)
+        .limit(1)
+        .maybeSingle();
+      if (instanceWorkspace?.id) return instanceWorkspace.id;
+    }
+
+    const { data: workspaces } = await supabase
+      .from('workspaces')
+      .select('id')
+      .eq('organization_id', organizationId)
+      .order('created_at', { ascending: true })
+      .limit(2);
+
+    return workspaces?.length === 1 ? workspaces[0].id : null;
+  }
+
+  async function findOrCreateContact(supabase: any, phone: string, organizationId: string, name: string | null, avatarUrl: string | null, workspaceId?: string | null) {
     const variants = phoneVariants(phone);
     const canonical = canonicalPhone(phone);
 
@@ -2024,6 +2116,7 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
       const updateData: any = {};
       if (name && !existing.name) updateData.name = name;
       if (avatarUrl && !existing.avatar_url) updateData.avatar_url = avatarUrl;
+      if (workspaceId && !existing.workspace_id) updateData.workspace_id = workspaceId;
       const metadata = { ...(existing.metadata || {}) };
       const aliases = uniquePhones([...(metadata.phone_aliases || []), phone, canonical, ...variants]);
       updateData.metadata = { ...metadata, phone_aliases: aliases, canonical_phone: canonical };
@@ -2041,6 +2134,7 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
         name: name || null,
         avatar_url: avatarUrl || null,
         organization_id: organizationId,
+        workspace_id: workspaceId || null,
         metadata: { phone_aliases: uniquePhones([phone, canonical, ...variants]), canonical_phone: canonical },
       })
       .select().single();
@@ -2143,7 +2237,7 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
     }
   }
 
-  async function findOrCreateConversation(supabase: any, contactId: string, organizationId: string, whatsappInstanceId: string, sourcePhone?: string) {
+  async function findOrCreateConversation(supabase: any, contactId: string, organizationId: string, whatsappInstanceId: string, sourcePhone?: string, workspaceId?: string | null) {
     // IMPORTANT: Find conversation by contact_id to avoid mixing messages
     const { data: existing } = await supabase
       .from('conversations').select('*')
@@ -2151,10 +2245,14 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
       .order('created_at', { ascending: false }).limit(1).maybeSingle();
 
     if (existing) {
-      if (existing.whatsapp_instance_id !== whatsappInstanceId) {
-        await supabase.from('conversations').update({ whatsapp_instance_id: whatsappInstanceId }).eq('id', existing.id);
+      const updates: any = {};
+      if (existing.whatsapp_instance_id !== whatsappInstanceId) updates.whatsapp_instance_id = whatsappInstanceId;
+      if (workspaceId && !existing.workspace_id) updates.workspace_id = workspaceId;
+      if (!existing.source_phone && sourcePhone) updates.source_phone = sourcePhone;
+      if (Object.keys(updates).length > 0) {
+        await supabase.from('conversations').update(updates).eq('id', existing.id);
       }
-      return existing;
+      return { ...existing, ...updates };
     }
 
     const { data: newConv, error } = await supabase
@@ -2162,6 +2260,7 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
       .insert({
         contact_id: contactId, organization_id: organizationId,
         whatsapp_instance_id: whatsappInstanceId, source_phone: sourcePhone || null,
+        workspace_id: workspaceId || null,
         status: 'open', unread_count: 0,
       })
       .select().single();

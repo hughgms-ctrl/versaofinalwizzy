@@ -112,8 +112,11 @@ const ConversationsPage = () => {
       if (selectedWorkspaceId && selectedWorkspace) {
         // Check direct workspace_id match on conversation
         const hasDirectWorkspace = (conv as any).workspace_id === selectedWorkspaceId;
+        const isUnroutedConversation = !(conv as any).workspace_id;
         if (hasDirectWorkspace) {
           // Direct match - allow through
+        } else if (isUnroutedConversation) {
+          // Keep uncaptured conversations visible even before a campaign/tag routes them.
         } else {
           // Fallback to tag-based filtering
           const workspaceTagIds = selectedWorkspace.filter_tag_ids || [];
@@ -221,7 +224,8 @@ const ConversationsPage = () => {
 
       if (selectedWorkspaceId && selectedWorkspace) {
         const hasDirectWorkspace = (conv as any).workspace_id === selectedWorkspaceId;
-        if (!hasDirectWorkspace) {
+        const isUnroutedConversation = !(conv as any).workspace_id;
+        if (!hasDirectWorkspace && !isUnroutedConversation) {
           const workspaceTagIds = selectedWorkspace.filter_tag_ids || [];
           if (workspaceTagIds.length > 0) {
             const contactTagIds = allContactTags?.filter(ct => ct.contact_id === conv.contact?.id).map(ct => ct.tag_id) || [];
@@ -529,6 +533,7 @@ const ConversationsPage = () => {
       <NewConversationDialog
         open={showNewConversationDialog}
         onOpenChange={setShowNewConversationDialog}
+        workspaceId={selectedWorkspaceId}
         onConversationCreated={(conv) => {
           setSelectedConversation(conv);
           refetch(); // Ensure list updates

@@ -216,7 +216,7 @@ export function useCreateConversation() {
   const { session, profile } = useAuth();
 
   return useMutation({
-    mutationFn: async (data: { phone: string, name: string | null }) => {
+    mutationFn: async (data: { phone: string, name: string | null, workspaceId?: string | null }) => {
       if (!profile?.organization_id) throw new Error('Organization ID is required');
 
       // Format phone: ensure it has country code '55' for BR assuming 10 or 11 digits
@@ -237,6 +237,12 @@ export function useCreateConversation() {
 
       if (existingContact) {
         contactId = existingContact.id;
+        const contactUpdates: Record<string, any> = {};
+        if (data.name) contactUpdates.name = data.name;
+        if (data.workspaceId) contactUpdates.workspace_id = data.workspaceId;
+        if (Object.keys(contactUpdates).length > 0) {
+          await supabase.from('contacts').update(contactUpdates).eq('id', contactId);
+        }
       } else {
         // 2. Create contact if doesn't exist
         const { data: newContact, error: contactError } = await supabase
@@ -245,6 +251,7 @@ export function useCreateConversation() {
             phone: formattedPhone,
             name: data.name,
             organization_id: profile.organization_id,
+            workspace_id: data.workspaceId || null,
           } as any)
           .select()
           .single();
@@ -262,11 +269,28 @@ export function useCreateConversation() {
         .maybeSingle();
 
       if (existingConv) {
+        if (data.workspaceId && !(existingConv as any).workspace_id) {
+          await supabase
+            .from('conversations')
+            .update({ workspace_id: data.workspaceId } as any)
+            .eq('id', existingConv.id);
+          (existingConv as any).workspace_id = data.workspaceId;
+        }
         return {
           conversation: { ...existingConv, last_message: [] } as unknown as DbConversation,
           isNew: false
         };
       }
+
+      const { data: activeInstance } = await supabase
+        .from('whatsapp_instances')
+        .select('id, phone_number')
+        .eq('organization_id', profile.organization_id)
+        .eq('status', 'connected')
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
       // 4. Create new conversation
       const { data: newConv, error: convError } = await supabase
@@ -276,7 +300,10 @@ export function useCreateConversation() {
           organization_id: profile.organization_id,
           status: 'open',
           service_mode: 'ativo', // Outbound feature starts as "ativo" generally
-          unread_count: 0
+          unread_count: 0,
+          workspace_id: data.workspaceId || null,
+          whatsapp_instance_id: activeInstance?.id || null,
+          source_phone: activeInstance?.phone_number || null,
         } as any)
         .select('*, contact:contacts(*)')
         .single();

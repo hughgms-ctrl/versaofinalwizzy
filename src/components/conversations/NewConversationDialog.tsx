@@ -18,9 +18,10 @@ interface NewConversationDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     onConversationCreated?: (conversation: any) => void;
+    workspaceId?: string | null;
 }
 
-export function NewConversationDialog({ open, onOpenChange, onConversationCreated }: NewConversationDialogProps) {
+export function NewConversationDialog({ open, onOpenChange, onConversationCreated, workspaceId }: NewConversationDialogProps) {
     const [name, setName] = useState('');
     const [phone, setPhone] = useState('');
     const createConversation = useCreateConversation();
@@ -48,6 +49,7 @@ export function NewConversationDialog({ open, onOpenChange, onConversationCreate
             const result = await createConversation.mutateAsync({
                 name: name.trim() || null,
                 phone: cleanPhone,
+                workspaceId: workspaceId || null,
             });
 
             onOpenChange(false);
@@ -59,6 +61,11 @@ export function NewConversationDialog({ open, onOpenChange, onConversationCreate
             }
         } catch (error) {
             console.error(error);
+            toast({
+                title: "Erro ao iniciar conversa",
+                description: error instanceof Error ? error.message : "Não foi possível criar a conversa.",
+                variant: "destructive",
+            });
         }
     };
 
