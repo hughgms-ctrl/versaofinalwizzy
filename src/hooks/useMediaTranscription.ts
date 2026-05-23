@@ -13,6 +13,18 @@ interface CachedTranscription {
   media_type: string;
 }
 
+function isFailedMediaAnalysis(value?: string | null) {
+  if (!value) return false;
+  return [
+    '[Imagem não analisada]',
+    '[Imagem nÃ£o analisada]',
+    '[Transcrição não disponível]',
+    '[TranscriÃ§Ã£o nÃ£o disponÃ­vel]',
+    '[Áudio não disponível]',
+    '[Ãudio nÃ£o disponÃ­vel]',
+  ].includes(value.trim());
+}
+
 /**
  * Hook to auto-fetch transcription/description for media messages.
  * First checks cache, then triggers analysis if not cached.
@@ -40,7 +52,8 @@ export function useMediaTranscription(
         .eq('message_id', messageId)
         .maybeSingle();
 
-      if (cached?.transcription) {
+      const hasFailedCache = isFailedMediaAnalysis(cached?.transcription);
+      if (cached?.transcription && !hasFailedCache) {
         setTranscription(cached.transcription);
         setIsLoading(false);
         return;
@@ -49,7 +62,7 @@ export function useMediaTranscription(
       // If not cached, trigger the analyze-conversation edge function
       // which will analyze and cache this media
       const { data, error: fnError } = await supabase.functions.invoke('transcribe-media', {
-        body: { messageId, mediaUrl, mediaType },
+        body: { messageId, mediaUrl, mediaType, force: hasFailedCache },
       });
 
       if (fnError) throw fnError;
@@ -100,7 +113,9 @@ export function useMediaTranscriptions(messageIds: string[]) {
 
         const map: Record<string, string> = {};
         data?.forEach((item: CachedTranscription) => {
-          map[item.message_id] = item.transcription;
+          if (!isFailedMediaAnalysis(item.transcription)) {
+            map[item.message_id] = item.transcription;
+          }
         });
         setTranscriptions(map);
 
@@ -122,7 +137,7 @@ export function useMediaTranscriptions(messageIds: string[]) {
                 pendingRef.current.add(msg.id);
                 // Trigger transcription in background
                 supabase.functions.invoke('transcribe-media', {
-                  body: { messageId: msg.id, mediaUrl: msg.media_url, mediaType: msg.type },
+                  body: { messageId: msg.id, mediaUrl: msg.media_url, mediaType: msg.type, force: true },
                 }).then(({ data: result }) => {
                   if (result?.transcription) {
                     setTranscriptions(prev => ({ ...prev, [msg.id]: result.transcription }));

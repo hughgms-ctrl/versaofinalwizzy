@@ -244,6 +244,21 @@ function isProbablyBase64(value?: string | null): boolean {
   return /^[A-Za-z0-9+/=_-]{80,}$/.test(trimmed.replace(/\s+/g, ''));
 }
 
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const chunkSize = 8192;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.slice(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+function isLocalStorageUrl(url?: string | null): boolean {
+  if (!url) return false;
+  return url.includes('/storage/v1/object/public/chat-media/');
+}
+
 function withCountryCode(phone: string): string {
   const clean = phone.replace(/\D/g, '');
   if (!clean) return '';
@@ -1052,6 +1067,36 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
     else if (messageType === 'video') mimeType = 'video/mp4';
     else if (messageType === 'sticker') mimeType = 'image/webp';
     else mimeType = 'application/octet-stream';
+  }
+
+  if (!base64Data && directMediaUrl && isMediaType && !isLocalStorageUrl(directMediaUrl)) {
+    try {
+      console.log(`[WEBHOOK] Fetching external media URL before storing: ${directMediaUrl.substring(0, 100)}`);
+      const headers: Record<string, string> = {};
+      if (whatsappInstance.provider === 'evolution') {
+        const evolutionApiKey = whatsappInstance.evolution_api_key || connectionSettings.evolutionApiKey;
+        if (evolutionApiKey) headers.apikey = evolutionApiKey;
+      } else if (whatsappInstance.zapi_token) {
+        headers.token = whatsappInstance.zapi_token;
+      }
+      const resp = await fetch(directMediaUrl, { headers });
+      const contentType = resp.headers.get('content-type') || '';
+      if (resp.ok && !contentType.toLowerCase().includes('text/html') && !contentType.toLowerCase().includes('application/json')) {
+        const buffer = await resp.arrayBuffer();
+        if (buffer.byteLength > 128) {
+          base64Data = arrayBufferToBase64(buffer);
+          mimeType = mimeType || contentType || (messageType === 'image' ? 'image/jpeg' : messageType === 'audio' ? 'audio/ogg' : 'application/octet-stream');
+          directMediaUrl = null;
+          console.log(`[WEBHOOK] External media fetched: ${buffer.byteLength} bytes, mimeType=${mimeType}`);
+        } else {
+          console.warn(`[WEBHOOK] External media too small: ${buffer.byteLength} bytes`);
+        }
+      } else {
+        console.warn(`[WEBHOOK] External media fetch failed or returned non-media: status=${resp.status}, contentType=${contentType}`);
+      }
+    } catch (e) {
+      console.error('[WEBHOOK] External media fetch exception:', e);
+    }
   }
 
   if (base64Data && mimeType) {

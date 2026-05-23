@@ -43,6 +43,38 @@ function resolveAIConfig(integrationConfig: any, feature: string): AIConfigResul
   }
 }
 
+function arrayBufferToBase64(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const chunkSize = 8192;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.slice(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+async function imageUrlForVision(mediaUrl: string): Promise<string> {
+  try {
+    const response = await fetch(mediaUrl);
+    if (!response.ok) {
+      console.error('Image fetch failed before vision:', response.status);
+      return mediaUrl;
+    }
+
+    const contentType = (response.headers.get('content-type') || 'image/jpeg').split(';')[0];
+    const buffer = await response.arrayBuffer();
+    if (buffer.byteLength < 128 || !contentType.startsWith('image/')) {
+      console.error('Invalid image payload before vision:', contentType, buffer.byteLength);
+      return mediaUrl;
+    }
+
+    return `data:${contentType};base64,${arrayBufferToBase64(buffer)}`;
+  } catch (error) {
+    console.error('Image fetch exception before vision:', error);
+    return mediaUrl;
+  }
+}
+
 async function transcribeAudioWithWhisper(mediaUrl: string, apiKey: string): Promise<string> {
   try {
     console.log(`[WHISPER] Fetching audio from: ${mediaUrl}`);
@@ -176,6 +208,7 @@ async function analyzeMedia(
 
     // For images - use vision API
     if (mediaType === 'image') {
+      const visionImageUrl = await imageUrlForVision(mediaUrl);
       const response = await fetch(aiConfig.endpoint, {
         method: 'POST',
         headers: {
@@ -188,14 +221,14 @@ async function analyzeMedia(
             role: 'user',
             content: [
               { type: 'text', text: 'Descreva esta imagem de forma MUITO BREVE (máximo 15 palavras) em português. Foque apenas no elemento principal.' },
-              { type: 'image_url', image_url: { url: mediaUrl } },
+              { type: 'image_url', image_url: { url: visionImageUrl } },
             ],
           }],
         }),
       });
 
       if (!response.ok) {
-        console.error('Image analysis failed:', response.status);
+        console.error('Image analysis failed:', response.status, await response.text());
         return '[Imagem não analisada]';
       }
 
