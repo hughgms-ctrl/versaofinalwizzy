@@ -27,6 +27,7 @@ interface SignerRow {
   sent_at: string | null;
   signed_at: string | null;
   generated_document_id: string;
+  metadata?: Record<string, any> | null;
 }
 
 export function SignerLinksList({
@@ -53,6 +54,31 @@ export function SignerLinksList({
   });
 
   const buildLink = (token: string) => `${getPublicAppOrigin()}/sign/${token}`;
+
+  const groupedSigners = (() => {
+    const map = new Map<string, SignerRow[]>();
+    for (const signer of signers || []) {
+      const key = signer.metadata?.pack_signer_key
+        || signer.signature_token
+        || `${signer.signer_email || ''}:${signer.signer_phone || ''}:${signer.signer_name || ''}`;
+      const rows = map.get(key) || [];
+      rows.push(signer);
+      map.set(key, rows);
+    }
+
+    return Array.from(map.values()).map((rows) => {
+      const primary = rows[0];
+      const allSigned = rows.every((row) => row.status === 'signed' || !!row.signed_at);
+      const anySent = rows.some((row) => !!row.sent_at);
+      return {
+        ...primary,
+        status: allSigned ? 'signed' : primary.status,
+        sent_at: anySent ? (primary.sent_at || rows.find((row) => row.sent_at)?.sent_at || null) : null,
+        signed_at: allSigned ? (primary.signed_at || rows.find((row) => row.signed_at)?.signed_at || null) : null,
+        document_count: rows.length,
+      };
+    });
+  })();
 
   const copyLink = async (signer: SignerRow) => {
     await navigator.clipboard.writeText(buildLink(signer.signature_token));
@@ -123,7 +149,7 @@ export function SignerLinksList({
         </div>
       )}
 
-      {signers.map((signer, idx) => {
+      {groupedSigners.map((signer, idx) => {
         const link = buildLink(signer.signature_token);
         const isSigned = signer.status === 'signed';
         return (
@@ -141,6 +167,11 @@ export function SignerLinksList({
                     <Badge variant="outline" className="text-[10px]">
                       {signer.signer_role || 'Assinar'}
                     </Badge>
+                    {signer.document_count > 1 && (
+                      <Badge variant="secondary" className="text-[10px]">
+                        {signer.document_count} documentos
+                      </Badge>
+                    )}
                     {isSigned ? (
                       <Badge className="text-[10px] bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/10">
                         ✓ Assinado
