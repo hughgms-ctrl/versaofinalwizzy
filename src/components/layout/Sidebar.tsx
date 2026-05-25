@@ -29,6 +29,7 @@ import { useSidebarContext } from '@/contexts/SidebarContext';
 import { useAuth } from '@/hooks/useAuth';
 import { useUserPermissions, useCurrentUserRole } from '@/hooks/useUserPermissions';
 import { useOrganizationPlan } from '@/hooks/useOrganizationPlan';
+import { usePlatformSetting } from '@/hooks/usePlatformSettings';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import wizzyLogo from '@/assets/wizzy-logo.png';
@@ -68,6 +69,7 @@ export function Sidebar() {
   const { data: permissions } = useUserPermissions();
   const { signOut } = useAuth();
   const { canAccessModule: canAccessPlanModule } = useOrganizationPlan();
+  const { data: showClientPlansMenu = false } = usePlatformSetting<boolean>('show_client_plans_menu', false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [blockedModule, setBlockedModule] = useState<string | undefined>();
 
@@ -174,24 +176,28 @@ export function Sidebar() {
             );
           })}
 
-          {/* Plans link */}
-          <Separator className="my-2 bg-sidebar-border" />
-          <Link
-            to="/plans"
-            className={cn(
-              "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
-              location.pathname === '/plans'
-                ? "bg-sidebar-accent text-sidebar-primary shadow-sm"
-                : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
-              collapsed && "justify-center px-2"
-            )}
-          >
-            <Crown className={cn(
-              "h-5 w-5 flex-shrink-0 transition-colors",
-              location.pathname === '/plans' ? "text-sidebar-primary" : "text-sidebar-foreground/60 group-hover:text-sidebar-foreground"
-            )} />
-            {!collapsed && <span>Planos</span>}
-          </Link>
+          {showClientPlansMenu && (
+            <>
+              {/* Plans link */}
+              <Separator className="my-2 bg-sidebar-border" />
+              <Link
+                to="/plans"
+                className={cn(
+                  "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                  location.pathname === '/plans'
+                    ? "bg-sidebar-accent text-sidebar-primary shadow-sm"
+                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
+                  collapsed && "justify-center px-2"
+                )}
+              >
+                <Crown className={cn(
+                  "h-5 w-5 flex-shrink-0 transition-colors",
+                  location.pathname === '/plans' ? "text-sidebar-primary" : "text-sidebar-foreground/60 group-hover:text-sidebar-foreground"
+                )} />
+                {!collapsed && <span>Planos</span>}
+              </Link>
+            </>
+          )}
 
           {/* Logout */}
           <Separator className="my-2 bg-sidebar-border" />

@@ -8,7 +8,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Separator } from '@/components/ui/separator';
-import { useAdminPlans, useUpdatePlan } from '@/hooks/useAdminDashboard';
+import { useAdminPlans, useToggleClientPlansMenu, useUpdatePlan } from '@/hooks/useAdminDashboard';
 import { CreditCard, Plus, Edit, Users, Check, X } from 'lucide-react';
 import { useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
@@ -58,9 +58,11 @@ const emptyPlan: PlanForm = {
 export default function AdminPlansPage() {
   const { data, isLoading } = useAdminPlans();
   const updatePlan = useUpdatePlan();
+  const toggleClientPlansMenu = useToggleClientPlansMenu();
   const [editPlan, setEditPlan] = useState<PlanForm | null>(null);
 
   const plans = data?.plans || [];
+  const showClientPlansMenu = data?.settings?.show_client_plans_menu === true;
 
   const formatStorage = (bytes: number) => {
     if (bytes >= 1073741824) return `${(bytes / 1073741824).toFixed(0)} GB`;
@@ -101,6 +103,22 @@ export default function AdminPlansPage() {
             Novo Plano
           </Button>
         </div>
+
+        <Card>
+          <CardContent className="flex items-center justify-between gap-4 p-4">
+            <div>
+              <p className="font-medium text-foreground">Exibir aba Planos para clientes</p>
+              <p className="text-sm text-muted-foreground">
+                Controla se o link Planos aparece no menu lateral do app do cliente.
+              </p>
+            </div>
+            <Switch
+              checked={showClientPlansMenu}
+              disabled={toggleClientPlansMenu.isPending || isLoading}
+              onCheckedChange={(checked) => toggleClientPlansMenu.mutate(checked)}
+            />
+          </CardContent>
+        </Card>
 
         {isLoading ? (
           <div className="grid gap-4 md:grid-cols-3">

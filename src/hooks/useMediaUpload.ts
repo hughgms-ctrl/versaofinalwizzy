@@ -76,9 +76,15 @@ export function useMediaUpload() {
     blob: Blob,
     conversationId: string
   ): Promise<UploadResult | null> => {
-    // Convert blob to file
-    const ext = blob.type.includes('webm') ? 'webm' : 'mp4';
-    const file = new File([blob], `audio.${ext}`, { type: blob.type });
+    const mimeType = blob.type || 'audio/webm';
+    const ext = mimeType.includes('ogg')
+      ? 'ogg'
+      : mimeType.includes('mpeg') || mimeType.includes('mp3')
+        ? 'mp3'
+        : mimeType.includes('mp4')
+          ? 'm4a'
+          : 'webm';
+    const file = new File([blob], `audio.${ext}`, { type: mimeType });
     return uploadFile(file, conversationId);
   }, [uploadFile]);
 

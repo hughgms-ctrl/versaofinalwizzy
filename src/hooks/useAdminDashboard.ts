@@ -132,6 +132,20 @@ export function useUpdatePlan() {
   });
 }
 
+export function useToggleClientPlansMenu() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (show: boolean) => adminFetch('toggle_client_plans_menu', { show }),
+    onSuccess: (_, show) => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'plans'] });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'settings'] });
+      queryClient.invalidateQueries({ queryKey: ['platform-setting', 'show_client_plans_menu'] });
+      toast.success(show ? 'Aba Planos habilitada para clientes' : 'Aba Planos ocultada dos clientes');
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+}
+
 export function useAssignPlan() {
   const queryClient = useQueryClient();
   return useMutation({

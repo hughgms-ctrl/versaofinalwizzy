@@ -506,25 +506,28 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
   const handleAudioRecordComplete = async (audioBlob: Blob) => {
     try {
       const result = await uploadAudioBlob(audioBlob, conversation.id);
-      if (!result) return;
+      if (!result) {
+        throw new Error('Falha ao enviar o audio para o armazenamento.');
+      }
 
       await sendMessage.mutateAsync({
         conversationId: conversation.id,
-        content: 'Áudio',
+        content: 'Audio',
         type: 'audio',
         mediaUrl: result.url,
       });
 
       toast({
-        title: 'Áudio enviado',
-        description: 'O áudio foi enviado com sucesso.',
+        title: 'Audio enviado',
+        description: 'O audio foi enviado com sucesso.',
       });
     } catch (error) {
       toast({
-        title: 'Erro ao enviar áudio',
-        description: 'Não foi possível enviar o áudio.',
+        title: 'Erro ao enviar audio',
+        description: error instanceof Error ? error.message : 'Nao foi possivel enviar o audio.',
         variant: 'destructive',
       });
+      throw error;
     }
   };
 

@@ -21,6 +21,9 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
 } from '@/components/ui/dialog';
 import { ContactProfilePanel } from '@/components/conversations/ContactProfilePanel';
 import { ContactFilters, ContactFiltersState, defaultContactFilters } from '@/components/contacts/ContactFilters';
@@ -208,6 +211,10 @@ const ContactsPage = () => {
       {selectedContact && (
         <Dialog open={!!selectedContact} onOpenChange={() => setSelectedContact(null)}>
           <DialogContent className="max-w-lg p-0 max-h-[80vh] overflow-hidden">
+            <DialogHeader className="sr-only">
+              <DialogTitle>Detalhes do contato</DialogTitle>
+              <DialogDescription>Visualizacao e edicao das informacoes do contato selecionado.</DialogDescription>
+            </DialogHeader>
             <div className="overflow-y-auto max-h-[80vh]">
               <ContactProfilePanel
                 conversation={{

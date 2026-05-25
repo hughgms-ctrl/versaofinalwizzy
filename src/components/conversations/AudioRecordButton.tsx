@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 
 interface AudioRecordButtonProps {
-  onRecordComplete: (audioBlob: Blob) => void;
+  onRecordComplete: (audioBlob: Blob) => void | Promise<void>;
   onStart?: () => void;
   onStop?: () => void;
   disabled?: boolean;
@@ -16,6 +16,7 @@ export function AudioRecordButton({ onRecordComplete, onStart, onStop, disabled 
   const [recordingTime, setRecordingTime] = useState(0);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [isSending, setIsSending] = useState(false);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -108,10 +109,17 @@ export function AudioRecordButton({ onRecordComplete, onStart, onStop, disabled 
     setRecordingTime(0);
   }, [audioUrl]);
 
-  const sendAudio = useCallback(() => {
+  const sendAudio = useCallback(async () => {
     if (audioBlob) {
-      onRecordComplete(audioBlob);
-      cancelRecording();
+      setIsSending(true);
+      try {
+        await onRecordComplete(audioBlob);
+        cancelRecording();
+      } catch (error) {
+        console.error('Error sending recorded audio:', error);
+      } finally {
+        setIsSending(false);
+      }
     }
   }, [audioBlob, onRecordComplete, cancelRecording]);
 
@@ -134,7 +142,7 @@ export function AudioRecordButton({ onRecordComplete, onStart, onStop, disabled 
           <Trash2 className="h-4 w-4" />
         </Button>
 
-        <audio controls src={audioUrl} className="h-8 max-w-[200px]" />
+        <audio controls src={audioUrl} className="h-8 max-w-[200px]" preload="metadata" />
 
         <span className="text-xs text-muted-foreground min-w-[40px]">
           {formatTime(recordingTime)}
@@ -144,8 +152,9 @@ export function AudioRecordButton({ onRecordComplete, onStart, onStop, disabled 
           size="icon"
           className="h-8 w-8"
           onClick={sendAudio}
+          disabled={isSending}
         >
-          <Send className="h-4 w-4" />
+          {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
         </Button>
       </div>
     );

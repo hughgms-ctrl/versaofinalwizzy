@@ -13,6 +13,38 @@ interface SendMessageParams {
   quotedSender?: string;
 }
 
+function normalizeFunctionErrorMessage(message: unknown) {
+  const text = typeof message === 'string' ? message : '';
+  if (!text) return 'Nao foi possivel enviar a mensagem. Tente novamente.';
+
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed?.code === 401 || /invalid token/i.test(parsed?.message || '')) {
+      return 'Token da instancia do provedor WhatsApp invalido. Reconecte a instancia ou atualize as credenciais.';
+    }
+    return parsed?.message || parsed?.error || text;
+  } catch {
+    if (/invalid token/i.test(text)) {
+      return 'Token da instancia do provedor WhatsApp invalido. Reconecte a instancia ou atualize as credenciais.';
+    }
+    return text;
+  }
+}
+
+async function getFunctionErrorMessage(error: any) {
+  const context = error?.context;
+  if (context && typeof context.json === 'function') {
+    try {
+      const body = await context.json();
+      return normalizeFunctionErrorMessage(body?.details || body?.error || error.message);
+    } catch {
+      return normalizeFunctionErrorMessage(error.message);
+    }
+  }
+
+  return normalizeFunctionErrorMessage(error?.message);
+}
+
 export function useSendMessage() {
   const queryClient = useQueryClient();
 
@@ -23,19 +55,16 @@ export function useSendMessage() {
         headers: { Authorization: `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}` }
       });
 
-      if (error) throw error;
+      if (error) throw new Error(await getFunctionErrorMessage(error));
       if (data?.error) throw new Error(data.error);
 
       return data;
     },
     onMutate: async (newMessage) => {
-      // Cancel any outgoing refetches (so they don't overwrite our optimistic update)
       await queryClient.cancelQueries({ queryKey: ['messages', newMessage.conversationId] });
 
-      // Snapshot the previous value
       const previousMessages = queryClient.getQueryData<DbMessage[]>(['messages', newMessage.conversationId]);
 
-      // Optimistically update to the new value
       if (previousMessages) {
         const optimisticMessage: DbMessage = {
           id: `temp-${Date.now()}`,
@@ -64,11 +93,9 @@ export function useSendMessage() {
         );
       }
 
-      // Return a context object with the snapshotted value
       return { previousMessages };
     },
     onError: (err, newMessage, context) => {
-      // If the mutation fails, use the context returned from onMutate to roll back
       if (context?.previousMessages) {
         queryClient.setQueryData(
           ['messages', newMessage.conversationId],
@@ -79,12 +106,11 @@ export function useSendMessage() {
       console.error('Send message error:', err);
       toast({
         title: 'Erro ao enviar mensagem',
-        description: err instanceof Error ? err.message : 'Não foi possível enviar a mensagem. Tente novamente.',
+        description: err instanceof Error ? err.message : 'Nao foi possivel enviar a mensagem. Tente novamente.',
         variant: 'destructive',
       });
     },
     onSettled: (data, error, variables) => {
-      // Always refetch after error or success to keep server state in sync
       queryClient.invalidateQueries({ queryKey: ['messages', variables.conversationId] });
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
     },

@@ -326,9 +326,10 @@ Deno.serve(async (req) => {
     }
 
     if (action === 'plans') {
-      const [plansRes, orgPlansRes] = await Promise.all([
+      const [plansRes, orgPlansRes, settingsRes] = await Promise.all([
         adminClient.from('platform_plans').select('*').order('price_monthly', { ascending: true }),
         adminClient.from('organization_plans').select('plan_id, status'),
+        adminClient.from('platform_settings').select('value').eq('key', 'show_client_plans_menu').maybeSingle(),
       ])
 
       const plans = (plansRes.data || []).map((plan: any) => ({
@@ -336,7 +337,12 @@ Deno.serve(async (req) => {
         subscriber_count: (orgPlansRes.data || []).filter((op: any) => op.plan_id === plan.id && op.status === 'active').length,
       }))
 
-      return new Response(JSON.stringify({ plans }), {
+      return new Response(JSON.stringify({
+        plans,
+        settings: {
+          show_client_plans_menu: settingsRes.data?.value === true,
+        },
+      }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }
@@ -972,6 +978,31 @@ Deno.serve(async (req) => {
         entity_type: 'platform',
         performed_by: user.id,
         details: { allow_signups: allow },
+      })
+
+      return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    if (action === 'toggle_client_plans_menu') {
+      const body = await req.json()
+      const show = body.show === true
+
+      const { error } = await adminClient
+        .from('platform_settings')
+        .upsert({
+          key: 'show_client_plans_menu',
+          value: show,
+          updated_at: new Date().toISOString(),
+          updated_by: user.id,
+        }, { onConflict: 'key' })
+
+      if (error) throw error
+
+      await adminClient.from('admin_audit_logs').insert({
+        action: show ? 'show_client_plans_menu' : 'hide_client_plans_menu',
+        entity_type: 'platform',
+        performed_by: user.id,
+        details: { show_client_plans_menu: show },
       })
 
       return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })

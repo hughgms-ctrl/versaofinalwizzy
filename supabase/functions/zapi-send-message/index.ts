@@ -71,6 +71,7 @@ function guessMimeType(type: string, mediaUrl?: string): string {
   if (type === 'audio') {
     if (lower.includes('.ogg')) return 'audio/ogg';
     if (lower.includes('.mpeg') || lower.includes('.mp3')) return 'audio/mpeg';
+    if (lower.includes('.webm')) return 'audio/webm';
     return 'audio/mp4';
   }
   if (type === 'document') {
@@ -91,6 +92,53 @@ function fileNameFromUrl(mediaUrl?: string, fallback = 'arquivo') {
   }
 }
 
+async function validatePublicMediaUrl(mediaUrl: string): Promise<{
+  ok: boolean;
+  status?: number;
+  contentType?: string | null;
+  error?: string;
+}> {
+  try {
+    const headResponse = await fetch(mediaUrl, { method: 'HEAD' });
+    if (headResponse.ok) {
+      return {
+        ok: true,
+        status: headResponse.status,
+        contentType: headResponse.headers.get('content-type'),
+      };
+    }
+
+    if (headResponse.status !== 405) {
+      return {
+        ok: false,
+        status: headResponse.status,
+        contentType: headResponse.headers.get('content-type'),
+        error: await headResponse.text().catch(() => ''),
+      };
+    }
+  } catch (error) {
+    console.warn('Media HEAD validation failed, trying ranged GET:', error);
+  }
+
+  try {
+    const getResponse = await fetch(mediaUrl, {
+      method: 'GET',
+      headers: { Range: 'bytes=0-0' },
+    });
+    return {
+      ok: getResponse.ok || getResponse.status === 206,
+      status: getResponse.status,
+      contentType: getResponse.headers.get('content-type'),
+      error: getResponse.ok || getResponse.status === 206 ? undefined : await getResponse.text().catch(() => ''),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 function normalizeReplyMessageId(messageId: string | null | undefined): string | null {
   if (!messageId) return null;
   const trimmed = messageId.trim();
@@ -106,6 +154,37 @@ function normalizeReplyMessageId(messageId: string | null | undefined): string |
 
 function providerEnabled(provider: Provider, strategy: Awaited<ReturnType<typeof loadProviderStrategy>>) {
   return provider === 'evolution' ? strategy.evolutionEnabled : strategy.uazapiEnabled;
+}
+
+function providerDisplayName(provider: Provider, connectionSettings: Awaited<ReturnType<typeof loadConnectionSettings>>) {
+  if (provider === 'evolution') return 'Evolution';
+  if (connectionSettings.uazapiBaseUrl.includes('automahub')) return 'Automahub';
+  return 'provedor WhatsApp';
+}
+
+function providerAuthErrorMessage(
+  provider: Provider,
+  rawError: string,
+  connectionSettings: Awaited<ReturnType<typeof loadConnectionSettings>>,
+) {
+  const displayName = providerDisplayName(provider, connectionSettings);
+  const text = rawError || '';
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed?.code === 401 || /invalid token/i.test(parsed?.message || '')) {
+      return provider === 'uazapi'
+        ? `Token da instancia ${displayName} invalido. Reconecte a instancia ou atualize o token salvo.`
+        : `Credenciais da instancia ${displayName} invalidas. Confira API key, URL e nome da instancia.`;
+    }
+    return parsed?.message || parsed?.error || text;
+  } catch {
+    if (/invalid token|unauthorized|401/i.test(text)) {
+      return provider === 'uazapi'
+        ? `Token da instancia ${displayName} invalido. Reconecte a instancia ou atualize o token salvo.`
+        : `Credenciais da instancia ${displayName} invalidas. Confira API key, URL e nome da instancia.`;
+    }
+    return text;
+  }
 }
 
 async function resolveSendInstance(
@@ -243,6 +322,44 @@ Deno.serve(async (req) => {
     const instanceToken = instance.zapi_token;
     const phone = conversation.contact.phone;
     const normalizedPhone = phone.replace(/\D/g, '');
+
+    if (type !== 'text') {
+      if (!mediaUrl) {
+        return new Response(JSON.stringify({ error: 'mediaUrl is required for media messages' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const mediaValidation = await validatePublicMediaUrl(mediaUrl);
+      if (!mediaValidation.ok) {
+        return new Response(JSON.stringify({
+          error: 'Arquivo de midia nao esta acessivel publicamente para o provedor WhatsApp.',
+          details: mediaValidation,
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
+    if (provider === 'uazapi') {
+      if (!connectionSettings.uazapiBaseUrl) {
+        return new Response(JSON.stringify({ error: 'URL do provedor WhatsApp nao configurada' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (!instanceToken) {
+        return new Response(JSON.stringify({
+          error: `Instancia ${providerDisplayName(provider, connectionSettings)} sem token salvo. Reconecte a instancia antes de enviar mensagens.`,
+        }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
 
     if (provider === 'uazapi') {
       // Typing/Recording presence via UAZAPI (Fire and forget, no delay)
@@ -542,9 +659,10 @@ Deno.serve(async (req) => {
       .eq('id', conversationId);
 
     if (sendFailed) {
+      const friendlyError = providerAuthErrorMessage(provider, sendErrorText, connectionSettings);
       return new Response(JSON.stringify({
         success: false,
-        error: 'Failed to send message via WhatsApp, but message was saved',
+        error: friendlyError || 'Failed to send message via WhatsApp, but message was saved',
         messageId: message?.id || `failed-${Date.now()}`,
         details: sendErrorText,
       }), {

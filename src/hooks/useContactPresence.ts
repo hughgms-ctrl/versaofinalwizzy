@@ -26,7 +26,7 @@ export function useContactPresence(contactId: string | null) {
         .select('*')
         .eq('contact_id', contactId)
         .gt('expires_at', new Date().toISOString())
-        .single();
+        .maybeSingle();
       
       if (data) {
         setPresence(data as ContactPresence);
