@@ -11,6 +11,18 @@ interface AudioRecordButtonProps {
   disabled?: boolean;
 }
 
+const AUDIO_MIME_PRIORITY = [
+  'audio/ogg;codecs=opus',
+  'audio/ogg',
+  'audio/mp4',
+  'audio/webm;codecs=opus',
+  'audio/webm',
+];
+
+export function selectAudioRecordingMimeType(mediaRecorder: Pick<typeof MediaRecorder, 'isTypeSupported'>): string | undefined {
+  return AUDIO_MIME_PRIORITY.find((mimeType) => mediaRecorder.isTypeSupported(mimeType));
+}
+
 export function AudioRecordButton({ onRecordComplete, onStart, onStop, disabled }: AudioRecordButtonProps) {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
@@ -39,9 +51,11 @@ export function AudioRecordButton({ onRecordComplete, onStart, onStop, disabled 
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
 
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4'
-      });
+      const preferredMimeType = selectAudioRecordingMimeType(MediaRecorder);
+      const mediaRecorder = new MediaRecorder(
+        stream,
+        preferredMimeType ? { mimeType: preferredMimeType } : undefined
+      );
 
       mediaRecorderRef.current = mediaRecorder;
       chunksRef.current = [];

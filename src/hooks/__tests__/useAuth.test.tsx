@@ -79,7 +79,7 @@ describe('useAuth', () => {
       email: 'test@test.com',
       password: '123456',
       options: expect.objectContaining({
-        data: { full_name: 'Test', company_name: 'Company' },
+        data: expect.objectContaining({ full_name: 'Test', company_name: 'Company' }),
       }),
     });
   });

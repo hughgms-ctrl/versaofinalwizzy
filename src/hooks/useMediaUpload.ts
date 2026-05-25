@@ -76,7 +76,7 @@ export function useMediaUpload() {
     blob: Blob,
     conversationId: string
   ): Promise<UploadResult | null> => {
-    const mimeType = blob.type || 'audio/webm';
+    const mimeType = (blob.type || 'audio/webm').split(';')[0].trim();
     const ext = mimeType.includes('ogg')
       ? 'ogg'
       : mimeType.includes('mpeg') || mimeType.includes('mp3')

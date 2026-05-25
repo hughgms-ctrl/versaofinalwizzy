@@ -69,7 +69,7 @@ function guessMimeType(type: string, mediaUrl?: string): string {
     return 'image/jpeg';
   }
   if (type === 'audio') {
-    if (lower.includes('.ogg')) return 'audio/ogg';
+    if (lower.includes('.ogg')) return 'audio/ogg; codecs=opus';
     if (lower.includes('.mpeg') || lower.includes('.mp3')) return 'audio/mpeg';
     if (lower.includes('.webm')) return 'audio/webm';
     return 'audio/mp4';
@@ -563,7 +563,15 @@ Deno.serve(async (req) => {
         break;
       case 'audio':
         endpoint = uazapiUrl(connectionSettings.uazapiBaseUrl, '/send/media');
-        body = { number: normalizedPhone, file: mediaUrl, type: 'audio' };
+        body = {
+          number: normalizedPhone,
+          file: mediaUrl,
+          type: 'audio',
+          mimetype: guessMimeType(type, mediaUrl),
+          mimeType: guessMimeType(type, mediaUrl),
+          fileName: fileNameFromUrl(mediaUrl, `audio-${Date.now()}`),
+          ptt: true,
+        };
         if (zapiQuotedMsgId) body.replyid = zapiQuotedMsgId;
         break;
       case 'document':
