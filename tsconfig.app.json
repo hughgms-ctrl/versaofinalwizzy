@@ -18,7 +18,7 @@
     "noUnusedParameters": false,
     "paths": {
       "@/*": [
-        "./apps/web/src/*"
+        "./src/*"
       ]
     },
     "skipLibCheck": true,
@@ -30,6 +30,6 @@
     "useDefineForClassFields": true
   },
   "include": [
-    "apps/web/src"
+    "src"
   ]
 }

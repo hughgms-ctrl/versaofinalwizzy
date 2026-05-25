@@ -138,7 +138,7 @@ async function sendWhatsappOtp(args: {
     }
 
     const cleanPhone = args.phone.replace(/\D/g, "");
-    const whatsappPhone = cleanPhone;
+    const whatsappPhone = cleanPhone.startsWith("55") ? cleanPhone : `55${cleanPhone}`;
     const message = `Codigo de verificacao\n\nSeu codigo para assinatura do documento: ${args.code}\n\nEste codigo expira em 5 minutos.\n\nSe voce nao solicitou, ignore esta mensagem.`;
 
     if ((instance.provider || "uazapi") === "evolution") {

@@ -5,16 +5,41 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Accept global WhatsApp/E.164-style numbers without assuming a country.
+// Ensure phone has country code (default Brazil 55)
 function ensureCountryCode(phone: string): string {
   const clean = phone.replace(/\D/g, '');
-  return isValidPhoneNumber(clean) ? clean : '';
+  // Already has country code (12+ digits for BR = 55 + DDD(2) + number(8-9))
+  if (clean.length >= 12) return clean;
+  // Has DDD + number (10-11 digits) - add 55
+  if (clean.length >= 10 && clean.length <= 11) return `55${clean}`;
+  // Too short - not a valid phone number
+  return '';
 }
+
+// List of valid Brazilian DDDs
+const VALID_DDDS = new Set([
+  11, 12, 13, 14, 15, 16, 17, 18, 19,
+  21, 22, 24, 27, 28,
+  31, 32, 33, 34, 35, 37, 38,
+  41, 42, 43, 44, 45, 46, 47, 48, 49,
+  51, 53, 54, 55,
+  61, 62, 63, 64, 65, 66, 67, 68, 69,
+  71, 73, 74, 75, 77, 79,
+  81, 82, 83, 84, 85, 86, 87, 88, 89,
+  91, 92, 93, 94, 95, 96, 97, 98, 99
+]);
 
 function isValidPhoneNumber(phone: string): boolean {
   if (!phone) return false;
   const clean = phone.replace(/\D/g, '');
-  return /^\d{8,15}$/.test(clean);
+  if (clean.length < 12 || clean.length > 15) return false;
+  if (!/^\d+$/.test(clean)) return false;
+  // Validate Brazilian DDD
+  if (clean.startsWith('55')) {
+    const ddd = parseInt(clean.substring(2, 4), 10);
+    if (!VALID_DDDS.has(ddd)) return false;
+  }
+  return true;
 }
 
 function normalizeTimestamp(value: any): string {

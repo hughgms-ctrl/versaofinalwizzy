@@ -10,21 +10,19 @@ import {
     DialogDescription,
     DialogFooter,
 } from '@/components/ui/dialog';
-import { Loader2, MessageSquarePlus } from 'lucide-react';
-import { useCreateConversation } from '@/hooks/useConversations';
-import { toast } from '@/hooks/use-toast';
+import { Loader2, Plus, UserPlus } from 'lucide-react';
+import { useCreateContact } from '@/hooks/useContacts';
 
-interface NewConversationDialogProps {
+interface NewContactDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
-    onConversationCreated?: (conversation: any) => void;
-    workspaceId?: string | null;
+    onContactCreated?: (contact: any) => void;
 }
 
-export function NewConversationDialog({ open, onOpenChange, onConversationCreated, workspaceId }: NewConversationDialogProps) {
+export function NewContactDialog({ open, onOpenChange, onContactCreated }: NewContactDialogProps) {
     const [name, setName] = useState('');
     const [phone, setPhone] = useState('');
-    const createConversation = useCreateConversation();
+    const createContact = useCreateContact();
 
     const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         // Only allow numbers, plus sign and spaces
@@ -33,39 +31,30 @@ export function NewConversationDialog({ open, onOpenChange, onConversationCreate
     };
 
     const handleCreate = async () => {
-        // Clean phone number: remove non-digits
+        // Clean phone number: remove non-digits, ensuring country code pattern
         const cleanPhone = phone.replace(/\D/g, '');
 
         if (cleanPhone.length < 10) {
-            toast({
-                title: "Telefone inválido",
-                description: "Digite o telefone com DDD (ex: 11999999999)",
-                variant: "destructive"
-            });
+            alert('Telefone inválido. Digite no formato: DD + Número (ex: 11999999999)');
             return;
         }
 
         try {
-            const result = await createConversation.mutateAsync({
+            const contact = await createContact.mutateAsync({
                 name: name.trim() || null,
                 phone: cleanPhone,
-                workspaceId: workspaceId || null,
             });
 
             onOpenChange(false);
             setName('');
             setPhone('');
 
-            if (onConversationCreated && result?.conversation) {
-                onConversationCreated(result.conversation);
+            if (onContactCreated && contact) {
+                onContactCreated(contact);
             }
         } catch (error) {
+            // Error handled by hook toast
             console.error(error);
-            toast({
-                title: "Erro ao iniciar conversa",
-                description: error instanceof Error ? error.message : "Não foi possível criar a conversa.",
-                variant: "destructive",
-            });
         }
     };
 
@@ -75,12 +64,12 @@ export function NewConversationDialog({ open, onOpenChange, onConversationCreate
                 <DialogHeader>
                     <div className="flex items-center gap-2 mb-2">
                         <div className="p-2 rounded-lg bg-primary/10">
-                            <MessageSquarePlus className="h-5 w-5 text-primary" />
+                            <UserPlus className="h-5 w-5 text-primary" />
                         </div>
                     </div>
-                    <DialogTitle>Nova Conversa</DialogTitle>
+                    <DialogTitle>Novo Contato</DialogTitle>
                     <DialogDescription>
-                        Inicie um atendimento com um novo número de telefone.
+                        Adicione um novo contato à sua base. O telefone é obrigatório.
                     </DialogDescription>
                 </DialogHeader>
 
@@ -94,6 +83,9 @@ export function NewConversationDialog({ open, onOpenChange, onConversationCreate
                             onChange={handlePhoneChange}
                             autoComplete="off"
                         />
+                        <p className="text-[10px] text-muted-foreground">
+                            Apenas números com DDD. Codigo do Brasil (55) não é obrigatório para números nacionais.
+                        </p>
                     </div>
 
                     <div className="space-y-2">
@@ -112,15 +104,15 @@ export function NewConversationDialog({ open, onOpenChange, onConversationCreate
                     <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
                     <Button
                         onClick={handleCreate}
-                        disabled={!phone.trim() || phone.replace(/\D/g, '').length < 10 || createConversation.isPending}
+                        disabled={!phone.trim() || phone.replace(/\D/g, '').length < 10 || createContact.isPending}
                         className="gap-2"
                     >
-                        {createConversation.isPending ? (
+                        {createContact.isPending ? (
                             <Loader2 className="h-4 w-4 animate-spin" />
                         ) : (
-                            <MessageSquarePlus className="h-4 w-4" />
+                            <Plus className="h-4 w-4" />
                         )}
-                        Iniciar Conversa
+                        Salvar Contato
                     </Button>
                 </DialogFooter>
             </DialogContent>

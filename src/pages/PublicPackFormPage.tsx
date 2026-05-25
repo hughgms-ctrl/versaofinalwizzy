@@ -265,7 +265,7 @@ export default function PublicPackFormPage() {
                         type="tel"
                         value={whatsappPhone}
                         onChange={e => setWhatsappPhone(e.target.value)}
-                        placeholder="+1 415 555 2671"
+                        placeholder="(11) 99999-9999"
                         className="pl-9"
                       />
                     </div>

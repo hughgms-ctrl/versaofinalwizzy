@@ -6,7 +6,7 @@
     "noUnusedParameters": false,
     "paths": {
       "@/*": [
-        "./apps/web/src/*"
+        "./src/*"
       ]
     },
     "skipLibCheck": true,

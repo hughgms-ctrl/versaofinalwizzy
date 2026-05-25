@@ -27,6 +27,7 @@ function phoneVariants(raw?: string | null): string[] {
     if (!value) return
     values.add(value)
     if (value.startsWith('55')) values.add(value.slice(2))
+    if (!value.startsWith('55') && value.length >= 10 && value.length <= 11) values.add(`55${value}`)
   }
   add(clean)
   const local = clean.startsWith('55') ? clean.slice(2) : clean
@@ -38,7 +39,8 @@ function phoneVariants(raw?: string | null): string[] {
 function canonicalPhone(raw?: string | null) {
   const clean = onlyDigits(raw)
   if (!clean) return ''
-  return clean
+  if (clean.startsWith('55')) return clean
+  return clean.length >= 10 && clean.length <= 13 ? `55${clean}` : clean
 }
 
 function normalizeLabel(value?: string | null) {

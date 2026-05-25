@@ -75,7 +75,13 @@ Deno.serve(async (req) => {
       let cleaned = phone.replace(/\D/g, '');
       if (cleaned.length === 0) return '';
 
+      // WhatsApp standard (55 + DDD + 9? + number)
       if (cleaned.startsWith('0')) cleaned = cleaned.substring(1);
+
+      // If it has 10-11 digits and doesn't start with 55, add 55 (Brazil)
+      if (cleaned.length >= 10 && cleaned.length <= 11 && !cleaned.startsWith('55')) {
+        cleaned = '55' + cleaned;
+      }
 
       return cleaned;
     };
@@ -85,7 +91,7 @@ Deno.serve(async (req) => {
       const raw = value.replace(/@.*$/, '').replace(/\D/g, '');
       if (!raw) return null;
       const cleaned = ensureCountryCode(raw);
-      if (cleaned.length >= 8 && cleaned.length <= 15) return cleaned;
+      if (cleaned.length >= 10 && cleaned.length <= 15) return cleaned;
       return raw.length >= 8 ? raw : null;
     };
 

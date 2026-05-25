@@ -5,8 +5,8 @@ on:
   push:
     branches: [ "main" ]
     paths:
-      - "apps/api/supabase/functions/**"
-      - "apps/api/supabase/config.toml"
+      - "supabase/functions/**"
+      - "supabase/config.toml"
       - ".github/workflows/deploy-supabase-functions.yml"
 
 jobs:
@@ -24,5 +24,4 @@ jobs:
           version: latest
 
       - name: Deploy functions
-        working-directory: apps/api
         run: supabase functions deploy --project-ref "$PROJECT_REF"
