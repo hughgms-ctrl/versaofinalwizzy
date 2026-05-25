@@ -219,11 +219,7 @@ export function useCreateConversation() {
     mutationFn: async (data: { phone: string, name: string | null, workspaceId?: string | null }) => {
       if (!profile?.organization_id) throw new Error('Organization ID is required');
 
-      // Format phone: ensure it has country code '55' for BR assuming 10 or 11 digits
-      let formattedPhone = data.phone.replace(/\D/g, '');
-      if (formattedPhone.length === 10 || formattedPhone.length === 11) {
-        formattedPhone = `55${formattedPhone}`;
-      }
+      const formattedPhone = data.phone.replace(/\D/g, '');
 
       // 1. Check if contact exists
       let contactId = null;

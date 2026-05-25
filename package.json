@@ -1,14 +1,19 @@
 {
-  "name": "vite_react_shadcn_ts",
+  "name": "wizzy",
   "private": true,
   "version": "0.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:web": "vite",
     "build": "vite build",
+    "build:web": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",
+    "api:start": "cd apps/api && supabase start",
+    "api:stop": "cd apps/api && supabase stop",
+    "api:functions:serve": "cd apps/api && supabase functions serve",
     "test": "vitest run",
     "test:watch": "vitest"
   },

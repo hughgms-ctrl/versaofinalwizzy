@@ -9,9 +9,6 @@ function ensureCountryCode(phone: string): string {
     let cleaned = phone.replace(/\D/g, '');
     if (cleaned.length === 0) return '';
     if (cleaned.startsWith('0')) cleaned = cleaned.substring(1);
-    if (cleaned.length >= 10 && cleaned.length <= 11 && !cleaned.startsWith('55')) {
-        cleaned = '55' + cleaned;
-    }
     return cleaned;
 }
 

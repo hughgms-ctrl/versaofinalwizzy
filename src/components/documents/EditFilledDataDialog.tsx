@@ -323,7 +323,7 @@ export function EditFilledDataDialog({ open, onOpenChange, documentId, onSaved }
                       </div>
                       <div>
                         <Label className="text-xs">WhatsApp</Label>
-                        <Input value={s.signer_phone || ''} onChange={(e) => updateSigner(s.id, { signer_phone: e.target.value })} placeholder="(11) 99999-0000" />
+                        <Input value={s.signer_phone || ''} onChange={(e) => updateSigner(s.id, { signer_phone: e.target.value })} placeholder="+1 415 555 2671" />
                       </div>
                     </div>
                     <div className="grid gap-2 sm:grid-cols-2">

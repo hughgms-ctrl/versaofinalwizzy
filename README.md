@@ -1,73 +1,53 @@
-# Welcome to your Lovable project
+# Wizzy
 
-## Project info
+Plataforma SaaS para atendimento via WhatsApp com IA, CRM, automacoes, documentos e integracoes.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+## Estrutura
 
-## How can I edit this code?
+```text
+apps/
+  web/                 React + Vite + TypeScript
+    src/               Codigo do frontend
+    public/            Assets publicos do frontend
+    index.html         Entrada da SPA
+  api/
+    supabase/          Backend Supabase
+      functions/       Edge Functions em Deno
+      migrations/      Migrations SQL
+      config.toml      Configuracao do projeto Supabase
+docs/                  Documentacao tecnica
+tools/diagnostics/     Scripts manuais de diagnostico e manutencao
+```
 
-There are several ways of editing your application.
+As configuracoes compartilhadas continuam na raiz: `package.json`, `vite.config.ts`, `vitest.config.ts`, `tailwind.config.ts`, `tsconfig*.json`, `eslint.config.js` e `components.json`.
 
-**Use Lovable**
-
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
-
-Changes made via Lovable will be committed automatically to this repo.
-
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
+## Desenvolvimento
 
 ```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
+npm install
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+O frontend roda pelo Vite a partir de `apps/web`, mas os comandos continuam sendo executados na raiz.
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+## Scripts
 
-**Use GitHub Codespaces**
+- `npm run dev`: inicia o frontend.
+- `npm run build`: gera o build do frontend em `dist`.
+- `npm run test`: executa os testes do frontend.
+- `npm run lint`: executa ESLint no repositorio.
+- `npm run api:start`: inicia o Supabase local em `apps/api`.
+- `npm run api:stop`: para o Supabase local.
+- `npm run api:functions:serve`: serve as Edge Functions localmente.
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+## Backend Supabase
 
-## What technologies are used for this project?
+O backend fica em `apps/api/supabase`. Para comandos diretos da CLI:
 
-This project is built with:
+```sh
+cd apps/api
+supabase functions serve
+supabase functions deploy --project-ref <PROJECT_REF>
+```
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
-
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+Os workflows de deploy tambem apontam para `apps/api`.

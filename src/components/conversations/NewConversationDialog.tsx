@@ -28,7 +28,7 @@ export function NewConversationDialog({ open, onOpenChange, onConversationCreate
 
     const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         // Only allow numbers, plus sign and spaces
-        const value = e.target.value.replace(/[^\d+\s]/g, '');
+        const value = e.target.value.replace(/[^\d+\s()-]/g, '');
         setPhone(value);
     };
 
@@ -36,10 +36,10 @@ export function NewConversationDialog({ open, onOpenChange, onConversationCreate
         // Clean phone number: remove non-digits
         const cleanPhone = phone.replace(/\D/g, '');
 
-        if (cleanPhone.length < 10) {
+        if (cleanPhone.length < 8 || cleanPhone.length > 15) {
             toast({
                 title: "Telefone inválido",
-                description: "Digite o telefone com DDD (ex: 11999999999)",
+                description: "Use o formato internacional com codigo do pais, ex: +1 415 555 2671.",
                 variant: "destructive"
             });
             return;
@@ -89,7 +89,7 @@ export function NewConversationDialog({ open, onOpenChange, onConversationCreate
                         <Label htmlFor="phone">Telefone (obrigatório)</Label>
                         <Input
                             id="phone"
-                            placeholder="(11) 99999-9999"
+                            placeholder="+1 415 555 2671"
                             value={phone}
                             onChange={handlePhoneChange}
                             autoComplete="off"
@@ -112,7 +112,7 @@ export function NewConversationDialog({ open, onOpenChange, onConversationCreate
                     <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
                     <Button
                         onClick={handleCreate}
-                        disabled={!phone.trim() || phone.replace(/\D/g, '').length < 10 || createConversation.isPending}
+                        disabled={!phone.trim() || phone.replace(/\D/g, '').length < 8 || phone.replace(/\D/g, '').length > 15 || createConversation.isPending}
                         className="gap-2"
                     >
                         {createConversation.isPending ? (

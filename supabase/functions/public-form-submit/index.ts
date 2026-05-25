@@ -284,8 +284,7 @@ Deno.serve(async (req) => {
     // 5) WhatsApp opcional (mantém comportamento existente)
     let whatsappSent = false;
     if ((auto_send_whatsapp || template.auto_send_whatsapp) && fillerPhone) {
-      let normalizedPhone = fillerPhone;
-      if (!normalizedPhone.startsWith('55')) normalizedPhone = `55${normalizedPhone}`;
+      const normalizedPhone = fillerPhone.replace(/\D/g, '');
 
       const { data: instance } = await supabase
         .from("whatsapp_instances")

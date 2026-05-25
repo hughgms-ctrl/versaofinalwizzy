@@ -30,8 +30,7 @@ function pickSubmittedValue(data: Record<string, any>, mappedKey?: string, alias
 
 function normalizePhone(value: string | null | undefined) {
   const digits = String(value || "").replace(/\D/g, "");
-  if (!digits) return "";
-  return digits.startsWith("55") ? digits : `55${digits}`;
+  return digits;
 }
 
 function otpChannelsForSigner(signer: any) {
