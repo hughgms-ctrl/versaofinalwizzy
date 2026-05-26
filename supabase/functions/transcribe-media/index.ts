@@ -86,14 +86,26 @@ async function transcribeAudioWithWhisper(mediaUrl: string, apiKey: string): Pro
 
     const audioBuffer = await audioResponse.arrayBuffer();
     console.log(`[WHISPER] Audio size: ${audioBuffer.byteLength} bytes`);
+    const contentType = (audioResponse.headers.get('content-type') || '').toLowerCase().split(';')[0].trim();
+    const bytes = new Uint8Array(audioBuffer);
+    const magic = String.fromCharCode(...bytes.slice(0, 4));
+    const urlLower = mediaUrl.toLowerCase();
 
-    // Determine file extension from URL
+    // Determine file extension from URL, content-type, or magic bytes.
     let ext = 'ogg';
-    if (mediaUrl.includes('.mp3')) ext = 'mp3';
-    else if (mediaUrl.includes('.wav')) ext = 'wav';
-    else if (mediaUrl.includes('.m4a')) ext = 'm4a';
-    else if (mediaUrl.includes('.webm')) ext = 'webm';
-    else if (mediaUrl.includes('.mp4')) ext = 'mp4';
+    if (contentType.includes('mpeg') || contentType.includes('mp3')) ext = 'mp3';
+    else if (contentType.includes('wav')) ext = 'wav';
+    else if (contentType.includes('mp4') || contentType.includes('m4a')) ext = 'm4a';
+    else if (contentType.includes('webm')) ext = 'webm';
+    else if (contentType.includes('ogg')) ext = 'ogg';
+    else if (urlLower.includes('.mp3')) ext = 'mp3';
+    else if (urlLower.includes('.wav')) ext = 'wav';
+    else if (urlLower.includes('.m4a')) ext = 'm4a';
+    else if (urlLower.includes('.webm')) ext = 'webm';
+    else if (urlLower.includes('.mp4')) ext = 'mp4';
+    else if (magic === 'OggS') ext = 'ogg';
+    else if (magic === 'RIFF') ext = 'wav';
+    else if (magic.startsWith('ID3') || (bytes[0] === 0xFF && (bytes[1] & 0xE0) === 0xE0)) ext = 'mp3';
 
     const mimeMap: Record<string, string> = {
       'ogg': 'audio/ogg',
@@ -152,11 +164,22 @@ async function transcribeAudioWithGemini(mediaUrl: string, apiKey: string, model
     }
     const base64Audio = btoa(binary);
 
+    const contentType = (audioResponse.headers.get('content-type') || '').toLowerCase().split(';')[0].trim();
+    const magic = String.fromCharCode(...bytes.slice(0, 4));
+    const urlLower = mediaUrl.toLowerCase();
     let mimeType = 'audio/ogg';
-    if (mediaUrl.includes('.mp3')) mimeType = 'audio/mpeg';
-    else if (mediaUrl.includes('.wav')) mimeType = 'audio/wav';
-    else if (mediaUrl.includes('.m4a')) mimeType = 'audio/mp4';
-    else if (mediaUrl.includes('.webm')) mimeType = 'audio/webm';
+    if (contentType.includes('mpeg') || contentType.includes('mp3')) mimeType = 'audio/mpeg';
+    else if (contentType.includes('wav')) mimeType = 'audio/wav';
+    else if (contentType.includes('mp4') || contentType.includes('m4a')) mimeType = 'audio/mp4';
+    else if (contentType.includes('webm')) mimeType = 'audio/webm';
+    else if (contentType.includes('ogg')) mimeType = 'audio/ogg';
+    else if (urlLower.includes('.mp3')) mimeType = 'audio/mpeg';
+    else if (urlLower.includes('.wav')) mimeType = 'audio/wav';
+    else if (urlLower.includes('.m4a') || urlLower.includes('.mp4')) mimeType = 'audio/mp4';
+    else if (urlLower.includes('.webm')) mimeType = 'audio/webm';
+    else if (magic === 'OggS') mimeType = 'audio/ogg';
+    else if (magic === 'RIFF') mimeType = 'audio/wav';
+    else if (magic.startsWith('ID3') || (bytes[0] === 0xFF && (bytes[1] & 0xE0) === 0xE0)) mimeType = 'audio/mpeg';
 
     // Gemini supports inline audio in chat completions via the OpenAI-compatible endpoint
     const response = await fetch('https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', {

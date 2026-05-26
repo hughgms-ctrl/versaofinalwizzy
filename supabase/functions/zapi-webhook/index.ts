@@ -157,6 +157,13 @@ function firstString(...values: any[]): string | null {
   return null;
 }
 
+function firstObject(...values: any[]): any | null {
+  for (const value of values) {
+    if (value && typeof value === 'object' && !Array.isArray(value)) return value;
+  }
+  return null;
+}
+
 function extractMediaUrlFromObject(media: any): string | null {
   if (!media || typeof media !== 'object') return null;
   return firstString(
@@ -168,13 +175,30 @@ function extractMediaUrlFromObject(media: any): string | null {
     media.fileUrl,
     media.fileURL,
     media.file_url,
+    media.audioUrl,
+    media.audioURL,
+    media.audio_url,
+    media.pttUrl,
+    media.pttURL,
+    media.ptt_url,
+    media.voiceUrl,
+    media.voiceURL,
+    media.voice_url,
     media.downloadUrl,
     media.downloadURL,
+    media.download_url,
     media.link,
+    media.path,
     media.media?.url,
     media.media?.URL,
     media.media?.fileUrl,
     media.media?.fileURL,
+    media.data?.url,
+    media.data?.URL,
+    media.data?.fileUrl,
+    media.data?.fileURL,
+    media.data?.downloadUrl,
+    media.data?.downloadURL,
   );
 }
 
@@ -184,8 +208,12 @@ function extractBase64FromObject(media: any): string | null {
     media.base64,
     media.Base64,
     media.base64Data,
+    media.base64_data,
+    media.audioBase64,
+    media.audio_base64,
     media.data?.base64,
     media.data?.base64Data,
+    media.data?.base64_data,
     media.media?.base64,
     media.media?.base64Data,
     media.media,
@@ -202,8 +230,14 @@ function extractMimeTypeFromObject(media: any): string | null {
     media.mimeType,
     media.MimeType,
     media.mime_type,
+    media.contentType,
+    media.content_type,
+    media.type,
     media.media?.mimetype,
     media.media?.mimeType,
+    media.data?.mimetype,
+    media.data?.mimeType,
+    media.data?.contentType,
   );
 }
 
@@ -242,6 +276,22 @@ function isProbablyBase64(value?: string | null): boolean {
   if (trimmed.startsWith('data:')) return trimmed.includes('base64,');
   if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) return false;
   return /^[A-Za-z0-9+/=_-]{80,}$/.test(trimmed.replace(/\s+/g, ''));
+}
+
+function isUsefulMediaAnalysis(value?: string | null): boolean {
+  if (!value) return false;
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return false;
+  return ![
+    '[transcrição não disponível]',
+    '[transcriã§ã£o nã£o disponã­vel]',
+    '[áudio não disponível]',
+    '[ãudio nã£o disponã­vel]',
+    '[erro na transcrição]',
+    '[erro na transcriã§ã£o]',
+    '[áudio inaudível]',
+    '[ãudio inaudã­vel]',
+  ].includes(normalized);
 }
 
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
@@ -737,11 +787,30 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
   // Check UAZAPI native format first (payload.event.Message sub-objects)
   const conversationText = eventMessage.conversation || eventMessage.Conversation || evolutionMessage.conversation;
   const extendedText = eventMessage.extendedTextMessage || eventMessage.ExtendedTextMessage || evolutionMessage.extendedTextMessage;
-  const imageMsg = eventMessage.imageMessage || eventMessage.ImageMessage || evolutionMessage.imageMessage;
-  const audioMsg = eventMessage.audioMessage || eventMessage.AudioMessage || evolutionMessage.audioMessage;
-  const videoMsg = eventMessage.videoMessage || eventMessage.VideoMessage || evolutionMessage.videoMessage;
-  const documentMsg = eventMessage.documentMessage || eventMessage.DocumentMessage || evolutionMessage.documentMessage;
-  const stickerMsg = eventMessage.stickerMessage || eventMessage.StickerMessage || evolutionMessage.stickerMessage;
+  const imageMsg = firstObject(
+    eventMessage.imageMessage, eventMessage.ImageMessage, evolutionMessage.imageMessage, evolutionMessage.image,
+    payload.imageMessage, payload.image, msg.imageMessage, msg.image, evolutionData.imageMessage, evolutionData.image,
+  );
+  const audioMsg = firstObject(
+    eventMessage.audioMessage, eventMessage.AudioMessage, eventMessage.pttMessage, eventMessage.PTTMessage,
+    eventMessage.voiceMessage, eventMessage.VoiceMessage, evolutionMessage.audioMessage, evolutionMessage.audio,
+    evolutionMessage.pttMessage, evolutionMessage.ptt, evolutionMessage.voiceMessage, evolutionMessage.voice,
+    payload.audioMessage, payload.AudioMessage, payload.audio, payload.ptt, payload.voice,
+    msg.audioMessage, msg.AudioMessage, msg.audio, msg.ptt, msg.voice,
+    evolutionData.audioMessage, evolutionData.audio, evolutionData.ptt, evolutionData.voice,
+  );
+  const videoMsg = firstObject(
+    eventMessage.videoMessage, eventMessage.VideoMessage, evolutionMessage.videoMessage, evolutionMessage.video,
+    payload.videoMessage, payload.video, msg.videoMessage, msg.video, evolutionData.videoMessage, evolutionData.video,
+  );
+  const documentMsg = firstObject(
+    eventMessage.documentMessage, eventMessage.DocumentMessage, evolutionMessage.documentMessage, evolutionMessage.document,
+    payload.documentMessage, payload.document, msg.documentMessage, msg.document, evolutionData.documentMessage, evolutionData.document,
+  );
+  const stickerMsg = firstObject(
+    eventMessage.stickerMessage, eventMessage.StickerMessage, evolutionMessage.stickerMessage, evolutionMessage.sticker,
+    payload.stickerMessage, payload.sticker, msg.stickerMessage, msg.sticker, evolutionData.stickerMessage, evolutionData.sticker,
+  );
   const locationMsg = eventMessage.locationMessage || eventMessage.LocationMessage || evolutionMessage.locationMessage;
   const contactMsg = eventMessage.contactMessage || eventMessage.ContactMessage || evolutionMessage.contactMessage;
 
@@ -783,9 +852,9 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
     // Fallback for media payloads that might have root fields
     textContent = payload.caption || payload.text || (typeof payload.content === 'string' ? payload.content : null);
 
-    const pType = (payload.type || '').toLowerCase();
+    const pType = String(payload.type || payload.mediaType || payload.messageType || eventType || '').toLowerCase();
     if (pType === 'image') messageType = 'image';
-    else if (pType === 'audio' || pType === 'ptt') messageType = 'audio';
+    else if (pType === 'audio' || pType === 'ptt' || pType.includes('audio') || pType.includes('ptt') || pType.includes('voice')) messageType = 'audio';
     else if (pType === 'video') messageType = 'video';
     else if (pType === 'document') messageType = 'document';
   } else {
@@ -808,14 +877,14 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
 
     // Extract media URL from content.URL (UAZAPI puts encrypted WhatsApp URL there)
     // or from msg.mediaUrl / msg.media.url
-    const contentMediaUrl = (typeof content === 'object' && content !== null) ? content.URL || content.url : null;
-    const legacyMediaUrl = msg.mediaUrl || msg.media?.url || contentMediaUrl || null;
+    const contentMediaUrl = (typeof content === 'object' && content !== null) ? extractMediaUrlFromObject(content) : null;
+    const legacyMediaUrl = extractMediaUrlFromObject(msg) || extractMediaUrlFromObject(msg.media) || contentMediaUrl || null;
 
     if (msgType.includes('image')) {
       messageType = 'image';
       mediaUrl = legacyMediaUrl;
       if (!textContent) textContent = content.caption || msg.caption || null;
-    } else if (msgType.includes('audio') || msgType.includes('ptt')) {
+    } else if (msgType.includes('audio') || msgType.includes('ptt') || msgType.includes('voice')) {
       messageType = 'audio';
       mediaUrl = legacyMediaUrl;
     } else if (msgType.includes('video')) {
@@ -900,7 +969,28 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
   if (!mimeType) mimeType = documentMsg?.mimetype || audioMsg?.mimetype || videoMsg?.mimetype || imageMsg?.mimetype || null;
   if (!mimeType) mimeType = extractMimeTypeFromObject(documentMsg) || extractMimeTypeFromObject(audioMsg) || extractMimeTypeFromObject(videoMsg) || extractMimeTypeFromObject(imageMsg) || extractMimeTypeFromObject(stickerMsg);
 
-  let directMediaUrl = mediaUrl || payload.mediaUrl || payload.MediaUrl || msg.mediaUrl || msg.media?.url || null;
+  let directMediaUrl = firstString(
+    mediaUrl,
+    payload.mediaUrl,
+    payload.MediaUrl,
+    payload.media_url,
+    payload.fileUrl,
+    payload.fileURL,
+    payload.audioUrl,
+    payload.audioURL,
+    payload.downloadUrl,
+    payload.downloadURL,
+    msg.mediaUrl,
+    msg.MediaUrl,
+    msg.media_url,
+    msg.fileUrl,
+    msg.fileURL,
+    msg.audioUrl,
+    msg.audioURL,
+    extractMediaUrlFromObject(msg.media),
+    extractMediaUrlFromObject(payload.media),
+    extractMediaUrlFromObject(payload.data),
+  );
   if (directMediaUrl && isEncryptedWhatsAppMediaUrl(directMediaUrl)) {
     console.log(`[WEBHOOK] Ignoring encrypted WhatsApp media URL; will download/decrypt before saving: ${directMediaUrl.substring(0, 80)}`);
     directMediaUrl = null;
@@ -1156,9 +1246,10 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
 
   if (base64Data && mimeType) {
     try {
+      const normalizedMimeType = mimeType.toLowerCase().split(';')[0].trim();
       const extMap: Record<string, string> = {
         'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif',
-        'audio/ogg; codecs=opus': 'ogg', 'audio/ogg': 'ogg', 'audio/mpeg': 'mp3', 'audio/mp4': 'm4a', 'audio/wav': 'wav', 'audio/aac': 'aac',
+        'audio/ogg': 'ogg', 'application/ogg': 'ogg', 'audio/mpeg': 'mp3', 'audio/mp3': 'mp3', 'audio/mp4': 'm4a', 'audio/x-m4a': 'm4a', 'audio/m4a': 'm4a', 'audio/wav': 'wav', 'audio/x-wav': 'wav', 'audio/aac': 'aac', 'audio/webm': 'webm',
         'video/mp4': 'mp4', 'video/3gpp': '3gp',
         'application/pdf': 'pdf', 'application/msword': 'doc',
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
@@ -1171,7 +1262,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
 
       // Try to get file extension from multiple sources
       const docFileName = documentMsg?.fileName || documentMsg?.FileName || payload.fileName || '';
-      const extFromMap = extMap[mimeType];
+      const extFromMap = extMap[normalizedMimeType] || extMap[mimeType];
       const extFromFileName = docFileName ? docFileName.split('.').pop() : null;
       const ext = extFromMap || extFromFileName || 'bin';
 
@@ -1436,10 +1527,12 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
 
   console.log(`Message saved: ${msgId} for contact ${phone} in conversation ${conversation.id}`);
 
+  let mediaAnalysisPromise: Promise<string | null> | null = null;
+
   // Auto-transcribe media messages in background (audio, image, video)
   if (savedMessage && mediaUrl && ['audio', 'image', 'video'].includes(messageType)) {
     console.log(`[WEBHOOK] Triggering auto-transcription for ${messageType} message ${savedMessage.id}`);
-    const transcribePromise = (async () => {
+    mediaAnalysisPromise = (async () => {
       try {
         // Get org integration config for AI
         const { data: intConfig } = await supabase
@@ -1450,7 +1543,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
 
         if (!intConfig) {
           console.log('[WEBHOOK] No AI integration config, skipping auto-transcription');
-          return;
+          return null;
         }
 
         // Call transcribe-media with service role key (bypasses user auth)
@@ -1471,14 +1564,30 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
         if (resp.ok) {
           const result = await resp.json();
           console.log(`[WEBHOOK] Auto-transcription result for ${savedMessage.id}: ${result.transcription?.substring(0, 80) || 'empty'}`);
+          return result.transcription || null;
         } else {
           console.log(`[WEBHOOK] Auto-transcription failed: ${resp.status}`);
+          return null;
         }
       } catch (e) {
         console.error('[WEBHOOK] Auto-transcription error:', e);
+        return null;
       }
     })();
-    runBackground(transcribePromise);
+    runBackground(mediaAnalysisPromise);
+  }
+
+  if (!fromMe && !textContent && messageType === 'audio' && mediaAnalysisPromise) {
+    const transcription = await Promise.race([
+      mediaAnalysisPromise,
+      new Promise<null>(resolve => setTimeout(() => resolve(null), 12000)),
+    ]);
+    if (isUsefulMediaAnalysis(transcription)) {
+      textContent = transcription;
+      console.log(`[WEBHOOK] Using audio transcription as trigger text: "${textContent.substring(0, 80)}"`);
+    } else {
+      console.log('[WEBHOOK] Audio transcription not available before trigger routing; falling back to media placeholder');
+    }
   }
 
   // Trigger AI agent or Campaigns if needed
