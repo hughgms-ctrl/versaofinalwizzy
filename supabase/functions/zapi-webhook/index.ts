@@ -319,6 +319,112 @@ function normalizeBase64Candidate(value?: string | null): string | null {
   return trimmed;
 }
 
+function extractDownloadedMedia(data: any): { base64: string | null; mimeType: string | null; url: string | null } {
+  const candidateBase64 = firstString(
+    data?.base64,
+    data?.Base64,
+    data?.base64Data,
+    data?.base64Url,
+    data?.base64_url,
+    data?.fileBase64,
+    data?.file_base64,
+    data?.data?.base64,
+    data?.data?.Base64,
+    data?.data?.base64Data,
+    data?.data?.base64Url,
+    data?.data?.base64_url,
+    data?.data?.fileBase64,
+    data?.data?.file_base64,
+    data?.media?.base64,
+    data?.media?.Base64,
+    data?.media?.base64Data,
+    data?.media?.base64Url,
+    data?.media?.base64_url,
+    data?.result?.base64,
+    data?.result?.Base64,
+    data?.result?.base64Data,
+    data?.result?.base64Url,
+    data?.result?.base64_url,
+    data?.response?.base64,
+    data?.response?.base64Data,
+    typeof data === 'string' ? data : null,
+  );
+
+  const candidateUrl = firstString(
+    data?.fileUrl,
+    data?.fileURL,
+    data?.file_url,
+    data?.downloadUrl,
+    data?.downloadURL,
+    data?.download_url,
+    data?.mediaUrl,
+    data?.mediaURL,
+    data?.media_url,
+    data?.url,
+    data?.URL,
+    data?.link,
+    data?.data?.fileUrl,
+    data?.data?.fileURL,
+    data?.data?.file_url,
+    data?.data?.downloadUrl,
+    data?.data?.downloadURL,
+    data?.data?.download_url,
+    data?.data?.mediaUrl,
+    data?.data?.mediaURL,
+    data?.data?.media_url,
+    data?.data?.url,
+    data?.data?.URL,
+    data?.data?.link,
+    data?.media?.fileUrl,
+    data?.media?.fileURL,
+    data?.media?.file_url,
+    data?.media?.downloadUrl,
+    data?.media?.downloadURL,
+    data?.media?.download_url,
+    data?.media?.url,
+    data?.result?.fileUrl,
+    data?.result?.fileURL,
+    data?.result?.file_url,
+    data?.result?.downloadUrl,
+    data?.result?.downloadURL,
+    data?.result?.download_url,
+    data?.result?.mediaUrl,
+    data?.result?.mediaURL,
+    data?.result?.media_url,
+    data?.result?.url,
+    data?.result?.URL,
+    data?.response?.fileUrl,
+    data?.response?.downloadUrl,
+    data?.response?.url,
+  );
+
+  return {
+    base64: normalizeBase64Candidate(candidateBase64),
+    mimeType: firstString(
+      data?.mimetype,
+      data?.mimeType,
+      data?.MimeType,
+      data?.contentType,
+      data?.type,
+      data?.data?.mimetype,
+      data?.data?.mimeType,
+      data?.data?.contentType,
+      data?.data?.type,
+      data?.media?.mimetype,
+      data?.media?.mimeType,
+      data?.media?.contentType,
+      data?.media?.type,
+      data?.result?.mimetype,
+      data?.result?.mimeType,
+      data?.result?.contentType,
+      data?.result?.type,
+      data?.response?.mimetype,
+      data?.response?.mimeType,
+    ),
+    url: candidateUrl && !isEncryptedWhatsAppMediaUrl(candidateUrl) ? candidateUrl : null,
+  };
+}
+
 function withCountryCode(phone: string): string {
   const clean = phone.replace(/\D/g, '');
   if (!clean) return '';
@@ -1045,43 +1151,72 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
       console.log(`[WEBHOOK] Fetching decrypted media via /message/download for ID: ${msgId}...`);
       const uazapiBaseUrl = connectionSettings.uazapiBaseUrl;
       if (!uazapiBaseUrl) throw new Error('UAZAPI base URL not configured');
-      // Documentation at https://docs.uazapi.com/endpoint/post/message~download
-      const resp = await fetch(`${uazapiBaseUrl}/message/download`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'token': whatsappInstance.zapi_token
-        },
-        body: JSON.stringify({
-          id: msgId,
-          return_base64: true,
-          generate_mp3: true,
-          return_link: true
-        })
-      });
 
-      if (resp.ok) {
-        const data = await resp.json();
-        const candidateBase64 = firstString(
-          data?.base64Data,
-          data?.base64,
-          data?.data?.base64Data,
-          data?.data?.base64,
-          data?.media?.base64Data,
-          data?.media?.base64,
-        );
-        if (isProbablyBase64(candidateBase64)) {
-          base64Data = candidateBase64;
-          if (!mimeType) mimeType = firstString(data.mimetype, data.mimeType, data.data?.mimetype, data.data?.mimeType);
-          console.log(`[WEBHOOK] Successfully downloaded media: ${base64Data.length} chars, mimeType=${mimeType}`);
-        } else if (data && data.fileURL && !base64Data && !isEncryptedWhatsAppMediaUrl(data.fileURL)) {
-          // If only link is returned but no base64, we can use the link directly
-          directMediaUrl = data.fileURL;
-          console.log(`[WEBHOOK] Using temporary decrypted URL from API: ${directMediaUrl}`);
+      const mediaMessage = eventMessage || msg.message || msg || {};
+      const mediaKey = {
+        id: msgId,
+        remoteJid: chatJid || `${phone}@s.whatsapp.net`,
+        fromMe,
+        participant: senderJid || undefined,
+      };
+      const requestCandidates = [
+        {
+          endpoint: `${uazapiBaseUrl}/message/download`,
+          body: { id: msgId, return_base64: true, generate_mp3: messageType === 'audio', return_link: true },
+        },
+        {
+          endpoint: `${uazapiBaseUrl}/message/download`,
+          body: { messageId: msgId, return_base64: true, generate_mp3: messageType === 'audio', return_link: true },
+        },
+        {
+          endpoint: `${uazapiBaseUrl}/message/download`,
+          body: { msgId, return_base64: true, generate_mp3: messageType === 'audio', return_link: true },
+        },
+        {
+          endpoint: `${uazapiBaseUrl}/chat/getBase64FromMediaMessage/${instanceName || whatsappInstance.zapi_instance_id || whatsappInstance.evolution_instance_name || ''}`,
+          body: { message: { key: mediaKey, message: mediaMessage }, convertToMp4: false },
+        },
+        {
+          endpoint: `${uazapiBaseUrl}/chat/getBase64FromMediaMessage/${instanceName || whatsappInstance.zapi_instance_id || whatsappInstance.evolution_instance_name || ''}`,
+          body: { key: mediaKey, message: mediaMessage, convertToMp4: false },
+        },
+      ].filter(candidate => !candidate.endpoint.endsWith('/'));
+
+      for (const candidate of requestCandidates) {
+        const resp = await fetch(candidate.endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'token': whatsappInstance.zapi_token,
+          },
+          body: JSON.stringify(candidate.body),
+        });
+
+        const raw = await resp.text();
+        if (!resp.ok) {
+          console.error(`[WEBHOOK] UAZAPI media download failed ${resp.status} at ${candidate.endpoint}: ${raw.substring(0, 300)}`);
+          continue;
         }
-      } else {
-        const errText = await resp.text();
-        console.error(`[WEBHOOK] Failed to download media via API: ${resp.status} ${errText}`);
+
+        let data: any = null;
+        try { data = raw ? JSON.parse(raw) : {}; } catch { data = raw; }
+        const downloaded = extractDownloadedMedia(data);
+
+        if (isProbablyBase64(downloaded.base64)) {
+          base64Data = downloaded.base64;
+          if (!mimeType) mimeType = downloaded.mimeType;
+          console.log(`[WEBHOOK] Successfully downloaded media: ${base64Data.length} chars, mimeType=${mimeType || 'none'}`);
+          break;
+        }
+
+        if (downloaded.url) {
+          directMediaUrl = downloaded.url;
+          if (!mimeType) mimeType = downloaded.mimeType;
+          console.log(`[WEBHOOK] Using temporary decrypted URL from API: ${directMediaUrl}`);
+          break;
+        }
+
+        console.warn(`[WEBHOOK] UAZAPI media download returned no usable base64/url at ${candidate.endpoint}. Keys: ${data && typeof data === 'object' ? Object.keys(data).join(',') : 'raw'}`);
       }
     } catch (e) {
       console.error('[WEBHOOK] Media Download API exception:', e);
@@ -1142,52 +1277,10 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
           const raw = await resp.text();
           let data: any = null;
           try { data = raw ? JSON.parse(raw) : {}; } catch { data = { base64: raw }; }
-          const candidateBase64 = firstString(
-            data.base64,
-            data.base64Data,
-            data.base64Url,
-            data.data?.base64,
-            data.data?.base64Data,
-            data.data?.base64Url,
-            data.media?.base64,
-            data.media?.base64Data,
-            data.media?.base64Url,
-            data.result?.base64,
-            data.result?.base64Data,
-            data.result?.base64Url,
-          );
-          const normalizedBase64 = normalizeBase64Candidate(candidateBase64);
-          if (isProbablyBase64(normalizedBase64)) base64Data = normalizedBase64;
-          mimeType = mimeType || firstString(
-            data.mimetype,
-            data.mimeType,
-            data.MimeType,
-            data.type,
-            data.data?.mimetype,
-            data.data?.mimeType,
-            data.data?.type,
-            data.result?.mimetype,
-            data.result?.mimeType,
-            data.result?.type,
-          );
-          directMediaUrl = directMediaUrl || firstString(
-            data.fileUrl,
-            data.fileURL,
-            data.downloadUrl,
-            data.mediaUrl,
-            data.url,
-            data.data?.fileUrl,
-            data.data?.fileURL,
-            data.data?.downloadUrl,
-            data.data?.mediaUrl,
-            data.data?.url,
-            data.result?.fileUrl,
-            data.result?.fileURL,
-            data.result?.downloadUrl,
-            data.result?.mediaUrl,
-            data.result?.url,
-          );
-          if (directMediaUrl && isEncryptedWhatsAppMediaUrl(directMediaUrl)) directMediaUrl = null;
+          const downloaded = extractDownloadedMedia(data);
+          if (isProbablyBase64(downloaded.base64)) base64Data = downloaded.base64;
+          mimeType = mimeType || downloaded.mimeType;
+          directMediaUrl = directMediaUrl || downloaded.url;
           console.log(`[WEBHOOK] Evolution media result: hasBase64=${!!base64Data}, mimeType=${mimeType || 'none'}, hasUrl=${!!directMediaUrl}`);
           if (base64Data || directMediaUrl) break;
         }
@@ -1207,6 +1300,14 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
   }
 
   if (base64Data && !mimeType) {
+    if (messageType === 'audio') mimeType = 'audio/ogg';
+    else if (messageType === 'image') mimeType = 'image/jpeg';
+    else if (messageType === 'video') mimeType = 'video/mp4';
+    else if (messageType === 'sticker') mimeType = 'image/webp';
+    else mimeType = 'application/octet-stream';
+  }
+
+  if (base64Data && mimeType && !mimeType.includes('/')) {
     if (messageType === 'audio') mimeType = 'audio/ogg';
     else if (messageType === 'image') mimeType = 'image/jpeg';
     else if (messageType === 'video') mimeType = 'video/mp4';
