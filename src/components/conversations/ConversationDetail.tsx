@@ -10,7 +10,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useSignatureSettings } from '@/hooks/useSignatureSettings';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Bot, User, Send, Loader2, MessageCircle, Mic, Check, CheckCheck, ArrowUp, FileText, MapPin, Play, UserCircle, X, Variable, PenLine, Archive, Search, Reply, Clock, Sparkles, Timer, ChevronDown } from 'lucide-react';
+import { Bot, User, Send, Loader2, MessageCircle, Mic, Check, CheckCheck, ArrowUp, FileText, MapPin, Play, UserCircle, X, Variable, PenLine, Archive, Search, Reply, Clock, Sparkles, Timer, ChevronDown, RefreshCw } from 'lucide-react';
 import { formatWhatsAppMessage, parseMessageVariables, messageVariables } from '@/lib/whatsappFormatter';
 import {
   DropdownMenu,
@@ -1201,6 +1201,36 @@ interface MessageBubbleProps {
 function MessageBubble({ message, contactAvatar, contactName, contactPhone, contactId, transcription, isTranscriptionLoading, senderAvatar, senderName, isHighlighted, hasFollowUp, onReply, onFollowUp, onTranscriptionUpdate, onAdjustPrompt }: MessageBubbleProps) {
   const isInbound = message.direction === 'inbound';
   const isBot = message.is_from_bot;
+  const queryClient = useQueryClient();
+  const [isRecoveringMedia, setIsRecoveringMedia] = useState(false);
+
+  const recoverMissingMedia = async () => {
+    if (isRecoveringMedia) return;
+    setIsRecoveringMedia(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('zapi-message-actions', {
+        body: { action: 'recover_media', messageId: message.id },
+      });
+
+      if (error || data?.error || !data?.mediaUrl) {
+        throw new Error(data?.error || error?.message || 'Nao foi possivel recuperar o audio.');
+      }
+
+      await queryClient.invalidateQueries({ queryKey: ['messages', message.conversation_id] });
+      toast({
+        title: 'Audio recuperado',
+        description: 'O player ja deve aparecer nesta mensagem.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Audio indisponivel',
+        description: error instanceof Error ? error.message : 'Nao foi possivel recuperar o arquivo de audio.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsRecoveringMedia(false);
+    }
+  };
 
   // Render media content based on type
   const renderMediaContent = () => {
@@ -1285,7 +1315,22 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted">
             <Mic className="h-5 w-5 text-muted-foreground" />
           </div>
-          <div className="min-w-0">
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            className="h-8 w-8 shrink-0"
+            onClick={recoverMissingMedia}
+            disabled={isRecoveringMedia || !message.zapi_message_id}
+            title={message.zapi_message_id ? 'Recuperar audio' : 'Mensagem sem ID do WhatsApp'}
+          >
+            {isRecoveringMedia ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4" />
+            )}
+          </Button>
+          <div className="min-w-0 flex-1">
             <p className="text-sm font-medium">Áudio recebido</p>
             <p className="text-xs text-muted-foreground">Arquivo de áudio ainda não disponível.</p>
           </div>

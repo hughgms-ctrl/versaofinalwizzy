@@ -59,6 +59,7 @@ export interface DbMessage {
   read_at: string | null;
   delivered_at: string | null;
   media_url: string | null;
+  zapi_message_id: string | null;
   metadata?: any;
 }
 
