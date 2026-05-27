@@ -23,6 +23,19 @@ function normalizeNotificationPhone(value?: string | null): string {
   return "";
 }
 
+function safeJsonParse(value: string): any {
+  try {
+    return value ? JSON.parse(value) : null;
+  } catch {
+    return null;
+  }
+}
+
+function extractProviderMessageId(payload: any): string | null {
+  if (!payload) return null;
+  return payload.messageId || payload.zapiMessageId || payload.id || payload.ID || payload.key?.id || null;
+}
+
 type Provider = "evolution" | "uazapi";
 
 async function loadConnectionSettings(supabase: any) {
@@ -82,6 +95,189 @@ function selectInstanceByStrategy(instances: any[] | null | undefined, strategy:
   }
 
   return candidates[0] || null;
+}
+
+async function ensureRecipientConversation(
+  supabase: any,
+  {
+    organizationId,
+    phone,
+    name,
+    workspaceId,
+    instance,
+  }: {
+    organizationId: string;
+    phone: string;
+    name?: string | null;
+    workspaceId?: string | null;
+    instance: any;
+  },
+): Promise<string | null> {
+  let { data: contact } = await supabase
+    .from("contacts")
+    .select("id")
+    .eq("organization_id", organizationId)
+    .eq("phone", phone)
+    .maybeSingle();
+
+  if (!contact?.id) {
+    const { data: insertedContact, error: contactError } = await supabase
+      .from("contacts")
+      .insert({
+        organization_id: organizationId,
+        phone,
+        name: name || phone,
+        workspace_id: workspaceId || null,
+        metadata: {
+          internal_notification_recipient: true,
+          source: "stage-notification",
+        },
+      })
+      .select("id")
+      .maybeSingle();
+
+    if (contactError) {
+      const { data: existingContact } = await supabase
+        .from("contacts")
+        .select("id")
+        .eq("organization_id", organizationId)
+        .eq("phone", phone)
+        .maybeSingle();
+      contact = existingContact;
+    } else {
+      contact = insertedContact;
+    }
+  }
+
+  if (!contact?.id) return null;
+
+  let { data: conversation } = await supabase
+    .from("conversations")
+    .select("id")
+    .eq("organization_id", organizationId)
+    .eq("contact_id", contact.id)
+    .maybeSingle();
+
+  if (!conversation?.id) {
+    const { data: insertedConversation, error: conversationError } = await supabase
+      .from("conversations")
+      .insert({
+        organization_id: organizationId,
+        contact_id: contact.id,
+        whatsapp_instance_id: instance?.id || null,
+        source_phone: instance?.phone_number || instance?.logical_phone || null,
+        workspace_id: workspaceId || null,
+        status: "open",
+        unread_count: 0,
+        last_message_at: new Date().toISOString(),
+        metadata: {
+          internal_notification_recipient: true,
+          source: "stage-notification",
+        },
+      })
+      .select("id")
+      .maybeSingle();
+
+    if (conversationError) {
+      const { data: existingConversation } = await supabase
+        .from("conversations")
+        .select("id")
+        .eq("organization_id", organizationId)
+        .eq("contact_id", contact.id)
+        .maybeSingle();
+      conversation = existingConversation;
+    } else {
+      conversation = insertedConversation;
+    }
+  }
+
+  return conversation?.id || null;
+}
+
+async function saveNotificationMessage(
+  supabase: any,
+  {
+    organizationId,
+    workspaceId,
+    profile,
+    normalizedPhone,
+    message,
+    instance,
+    provider,
+    responseOk,
+    responseStatus,
+    responseText,
+    providerResponse,
+    sourceConversationId,
+    columnId,
+  }: {
+    organizationId: string;
+    workspaceId?: string | null;
+    profile: any;
+    normalizedPhone: string;
+    message: string;
+    instance: any;
+    provider: Provider;
+    responseOk: boolean;
+    responseStatus: number;
+    responseText: string;
+    providerResponse: any;
+    sourceConversationId: string;
+    columnId: string;
+  }) {
+  const conversationId = await ensureRecipientConversation(supabase, {
+    organizationId,
+    phone: normalizedPhone,
+    name: profile.full_name,
+    workspaceId,
+    instance,
+  });
+
+  if (!conversationId) {
+    console.log("Could not create/find recipient conversation for", profile.full_name, normalizedPhone);
+    return null;
+  }
+
+  const zapiMessageId = responseOk ? extractProviderMessageId(providerResponse) : null;
+  const now = new Date().toISOString();
+  const { data: savedMessage, error: messageError } = await supabase
+    .from("messages")
+    .insert({
+      conversation_id: conversationId,
+      direction: "outbound",
+      type: "text",
+      content: message,
+      is_from_bot: true,
+      zapi_message_id: zapiMessageId,
+      metadata: {
+        provider,
+        stage_notification: true,
+        source_conversation_id: sourceConversationId,
+        source_column_id: columnId,
+        recipient_user_id: profile.user_id,
+        provider_response: providerResponse || responseText || null,
+      },
+      ...(responseOk ? {} : { failed_at: now, error_message: responseText || "Provider send failed" }),
+    })
+    .select("id")
+    .maybeSingle();
+
+  if (messageError) {
+    console.error("Error saving stage notification message:", messageError);
+    return null;
+  }
+
+  await supabase
+    .from("conversations")
+    .update({
+      last_message_at: now,
+      status: "open",
+      whatsapp_instance_id: instance?.id || null,
+      source_phone: instance?.phone_number || instance?.logical_phone || null,
+    })
+    .eq("id", conversationId);
+
+  return savedMessage?.id || null;
 }
 
 Deno.serve(async (req) => {
@@ -276,13 +472,31 @@ Deno.serve(async (req) => {
         });
 
         const responseText = await response.text();
+        const providerResponse = safeJsonParse(responseText);
         console.log(`${provider} response for`, profile.full_name, ":", response.status, responseText);
+
+        const savedMessageId = await saveNotificationMessage(supabase, {
+          organizationId,
+          workspaceId,
+          profile,
+          normalizedPhone,
+          message,
+          instance,
+          provider,
+          responseOk: response.ok,
+          responseStatus: response.status,
+          responseText,
+          providerResponse,
+          sourceConversationId: conversationId,
+          columnId,
+        });
 
         results.push({
           userId: profile.user_id,
           name: profile.full_name,
           success: response.ok,
           status: response.status,
+          savedMessageId,
           error: response.ok ? undefined : responseText,
         });
       } catch (err) {
