@@ -48,6 +48,7 @@ interface ExecutionContext {
 
 // deno-lint-ignore no-explicit-any
 type SupabaseClientType = any;
+type Provider = 'evolution' | 'uazapi';
 
 function normalizeBaseUrl(value?: string | null): string {
   return (value || '').trim().replace(/\/$/, '');
@@ -65,6 +66,68 @@ async function loadConnectionSettings(supabase: SupabaseClientType) {
     evolutionBaseUrl: normalizeBaseUrl(value.evolution_base_url || Deno.env.get('EVOLUTION_BASE_URL')),
     evolutionApiKey: value.evolution_api_key || Deno.env.get('EVOLUTION_API_KEY') || '',
   };
+}
+
+async function loadProviderStrategy(supabase: SupabaseClientType): Promise<{
+  primaryProvider: Provider;
+  backupProvider: Provider;
+  evolutionEnabled: boolean;
+  uazapiEnabled: boolean;
+}> {
+  const { data: row } = await supabase
+    .from('platform_settings')
+    .select('value')
+    .eq('key', 'whatsapp_provider_strategy')
+    .maybeSingle();
+  const value = row?.value || {};
+  return {
+    primaryProvider: value.primary_provider === 'uazapi' ? 'uazapi' : 'evolution',
+    backupProvider: value.backup_provider === 'evolution' ? 'evolution' : 'uazapi',
+    evolutionEnabled: value.evolution_enabled ?? true,
+    uazapiEnabled: value.uazapi_enabled ?? true,
+  };
+}
+
+function providerEnabled(provider: Provider, strategy: Awaited<ReturnType<typeof loadProviderStrategy>>) {
+  return provider === 'evolution' ? strategy.evolutionEnabled : strategy.uazapiEnabled;
+}
+
+async function resolveWhatsAppInstance(
+  supabase: SupabaseClientType,
+  organizationId: string,
+  conversationInstanceId?: string | null,
+) {
+  const strategy = await loadProviderStrategy(supabase);
+  const preferredProviders: Provider[] = [];
+  if (providerEnabled(strategy.primaryProvider, strategy)) preferredProviders.push(strategy.primaryProvider);
+  if (strategy.backupProvider !== strategy.primaryProvider && providerEnabled(strategy.backupProvider, strategy)) {
+    preferredProviders.push(strategy.backupProvider);
+  }
+  if (!preferredProviders.includes('evolution')) preferredProviders.push('evolution');
+  if (!preferredProviders.includes('uazapi')) preferredProviders.push('uazapi');
+
+  const { data: instances, error } = await supabase
+    .from('whatsapp_instances')
+    .select('*')
+    .eq('organization_id', organizationId)
+    .eq('status', 'connected')
+    .order('created_at', { ascending: false });
+
+  if (error || !instances?.length) return { instance: null, error };
+
+  const conversationInstance = conversationInstanceId
+    ? instances.find((item: any) => item.id === conversationInstanceId)
+    : null;
+
+  for (const provider of preferredProviders) {
+    const instance =
+      conversationInstance && (conversationInstance.provider || 'uazapi') === provider
+        ? conversationInstance
+        : instances.find((item: any) => (item.provider || 'uazapi') === provider);
+    if (instance) return { instance, error: null };
+  }
+
+  return { instance: conversationInstance || instances[0], error: null };
 }
 
 function guessMimeType(type: string, mediaUrl?: string): string {
@@ -160,22 +223,17 @@ Deno.serve(async (req) => {
           return;
         }
 
-        // 3. Get WhatsApp instance, preferring the instance attached to the conversation.
-        const { data: instances, error: instanceError } = await supabase
-          .from('whatsapp_instances')
-          .select('*')
-          .eq('organization_id', flow.organization_id)
-          .eq('status', 'connected')
-          .order('created_at', { ascending: false });
+        // 3. Get WhatsApp instance according to the admin provider strategy.
+        const { instance, error: instanceError } = await resolveWhatsAppInstance(
+          supabase,
+          flow.organization_id,
+          conversation.whatsapp_instance_id,
+        );
 
-        if (instanceError || !instances?.length) {
+        if (instanceError || !instance) {
           console.error(`[FLOW EXECUTE] No connected instance for org ${flow.organization_id}`);
           return;
         }
-
-        const instance = conversation.whatsapp_instance_id
-          ? instances.find((item: any) => item.id === conversation.whatsapp_instance_id) || instances[0]
-          : instances[0];
         const connectionSettings = await loadConnectionSettings(supabase);
         const provider = instance.provider === 'evolution' ? 'evolution' : 'uazapi';
 
@@ -1037,22 +1095,13 @@ async function notifyHumanEscalation({
     return;
   }
 
-  // Get active WhatsApp instance for this org
-  const { data: instance } = await supabase
-    .from('whatsapp_instances')
-    .select('zapi_token, name')
-    .eq('organization_id', context.organizationId)
-    .eq('is_active', true)
-    .maybeSingle();
-
-  if (!instance?.zapi_token) {
-    console.log('[FLOW EXECUTE] No active WhatsApp instance for notifications');
+  if (context.provider === 'evolution' && (!context.evolutionBaseUrl || !context.evolutionApiKey || !context.evolutionInstanceName)) {
+    console.log('[FLOW EXECUTE] Evolution not configured for handoff notifications');
     return;
   }
 
-  const uazapiBase = (Deno.env.get('UAZAPI_BASE_URL') || '').replace(/\/$/, '');
-  if (!uazapiBase) {
-    console.log('[FLOW EXECUTE] UAZAPI_BASE_URL not configured');
+  if (context.provider === 'uazapi' && (!context.uazapiBaseUrl || !context.zapiToken)) {
+    console.log('[FLOW EXECUTE] UAZAPI not configured for handoff notifications');
     return;
   }
 
@@ -1067,11 +1116,17 @@ async function notifyHumanEscalation({
     const normalized = String(recipient.phone || '').replace(/\D/g, '');
     if (!normalized) continue;
     try {
-      const res = await fetch(`${uazapiBase}/send/text`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', token: instance.zapi_token },
-        body: JSON.stringify({ number: normalized, text: message }),
-      });
+      const res = context.provider === 'evolution'
+        ? await fetch(`${context.evolutionBaseUrl}/message/sendText/${context.evolutionInstanceName}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', apikey: context.evolutionApiKey! },
+          body: JSON.stringify({ number: normalized, text: message, delay: 1000, linkPreview: false }),
+        })
+        : await fetch(`${context.uazapiBaseUrl}/send/text`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', token: context.zapiToken },
+          body: JSON.stringify({ number: normalized, text: message }),
+        });
       console.log('[FLOW EXECUTE] Notification sent to', recipient.full_name, '->', res.status);
     } catch (err) {
       console.error('[FLOW EXECUTE] Notification send failed for', recipient.full_name, err);
@@ -1292,21 +1347,27 @@ async function sendMediaItem(
     if (!context.evolutionBaseUrl || !context.evolutionApiKey || !context.evolutionInstanceName) {
       throw new Error('Evolution API not configured for flow execution');
     }
-    const body: Record<string, unknown> = {
-      number: normalizedPhone,
-      mediatype: mediaType,
-      mimetype: guessMimeType(mediaType, mediaUrl),
-      caption: mediaType === 'audio' ? undefined : processedCaption,
-      media: mediaUrl,
-      fileName: fileNameFromUrl(mediaUrl, `${mediaType}-${Date.now()}`),
-      delay: 1000,
-      linkPreview: true,
-    };
-    if (mediaType === 'audio') {
-      body.ptt = true;
-      body.voice = true;
-    }
-    response = await fetch(`${context.evolutionBaseUrl}/message/sendMedia/${context.evolutionInstanceName}`, {
+    const body: Record<string, unknown> = mediaType === 'audio'
+      ? {
+        number: normalizedPhone,
+        audio: mediaUrl,
+        delay: 1000,
+        linkPreview: true,
+      }
+      : {
+        number: normalizedPhone,
+        mediatype: mediaType,
+        mimetype: guessMimeType(mediaType, mediaUrl),
+        caption: processedCaption,
+        media: mediaUrl,
+        fileName: fileNameFromUrl(mediaUrl, `${mediaType}-${Date.now()}`),
+        delay: 1000,
+        linkPreview: true,
+      };
+    const endpoint = mediaType === 'audio'
+      ? `${context.evolutionBaseUrl}/message/sendWhatsAppAudio/${context.evolutionInstanceName}`
+      : `${context.evolutionBaseUrl}/message/sendMedia/${context.evolutionInstanceName}`;
+    response = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

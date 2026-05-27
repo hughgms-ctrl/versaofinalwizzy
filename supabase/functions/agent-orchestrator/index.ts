@@ -41,6 +41,85 @@ interface DocumentCollectionContext {
 }
 
 const MAX_TOOL_ROUNDS = 3;
+type Provider = 'evolution' | 'uazapi';
+
+function normalizeBaseUrl(value?: string | null): string {
+  return (value || '').trim().replace(/\/$/, '');
+}
+
+async function loadWhatsAppConnectionSettings(supabase: any) {
+  const { data: row } = await supabase
+    .from('platform_settings')
+    .select('value')
+    .eq('key', 'whatsapp_connection_settings')
+    .maybeSingle();
+  const value = row?.value || {};
+  return {
+    uazapiBaseUrl: normalizeBaseUrl(value.uazapi_base_url || Deno.env.get('UAZAPI_BASE_URL')),
+    evolutionBaseUrl: normalizeBaseUrl(value.evolution_base_url || Deno.env.get('EVOLUTION_BASE_URL')),
+    evolutionApiKey: value.evolution_api_key || Deno.env.get('EVOLUTION_API_KEY') || '',
+  };
+}
+
+async function loadWhatsAppProviderStrategy(supabase: any): Promise<{
+  primaryProvider: Provider;
+  backupProvider: Provider;
+  evolutionEnabled: boolean;
+  uazapiEnabled: boolean;
+}> {
+  const { data: row } = await supabase
+    .from('platform_settings')
+    .select('value')
+    .eq('key', 'whatsapp_provider_strategy')
+    .maybeSingle();
+  const value = row?.value || {};
+  return {
+    primaryProvider: value.primary_provider === 'uazapi' ? 'uazapi' : 'evolution',
+    backupProvider: value.backup_provider === 'evolution' ? 'evolution' : 'uazapi',
+    evolutionEnabled: value.evolution_enabled ?? true,
+    uazapiEnabled: value.uazapi_enabled ?? true,
+  };
+}
+
+function isWhatsAppProviderEnabled(provider: Provider, strategy: Awaited<ReturnType<typeof loadWhatsAppProviderStrategy>>) {
+  return provider === 'evolution' ? strategy.evolutionEnabled : strategy.uazapiEnabled;
+}
+
+async function resolveWhatsAppInstanceForSend(supabase: any, conversation: any) {
+  const strategy = await loadWhatsAppProviderStrategy(supabase);
+  const preferredProviders: Provider[] = [];
+  if (isWhatsAppProviderEnabled(strategy.primaryProvider, strategy)) preferredProviders.push(strategy.primaryProvider);
+  if (strategy.backupProvider !== strategy.primaryProvider && isWhatsAppProviderEnabled(strategy.backupProvider, strategy)) {
+    preferredProviders.push(strategy.backupProvider);
+  }
+  if (!preferredProviders.includes('evolution')) preferredProviders.push('evolution');
+  if (!preferredProviders.includes('uazapi')) preferredProviders.push('uazapi');
+
+  const { data: connected } = await supabase.from('whatsapp_instances').select('*')
+    .eq('organization_id', conversation.organization_id).eq('status', 'connected')
+    .order('is_active', { ascending: false })
+    .order('created_at', { ascending: false });
+  const connectedInstances = connected || [];
+
+  const conversationInstance = conversation.whatsapp_instance_id
+    ? connectedInstances.find((item: any) => item.id === conversation.whatsapp_instance_id)
+    : null;
+
+  for (const provider of preferredProviders) {
+    const instance =
+      conversationInstance && (conversationInstance.provider || 'uazapi') === provider
+        ? conversationInstance
+        : connectedInstances.find((item: any) => (item.provider || 'uazapi') === provider);
+    if (instance) return instance;
+  }
+
+  if (conversationInstance) return conversationInstance;
+
+  const { data: fallback } = await supabase.from('whatsapp_instances').select('*')
+    .eq('organization_id', conversation.organization_id)
+    .order('updated_at', { ascending: false }).limit(1).maybeSingle();
+  return fallback || null;
+}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -3212,28 +3291,7 @@ async function sendReplyViaZAPI(supabase: any, conversation: any, message: strin
   const contactPhone = conversation.contact?.phone;
   if (!contactPhone) return;
 
-  let instance = null;
-  if (conversation.whatsapp_instance_id) {
-    const { data } = await supabase.from('whatsapp_instances').select('*')
-      .eq('id', conversation.whatsapp_instance_id).eq('status', 'connected').maybeSingle();
-    instance = data;
-  }
-  if (!instance) {
-    const { data } = await supabase.from('whatsapp_instances').select('*')
-      .eq('organization_id', conversation.organization_id).eq('status', 'connected')
-      .order('is_active', { descending: true })
-      .order('created_at', { ascending: true }).limit(1).maybeSingle();
-    instance = data;
-  }
-  
-  // FINAL FALLBACK: Any instance at all if none are "connected" 
-  // (better to try sending than to definitely fail)
-  if (!instance) {
-    const { data } = await supabase.from('whatsapp_instances').select('*')
-      .eq('organization_id', conversation.organization_id)
-      .order('updated_at', { descending: false }).limit(1).maybeSingle();
-    instance = data;
-  }
+  const instance = await resolveWhatsAppInstanceForSend(supabase, conversation);
 
   if (!instance || !instance.zapi_token) {
     console.error('[ORCHESTRATOR] No WhatsApp instance found for organization:', conversation.organization_id);
@@ -3241,35 +3299,54 @@ async function sendReplyViaZAPI(supabase: any, conversation: any, message: strin
   }
 
   const normalizedPhone = contactPhone.replace(/\D/g, '');
-  const uazapiBaseUrl = Deno.env.get('UAZAPI_BASE_URL')!;
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    'token': instance.zapi_token
-  };
+  const settings = await loadWhatsAppConnectionSettings(supabase);
+  const provider: Provider = instance.provider === 'evolution' ? 'evolution' : 'uazapi';
+  let endpoint = '';
+  let headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  let body: Record<string, unknown> = { number: normalizedPhone, text: message };
 
-  try {
-    // Typing indicator fallback
-    await fetch(`${uazapiBaseUrl}/chat/presence`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ number: normalizedPhone, presenceType: 'composing' })
-    }).catch(() => { });
-    await new Promise(r => setTimeout(r, 1000));
-  } catch { }
+  if (provider === 'evolution') {
+    const evolutionApiKey = instance.evolution_api_key || settings.evolutionApiKey || instance.zapi_token;
+    const evolutionInstanceName = instance.evolution_instance_name || instance.zapi_instance_id || instance.evolution_instance_id;
+    if (!settings.evolutionBaseUrl || !evolutionApiKey || !evolutionInstanceName) {
+      console.error('[ORCHESTRATOR] Evolution API not configured for instance:', instance.id);
+      return;
+    }
+    endpoint = `${settings.evolutionBaseUrl}/message/sendText/${evolutionInstanceName}`;
+    headers = { ...headers, apikey: evolutionApiKey };
+    body = { ...body, delay: 1000, linkPreview: true };
+  } else {
+    if (!settings.uazapiBaseUrl || !instance.zapi_token) {
+      console.error('[ORCHESTRATOR] UAZAPI not configured for instance:', instance.id);
+      return;
+    }
+    endpoint = `${settings.uazapiBaseUrl}/send/text`;
+    headers = { ...headers, token: instance.zapi_token };
 
-  const resp = await fetch(`${uazapiBaseUrl}/send/text`, {
+    try {
+      // Typing indicator fallback
+      await fetch(`${settings.uazapiBaseUrl}/chat/presence`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ number: normalizedPhone, presenceType: 'composing' })
+      }).catch(() => { });
+      await new Promise(r => setTimeout(r, 1000));
+    } catch { }
+  }
+
+  const resp = await fetch(endpoint, {
     method: 'POST',
     headers,
-    body: JSON.stringify({ number: normalizedPhone, text: message }),
+    body: JSON.stringify(body),
   });
 
   if (!resp.ok) {
-    console.error('UAZAPI send error:', await resp.text());
+    console.error(`${provider} send error:`, await resp.text());
     return;
   }
 
-  const zapiResult = await resp.json();
-  const zapiMessageId = zapiResult.messageId || zapiResult.zapiMessageId || zapiResult.id || null;
+  const providerResult = await resp.json();
+  const zapiMessageId = providerResult.messageId || providerResult.zapiMessageId || providerResult.id || providerResult.key?.id || null;
 
   await supabase.from('messages').insert({
     conversation_id: conversation.id,
@@ -3279,14 +3356,15 @@ async function sendReplyViaZAPI(supabase: any, conversation: any, message: strin
     is_from_bot: true, // Orchestrator IS an AI agent
     zapi_message_id: zapiMessageId,
     metadata: { 
-      zapi_response: zapiResult, 
+      provider,
+      provider_response: providerResult, 
       ai_generated: true,
       ai_metadata: aiMetadata || {}
     },
   });
 
   await supabase.from('conversations').update({ last_message_at: new Date().toISOString() }).eq('id', conversation.id);
-  console.log('Reply sent via UAZAPI');
+  console.log(`Reply sent via ${provider}`);
 }
 
 // ==================== INTERNAL THOUGHT FILTER ====================

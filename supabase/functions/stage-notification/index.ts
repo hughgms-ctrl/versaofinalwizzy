@@ -15,6 +15,8 @@ function normalizeBaseUrl(value?: string | null): string {
   return (value || "").trim().replace(/\/$/, "");
 }
 
+type Provider = "evolution" | "uazapi";
+
 async function loadConnectionSettings(supabase: any) {
   const { data: row } = await supabase
     .from("platform_settings")
@@ -27,6 +29,51 @@ async function loadConnectionSettings(supabase: any) {
     evolutionBaseUrl: normalizeBaseUrl(value.evolution_base_url || Deno.env.get("EVOLUTION_BASE_URL")),
     evolutionApiKey: value.evolution_api_key || Deno.env.get("EVOLUTION_API_KEY") || "",
   };
+}
+
+async function loadProviderStrategy(supabase: any): Promise<{
+  primaryProvider: Provider;
+  backupProvider: Provider;
+  evolutionEnabled: boolean;
+  uazapiEnabled: boolean;
+}> {
+  const { data: row } = await supabase
+    .from("platform_settings")
+    .select("value")
+    .eq("key", "whatsapp_provider_strategy")
+    .maybeSingle();
+  const value = row?.value || {};
+  return {
+    primaryProvider: value.primary_provider === "uazapi" ? "uazapi" : "evolution",
+    backupProvider: value.backup_provider === "evolution" ? "evolution" : "uazapi",
+    evolutionEnabled: value.evolution_enabled ?? true,
+    uazapiEnabled: value.uazapi_enabled ?? true,
+  };
+}
+
+function providerEnabled(provider: Provider, strategy: Awaited<ReturnType<typeof loadProviderStrategy>>) {
+  return provider === "evolution" ? strategy.evolutionEnabled : strategy.uazapiEnabled;
+}
+
+function selectInstanceByStrategy(instances: any[] | null | undefined, strategy: Awaited<ReturnType<typeof loadProviderStrategy>>) {
+  const list = instances || [];
+  const connected = list.filter((item: any) => item.status === "connected");
+  const candidates = connected.length ? connected : list;
+  const preferredProviders: Provider[] = [];
+
+  if (providerEnabled(strategy.primaryProvider, strategy)) preferredProviders.push(strategy.primaryProvider);
+  if (strategy.backupProvider !== strategy.primaryProvider && providerEnabled(strategy.backupProvider, strategy)) {
+    preferredProviders.push(strategy.backupProvider);
+  }
+  if (!preferredProviders.includes("evolution")) preferredProviders.push("evolution");
+  if (!preferredProviders.includes("uazapi")) preferredProviders.push("uazapi");
+
+  for (const provider of preferredProviders) {
+    const instance = candidates.find((item: any) => (item.provider || "uazapi") === provider);
+    if (instance) return instance;
+  }
+
+  return candidates[0] || null;
 }
 
 Deno.serve(async (req) => {
@@ -48,6 +95,7 @@ Deno.serve(async (req) => {
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, serviceRoleKey);
     const connectionSettings = await loadConnectionSettings(supabase);
+    const providerStrategy = await loadProviderStrategy(supabase);
 
     // Resolve workspaceId from conversation if not provided
     let workspaceId: string | null = explicitWorkspaceId || null;
@@ -136,7 +184,7 @@ Deno.serve(async (req) => {
       .eq("is_active", true)
       .order("created_at", { ascending: false });
 
-    const instance = (instances || []).find((item: any) => item.status === "connected") || (instances || [])[0] || null;
+    const instance = selectInstanceByStrategy(instances, providerStrategy);
 
     if (!instance) {
       console.log("No active WhatsApp instance for org", organizationId);

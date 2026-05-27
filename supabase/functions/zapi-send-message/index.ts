@@ -217,15 +217,11 @@ async function resolveSendInstance(
     ? instances.find((item: any) => item.id === conversationInstanceId)
     : null;
 
-  if (
-    conversationInstance &&
-    providerEnabled((conversationInstance.provider || 'uazapi') === 'evolution' ? 'evolution' : 'uazapi', strategy)
-  ) {
-    return conversationInstance;
-  }
-
   for (const provider of preferredProviders) {
-    const providerInstance = instances.find((item: any) => (item.provider || 'uazapi') === provider);
+    const providerInstance =
+      conversationInstance && (conversationInstance.provider || 'uazapi') === provider
+        ? conversationInstance
+        : instances.find((item: any) => (item.provider || 'uazapi') === provider);
     if (providerInstance) {
       if (conversationInstance && (conversationInstance.provider || 'uazapi') !== provider) {
         console.log(
@@ -424,20 +420,26 @@ Deno.serve(async (req) => {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           });
         }
-        endpoint = `${evolutionBaseUrl}/message/sendMedia/${instanceName}`;
-        body = {
-          number: normalizedPhone,
-          mediatype: type,
-          mimetype: guessMimeType(type, mediaUrl),
-          caption: type === 'audio' ? undefined : content,
-          media: mediaUrl,
-          fileName: fileNameFromUrl(mediaUrl, `${type}-${Date.now()}`),
-          delay: 1000,
-          linkPreview: true,
-        };
         if (type === 'audio') {
-          body.ptt = true;
-          body.voice = true;
+          endpoint = `${evolutionBaseUrl}/message/sendWhatsAppAudio/${instanceName}`;
+          body = {
+            number: normalizedPhone,
+            audio: mediaUrl,
+            delay: 1000,
+            linkPreview: true,
+          };
+        } else {
+          endpoint = `${evolutionBaseUrl}/message/sendMedia/${instanceName}`;
+          body = {
+            number: normalizedPhone,
+            mediatype: type,
+            mimetype: guessMimeType(type, mediaUrl),
+            caption: content,
+            media: mediaUrl,
+            fileName: fileNameFromUrl(mediaUrl, `${type}-${Date.now()}`),
+            delay: 1000,
+            linkPreview: true,
+          };
         }
       }
 
