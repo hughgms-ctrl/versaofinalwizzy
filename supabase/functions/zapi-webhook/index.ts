@@ -1229,6 +1229,8 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
     ? 'evolution'
     : 'uazapi';
 
+  const mediaRecoveryDiagnostics: any[] = [];
+
   if (!base64Data && isMediaType && whatsappInstance && msgId && webhookProvider === 'evolution') {
     try {
       const evolutionBaseUrl = connectionSettings.evolutionBaseUrl;
@@ -1244,6 +1246,20 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
           participant: evolutionParticipantAlt || evolutionKey.participant || senderJid || undefined,
         };
         const bodyCandidates = [
+          {
+            message: {
+              key: {
+                id: msgId,
+              },
+            },
+            convertToMp4: false,
+          },
+          {
+            message: {
+              key: mediaKey,
+            },
+            convertToMp4: false,
+          },
           {
             message: {
               key: mediaKey,
@@ -1280,26 +1296,52 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
             body: JSON.stringify(requestBody),
           });
 
+          const raw = await resp.text();
           if (!resp.ok) {
-            console.error(`[WEBHOOK] Evolution media download failed: ${resp.status} ${await resp.text()}`);
+            console.error(`[WEBHOOK] Evolution media download failed: ${resp.status} ${raw}`);
+            mediaRecoveryDiagnostics.push({
+              provider: 'evolution',
+              status: resp.status,
+              error: raw.substring(0, 300),
+              bodyKeys: Object.keys(requestBody || {}),
+              messageKeys: Object.keys((requestBody as any)?.message || {}),
+            });
             continue;
           }
 
-          const raw = await resp.text();
           let data: any = null;
           try { data = raw ? JSON.parse(raw) : {}; } catch { data = { base64: raw }; }
           const downloaded = extractDownloadedMedia(data);
           if (isProbablyBase64(downloaded.base64)) base64Data = downloaded.base64;
           mimeType = mimeType || downloaded.mimeType;
           directMediaUrl = directMediaUrl || downloaded.url;
+          mediaRecoveryDiagnostics.push({
+            provider: 'evolution',
+            status: resp.status,
+            hasBase64: !!base64Data,
+            hasUrl: !!directMediaUrl,
+            mimeType: mimeType || null,
+            responseKeys: data && typeof data === 'object' ? Object.keys(data).slice(0, 12) : ['raw'],
+          });
           console.log(`[WEBHOOK] Evolution media result: hasBase64=${!!base64Data}, mimeType=${mimeType || 'none'}, hasUrl=${!!directMediaUrl}`);
           if (base64Data || directMediaUrl) break;
         }
       } else {
         console.warn('[WEBHOOK] Evolution media download skipped: missing base URL, API key, or instance name');
+        mediaRecoveryDiagnostics.push({
+          provider: 'evolution',
+          skipped: 'missing_config',
+          hasBaseUrl: !!evolutionBaseUrl,
+          hasApiKey: !!evolutionApiKey,
+          hasInstanceName: !!evolutionInstanceName,
+        });
       }
     } catch (e) {
       console.error('[WEBHOOK] Evolution media download exception:', e);
+      mediaRecoveryDiagnostics.push({
+        provider: 'evolution',
+        exception: e instanceof Error ? e.message : String(e),
+      });
     }
   }
 
@@ -1589,7 +1631,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
   }
 
   // Build metadata with quoted message info if present
-  let messageMetadata: any = null;
+  let messageMetadata: any = {};
   if (quotedMessageMeta) {
     // Try to resolve the quoted message's internal ID by zapi_message_id
     let resolvedQuotedId: string | null = null;
@@ -1609,14 +1651,25 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
         }
       }
     }
-    messageMetadata = {
-      quoted_message: {
-        id: resolvedQuotedId || null,
-        zapi_message_id: quotedMessageMeta.zapi_message_id,
-        content: quotedMessageMeta.content || null,
-        sender: resolvedQuotedSender || quotedMessageMeta.participant || null,
-      }
+    messageMetadata.quoted_message = {
+      id: resolvedQuotedId || null,
+      zapi_message_id: quotedMessageMeta.zapi_message_id,
+      content: quotedMessageMeta.content || null,
+      sender: resolvedQuotedSender || quotedMessageMeta.participant || null,
     };
+  }
+
+  if (isMediaType && !mediaUrl && mediaRecoveryDiagnostics.length > 0) {
+    messageMetadata.media_recovery = {
+      provider: webhookProvider,
+      messageType,
+      msgId,
+      attempts: mediaRecoveryDiagnostics.slice(-5),
+    };
+  }
+
+  if (Object.keys(messageMetadata).length === 0) {
+    messageMetadata = null;
   }
 
   // Insert message into the CORRECT conversation

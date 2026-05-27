@@ -189,6 +189,8 @@ async function recoverMediaFile(supabase: any, messageId: string, userId: string
 
     const candidates = provider === 'evolution'
         ? [
+            { endpoint: `${baseUrl}/chat/getBase64FromMediaMessage/${instanceName}`, headers: { apikey: token }, body: { message: { key: { id: message.zapi_message_id } }, convertToMp4: false } },
+            { endpoint: `${baseUrl}/chat/getBase64FromMediaMessage/${instanceName}`, headers: { apikey: token }, body: { message: { key: mediaKey }, convertToMp4: false } },
             { endpoint: `${baseUrl}/chat/getBase64FromMediaMessage/${instanceName}`, headers: { apikey: token }, body: { messageId: message.zapi_message_id, key: mediaKey, convertToMp4: false } },
             { endpoint: `${baseUrl}/chat/getBase64FromMediaMessage/${instanceName}`, headers: { apikey: token }, body: { key: mediaKey, convertToMp4: false } },
         ]
