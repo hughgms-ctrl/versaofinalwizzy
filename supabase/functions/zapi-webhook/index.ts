@@ -1145,8 +1145,13 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
     return respond({ success: false, error: 'instance_not_found', instanceId, instanceName });
   }
 
+  const webhookProvider = whatsappInstance.provider === 'evolution' || whatsappInstance.evolution_instance_name || whatsappInstance.evolution_instance_id
+    ? 'evolution'
+    : 'uazapi';
+  const mediaRecoveryDiagnostics: any[] = [];
+
   // Fetch missing Base64 directly from UAZAPI if not in payload
-  if (!base64Data && isMediaType && whatsappInstance && msgId && (whatsappInstance.provider || 'uazapi') === 'uazapi') {
+  if (!base64Data && isMediaType && whatsappInstance && msgId && webhookProvider === 'uazapi') {
     try {
       console.log(`[WEBHOOK] Fetching decrypted media via /message/download for ID: ${msgId}...`);
       const uazapiBaseUrl = connectionSettings.uazapiBaseUrl;
@@ -1225,12 +1230,6 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
 
   // Evolution webhooks often include only the WhatsApp media stub. Convert it
   // to base64 through Evolution before falling back to a temporary URL.
-  const webhookProvider = whatsappInstance.provider === 'evolution' || whatsappInstance.evolution_instance_name || whatsappInstance.evolution_instance_id
-    ? 'evolution'
-    : 'uazapi';
-
-  const mediaRecoveryDiagnostics: any[] = [];
-
   if (!base64Data && isMediaType && whatsappInstance && msgId && webhookProvider === 'evolution') {
     try {
       const evolutionBaseUrl = connectionSettings.evolutionBaseUrl;
@@ -1343,6 +1342,24 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
         exception: e instanceof Error ? e.message : String(e),
       });
     }
+  } else if (isMediaType && !base64Data && !msgId) {
+    mediaRecoveryDiagnostics.push({
+      provider: webhookProvider,
+      skipped: 'missing_message_id',
+      messageType,
+      instanceProvider: whatsappInstance.provider || null,
+      instanceId: whatsappInstance.id || null,
+    });
+  } else if (isMediaType && !base64Data && webhookProvider !== 'evolution') {
+    mediaRecoveryDiagnostics.push({
+      provider: webhookProvider,
+      skipped: 'not_evolution',
+      messageType,
+      instanceProvider: whatsappInstance.provider || null,
+      instanceId: whatsappInstance.id || null,
+      hasEvolutionInstanceName: !!whatsappInstance.evolution_instance_name,
+      hasEvolutionInstanceId: !!whatsappInstance.evolution_instance_id,
+    });
   }
 
   console.log(`[WEBHOOK] Media check: hasBase64=${!!base64Data} (${base64Data ? base64Data.length + ' chars' : '0'}), mimeType=${mimeType}, directUrl=${!!directMediaUrl}`);
@@ -1664,7 +1681,23 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
       provider: webhookProvider,
       messageType,
       msgId,
+      instanceProvider: whatsappInstance.provider || null,
+      instanceId: whatsappInstance.id || null,
+      evolutionInstanceName: whatsappInstance.evolution_instance_name || null,
+      evolutionInstanceId: whatsappInstance.evolution_instance_id || null,
       attempts: mediaRecoveryDiagnostics.slice(-5),
+    };
+  } else if (isMediaType && !mediaUrl) {
+    messageMetadata.media_recovery = {
+      provider: webhookProvider,
+      messageType,
+      msgId,
+      instanceProvider: whatsappInstance.provider || null,
+      instanceId: whatsappInstance.id || null,
+      evolutionInstanceName: whatsappInstance.evolution_instance_name || null,
+      evolutionInstanceId: whatsappInstance.evolution_instance_id || null,
+      attempts: [],
+      skipped: 'no_recovery_attempt_recorded',
     };
   }
 
