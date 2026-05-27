@@ -36,6 +36,11 @@ interface ExecutionContext {
   organizationId: string;
   zapiInstanceId: string;
   zapiToken: string;
+  provider: 'evolution' | 'uazapi';
+  evolutionBaseUrl?: string;
+  evolutionApiKey?: string;
+  evolutionInstanceName?: string;
+  uazapiBaseUrl?: string;
   isFromOrchestrator?: boolean;
   triggerMessage?: string;
   flowId: string;
@@ -43,6 +48,70 @@ interface ExecutionContext {
 
 // deno-lint-ignore no-explicit-any
 type SupabaseClientType = any;
+
+function normalizeBaseUrl(value?: string | null): string {
+  return (value || '').trim().replace(/\/$/, '');
+}
+
+async function loadConnectionSettings(supabase: SupabaseClientType) {
+  const { data: row } = await supabase
+    .from('platform_settings')
+    .select('value')
+    .eq('key', 'whatsapp_connection_settings')
+    .maybeSingle();
+  const value = row?.value || {};
+  return {
+    uazapiBaseUrl: normalizeBaseUrl(value.uazapi_base_url || Deno.env.get('UAZAPI_BASE_URL')),
+    evolutionBaseUrl: normalizeBaseUrl(value.evolution_base_url || Deno.env.get('EVOLUTION_BASE_URL')),
+    evolutionApiKey: value.evolution_api_key || Deno.env.get('EVOLUTION_API_KEY') || '',
+  };
+}
+
+function guessMimeType(type: string, mediaUrl?: string): string {
+  const lower = (mediaUrl || '').toLowerCase();
+  if (type === 'image') {
+    if (lower.includes('.png')) return 'image/png';
+    if (lower.includes('.webp')) return 'image/webp';
+    return 'image/jpeg';
+  }
+  if (type === 'audio') {
+    if (lower.includes('.ogg')) return 'audio/ogg';
+    if (lower.includes('.mpeg') || lower.includes('.mp3')) return 'audio/mpeg';
+    if (lower.includes('.webm')) return 'audio/webm';
+    if (lower.includes('.m4a') || lower.includes('.mp4')) return 'audio/mp4';
+    return 'audio/mp4';
+  }
+  if (type === 'video') {
+    if (lower.includes('.webm')) return 'video/webm';
+    if (lower.includes('.3gp')) return 'video/3gpp';
+    return 'video/mp4';
+  }
+  if (type === 'document') {
+    if (lower.includes('.pdf')) return 'application/pdf';
+    return 'application/octet-stream';
+  }
+  return 'application/octet-stream';
+}
+
+function fileNameFromUrl(mediaUrl?: string, fallback = 'arquivo') {
+  if (!mediaUrl) return fallback;
+  try {
+    const pathname = new URL(mediaUrl).pathname;
+    const name = pathname.split('/').filter(Boolean).pop();
+    return name || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+async function parseProviderMessageId(response: Response): Promise<string | null> {
+  try {
+    const result = await response.clone().json();
+    return result?.messageId || result?.id || result?.ID || result?.key?.id || null;
+  } catch {
+    return null;
+  }
+}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -91,18 +160,24 @@ Deno.serve(async (req) => {
           return;
         }
 
-        // 3. Get WhatsApp instance
-        const { data: instance, error: instanceError } = await supabase
+        // 3. Get WhatsApp instance, preferring the instance attached to the conversation.
+        const { data: instances, error: instanceError } = await supabase
           .from('whatsapp_instances')
           .select('*')
           .eq('organization_id', flow.organization_id)
           .eq('status', 'connected')
-          .single();
+          .order('created_at', { ascending: false });
 
-        if (instanceError || !instance) {
+        if (instanceError || !instances?.length) {
           console.error(`[FLOW EXECUTE] No connected instance for org ${flow.organization_id}`);
           return;
         }
+
+        const instance = conversation.whatsapp_instance_id
+          ? instances.find((item: any) => item.id === conversation.whatsapp_instance_id) || instances[0]
+          : instances[0];
+        const connectionSettings = await loadConnectionSettings(supabase);
+        const provider = instance.provider === 'evolution' ? 'evolution' : 'uazapi';
 
         // 4. Create flow execution record
         const { data: execution, error: execError } = await supabase
@@ -134,6 +209,11 @@ Deno.serve(async (req) => {
           organizationId: flow.organization_id,
           zapiInstanceId: instance.zapi_instance_id!,
           zapiToken: instance.zapi_token!,
+          provider,
+          uazapiBaseUrl: connectionSettings.uazapiBaseUrl,
+          evolutionBaseUrl: connectionSettings.evolutionBaseUrl,
+          evolutionApiKey: instance.evolution_api_key || connectionSettings.evolutionApiKey || instance.zapi_token || '',
+          evolutionInstanceName: instance.evolution_instance_name || instance.zapi_instance_id || instance.evolution_instance_id || '',
           isFromOrchestrator: !!isFromOrchestrator,
           triggerMessage: triggerMessage,
           flowId: flowId,
@@ -160,7 +240,6 @@ Deno.serve(async (req) => {
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
-
   } catch (error) {
     console.error('Flow execution error:', error);
     return new Response(
@@ -1122,14 +1201,33 @@ async function sendTextMessage(content: string, context: ExecutionContext, supab
   const message = replaceVariables(content, context.variables);
   if (!message) return;
 
-  const uazapiBaseUrl = Deno.env.get('UAZAPI_BASE_URL')!;
   const normalizedPhone = context.contactPhone.replace(/\D/g, '');
 
-  console.log(`[FLOW EXECUTE] sendTextMessage: phone=${normalizedPhone}`);
+  console.log(`[FLOW EXECUTE] sendTextMessage: provider=${context.provider}, phone=${normalizedPhone}`);
 
-  const response = await fetch(
-    `${uazapiBaseUrl}/send/text`,
-    {
+  let response: Response;
+  if (context.provider === 'evolution') {
+    if (!context.evolutionBaseUrl || !context.evolutionApiKey || !context.evolutionInstanceName) {
+      throw new Error('Evolution API not configured for flow execution');
+    }
+    response = await fetch(`${context.evolutionBaseUrl}/message/sendText/${context.evolutionInstanceName}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': context.evolutionApiKey,
+      },
+      body: JSON.stringify({
+        number: normalizedPhone,
+        text: message,
+        delay: 1000,
+        linkPreview: true,
+      }),
+    });
+  } else {
+    if (!context.uazapiBaseUrl || !context.zapiToken) {
+      throw new Error('UAZAPI not configured for flow execution');
+    }
+    response = await fetch(`${context.uazapiBaseUrl}/send/text`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1139,8 +1237,8 @@ async function sendTextMessage(content: string, context: ExecutionContext, supab
         number: normalizedPhone,
         text: message,
       }),
-    }
-  );
+    });
+  }
 
   if (!response.ok) {
     const error = await response.text();
@@ -1148,12 +1246,7 @@ async function sendTextMessage(content: string, context: ExecutionContext, supab
     throw new Error(`Failed to send text message: ${error}`);
   }
 
-  // Parse UAZAPI response to get message ID
-  let zapiMessageId: string | null = null;
-  try {
-    const result = await response.clone().json();
-    zapiMessageId = result?.messageId || result?.id || result?.ID || result?.key?.id || null;
-  } catch { /* ignore parse errors */ }
+  const zapiMessageId = await parseProviderMessageId(response);
 
   // Save message to database so it appears in the UI immediately
   try {
@@ -1166,6 +1259,7 @@ async function sendTextMessage(content: string, context: ExecutionContext, supab
       zapi_message_id: zapiMessageId,
       metadata: { 
         source: 'flow_execute', 
+        provider: context.provider,
         is_from_orchestrator: !!context.isFromOrchestrator,
         node_id: nodeId,
         flow_id: context.flowId
@@ -1188,30 +1282,62 @@ async function sendMediaItem(
   supabase: SupabaseClientType,
   nodeId?: string
 ): Promise<void> {
-  const uazapiBaseUrl = Deno.env.get('UAZAPI_BASE_URL')!;
   const normalizedPhone = context.contactPhone.replace(/\D/g, '');
   const processedCaption = caption ? replaceVariables(caption, context.variables) : undefined;
 
-  // UAZAPI uses unified /send/media endpoint for all media types
-  const body: Record<string, unknown> = {
-    number: normalizedPhone,
-    file: mediaUrl,
-    type: mediaType
-  };
+  console.log(`[FLOW EXECUTE] sendMediaItem: provider=${context.provider}, type=${mediaType}, file=${mediaUrl?.substring(0, 80)}`);
 
-  if (processedCaption) body.caption = processedCaption;
+  let response: Response;
+  if (context.provider === 'evolution') {
+    if (!context.evolutionBaseUrl || !context.evolutionApiKey || !context.evolutionInstanceName) {
+      throw new Error('Evolution API not configured for flow execution');
+    }
+    const body: Record<string, unknown> = {
+      number: normalizedPhone,
+      mediatype: mediaType,
+      mimetype: guessMimeType(mediaType, mediaUrl),
+      caption: mediaType === 'audio' ? undefined : processedCaption,
+      media: mediaUrl,
+      fileName: fileNameFromUrl(mediaUrl, `${mediaType}-${Date.now()}`),
+      delay: 1000,
+      linkPreview: true,
+    };
+    if (mediaType === 'audio') {
+      body.ptt = true;
+      body.voice = true;
+    }
+    response = await fetch(`${context.evolutionBaseUrl}/message/sendMedia/${context.evolutionInstanceName}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': context.evolutionApiKey,
+      },
+      body: JSON.stringify(body),
+    });
+  } else {
+    if (!context.uazapiBaseUrl || !context.zapiToken) {
+      throw new Error('UAZAPI not configured for flow execution');
+    }
+    const body: Record<string, unknown> = {
+      number: normalizedPhone,
+      file: mediaUrl,
+      type: mediaType,
+      mimetype: guessMimeType(mediaType, mediaUrl),
+      mimeType: guessMimeType(mediaType, mediaUrl),
+      fileName: fileNameFromUrl(mediaUrl, `${mediaType}-${Date.now()}`),
+    };
+    if (processedCaption) body.caption = processedCaption;
+    if (mediaType === 'audio') body.ptt = true;
 
-  const endpoint = `${uazapiBaseUrl}/send/media`;
-  console.log(`[FLOW EXECUTE] sendMediaItem: type=${mediaType}, file=${mediaUrl?.substring(0, 80)}`);
-
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'token': context.zapiToken
-    },
-    body: JSON.stringify(body),
-  });
+    response = await fetch(`${context.uazapiBaseUrl}/send/media`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'token': context.zapiToken
+      },
+      body: JSON.stringify(body),
+    });
+  }
 
   let zapiMessageId: string | null = null;
 
@@ -1220,12 +1346,8 @@ async function sendMediaItem(
     console.error(`[FLOW EXECUTE] Failed to send ${mediaType}. Status: ${response.status}, Error: ${error}`);
     // Don't throw — still save to DB so user sees it was attempted
   } else {
-    // Parse UAZAPI response to get message ID
-    try {
-      const result = await response.clone().json();
-      zapiMessageId = result?.messageId || result?.id || result?.ID || result?.key?.id || null;
-    } catch { /* ignore parse errors */ }
-    console.log(`[FLOW EXECUTE] ${mediaType} sent successfully via UAZAPI (ID: ${zapiMessageId})`);
+    zapiMessageId = await parseProviderMessageId(response);
+    console.log(`[FLOW EXECUTE] ${mediaType} sent successfully via ${context.provider} (ID: ${zapiMessageId})`);
   }
 
   // Save media message to database so it appears in the UI immediately
@@ -1240,6 +1362,7 @@ async function sendMediaItem(
       zapi_message_id: zapiMessageId,
       metadata: { 
         source: 'flow_execute', 
+        provider: context.provider,
         type: mediaType, 
         is_from_orchestrator: !!context.isFromOrchestrator,
         node_id: nodeId,
@@ -1264,12 +1387,20 @@ async function sendButtonsMessage(data: Record<string, unknown>, context: Execut
       return { success: true };
     }
 
-    const uazapiBaseUrl = Deno.env.get('UAZAPI_BASE_URL')!;
     const normalizedPhone = context.contactPhone.replace(/\D/g, '');
     
     // Build fallback text (always included in body for devices that don't render buttons)
     const buttonsText = buttons.map((b, i) => `${i + 1}. ${b.label}`).join('\n');
     const fallbackMessage = `${content}\n\n${buttonsText}`;
+
+    if (context.provider === 'evolution') {
+      await sendTextMessage(fallbackMessage, context, createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!), nodeId);
+      return { success: true, waitForInput: true };
+    }
+
+    if (!context.uazapiBaseUrl) {
+      return { success: false, error: 'UAZAPI not configured for native buttons' };
+    }
 
     let response: Response;
     let sentNativeButtons = false;
@@ -1291,7 +1422,7 @@ async function sendButtonsMessage(data: Record<string, unknown>, context: Execut
 
         console.log(`[FLOW EXECUTE] Trying native buttons via /send/buttons: ${JSON.stringify(nativeBody)}`);
         
-        const nativeResponse = await fetch(`${uazapiBaseUrl}/send/buttons`, {
+        const nativeResponse = await fetch(`${context.uazapiBaseUrl}/send/buttons`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -1310,7 +1441,7 @@ async function sendButtonsMessage(data: Record<string, unknown>, context: Execut
             console.log(`[FLOW EXECUTE] Native buttons sent successfully`);
           } else {
             console.log(`[FLOW EXECUTE] Native buttons API returned error: ${JSON.stringify(nativeResult)}, falling back to text`);
-            response = await fetch(`${uazapiBaseUrl}/send/text`, {
+            response = await fetch(`${context.uazapiBaseUrl}/send/text`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'token': context.zapiToken },
               body: JSON.stringify({ number: normalizedPhone, text: fallbackMessage }),
@@ -1319,7 +1450,7 @@ async function sendButtonsMessage(data: Record<string, unknown>, context: Execut
         } else {
           const errText = await nativeResponse.text();
           console.log(`[FLOW EXECUTE] Native buttons failed (${nativeResponse.status}): ${errText}, falling back to text`);
-          response = await fetch(`${uazapiBaseUrl}/send/text`, {
+          response = await fetch(`${context.uazapiBaseUrl}/send/text`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'token': context.zapiToken },
             body: JSON.stringify({ number: normalizedPhone, text: fallbackMessage }),
@@ -1327,7 +1458,7 @@ async function sendButtonsMessage(data: Record<string, unknown>, context: Execut
         }
       } catch (nativeErr) {
         console.log(`[FLOW EXECUTE] Native buttons exception: ${nativeErr}, falling back to text`);
-        response = await fetch(`${uazapiBaseUrl}/send/text`, {
+        response = await fetch(`${context.uazapiBaseUrl}/send/text`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'token': context.zapiToken },
           body: JSON.stringify({ number: normalizedPhone, text: fallbackMessage }),
@@ -1336,7 +1467,7 @@ async function sendButtonsMessage(data: Record<string, unknown>, context: Execut
     } else {
       // More than 3 buttons — always use text fallback
       console.log(`[FLOW EXECUTE] ${buttons.length} buttons > 3, using text fallback`);
-      response = await fetch(`${uazapiBaseUrl}/send/text`, {
+      response = await fetch(`${context.uazapiBaseUrl}/send/text`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'token': context.zapiToken },
         body: JSON.stringify({ number: normalizedPhone, text: fallbackMessage }),
@@ -1370,6 +1501,7 @@ async function sendButtonsMessage(data: Record<string, unknown>, context: Execut
         zapi_message_id: zapiMessageId,
         metadata: { 
           source: 'flow_execute', 
+          provider: context.provider,
           type: 'buttons',
           native_buttons: sentNativeButtons,
           buttons: buttons.map(b => b.label),
@@ -1394,9 +1526,7 @@ async function sendListMessage(data: Record<string, unknown>, context: Execution
   try {
     const content = replaceVariables(String(data.content || ''), context.variables);
 
-    // UAZAPI: send list as formatted text since native lists may not be supported
-    const uazapiBaseUrl = Deno.env.get('UAZAPI_BASE_URL')!;
-    const normalizedPhone = context.contactPhone.replace(/\D/g, '');
+    // Lists are sent as formatted text for both providers.
     const sections = data.sections as Array<{ title: string; rows: Array<{ title: string; description?: string }> }> || [];
 
     let listText = content;
@@ -1408,7 +1538,17 @@ async function sendListMessage(data: Record<string, unknown>, context: Execution
       }
     }
 
-    const response = await fetch(`${uazapiBaseUrl}/send/text`, {
+    const supabaseUrlForList = Deno.env.get('SUPABASE_URL')!;
+    const supabaseKeyForList = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabaseForList = createClient(supabaseUrlForList, supabaseKeyForList);
+    await sendTextMessage(listText, context, supabaseForList, nodeId);
+
+    console.log('[FLOW EXECUTE] List message sent as text - waiting for user choice');
+    return { success: true, waitForInput: true };
+
+    /*
+    const normalizedPhone = context.contactPhone.replace(/\D/g, '');
+    const response = await fetch(`${context.uazapiBaseUrl}/send/text`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1460,6 +1600,7 @@ async function sendListMessage(data: Record<string, unknown>, context: Execution
 
     console.log('[FLOW EXECUTE] List message sent — waiting for user choice');
     return { success: true, waitForInput: true };
+    */
   } catch (error) {
     return { success: false, error: String(error) };
   }
@@ -1805,9 +1946,27 @@ async function sendPresence(
   durationMs: number = 5000
 ): Promise<void> {
   try {
-    const uazapiBaseUrl = Deno.env.get('UAZAPI_BASE_URL')!;
     const normalizedPhone = context.contactPhone.replace(/\D/g, '');
     const presenceState = presenceType === 'typing' ? 'composing' : 'recording';
+
+    if (context.provider === 'evolution') {
+      if (!context.evolutionBaseUrl || !context.evolutionApiKey || !context.evolutionInstanceName) return;
+      await fetch(`${context.evolutionBaseUrl}/chat/sendPresence/${context.evolutionInstanceName}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': context.evolutionApiKey,
+        },
+        body: JSON.stringify({
+          number: normalizedPhone,
+          presence: presenceState,
+          delay: durationMs,
+        }),
+      }).catch(() => null);
+      return;
+    }
+
+    if (!context.uazapiBaseUrl || !context.zapiToken) return;
 
     // Try multiple UAZAPI presence endpoints (varies by server version)
     const presenceEndpoints = [
@@ -1820,7 +1979,7 @@ async function sendPresence(
 
     for (const ep of presenceEndpoints) {
       try {
-        const response = await fetch(`${uazapiBaseUrl}${ep.path}`, {
+        const response = await fetch(`${context.uazapiBaseUrl}${ep.path}`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

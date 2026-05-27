@@ -69,9 +69,10 @@ function guessMimeType(type: string, mediaUrl?: string): string {
     return 'image/jpeg';
   }
   if (type === 'audio') {
-    if (lower.includes('.ogg')) return 'audio/ogg; codecs=opus';
+    if (lower.includes('.ogg')) return 'audio/ogg';
     if (lower.includes('.mpeg') || lower.includes('.mp3')) return 'audio/mpeg';
     if (lower.includes('.webm')) return 'audio/webm';
+    if (lower.includes('.m4a') || lower.includes('.mp4')) return 'audio/mp4';
     return 'audio/mp4';
   }
   if (type === 'document') {
@@ -434,6 +435,10 @@ Deno.serve(async (req) => {
           delay: 1000,
           linkPreview: true,
         };
+        if (type === 'audio') {
+          body.ptt = true;
+          body.voice = true;
+        }
       }
 
       if (zapiQuotedMsgId) {
