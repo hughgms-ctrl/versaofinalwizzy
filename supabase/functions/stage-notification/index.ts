@@ -15,6 +15,14 @@ function normalizeBaseUrl(value?: string | null): string {
   return (value || "").trim().replace(/\/$/, "");
 }
 
+function normalizeNotificationPhone(value?: string | null): string {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.length >= 12) return digits;
+  if (digits.length >= 10 && digits.length <= 11) return `55${digits}`;
+  return "";
+}
+
 type Provider = "evolution" | "uazapi";
 
 async function loadConnectionSettings(supabase: any) {
@@ -212,7 +220,18 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      const normalizedPhone = profile.phone.replace(/\D/g, '');
+      const normalizedPhone = normalizeNotificationPhone(profile.phone);
+      if (!normalizedPhone) {
+        console.log("User", profile.full_name, "has invalid phone number, skipping:", profile.phone);
+        results.push({
+          userId: profile.user_id,
+          name: profile.full_name,
+          success: false,
+          error: "Invalid phone number",
+        });
+        continue;
+      }
+
       console.log("Sending notification to", profile.full_name, "at", normalizedPhone);
 
       try {
