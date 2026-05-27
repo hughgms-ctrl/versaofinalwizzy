@@ -1225,7 +1225,11 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
 
   // Evolution webhooks often include only the WhatsApp media stub. Convert it
   // to base64 through Evolution before falling back to a temporary URL.
-  if (!base64Data && isMediaType && whatsappInstance && msgId && whatsappInstance.provider === 'evolution') {
+  const webhookProvider = whatsappInstance.provider === 'evolution' || whatsappInstance.evolution_instance_name || whatsappInstance.evolution_instance_id
+    ? 'evolution'
+    : 'uazapi';
+
+  if (!base64Data && isMediaType && whatsappInstance && msgId && webhookProvider === 'evolution') {
     try {
       const evolutionBaseUrl = connectionSettings.evolutionBaseUrl;
       const evolutionApiKey = whatsappInstance.evolution_api_key || connectionSettings.evolutionApiKey;
@@ -1235,15 +1239,22 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
         const mediaMessage = evolutionMessage || eventMessage || {};
         const mediaKey = {
           id: msgId,
-          remoteJid: evolutionKey.remoteJid || chatJid,
+          remoteJid: evolutionRemoteJid || chatJid || `${phone}@s.whatsapp.net`,
           fromMe,
-          participant: evolutionKey.participant || senderJid || undefined,
+          participant: evolutionParticipantAlt || evolutionKey.participant || senderJid || undefined,
         };
         const bodyCandidates = [
           {
             message: {
               key: mediaKey,
               message: mediaMessage,
+            },
+            convertToMp4: false,
+          },
+          {
+            message: {
+              key: mediaKey,
+              message: { [messageType === 'audio' ? 'audioMessage' : `${messageType}Message`]: audioMsg || imageMsg || videoMsg || documentMsg || stickerMsg || mediaMessage },
             },
             convertToMp4: false,
           },
@@ -1319,7 +1330,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
     try {
       console.log(`[WEBHOOK] Fetching external media URL before storing: ${directMediaUrl.substring(0, 100)}`);
       const headers: Record<string, string> = {};
-      if (whatsappInstance.provider === 'evolution') {
+      if (webhookProvider === 'evolution') {
         const evolutionApiKey = whatsappInstance.evolution_api_key || connectionSettings.evolutionApiKey;
         if (evolutionApiKey) headers.apikey = evolutionApiKey;
       } else if (whatsappInstance.zapi_token) {
@@ -1414,10 +1425,17 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
     } catch (e) {
       console.error('[WEBHOOK] Media upload exception:', e);
     }
-  } else if (directMediaUrl) {
+  } else if (directMediaUrl && !isEncryptedWhatsAppMediaUrl(directMediaUrl)) {
     mediaUrl = directMediaUrl;
     console.log(`[WEBHOOK] Using direct media URL: ${mediaUrl}`);
-  } else if (isMediaType && !mediaUrl) {
+  }
+
+  if (mediaUrl && isEncryptedWhatsAppMediaUrl(mediaUrl)) {
+    console.warn(`[WEBHOOK] Refusing to save encrypted WhatsApp media URL as final media_url: ${mediaUrl.substring(0, 100)}`);
+    mediaUrl = null;
+  }
+
+  if (isMediaType && !mediaUrl) {
     console.warn(`[WEBHOOK] WARNING: Media message type=${messageType} but no base64 or URL found! Payload keys: ${Object.keys(payload).join(', ')}`);
     // Still save the message so user sees it (even without actual media file)
     if (!textContent) {

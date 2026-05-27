@@ -136,7 +136,9 @@ async function recoverMediaFile(supabase: any, messageId: string, userId: string
         .maybeSingle();
 
     if (!message) throw new Error('Mensagem nao encontrada');
-    if (message.media_url) return { mediaUrl: message.media_url, recovered: false };
+    if (message.media_url && !isEncryptedWhatsAppMediaUrl(message.media_url)) {
+        return { mediaUrl: message.media_url, recovered: false };
+    }
     if (!message.zapi_message_id) throw new Error('Mensagem sem ID do WhatsApp para recuperar midia');
 
     const { data: conversation } = await supabase
@@ -172,7 +174,7 @@ async function recoverMediaFile(supabase: any, messageId: string, userId: string
     if (!instance) throw new Error('Instancia do WhatsApp nao encontrada');
 
     const settings = await loadConnectionSettings(supabase);
-    const provider = instance.provider === 'evolution' ? 'evolution' : 'uazapi';
+    const provider = instance.provider === 'evolution' || instance.evolution_instance_name || instance.evolution_instance_id ? 'evolution' : 'uazapi';
     const token = provider === 'evolution'
         ? (instance.evolution_api_key || settings.evolutionApiKey || instance.zapi_token)
         : instance.zapi_token;

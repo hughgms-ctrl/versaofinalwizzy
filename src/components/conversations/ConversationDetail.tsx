@@ -56,6 +56,16 @@ const getInitialsFromName = (name: string | null, phone?: string) => {
   return phone?.slice(-2) || '??';
 };
 
+function isTemporaryWhatsAppMediaUrl(url?: string | null) {
+  if (!url) return false;
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return host.endsWith('mmg.whatsapp.net') || host.endsWith('media.whatsapp.net') || host.endsWith('pps.whatsapp.net');
+  } catch {
+    return false;
+  }
+}
+
 // Cancela qualquer follow-up/remarketing pendente para uma conversa.
 // Cobre 3 casos: nó "chat-follow-up", remarketing_step > 0 e variables.source = 'chat_follow_up'.
 async function cancelPendingFollowUps(conversationId: string, reason: string) {
@@ -1267,7 +1277,7 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
       );
     }
 
-    if (type === 'audio' && media_url) {
+    if (type === 'audio' && media_url && !isTemporaryWhatsAppMediaUrl(media_url)) {
       const metadata = message.metadata as any;
       const isPlayed = !!metadata?.played_at;
 
@@ -1309,7 +1319,7 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
       );
     }
 
-    if (type === 'audio' && !media_url) {
+    if (type === 'audio' && (!media_url || isTemporaryWhatsAppMediaUrl(media_url))) {
       return (
         <div className="flex min-w-[200px] items-center gap-3 rounded-lg border border-dashed border-border/70 bg-background/30 p-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted">
