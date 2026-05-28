@@ -164,6 +164,13 @@ function firstObject(...values: any[]): any | null {
   return null;
 }
 
+function firstNonEmptyObject(...values: any[]): any | null {
+  for (const value of values) {
+    if (value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length > 0) return value;
+  }
+  return null;
+}
+
 function extractMediaUrlFromObject(media: any): string | null {
   if (!media || typeof media !== 'object') return null;
   return firstString(
@@ -1150,6 +1157,17 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
     : 'uazapi';
   const mediaRecoveryDiagnostics: any[] = [];
 
+  if (base64Data && !isProbablyBase64(base64Data)) {
+    mediaRecoveryDiagnostics.push({
+      provider: 'payload',
+      skipped: 'invalid_base64_candidate',
+      messageType,
+      valueType: typeof base64Data,
+      preview: String(base64Data).slice(0, 80),
+    });
+    base64Data = null;
+  }
+
   // Fetch missing Base64 directly from UAZAPI if not in payload
   if (!base64Data && isMediaType && whatsappInstance && msgId && webhookProvider === 'uazapi') {
     try {
@@ -1237,7 +1255,8 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
       const evolutionInstanceName = whatsappInstance.evolution_instance_name || instanceName || whatsappInstance.zapi_instance_id;
       if (evolutionBaseUrl && evolutionApiKey && evolutionInstanceName) {
         console.log(`[WEBHOOK] Fetching decrypted media via Evolution for ID: ${msgId}...`);
-        const mediaMessage = evolutionMessage || eventMessage || {};
+        const mediaMessage = firstNonEmptyObject(evolutionMessage, eventMessage, msg.message, msg) || {};
+        const typedMediaMessage = firstNonEmptyObject(audioMsg, imageMsg, videoMsg, documentMsg, stickerMsg, mediaMessage) || {};
         const mediaKey = {
           id: msgId,
           remoteJid: evolutionRemoteJid || chatJid || `${phone}@s.whatsapp.net`,
@@ -1246,6 +1265,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
         };
         const bodyCandidates = [
           {
+            label: 'docs_key_id_only',
             message: {
               key: {
                 id: msgId,
@@ -1254,12 +1274,23 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
             convertToMp4: false,
           },
           {
+            label: 'docs_key_id_only_convert_true',
+            message: {
+              key: {
+                id: msgId,
+              },
+            },
+            convertToMp4: true,
+          },
+          {
+            label: 'key_full',
             message: {
               key: mediaKey,
             },
             convertToMp4: false,
           },
           {
+            label: 'key_full_with_message',
             message: {
               key: mediaKey,
               message: mediaMessage,
@@ -1267,18 +1298,21 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
             convertToMp4: false,
           },
           {
+            label: 'typed_message',
             message: {
               key: mediaKey,
-              message: { [messageType === 'audio' ? 'audioMessage' : `${messageType}Message`]: audioMsg || imageMsg || videoMsg || documentMsg || stickerMsg || mediaMessage },
+              message: { [messageType === 'audio' ? 'audioMessage' : `${messageType}Message`]: typedMediaMessage },
             },
             convertToMp4: false,
           },
           {
+            label: 'flat_key_with_message',
             key: mediaKey,
             message: mediaMessage,
             convertToMp4: false,
           },
           {
+            label: 'flat_message_id',
             messageId: msgId,
             key: mediaKey,
             convertToMp4: false,
@@ -1286,13 +1320,14 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
         ];
 
         for (const requestBody of bodyCandidates) {
+          const { label, ...evolutionRequestBody } = requestBody as any;
           const resp = await fetch(`${evolutionBaseUrl}/chat/getBase64FromMediaMessage/${evolutionInstanceName}`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
               'apikey': evolutionApiKey,
             },
-            body: JSON.stringify(requestBody),
+            body: JSON.stringify(evolutionRequestBody),
           });
 
           const raw = await resp.text();
@@ -1300,10 +1335,11 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
             console.error(`[WEBHOOK] Evolution media download failed: ${resp.status} ${raw}`);
             mediaRecoveryDiagnostics.push({
               provider: 'evolution',
+              label: label || null,
               status: resp.status,
               error: raw.substring(0, 300),
-              bodyKeys: Object.keys(requestBody || {}),
-              messageKeys: Object.keys((requestBody as any)?.message || {}),
+              bodyKeys: Object.keys(evolutionRequestBody || {}),
+              messageKeys: Object.keys(evolutionRequestBody?.message || {}),
             });
             continue;
           }
@@ -1316,6 +1352,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
           directMediaUrl = directMediaUrl || downloaded.url;
           mediaRecoveryDiagnostics.push({
             provider: 'evolution',
+            label: label || null,
             status: resp.status,
             hasBase64: !!base64Data,
             hasUrl: !!directMediaUrl,
@@ -1480,9 +1517,21 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
         console.log(`[WEBHOOK] Media uploaded successfully: ${mediaUrl}`);
       } else {
         console.error('[WEBHOOK] Final upload error:', uploadResult.error);
+        mediaRecoveryDiagnostics.push({
+          provider: 'supabase_storage',
+          error: uploadResult.error.message || String(uploadResult.error),
+          path: storagePath,
+          mimeType,
+        });
       }
     } catch (e) {
       console.error('[WEBHOOK] Media upload exception:', e);
+      mediaRecoveryDiagnostics.push({
+        provider: 'supabase_storage',
+        exception: e instanceof Error ? e.message : String(e),
+        messageType,
+        mimeType: mimeType || null,
+      });
     }
   } else if (directMediaUrl && !isEncryptedWhatsAppMediaUrl(directMediaUrl)) {
     mediaUrl = directMediaUrl;
