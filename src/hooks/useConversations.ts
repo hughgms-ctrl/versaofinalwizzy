@@ -109,6 +109,16 @@ export function useConversations(options?: { includeArchived?: boolean; onlyArch
   useEffect(() => {
     if (!session) return;
 
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleConversationsRefresh = () => {
+      if (refreshTimer) return;
+
+      refreshTimer = setTimeout(() => {
+        refreshTimer = null;
+        queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      }, 500);
+    };
+
     const channel = supabase
       .channel('conversations-realtime')
       .on(
@@ -120,7 +130,7 @@ export function useConversations(options?: { includeArchived?: boolean; onlyArch
         },
         (payload) => {
           console.log('Conversation realtime update:', payload);
-          queryClient.invalidateQueries({ queryKey: ['conversations'] });
+          scheduleConversationsRefresh();
         }
       )
       .on(
@@ -131,12 +141,13 @@ export function useConversations(options?: { includeArchived?: boolean; onlyArch
           table: 'contact_presence',
         },
         () => {
-          queryClient.invalidateQueries({ queryKey: ['conversations'] });
+          scheduleConversationsRefresh();
         }
       )
       .subscribe();
 
     return () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
       supabase.removeChannel(channel);
     };
   }, [session, queryClient]);

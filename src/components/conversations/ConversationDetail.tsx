@@ -30,6 +30,7 @@ import { ScrollToBottomButton } from './ScrollToBottomButton';
 import { MessageSearch } from './MessageSearch';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
@@ -989,7 +990,7 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
               </TooltipContent>
             </Tooltip>
 
-            <Input
+            <Textarea
               value={newMessage}
               onChange={(e) => handleInputChange(e.target.value)}
               onPaste={handlePaste}
@@ -1000,9 +1001,15 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
                     ? "A IA está respondendo... Digite para assumir"
                     : "Digite sua mensagem ou cole uma imagem..."
               }
-              className="flex-1"
-              onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
-              disabled={sendMessage.isPending || isSendingMedia}
+              rows={1}
+              className="flex-1 min-h-10 max-h-32 resize-none py-2"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSend();
+                }
+              }}
+              disabled={isSendingMedia}
             />
             {(newMessage.trim() || attachedMedia) ? (
               <Button
