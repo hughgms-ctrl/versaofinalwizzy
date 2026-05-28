@@ -286,7 +286,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { conversationId, columnId, organizationId, workspaceId: explicitWorkspaceId } = await req.json();
+    const { conversationId, pipelineId, columnId, organizationId, workspaceId: explicitWorkspaceId } = await req.json();
 
     if (!conversationId || !columnId || !organizationId) {
       return new Response(
@@ -303,16 +303,18 @@ Deno.serve(async (req) => {
 
     const { data: currentPosition } = await supabase
       .from("conversation_pipeline_positions")
-      .select("column_id")
+      .select("pipeline_id, column_id")
       .eq("conversation_id", conversationId)
       .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle();
 
-    if (currentPosition?.column_id !== columnId) {
+    if (currentPosition?.column_id !== columnId || (pipelineId && currentPosition?.pipeline_id !== pipelineId)) {
       console.log("Skipping stale stage notification", {
         conversationId,
+        requestedPipelineId: pipelineId || null,
         requestedColumnId: columnId,
+        currentPipelineId: currentPosition?.pipeline_id || null,
         currentColumnId: currentPosition?.column_id || null,
       });
       return new Response(

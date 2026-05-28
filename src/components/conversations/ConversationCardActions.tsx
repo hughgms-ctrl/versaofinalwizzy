@@ -144,6 +144,7 @@ export function ConversationCardActions({
         conversationId: conversation.id,
         pipelineId,
         columnId,
+        skipAutoTransition: true,
       });
       console.log('Move successful');
       toast({
