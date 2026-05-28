@@ -211,6 +211,25 @@ function findContextInfoDeep(root: any): { value: any; path: string[] } | null {
   );
 }
 
+function findKeyPathsDeep(root: any, pattern: RegExp, maxDepth = 8, limit = 30): string[] {
+  const paths: string[] = [];
+  const seen = new WeakSet<object>();
+  const walk = (value: any, path: string[], depth: number) => {
+    if (!value || typeof value !== 'object' || seen.has(value) || paths.length >= limit) return;
+    seen.add(value);
+    if (depth >= maxDepth) return;
+
+    for (const [key, child] of Object.entries(value)) {
+      const nextPath = [...path, key];
+      if (pattern.test(key)) paths.push(nextPath.join('.'));
+      if (child && typeof child === 'object') walk(child, nextPath, depth + 1);
+      if (paths.length >= limit) return;
+    }
+  };
+  walk(root, [], 0);
+  return paths;
+}
+
 function extractMediaUrlFromObject(media: any): string | null {
   if (!media || typeof media !== 'object') return null;
   return firstString(
@@ -1847,6 +1866,17 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
         context_keys: quotedMessageMeta.context_keys || [],
         quoted_message_keys: quotedMessageMeta.quoted_message_keys || [],
       },
+    };
+  } else if (!fromMe) {
+    const contextLikePaths = findKeyPathsDeep(payload, /context|quoted|stanza|reply|participant/i);
+    messageMetadata.reply_context_scan = {
+      found: false,
+      eventType,
+      payloadKeys: Object.keys(payload || {}).slice(0, 30),
+      dataKeys: payload?.data && typeof payload.data === 'object' ? Object.keys(payload.data).slice(0, 30) : [],
+      messageKeys: payload?.data?.message && typeof payload.data.message === 'object' ? Object.keys(payload.data.message).slice(0, 30) : [],
+      eventMessageKeys: eventMessage && typeof eventMessage === 'object' ? Object.keys(eventMessage).slice(0, 30) : [],
+      contextLikePaths,
     };
   }
 
