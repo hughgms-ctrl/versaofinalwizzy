@@ -396,30 +396,56 @@ export function useMoveConversation() {
       changedByType?: string;
       skipAutoTransition?: boolean;
     }) => {
+      const { data: targetColumn, error: targetColumnError } = await (supabase as any)
+        .from('pipeline_columns')
+        .select('id, pipeline_id')
+        .eq('id', columnId)
+        .single();
+
+      if (targetColumnError) throw targetColumnError;
+      if (!targetColumn || targetColumn.pipeline_id !== pipelineId) {
+        throw new Error('A coluna escolhida nao pertence ao pipeline de destino.');
+      }
+
       // Check if position already exists (unique per conversation_id globally)
-      const { data: existing } = await supabase
+      const { data: existing, error: existingError } = await supabase
         .from('conversation_pipeline_positions')
         .select('id, column_id, pipeline_id')
         .eq('conversation_id', conversationId)
         .maybeSingle();
 
+      if (existingError) throw existingError;
+
+      if (existing?.pipeline_id === pipelineId && existing?.column_id === columnId) {
+        return {
+          changed: false,
+          fromColumnId: existing.column_id,
+          toColumnId: columnId,
+          pipelineId,
+        };
+      }
+
       const fromColumnId = existing?.column_id || null;
+      let savedPosition: ConversationPipelinePosition | null = null;
 
       if (existing && existing.pipeline_id === pipelineId) {
         // Same pipeline, just update column
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from('conversation_pipeline_positions')
           .update({
             column_id: columnId,
             order,
             updated_at: new Date().toISOString(),
           })
-          .eq('id', existing.id);
+          .eq('id', existing.id)
+          .select()
+          .single();
 
         if (error) throw error;
+        savedPosition = data as ConversationPipelinePosition;
       } else if (existing) {
         // Different pipeline — update pipeline + column
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from('conversation_pipeline_positions')
           .update({
             pipeline_id: pipelineId,
@@ -427,20 +453,34 @@ export function useMoveConversation() {
             order,
             updated_at: new Date().toISOString(),
           })
-          .eq('id', existing.id);
+          .eq('id', existing.id)
+          .select()
+          .single();
 
         if (error) throw error;
+        savedPosition = data as ConversationPipelinePosition;
       } else {
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from('conversation_pipeline_positions')
           .insert({
             conversation_id: conversationId,
             pipeline_id: pipelineId,
             column_id: columnId,
             order,
-          });
+          })
+          .select()
+          .single();
 
         if (error) throw error;
+        savedPosition = data as ConversationPipelinePosition;
+      }
+
+      if (
+        !savedPosition ||
+        savedPosition.pipeline_id !== pipelineId ||
+        savedPosition.column_id !== columnId
+      ) {
+        throw new Error('A posicao no pipeline nao foi confirmada.');
       }
 
       // Log stage change
@@ -572,12 +612,15 @@ export function useMoveConversation() {
         }
       }
 
-      return { fromColumnId, toColumnId: columnId };
+      return { changed: true, fromColumnId, toColumnId: columnId, pipelineId };
     },
-    onSuccess: (_, variables) => {
+    onSuccess: (result, variables) => {
       queryClient.invalidateQueries({ queryKey: ['conversation-positions'] });
+      queryClient.invalidateQueries({ queryKey: ['conversation-positions', result?.pipelineId] });
       queryClient.invalidateQueries({ queryKey: ['stage-history', variables.conversationId] });
-      toast({ title: 'Conversa movida!' });
+      if (result?.changed) {
+        toast({ title: 'Conversa movida!' });
+      }
     },
     onError: (error) => {
       console.error('Error moving conversation:', error);
