@@ -743,7 +743,18 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
                   </p>
                 )}
               </div>
-              {isAIActive && <Bot className="mt-0.5 h-3.5 w-3.5 shrink-0 text-purple-300" />}
+              <div
+                className="flex shrink-0 items-center gap-1"
+                onMouseDown={(event) => event.stopPropagation()}
+                onClick={(event) => event.stopPropagation()}
+              >
+                {isAIActive && <Bot className="h-3.5 w-3.5 text-purple-300" />}
+                <ConversationCardActions
+                  conversation={conversation}
+                  variant="minimal"
+                  onOpenChat={() => onConversationClick(conversation)}
+                />
+              </div>
             </div>
 
             {(isTyping || isRecording || followUpMap?.[conversation.id]) && (
@@ -751,7 +762,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
                 {isTyping || isRecording ? (
                   <span className="font-medium text-green-300">{isTyping ? 'Digitando...' : 'Gravando audio...'}</span>
                 ) : (
-                  <span className="inline-flex items-center gap-1 rounded bg-orange-500/15 px-1.5 py-0.5 text-orange-300">
+                  <span className="inline-flex items-center gap-1 rounded bg-orange-500/15 px-1.5 py-0.5 font-medium text-orange-300 animate-pulse">
                     <RefreshCw className="h-2.5 w-2.5" />
                     Follow-up #{followUpMap[conversation.id].step}
                   </span>
