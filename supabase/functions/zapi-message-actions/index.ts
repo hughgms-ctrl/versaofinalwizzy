@@ -368,6 +368,7 @@ async function deleteMessageForEveryone(
     const providerMessageId = message.zapi_message_id;
     const key = { id: providerMessageId, remoteJid, fromMe: true };
 
+    const number = String(phone || '').replace(/\D/g, '');
     const candidates = provider === 'evolution'
         ? [
             { endpoint: `${baseUrl}/chat/deleteMessageForEveryone/${instanceName}`, headers: { apikey: token }, body: { id: providerMessageId, remoteJid, fromMe: true } },
@@ -375,9 +376,11 @@ async function deleteMessageForEveryone(
             { endpoint: `${baseUrl}/message/delete/${instanceName}`, headers: { apikey: token }, body: { id: providerMessageId, key } },
         ]
         : [
-            { endpoint: `${baseUrl}/message/delete`, headers: { token }, body: { messageId: providerMessageId } },
-            { endpoint: `${baseUrl}/message/delete`, headers: { token }, body: { id: providerMessageId } },
-            { endpoint: `${baseUrl}/message/delete`, headers: { token }, body: { key } },
+            { endpoint: `${baseUrl}/message/delete`, headers: { token }, body: { messageId: providerMessageId, number, phone: number, owner: true } },
+            { endpoint: `${baseUrl}/message/delete`, headers: { token }, body: { id: providerMessageId, number, phone: number, owner: true } },
+            { endpoint: `${baseUrl}/message/delete`, headers: { token }, body: { key, number, phone: number, owner: true } },
+            { endpoint: `${baseUrl}/chat/delete`, headers: { token }, body: { messageId: providerMessageId, number, phone: number, owner: true } },
+            { endpoint: `${baseUrl}/chat/deleteMessage`, headers: { token }, body: { messageId: providerMessageId, number, phone: number, owner: true } },
         ];
 
     let providerResult: any = null;
@@ -404,7 +407,13 @@ async function deleteMessageForEveryone(
         }
     }
 
-    throw new Error(lastError || 'O provedor nao confirmou a exclusao da mensagem.');
+    return {
+        deleted: false,
+        provider,
+        providerError: lastError || 'O provedor nao confirmou a exclusao da mensagem.',
+        providerMessageId,
+        number,
+    };
 }
 
 Deno.serve(async (req) => {
@@ -446,7 +455,8 @@ Deno.serve(async (req) => {
 
         if (action === 'delete') {
             const result = await deleteMessageForEveryone(supabase, messageId, user.id, instanceId);
-            return new Response(JSON.stringify({ success: true, ...result }), {
+            return new Response(JSON.stringify({ success: !!result.deleted, ...result }), {
+                status: result.deleted ? 200 : 400,
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
             });
         }
