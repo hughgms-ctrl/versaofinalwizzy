@@ -106,6 +106,30 @@ const BOARD_BACKGROUND_IMAGES = [
     name: 'Abstrato',
     url: 'https://images.unsplash.com/photo-1557682250-33bd709cbe85?auto=format&fit=crop&w=1600&q=80',
   },
+  {
+    name: 'Escritorio',
+    url: 'https://images.unsplash.com/photo-1497366811353-6870744d04b2?auto=format&fit=crop&w=1600&q=80',
+  },
+  {
+    name: 'Mesa',
+    url: 'https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=1600&q=80',
+  },
+  {
+    name: 'Noite',
+    url: 'https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&fit=crop&w=1600&q=80',
+  },
+  {
+    name: 'Vidro',
+    url: 'https://images.unsplash.com/photo-1497366412874-3415097a27e7?auto=format&fit=crop&w=1600&q=80',
+  },
+  {
+    name: 'Oceano',
+    url: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1600&q=80',
+  },
+  {
+    name: 'Textura',
+    url: 'https://images.unsplash.com/photo-1557683316-973673baf926?auto=format&fit=crop&w=1600&q=80',
+  },
 ];
 
 function CardMetric({
@@ -131,6 +155,8 @@ const getChecklistTemplateStorageKey = (workspaceId?: string | null) => `pipelin
 const getColumnChecklistStorageKey = (workspaceId?: string | null, pipelineId?: string | null) => (
   `pipeline_column_checklists:${workspaceId || 'global'}:${pipelineId || 'none'}`
 );
+const getBoardBackgroundStorageKey = (workspaceId?: string | null) => `pipeline_board_background:${workspaceId || 'global'}`;
+const getBoardBackgroundImageStorageKey = (workspaceId?: string | null) => `pipeline_board_background_image:${workspaceId || 'global'}`;
 
 function loadChecklistTemplates(workspaceId?: string | null): ChecklistTemplate[] {
   try {
@@ -195,8 +221,8 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
     const stored = localStorage.getItem('pipeline_tag_display_mode');
     return stored === 'bars' ? 'bars' : 'labels';
   });
-  const [boardBackground, setBoardBackground] = useState(() => localStorage.getItem('pipeline_board_background') || BOARD_BACKGROUNDS[0]);
-  const [boardBackgroundImage, setBoardBackgroundImage] = useState(() => localStorage.getItem('pipeline_board_background_image') || '');
+  const [boardBackground, setBoardBackground] = useState(() => localStorage.getItem(getBoardBackgroundStorageKey(selectedWorkspaceId)) || BOARD_BACKGROUNDS[0]);
+  const [boardBackgroundImage, setBoardBackgroundImage] = useState(() => localStorage.getItem(getBoardBackgroundImageStorageKey(selectedWorkspaceId)) || '');
   const [checklistTemplates, setChecklistTemplates] = useState<ChecklistTemplate[]>(() => loadChecklistTemplates(selectedWorkspaceId));
   const [columnChecklistConfig, setColumnChecklistConfig] = useState<Record<string, string>>(() => (
     loadColumnChecklistConfig(selectedWorkspaceId, pipeline?.id)
@@ -213,19 +239,24 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
   const changeBoardBackground = useCallback((color: string) => {
     setBoardBackground(color);
     setBoardBackgroundImage('');
-    localStorage.setItem('pipeline_board_background', color);
-    localStorage.removeItem('pipeline_board_background_image');
-  }, []);
+    localStorage.setItem(getBoardBackgroundStorageKey(selectedWorkspaceId), color);
+    localStorage.removeItem(getBoardBackgroundImageStorageKey(selectedWorkspaceId));
+  }, [selectedWorkspaceId]);
 
   const changeBoardBackgroundImage = useCallback((url: string) => {
     setBoardBackgroundImage(url);
-    localStorage.setItem('pipeline_board_background_image', url);
-  }, []);
+    localStorage.setItem(getBoardBackgroundImageStorageKey(selectedWorkspaceId), url);
+  }, [selectedWorkspaceId]);
 
   useEffect(() => {
     setChecklistTemplates(loadChecklistTemplates(selectedWorkspaceId));
     setColumnChecklistConfig(loadColumnChecklistConfig(selectedWorkspaceId, pipeline?.id));
   }, [selectedWorkspaceId, pipeline?.id]);
+
+  useEffect(() => {
+    setBoardBackground(localStorage.getItem(getBoardBackgroundStorageKey(selectedWorkspaceId)) || BOARD_BACKGROUNDS[0]);
+    setBoardBackgroundImage(localStorage.getItem(getBoardBackgroundImageStorageKey(selectedWorkspaceId)) || '');
+  }, [selectedWorkspaceId]);
 
   // Admin preference to hide unassigned column (localStorage)
   const [adminHideUnassigned, setAdminHideUnassigned] = useState(() => {
@@ -997,14 +1028,19 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
                     onClick={() => changeBoardBackground(color)}
                   />
                 ))}
-                <label className="flex h-7 w-10 cursor-pointer items-center justify-center rounded-md border border-border bg-muted text-xs">
+                <label
+                  className={cn(
+                    "flex h-7 w-10 cursor-pointer items-center justify-center overflow-hidden rounded-md border border-border bg-muted p-0.5",
+                    !boardBackgroundImage && !BOARD_BACKGROUNDS.includes(boardBackground) && "ring-2 ring-primary"
+                  )}
+                  title="Escolher cor"
+                >
                   <input
                     type="color"
                     value={boardBackground}
-                    className="h-0 w-0 opacity-0"
+                    className="h-full w-full cursor-pointer rounded border-0 bg-transparent p-0"
                     onChange={(event) => changeBoardBackground(event.target.value)}
                   />
-                  +
                 </label>
               </div>
             </div>
