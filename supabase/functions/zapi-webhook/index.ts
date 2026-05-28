@@ -179,6 +179,38 @@ function normalizeExternalMessageId(value?: string | null): string | null {
   return parts.length > 1 ? parts[parts.length - 1] : trimmed;
 }
 
+function findObjectDeep(root: any, predicate: (value: any, path: string[]) => boolean, maxDepth = 8): { value: any; path: string[] } | null {
+  const seen = new WeakSet<object>();
+  const walk = (value: any, path: string[], depth: number): { value: any; path: string[] } | null => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    if (seen.has(value)) return null;
+    seen.add(value);
+    if (predicate(value, path)) return { value, path };
+    if (depth >= maxDepth) return null;
+
+    for (const [key, child] of Object.entries(value)) {
+      const found = walk(child, [...path, key], depth + 1);
+      if (found) return found;
+    }
+    return null;
+  };
+  return walk(root, [], 0);
+}
+
+function findContextInfoDeep(root: any): { value: any; path: string[] } | null {
+  return findObjectDeep(root, (value) =>
+    !!(
+      value.stanzaId
+      || value.StanzaId
+      || value.quotedMessageId
+      || value.quotedStanzaId
+      || value.quotedMessageID
+      || value.quotedMessage
+      || value.QuotedMessage
+    )
+  );
+}
+
 function extractMediaUrlFromObject(media: any): string | null {
   if (!media || typeof media !== 'object') return null;
   return firstString(
@@ -1029,7 +1061,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
   // --- Extract quoted/reply context ---
   // WhatsApp reply messages contain contextInfo with stanzaId (original message ID)
   let quotedMessageMeta: any = null;
-  const contextInfo = firstNonEmptyObject(
+  const explicitContextInfo = firstNonEmptyObject(
     extendedText?.contextInfo,
     extendedText?.ContextInfo,
     imageMsg?.contextInfo,
@@ -1058,6 +1090,8 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
     payload?.data?.contextInfo,
     payload?.data?.messageContextInfo,
   );
+  const deepContextInfo = explicitContextInfo ? null : findContextInfoDeep(payload);
+  const contextInfo = explicitContextInfo || deepContextInfo?.value || null;
   
   if (contextInfo) {
     const stanzaId = contextInfo.stanzaId
@@ -1089,6 +1123,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
         normalized_zapi_message_id: normalizeExternalMessageId(stanzaId),
         content: quotedText,
         participant: participant,
+        context_path: deepContextInfo?.path?.join('.') || 'explicit',
         context_keys: Object.keys(contextInfo).slice(0, 20),
         quoted_message_keys: quotedMsg && typeof quotedMsg === 'object' ? Object.keys(quotedMsg).slice(0, 20) : [],
       };
@@ -1808,6 +1843,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
       sender: resolvedQuotedSender || quotedMessageMeta.participant || null,
       resolved: !!resolvedQuotedId,
       diagnostics: {
+        context_path: quotedMessageMeta.context_path || null,
         context_keys: quotedMessageMeta.context_keys || [],
         quoted_message_keys: quotedMessageMeta.quoted_message_keys || [],
       },
