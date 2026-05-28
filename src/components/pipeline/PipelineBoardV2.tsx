@@ -217,6 +217,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
   const [selectedCard, setSelectedCard] = useState<DbConversation | null>(null);
   const [selectedCardTab, setSelectedCardTab] = useState<CardPanelTab>('details');
   const [expandedChecklistCardId, setExpandedChecklistCardId] = useState<string | null>(null);
+  const [showAllChecklistCardId, setShowAllChecklistCardId] = useState<string | null>(null);
   const [tagDisplayMode, setTagDisplayMode] = useState<TagDisplayMode>(() => {
     const stored = localStorage.getItem('pipeline_tag_display_mode');
     return stored === 'bars' ? 'bars' : 'labels';
@@ -823,81 +824,22 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
                   setSelectedCardTab('notes');
                 }}
               />
-              <Popover
-                onOpenChange={(open) => {
-                  if (!open && expandedChecklistCardId === conversation.id) {
-                    setExpandedChecklistCardId(null);
-                  }
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 hover:text-zinc-100"
+                title="checklist"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setExpandedChecklistCardId(prev => {
+                    const next = prev === conversation.id ? null : conversation.id;
+                    if (!next) setShowAllChecklistCardId(null);
+                    return next;
+                  });
                 }}
               >
-                <PopoverTrigger asChild>
-                  <button
-                    type="button"
-                    className="inline-flex items-center gap-1 hover:text-zinc-100"
-                    title="checklist"
-                    onClick={(event) => event.stopPropagation()}
-                  >
-                    <ListTodo className="h-3.5 w-3.5" />
-                    <span>{doneTaskCount}/{taskCount}</span>
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent
-                  align="start"
-                  side="bottom"
-                  className="z-50 w-72 border-white/10 bg-zinc-950/95 p-2 text-zinc-200 shadow-xl"
-                  onClick={(event) => event.stopPropagation()}
-                >
-                  {checklistItems.length === 0 ? (
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs text-zinc-500">Nenhum checklist neste card.</span>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-7 px-2 text-xs text-zinc-300"
-                        onClick={() => {
-                          setSelectedCard(conversation);
-                          setSelectedCardTab('checklist');
-                        }}
-                      >
-                        Adicionar
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="space-y-1.5">
-                      {(expandedChecklistCardId === conversation.id ? checklistItems : checklistItems.slice(0, 3)).map(item => (
-                        <label key={item.id} className="flex items-start gap-2 rounded px-1 py-0.5 text-[11px]">
-                          <input
-                            type="checkbox"
-                            checked={item.done}
-                            className="mt-0.5 h-3.5 w-3.5 accent-primary"
-                            onChange={async () => {
-                              const next = checklistItems.map(current => (
-                                current.id === item.id ? { ...current, done: !current.done } : current
-                              ));
-                              await saveChecklistForConversation(conversation, next);
-                            }}
-                          />
-                          <span className={cn("min-w-0 flex-1 break-words", item.done && "text-zinc-500 line-through")}>{item.text}</span>
-                        </label>
-                      ))}
-                      <div className="flex items-center justify-between border-t border-white/5 pt-1">
-                        <span className="text-[10px] text-zinc-500">{doneTaskCount}/{taskCount} concluidos</span>
-                        {checklistItems.length > 3 && (
-                          <button
-                            type="button"
-                            className="text-[10px] font-medium text-zinc-400 hover:text-zinc-100"
-                            onClick={() => {
-                              setExpandedChecklistCardId(prev => prev === conversation.id ? null : conversation.id);
-                            }}
-                          >
-                            {expandedChecklistCardId === conversation.id ? 'Ver menos' : `Ver mais ${checklistItems.length - 3}`}
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                </PopoverContent>
-              </Popover>
+                <ListTodo className="h-3.5 w-3.5" />
+                <span>{doneTaskCount}/{taskCount}</span>
+              </button>
               <button
                 type="button"
                 className="inline-flex items-center gap-1 hover:text-zinc-100"
@@ -929,6 +871,63 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
                 {hasUnread && <span className="font-bold">{conversation.unread_count}</span>}
               </button>
             </div>
+
+            {expandedChecklistCardId === conversation.id && (
+              <div
+                className="mt-2 space-y-1.5 rounded-md border border-white/5 bg-black/15 p-2 text-zinc-200"
+                onClick={(event) => event.stopPropagation()}
+              >
+                {checklistItems.length === 0 ? (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[11px] text-zinc-500">Nenhum checklist neste card.</span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs text-zinc-300"
+                      onClick={() => {
+                        setSelectedCard(conversation);
+                        setSelectedCardTab('checklist');
+                      }}
+                    >
+                      Adicionar
+                    </Button>
+                  </div>
+                ) : (
+                  <>
+                    {(showAllChecklistCardId === conversation.id ? checklistItems : checklistItems.slice(0, 3)).map(item => (
+                      <label key={item.id} className="flex items-start gap-2 rounded px-1 py-0.5 text-[11px]">
+                        <input
+                          type="checkbox"
+                          checked={item.done}
+                          className="mt-0.5 h-3.5 w-3.5 accent-primary"
+                          onChange={async () => {
+                            const next = checklistItems.map(current => (
+                              current.id === item.id ? { ...current, done: !current.done } : current
+                            ));
+                            await saveChecklistForConversation(conversation, next);
+                          }}
+                        />
+                        <span className={cn("min-w-0 flex-1 break-words", item.done && "text-zinc-500 line-through")}>{item.text}</span>
+                      </label>
+                    ))}
+                    <div className="flex items-center justify-between border-t border-white/5 pt-1">
+                      <span className="text-[10px] text-zinc-500">{doneTaskCount}/{taskCount} concluidos</span>
+                      {checklistItems.length > 3 && (
+                        <button
+                          type="button"
+                          className="text-[10px] font-medium text-zinc-400 hover:text-zinc-100"
+                          onClick={() => {
+                            setShowAllChecklistCardId(prev => prev === conversation.id ? null : conversation.id);
+                          }}
+                        >
+                          {showAllChecklistCardId === conversation.id ? 'Ver menos' : `Ver mais ${checklistItems.length - 3}`}
+                        </button>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
 
           </div>
         </div>
