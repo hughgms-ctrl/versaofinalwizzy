@@ -440,7 +440,7 @@ export function useMoveConversation() {
       // Check if position already exists. Keep the newest row if legacy duplicates exist.
       const { data: existingRows, error: existingError } = await supabase
         .from('conversation_pipeline_positions')
-        .select('id, column_id, pipeline_id')
+        .select('id, column_id, pipeline_id, order')
         .eq('conversation_id', conversationId)
         .order('updated_at', { ascending: false })
         .limit(10);
@@ -457,9 +457,16 @@ export function useMoveConversation() {
         if (deleteDuplicatesError) throw deleteDuplicatesError;
       }
 
-      if (existing?.pipeline_id === pipelineId && existing?.column_id === columnId) {
+      const existingOrder = Number(existing?.order ?? 0);
+      const requestedOrder = Number(order ?? 0);
+      if (
+        existing?.pipeline_id === pipelineId &&
+        existing?.column_id === columnId &&
+        existingOrder === requestedOrder
+      ) {
         return {
           changed: false,
+          orderChanged: false,
           fromColumnId: existing.column_id,
           toColumnId: columnId,
           pipelineId,
@@ -467,6 +474,7 @@ export function useMoveConversation() {
       }
 
       const fromColumnId = existing?.column_id || null;
+      const stageChanged = existing?.pipeline_id !== pipelineId || existing?.column_id !== columnId;
       let savedPosition: ConversationPipelinePosition | null = null;
 
       if (existing && existing.pipeline_id === pipelineId) {
@@ -526,8 +534,8 @@ export function useMoveConversation() {
 
       await removeStaleConversationPositions(conversationId, savedPosition.id);
 
-      // Log stage change
-      if (profile?.organization_id) {
+      // Log stage change only when the card actually changes column/pipeline.
+      if (stageChanged && profile?.organization_id) {
         await (supabase as any)
           .from('conversation_stage_history')
           .insert({
@@ -542,7 +550,7 @@ export function useMoveConversation() {
       }
 
       // Trigger notification (fire and forget)
-      if (profile?.organization_id) {
+      if (stageChanged && profile?.organization_id) {
         supabase.functions.invoke('stage-notification', {
           body: {
             conversationId,
@@ -554,7 +562,7 @@ export function useMoveConversation() {
       }
 
       // Auto-transition: check if this is the last column and pipeline has next_pipeline_id
-      if (!skipAutoTransition && profile?.organization_id) {
+      if (stageChanged && !skipAutoTransition && profile?.organization_id) {
         // Fetch all columns of current pipeline to check if we're at the last one
         const { data: allColumns } = await (supabase as any)
           .from('pipeline_columns')
@@ -657,7 +665,7 @@ export function useMoveConversation() {
         }
       }
 
-      return { changed: true, fromColumnId, toColumnId: columnId, pipelineId };
+      return { changed: stageChanged, orderChanged: !stageChanged, fromColumnId, toColumnId: columnId, pipelineId };
     },
     onSuccess: (result, variables) => {
       queryClient.invalidateQueries({ queryKey: ['conversation-positions'] });

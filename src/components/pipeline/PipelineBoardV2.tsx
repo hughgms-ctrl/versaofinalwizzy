@@ -214,6 +214,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
 
   const [draggedCard, setDraggedCard] = useState<string | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
+  const [dragOverCard, setDragOverCard] = useState<string | null>(null);
   const [selectedCard, setSelectedCard] = useState<DbConversation | null>(null);
   const [selectedCardTab, setSelectedCardTab] = useState<CardPanelTab>('details');
   const [expandedChecklistCardId, setExpandedChecklistCardId] = useState<string | null>(null);
@@ -479,7 +480,14 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
   // Map conversations to columns
   const getConversationsByColumn = (columnId: string) => {
     const positionMap = new Map(positions.map(p => [p.conversation_id, p.column_id]));
-    return filteredConversations.filter(c => positionMap.get(c.id) === columnId);
+    const orderMap = new Map(positions.map(p => [p.conversation_id, Number(p.order || 0)]));
+    return filteredConversations
+      .filter(c => positionMap.get(c.id) === columnId)
+      .sort((a, b) => {
+        const byOrder = (orderMap.get(a.id) || 0) - (orderMap.get(b.id) || 0);
+        if (byOrder !== 0) return byOrder;
+        return new Date(b.last_message_at || 0).getTime() - new Date(a.last_message_at || 0).getTime();
+      });
   };
 
   // Get unassigned conversations (not in any column of this pipeline)
@@ -549,8 +557,31 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
     }
   };
 
-  const handleDrop = async (e: React.DragEvent, columnId: string | null) => {
+  const getDropOrder = useCallback((columnId: string, targetConversationId?: string | null) => {
+    const orderedPositions = positions
+      .filter(position => position.column_id === columnId && position.conversation_id !== draggedCard)
+      .sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
+
+    if (!targetConversationId) {
+      const lastOrder = orderedPositions.length > 0
+        ? Number(orderedPositions[orderedPositions.length - 1].order || 0)
+        : -1;
+      return lastOrder + 1;
+    }
+
+    const targetIndex = orderedPositions.findIndex(position => position.conversation_id === targetConversationId);
+    if (targetIndex === -1) return orderedPositions.length;
+
+    const previous = orderedPositions[targetIndex - 1];
+    const target = orderedPositions[targetIndex];
+    const previousOrder = previous ? Number(previous.order || 0) : Number(target.order || 0) - 1;
+    const targetOrder = Number(target.order || 0);
+    return (previousOrder + targetOrder) / 2;
+  }, [draggedCard, positions]);
+
+  const handleDrop = async (e: React.DragEvent, columnId: string | null, targetConversationId?: string | null) => {
     e.preventDefault();
+    e.stopPropagation();
     if (draggedCard && pipeline) {
       if (columnId === null) {
         // Remove from pipeline (move to unassigned)
@@ -563,16 +594,21 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
         queryClient.invalidateQueries({ queryKey: ['conversation-positions', pipeline.id] });
         queryClient.invalidateQueries({ queryKey: ['conversation-positions'] });
       } else {
-        await moveConversation.mutateAsync({
+        const order = getDropOrder(columnId, targetConversationId);
+        const result = await moveConversation.mutateAsync({
           conversationId: draggedCard,
           pipelineId: pipeline.id,
           columnId,
+          order,
         });
-        await applyColumnChecklistTemplate(draggedCard, columnId);
+        if (result?.changed) {
+          await applyColumnChecklistTemplate(draggedCard, columnId);
+        }
       }
     }
     setDraggedCard(null);
     setDragOverColumn(null);
+    setDragOverCard(null);
   };
 
   const handleMoveCardFromPanel = useCallback(async (conversation: DbConversation, columnId: string) => {
@@ -588,6 +624,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
   const handleDragEnd = () => {
     setDraggedCard(null);
     setDragOverColumn(null);
+    setDragOverCard(null);
   };
 
   const getInitials = (name: string | null, phone: string) => {
@@ -705,12 +742,30 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
     const checklistItems = (((conversation.metadata as any)?.pipeline_checklist || []) as ChecklistItem[]);
     const taskCount = checklistItems.length;
     const doneTaskCount = checklistItems.filter(item => item.done).length;
+    const cardPosition = positions.find(position => position.conversation_id === conversation.id);
+    const isCardDropTarget = dragOverCard === conversation.id && draggedCard !== conversation.id;
 
     return (
       <div
         key={conversation.id}
         draggable
         onDragStart={(e) => handleDragStart(e, conversation.id)}
+        onDragOver={(event) => {
+          if (!draggedCard || draggedCard === conversation.id || !cardPosition?.column_id) return;
+          event.preventDefault();
+          event.stopPropagation();
+          setDragOverColumn(cardPosition.column_id);
+          setDragOverCard(conversation.id);
+        }}
+        onDragLeave={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+            setDragOverCard(prev => prev === conversation.id ? null : prev);
+          }
+        }}
+        onDrop={(event) => {
+          if (!cardPosition?.column_id) return;
+          handleDrop(event, cardPosition.column_id, conversation.id);
+        }}
         onDragEnd={handleDragEnd}
         onClick={() => {
           setSelectedCard(conversation);
@@ -719,7 +774,8 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
         className={cn(
           "pipeline-card relative",
           draggedCard === conversation.id && "dragging",
-          hasUnread && "ring-1 ring-primary/40"
+          hasUnread && "ring-1 ring-primary/40",
+          isCardDropTarget && "ring-2 ring-primary/70 before:absolute before:-top-1.5 before:left-2 before:right-2 before:h-0.5 before:rounded before:bg-primary"
         )}
       >
         <div className="flex items-start gap-2">
