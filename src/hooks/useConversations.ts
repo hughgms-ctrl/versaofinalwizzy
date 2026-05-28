@@ -2,6 +2,7 @@ import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './useAuth';
+import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 
 export interface DbConversation {
   id: string;
@@ -14,6 +15,7 @@ export interface DbConversation {
   ai_agent_id: string | null;
   metadata: Record<string, any> | null;
   closed_at: string | null;
+  workspace_id?: string | null;
   created_at: string;
   updated_at: string;
   contact: {
@@ -22,6 +24,7 @@ export interface DbConversation {
     phone: string;
     avatar_url: string | null;
     email: string | null;
+    workspace_id?: string | null;
     created_at: string;
     metadata: { note?: string } | null;
     contact_presence?: {
@@ -65,6 +68,7 @@ export interface DbMessage {
 
 export function useConversations(options?: { includeArchived?: boolean; onlyArchived?: boolean; includeClosed?: boolean; onlyClosed?: boolean }) {
   const { session } = useAuth();
+  const { selectedWorkspaceId } = useWorkspaceContext();
   const queryClient = useQueryClient();
   const includeArchived = options?.includeArchived ?? false;
   const onlyArchived = options?.onlyArchived ?? false;
@@ -72,13 +76,13 @@ export function useConversations(options?: { includeArchived?: boolean; onlyArch
   const onlyClosed = options?.onlyClosed ?? false;
 
   const query = useQuery({
-    queryKey: ['conversations', { includeArchived, onlyArchived, includeClosed, onlyClosed }],
+    queryKey: ['conversations', { includeArchived, onlyArchived, includeClosed, onlyClosed, selectedWorkspaceId }],
     queryFn: async (): Promise<DbConversation[]> => {
       let query = supabase
         .from('conversations')
         .select(`
           *,
-          contact:contacts(id, name, phone, avatar_url, email, created_at, metadata, contact_presence(presence_type, expires_at)),
+          contact:contacts(id, name, phone, avatar_url, email, workspace_id, created_at, metadata, contact_presence(presence_type, expires_at)),
           last_message:messages(id, content, type, direction, is_from_bot, read_at, delivered_at)
         `)
         .order('last_message_at', { ascending: false, nullsFirst: false })
@@ -95,6 +99,10 @@ export function useConversations(options?: { includeArchived?: boolean; onlyArch
         if (!includeArchived) query = query.neq('status', 'archived');
         // Hide closed by default
         if (!includeClosed) query = query.neq('status', 'closed' as any);
+      }
+
+      if (selectedWorkspaceId) {
+        query = query.eq('workspace_id', selectedWorkspaceId);
       }
 
       const { data, error } = await query;
@@ -241,7 +249,7 @@ export function useCreateConversation() {
       let contactId = null;
       const { data: existingContact } = await supabase
         .from('contacts')
-        .select('id')
+        .select('id, workspace_id')
         .eq('phone', formattedPhone)
         .eq('organization_id', profile.organization_id)
         .limit(1)
@@ -251,7 +259,7 @@ export function useCreateConversation() {
         contactId = existingContact.id;
         const contactUpdates: Record<string, any> = {};
         if (data.name) contactUpdates.name = data.name;
-        if (data.workspaceId) contactUpdates.workspace_id = data.workspaceId;
+        if (data.workspaceId && !(existingContact as any).workspace_id) contactUpdates.workspace_id = data.workspaceId;
         if (Object.keys(contactUpdates).length > 0) {
           await supabase.from('contacts').update(contactUpdates).eq('id', contactId);
         }
@@ -273,12 +281,17 @@ export function useCreateConversation() {
       }
 
       // 3. Check for existing open/pending/closed conversation
-      const { data: existingConv } = await supabase
+      let existingConvQuery = supabase
         .from('conversations')
         .select('*, contact:contacts(*)')
         .eq('contact_id', contactId)
-        .in('status', ['open', 'pending', 'closed'] as any)
-        .maybeSingle();
+        .in('status', ['open', 'pending', 'closed'] as any);
+
+      existingConvQuery = data.workspaceId
+        ? existingConvQuery.eq('workspace_id', data.workspaceId)
+        : existingConvQuery.is('workspace_id', null);
+
+      const { data: existingConv } = await existingConvQuery.maybeSingle();
 
       if (existingConv) {
         if (data.workspaceId && !(existingConv as any).workspace_id) {

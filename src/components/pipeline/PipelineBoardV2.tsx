@@ -353,14 +353,11 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
       if (sharedConversationIds && !sharedConversationIds.has(conv.id)) return false;
 
       // === WORKSPACE FILTER (must come first) ===
-      // When a workspace is selected, only show contacts that have at least one of the workspace's tags
+      // Never use tags as workspace boundaries. Tags can be shared or misapplied.
       if (selectedWorkspaceId && selectedWorkspace) {
-        const workspaceTagIds = selectedWorkspace.filter_tag_ids || [];
-        if (workspaceTagIds.length > 0) {
-          const contactTagIds = allContactTags?.filter(ct => ct.contact_id === conv.contact?.id).map(ct => ct.tag_id) || [];
-          const hasWorkspaceTag = workspaceTagIds.some(tagId => contactTagIds.includes(tagId));
-          if (!hasWorkspaceTag) return false;
-        }
+        const hasDirectWorkspace = (conv as any).workspace_id === selectedWorkspaceId;
+        const hasContactWorkspace = (conv.contact as any)?.workspace_id === selectedWorkspaceId;
+        if (!hasDirectWorkspace && !hasContactWorkspace) return false;
       }
 
       // Search filter (name, phone, or message content)

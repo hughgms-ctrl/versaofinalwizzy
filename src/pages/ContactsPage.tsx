@@ -5,8 +5,6 @@ import { useContacts, Contact } from '@/hooks/useContacts';
 import { useWhatsAppStatus } from '@/hooks/useWhatsAppStatus';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { isWithinInterval, parseISO } from 'date-fns';
-import { useQuery } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
 import {
   Search,
   X,
@@ -35,18 +33,6 @@ const ContactsPage = () => {
   const { connected: whatsappConnected, isLoading: whatsappLoading } = useWhatsAppStatus();
   const { selectedWorkspace, selectedWorkspaceId } = useWorkspaceContext();
 
-  // Fetch contact tags for workspace filtering
-  const { data: allContactTags = [] } = useQuery({
-    queryKey: ['all-contact-tags'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('contact_tags')
-        .select('contact_id, tag_id');
-      if (error) throw error;
-      return data || [];
-    },
-  });
-
   const [searchQuery, setSearchQuery] = useState('');
   const [filters, setFilters] = useState<ContactFiltersState>(defaultContactFilters);
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
@@ -59,12 +45,7 @@ const ContactsPage = () => {
     return contacts.filter(contact => {
       // === WORKSPACE FILTER ===
       if (selectedWorkspaceId && selectedWorkspace) {
-        const workspaceTagIds = selectedWorkspace.filter_tag_ids || [];
-        if (workspaceTagIds.length > 0) {
-          const contactTagIds = allContactTags?.filter(ct => ct.contact_id === contact.id).map(ct => ct.tag_id) || [];
-          const hasWorkspaceTag = workspaceTagIds.some(tagId => contactTagIds.includes(tagId));
-          if (!hasWorkspaceTag) return false;
-        }
+        if ((contact as any).workspace_id !== selectedWorkspaceId) return false;
       }
 
       // Search filter
@@ -96,7 +77,7 @@ const ContactsPage = () => {
 
       return true;
     });
-  }, [contacts, searchQuery, filters, selectedWorkspaceId, selectedWorkspace, allContactTags]);
+  }, [contacts, searchQuery, filters, selectedWorkspaceId, selectedWorkspace]);
 
   // Show disconnected state if WhatsApp is not connected
   if (!whatsappLoading && !whatsappConnected) {
@@ -259,4 +240,3 @@ const ContactsPage = () => {
 };
 
 export default ContactsPage;
-
