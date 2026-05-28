@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Trash2, GripVertical, Bell, BellOff } from 'lucide-react';
+import { Plus, Trash2, GripVertical, Bell, BellOff, CheckSquare } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -114,6 +114,46 @@ const DEFAULT_COLORS = [
   '#3b82f6', '#f59e0b', '#22c55e', '#8b5cf6', '#ef4444', '#64748b',
 ];
 
+type ChecklistTemplate = {
+  id: string;
+  name: string;
+  workspaceId: string | null;
+  items: Array<{ id: string; text: string; done: boolean }>;
+};
+
+const getChecklistTemplateStorageKey = (workspaceId?: string | null) => `pipeline_checklist_templates:${workspaceId || 'global'}`;
+const getColumnChecklistStorageKey = (workspaceId?: string | null, pipelineId?: string | null) => (
+  `pipeline_column_checklists:${workspaceId || 'global'}:${pipelineId || 'none'}`
+);
+
+function loadChecklistTemplates(workspaceId?: string | null): ChecklistTemplate[] {
+  try {
+    const stored = JSON.parse(localStorage.getItem(getChecklistTemplateStorageKey(workspaceId)) || '[]');
+    if (!Array.isArray(stored)) return [];
+    return stored.map((template: any) => ({
+      ...template,
+      workspaceId: template.workspaceId || workspaceId || null,
+      items: Array.isArray(template.items)
+        ? template.items.map((item: any) => ({
+            id: item.id || crypto.randomUUID(),
+            text: item.text || '',
+            done: !!item.done,
+          }))
+        : [],
+    }));
+  } catch {
+    return [];
+  }
+}
+
+function loadColumnChecklistConfig(workspaceId?: string | null, pipelineId?: string | null): Record<string, string> {
+  try {
+    return JSON.parse(localStorage.getItem(getColumnChecklistStorageKey(workspaceId, pipelineId)) || '{}');
+  } catch {
+    return {};
+  }
+}
+
 function ColumnInput({ 
   column, 
   onUpdate, 
@@ -204,7 +244,9 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
   const [completionColumnId, setCompletionColumnId] = useState<string>(pipeline.completion_column_id || 'last');
   const [defaultAssignedTo, setDefaultAssignedTo] = useState<string>(pipeline.default_assigned_to || 'none');
   const [deleteColumnId, setDeleteColumnId] = useState<string | null>(null);
-  const [activeSection, setActiveSection] = useState<'general' | 'notifications'>('general');
+  const [activeSection, setActiveSection] = useState<'general' | 'checklists' | 'notifications'>('general');
+  const [checklistTemplates, setChecklistTemplates] = useState<ChecklistTemplate[]>([]);
+  const [columnChecklistConfig, setColumnChecklistConfig] = useState<Record<string, string>>({});
 
   const { data: columns = [] } = usePipelineColumns(pipeline.id);
   const { data: allPipelines = [] } = usePipelines();
@@ -217,9 +259,11 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
   const deleteColumn = useDeleteColumn();
   const reorderColumns = useReorderColumns();
   const upsertNotification = useUpsertStageNotification();
-  const { availableWorkspaces, isAdmin } = useWorkspaceContext();
+  const { availableWorkspaces, isAdmin, selectedWorkspaceId } = useWorkspaceContext();
 
-  const otherPipelines = allPipelines.filter(p => p.id !== pipeline.id);
+  const otherPipelines = allPipelines.filter(p => (
+    p.id !== pipeline.id && (!selectedWorkspaceId || p.workspace_ids?.includes(selectedWorkspaceId))
+  ));
   const { data: nextPipelineColumns = [] } = usePipelineColumns(nextPipelineId !== 'none' ? nextPipelineId : null);
 
   useEffect(() => {
@@ -230,7 +274,17 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
     setNextPipelineColumnId(pipeline.next_pipeline_column_id || 'first');
     setCompletionColumnId(pipeline.completion_column_id || 'last');
     setDefaultAssignedTo(pipeline.default_assigned_to || 'none');
-  }, [pipeline]);
+    setChecklistTemplates(loadChecklistTemplates(selectedWorkspaceId));
+    setColumnChecklistConfig(loadColumnChecklistConfig(selectedWorkspaceId, pipeline.id));
+  }, [pipeline, selectedWorkspaceId]);
+
+  const saveColumnChecklistConfig = (columnId: string, templateId: string) => {
+    const next = { ...columnChecklistConfig };
+    if (templateId) next[columnId] = templateId;
+    else delete next[columnId];
+    setColumnChecklistConfig(next);
+    localStorage.setItem(getColumnChecklistStorageKey(selectedWorkspaceId, pipeline.id), JSON.stringify(next));
+  };
 
   const [draggedColumnId, setDraggedColumnId] = useState<string | null>(null);
   const [dragOverColumnId, setDragOverColumnId] = useState<string | null>(null);
@@ -373,6 +427,14 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
             >
               <Bell className="h-4 w-4 mr-1" />
               Notificações
+            </Button>
+            <Button
+              variant={activeSection === 'checklists' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setActiveSection('checklists')}
+            >
+              <CheckSquare className="h-4 w-4 mr-1" />
+              Checklists
             </Button>
           </div>
 
@@ -597,6 +659,57 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
                   )}
                 </div>
               </>
+            )}
+
+            {activeSection === 'checklists' && (
+              <div className="space-y-4">
+                <div>
+                  <h3 className="text-sm font-semibold">Checklist automático por coluna</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Escolha qual modelo será aplicado quando um card entrar em cada coluna deste pipeline.
+                  </p>
+                </div>
+
+                {checklistTemplates.length === 0 ? (
+                  <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+                    Nenhum modelo salvo neste workspace. Crie um modelo na aba Checklist de qualquer card.
+                  </p>
+                ) : columns.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    Nenhuma coluna configurada.
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {columns.map((col) => (
+                      <div key={col.id} className="flex items-center gap-3 rounded-lg border p-3">
+                        <div className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: col.color }} />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium">{col.name || 'Sem nome'}</p>
+                          <p className="text-xs text-muted-foreground">Modelo ao entrar nesta coluna</p>
+                        </div>
+                        <Select
+                          value={columnChecklistConfig[col.id] || 'none'}
+                          onValueChange={(value) => saveColumnChecklistConfig(col.id, value === 'none' ? '' : value)}
+                        >
+                          <SelectTrigger className="w-[190px]">
+                            <SelectValue placeholder="Selecionar modelo" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">
+                              <span className="text-muted-foreground">Nenhum checklist</span>
+                            </SelectItem>
+                            {checklistTemplates.map(template => (
+                              <SelectItem key={template.id} value={template.id}>
+                                {template.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             )}
 
             {activeSection === 'notifications' && (

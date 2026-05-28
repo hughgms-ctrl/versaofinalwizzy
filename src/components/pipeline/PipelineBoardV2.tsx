@@ -33,6 +33,7 @@ import {
   Plus,
   Trash2,
   CheckSquare,
+  Pencil,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ConversationCardActions } from '@/components/conversations/ConversationCardActions';
@@ -75,7 +76,7 @@ interface PipelineBoardProps {
 type TagDisplayMode = 'labels' | 'bars';
 type CardPanelTab = 'details' | 'files' | 'notes' | 'activity' | 'checklist';
 type ChecklistItem = { id: string; text: string; done: boolean };
-type ChecklistTemplate = { id: string; name: string; workspaceId: string | null; items: Array<{ text: string; done: boolean }> };
+type ChecklistTemplate = { id: string; name: string; workspaceId: string | null; items: ChecklistItem[] };
 
 const BOARD_BACKGROUNDS = [
   '#9b3f6d',
@@ -133,7 +134,19 @@ const getColumnChecklistStorageKey = (workspaceId?: string | null, pipelineId?: 
 
 function loadChecklistTemplates(workspaceId?: string | null): ChecklistTemplate[] {
   try {
-    return JSON.parse(localStorage.getItem(getChecklistTemplateStorageKey(workspaceId)) || '[]');
+    const stored = JSON.parse(localStorage.getItem(getChecklistTemplateStorageKey(workspaceId)) || '[]');
+    if (!Array.isArray(stored)) return [];
+    return stored.map((template: any) => ({
+      ...template,
+      workspaceId: template.workspaceId || workspaceId || null,
+      items: Array.isArray(template.items)
+        ? template.items.map((item: any) => ({
+            id: item.id || crypto.randomUUID(),
+            text: item.text || '',
+            done: !!item.done,
+          }))
+        : [],
+    }));
   } catch {
     return [];
   }
@@ -145,6 +158,17 @@ function loadColumnChecklistConfig(workspaceId?: string | null, pipelineId?: str
   } catch {
     return {};
   }
+}
+
+function buildChecklistFromTemplate(template: ChecklistTemplate, existing: ChecklistItem[] = []) {
+  return template.items.map(templateItem => {
+    const current = existing.find(item => item.id === templateItem.id || item.text === templateItem.text);
+    return {
+      id: templateItem.id || crypto.randomUUID(),
+      text: templateItem.text,
+      done: current?.done || false,
+    };
+  });
 }
 
 export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversationClick, sharedConversationIds }: PipelineBoardProps) {
@@ -202,17 +226,6 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
     setChecklistTemplates(loadChecklistTemplates(selectedWorkspaceId));
     setColumnChecklistConfig(loadColumnChecklistConfig(selectedWorkspaceId, pipeline?.id));
   }, [selectedWorkspaceId, pipeline?.id]);
-
-  const saveColumnChecklistConfig = useCallback((columnId: string, templateId: string) => {
-    if (!pipeline?.id) return;
-    setColumnChecklistConfig(prev => {
-      const next = { ...prev };
-      if (templateId) next[columnId] = templateId;
-      else delete next[columnId];
-      localStorage.setItem(getColumnChecklistStorageKey(selectedWorkspaceId, pipeline.id), JSON.stringify(next));
-      return next;
-    });
-  }, [pipeline?.id, selectedWorkspaceId]);
 
   // Admin preference to hide unassigned column (localStorage)
   const [adminHideUnassigned, setAdminHideUnassigned] = useState(() => {
@@ -452,11 +465,12 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
     e.dataTransfer.setData('text/plain', conversationId);
   };
 
-  const saveChecklistForConversation = useCallback(async (conversation: DbConversation, items: ChecklistItem[]) => {
+  const saveChecklistForConversation = useCallback(async (conversation: DbConversation, items: ChecklistItem[], templateId?: string | null) => {
     const currentMetadata = (conversation.metadata as Record<string, unknown>) || {};
+    const metadata = { ...currentMetadata, pipeline_checklist: items, pipeline_checklist_template_id: templateId ?? currentMetadata.pipeline_checklist_template_id ?? null };
     const optimisticConversation = {
       ...conversation,
-      metadata: { ...currentMetadata, pipeline_checklist: items },
+      metadata,
     } as DbConversation;
 
     queryClient.setQueriesData({ queryKey: ['conversations'] }, (old: any) => {
@@ -467,7 +481,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
 
     const { error } = await supabase
       .from('conversations')
-      .update({ metadata: { ...currentMetadata, pipeline_checklist: items } })
+      .update({ metadata })
       .eq('id', conversation.id);
     if (error) throw error;
     queryClient.invalidateQueries({ queryKey: ['conversations'] });
@@ -482,9 +496,8 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
     const conversation = conversations?.find(item => item.id === conversationId);
     if (!conversation) return;
     const existing = (((conversation.metadata as any)?.pipeline_checklist || []) as ChecklistItem[]);
-    if (existing.length > 0) return;
-    const next = template.items.map(item => ({ id: crypto.randomUUID(), text: item.text, done: false }));
-    await saveChecklistForConversation(conversation, next);
+    const next = buildChecklistFromTemplate(template, existing);
+    await saveChecklistForConversation(conversation, next, template.id);
   }, [checklistTemplates, columnChecklistConfig, conversations, saveChecklistForConversation]);
 
   const handleDragOver = (e: React.DragEvent, columnId: string) => {
@@ -753,6 +766,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
                   conversation={conversation}
                   variant="minimal"
                   onOpenChat={() => onConversationClick(conversation)}
+                  workspaceId={selectedWorkspaceId}
                 />
               </div>
             </div>
@@ -1119,36 +1133,6 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
                   {columnConversations.length}
                 </span>
               </div>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-6 w-6 text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
-                  >
-                    <Settings className="h-3.5 w-3.5" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent align="end" className="w-72 space-y-3">
-                  <div>
-                    <p className="text-sm font-semibold">Configuracoes da coluna</p>
-                    <p className="text-xs text-muted-foreground">Adicionar checklist automaticamente ao card quando ele chegar aqui.</p>
-                  </div>
-                  <select
-                    className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-                    value={columnChecklistConfig[column.id] || ''}
-                    onChange={(event) => saveColumnChecklistConfig(column.id, event.target.value)}
-                  >
-                    <option value="">Nenhum checklist</option>
-                    {checklistTemplates.map(template => (
-                      <option key={template.id} value={template.id}>{template.name}</option>
-                    ))}
-                  </select>
-                  {checklistTemplates.length === 0 && (
-                    <p className="text-xs text-muted-foreground">Crie modelos na aba Checklist de um card. Modelos sao isolados por workspace.</p>
-                  )}
-                </PopoverContent>
-              </Popover>
             </div>
 
             <div className="space-y-2 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
@@ -1207,6 +1191,7 @@ function PipelineCardDetailDialog({
   const [newChecklistItem, setNewChecklistItem] = useState('');
   const [checklistTemplateName, setChecklistTemplateName] = useState('');
   const [checklistTemplates, setChecklistTemplates] = useState<ChecklistTemplate[]>(() => loadChecklistTemplates(workspaceId));
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [newComment, setNewComment] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
@@ -1218,6 +1203,8 @@ function PipelineCardDetailDialog({
     setEditedDescription(((conversation?.contact?.metadata as any)?.description as string) || '');
     setChecklistItems(((conversation?.metadata as any)?.pipeline_checklist || []) as ChecklistItem[]);
     setChecklistTemplates(loadChecklistTemplates(workspaceId));
+    setSelectedTemplateId(((conversation?.metadata as any)?.pipeline_checklist_template_id as string | undefined) || null);
+    setChecklistTemplateName('');
   }, [conversation?.id, conversation?.contact?.name, conversation?.contact?.metadata, workspaceId, initialTab]);
 
   if (!conversation) return null;
@@ -1263,20 +1250,26 @@ function PipelineCardDetailDialog({
 
   const updateConversationMetadata = async (patch: Record<string, unknown>) => {
     const currentMetadata = (conversation.metadata as Record<string, unknown>) || {};
+    const metadata = { ...currentMetadata, ...patch };
     const { error } = await supabase
       .from('conversations')
-      .update({ metadata: { ...currentMetadata, ...patch } })
+      .update({ metadata })
       .eq('id', conversation.id);
 
     if (error) throw error;
+    const updatedConversation = { ...conversation, metadata } as DbConversation;
+    queryClient.setQueriesData({ queryKey: ['conversations'] }, (old: any) => {
+      if (!Array.isArray(old)) return old;
+      return old.map(item => item.id === conversation.id ? updatedConversation : item);
+    });
     queryClient.invalidateQueries({ queryKey: ['conversations'] });
     queryClient.invalidateQueries({ queryKey: ['pipeline-conversations'] });
   };
 
-  const saveChecklist = async (items = checklistItems) => {
+  const saveChecklist = async (items = checklistItems, templateId = selectedTemplateId) => {
     setIsSaving(true);
     try {
-      await updateConversationMetadata({ pipeline_checklist: items });
+      await updateConversationMetadata({ pipeline_checklist: items, pipeline_checklist_template_id: templateId });
       toast({ title: 'Checklist salvo' });
     } catch (error: any) {
       toast({ title: 'Erro ao salvar checklist', description: error.message, variant: 'destructive' });
@@ -1305,21 +1298,72 @@ function PipelineCardDetailDialog({
     await saveChecklist(next);
   };
 
-  const saveChecklistTemplate = () => {
+  const updateChecklistItemText = async (itemId: string, text: string) => {
+    const next = checklistItems.map(item => item.id === itemId ? { ...item, text } : item);
+    setChecklistItems(next);
+    await saveChecklist(next);
+  };
+
+  const syncTemplateToCards = async (template: ChecklistTemplate) => {
+    const cachedConversations = queryClient
+      .getQueriesData<DbConversation[]>({ queryKey: ['conversations'] })
+      .flatMap(([, data]) => data || []);
+    const usingTemplate = cachedConversations.filter(item => (item.metadata as any)?.pipeline_checklist_template_id === template.id);
+
+    await Promise.all(usingTemplate.map(async item => {
+      const currentMetadata = (item.metadata as Record<string, unknown>) || {};
+      const currentItems = (((item.metadata as any)?.pipeline_checklist || []) as ChecklistItem[]);
+      const nextItems = buildChecklistFromTemplate(template, currentItems);
+      const metadata = { ...currentMetadata, pipeline_checklist: nextItems, pipeline_checklist_template_id: template.id };
+
+      const { error } = await supabase
+        .from('conversations')
+        .update({ metadata })
+        .eq('id', item.id);
+
+      if (error) throw error;
+    }));
+
+    queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    queryClient.invalidateQueries({ queryKey: ['pipeline-conversations'] });
+  };
+
+  const saveChecklistTemplate = async () => {
     if (!checklistTemplateName.trim() || checklistItems.length === 0) return;
-    const next = [
-      ...checklistTemplates,
-      {
-        id: crypto.randomUUID(),
-        name: checklistTemplateName.trim(),
-        workspaceId: workspaceId || null,
-        items: checklistItems.map(item => ({ text: item.text, done: false })),
-      },
-    ];
+    const template: ChecklistTemplate = {
+      id: selectedTemplateId || crypto.randomUUID(),
+      name: checklistTemplateName.trim(),
+      workspaceId: workspaceId || null,
+      items: checklistItems.map(item => ({ id: item.id || crypto.randomUUID(), text: item.text, done: false })),
+    };
+    const next = selectedTemplateId
+      ? checklistTemplates.map(item => item.id === selectedTemplateId ? template : item)
+      : [...checklistTemplates, template];
+    setChecklistTemplates(next);
+    setSelectedTemplateId(template.id);
+    localStorage.setItem(getChecklistTemplateStorageKey(workspaceId), JSON.stringify(next));
+    await saveChecklist(buildChecklistFromTemplate(template, checklistItems), template.id);
+    await syncTemplateToCards(template);
+    toast({ title: selectedTemplateId ? 'Modelo de checklist atualizado' : 'Modelo de checklist salvo' });
+  };
+
+  const editChecklistTemplate = (template: ChecklistTemplate) => {
+    setSelectedTemplateId(template.id);
+    setChecklistTemplateName(template.name);
+    const next = buildChecklistFromTemplate(template, checklistItems);
+    setChecklistItems(next);
+    saveChecklist(next, template.id);
+  };
+
+  const deleteChecklistTemplate = (templateId: string) => {
+    const next = checklistTemplates.filter(item => item.id !== templateId);
     setChecklistTemplates(next);
     localStorage.setItem(getChecklistTemplateStorageKey(workspaceId), JSON.stringify(next));
-    setChecklistTemplateName('');
-    toast({ title: 'Modelo de checklist salvo' });
+    if (selectedTemplateId === templateId) {
+      setSelectedTemplateId(null);
+      setChecklistTemplateName('');
+    }
+    toast({ title: 'Modelo removido' });
   };
 
   const moveToColumn = async (columnId: string) => {
@@ -1338,9 +1382,11 @@ function PipelineCardDetailDialog({
   const applyChecklistTemplate = async (templateId: string) => {
     const template = checklistTemplates.find(item => item.id === templateId);
     if (!template) return;
-    const next = template.items.map(item => ({ id: crypto.randomUUID(), text: item.text, done: item.done }));
+    const next = buildChecklistFromTemplate(template, checklistItems);
+    setSelectedTemplateId(template.id);
+    setChecklistTemplateName(template.name);
     setChecklistItems(next);
-    await saveChecklist(next);
+    await saveChecklist(next, template.id);
   };
 
   const addComment = async () => {
@@ -1522,6 +1568,61 @@ function PipelineCardDetailDialog({
 
               {activeTab === 'checklist' && (
                 <div className="max-w-2xl space-y-5">
+                  <div className="rounded-md bg-zinc-900/30 p-4 space-y-3">
+                    <h3 className="text-sm font-semibold text-zinc-100">Modelos de checklist</h3>
+                    <div className="flex gap-2">
+                      <Input
+                        value={checklistTemplateName}
+                        onChange={(event) => setChecklistTemplateName(event.target.value)}
+                        placeholder="Nome do modelo"
+                        className="bg-zinc-900/60 border-zinc-700 text-zinc-100"
+                      />
+                      <Button variant="outline" onClick={saveChecklistTemplate} disabled={!checklistTemplateName.trim() || checklistItems.length === 0}>
+                        {selectedTemplateId ? 'Atualizar modelo' : 'Salvar modelo'}
+                      </Button>
+                    </div>
+                    <div className="space-y-2">
+                      {checklistTemplates.length === 0 ? (
+                        <p className="text-sm text-zinc-500">Nenhum modelo salvo.</p>
+                      ) : checklistTemplates.map(template => (
+                        <div
+                          key={template.id}
+                          className={cn(
+                            "flex w-full items-center justify-between gap-2 rounded-md bg-zinc-950/35 px-3 py-2 text-sm",
+                            selectedTemplateId === template.id && "ring-1 ring-primary/50"
+                          )}
+                        >
+                          <button
+                            type="button"
+                            className="min-w-0 flex-1 text-left hover:text-primary"
+                            onClick={() => applyChecklistTemplate(template.id)}
+                          >
+                            <span className="block truncate">{template.name}</span>
+                          </button>
+                          <Badge variant="secondary">{template.items.length} itens</Badge>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-zinc-500 hover:text-zinc-100"
+                            onClick={() => editChecklistTemplate(template)}
+                            title="Editar modelo"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-zinc-500 hover:text-destructive"
+                            onClick={() => deleteChecklistTemplate(template.id)}
+                            title="Remover modelo"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
                   <div className="rounded-md bg-zinc-900/30 p-4">
                     <div className="mb-3 flex items-center justify-between">
                       <div>
@@ -1543,7 +1644,23 @@ function PipelineCardDetailDialog({
                             onChange={() => toggleChecklistItem(item.id)}
                             className="h-4 w-4 accent-primary"
                           />
-                          <span className={cn("flex-1 text-sm", item.done && "text-zinc-500 line-through")}>{item.text}</span>
+                          <Input
+                            value={item.text}
+                            onChange={(event) => {
+                              const value = event.target.value;
+                              setChecklistItems(prev => prev.map(current => current.id === item.id ? { ...current, text: value } : current));
+                            }}
+                            onBlur={(event) => updateChecklistItemText(item.id, event.target.value.trim())}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter') {
+                                event.currentTarget.blur();
+                              }
+                            }}
+                            className={cn(
+                              "h-8 flex-1 border-transparent bg-transparent px-1 text-sm text-zinc-100 focus-visible:border-zinc-700 focus-visible:bg-zinc-900/60",
+                              item.done && "text-zinc-500 line-through"
+                            )}
+                          />
                           <Button variant="ghost" size="icon" className="h-7 w-7 text-zinc-500 hover:text-destructive" onClick={() => removeChecklistItem(item.id)}>
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
@@ -1563,35 +1680,6 @@ function PipelineCardDetailDialog({
                           <Plus className="h-4 w-4" />
                         </Button>
                       </div>
-                    </div>
-                  </div>
-
-                  <div className="rounded-md bg-zinc-900/30 p-4 space-y-3">
-                    <h3 className="text-sm font-semibold text-zinc-100">Modelos de checklist</h3>
-                    <div className="flex gap-2">
-                      <Input
-                        value={checklistTemplateName}
-                        onChange={(event) => setChecklistTemplateName(event.target.value)}
-                        placeholder="Nome do modelo"
-                        className="bg-zinc-900/60 border-zinc-700 text-zinc-100"
-                      />
-                      <Button variant="outline" onClick={saveChecklistTemplate} disabled={!checklistTemplateName.trim() || checklistItems.length === 0}>
-                        Salvar modelo
-                      </Button>
-                    </div>
-                    <div className="space-y-2">
-                      {checklistTemplates.length === 0 ? (
-                        <p className="text-sm text-zinc-500">Nenhum modelo salvo.</p>
-                      ) : checklistTemplates.map(template => (
-                        <button
-                          key={template.id}
-                          className="flex w-full items-center justify-between rounded-md bg-zinc-950/35 px-3 py-2 text-left text-sm hover:bg-zinc-950/55"
-                          onClick={() => applyChecklistTemplate(template.id)}
-                        >
-                          <span>{template.name}</span>
-                          <Badge variant="secondary">{template.items.length} itens</Badge>
-                        </button>
-                      ))}
                     </div>
                   </div>
                 </div>

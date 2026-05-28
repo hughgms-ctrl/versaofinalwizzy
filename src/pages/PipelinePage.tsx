@@ -66,7 +66,7 @@ const PipelinePage = () => {
     // Workspace filter
     if (selectedWorkspaceId) {
       filtered = filtered.filter(p =>
-        !p.workspace_ids || p.workspace_ids.length === 0 || p.workspace_ids.includes(selectedWorkspaceId)
+        p.workspace_ids?.includes(selectedWorkspaceId)
       );
     }
     
