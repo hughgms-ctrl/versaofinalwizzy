@@ -171,6 +171,14 @@ function firstNonEmptyObject(...values: any[]): any | null {
   return null;
 }
 
+function normalizeExternalMessageId(value?: string | null): string | null {
+  if (!value) return null;
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+  const parts = trimmed.split(':').filter(Boolean);
+  return parts.length > 1 ? parts[parts.length - 1] : trimmed;
+}
+
 function extractMediaUrlFromObject(media: any): string | null {
   if (!media || typeof media !== 'object') return null;
   return firstString(
@@ -1021,16 +1029,44 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
   // --- Extract quoted/reply context ---
   // WhatsApp reply messages contain contextInfo with stanzaId (original message ID)
   let quotedMessageMeta: any = null;
-  const contextInfo = extendedText?.contextInfo || extendedText?.ContextInfo
-    || imageMsg?.contextInfo || imageMsg?.ContextInfo
-    || audioMsg?.contextInfo || audioMsg?.ContextInfo
-    || videoMsg?.contextInfo || videoMsg?.ContextInfo
-    || documentMsg?.contextInfo || documentMsg?.ContextInfo
-    || eventMessage?.contextInfo || eventMessage?.ContextInfo
-    || null;
+  const contextInfo = firstNonEmptyObject(
+    extendedText?.contextInfo,
+    extendedText?.ContextInfo,
+    imageMsg?.contextInfo,
+    imageMsg?.ContextInfo,
+    audioMsg?.contextInfo,
+    audioMsg?.ContextInfo,
+    videoMsg?.contextInfo,
+    videoMsg?.ContextInfo,
+    documentMsg?.contextInfo,
+    documentMsg?.ContextInfo,
+    stickerMsg?.contextInfo,
+    stickerMsg?.ContextInfo,
+    eventMessage?.contextInfo,
+    eventMessage?.ContextInfo,
+    eventMessage?.messageContextInfo,
+    eventMessage?.MessageContextInfo,
+    evolutionMessage?.contextInfo,
+    evolutionMessage?.ContextInfo,
+    evolutionMessage?.messageContextInfo,
+    evolutionData?.contextInfo,
+    evolutionData?.messageContextInfo,
+    msg?.contextInfo,
+    msg?.ContextInfo,
+    payload?.contextInfo,
+    payload?.messageContextInfo,
+    payload?.data?.contextInfo,
+    payload?.data?.messageContextInfo,
+  );
   
   if (contextInfo) {
-    const stanzaId = contextInfo.stanzaId || contextInfo.StanzaId || contextInfo.quotedMessageId || null;
+    const stanzaId = contextInfo.stanzaId
+      || contextInfo.StanzaId
+      || contextInfo.quotedMessageId
+      || contextInfo.quotedStanzaId
+      || contextInfo.quotedMessageID
+      || contextInfo.id
+      || null;
     const participant = contextInfo.participant || contextInfo.Participant || null;
     const quotedMsg = contextInfo.quotedMessage || contextInfo.QuotedMessage || null;
     
@@ -1041,12 +1077,20 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
           || quotedMsg.extendedTextMessage?.text || quotedMsg.ExtendedTextMessage?.Text
           || quotedMsg.imageMessage?.caption || quotedMsg.ImageMessage?.Caption
           || quotedMsg.videoMessage?.caption || quotedMsg.VideoMessage?.Caption
+          || quotedMsg.documentMessage?.fileName || quotedMsg.DocumentMessage?.FileName
+          || (quotedMsg.audioMessage || quotedMsg.AudioMessage ? 'Audio' : null)
+          || (quotedMsg.imageMessage || quotedMsg.ImageMessage ? 'Imagem' : null)
+          || (quotedMsg.videoMessage || quotedMsg.VideoMessage ? 'Video' : null)
+          || (quotedMsg.documentMessage || quotedMsg.DocumentMessage ? 'Documento' : null)
           || null;
       }
       quotedMessageMeta = {
         zapi_message_id: stanzaId,
+        normalized_zapi_message_id: normalizeExternalMessageId(stanzaId),
         content: quotedText,
         participant: participant,
+        context_keys: Object.keys(contextInfo).slice(0, 20),
+        quoted_message_keys: quotedMsg && typeof quotedMsg === 'object' ? Object.keys(quotedMsg).slice(0, 20) : [],
       };
       console.log(`[WEBHOOK] Quoted message detected: stanzaId=${stanzaId}, text=${quotedText?.substring(0, 50) || 'none'}`);
     }
@@ -1705,11 +1749,37 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
     let resolvedQuotedId: string | null = null;
     let resolvedQuotedSender: string | null = null;
     if (quotedMessageMeta.zapi_message_id) {
-      const { data: quotedRow } = await supabase
+      const quotedIdCandidates = Array.from(new Set([
+        quotedMessageMeta.zapi_message_id,
+        quotedMessageMeta.normalized_zapi_message_id,
+        normalizeExternalMessageId(quotedMessageMeta.zapi_message_id),
+      ].filter(Boolean)));
+
+      let quotedRow: any = null;
+      const { data: exactRows } = await supabase
         .from('messages')
-        .select('id, direction, content')
-        .eq('zapi_message_id', quotedMessageMeta.zapi_message_id)
-        .maybeSingle();
+        .select('id, direction, content, type, media_url, zapi_message_id')
+        .eq('conversation_id', conversation.id)
+        .in('zapi_message_id', quotedIdCandidates.length > 0 ? quotedIdCandidates : ['__none__'])
+        .limit(1);
+
+      quotedRow = exactRows?.[0] || null;
+
+      if (!quotedRow && quotedMessageMeta.normalized_zapi_message_id) {
+        const { data: recentRows } = await supabase
+          .from('messages')
+          .select('id, direction, content, type, media_url, zapi_message_id')
+          .eq('conversation_id', conversation.id)
+          .not('zapi_message_id', 'is', null)
+          .order('created_at', { ascending: false })
+          .limit(80);
+
+        quotedRow = (recentRows || []).find((row: any) =>
+          normalizeExternalMessageId(row.zapi_message_id) === quotedMessageMeta.normalized_zapi_message_id
+          || String(row.zapi_message_id || '').includes(quotedMessageMeta.normalized_zapi_message_id)
+        ) || null;
+      }
+
       if (quotedRow) {
         resolvedQuotedId = quotedRow.id;
         resolvedQuotedSender = quotedRow.direction === 'inbound' ? (contact.name || phone) : 'Você';
@@ -1717,13 +1787,30 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
         if (!quotedMessageMeta.content && quotedRow.content) {
           quotedMessageMeta.content = quotedRow.content;
         }
+        if (!quotedMessageMeta.content && quotedRow.type && quotedRow.type !== 'text') {
+          quotedMessageMeta.content = quotedRow.type === 'image'
+            ? 'Imagem'
+            : quotedRow.type === 'audio'
+              ? 'Audio'
+              : quotedRow.type === 'video'
+                ? 'Video'
+                : quotedRow.type === 'document'
+                  ? 'Documento'
+                  : 'Midia';
+        }
       }
     }
     messageMetadata.quoted_message = {
       id: resolvedQuotedId || null,
       zapi_message_id: quotedMessageMeta.zapi_message_id,
+      normalized_zapi_message_id: quotedMessageMeta.normalized_zapi_message_id || null,
       content: quotedMessageMeta.content || null,
       sender: resolvedQuotedSender || quotedMessageMeta.participant || null,
+      resolved: !!resolvedQuotedId,
+      diagnostics: {
+        context_keys: quotedMessageMeta.context_keys || [],
+        quoted_message_keys: quotedMessageMeta.quoted_message_keys || [],
+      },
     };
   }
 
