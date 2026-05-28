@@ -364,23 +364,26 @@ async function deleteMessageForEveryone(
     if (!baseUrl || !token) throw new Error('Provedor de WhatsApp sem credenciais para apagar mensagem');
 
     const phone = Array.isArray(conversation.contact) ? conversation.contact[0]?.phone : conversation.contact?.phone;
-    const remoteJid = phone ? `${String(phone).replace(/\D/g, '')}@s.whatsapp.net` : undefined;
+    const number = String(phone || '').replace(/\D/g, '');
+    const remoteJid = number ? `${number}@s.whatsapp.net` : undefined;
+    const alternateRemoteJid = number ? `${number}@s.whatsapp.com` : undefined;
     const providerMessageId = message.zapi_message_id;
     const key = { id: providerMessageId, remoteJid, fromMe: true };
 
-    const number = String(phone || '').replace(/\D/g, '');
     const candidates = provider === 'evolution'
         ? [
-            { endpoint: `${baseUrl}/chat/deleteMessageForEveryone/${instanceName}`, headers: { apikey: token }, body: { id: providerMessageId, remoteJid, fromMe: true } },
-            { endpoint: `${baseUrl}/chat/deleteMessageForEveryone/${instanceName}`, headers: { apikey: token }, body: { key } },
-            { endpoint: `${baseUrl}/message/delete/${instanceName}`, headers: { apikey: token }, body: { id: providerMessageId, key } },
+            { method: 'DELETE', endpoint: `${baseUrl}/chat/deleteMessageForEveryone/${instanceName}`, headers: { apikey: token }, body: { id: providerMessageId, remoteJid, fromMe: true } },
+            { method: 'DELETE', endpoint: `${baseUrl}/chat/deleteMessageForEveryone/${instanceName}`, headers: { apikey: token }, body: { id: providerMessageId, remoteJid: alternateRemoteJid, fromMe: true } },
+            { method: 'POST', endpoint: `${baseUrl}/chat/deleteMessageForEveryone/${instanceName}`, headers: { apikey: token }, body: { id: providerMessageId, remoteJid, fromMe: true } },
+            { method: 'POST', endpoint: `${baseUrl}/chat/deleteMessageForEveryone/${instanceName}`, headers: { apikey: token }, body: { key } },
+            { method: 'POST', endpoint: `${baseUrl}/message/delete/${instanceName}`, headers: { apikey: token }, body: { id: providerMessageId, key } },
         ]
         : [
-            { endpoint: `${baseUrl}/message/delete`, headers: { token }, body: { messageId: providerMessageId, number, phone: number, owner: true } },
-            { endpoint: `${baseUrl}/message/delete`, headers: { token }, body: { id: providerMessageId, number, phone: number, owner: true } },
-            { endpoint: `${baseUrl}/message/delete`, headers: { token }, body: { key, number, phone: number, owner: true } },
-            { endpoint: `${baseUrl}/chat/delete`, headers: { token }, body: { messageId: providerMessageId, number, phone: number, owner: true } },
-            { endpoint: `${baseUrl}/chat/deleteMessage`, headers: { token }, body: { messageId: providerMessageId, number, phone: number, owner: true } },
+            { method: 'POST', endpoint: `${baseUrl}/message/delete`, headers: { token }, body: { messageId: providerMessageId, number, phone: number, owner: true } },
+            { method: 'POST', endpoint: `${baseUrl}/message/delete`, headers: { token }, body: { id: providerMessageId, number, phone: number, owner: true } },
+            { method: 'POST', endpoint: `${baseUrl}/message/delete`, headers: { token }, body: { key, number, phone: number, owner: true } },
+            { method: 'POST', endpoint: `${baseUrl}/chat/delete`, headers: { token }, body: { messageId: providerMessageId, number, phone: number, owner: true } },
+            { method: 'POST', endpoint: `${baseUrl}/chat/deleteMessage`, headers: { token }, body: { messageId: providerMessageId, number, phone: number, owner: true } },
         ];
 
     let providerResult: any = null;
@@ -388,7 +391,7 @@ async function deleteMessageForEveryone(
     for (const candidate of candidates.filter(c => !c.endpoint.endsWith('/'))) {
         try {
             const response = await fetch(candidate.endpoint, {
-                method: 'POST',
+                method: candidate.method,
                 headers: { 'Content-Type': 'application/json', ...candidate.headers },
                 body: JSON.stringify(candidate.body),
             });
