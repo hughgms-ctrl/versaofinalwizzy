@@ -407,14 +407,23 @@ export function useMoveConversation() {
         throw new Error('A coluna escolhida nao pertence ao pipeline de destino.');
       }
 
-      // Check if position already exists (unique per conversation_id globally)
-      const { data: existing, error: existingError } = await supabase
+      // Check if position already exists. Keep the newest row if legacy duplicates exist.
+      const { data: existingRows, error: existingError } = await supabase
         .from('conversation_pipeline_positions')
         .select('id, column_id, pipeline_id')
         .eq('conversation_id', conversationId)
-        .maybeSingle();
+        .order('updated_at', { ascending: false })
+        .limit(10);
 
       if (existingError) throw existingError;
+      const existing = existingRows?.[0] || null;
+
+      if (existingRows && existingRows.length > 1) {
+        await supabase
+          .from('conversation_pipeline_positions')
+          .delete()
+          .in('id', existingRows.slice(1).map((row) => row.id));
+      }
 
       if (existing?.pipeline_id === pipelineId && existing?.column_id === columnId) {
         return {
@@ -654,28 +663,44 @@ export function useTransferConversation() {
       const targetColumnId = targetColumns?.[0]?.id;
       if (!targetColumnId) throw new Error('Pipeline sem colunas');
 
-      // Get current position for history
-      const { data: currentPos } = await supabase
+      // Get current position for history. Keep newest if old duplicate rows exist.
+      const { data: currentRows, error: currentRowsError } = await supabase
         .from('conversation_pipeline_positions')
-        .select('pipeline_id, column_id')
+        .select('id, pipeline_id, column_id')
         .eq('conversation_id', conversationId)
-        .maybeSingle();
+        .order('updated_at', { ascending: false })
+        .limit(10);
 
-      // Delete old position (unique constraint means only one exists)
-      await supabase
-        .from('conversation_pipeline_positions')
-        .delete()
-        .eq('conversation_id', conversationId);
+      if (currentRowsError) throw currentRowsError;
+      const currentPos = currentRows?.[0] || null;
 
-      // Insert new position
-      const { error } = await supabase
-        .from('conversation_pipeline_positions')
-        .insert({
-          conversation_id: conversationId,
-          pipeline_id: targetPipelineId,
-          column_id: targetColumnId,
-          order: 0,
-        });
+      if (currentRows && currentRows.length > 1) {
+        await supabase
+          .from('conversation_pipeline_positions')
+          .delete()
+          .in('id', currentRows.slice(1).map((row) => row.id));
+      }
+
+      const mutation = currentPos
+        ? supabase
+          .from('conversation_pipeline_positions')
+          .update({
+            pipeline_id: targetPipelineId,
+            column_id: targetColumnId,
+            order: 0,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', currentPos.id)
+        : supabase
+          .from('conversation_pipeline_positions')
+          .insert({
+            conversation_id: conversationId,
+            pipeline_id: targetPipelineId,
+            column_id: targetColumnId,
+            order: 0,
+          });
+
+      const { error } = await mutation;
 
       if (error) throw error;
 

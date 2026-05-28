@@ -301,6 +301,49 @@ Deno.serve(async (req) => {
     const connectionSettings = await loadConnectionSettings(supabase);
     const providerStrategy = await loadProviderStrategy(supabase);
 
+    const { data: currentPosition } = await supabase
+      .from("conversation_pipeline_positions")
+      .select("column_id")
+      .eq("conversation_id", conversationId)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (currentPosition?.column_id !== columnId) {
+      console.log("Skipping stale stage notification", {
+        conversationId,
+        requestedColumnId: columnId,
+        currentColumnId: currentPosition?.column_id || null,
+      });
+      return new Response(
+        JSON.stringify({ message: "Skipped stale notification" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const { data: duplicateMessage } = await supabase
+      .from("messages")
+      .select("id")
+      .eq("metadata->>stage_notification", "true")
+      .eq("metadata->>source_conversation_id", conversationId)
+      .eq("metadata->>source_column_id", columnId)
+      .gte("created_at", fiveMinutesAgo)
+      .limit(1)
+      .maybeSingle();
+
+    if (duplicateMessage?.id) {
+      console.log("Skipping duplicate stage notification", {
+        conversationId,
+        columnId,
+        duplicateMessageId: duplicateMessage.id,
+      });
+      return new Response(
+        JSON.stringify({ message: "Skipped duplicate notification" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     // Resolve workspaceId from conversation if not provided
     let workspaceId: string | null = explicitWorkspaceId || null;
     if (!workspaceId) {
