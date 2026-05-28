@@ -10,7 +10,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useSignatureSettings } from '@/hooks/useSignatureSettings';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Bot, User, Send, Loader2, MessageCircle, Mic, Check, CheckCheck, ArrowUp, FileText, MapPin, Play, UserCircle, X, Variable, PenLine, Archive, Search, Reply, Clock, Sparkles, Timer, ChevronDown, RefreshCw } from 'lucide-react';
+import { Bot, User, Send, Loader2, MessageCircle, Mic, Check, CheckCheck, ArrowUp, FileText, MapPin, Play, UserCircle, X, Variable, PenLine, Archive, Search, Reply, Clock, Sparkles, Timer, ChevronDown, RefreshCw, Trash2 } from 'lucide-react';
 import { formatWhatsAppMessage, parseMessageVariables, messageVariables } from '@/lib/whatsappFormatter';
 import {
   DropdownMenu,
@@ -810,6 +810,15 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
                        highlightedMessageId={highlightedMessageId}
                        followUpMap={followUpMap || {}}
                        onReply={(msg) => setReplyingTo(msg)}
+                       onDelete={async (msg) => {
+                         const { data, error } = await supabase.functions.invoke('zapi-message-actions', {
+                           body: { action: 'delete', messageId: msg.id, instanceId: conversation.whatsapp_instance_id },
+                         });
+                         if (error || data?.error || data?.success === false) {
+                           throw new Error(data?.error || error?.message || 'Nao foi possivel apagar a mensagem.');
+                         }
+                         await queryClient.invalidateQueries({ queryKey: ['messages', msg.conversation_id] });
+                       }}
                        onFollowUp={(msg) => {
                          setFollowUpMessage(msg);
                          setFollowUpDialogOpen(true);
@@ -1103,11 +1112,12 @@ interface MessageBubbleListProps {
   highlightedMessageId?: string | null;
   followUpMap?: Record<string, { step: number; triggerMessageId?: string }>;
   onReply?: (message: DbMessage) => void;
+  onDelete?: (message: DbMessage) => Promise<void>;
   onFollowUp?: (message: DbMessage) => void;
   onAdjustPrompt?: (message: DbMessage) => void;
 }
 
-function MessageBubbleList({ messages, mediaMessageIds, contactAvatar, contactName, contactPhone, contactId, senderAvatar, senderName, highlightedMessageId, followUpMap, onReply, onFollowUp, onAdjustPrompt }: MessageBubbleListProps) {
+function MessageBubbleList({ messages, mediaMessageIds, contactAvatar, contactName, contactPhone, contactId, senderAvatar, senderName, highlightedMessageId, followUpMap, onReply, onDelete, onFollowUp, onAdjustPrompt }: MessageBubbleListProps) {
   const { transcriptions, isLoading: transcriptionsLoading } = useMediaTranscriptions(mediaMessageIds);
   const [localTranscriptions, setLocalTranscriptions] = useState<Record<string, string>>({});
 
@@ -1186,6 +1196,7 @@ function MessageBubbleList({ messages, mediaMessageIds, contactAvatar, contactNa
               isHighlighted={highlightedMessageId === message.id}
               hasFollowUp={!!(conversationFollowUp && message.id === followUpTargetId)}
               onReply={onReply}
+              onDelete={onDelete}
               onFollowUp={onFollowUp}
               onTranscriptionUpdate={handleTranscriptionUpdate}
               onAdjustPrompt={onAdjustPrompt}
@@ -1210,16 +1221,18 @@ interface MessageBubbleProps {
   isHighlighted?: boolean;
   hasFollowUp?: boolean;
   onReply?: (message: DbMessage) => void;
+  onDelete?: (message: DbMessage) => Promise<void>;
   onFollowUp?: (message: DbMessage) => void;
   onTranscriptionUpdate?: (messageId: string, transcription: string) => void;
   onAdjustPrompt?: (message: DbMessage) => void;
 }
 
-function MessageBubble({ message, contactAvatar, contactName, contactPhone, contactId, transcription, isTranscriptionLoading, senderAvatar, senderName, isHighlighted, hasFollowUp, onReply, onFollowUp, onTranscriptionUpdate, onAdjustPrompt }: MessageBubbleProps) {
+function MessageBubble({ message, contactAvatar, contactName, contactPhone, contactId, transcription, isTranscriptionLoading, senderAvatar, senderName, isHighlighted, hasFollowUp, onReply, onDelete, onFollowUp, onTranscriptionUpdate, onAdjustPrompt }: MessageBubbleProps) {
   const isInbound = message.direction === 'inbound';
   const isBot = message.is_from_bot;
   const queryClient = useQueryClient();
   const [isRecoveringMedia, setIsRecoveringMedia] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const recoverMissingMedia = async () => {
     if (isRecoveringMedia) return;
@@ -1246,6 +1259,32 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
       });
     } finally {
       setIsRecoveringMedia(false);
+    }
+  };
+
+  const deleteMessageForEveryone = async () => {
+    if (!onDelete || isDeleting) return;
+    if (!message.zapi_message_id) {
+      toast({
+        title: 'Mensagem sem ID do WhatsApp',
+        description: 'Nao foi possivel apagar no WhatsApp porque esta mensagem nao tem ID remoto.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      await onDelete(message);
+      toast({ title: 'Mensagem apagada' });
+    } catch (error) {
+      toast({
+        title: 'Erro ao apagar mensagem',
+        description: error instanceof Error ? error.message : 'Nao foi possivel apagar a mensagem.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -1502,6 +1541,24 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
             </TooltipTrigger>
             <TooltipContent side="top" className="text-xs">Responder</TooltipContent>
           </Tooltip>
+          {onDelete && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={deleteMessageForEveryone}
+                  disabled={isDeleting}
+                  className="h-6 w-6 rounded-full bg-card border border-border shadow-sm flex items-center justify-center hover:bg-destructive/10 transition-colors disabled:opacity-50"
+                >
+                  {isDeleting ? (
+                    <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+                  ) : (
+                    <Trash2 className="h-3 w-3 text-destructive" />
+                  )}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="text-xs">Apagar para todos</TooltipContent>
+            </Tooltip>
+          )}
         </div>
       )}
       {isInbound && (

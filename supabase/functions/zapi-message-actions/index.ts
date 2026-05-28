@@ -291,6 +291,122 @@ async function recoverMediaFile(supabase: any, messageId: string, userId: string
     return { mediaUrl, recovered: true };
 }
 
+async function deleteMessageForEveryone(
+    supabase: any,
+    messageId: string,
+    userId: string,
+    requestedInstanceId?: string | null,
+) {
+    const { data: profile } = await supabase
+        .from('profiles')
+        .select('organization_id')
+        .eq('user_id', userId)
+        .maybeSingle();
+
+    if (!profile?.organization_id) throw new Error('Perfil nao encontrado');
+
+    const { data: message } = await supabase
+        .from('messages')
+        .select('id, zapi_message_id, direction, conversation_id, metadata')
+        .eq('id', messageId)
+        .maybeSingle();
+
+    if (!message) throw new Error('Mensagem nao encontrada');
+    if (message.direction !== 'outbound') {
+        throw new Error('So e possivel apagar no WhatsApp mensagens enviadas por voce.');
+    }
+    if (!message.zapi_message_id) {
+        throw new Error('Mensagem sem ID do WhatsApp para apagar.');
+    }
+
+    const { data: conversation } = await supabase
+        .from('conversations')
+        .select('id, organization_id, whatsapp_instance_id, contact:contacts(phone)')
+        .eq('id', message.conversation_id)
+        .maybeSingle();
+
+    if (!conversation || conversation.organization_id !== profile.organization_id) {
+        throw new Error('Acesso negado');
+    }
+
+    let instance = null;
+    const targetInstanceId = requestedInstanceId || conversation.whatsapp_instance_id;
+    if (targetInstanceId) {
+        const { data } = await supabase
+            .from('whatsapp_instances')
+            .select('*')
+            .eq('id', targetInstanceId)
+            .eq('organization_id', profile.organization_id)
+            .maybeSingle();
+        instance = data;
+    }
+
+    if (!instance) {
+        const { data: instances } = await supabase
+            .from('whatsapp_instances')
+            .select('*')
+            .eq('organization_id', profile.organization_id)
+            .eq('status', 'connected')
+            .limit(1);
+        instance = instances?.[0];
+    }
+
+    if (!instance) throw new Error('Instancia do WhatsApp nao encontrada');
+
+    const settings = await loadConnectionSettings(supabase);
+    const provider = instance.provider === 'evolution' || instance.evolution_instance_name || instance.evolution_instance_id ? 'evolution' : 'uazapi';
+    const token = provider === 'evolution'
+        ? (instance.evolution_api_key || settings.evolutionApiKey || instance.zapi_token)
+        : instance.zapi_token;
+    const baseUrl = provider === 'evolution' ? settings.evolutionBaseUrl : settings.uazapiBaseUrl;
+    const instanceName = instance.evolution_instance_name || instance.zapi_instance_id || instance.evolution_instance_id || '';
+
+    if (!baseUrl || !token) throw new Error('Provedor de WhatsApp sem credenciais para apagar mensagem');
+
+    const phone = Array.isArray(conversation.contact) ? conversation.contact[0]?.phone : conversation.contact?.phone;
+    const remoteJid = phone ? `${String(phone).replace(/\D/g, '')}@s.whatsapp.net` : undefined;
+    const providerMessageId = message.zapi_message_id;
+    const key = { id: providerMessageId, remoteJid, fromMe: true };
+
+    const candidates = provider === 'evolution'
+        ? [
+            { endpoint: `${baseUrl}/chat/deleteMessageForEveryone/${instanceName}`, headers: { apikey: token }, body: { id: providerMessageId, remoteJid, fromMe: true } },
+            { endpoint: `${baseUrl}/chat/deleteMessageForEveryone/${instanceName}`, headers: { apikey: token }, body: { key } },
+            { endpoint: `${baseUrl}/message/delete/${instanceName}`, headers: { apikey: token }, body: { id: providerMessageId, key } },
+        ]
+        : [
+            { endpoint: `${baseUrl}/message/delete`, headers: { token }, body: { messageId: providerMessageId } },
+            { endpoint: `${baseUrl}/message/delete`, headers: { token }, body: { id: providerMessageId } },
+            { endpoint: `${baseUrl}/message/delete`, headers: { token }, body: { key } },
+        ];
+
+    let providerResult: any = null;
+    let lastError = '';
+    for (const candidate of candidates.filter(c => !c.endpoint.endsWith('/'))) {
+        try {
+            const response = await fetch(candidate.endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', ...candidate.headers },
+                body: JSON.stringify(candidate.body),
+            });
+            const raw = await response.text();
+            try { providerResult = raw ? JSON.parse(raw) : {}; } catch { providerResult = raw; }
+            if (response.ok) {
+                await supabase
+                    .from('messages')
+                    .delete()
+                    .eq('id', message.id);
+                return { deleted: true, provider, providerResult };
+            }
+            lastError = `${response.status} ${raw}`.slice(0, 500);
+        } catch (error) {
+            lastError = String(error);
+        }
+    }
+
+    throw new Error(lastError || 'O provedor nao confirmou a exclusao da mensagem.');
+}
+
 Deno.serve(async (req) => {
     if (req.method === 'OPTIONS') {
         return new Response(null, { headers: corsHeaders });
@@ -323,6 +439,13 @@ Deno.serve(async (req) => {
 
         if (action === 'recover_media') {
             const result = await recoverMediaFile(supabase, messageId, user.id);
+            return new Response(JSON.stringify({ success: true, ...result }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+        }
+
+        if (action === 'delete') {
+            const result = await deleteMessageForEveryone(supabase, messageId, user.id, instanceId);
             return new Response(JSON.stringify({ success: true, ...result }), {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
             });

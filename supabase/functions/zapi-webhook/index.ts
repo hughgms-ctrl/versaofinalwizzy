@@ -603,6 +603,98 @@ async function updateMessageReceiptByProviderId(supabase: any, msgId: any, statu
   return true;
 }
 
+function extractRevokedMessageInfo(payload: any): { messageId: string; fromMe: boolean | null } {
+  const data = payload?.data || {};
+  const key = data?.key || payload?.key || payload?.message?.key || {};
+  const protocolMessage = data?.message?.protocolMessage
+    || payload?.message?.protocolMessage
+    || payload?.event?.Message?.protocolMessage
+    || payload?.event?.message?.protocolMessage
+    || {};
+  const protocolKey = protocolMessage?.key || {};
+  const eventInfo = payload?.event?.Info || payload?.event?.info || {};
+  const msg = payload?.message || {};
+
+  const messageId =
+    protocolKey?.id ||
+    protocolMessage?.messageKey?.id ||
+    protocolMessage?.id ||
+    key?.id ||
+    msg?.msgid ||
+    msg?.id ||
+    eventInfo?.ID ||
+    eventInfo?.Id ||
+    eventInfo?.id ||
+    payload?.messageId ||
+    payload?.id ||
+    '';
+
+  const rawFromMe =
+    protocolKey?.fromMe ??
+    key?.fromMe ??
+    eventInfo?.IsFromMe ??
+    eventInfo?.isFromMe ??
+    msg?.fromMe ??
+    payload?.fromMe;
+
+  const fromMe = rawFromMe === true || rawFromMe === 'true'
+    ? true
+    : rawFromMe === false || rawFromMe === 'false'
+      ? false
+      : null;
+
+  return { messageId: String(messageId || ''), fromMe };
+}
+
+async function handleRevokedMessage(supabase: any, payload: any) {
+  const { messageId, fromMe } = extractRevokedMessageInfo(payload);
+  const normalizedId = normalizeProviderMessageId(messageId);
+  if (!normalizedId) {
+    return respond({ success: true, ignored: true, reason: 'revoked_without_message_id' });
+  }
+
+  const idCandidates = Array.from(new Set([
+    messageId,
+    normalizedId,
+    `true_${normalizedId}`,
+    `false_${normalizedId}`,
+  ].filter(Boolean)));
+
+  const { data: message } = await supabase
+    .from('messages')
+    .select('id, direction, metadata')
+    .in('zapi_message_id', idCandidates)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!message) {
+    return respond({ success: true, ignored: true, reason: 'revoked_message_not_found' });
+  }
+
+  if (fromMe === true) {
+    await supabase
+      .from('messages')
+      .delete()
+      .eq('id', message.id);
+
+    return respond({ success: true, deleted: true, source: 'whatsapp_self_delete' });
+  }
+
+  const metadata = {
+    ...(message.metadata || {}),
+    whatsapp_revoked: true,
+    revoked_by_contact_at: new Date().toISOString(),
+  };
+
+  await supabase
+    .from('messages')
+    .update({ metadata })
+    .eq('id', message.id);
+
+  return respond({ success: true, preserved: true, source: 'contact_delete' });
+}
+
 async function upsertContactPresenceByPhone(
   supabase: any,
   rawPhone: string,
@@ -757,9 +849,21 @@ Deno.serve(async (req) => {
       }
     }
 
+    if (eventType.includes('revoked') || eventType.includes('revoke')) {
+      return await handleRevokedMessage(supabase, payload);
+    }
+
+    const payloadHasProtocolRevoke =
+      payload?.data?.message?.protocolMessage?.type ||
+      payload?.message?.protocolMessage?.type ||
+      payload?.event?.Message?.protocolMessage?.type;
+    if (payloadHasProtocolRevoke && String(payloadHasProtocolRevoke).toLowerCase().includes('revoke')) {
+      return await handleRevokedMessage(supabase, payload);
+    }
+
     // System events to ignore
     if (['connectfailure', 'qr', 'qrtimeout', 'historysync',
-      'notification', 'e2e_notification', 'ciphertext', 'revoked', 'protocol'].includes(eventType)) {
+      'notification', 'e2e_notification', 'ciphertext', 'protocol'].includes(eventType)) {
       return respond({ success: true, ignored: true, reason: 'system_event' });
     }
 
