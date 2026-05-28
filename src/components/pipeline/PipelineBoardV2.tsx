@@ -5,7 +5,35 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { formatDistanceToNow, isWithinInterval, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { GripVertical, Loader2, Inbox, MessageCircle, Bot, Check, CheckCheck, EyeOff, Eye, RefreshCw } from 'lucide-react';
+import {
+  GripVertical,
+  Loader2,
+  Inbox,
+  MessageCircle,
+  Bot,
+  Check,
+  CheckCheck,
+  EyeOff,
+  Eye,
+  RefreshCw,
+  StickyNote,
+  ListTodo,
+  Paperclip,
+  MessagesSquare,
+  X,
+  Save,
+  Phone,
+  CalendarDays,
+  Activity,
+  AlignLeft,
+  Palette,
+  Tags as TagsIcon,
+  Settings,
+  Image as ImageIcon,
+  Plus,
+  Trash2,
+  CheckSquare,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ConversationCardActions } from '@/components/conversations/ConversationCardActions';
 import { cn } from '@/lib/utils';
@@ -24,6 +52,17 @@ import { useTags } from '@/hooks/useTags';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useFollowUpStatus } from '@/hooks/useFollowUpStatus';
 import { useMessageSearch } from '@/hooks/useMessageSearch';
+import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Separator } from '@/components/ui/separator';
+import { Badge } from '@/components/ui/badge';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { ContactFilesSection } from '@/components/conversations/ContactFilesSection';
+import { ContactNotesSection } from '@/components/conversations/ContactNotesSection';
+import { ContactLogsSection } from '@/components/conversations/ContactLogsSection';
+import { ContactAvatar } from '@/components/conversations/ContactAvatar';
+import { useToast } from '@/hooks/use-toast';
 
 interface PipelineBoardProps {
   pipeline: Pipeline | null;
@@ -31,6 +70,81 @@ interface PipelineBoardProps {
   searchQuery?: string;
   onConversationClick: (conversation: DbConversation) => void;
   sharedConversationIds?: Set<string>;
+}
+
+type TagDisplayMode = 'labels' | 'bars';
+type CardPanelTab = 'details' | 'files' | 'notes' | 'activity' | 'checklist';
+type ChecklistItem = { id: string; text: string; done: boolean };
+type ChecklistTemplate = { id: string; name: string; workspaceId: string | null; items: Array<{ text: string; done: boolean }> };
+
+const BOARD_BACKGROUNDS = [
+  '#9b3f6d',
+  '#2563eb',
+  '#0f766e',
+  '#7c3aed',
+  '#475569',
+  '#166534',
+  '#b45309',
+  '#1f2937',
+];
+
+const BOARD_BACKGROUND_IMAGES = [
+  {
+    name: 'Montanhas',
+    url: 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1600&q=80',
+  },
+  {
+    name: 'Cidade',
+    url: 'https://images.unsplash.com/photo-1494526585095-c41746248156?auto=format&fit=crop&w=1600&q=80',
+  },
+  {
+    name: 'Floresta',
+    url: 'https://images.unsplash.com/photo-1448375240586-882707db888b?auto=format&fit=crop&w=1600&q=80',
+  },
+  {
+    name: 'Abstrato',
+    url: 'https://images.unsplash.com/photo-1557682250-33bd709cbe85?auto=format&fit=crop&w=1600&q=80',
+  },
+];
+
+function CardMetric({
+  icon: Icon,
+  count,
+  label,
+  onClick,
+}: {
+  icon: typeof StickyNote;
+  count: number;
+  label: string;
+  onClick?: (event: React.MouseEvent) => void;
+}) {
+  return (
+    <button type="button" className="inline-flex items-center gap-1 hover:text-zinc-100" title={label} onClick={onClick}>
+      <Icon className="h-3.5 w-3.5" />
+      <span>{count}</span>
+    </button>
+  );
+}
+
+const getChecklistTemplateStorageKey = (workspaceId?: string | null) => `pipeline_checklist_templates:${workspaceId || 'global'}`;
+const getColumnChecklistStorageKey = (workspaceId?: string | null, pipelineId?: string | null) => (
+  `pipeline_column_checklists:${workspaceId || 'global'}:${pipelineId || 'none'}`
+);
+
+function loadChecklistTemplates(workspaceId?: string | null): ChecklistTemplate[] {
+  try {
+    return JSON.parse(localStorage.getItem(getChecklistTemplateStorageKey(workspaceId)) || '[]');
+  } catch {
+    return [];
+  }
+}
+
+function loadColumnChecklistConfig(workspaceId?: string | null, pipelineId?: string | null): Record<string, string> {
+  try {
+    return JSON.parse(localStorage.getItem(getColumnChecklistStorageKey(workspaceId, pipelineId)) || '{}');
+  } catch {
+    return {};
+  }
 }
 
 export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversationClick, sharedConversationIds }: PipelineBoardProps) {
@@ -50,6 +164,55 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
 
   const [draggedCard, setDraggedCard] = useState<string | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
+  const [selectedCard, setSelectedCard] = useState<DbConversation | null>(null);
+  const [selectedCardTab, setSelectedCardTab] = useState<CardPanelTab>('details');
+  const [expandedChecklistCardId, setExpandedChecklistCardId] = useState<string | null>(null);
+  const [tagDisplayMode, setTagDisplayMode] = useState<TagDisplayMode>(() => {
+    const stored = localStorage.getItem('pipeline_tag_display_mode');
+    return stored === 'bars' ? 'bars' : 'labels';
+  });
+  const [boardBackground, setBoardBackground] = useState(() => localStorage.getItem('pipeline_board_background') || BOARD_BACKGROUNDS[0]);
+  const [boardBackgroundImage, setBoardBackgroundImage] = useState(() => localStorage.getItem('pipeline_board_background_image') || '');
+  const [checklistTemplates, setChecklistTemplates] = useState<ChecklistTemplate[]>(() => loadChecklistTemplates(selectedWorkspaceId));
+  const [columnChecklistConfig, setColumnChecklistConfig] = useState<Record<string, string>>(() => (
+    loadColumnChecklistConfig(selectedWorkspaceId, pipeline?.id)
+  ));
+
+  const toggleTagDisplayMode = useCallback(() => {
+    setTagDisplayMode(prev => {
+      const next = prev === 'labels' ? 'bars' : 'labels';
+      localStorage.setItem('pipeline_tag_display_mode', next);
+      return next;
+    });
+  }, []);
+
+  const changeBoardBackground = useCallback((color: string) => {
+    setBoardBackground(color);
+    setBoardBackgroundImage('');
+    localStorage.setItem('pipeline_board_background', color);
+    localStorage.removeItem('pipeline_board_background_image');
+  }, []);
+
+  const changeBoardBackgroundImage = useCallback((url: string) => {
+    setBoardBackgroundImage(url);
+    localStorage.setItem('pipeline_board_background_image', url);
+  }, []);
+
+  useEffect(() => {
+    setChecklistTemplates(loadChecklistTemplates(selectedWorkspaceId));
+    setColumnChecklistConfig(loadColumnChecklistConfig(selectedWorkspaceId, pipeline?.id));
+  }, [selectedWorkspaceId, pipeline?.id]);
+
+  const saveColumnChecklistConfig = useCallback((columnId: string, templateId: string) => {
+    if (!pipeline?.id) return;
+    setColumnChecklistConfig(prev => {
+      const next = { ...prev };
+      if (templateId) next[columnId] = templateId;
+      else delete next[columnId];
+      localStorage.setItem(getColumnChecklistStorageKey(selectedWorkspaceId, pipeline.id), JSON.stringify(next));
+      return next;
+    });
+  }, [pipeline?.id, selectedWorkspaceId]);
 
   // Admin preference to hide unassigned column (localStorage)
   const [adminHideUnassigned, setAdminHideUnassigned] = useState(() => {
@@ -235,6 +398,42 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
     });
   }, [conversations, filters, searchQuery, allContactTags, selectedWorkspaceId, selectedWorkspace, messageSearchResult, sharedConversationIds]);
 
+  const filteredContactIds = useMemo(() => (
+    Array.from(new Set(filteredConversations.map(conv => conv.contact?.id).filter(Boolean) as string[]))
+  ), [filteredConversations]);
+
+  const { data: contactFileCounts = new Map<string, number>() } = useQuery({
+    queryKey: ['pipeline-contact-file-counts', filteredContactIds],
+    queryFn: async () => {
+      if (filteredContactIds.length === 0) return new Map<string, number>();
+      const { data, error } = await supabase
+        .from('contact_files')
+        .select('contact_id')
+        .in('contact_id', filteredContactIds);
+      if (error) throw error;
+      const counts = new Map<string, number>();
+      (data || []).forEach(row => counts.set(row.contact_id, (counts.get(row.contact_id) || 0) + 1));
+      return counts;
+    },
+    enabled: filteredContactIds.length > 0,
+  });
+
+  const { data: contactNoteCounts = new Map<string, number>() } = useQuery({
+    queryKey: ['pipeline-contact-note-counts', filteredContactIds],
+    queryFn: async () => {
+      if (filteredContactIds.length === 0) return new Map<string, number>();
+      const { data, error } = await supabase
+        .from('contact_notes')
+        .select('contact_id')
+        .in('contact_id', filteredContactIds);
+      if (error) throw error;
+      const counts = new Map<string, number>();
+      (data || []).forEach(row => counts.set(row.contact_id, (counts.get(row.contact_id) || 0) + 1));
+      return counts;
+    },
+    enabled: filteredContactIds.length > 0,
+  });
+
   // Map conversations to columns
   const getConversationsByColumn = (columnId: string) => {
     const positionMap = new Map(positions.map(p => [p.conversation_id, p.column_id]));
@@ -252,6 +451,41 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', conversationId);
   };
+
+  const saveChecklistForConversation = useCallback(async (conversation: DbConversation, items: ChecklistItem[]) => {
+    const currentMetadata = (conversation.metadata as Record<string, unknown>) || {};
+    const optimisticConversation = {
+      ...conversation,
+      metadata: { ...currentMetadata, pipeline_checklist: items },
+    } as DbConversation;
+
+    queryClient.setQueriesData({ queryKey: ['conversations'] }, (old: any) => {
+      if (!Array.isArray(old)) return old;
+      return old.map(item => item.id === conversation.id ? optimisticConversation : item);
+    });
+    setSelectedCard(prev => prev?.id === conversation.id ? optimisticConversation : prev);
+
+    const { error } = await supabase
+      .from('conversations')
+      .update({ metadata: { ...currentMetadata, pipeline_checklist: items } })
+      .eq('id', conversation.id);
+    if (error) throw error;
+    queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    queryClient.invalidateQueries({ queryKey: ['pipeline-conversations'] });
+  }, [queryClient]);
+
+  const applyColumnChecklistTemplate = useCallback(async (conversationId: string, columnId: string) => {
+    const templateId = columnChecklistConfig[columnId];
+    if (!templateId) return;
+    const template = checklistTemplates.find(item => item.id === templateId);
+    if (!template) return;
+    const conversation = conversations?.find(item => item.id === conversationId);
+    if (!conversation) return;
+    const existing = (((conversation.metadata as any)?.pipeline_checklist || []) as ChecklistItem[]);
+    if (existing.length > 0) return;
+    const next = template.items.map(item => ({ id: crypto.randomUUID(), text: item.text, done: false }));
+    await saveChecklistForConversation(conversation, next);
+  }, [checklistTemplates, columnChecklistConfig, conversations, saveChecklistForConversation]);
 
   const handleDragOver = (e: React.DragEvent, columnId: string) => {
     e.preventDefault();
@@ -292,11 +526,22 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
           pipelineId: pipeline.id,
           columnId,
         });
+        await applyColumnChecklistTemplate(draggedCard, columnId);
       }
     }
     setDraggedCard(null);
     setDragOverColumn(null);
   };
+
+  const handleMoveCardFromPanel = useCallback(async (conversation: DbConversation, columnId: string) => {
+    if (!pipeline) return;
+    await moveConversation.mutateAsync({
+      conversationId: conversation.id,
+      pipelineId: pipeline.id,
+      columnId,
+    });
+    await applyColumnChecklistTemplate(conversation.id, columnId);
+  }, [applyColumnChecklistTemplate, moveConversation, pipeline]);
 
   const handleDragEnd = () => {
     setDraggedCard(null);
@@ -401,10 +646,6 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
     const hasUnread = conversation.unread_count > 0;
     const lastMessage = conversation.last_message?.[0];
     const isAIActive = lastMessage?.is_from_bot;
-    const searchSnippet = searchQuery.trim().length >= 2 ? messageSearchResult?.snippets?.get(conversation.id) : undefined;
-    const highlightedSnippet = searchSnippet ? highlightTerm(stripMarkdown(searchSnippet), searchQuery) : null;
-    const messagePreview = searchSnippet ? null : getLastMessagePreview(conversation);
-
     // Real presence logic using contact_presence table
     const presenceData = conversation.contact?.contact_presence;
     const presence = Array.isArray(presenceData) ? presenceData[0] : presenceData;
@@ -412,6 +653,16 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
     const isOnline = isActive && presence?.presence_type !== 'offline';
     const isTyping = isActive && presence?.presence_type === 'typing';
     const isRecording = isActive && presence?.presence_type === 'recording';
+    const contactId = conversation.contact?.id;
+    const note = (conversation.contact?.metadata as { note?: string } | null)?.note;
+    const contactTagIds = allContactTags?.filter(ct => ct.contact_id === contactId).map(ct => ct.tag_id) || [];
+    const contactTags = tags.filter(t => contactTagIds.includes(t.id));
+    const visibleTags = contactTags.slice(0, 5);
+    const fileCount = contactId ? contactFileCounts.get(contactId) || 0 : 0;
+    const noteCount = contactId ? contactNoteCounts.get(contactId) || 0 : 0;
+    const checklistItems = (((conversation.metadata as any)?.pipeline_checklist || []) as ChecklistItem[]);
+    const taskCount = checklistItems.length;
+    const doneTaskCount = checklistItems.filter(item => item.done).length;
 
     return (
       <div
@@ -419,214 +670,208 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
         draggable
         onDragStart={(e) => handleDragStart(e, conversation.id)}
         onDragEnd={handleDragEnd}
-        onClick={() => onConversationClick(conversation)}
+        onClick={() => {
+          setSelectedCard(conversation);
+          setSelectedCardTab('details');
+        }}
         className={cn(
-          "pipeline-card",
+          "pipeline-card relative",
           draggedCard === conversation.id && "dragging",
-          hasUnread && "bg-primary/5"
+          hasUnread && "ring-1 ring-primary/40"
         )}
       >
         <div className="flex items-start gap-2">
-          <GripVertical className="h-4 w-4 text-muted-foreground/50 mt-1 cursor-grab flex-shrink-0" />
+          <GripVertical className="h-4 w-4 text-zinc-500 mt-0.5 cursor-grab flex-shrink-0" />
 
-          {/* Avatar with indicator */}
           <div className="relative flex-shrink-0">
-            <div className="h-10 w-10 rounded-full bg-gradient-to-br from-primary/20 to-purple-500/20 flex items-center justify-center relative">
-              {conversation.contact?.avatar_url ? (
-                <img
-                  src={conversation.contact.avatar_url}
-                  alt={contactName || contactPhone}
-                  className="h-10 w-10 rounded-full object-cover"
-                  onError={(e) => {
-                    e.currentTarget.style.display = 'none';
-                    e.currentTarget.nextElementSibling?.classList.remove('hidden');
-                  }}
-                />
-              ) : null}
-              <span className={cn("text-xs font-semibold text-primary", conversation.contact?.avatar_url && "hidden")}>
-                {getInitials(contactName || null, contactPhone)}
-              </span>
-
-              <div
-                className={cn(
-                  "absolute top-0 right-0 h-2.5 w-2.5 rounded-full ring-2 ring-card",
-                  isTyping ? "bg-blue-500 animate-pulse" :
-                    isRecording ? "bg-red-500 animate-pulse" :
-                      isOnline ? "bg-green-500" : "bg-muted-foreground/40"
-                )}
-                title={getPresenceLabel(isOnline, isTyping, isRecording)}
-              />
-            </div>
-
-            <div className={cn(
-              "absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-full flex items-center justify-center ring-2 ring-card",
-              isAIActive ? "bg-purple-500" : "bg-green-500"
-            )}>
-              {isAIActive ? (
-                <Bot className="h-2.5 w-2.5 text-white" />
-              ) : (
-                <MessageCircle className="h-2.5 w-2.5 text-white" />
+            <ContactAvatar
+              src={conversation.contact?.avatar_url}
+              name={contactName || null}
+              phone={contactPhone}
+              contactId={contactId}
+              instanceId={(conversation as any).whatsapp_instance_id}
+              size={18}
+              className="ring-1 ring-white/10"
+            />
+            <span
+              className={cn(
+                "absolute -right-0.5 -bottom-0.5 h-2 w-2 rounded-full ring-1 ring-zinc-800",
+                isTyping ? "bg-blue-400 animate-pulse" :
+                  isRecording ? "bg-red-400 animate-pulse" :
+                    isOnline ? "bg-green-400" : "bg-zinc-500"
               )}
-            </div>
+              title={getPresenceLabel(isOnline, isTyping, isRecording)}
+            />
           </div>
 
-          {/* Content - overflow hidden to contain all truncated text */}
-          <div className="flex-1 min-w-0 overflow-hidden">
-            {/* Content Lines */}
-            {(() => {
-              const metadata = conversation.contact?.metadata as { note?: string } | null;
-              const note = metadata?.note;
-
-              return (
-                <div className="flex flex-col gap-0.5">
-                  {/* Row 1: Note (if exists) + Time/Unread/Actions */}
-                  <div className="flex items-center justify-between gap-2 min-w-0">
-                    {note && (
-                      <span
-                        className="text-xs font-semibold px-2 py-0.5 bg-amber-500/15 text-amber-700 dark:text-amber-400 rounded truncate min-w-0 flex-1"
-                        title={note}
-                      >
-                        {note}
-                      </span>
-                    )}
-
-                    <div className="flex items-center gap-1 flex-shrink-0 ml-auto">
-                      {conversation.last_message_at && (
-                        <span className={cn(
-                          "text-[10px] whitespace-nowrap",
-                          hasUnread ? "text-primary font-medium" : "text-muted-foreground"
-                        )}>
-                          {formatDistanceToNow(new Date(conversation.last_message_at), { addSuffix: false, locale: ptBR })}
-                        </span>
-                      )}
-                      {hasUnread && (
-                        <span className="h-5 min-w-[20px] px-1 rounded-full bg-primary text-[10px] font-bold text-primary-foreground flex items-center justify-center">
-                          {conversation.unread_count}
-                        </span>
-                      )}
-                      <ConversationCardActions
-                        conversation={conversation}
-                        variant="minimal"
-                        onOpenChat={() => onConversationClick(conversation)}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Row 2: Name + Phone */}
-                  {note ? (
-                    <div className="flex items-center gap-1.5 min-w-0">
-                      <p className={cn(
-                        "text-[11px] truncate flex-1 min-w-0",
-                        hasUnread ? "font-bold text-foreground" : "font-medium text-muted-foreground"
-                      )} data-sensitive>
-                        {hasName ? contactName : formattedPhone}
-                      </p>
-                      {hasName && (
-                        <p className="text-[10px] text-muted-foreground/70 truncate flex-shrink-0" data-sensitive>
-                          • {formattedPhone}
-                        </p>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-between gap-2 min-w-0">
-                      <p className={cn(
-                        "text-sm truncate flex-1 min-w-0",
-                        hasUnread ? "font-bold text-foreground" : "font-medium text-foreground"
-                      )} data-sensitive>
-                        {hasName ? contactName : formattedPhone}
-                      </p>
-                    </div>
-                  )}
-                  {!note && hasName && (
-                    <p className="text-[10px] text-muted-foreground truncate" data-sensitive>
-                      {formattedPhone}
-                    </p>
-                  )}
-                </div>
-              );
-            })()}
-
-            {/* Row 3: Last message preview / Status indicator */}
-            <div className="flex items-center gap-1 mt-1">
-              {lastMessage?.direction === 'outbound' && (
-                <span className="flex-shrink-0 flex items-center">
-                  {renderMessageStatus(lastMessage)}
-                </span>
-              )}
-              {isTyping || isRecording ? (
-                <p className="text-[11px] text-green-500 font-medium animate-pulse truncate flex-1 min-w-0">
-                  {isTyping ? 'Digitando...' : 'Gravando áudio...'}
-                </p>
-              ) : highlightedSnippet ? (
-                <p className={cn(
-                  "text-[11px] truncate flex-1 min-w-0",
-                  hasUnread ? "text-foreground font-medium" : "text-muted-foreground"
-                )}>
-                  🔍 {highlightedSnippet}
-                </p>
-              ) : messagePreview ? (
-                <p className={cn(
-                  "text-[11px] truncate flex-1 min-w-0",
-                  hasUnread ? "text-foreground font-medium" : "text-muted-foreground"
-                )}>
-                  {messagePreview}
-                </p>
-              ) : (
-                <span
-                  className={cn(
-                    "px-2 py-0.5 rounded-full text-[10px] font-medium",
-                    conversation.status === 'open' && "bg-green-500/10 text-green-500",
-                    conversation.status === 'resolved' && "bg-blue-500/10 text-blue-500",
-                    conversation.status === 'archived' && "bg-muted text-muted-foreground"
-                  )}
-                >
-                  {conversation.status === 'open' && 'Aberto'}
-                  {conversation.status === 'resolved' && 'Resolvido'}
-                  {conversation.status === 'archived' && 'Arquivado'}
-                </span>
-              )}
-            </div>
-
-            {/* Follow-up Badge */}
-            {followUpMap?.[conversation.id] && (
-              <div className="flex items-center gap-1 mt-1">
-                <span className="inline-flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full bg-orange-500/15 text-orange-600 dark:text-orange-400 font-medium animate-pulse">
-                  <RefreshCw className="h-2.5 w-2.5" />
-                  Follow-up #{followUpMap[conversation.id].step}
-                </span>
+          <div className="min-w-0 flex-1 overflow-hidden">
+            {note && (
+              <div className="mb-1.5 rounded bg-amber-400/15 px-2 py-1 text-[10px] font-medium leading-tight text-amber-200 line-clamp-2">
+                {note}
               </div>
             )}
 
-            {/* Contact Tags */}
-            {(() => {
-              const contactTagIds = allContactTags?.filter(ct => ct.contact_id === conversation.contact?.id).map(ct => ct.tag_id) || [];
-              const contactTags = tags.filter(t => contactTagIds.includes(t.id));
-              if (contactTags.length === 0) return null;
-              const visibleTags = contactTags.slice(0, 3);
-              const remainingCount = contactTags.length - 3;
-              return (
-                <div className="flex items-center gap-1 mt-1 flex-wrap">
-                  {visibleTags.map(tag => (
-                    <span
-                      key={tag.id}
-                      className="text-[9px] px-1.5 py-0.5 rounded truncate max-w-[80px]"
-                      style={{ backgroundColor: `${tag.color}20`, color: tag.color }}
+            {visibleTags.length > 0 && (
+              <div className={cn("mb-1.5 flex flex-wrap gap-1", tagDisplayMode === 'bars' && "gap-1.5")}>
+                {visibleTags.map(tag => (
+                  <span
+                    key={tag.id}
+                    className={cn(
+                      tagDisplayMode === 'bars'
+                        ? "h-1.5 w-10 rounded-full"
+                        : "max-w-[92px] truncate rounded px-1.5 py-0.5 text-[9px] font-semibold leading-none"
+                    )}
+                    style={tagDisplayMode === 'bars'
+                      ? { backgroundColor: tag.color }
+                      : { backgroundColor: `${tag.color}30`, color: tag.color }}
+                    title={tag.name}
+                  >
+                    {tagDisplayMode === 'labels' ? tag.name : null}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className={cn("truncate text-[12px] font-semibold text-zinc-100", hasUnread && "text-white")} data-sensitive>
+                  {hasName ? contactName : formattedPhone}
+                </p>
+                {hasName && (
+                  <p className="mt-0.5 truncate text-[10px] text-zinc-400" data-sensitive>
+                    {formattedPhone}
+                  </p>
+                )}
+              </div>
+              {isAIActive && <Bot className="mt-0.5 h-3.5 w-3.5 shrink-0 text-purple-300" />}
+            </div>
+
+            {(isTyping || isRecording || followUpMap?.[conversation.id]) && (
+              <div className="mt-1.5 flex items-center gap-1 text-[10px] text-zinc-300">
+                {isTyping || isRecording ? (
+                  <span className="font-medium text-green-300">{isTyping ? 'Digitando...' : 'Gravando audio...'}</span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 rounded bg-orange-500/15 px-1.5 py-0.5 text-orange-300">
+                    <RefreshCw className="h-2.5 w-2.5" />
+                    Follow-up #{followUpMap[conversation.id].step}
+                  </span>
+                )}
+              </div>
+            )}
+
+            <div className="mt-1.5 flex items-center gap-2.5 text-[10px] text-zinc-400">
+              <CardMetric
+                icon={StickyNote}
+                count={noteCount}
+                label="notas"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setSelectedCard(conversation);
+                  setSelectedCardTab('notes');
+                }}
+              />
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 hover:text-zinc-100"
+                title="checklist"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setExpandedChecklistCardId(prev => prev === conversation.id ? null : conversation.id);
+                }}
+              >
+                <ListTodo className="h-3.5 w-3.5" />
+                <span>{doneTaskCount}/{taskCount}</span>
+              </button>
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 hover:text-zinc-100"
+                title="Anexos"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setSelectedCard(conversation);
+                  setSelectedCardTab('files');
+                }}
+              >
+                <Paperclip className="h-3.5 w-3.5" />
+                <span>{fileCount}</span>
+              </button>
+              <button
+                type="button"
+                className={cn(
+                  "ml-auto inline-flex items-center gap-1 rounded px-1.5 py-0.5 transition-colors",
+                  hasUnread
+                    ? "bg-primary text-primary-foreground shadow-[0_0_14px_hsl(var(--primary)/0.45)]"
+                    : "text-zinc-400 hover:bg-white/5 hover:text-zinc-100"
+                )}
+                title="Abrir mensagens"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onConversationClick(conversation);
+                }}
+              >
+                <MessagesSquare className="h-3.5 w-3.5" />
+                {hasUnread && <span className="font-bold">{conversation.unread_count}</span>}
+              </button>
+            </div>
+
+            {expandedChecklistCardId === conversation.id && (
+              <div
+                className="mt-2 space-y-1.5 rounded-md border border-white/5 bg-black/15 p-2 text-[11px] text-zinc-300"
+                onClick={(event) => event.stopPropagation()}
+              >
+                {checklistItems.length === 0 ? (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-zinc-500">Nenhum checklist neste card.</span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-2 text-[10px] text-zinc-300"
+                      onClick={() => {
+                        setSelectedCard(conversation);
+                        setSelectedCardTab('checklist');
+                      }}
                     >
-                      {tag.name}
-                    </span>
-                  ))}
-                  {remainingCount > 0 && (
-                    <span className="text-[10px] text-muted-foreground">
-                      +{remainingCount}
-                    </span>
-                  )}
-                </div>
-              );
-            })()}
+                      Adicionar
+                    </Button>
+                  </div>
+                ) : (
+                  <>
+                    {checklistItems.slice(0, 3).map(item => (
+                      <label key={item.id} className="flex items-start gap-2">
+                        <input
+                          type="checkbox"
+                          checked={item.done}
+                          className="mt-0.5 h-3.5 w-3.5 accent-primary"
+                          onChange={async () => {
+                            const next = checklistItems.map(current => (
+                              current.id === item.id ? { ...current, done: !current.done } : current
+                            ));
+                            await saveChecklistForConversation(conversation, next);
+                          }}
+                        />
+                        <span className={cn("min-w-0 flex-1 truncate", item.done && "text-zinc-500 line-through")}>{item.text}</span>
+                      </label>
+                    ))}
+                    {checklistItems.length > 3 && (
+                      <button
+                        className="text-[10px] text-zinc-500 hover:text-zinc-200"
+                        onClick={() => {
+                          setSelectedCard(conversation);
+                          setSelectedCardTab('checklist');
+                        }}
+                      >
+                        Mostrar mais
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
     );
+
   };
 
   // Check if user should see unassigned column for this pipeline
@@ -644,12 +889,16 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
     <div
       ref={scrollContainerRef}
       className={cn(
-        "flex gap-4 h-[calc(100vh-140px)]",
+        "relative flex items-start gap-5 h-[calc(100vh-140px)] p-4",
         isMobile ? "select-auto overflow-x-auto overflow-y-hidden" : "select-none cursor-grab overflow-x-auto overflow-y-hidden"
       )}
       style={{
         touchAction: isMobile ? 'pan-x pan-y' : 'pan-y',
         WebkitOverflowScrolling: 'touch',
+        backgroundColor: boardBackground,
+        backgroundImage: boardBackgroundImage ? `linear-gradient(rgb(0 0 0 / 0.18), rgb(0 0 0 / 0.18)), url(${boardBackgroundImage})` : undefined,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
       }}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
@@ -672,6 +921,95 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
         }
       }}
     >
+      <div className="fixed right-6 top-20 z-40">
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 rounded-md bg-black/30 text-white backdrop-blur hover:bg-black/45 hover:text-white"
+            >
+              <Settings className="h-4 w-4" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-80 space-y-4">
+            <div className="space-y-2">
+              <p className="text-sm font-semibold">Configuracoes do quadro</p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full justify-start"
+                onClick={toggleTagDisplayMode}
+              >
+                <TagsIcon className="mr-2 h-4 w-4" />
+                {tagDisplayMode === 'labels' ? 'Mostrar tags como barras' : 'Mostrar nome das tags'}
+              </Button>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <Palette className="h-4 w-4" />
+                Cor de fundo
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {BOARD_BACKGROUNDS.map(color => (
+                  <button
+                    key={color}
+                    type="button"
+                    className={cn(
+                      "h-7 w-7 rounded-md border border-border",
+                      !boardBackgroundImage && boardBackground === color && "ring-2 ring-primary"
+                    )}
+                    style={{ backgroundColor: color }}
+                    title="Cor do fundo"
+                    onClick={() => changeBoardBackground(color)}
+                  />
+                ))}
+                <label className="flex h-7 w-10 cursor-pointer items-center justify-center rounded-md border border-border bg-muted text-xs">
+                  <input
+                    type="color"
+                    value={boardBackground}
+                    className="h-0 w-0 opacity-0"
+                    onChange={(event) => changeBoardBackground(event.target.value)}
+                  />
+                  +
+                </label>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <ImageIcon className="h-4 w-4" />
+                Imagem de fundo
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {BOARD_BACKGROUND_IMAGES.map(image => (
+                  <button
+                    key={image.url}
+                    type="button"
+                    className={cn(
+                      "h-16 overflow-hidden rounded-md border border-border bg-cover bg-center text-left",
+                      boardBackgroundImage === image.url && "ring-2 ring-primary"
+                    )}
+                    style={{ backgroundImage: `url(${image.url})` }}
+                    onClick={() => changeBoardBackgroundImage(image.url)}
+                  >
+                    <span className="flex h-full items-end bg-black/20 p-1 text-[10px] font-semibold text-white">
+                      {image.name}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <Input
+                placeholder="URL da imagem"
+                value={boardBackgroundImage}
+                onChange={(event) => changeBoardBackgroundImage(event.target.value)}
+              />
+            </div>
+          </PopoverContent>
+        </Popover>
+      </div>
+
       {/* Admin toggle to show hidden unassigned column */}
       {isAdminOrOwner && shouldHideUnassigned && unassignedConversations.length > 0 && (
         <div className="flex flex-col items-center justify-start pt-4 min-w-[48px]">
@@ -732,7 +1070,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
               </TooltipProvider>
             )}
           </div>
-          <div className="space-y-2 min-h-[200px] overflow-y-auto flex-1" style={{ WebkitOverflowScrolling: 'touch' }}>
+          <div className="space-y-2 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
             {unassignedConversations.map(renderConversationCard)}
           </div>
         </div>
@@ -757,31 +1095,563 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
             onDragOver={(e) => handleDragOver(e, column.id)}
             onDrop={(e) => handleDrop(e, column.id)}
           >
-            <div
-              className="flex items-center justify-between mb-3 px-2 py-1.5 -mx-3 -mt-3 rounded-t-xl"
-              style={{ backgroundColor: `${column.color}15` }}
-            >
+            <div className="flex items-center justify-between mb-2 px-1 py-1">
               <div className="flex items-center gap-2">
                 <div
-                  className="h-3 w-3 rounded-full"
+                  className="h-2.5 w-2.5 rounded-full"
                   style={{ backgroundColor: column.color }}
                 />
-                <h3 className="font-semibold text-foreground text-sm">{column.name}</h3>
+                <h3 className="font-semibold text-zinc-100 text-sm">{column.name}</h3>
                 <span
-                  className="flex items-center justify-center h-5 min-w-[20px] px-1 rounded-full text-[10px] font-bold text-white"
-                  style={{ backgroundColor: column.color }}
+                  className="flex items-center justify-center h-5 min-w-[20px] px-1 rounded-full bg-white/10 text-[10px] font-bold text-zinc-200"
                 >
                   {columnConversations.length}
                 </span>
               </div>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 text-zinc-400 hover:bg-white/10 hover:text-zinc-100"
+                  >
+                    <Settings className="h-3.5 w-3.5" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-72 space-y-3">
+                  <div>
+                    <p className="text-sm font-semibold">Configuracoes da coluna</p>
+                    <p className="text-xs text-muted-foreground">Adicionar checklist automaticamente ao card quando ele chegar aqui.</p>
+                  </div>
+                  <select
+                    className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                    value={columnChecklistConfig[column.id] || ''}
+                    onChange={(event) => saveColumnChecklistConfig(column.id, event.target.value)}
+                  >
+                    <option value="">Nenhum checklist</option>
+                    {checklistTemplates.map(template => (
+                      <option key={template.id} value={template.id}>{template.name}</option>
+                    ))}
+                  </select>
+                  {checklistTemplates.length === 0 && (
+                    <p className="text-xs text-muted-foreground">Crie modelos na aba Checklist de um card. Modelos sao isolados por workspace.</p>
+                  )}
+                </PopoverContent>
+              </Popover>
             </div>
 
-            <div className="space-y-2 min-h-[200px] overflow-y-auto flex-1" style={{ WebkitOverflowScrolling: 'touch' }}>
+            <div className="space-y-2 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
               {columnConversations.map(renderConversationCard)}
             </div>
           </div>
         );
       })}
+
+      <PipelineCardDetailDialog
+        conversation={selectedCard}
+        open={!!selectedCard}
+        initialTab={selectedCardTab}
+        columns={columns}
+        currentColumnId={selectedCard ? positions.find(position => position.conversation_id === selectedCard.id)?.column_id || null : null}
+        workspaceId={selectedWorkspaceId}
+        onMoveCard={handleMoveCardFromPanel}
+        onOpenChange={(open) => {
+          if (!open) setSelectedCard(null);
+        }}
+        onOpenChat={(conversation) => onConversationClick(conversation)}
+      />
     </div>
   );
+}
+
+function PipelineCardDetailDialog({
+  conversation,
+  open,
+  initialTab,
+  columns,
+  currentColumnId,
+  workspaceId,
+  onMoveCard,
+  onOpenChange,
+  onOpenChat,
+}: {
+  conversation: DbConversation | null;
+  open: boolean;
+  initialTab: CardPanelTab;
+  columns: Array<{ id: string; name: string; color: string }>;
+  currentColumnId: string | null;
+  workspaceId?: string | null;
+  onMoveCard: (conversation: DbConversation, columnId: string) => Promise<void>;
+  onOpenChange: (open: boolean) => void;
+  onOpenChat: (conversation: DbConversation) => void;
+}) {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [activeTab, setActiveTab] = useState<CardPanelTab>(initialTab);
+  const [isEditingName, setIsEditingName] = useState(false);
+  const [editedName, setEditedName] = useState('');
+  const [editedObservation, setEditedObservation] = useState('');
+  const [editedDescription, setEditedDescription] = useState('');
+  const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>([]);
+  const [newChecklistItem, setNewChecklistItem] = useState('');
+  const [checklistTemplateName, setChecklistTemplateName] = useState('');
+  const [checklistTemplates, setChecklistTemplates] = useState<ChecklistTemplate[]>(() => loadChecklistTemplates(workspaceId));
+  const [newComment, setNewComment] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    setActiveTab(initialTab);
+    setIsEditingName(false);
+    setEditedName(conversation?.contact?.name || '');
+    setEditedObservation((conversation?.contact?.metadata as { note?: string } | null)?.note || '');
+    setEditedDescription(((conversation?.contact?.metadata as any)?.description as string) || '');
+    setChecklistItems(((conversation?.metadata as any)?.pipeline_checklist || []) as ChecklistItem[]);
+    setChecklistTemplates(loadChecklistTemplates(workspaceId));
+  }, [conversation?.id, conversation?.contact?.name, conversation?.contact?.metadata, workspaceId, initialTab]);
+
+  if (!conversation) return null;
+
+  const contact = conversation.contact;
+  const contactId = contact?.id || null;
+  const phone = contact?.phone || '';
+  const formattedPhone = formatDialogPhone(phone);
+
+  const saveContact = async () => {
+    if (!contactId) return;
+    setIsSaving(true);
+    try {
+      const currentMetadata = (contact?.metadata as Record<string, unknown>) || {};
+      const updates: Record<string, unknown> = {
+        metadata: {
+          ...currentMetadata,
+          note: editedObservation.trim() || null,
+          description: editedDescription.trim() || null,
+        },
+      };
+      if (editedName.trim()) updates.name = editedName.trim();
+
+      const { error } = await supabase
+        .from('contacts')
+        .update(updates)
+        .eq('id', contactId);
+
+      if (error) throw error;
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      toast({ title: 'Dados atualizados' });
+      setIsEditingName(false);
+    } catch (error: any) {
+      toast({
+        title: 'Erro ao salvar',
+        description: error.message || 'Nao foi possivel atualizar o contato.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const updateConversationMetadata = async (patch: Record<string, unknown>) => {
+    const currentMetadata = (conversation.metadata as Record<string, unknown>) || {};
+    const { error } = await supabase
+      .from('conversations')
+      .update({ metadata: { ...currentMetadata, ...patch } })
+      .eq('id', conversation.id);
+
+    if (error) throw error;
+    queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    queryClient.invalidateQueries({ queryKey: ['pipeline-conversations'] });
+  };
+
+  const saveChecklist = async (items = checklistItems) => {
+    setIsSaving(true);
+    try {
+      await updateConversationMetadata({ pipeline_checklist: items });
+      toast({ title: 'Checklist salvo' });
+    } catch (error: any) {
+      toast({ title: 'Erro ao salvar checklist', description: error.message, variant: 'destructive' });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const addChecklistItem = async () => {
+    if (!newChecklistItem.trim()) return;
+    const next = [...checklistItems, { id: crypto.randomUUID(), text: newChecklistItem.trim(), done: false }];
+    setChecklistItems(next);
+    setNewChecklistItem('');
+    await saveChecklist(next);
+  };
+
+  const toggleChecklistItem = async (itemId: string) => {
+    const next = checklistItems.map(item => item.id === itemId ? { ...item, done: !item.done } : item);
+    setChecklistItems(next);
+    await saveChecklist(next);
+  };
+
+  const removeChecklistItem = async (itemId: string) => {
+    const next = checklistItems.filter(item => item.id !== itemId);
+    setChecklistItems(next);
+    await saveChecklist(next);
+  };
+
+  const saveChecklistTemplate = () => {
+    if (!checklistTemplateName.trim() || checklistItems.length === 0) return;
+    const next = [
+      ...checklistTemplates,
+      {
+        id: crypto.randomUUID(),
+        name: checklistTemplateName.trim(),
+        workspaceId: workspaceId || null,
+        items: checklistItems.map(item => ({ text: item.text, done: false })),
+      },
+    ];
+    setChecklistTemplates(next);
+    localStorage.setItem(getChecklistTemplateStorageKey(workspaceId), JSON.stringify(next));
+    setChecklistTemplateName('');
+    toast({ title: 'Modelo de checklist salvo' });
+  };
+
+  const moveToColumn = async (columnId: string) => {
+    if (!conversation || !columnId || columnId === currentColumnId) return;
+    setIsSaving(true);
+    try {
+      await onMoveCard(conversation, columnId);
+      toast({ title: 'Card movido' });
+    } catch (error: any) {
+      toast({ title: 'Erro ao mover card', description: error.message, variant: 'destructive' });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const applyChecklistTemplate = async (templateId: string) => {
+    const template = checklistTemplates.find(item => item.id === templateId);
+    if (!template) return;
+    const next = template.items.map(item => ({ id: crypto.randomUUID(), text: item.text, done: item.done }));
+    setChecklistItems(next);
+    await saveChecklist(next);
+  };
+
+  const addComment = async () => {
+    if (!newComment.trim()) return;
+    const comments = (((conversation.metadata as any)?.pipeline_comments || []) as Array<{ id: string; text: string; created_at: string; author: string }>);
+    const next = [
+      {
+        id: crypto.randomUUID(),
+        text: newComment.trim(),
+        created_at: new Date().toISOString(),
+        author: 'Usuario',
+      },
+      ...comments,
+    ];
+    setNewComment('');
+    try {
+      await updateConversationMetadata({ pipeline_comments: next });
+      toast({ title: 'Comentario adicionado' });
+    } catch (error: any) {
+      toast({ title: 'Erro ao comentar', description: error.message, variant: 'destructive' });
+    }
+  };
+
+  const tabs = [
+    { id: 'details' as const, label: 'Dados', icon: AlignLeft },
+    { id: 'activity' as const, label: 'Timeline', icon: Activity },
+    { id: 'checklist' as const, label: 'Checklist', icon: CheckSquare },
+    { id: 'notes' as const, label: 'Notas', icon: StickyNote },
+    { id: 'files' as const, label: 'Anexos', icon: Paperclip },
+  ];
+  const comments = (((conversation.metadata as any)?.pipeline_comments || []) as Array<{ id: string; text: string; created_at: string; author: string }>);
+  const completedChecklistItems = checklistItems.filter(item => item.done).length;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-6xl h-[88vh] p-0 gap-0 overflow-hidden bg-[#15161d] text-zinc-100 border-zinc-700 [&>button.absolute]:hidden">
+        <div className="flex h-full min-h-0">
+          <div className="flex min-w-0 flex-1 flex-col">
+            <div className="flex items-center justify-between border-b border-zinc-700 px-5 py-4">
+              <div className="flex min-w-0 items-center gap-3">
+                <ContactAvatar
+                  src={contact?.avatar_url}
+                  name={contact?.name || null}
+                  phone={contact?.phone}
+                  contactId={contact?.id}
+                  instanceId={(conversation as any).whatsapp_instance_id}
+                  size={44}
+                  className="shrink-0"
+                />
+                <div className="min-w-0">
+                  {isEditingName ? (
+                    <div className="flex items-center gap-2">
+                      <Input
+                        value={editedName}
+                        onChange={(event) => setEditedName(event.target.value)}
+                        className="h-8 bg-zinc-900/35 border-transparent text-zinc-100 focus-visible:border-zinc-600"
+                        autoFocus
+                      />
+                      <Button size="icon" className="h-9 w-9" onClick={saveContact} disabled={isSaving}>
+                        {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                      </Button>
+                    </div>
+                  ) : (
+                    <button
+                      className="max-w-full truncate text-left text-2xl font-semibold text-zinc-100 hover:text-primary"
+                      onClick={() => setIsEditingName(true)}
+                    >
+                      {contact?.name || formattedPhone}
+                    </button>
+                  )}
+                  <div className="mt-1 flex items-center gap-2 text-sm text-zinc-400">
+                    <Phone className="h-3.5 w-3.5" />
+                    <span data-sensitive>{formattedPhone}</span>
+                    {contact?.email && (
+                      <>
+                        <span>•</span>
+                        <span data-sensitive className="truncate">{contact.email}</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-zinc-300 hover:bg-white/10 hover:text-zinc-100"
+                  onClick={() => onOpenChat(conversation)}
+                >
+                  <MessagesSquare className="mr-2 h-4 w-4" />
+                  Mensagens
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="text-zinc-300 hover:bg-white/10 hover:text-zinc-100"
+                  onClick={() => onOpenChange(false)}
+                >
+                  <X className="h-5 w-5" />
+                </Button>
+              </div>
+            </div>
+
+            <div className="flex border-b border-zinc-700 px-5">
+              {tabs.map(tab => {
+                const Icon = tab.icon;
+                return (
+                  <button
+                    key={tab.id}
+                    className={cn(
+                      "flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-medium transition-colors",
+                      activeTab === tab.id
+                        ? "border-primary text-primary"
+                        : "border-transparent text-zinc-400 hover:text-zinc-100"
+                    )}
+                    onClick={() => setActiveTab(tab.id)}
+                  >
+                    <Icon className="h-4 w-4" />
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-5">
+              {activeTab === 'details' && (
+                <div className="max-w-2xl space-y-5">
+                  <section className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-semibold text-zinc-200">Observacao</h3>
+                      <Button size="sm" onClick={saveContact} disabled={isSaving} className="h-8">
+                        {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="mr-2 h-3.5 w-3.5" />}
+                        Salvar
+                      </Button>
+                    </div>
+                    <Textarea
+                      value={editedObservation}
+                      onChange={(event) => setEditedObservation(event.target.value)}
+                      placeholder="Adicionar observacao..."
+                      className="min-h-[44px] resize-none rounded-md bg-zinc-900/35 border-transparent text-sm text-zinc-100 focus-visible:border-zinc-600"
+                    />
+                  </section>
+
+                  <section className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-semibold text-zinc-200">Descricao</h3>
+                    </div>
+                    <Textarea
+                      value={editedDescription}
+                      onChange={(event) => setEditedDescription(event.target.value)}
+                      placeholder="Adicionar descricao do card..."
+                      className="min-h-[74px] resize-none rounded-md bg-zinc-900/35 border-transparent text-sm text-zinc-100 focus-visible:border-zinc-600"
+                    />
+                  </section>
+
+                  <Separator className="bg-zinc-700" />
+
+                  <section className="grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-md bg-zinc-900/40 p-3">
+                      <div className="flex items-center gap-2 text-xs uppercase text-zinc-500">
+                        <Phone className="h-3.5 w-3.5" />
+                        Telefone
+                      </div>
+                      <p className="mt-2 text-sm text-zinc-100" data-sensitive>{formattedPhone}</p>
+                    </div>
+                    <div className="rounded-md bg-zinc-900/40 p-3">
+                      <div className="flex items-center gap-2 text-xs uppercase text-zinc-500">
+                        <CalendarDays className="h-3.5 w-3.5" />
+                        Criado em
+                      </div>
+                      <p className="mt-2 text-sm text-zinc-100">
+                        {new Date(contact?.created_at || conversation.created_at).toLocaleDateString('pt-BR')}
+                      </p>
+                    </div>
+                  </section>
+                </div>
+              )}
+
+              {activeTab === 'checklist' && (
+                <div className="max-w-2xl space-y-5">
+                  <div className="rounded-md bg-zinc-900/30 p-4">
+                    <div className="mb-3 flex items-center justify-between">
+                      <div>
+                        <h3 className="text-sm font-semibold text-zinc-100">Checklist</h3>
+                        <p className="text-xs text-zinc-500">{completedChecklistItems}/{checklistItems.length} concluidos</p>
+                      </div>
+                      <Button size="sm" onClick={() => saveChecklist()} disabled={isSaving}>
+                        {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="mr-2 h-3.5 w-3.5" />}
+                        Salvar
+                      </Button>
+                    </div>
+
+                    <div className="space-y-2">
+                      {checklistItems.map(item => (
+                        <div key={item.id} className="flex items-center gap-2 rounded-md bg-zinc-950/35 p-2">
+                          <input
+                            type="checkbox"
+                            checked={item.done}
+                            onChange={() => toggleChecklistItem(item.id)}
+                            className="h-4 w-4 accent-primary"
+                          />
+                          <span className={cn("flex-1 text-sm", item.done && "text-zinc-500 line-through")}>{item.text}</span>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-zinc-500 hover:text-destructive" onClick={() => removeChecklistItem(item.id)}>
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      ))}
+                      <div className="flex gap-2">
+                        <Input
+                          value={newChecklistItem}
+                          onChange={(event) => setNewChecklistItem(event.target.value)}
+                          placeholder="Adicionar item..."
+                          className="bg-zinc-900/60 border-zinc-700 text-zinc-100"
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') addChecklistItem();
+                          }}
+                        />
+                        <Button onClick={addChecklistItem}>
+                          <Plus className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-md bg-zinc-900/30 p-4 space-y-3">
+                    <h3 className="text-sm font-semibold text-zinc-100">Modelos de checklist</h3>
+                    <div className="flex gap-2">
+                      <Input
+                        value={checklistTemplateName}
+                        onChange={(event) => setChecklistTemplateName(event.target.value)}
+                        placeholder="Nome do modelo"
+                        className="bg-zinc-900/60 border-zinc-700 text-zinc-100"
+                      />
+                      <Button variant="outline" onClick={saveChecklistTemplate} disabled={!checklistTemplateName.trim() || checklistItems.length === 0}>
+                        Salvar modelo
+                      </Button>
+                    </div>
+                    <div className="space-y-2">
+                      {checklistTemplates.length === 0 ? (
+                        <p className="text-sm text-zinc-500">Nenhum modelo salvo.</p>
+                      ) : checklistTemplates.map(template => (
+                        <button
+                          key={template.id}
+                          className="flex w-full items-center justify-between rounded-md bg-zinc-950/35 px-3 py-2 text-left text-sm hover:bg-zinc-950/55"
+                          onClick={() => applyChecklistTemplate(template.id)}
+                        >
+                          <span>{template.name}</span>
+                          <Badge variant="secondary">{template.items.length} itens</Badge>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'files' && contactId && (
+                <div className="rounded-md bg-zinc-900/25 p-4">
+                  <ContactFilesSection contactId={contactId} />
+                </div>
+              )}
+
+              {activeTab === 'notes' && contactId && (
+                <div className="rounded-md bg-zinc-900/25 p-4">
+                  <ContactNotesSection contactId={contactId} />
+                </div>
+              )}
+
+              {activeTab === 'activity' && (
+                <div className="rounded-md bg-zinc-900/25 p-4">
+                  <ContactLogsSection conversationId={conversation.id} />
+                </div>
+              )}
+            </div>
+          </div>
+
+          <aside className="hidden w-[330px] shrink-0 border-l border-zinc-700 bg-[#1b1d22] p-4 lg:block">
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-zinc-200">Comentarios e atividade</h3>
+              <Button variant="ghost" size="sm" className="h-8 text-zinc-400 hover:text-zinc-100" onClick={() => setActiveTab('activity')}>
+                Ver tudo
+              </Button>
+            </div>
+            <div className="space-y-3">
+              <Textarea
+                value={newComment}
+                onChange={(event) => setNewComment(event.target.value)}
+                placeholder="Escrever um comentario..."
+                className="min-h-[72px] resize-none bg-zinc-900/60 border-zinc-700 text-zinc-100"
+              />
+              <Button size="sm" className="w-full" onClick={addComment} disabled={!newComment.trim()}>
+                Comentar
+              </Button>
+              {comments.length > 0 && (
+                <div className="space-y-2">
+                  {comments.map(comment => (
+                    <div key={comment.id} className="rounded-md bg-zinc-900/50 p-2">
+                      <p className="text-sm text-zinc-100 whitespace-pre-wrap">{comment.text}</p>
+                      <p className="mt-1 text-[10px] text-zinc-500">
+                        {comment.author} • {new Date(comment.created_at).toLocaleString('pt-BR')}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <Separator className="bg-zinc-700" />
+              <ContactLogsSection conversationId={conversation.id} />
+            </div>
+          </aside>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function formatDialogPhone(phone: string) {
+  const cleaned = phone.replace(/\D/g, '');
+  if (cleaned.length === 13 && cleaned.startsWith('55')) {
+    return `+55 (${cleaned.slice(2, 4)}) ${cleaned.slice(4, 9)}-${cleaned.slice(9)}`;
+  }
+  if (cleaned.length === 12 && cleaned.startsWith('55')) {
+    return `+55 (${cleaned.slice(2, 4)}) ${cleaned.slice(4, 8)}-${cleaned.slice(8)}`;
+  }
+  return phone;
 }
