@@ -1109,8 +1109,8 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
     payload?.data?.contextInfo,
     payload?.data?.messageContextInfo,
   );
-  const deepContextInfo = explicitContextInfo ? null : findContextInfoDeep(payload);
-  const contextInfo = explicitContextInfo || deepContextInfo?.value || null;
+  const deepContextInfo = findContextInfoDeep(payload);
+  const contextInfo = deepContextInfo?.value || explicitContextInfo || null;
   
   if (contextInfo) {
     const stanzaId = contextInfo.stanzaId
