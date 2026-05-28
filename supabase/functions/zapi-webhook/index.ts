@@ -1455,6 +1455,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
   if (base64Data && mimeType) {
     try {
       const normalizedMimeType = mimeType.toLowerCase().split(';')[0].trim();
+      const uploadContentType = normalizedMimeType || mimeType;
       const extMap: Record<string, string> = {
         'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif',
         'audio/ogg': 'ogg', 'application/ogg': 'ogg', 'audio/mpeg': 'mp3', 'audio/mp3': 'mp3', 'audio/mp4': 'm4a', 'audio/x-m4a': 'm4a', 'audio/m4a': 'm4a', 'audio/wav': 'wav', 'audio/x-wav': 'wav', 'audio/aac': 'aac', 'audio/webm': 'webm',
@@ -1478,7 +1479,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
       const fileName = `${safeId}.${ext}`;
       const storagePath = `webhook-media/${fileName}`;
 
-      console.log(`[WEBHOOK] Uploading media: path=${storagePath}, mimeType=${mimeType}, base64Length=${base64Data.length}`);
+      console.log(`[WEBHOOK] Uploading media: path=${storagePath}, mimeType=${mimeType}, uploadContentType=${uploadContentType}, base64Length=${base64Data.length}`);
 
       let pureBase64 = base64Data;
       if (pureBase64.includes('base64,')) {
@@ -1494,7 +1495,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
       // Try upload, create bucket if it doesn't exist
       let uploadResult = await supabase.storage
         .from('chat-media')
-        .upload(storagePath, binaryData, { contentType: mimeType, upsert: true });
+        .upload(storagePath, binaryData, { contentType: uploadContentType, upsert: true });
 
       if (uploadResult.error) {
         console.error('[WEBHOOK] First upload attempt failed:', uploadResult.error.message);
@@ -1507,7 +1508,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
           // Retry upload
           uploadResult = await supabase.storage
             .from('chat-media')
-            .upload(storagePath, binaryData, { contentType: mimeType, upsert: true });
+            .upload(storagePath, binaryData, { contentType: uploadContentType, upsert: true });
         }
       }
 
@@ -1522,6 +1523,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
           error: uploadResult.error.message || String(uploadResult.error),
           path: storagePath,
           mimeType,
+          uploadContentType,
         });
       }
     } catch (e) {
