@@ -1233,6 +1233,11 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
   const queryClient = useQueryClient();
   const [isRecoveringMedia, setIsRecoveringMedia] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const metadata = message.metadata as any;
+  const isDeletedMessage = !!metadata?.whatsapp_deleted;
+  const deletedAt = metadata?.whatsapp_deleted_at ? new Date(metadata.whatsapp_deleted_at) : null;
+  const deletedBy = metadata?.deleted_by_name || (metadata?.whatsapp_delete_source === 'whatsapp' ? 'WhatsApp' : 'Wizzy');
+  const originalType = metadata?.original_type || message.type;
 
   const recoverMissingMedia = async () => {
     if (isRecoveringMedia) return;
@@ -1291,6 +1296,33 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
   // Render media content based on type
   const renderMediaContent = () => {
     const { type, media_url, content } = message;
+
+    if (isDeletedMessage) {
+      const deletedLabel = originalType === 'image'
+        ? 'Imagem apagada'
+        : originalType === 'audio'
+          ? 'Audio apagado'
+          : originalType === 'video'
+            ? 'Video apagado'
+            : originalType === 'document'
+              ? 'Documento apagado'
+              : 'Mensagem apagada';
+
+      return (
+        <div className="flex min-w-[220px] items-start gap-3 rounded-lg border border-dashed border-border/70 bg-background/40 p-3 text-muted-foreground">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">
+            <Trash2 className="h-4 w-4" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-medium">{deletedLabel}</p>
+            <p className="text-xs">
+              Apagada por {deletedBy}
+              {deletedAt && ` em ${format(deletedAt, 'dd/MM/yyyy HH:mm', { locale: ptBR })}`}
+            </p>
+          </div>
+        </div>
+      );
+    }
 
     if (type === 'image' && media_url) {
       return (
@@ -1512,7 +1544,7 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
       {/* Hover Action Buttons - inline next to bubble */}
       {!isInbound && (
         <div className="flex items-center gap-0.5 opacity-0 group-hover/msg:opacity-100 transition-opacity self-start mt-1">
-          {!isBot && (
+          {!isBot && !isDeletedMessage && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
@@ -1541,7 +1573,7 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
             </TooltipTrigger>
             <TooltipContent side="top" className="text-xs">Responder</TooltipContent>
           </Tooltip>
-          {onDelete && (
+          {onDelete && !isDeletedMessage && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
@@ -1580,14 +1612,16 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
       <div 
         className={cn(
           "max-w-[70%] rounded-2xl px-4 py-3 relative transition-all",
-          isInbound
+          isDeletedMessage
+            ? "bg-muted/40 border border-dashed border-border text-muted-foreground rounded-tr-sm"
+            : isInbound
             ? "bg-card border border-border rounded-tl-sm"
             : isBot
               ? "bg-gradient-to-br from-primary to-purple-500 text-white rounded-tr-sm cursor-pointer hover:shadow-lg hover:scale-[1.01] active:scale-[0.99]"
               : "bg-green-500 text-white rounded-tr-sm"
         )}
         onClick={() => {
-          if (!isInbound && isBot && onAdjustPrompt) {
+          if (!isDeletedMessage && !isInbound && isBot && onAdjustPrompt) {
             onAdjustPrompt(message);
           }
         }}

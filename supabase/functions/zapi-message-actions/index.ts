@@ -123,7 +123,7 @@ async function loadConnectionSettings(supabase: any) {
 async function recoverMediaFile(supabase: any, messageId: string, userId: string) {
     const { data: profile } = await supabase
         .from('profiles')
-        .select('organization_id')
+        .select('organization_id, full_name')
         .eq('user_id', userId)
         .maybeSingle();
 
@@ -307,7 +307,7 @@ async function deleteMessageForEveryone(
 
     const { data: message } = await supabase
         .from('messages')
-        .select('id, zapi_message_id, direction, conversation_id, metadata')
+        .select('id, zapi_message_id, direction, conversation_id, content, type, media_url, metadata')
         .eq('id', messageId)
         .maybeSingle();
 
@@ -398,11 +398,30 @@ async function deleteMessageForEveryone(
             const raw = await response.text();
             try { providerResult = raw ? JSON.parse(raw) : {}; } catch { providerResult = raw; }
             if (response.ok) {
+                const deletedAt = new Date().toISOString();
+                const metadata = {
+                    ...(message.metadata || {}),
+                    whatsapp_deleted: true,
+                    whatsapp_deleted_by_us: true,
+                    whatsapp_deleted_at: deletedAt,
+                    whatsapp_delete_source: 'wizzy',
+                    deleted_by_user_id: userId,
+                    deleted_by_name: profile.full_name || null,
+                    original_type: message.type,
+                    original_content: message.content,
+                    original_media_url: message.media_url,
+                };
+
                 await supabase
                     .from('messages')
-                    .delete()
+                    .update({
+                        content: message.type === 'image' ? 'Imagem apagada' : 'Mensagem apagada',
+                        type: 'text',
+                        media_url: null,
+                        metadata,
+                    })
                     .eq('id', message.id);
-                return { deleted: true, provider, providerResult };
+                return { deleted: true, provider, providerResult, deletedAt };
             }
             lastError = `${response.status} ${raw}`.slice(0, 500);
         } catch (error) {

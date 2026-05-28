@@ -662,7 +662,7 @@ async function handleRevokedMessage(supabase: any, payload: any) {
 
   const { data: message } = await supabase
     .from('messages')
-    .select('id, direction, metadata')
+    .select('id, direction, content, type, media_url, metadata')
     .in('zapi_message_id', idCandidates)
     .order('created_at', { ascending: false })
     .limit(1)
@@ -673,12 +673,28 @@ async function handleRevokedMessage(supabase: any, payload: any) {
   }
 
   if (fromMe === true) {
+    const metadata = {
+      ...(message.metadata || {}),
+      whatsapp_deleted: true,
+      whatsapp_deleted_by_us: true,
+      whatsapp_deleted_at: new Date().toISOString(),
+      whatsapp_delete_source: 'whatsapp',
+      original_type: message.type,
+      original_content: message.content,
+      original_media_url: message.media_url,
+    };
+
     await supabase
       .from('messages')
-      .delete()
+      .update({
+        content: message.type === 'image' ? 'Imagem apagada no WhatsApp' : 'Mensagem apagada no WhatsApp',
+        type: 'text',
+        media_url: null,
+        metadata,
+      })
       .eq('id', message.id);
 
-    return respond({ success: true, deleted: true, source: 'whatsapp_self_delete' });
+    return respond({ success: true, marked_deleted: true, source: 'whatsapp_self_delete' });
   }
 
   const metadata = {
