@@ -1236,7 +1236,7 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
   const metadata = message.metadata as any;
   const isDeletedMessage = !!metadata?.whatsapp_deleted;
   const deletedAt = metadata?.whatsapp_deleted_at ? new Date(metadata.whatsapp_deleted_at) : null;
-  const deletedBy = metadata?.deleted_by_name || (metadata?.whatsapp_delete_source === 'whatsapp' ? 'WhatsApp' : 'Wizzy');
+  const deletedBy = metadata?.deleted_by_name || (metadata?.deleted_by_user_id ? 'Usuario da Wizzy' : metadata?.whatsapp_delete_source === 'whatsapp' ? 'WhatsApp' : 'Usuario da Wizzy');
   const originalType = metadata?.original_type || message.type;
 
   const recoverMissingMedia = async () => {

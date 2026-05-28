@@ -675,9 +675,13 @@ export function useMoveConversation() {
         toast({ title: 'Conversa movida!' });
       }
     },
-    onError: (error) => {
+    onError: (error: any) => {
       console.error('Error moving conversation:', error);
-      toast({ title: 'Erro ao mover conversa', variant: 'destructive' });
+      toast({
+        title: 'Erro ao mover conversa',
+        description: error?.message || 'Nao foi possivel salvar a posicao do card.',
+        variant: 'destructive',
+      });
     },
   });
 }

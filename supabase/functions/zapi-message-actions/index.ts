@@ -299,7 +299,7 @@ async function deleteMessageForEveryone(
 ) {
     const { data: profile } = await supabase
         .from('profiles')
-        .select('organization_id')
+        .select('organization_id, full_name, user_id')
         .eq('user_id', userId)
         .maybeSingle();
 
@@ -406,7 +406,7 @@ async function deleteMessageForEveryone(
                     whatsapp_deleted_at: deletedAt,
                     whatsapp_delete_source: 'wizzy',
                     deleted_by_user_id: userId,
-                    deleted_by_name: profile.full_name || null,
+                    deleted_by_name: profile.full_name || 'Usuario da Wizzy',
                     original_type: message.type,
                     original_content: message.content,
                     original_media_url: message.media_url,

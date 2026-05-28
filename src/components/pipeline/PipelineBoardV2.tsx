@@ -200,6 +200,7 @@ function buildChecklistFromTemplate(template: ChecklistTemplate, existing: Check
 export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversationClick, sharedConversationIds }: PipelineBoardProps) {
   const isMobile = useIsMobile();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const { selectedWorkspace, selectedWorkspaceId, isAdmin } = useWorkspaceContext();
   const { data: conversations, isLoading: conversationsLoading } = useConversations();
   const { data: columns = [], isLoading: columnsLoading } = usePipelineColumns(pipeline?.id || null);
@@ -557,54 +558,87 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
     }
   };
 
-  const getDropOrder = useCallback((columnId: string, targetConversationId?: string | null) => {
+  const getDropIndex = useCallback((columnId: string, targetConversationId?: string | null) => {
     const orderedPositions = positions
       .filter(position => position.column_id === columnId && position.conversation_id !== draggedCard)
       .sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
 
     if (!targetConversationId) {
-      const lastOrder = orderedPositions.length > 0
-        ? Number(orderedPositions[orderedPositions.length - 1].order || 0)
-        : -1;
-      return lastOrder + 1;
+      return orderedPositions.length;
     }
 
     const targetIndex = orderedPositions.findIndex(position => position.conversation_id === targetConversationId);
     if (targetIndex === -1) return orderedPositions.length;
-
-    const previous = orderedPositions[targetIndex - 1];
-    const target = orderedPositions[targetIndex];
-    const previousOrder = previous ? Number(previous.order || 0) : Number(target.order || 0) - 1;
-    const targetOrder = Number(target.order || 0);
-    return (previousOrder + targetOrder) / 2;
+    return targetIndex;
   }, [draggedCard, positions]);
+
+  const normalizeColumnOrder = useCallback(async (columnId: string, movedConversationId: string, targetIndex: number) => {
+    const orderedPositions = positions
+      .filter(position => position.column_id === columnId && position.conversation_id !== movedConversationId)
+      .sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
+
+    const boundedIndex = Math.max(0, Math.min(targetIndex, orderedPositions.length));
+    const reordered = [...orderedPositions];
+    reordered.splice(boundedIndex, 0, {
+      id: '',
+      conversation_id: movedConversationId,
+      pipeline_id: pipeline?.id || '',
+      column_id: columnId,
+      order: boundedIndex,
+      created_at: '',
+      updated_at: '',
+    });
+
+    const results = await Promise.all(reordered.map((position, index) => (
+      supabase
+        .from('conversation_pipeline_positions')
+        .update({ order: index, updated_at: new Date().toISOString() })
+        .eq('conversation_id', position.conversation_id)
+        .eq('pipeline_id', pipeline?.id || '')
+    )));
+    const failed = results.find(result => result.error);
+    if (failed?.error) throw failed.error;
+
+    queryClient.invalidateQueries({ queryKey: ['conversation-positions', pipeline?.id] });
+    queryClient.invalidateQueries({ queryKey: ['conversation-positions'] });
+  }, [pipeline?.id, positions, queryClient]);
 
   const handleDrop = async (e: React.DragEvent, columnId: string | null, targetConversationId?: string | null) => {
     e.preventDefault();
     e.stopPropagation();
-    if (draggedCard && pipeline) {
-      if (columnId === null) {
-        // Remove from pipeline (move to unassigned)
-        await supabase
-          .from('conversation_pipeline_positions')
-          .delete()
-          .eq('conversation_id', draggedCard)
-          .eq('pipeline_id', pipeline.id);
-        // Invalidate positions query to refresh UI
-        queryClient.invalidateQueries({ queryKey: ['conversation-positions', pipeline.id] });
-        queryClient.invalidateQueries({ queryKey: ['conversation-positions'] });
-      } else {
-        const order = getDropOrder(columnId, targetConversationId);
-        const result = await moveConversation.mutateAsync({
-          conversationId: draggedCard,
-          pipelineId: pipeline.id,
-          columnId,
-          order,
-        });
-        if (result?.changed) {
-          await applyColumnChecklistTemplate(draggedCard, columnId);
+    try {
+      if (draggedCard && pipeline) {
+        if (columnId === null) {
+          // Remove from pipeline (move to unassigned)
+          await supabase
+            .from('conversation_pipeline_positions')
+            .delete()
+            .eq('conversation_id', draggedCard)
+            .eq('pipeline_id', pipeline.id);
+          // Invalidate positions query to refresh UI
+          queryClient.invalidateQueries({ queryKey: ['conversation-positions', pipeline.id] });
+          queryClient.invalidateQueries({ queryKey: ['conversation-positions'] });
+        } else {
+          const order = getDropIndex(columnId, targetConversationId);
+          const result = await moveConversation.mutateAsync({
+            conversationId: draggedCard,
+            pipelineId: pipeline.id,
+            columnId,
+            order,
+          });
+          await normalizeColumnOrder(columnId, draggedCard, order);
+          if (result?.changed) {
+            await applyColumnChecklistTemplate(draggedCard, columnId);
+          }
         }
       }
+    } catch (error) {
+      console.error('[PipelineBoard] Failed to move card:', error);
+      toast({
+        title: 'Erro ao mover card',
+        description: error instanceof Error ? error.message : 'Nao foi possivel salvar a nova posicao.',
+        variant: 'destructive',
+      });
     }
     setDraggedCard(null);
     setDragOverColumn(null);
