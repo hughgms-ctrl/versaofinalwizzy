@@ -38,10 +38,34 @@ export interface ConversationPipelinePosition {
   updated_at: string;
 }
 
-export interface ConversationPositionOrderUpdate {
-  conversationId: string;
-  columnId: string;
-  order: number;
+async function removeStaleConversationPositions(conversationId: string, keepPositionId: string) {
+  const { data: rows, error } = await supabase
+    .from('conversation_pipeline_positions')
+    .select('id, pipeline_id, column_id, updated_at')
+    .eq('conversation_id', conversationId)
+    .order('updated_at', { ascending: false });
+
+  if (error) throw error;
+
+  const staleRows = (rows || []).filter((row) => row.id !== keepPositionId);
+  if (staleRows.length > 0) {
+    const { error: deleteError } = await supabase
+      .from('conversation_pipeline_positions')
+      .delete()
+      .in('id', staleRows.map((row) => row.id));
+
+    if (deleteError) throw deleteError;
+  }
+
+  const { data: remainingRows, error: verifyError } = await supabase
+    .from('conversation_pipeline_positions')
+    .select('id, pipeline_id, column_id')
+    .eq('conversation_id', conversationId);
+
+  if (verifyError) throw verifyError;
+  if ((remainingRows || []).some((row) => row.id !== keepPositionId)) {
+    throw new Error('Ainda existem posicoes antigas deste card em outros pipelines.');
+  }
 }
 
 export function usePipelines() {
@@ -394,8 +418,6 @@ export function useMoveConversation() {
       order = 0,
       changedByType = 'manual',
       skipAutoTransition = false,
-      positionUpdates,
-      showToast = true,
     }: { 
       conversationId: string;
       pipelineId: string;
@@ -403,33 +425,76 @@ export function useMoveConversation() {
       order?: number;
       changedByType?: string;
       skipAutoTransition?: boolean;
-      positionUpdates?: ConversationPositionOrderUpdate[];
-      showToast?: boolean;
     }) => {
-      // Check if position already exists (unique per conversation_id globally)
-      const { data: existing } = await supabase
+      const { data: targetColumn, error: targetColumnError } = await (supabase as any)
+        .from('pipeline_columns')
+        .select('id, pipeline_id')
+        .eq('id', columnId)
+        .single();
+
+      if (targetColumnError) throw targetColumnError;
+      if (!targetColumn || targetColumn.pipeline_id !== pipelineId) {
+        throw new Error('A coluna escolhida nao pertence ao pipeline de destino.');
+      }
+
+      // Check if position already exists. Keep the newest row if legacy duplicates exist.
+      const { data: existingRows, error: existingError } = await supabase
         .from('conversation_pipeline_positions')
-        .select('id, column_id, pipeline_id')
+        .select('id, column_id, pipeline_id, order')
         .eq('conversation_id', conversationId)
-        .maybeSingle();
+        .order('updated_at', { ascending: false })
+        .limit(10);
+
+      if (existingError) throw existingError;
+      const existing = existingRows?.[0] || null;
+
+      if (existingRows && existingRows.length > 1) {
+        const { error: deleteDuplicatesError } = await supabase
+          .from('conversation_pipeline_positions')
+          .delete()
+          .in('id', existingRows.slice(1).map((row) => row.id));
+
+        if (deleteDuplicatesError) throw deleteDuplicatesError;
+      }
+
+      const existingOrder = Number(existing?.order ?? 0);
+      const requestedOrder = Number(order ?? 0);
+      if (
+        existing?.pipeline_id === pipelineId &&
+        existing?.column_id === columnId &&
+        existingOrder === requestedOrder
+      ) {
+        return {
+          changed: false,
+          orderChanged: false,
+          fromColumnId: existing.column_id,
+          toColumnId: columnId,
+          pipelineId,
+        };
+      }
 
       const fromColumnId = existing?.column_id || null;
+      const stageChanged = existing?.pipeline_id !== pipelineId || existing?.column_id !== columnId;
+      let savedPosition: ConversationPipelinePosition | null = null;
 
       if (existing && existing.pipeline_id === pipelineId) {
         // Same pipeline, just update column
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from('conversation_pipeline_positions')
           .update({
             column_id: columnId,
             order,
             updated_at: new Date().toISOString(),
           })
-          .eq('id', existing.id);
+          .eq('id', existing.id)
+          .select()
+          .single();
 
         if (error) throw error;
+        savedPosition = data as ConversationPipelinePosition;
       } else if (existing) {
         // Different pipeline — update pipeline + column
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from('conversation_pipeline_positions')
           .update({
             pipeline_id: pipelineId,
@@ -437,40 +502,40 @@ export function useMoveConversation() {
             order,
             updated_at: new Date().toISOString(),
           })
-          .eq('id', existing.id);
+          .eq('id', existing.id)
+          .select()
+          .single();
 
         if (error) throw error;
+        savedPosition = data as ConversationPipelinePosition;
       } else {
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from('conversation_pipeline_positions')
           .insert({
             conversation_id: conversationId,
             pipeline_id: pipelineId,
             column_id: columnId,
             order,
-          });
+          })
+          .select()
+          .single();
 
         if (error) throw error;
+        savedPosition = data as ConversationPipelinePosition;
       }
 
-      if (positionUpdates?.length) {
-        await Promise.all(positionUpdates.map(async (pos) => {
-          const { error } = await supabase
-            .from('conversation_pipeline_positions')
-            .update({
-              pipeline_id: pipelineId,
-              column_id: pos.columnId,
-              order: pos.order,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('conversation_id', pos.conversationId)
-            .eq('pipeline_id', pipelineId);
-          if (error) throw error;
-        }));
+      if (
+        !savedPosition ||
+        savedPosition.pipeline_id !== pipelineId ||
+        savedPosition.column_id !== columnId
+      ) {
+        throw new Error('A posicao no pipeline nao foi confirmada.');
       }
 
-      // Log stage change
-      if (profile?.organization_id) {
+      await removeStaleConversationPositions(conversationId, savedPosition.id);
+
+      // Log stage change only when the card actually changes column/pipeline.
+      if (stageChanged && profile?.organization_id) {
         await (supabase as any)
           .from('conversation_stage_history')
           .insert({
@@ -485,10 +550,11 @@ export function useMoveConversation() {
       }
 
       // Trigger notification (fire and forget)
-      if (profile?.organization_id) {
+      if (stageChanged && profile?.organization_id) {
         supabase.functions.invoke('stage-notification', {
           body: {
             conversationId,
+            pipelineId,
             columnId,
             organizationId: profile.organization_id,
           },
@@ -496,7 +562,7 @@ export function useMoveConversation() {
       }
 
       // Auto-transition: check if this is the last column and pipeline has next_pipeline_id
-      if (!skipAutoTransition && profile?.organization_id) {
+      if (stageChanged && !skipAutoTransition && profile?.organization_id) {
         // Fetch all columns of current pipeline to check if we're at the last one
         const { data: allColumns } = await (supabase as any)
           .from('pipeline_columns')
@@ -575,6 +641,7 @@ export function useMoveConversation() {
               supabase.functions.invoke('stage-notification', {
                 body: {
                   conversationId,
+                  pipelineId: currentPipeline.next_pipeline_id,
                   columnId: firstNextColumn.id,
                   organizationId: profile.organization_id,
                 },
@@ -598,18 +665,23 @@ export function useMoveConversation() {
         }
       }
 
-      return { fromColumnId, toColumnId: columnId };
+      return { changed: stageChanged, orderChanged: !stageChanged, fromColumnId, toColumnId: columnId, pipelineId };
     },
-    onSuccess: (_, variables) => {
+    onSuccess: (result, variables) => {
       queryClient.invalidateQueries({ queryKey: ['conversation-positions'] });
+      queryClient.invalidateQueries({ queryKey: ['conversation-positions', result?.pipelineId] });
       queryClient.invalidateQueries({ queryKey: ['stage-history', variables.conversationId] });
-      if (variables.showToast !== false) {
+      if (result?.changed) {
         toast({ title: 'Conversa movida!' });
       }
     },
-    onError: (error) => {
+    onError: (error: any) => {
       console.error('Error moving conversation:', error);
-      toast({ title: 'Erro ao mover conversa', variant: 'destructive' });
+      toast({
+        title: 'Erro ao mover conversa',
+        description: error?.message || 'Nao foi possivel salvar a posicao do card.',
+        variant: 'destructive',
+      });
     },
   });
 }
@@ -639,30 +711,51 @@ export function useTransferConversation() {
       const targetColumnId = targetColumns?.[0]?.id;
       if (!targetColumnId) throw new Error('Pipeline sem colunas');
 
-      // Get current position for history
-      const { data: currentPos } = await supabase
+      // Get current position for history. Keep newest if old duplicate rows exist.
+      const { data: currentRows, error: currentRowsError } = await supabase
         .from('conversation_pipeline_positions')
-        .select('pipeline_id, column_id')
+        .select('id, pipeline_id, column_id')
         .eq('conversation_id', conversationId)
-        .maybeSingle();
+        .order('updated_at', { ascending: false })
+        .limit(10);
 
-      // Delete old position (unique constraint means only one exists)
-      await supabase
-        .from('conversation_pipeline_positions')
-        .delete()
-        .eq('conversation_id', conversationId);
+      if (currentRowsError) throw currentRowsError;
+      const currentPos = currentRows?.[0] || null;
 
-      // Insert new position
-      const { error } = await supabase
-        .from('conversation_pipeline_positions')
-        .insert({
-          conversation_id: conversationId,
-          pipeline_id: targetPipelineId,
-          column_id: targetColumnId,
-          order: 0,
-        });
+      if (currentRows && currentRows.length > 1) {
+        const { error: deleteDuplicatesError } = await supabase
+          .from('conversation_pipeline_positions')
+          .delete()
+          .in('id', currentRows.slice(1).map((row) => row.id));
+
+        if (deleteDuplicatesError) throw deleteDuplicatesError;
+      }
+
+      const mutation = currentPos
+        ? supabase
+          .from('conversation_pipeline_positions')
+          .update({
+            pipeline_id: targetPipelineId,
+            column_id: targetColumnId,
+            order: 0,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', currentPos.id)
+        : supabase
+          .from('conversation_pipeline_positions')
+          .insert({
+            conversation_id: conversationId,
+            pipeline_id: targetPipelineId,
+            column_id: targetColumnId,
+            order: 0,
+          });
+
+      const { data: savedPosition, error } = await mutation.select().single();
 
       if (error) throw error;
+      if (!savedPosition) throw new Error('A transferencia no pipeline nao foi confirmada.');
+
+      await removeStaleConversationPositions(conversationId, savedPosition.id);
 
       // Log transfer in history
       await (supabase as any)

@@ -6,6 +6,28 @@ import "./index.css";
 
 const enableSentry = import.meta.env.PROD;
 
+function ensureWizzyFavicon() {
+  const faviconLinks = [
+    { rel: "icon", type: "image/png", sizes: "32x32", href: "/favicon.png?v=wizzy" },
+    { rel: "icon", type: "image/png", sizes: "192x192", href: "/favicon.png?v=wizzy" },
+    { rel: "icon", type: "image/x-icon", href: "/favicon.ico?v=wizzy" },
+    { rel: "apple-touch-icon", sizes: "180x180", href: "/favicon.png?v=wizzy" },
+    { rel: "shortcut icon", href: "/favicon.ico?v=wizzy" },
+  ];
+
+  document.querySelectorAll<HTMLLinkElement>('link[rel="icon"], link[rel="shortcut icon"], link[rel="apple-touch-icon"]').forEach((link) => {
+    link.remove();
+  });
+
+  for (const attrs of faviconLinks) {
+    const link = document.createElement("link");
+    Object.entries(attrs).forEach(([key, value]) => link.setAttribute(key, value));
+    document.head.appendChild(link);
+  }
+}
+
+ensureWizzyFavicon();
+
 Sentry.init({
   dsn: "https://e182c0b36f3c05825b22c0b0c5743cab@o4511028911734784.ingest.us.sentry.io/4511028921761792",
   tunnel: `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sentry-tunnel`,

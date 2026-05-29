@@ -164,6 +164,72 @@ function firstObject(...values: any[]): any | null {
   return null;
 }
 
+function firstNonEmptyObject(...values: any[]): any | null {
+  for (const value of values) {
+    if (value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length > 0) return value;
+  }
+  return null;
+}
+
+function normalizeExternalMessageId(value?: string | null): string | null {
+  if (!value) return null;
+  const trimmed = String(value).trim();
+  if (!trimmed) return null;
+  const parts = trimmed.split(':').filter(Boolean);
+  return parts.length > 1 ? parts[parts.length - 1] : trimmed;
+}
+
+function findObjectDeep(root: any, predicate: (value: any, path: string[]) => boolean, maxDepth = 8): { value: any; path: string[] } | null {
+  const seen = new WeakSet<object>();
+  const walk = (value: any, path: string[], depth: number): { value: any; path: string[] } | null => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    if (seen.has(value)) return null;
+    seen.add(value);
+    if (predicate(value, path)) return { value, path };
+    if (depth >= maxDepth) return null;
+
+    for (const [key, child] of Object.entries(value)) {
+      const found = walk(child, [...path, key], depth + 1);
+      if (found) return found;
+    }
+    return null;
+  };
+  return walk(root, [], 0);
+}
+
+function findContextInfoDeep(root: any): { value: any; path: string[] } | null {
+  return findObjectDeep(root, (value) =>
+    !!(
+      value.stanzaId
+      || value.StanzaId
+      || value.quotedMessageId
+      || value.quotedStanzaId
+      || value.quotedMessageID
+      || value.quotedMessage
+      || value.QuotedMessage
+    )
+  );
+}
+
+function findKeyPathsDeep(root: any, pattern: RegExp, maxDepth = 8, limit = 30): string[] {
+  const paths: string[] = [];
+  const seen = new WeakSet<object>();
+  const walk = (value: any, path: string[], depth: number) => {
+    if (!value || typeof value !== 'object' || seen.has(value) || paths.length >= limit) return;
+    seen.add(value);
+    if (depth >= maxDepth) return;
+
+    for (const [key, child] of Object.entries(value)) {
+      const nextPath = [...path, key];
+      if (pattern.test(key)) paths.push(nextPath.join('.'));
+      if (child && typeof child === 'object') walk(child, nextPath, depth + 1);
+      if (paths.length >= limit) return;
+    }
+  };
+  walk(root, [], 0);
+  return paths;
+}
+
 function extractMediaUrlFromObject(media: any): string | null {
   if (!media || typeof media !== 'object') return null;
   return firstString(
@@ -537,6 +603,114 @@ async function updateMessageReceiptByProviderId(supabase: any, msgId: any, statu
   return true;
 }
 
+function extractRevokedMessageInfo(payload: any): { messageId: string; fromMe: boolean | null } {
+  const data = payload?.data || {};
+  const key = data?.key || payload?.key || payload?.message?.key || {};
+  const protocolMessage = data?.message?.protocolMessage
+    || payload?.message?.protocolMessage
+    || payload?.event?.Message?.protocolMessage
+    || payload?.event?.message?.protocolMessage
+    || {};
+  const protocolKey = protocolMessage?.key || {};
+  const eventInfo = payload?.event?.Info || payload?.event?.info || {};
+  const msg = payload?.message || {};
+
+  const messageId =
+    protocolKey?.id ||
+    protocolMessage?.messageKey?.id ||
+    protocolMessage?.id ||
+    key?.id ||
+    msg?.msgid ||
+    msg?.id ||
+    eventInfo?.ID ||
+    eventInfo?.Id ||
+    eventInfo?.id ||
+    payload?.messageId ||
+    payload?.id ||
+    '';
+
+  const rawFromMe =
+    protocolKey?.fromMe ??
+    key?.fromMe ??
+    eventInfo?.IsFromMe ??
+    eventInfo?.isFromMe ??
+    msg?.fromMe ??
+    payload?.fromMe;
+
+  const fromMe = rawFromMe === true || rawFromMe === 'true'
+    ? true
+    : rawFromMe === false || rawFromMe === 'false'
+      ? false
+      : null;
+
+  return { messageId: String(messageId || ''), fromMe };
+}
+
+async function handleRevokedMessage(supabase: any, payload: any) {
+  const { messageId, fromMe } = extractRevokedMessageInfo(payload);
+  const normalizedId = normalizeProviderMessageId(messageId);
+  if (!normalizedId) {
+    return respond({ success: true, ignored: true, reason: 'revoked_without_message_id' });
+  }
+
+  const idCandidates = Array.from(new Set([
+    messageId,
+    normalizedId,
+    `true_${normalizedId}`,
+    `false_${normalizedId}`,
+  ].filter(Boolean)));
+
+  const { data: message } = await supabase
+    .from('messages')
+    .select('id, direction, content, type, media_url, metadata')
+    .in('zapi_message_id', idCandidates)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!message) {
+    return respond({ success: true, ignored: true, reason: 'revoked_message_not_found' });
+  }
+
+  if (fromMe === true) {
+    const metadata = {
+      ...(message.metadata || {}),
+      whatsapp_deleted: true,
+      whatsapp_deleted_by_us: true,
+      whatsapp_deleted_at: new Date().toISOString(),
+      whatsapp_delete_source: 'whatsapp',
+      original_type: message.type,
+      original_content: message.content,
+      original_media_url: message.media_url,
+    };
+
+    await supabase
+      .from('messages')
+      .update({
+        content: message.type === 'image' ? 'Imagem apagada no WhatsApp' : 'Mensagem apagada no WhatsApp',
+        type: 'text',
+        media_url: null,
+        metadata,
+      })
+      .eq('id', message.id);
+
+    return respond({ success: true, marked_deleted: true, source: 'whatsapp_self_delete' });
+  }
+
+  const metadata = {
+    ...(message.metadata || {}),
+    whatsapp_revoked: true,
+    revoked_by_contact_at: new Date().toISOString(),
+  };
+
+  await supabase
+    .from('messages')
+    .update({ metadata })
+    .eq('id', message.id);
+
+  return respond({ success: true, preserved: true, source: 'contact_delete' });
+}
+
 async function upsertContactPresenceByPhone(
   supabase: any,
   rawPhone: string,
@@ -691,9 +865,21 @@ Deno.serve(async (req) => {
       }
     }
 
+    if (eventType.includes('revoked') || eventType.includes('revoke')) {
+      return await handleRevokedMessage(supabase, payload);
+    }
+
+    const payloadHasProtocolRevoke =
+      payload?.data?.message?.protocolMessage?.type ||
+      payload?.message?.protocolMessage?.type ||
+      payload?.event?.Message?.protocolMessage?.type;
+    if (payloadHasProtocolRevoke && String(payloadHasProtocolRevoke).toLowerCase().includes('revoke')) {
+      return await handleRevokedMessage(supabase, payload);
+    }
+
     // System events to ignore
     if (['connectfailure', 'qr', 'qrtimeout', 'historysync',
-      'notification', 'e2e_notification', 'ciphertext', 'revoked', 'protocol'].includes(eventType)) {
+      'notification', 'e2e_notification', 'ciphertext', 'protocol'].includes(eventType)) {
       return respond({ success: true, ignored: true, reason: 'system_event' });
     }
 
@@ -1014,16 +1200,46 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
   // --- Extract quoted/reply context ---
   // WhatsApp reply messages contain contextInfo with stanzaId (original message ID)
   let quotedMessageMeta: any = null;
-  const contextInfo = extendedText?.contextInfo || extendedText?.ContextInfo
-    || imageMsg?.contextInfo || imageMsg?.ContextInfo
-    || audioMsg?.contextInfo || audioMsg?.ContextInfo
-    || videoMsg?.contextInfo || videoMsg?.ContextInfo
-    || documentMsg?.contextInfo || documentMsg?.ContextInfo
-    || eventMessage?.contextInfo || eventMessage?.ContextInfo
-    || null;
+  const explicitContextInfo = firstNonEmptyObject(
+    extendedText?.contextInfo,
+    extendedText?.ContextInfo,
+    imageMsg?.contextInfo,
+    imageMsg?.ContextInfo,
+    audioMsg?.contextInfo,
+    audioMsg?.ContextInfo,
+    videoMsg?.contextInfo,
+    videoMsg?.ContextInfo,
+    documentMsg?.contextInfo,
+    documentMsg?.ContextInfo,
+    stickerMsg?.contextInfo,
+    stickerMsg?.ContextInfo,
+    eventMessage?.contextInfo,
+    eventMessage?.ContextInfo,
+    eventMessage?.messageContextInfo,
+    eventMessage?.MessageContextInfo,
+    evolutionMessage?.contextInfo,
+    evolutionMessage?.ContextInfo,
+    evolutionMessage?.messageContextInfo,
+    evolutionData?.contextInfo,
+    evolutionData?.messageContextInfo,
+    msg?.contextInfo,
+    msg?.ContextInfo,
+    payload?.contextInfo,
+    payload?.messageContextInfo,
+    payload?.data?.contextInfo,
+    payload?.data?.messageContextInfo,
+  );
+  const deepContextInfo = findContextInfoDeep(payload);
+  const contextInfo = deepContextInfo?.value || explicitContextInfo || null;
   
   if (contextInfo) {
-    const stanzaId = contextInfo.stanzaId || contextInfo.StanzaId || contextInfo.quotedMessageId || null;
+    const stanzaId = contextInfo.stanzaId
+      || contextInfo.StanzaId
+      || contextInfo.quotedMessageId
+      || contextInfo.quotedStanzaId
+      || contextInfo.quotedMessageID
+      || contextInfo.id
+      || null;
     const participant = contextInfo.participant || contextInfo.Participant || null;
     const quotedMsg = contextInfo.quotedMessage || contextInfo.QuotedMessage || null;
     
@@ -1034,12 +1250,21 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
           || quotedMsg.extendedTextMessage?.text || quotedMsg.ExtendedTextMessage?.Text
           || quotedMsg.imageMessage?.caption || quotedMsg.ImageMessage?.Caption
           || quotedMsg.videoMessage?.caption || quotedMsg.VideoMessage?.Caption
+          || quotedMsg.documentMessage?.fileName || quotedMsg.DocumentMessage?.FileName
+          || (quotedMsg.audioMessage || quotedMsg.AudioMessage ? 'Audio' : null)
+          || (quotedMsg.imageMessage || quotedMsg.ImageMessage ? 'Imagem' : null)
+          || (quotedMsg.videoMessage || quotedMsg.VideoMessage ? 'Video' : null)
+          || (quotedMsg.documentMessage || quotedMsg.DocumentMessage ? 'Documento' : null)
           || null;
       }
       quotedMessageMeta = {
         zapi_message_id: stanzaId,
+        normalized_zapi_message_id: normalizeExternalMessageId(stanzaId),
         content: quotedText,
         participant: participant,
+        context_path: deepContextInfo?.path?.join('.') || 'explicit',
+        context_keys: Object.keys(contextInfo).slice(0, 20),
+        quoted_message_keys: quotedMsg && typeof quotedMsg === 'object' ? Object.keys(quotedMsg).slice(0, 20) : [],
       };
       console.log(`[WEBHOOK] Quoted message detected: stanzaId=${stanzaId}, text=${quotedText?.substring(0, 50) || 'none'}`);
     }
@@ -1149,17 +1374,20 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
     ? 'evolution'
     : 'uazapi';
   const mediaRecoveryDiagnostics: any[] = [];
-  if (isMediaType && base64Data && !isProbablyBase64(base64Data)) {
+
+  if (base64Data && !isProbablyBase64(base64Data)) {
     mediaRecoveryDiagnostics.push({
-      provider: webhookProvider,
-      reason: 'invalid_initial_base64',
+      provider: 'payload',
+      skipped: 'invalid_base64_candidate',
       messageType,
-      base64Length: String(base64Data).length,
+      valueType: typeof base64Data,
+      preview: String(base64Data).slice(0, 80),
     });
+    base64Data = null;
   }
 
   // Fetch missing Base64 directly from UAZAPI if not in payload
-  if (!isProbablyBase64(base64Data) && isMediaType && whatsappInstance && msgId && webhookProvider === 'uazapi') {
+  if (!base64Data && isMediaType && whatsappInstance && msgId && webhookProvider === 'uazapi') {
     try {
       console.log(`[WEBHOOK] Fetching decrypted media via /message/download for ID: ${msgId}...`);
       const uazapiBaseUrl = connectionSettings.uazapiBaseUrl;
@@ -1238,153 +1466,138 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
 
   // Evolution webhooks often include only the WhatsApp media stub. Convert it
   // to base64 through Evolution before falling back to a temporary URL.
-  if (!isProbablyBase64(base64Data) && isMediaType && whatsappInstance && msgId && webhookProvider === 'evolution') {
-    const evolutionBaseUrl = connectionSettings.evolutionBaseUrl;
-    const evolutionApiKey = whatsappInstance.evolution_api_key || connectionSettings.evolutionApiKey;
-    const evolutionInstanceName = whatsappInstance.evolution_instance_name || instanceName || whatsappInstance.zapi_instance_id;
-
-    if (!evolutionBaseUrl || !evolutionApiKey || !evolutionInstanceName) {
-      console.warn('[WEBHOOK] Evolution media recovery skipped: missing config', {
-        hasBaseUrl: !!evolutionBaseUrl,
-        hasApiKey: !!evolutionApiKey,
-        hasInstanceName: !!evolutionInstanceName,
-      });
-      mediaRecoveryDiagnostics.push({
-        provider: 'evolution',
-        skipped: 'missing_config',
-        hasBaseUrl: !!evolutionBaseUrl,
-        hasApiKey: !!evolutionApiKey,
-        hasInstanceName: !!evolutionInstanceName,
-      });
-    } else {
-      console.log(`[WEBHOOK] Fetching decrypted media via Evolution for msgId=${msgId}, instance=${evolutionInstanceName}`);
-
-      const remoteJidForRecovery =
-        evolutionRemoteJid ||
-        (chatJid && !chatJid.includes('@lid') ? chatJid : null) ||
-        (phone ? `${phone}@s.whatsapp.net` : null);
-
-      const bodyCandidates: Array<{ label: string; body: Record<string, unknown> }> = [
-        {
-          label: 'v2_key_id_only',
-          body: {
-            message: { key: { id: msgId } },
+  if (!base64Data && isMediaType && whatsappInstance && msgId && webhookProvider === 'evolution') {
+    try {
+      const evolutionBaseUrl = connectionSettings.evolutionBaseUrl;
+      const evolutionApiKey = whatsappInstance.evolution_api_key || connectionSettings.evolutionApiKey;
+      const evolutionInstanceName = whatsappInstance.evolution_instance_name || instanceName || whatsappInstance.zapi_instance_id;
+      if (evolutionBaseUrl && evolutionApiKey && evolutionInstanceName) {
+        console.log(`[WEBHOOK] Fetching decrypted media via Evolution for ID: ${msgId}...`);
+        const mediaMessage = firstNonEmptyObject(evolutionMessage, eventMessage, msg.message, msg) || {};
+        const typedMediaMessage = firstNonEmptyObject(audioMsg, imageMsg, videoMsg, documentMsg, stickerMsg, mediaMessage) || {};
+        const mediaKey = {
+          id: msgId,
+          remoteJid: evolutionRemoteJid || chatJid || `${phone}@s.whatsapp.net`,
+          fromMe,
+          participant: evolutionParticipantAlt || evolutionKey.participant || senderJid || undefined,
+        };
+        const bodyCandidates = [
+          {
+            label: 'docs_key_id_only',
+            message: {
+              key: {
+                id: msgId,
+              },
+            },
             convertToMp4: false,
           },
-        },
-        ...(remoteJidForRecovery
-          ? [
-              {
-                label: 'v2_key_full',
-                body: {
-                  message: {
-                    key: {
-                      id: msgId,
-                      remoteJid: remoteJidForRecovery,
-                      fromMe,
-                      participant: evolutionParticipantAlt || evolutionKey.participant || senderJid || undefined,
-                    },
-                  },
-                  convertToMp4: false,
-                },
+          {
+            label: 'docs_key_id_only_convert_true',
+            message: {
+              key: {
+                id: msgId,
               },
-            ]
-          : []),
-        {
-          label: 'flat_messageId',
-          body: { messageId: msgId, convertToMp4: false },
-        },
-        ...(remoteJidForRecovery
-          ? [
-              {
-                label: 'flat_key',
-                body: {
-                  key: {
-                    id: msgId,
-                    remoteJid: remoteJidForRecovery,
-                    fromMe,
-                  },
-                  convertToMp4: false,
-                },
-              },
-            ]
-          : []),
-      ];
+            },
+            convertToMp4: true,
+          },
+          {
+            label: 'key_full',
+            message: {
+              key: mediaKey,
+            },
+            convertToMp4: false,
+          },
+          {
+            label: 'key_full_with_message',
+            message: {
+              key: mediaKey,
+              message: mediaMessage,
+            },
+            convertToMp4: false,
+          },
+          {
+            label: 'typed_message',
+            message: {
+              key: mediaKey,
+              message: { [messageType === 'audio' ? 'audioMessage' : `${messageType}Message`]: typedMediaMessage },
+            },
+            convertToMp4: false,
+          },
+          {
+            label: 'flat_key_with_message',
+            key: mediaKey,
+            message: mediaMessage,
+            convertToMp4: false,
+          },
+          {
+            label: 'flat_message_id',
+            messageId: msgId,
+            key: mediaKey,
+            convertToMp4: false,
+          },
+        ];
 
-      const endpoint = `${evolutionBaseUrl}/chat/getBase64FromMediaMessage/${evolutionInstanceName}`;
-
-      for (const { label, body } of bodyCandidates) {
-        const diagEntry: Record<string, unknown> = {
-          provider: 'evolution',
-          label,
-          endpoint,
-          bodyKeys: Object.keys(body),
-        };
-
-        try {
-          const resp = await fetch(endpoint, {
+        for (const requestBody of bodyCandidates) {
+          const { label, ...evolutionRequestBody } = requestBody as any;
+          const resp = await fetch(`${evolutionBaseUrl}/chat/getBase64FromMediaMessage/${evolutionInstanceName}`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
               'apikey': evolutionApiKey,
             },
-            body: JSON.stringify(body),
+            body: JSON.stringify(evolutionRequestBody),
           });
 
           const raw = await resp.text();
-          diagEntry.status = resp.status;
-
           if (!resp.ok) {
-            diagEntry.error = raw.substring(0, 400);
-            console.error(`[WEBHOOK] Evolution media recovery (${label}) failed ${resp.status}: ${raw.substring(0, 300)}`);
-            mediaRecoveryDiagnostics.push(diagEntry);
+            console.error(`[WEBHOOK] Evolution media download failed: ${resp.status} ${raw}`);
+            mediaRecoveryDiagnostics.push({
+              provider: 'evolution',
+              label: label || null,
+              status: resp.status,
+              error: raw.substring(0, 300),
+              bodyKeys: Object.keys(evolutionRequestBody || {}),
+              messageKeys: Object.keys(evolutionRequestBody?.message || {}),
+            });
             continue;
           }
 
           let data: any = null;
-          try { data = raw ? JSON.parse(raw) : {}; } catch { data = raw; }
-
-          diagEntry.responseKeys = data && typeof data === 'object'
-            ? Object.keys(data).slice(0, 16)
-            : ['raw_string'];
-
+          try { data = raw ? JSON.parse(raw) : {}; } catch { data = { base64: raw }; }
           const downloaded = extractDownloadedMedia(data);
-          diagEntry.hasBase64 = isProbablyBase64(downloaded.base64);
-          diagEntry.hasUrl = !!downloaded.url;
-          diagEntry.mimeType = downloaded.mimeType || null;
-
-          if (isProbablyBase64(downloaded.base64)) {
-            base64Data = downloaded.base64;
-            if (!mimeType) mimeType = downloaded.mimeType;
-            diagEntry.result = 'base64_ok';
-            console.log(`[WEBHOOK] Evolution media recovery OK (${label}): base64=${base64Data.length} chars, mimeType=${mimeType || 'unknown'}`);
-            mediaRecoveryDiagnostics.push(diagEntry);
-            break;
-          }
-
-          if (downloaded.url && !isEncryptedWhatsAppMediaUrl(downloaded.url)) {
-            directMediaUrl = downloaded.url;
-            if (!mimeType) mimeType = downloaded.mimeType;
-            diagEntry.result = 'url_ok';
-            console.log(`[WEBHOOK] Evolution media recovery OK (${label}): url=${directMediaUrl}`);
-            mediaRecoveryDiagnostics.push(diagEntry);
-            break;
-          }
-
-          diagEntry.result = 'no_usable_data';
-          console.warn(`[WEBHOOK] Evolution media recovery (${label}): response had no usable base64/url`);
-          mediaRecoveryDiagnostics.push(diagEntry);
-        } catch (err) {
-          diagEntry.exception = err instanceof Error ? err.message : String(err);
-          diagEntry.result = 'exception';
-          console.error(`[WEBHOOK] Evolution media recovery (${label}) exception:`, err);
-          mediaRecoveryDiagnostics.push(diagEntry);
+          if (isProbablyBase64(downloaded.base64)) base64Data = downloaded.base64;
+          mimeType = mimeType || downloaded.mimeType;
+          directMediaUrl = directMediaUrl || downloaded.url;
+          mediaRecoveryDiagnostics.push({
+            provider: 'evolution',
+            label: label || null,
+            status: resp.status,
+            hasBase64: !!base64Data,
+            hasUrl: !!directMediaUrl,
+            mimeType: mimeType || null,
+            responseKeys: data && typeof data === 'object' ? Object.keys(data).slice(0, 12) : ['raw'],
+          });
+          console.log(`[WEBHOOK] Evolution media result: hasBase64=${!!base64Data}, mimeType=${mimeType || 'none'}, hasUrl=${!!directMediaUrl}`);
+          if (base64Data || directMediaUrl) break;
         }
+      } else {
+        console.warn('[WEBHOOK] Evolution media download skipped: missing base URL, API key, or instance name');
+        mediaRecoveryDiagnostics.push({
+          provider: 'evolution',
+          skipped: 'missing_config',
+          hasBaseUrl: !!evolutionBaseUrl,
+          hasApiKey: !!evolutionApiKey,
+          hasInstanceName: !!evolutionInstanceName,
+        });
       }
-
-      console.log(`[WEBHOOK] Evolution media recovery final: hasBase64=${isProbablyBase64(base64Data)}, hasUrl=${!!directMediaUrl}, attempts=${mediaRecoveryDiagnostics.length}`);
+    } catch (e) {
+      console.error('[WEBHOOK] Evolution media download exception:', e);
+      mediaRecoveryDiagnostics.push({
+        provider: 'evolution',
+        exception: e instanceof Error ? e.message : String(e),
+      });
     }
-  } else if (isMediaType && !isProbablyBase64(base64Data) && !msgId) {
+  } else if (isMediaType && !base64Data && !msgId) {
     mediaRecoveryDiagnostics.push({
       provider: webhookProvider,
       skipped: 'missing_message_id',
@@ -1392,7 +1605,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
       instanceProvider: whatsappInstance.provider || null,
       instanceId: whatsappInstance.id || null,
     });
-  } else if (isMediaType && !isProbablyBase64(base64Data) && webhookProvider !== 'evolution') {
+  } else if (isMediaType && !base64Data && webhookProvider !== 'evolution') {
     mediaRecoveryDiagnostics.push({
       provider: webhookProvider,
       skipped: 'not_evolution',
@@ -1427,7 +1640,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
     else mimeType = 'application/octet-stream';
   }
 
-  if (!isProbablyBase64(base64Data) && directMediaUrl && isMediaType && !isLocalStorageUrl(directMediaUrl)) {
+  if (!base64Data && directMediaUrl && isMediaType && !isLocalStorageUrl(directMediaUrl)) {
     try {
       console.log(`[WEBHOOK] Fetching external media URL before storing: ${directMediaUrl.substring(0, 100)}`);
       const headers: Record<string, string> = {};
@@ -1457,9 +1670,10 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
     }
   }
 
-  if (isProbablyBase64(base64Data) && mimeType) {
+  if (base64Data && mimeType) {
     try {
       const normalizedMimeType = mimeType.toLowerCase().split(';')[0].trim();
+      const uploadContentType = normalizedMimeType || mimeType;
       const extMap: Record<string, string> = {
         'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif',
         'audio/ogg': 'ogg', 'application/ogg': 'ogg', 'audio/mpeg': 'mp3', 'audio/mp3': 'mp3', 'audio/mp4': 'm4a', 'audio/x-m4a': 'm4a', 'audio/m4a': 'm4a', 'audio/wav': 'wav', 'audio/x-wav': 'wav', 'audio/aac': 'aac', 'audio/webm': 'webm',
@@ -1483,7 +1697,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
       const fileName = `${safeId}.${ext}`;
       const storagePath = `webhook-media/${fileName}`;
 
-      console.log(`[WEBHOOK] Uploading media: path=${storagePath}, mimeType=${mimeType}, base64Length=${base64Data.length}`);
+      console.log(`[WEBHOOK] Uploading media: path=${storagePath}, mimeType=${mimeType}, uploadContentType=${uploadContentType}, base64Length=${base64Data.length}`);
 
       let pureBase64 = base64Data;
       if (pureBase64.includes('base64,')) {
@@ -1499,7 +1713,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
       // Try upload, create bucket if it doesn't exist
       let uploadResult = await supabase.storage
         .from('chat-media')
-        .upload(storagePath, binaryData, { contentType: mimeType, upsert: true });
+        .upload(storagePath, binaryData, { contentType: uploadContentType, upsert: true });
 
       if (uploadResult.error) {
         console.error('[WEBHOOK] First upload attempt failed:', uploadResult.error.message);
@@ -1512,7 +1726,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
           // Retry upload
           uploadResult = await supabase.storage
             .from('chat-media')
-            .upload(storagePath, binaryData, { contentType: mimeType, upsert: true });
+            .upload(storagePath, binaryData, { contentType: uploadContentType, upsert: true });
         }
       }
 
@@ -1522,9 +1736,22 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
         console.log(`[WEBHOOK] Media uploaded successfully: ${mediaUrl}`);
       } else {
         console.error('[WEBHOOK] Final upload error:', uploadResult.error);
+        mediaRecoveryDiagnostics.push({
+          provider: 'supabase_storage',
+          error: uploadResult.error.message || String(uploadResult.error),
+          path: storagePath,
+          mimeType,
+          uploadContentType,
+        });
       }
     } catch (e) {
       console.error('[WEBHOOK] Media upload exception:', e);
+      mediaRecoveryDiagnostics.push({
+        provider: 'supabase_storage',
+        exception: e instanceof Error ? e.message : String(e),
+        messageType,
+        mimeType: mimeType || null,
+      });
     }
   } else if (directMediaUrl && !isEncryptedWhatsAppMediaUrl(directMediaUrl)) {
     mediaUrl = directMediaUrl;
@@ -1696,11 +1923,37 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
     let resolvedQuotedId: string | null = null;
     let resolvedQuotedSender: string | null = null;
     if (quotedMessageMeta.zapi_message_id) {
-      const { data: quotedRow } = await supabase
+      const quotedIdCandidates = Array.from(new Set([
+        quotedMessageMeta.zapi_message_id,
+        quotedMessageMeta.normalized_zapi_message_id,
+        normalizeExternalMessageId(quotedMessageMeta.zapi_message_id),
+      ].filter(Boolean)));
+
+      let quotedRow: any = null;
+      const { data: exactRows } = await supabase
         .from('messages')
-        .select('id, direction, content')
-        .eq('zapi_message_id', quotedMessageMeta.zapi_message_id)
-        .maybeSingle();
+        .select('id, direction, content, type, media_url, zapi_message_id')
+        .eq('conversation_id', conversation.id)
+        .in('zapi_message_id', quotedIdCandidates.length > 0 ? quotedIdCandidates : ['__none__'])
+        .limit(1);
+
+      quotedRow = exactRows?.[0] || null;
+
+      if (!quotedRow && quotedMessageMeta.normalized_zapi_message_id) {
+        const { data: recentRows } = await supabase
+          .from('messages')
+          .select('id, direction, content, type, media_url, zapi_message_id')
+          .eq('conversation_id', conversation.id)
+          .not('zapi_message_id', 'is', null)
+          .order('created_at', { ascending: false })
+          .limit(80);
+
+        quotedRow = (recentRows || []).find((row: any) =>
+          normalizeExternalMessageId(row.zapi_message_id) === quotedMessageMeta.normalized_zapi_message_id
+          || String(row.zapi_message_id || '').includes(quotedMessageMeta.normalized_zapi_message_id)
+        ) || null;
+      }
+
       if (quotedRow) {
         resolvedQuotedId = quotedRow.id;
         resolvedQuotedSender = quotedRow.direction === 'inbound' ? (contact.name || phone) : 'Você';
@@ -1708,13 +1961,42 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
         if (!quotedMessageMeta.content && quotedRow.content) {
           quotedMessageMeta.content = quotedRow.content;
         }
+        if (!quotedMessageMeta.content && quotedRow.type && quotedRow.type !== 'text') {
+          quotedMessageMeta.content = quotedRow.type === 'image'
+            ? 'Imagem'
+            : quotedRow.type === 'audio'
+              ? 'Audio'
+              : quotedRow.type === 'video'
+                ? 'Video'
+                : quotedRow.type === 'document'
+                  ? 'Documento'
+                  : 'Midia';
+        }
       }
     }
     messageMetadata.quoted_message = {
       id: resolvedQuotedId || null,
       zapi_message_id: quotedMessageMeta.zapi_message_id,
+      normalized_zapi_message_id: quotedMessageMeta.normalized_zapi_message_id || null,
       content: quotedMessageMeta.content || null,
       sender: resolvedQuotedSender || quotedMessageMeta.participant || null,
+      resolved: !!resolvedQuotedId,
+      diagnostics: {
+        context_path: quotedMessageMeta.context_path || null,
+        context_keys: quotedMessageMeta.context_keys || [],
+        quoted_message_keys: quotedMessageMeta.quoted_message_keys || [],
+      },
+    };
+  } else if (!fromMe) {
+    const contextLikePaths = findKeyPathsDeep(payload, /context|quoted|stanza|reply|participant/i);
+    messageMetadata.reply_context_scan = {
+      found: false,
+      eventType,
+      payloadKeys: Object.keys(payload || {}).slice(0, 30),
+      dataKeys: payload?.data && typeof payload.data === 'object' ? Object.keys(payload.data).slice(0, 30) : [],
+      messageKeys: payload?.data?.message && typeof payload.data.message === 'object' ? Object.keys(payload.data.message).slice(0, 30) : [],
+      eventMessageKeys: eventMessage && typeof eventMessage === 'object' ? Object.keys(eventMessage).slice(0, 30) : [],
+      contextLikePaths,
     };
   }
 

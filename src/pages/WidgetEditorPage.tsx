@@ -126,9 +126,9 @@ export default function WidgetEditorPage() {
     return (
       <MainLayout>
         <div className="p-6 text-center">
-          <p className="text-muted-foreground">Widget não encontrado</p>
+          <p className="text-muted-foreground">Form não encontrado</p>
           <Button variant="outline" className="mt-4" onClick={() => navigate('/widgets')}>
-            Voltar para Widgets
+            Voltar para Wizzy Forms
           </Button>
         </div>
       </MainLayout>
@@ -155,7 +155,7 @@ export default function WidgetEditorPage() {
                   </Badge>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Editando widget de captação
+                  Editando form de captação
                 </p>
               </div>
             </div>
@@ -333,12 +333,12 @@ export default function WidgetEditorPage() {
                               ))}
                             </SelectContent>
                           </Select>
-                          <p className="text-xs text-muted-foreground">Define em qual workspace este widget será exibido.</p>
+                          <p className="text-xs text-muted-foreground">Define em qual workspace este form será exibido.</p>
                         </div>
 
                         <div className="flex items-center justify-between">
                           <div>
-                            <Label>Widget Ativo</Label>
+                            <Label>Form ativo</Label>
                             <p className="text-xs text-muted-foreground">Desative para parar de receber submissões</p>
                           </div>
                           <Switch 
@@ -732,7 +732,7 @@ export default function WidgetEditorPage() {
                         <div className="space-y-2">
                           <Label>Tags automáticas</Label>
                           <p className="text-xs text-muted-foreground">
-                            Atribui automaticamente tags aos leads captados por este widget
+                            Atribui automaticamente tags aos leads captados por este form
                           </p>
                           <div className="flex flex-wrap gap-2 p-3 border rounded-lg bg-muted/30">
                             {tags.length === 0 ? (

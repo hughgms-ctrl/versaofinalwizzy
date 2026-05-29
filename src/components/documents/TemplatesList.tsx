@@ -178,7 +178,7 @@ export function TemplatesList({ onGeneratedForSignature }: { onGeneratedForSigna
       </div>
       <WorkspaceBadge workspaceId={template.workspace_id} />
 
-      {/* Primary actions — Zapsign style */}
+      {/* Primary actions */}
       <div className="flex items-center gap-1.5 shrink-0">
         <Button variant="ghost" size="sm" className="text-xs h-8" onClick={() => setEditingTemplate(template)}>
           Gerenciar

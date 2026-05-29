@@ -29,6 +29,58 @@ function isValidPhoneNumber(phone: string): boolean {
     return true;
 }
 
+async function fetchWithTimeout(url: string, options: RequestInit, ms = 8000): Promise<Response> {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), ms);
+    try {
+        return await fetch(url, { ...options, signal: ctrl.signal });
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+async function fetchChatDetails(
+    baseUrl: string,
+    token: string,
+    rawPhone: string,
+): Promise<{ name: string | null; avatarUrl: string | null; raw: any; status: number }> {
+    const isLid = rawPhone.includes('@lid') || rawPhone.length > 20;
+    const formattedPhone = isLid ? rawPhone : ensureCountryCode(rawPhone);
+    const body = isLid
+        ? { phone: formattedPhone, preview: false }
+        : { number: formattedPhone, preview: false };
+
+    const response = await fetchWithTimeout(`${baseUrl}/chat/details`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'token': token },
+        body: JSON.stringify(body),
+    }, 8000);
+
+    if (!response.ok) {
+        return { name: null, avatarUrl: null, raw: null, status: response.status };
+    }
+
+    const data: any = await response.json();
+    const root = data?.chat || data?.contact || data;
+    const avatarUrl =
+        (root?.image && String(root.image).trim()) ||
+        (root?.imagePreview && String(root.imagePreview).trim()) ||
+        (root?.profilePicture && String(root.profilePicture).trim()) ||
+        (root?.profilePictureUrl && String(root.profilePictureUrl).trim()) ||
+        (root?.imgUrl && String(root.imgUrl).trim()) ||
+        null;
+    const name =
+        root?.name ||
+        root?.lead_name ||
+        root?.lead_fullName ||
+        root?.wa_name ||
+        root?.wa_contactName ||
+        root?.pushname ||
+        null;
+
+    return { name, avatarUrl, raw: data, status: 200 };
+}
+
 Deno.serve(async (req) => {
     if (req.method === 'OPTIONS') {
         return new Response(null, { headers: corsHeaders });
@@ -55,6 +107,18 @@ Deno.serve(async (req) => {
             });
         }
 
+        const { data: profile } = await supabase
+            .from('profiles')
+            .select('organization_id')
+            .eq('user_id', user.id)
+            .single();
+
+        if (!profile?.organization_id) {
+            return new Response(JSON.stringify({ error: 'No organization' }), {
+                status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+        }
+
         const { contactId, phone: rawPhone, instanceId } = await req.json();
 
         if (!contactId && !rawPhone) {
@@ -66,10 +130,20 @@ Deno.serve(async (req) => {
         // Resolve instance
         let instance;
         if (instanceId) {
-            const { data } = await supabase.from('whatsapp_instances').select('*').eq('id', instanceId).single();
+            const { data } = await supabase
+                .from('whatsapp_instances')
+                .select('*')
+                .eq('id', instanceId)
+                .eq('organization_id', profile.organization_id)
+                .single();
             instance = data;
         } else {
-            const { data: instances } = await supabase.from('whatsapp_instances').select('*').eq('status', 'connected').limit(1);
+            const { data: instances } = await supabase
+                .from('whatsapp_instances')
+                .select('*')
+                .eq('organization_id', profile.organization_id)
+                .eq('status', 'connected')
+                .limit(1);
             instance = instances?.[0];
         }
 
@@ -87,49 +161,14 @@ Deno.serve(async (req) => {
 
         if (!phone) throw new Error('Phone not found');
 
-        // If it's a LID, the UAZAPI might not like 'number' field
-        // Some UAZAPI versions prefer 'phone' or 'jid'
-        const isLid = phone.includes('@lid') || phone.length > 20; // Heuristic for LID
-        const formattedPhone = isLid ? phone : ensureCountryCode(phone);
-
-        console.log(`Fetching profile for ${formattedPhone} (isLid: ${isLid})...`);
-
-        const phoneBody = isLid ? { phone: formattedPhone } : { number: formattedPhone };
-
-        // Try /contact/info first
-        const response = await fetch(`${uazapiBaseUrl}/contact/info`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'token': instance.zapi_token },
-            body: JSON.stringify(phoneBody),
-        });
-
-        let profileData: any = {};
-        if (response.ok) {
-            profileData = await response.json();
-            console.log('Profile info data:', JSON.stringify(profileData));
-        } else {
-            console.warn('contact/info failed:', await response.text());
+        const profileResult = await fetchChatDetails(uazapiBaseUrl, instance.zapi_token, phone);
+        const profileData = profileResult.raw || {};
+        if (profileResult.status !== 200) {
+            console.warn('chat/details failed:', profileResult.status);
         }
 
-        // Also try /contact/profile-picture for avatar
-        let avatarFromPicEndpoint: string | null = null;
-        try {
-            const picResponse = await fetch(`${uazapiBaseUrl}/contact/profile-picture`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'token': instance.zapi_token },
-                body: JSON.stringify(phoneBody),
-            });
-            if (picResponse.ok) {
-                const picData = await picResponse.json();
-                console.log('Profile picture data:', JSON.stringify(picData));
-                avatarFromPicEndpoint = picData.profilePictureUrl || picData.profilePicture || picData.imgUrl || picData.url || null;
-            }
-        } catch (e) {
-            console.warn('profile-picture endpoint failed:', e);
-        }
-
-        const name = profileData.name || profileData.pushname || profileData.verifiedName || null;
-        const remoteAvatarUrl = avatarFromPicEndpoint || profileData.profilePicture || profileData.profileThumbnail || profileData.imgUrl || null;
+        const name = profileResult.name;
+        const remoteAvatarUrl = profileResult.avatarUrl;
 
         // Download the WhatsApp avatar (URLs expire) and persist to our Storage for a permanent URL
         let persistedAvatarUrl: string | null = null;

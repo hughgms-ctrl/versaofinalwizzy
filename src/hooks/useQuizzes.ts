@@ -84,7 +84,7 @@ export function useQuizzes() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['quizzes'] });
-      toast.success('Quizz criado com sucesso');
+      toast.success('Wizzy Quiz criado com sucesso');
     },
     onError: (err: any) => toast.error(err.message),
   });
@@ -113,7 +113,7 @@ export function useQuizzes() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['quizzes'] });
-      toast.success('Quizz excluído');
+      toast.success('Wizzy Quiz excluído');
     },
     onError: (err: any) => toast.error(err.message),
   });

@@ -64,6 +64,8 @@ export function useSendMessage() {
       await queryClient.cancelQueries({ queryKey: ['messages', newMessage.conversationId] });
 
       const previousMessages = queryClient.getQueryData<DbMessage[]>(['messages', newMessage.conversationId]);
+      const previousConversations = queryClient.getQueriesData({ queryKey: ['conversations'] });
+      const now = new Date().toISOString();
 
       if (previousMessages) {
         const optimisticMessage: DbMessage = {
@@ -73,8 +75,8 @@ export function useSendMessage() {
           type: newMessage.type || 'text',
           direction: 'outbound',
           is_from_bot: false,
-          sent_by: (await supabase.auth.getUser()).data.user?.id || null,
-          created_at: new Date().toISOString(),
+          sent_by: null,
+          created_at: now,
           read_at: null,
           delivered_at: null,
           media_url: newMessage.mediaUrl || null,
@@ -93,7 +95,29 @@ export function useSendMessage() {
         );
       }
 
-      return { previousMessages };
+      queryClient.setQueriesData({ queryKey: ['conversations'] }, (old: any) => {
+        if (!Array.isArray(old)) return old;
+
+        return old.map((conversation) => {
+          if (conversation.id !== newMessage.conversationId) return conversation;
+
+          return {
+            ...conversation,
+            last_message_at: now,
+            last_message: [{
+              id: `temp-last-${Date.now()}`,
+              content: newMessage.content,
+              type: newMessage.type || 'text',
+              direction: 'outbound',
+              is_from_bot: false,
+              read_at: null,
+              delivered_at: null,
+            }],
+          };
+        });
+      });
+
+      return { previousMessages, previousConversations };
     },
     onError: (err, newMessage, context) => {
       if (context?.previousMessages) {
@@ -102,6 +126,9 @@ export function useSendMessage() {
           context.previousMessages
         );
       }
+      context?.previousConversations?.forEach(([queryKey, data]) => {
+        queryClient.setQueryData(queryKey, data);
+      });
 
       console.error('Send message error:', err);
       toast({
@@ -112,7 +139,9 @@ export function useSendMessage() {
     },
     onSettled: (data, error, variables) => {
       queryClient.invalidateQueries({ queryKey: ['messages', variables.conversationId] });
-      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      }, 1500);
     },
   });
 }

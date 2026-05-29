@@ -2226,7 +2226,7 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
                 <SelectContent>
                   <SelectItem value="manual">Manual / PDF Direto</SelectItem>
                   <SelectItem value="govbr">Gov.br</SelectItem>
-                  <SelectItem value="zapsign">ZapSign</SelectItem>
+                  <SelectItem value="zapsign">Wizzy Sign</SelectItem>
                 </SelectContent>
               </Select>
               {(localData.signingMethod as string) !== 'manual' && (

@@ -9,21 +9,21 @@ import UpgradeModal from '@/components/billing/UpgradeModal';
 
 const tools = [
   {
-    name: 'Botões',
-    description: 'Crie botões de WhatsApp para incorporar no seu site e capturar leads automaticamente.',
+    name: 'Wizzy Forms',
+    description: 'Crie botões com formulário para incorporar no seu site e capturar leads automaticamente.',
     icon: MousePointerClick,
     href: '/tools/buttons',
     planModule: 'widgets',
   },
   {
-    name: 'Documentos',
+    name: 'Wizzy Sign',
     description: 'Gerencie templates, pacotes de documentos, assinaturas e gere PDFs automaticamente.',
     icon: FileText,
     href: '/tools/documents',
     planModule: 'documents',
   },
   {
-    name: 'Quizz',
+    name: 'Wizzy Quiz',
     description: 'Crie questionários interativos estilo Typebot. Capture dados, qualifique leads e dispare conversas.',
     icon: HelpCircle,
     href: '/tools/quiz',

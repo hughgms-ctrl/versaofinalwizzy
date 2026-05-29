@@ -102,6 +102,190 @@ function minutesUntilQuietEnd(nowHHMM: string, quietEnd: string): number {
   return (24 * 60 - nowMin) + endMin;
 }
 
+type Provider = 'evolution' | 'uazapi';
+
+function normalizeBaseUrl(value?: string | null): string {
+  return (value || '').trim().replace(/\/$/, '');
+}
+
+async function loadConnectionSettings(supabase: any) {
+  const { data: row } = await supabase
+    .from('platform_settings')
+    .select('value')
+    .eq('key', 'whatsapp_connection_settings')
+    .maybeSingle();
+  const value = row?.value || {};
+  return {
+    uazapiBaseUrl: normalizeBaseUrl(value.uazapi_base_url || Deno.env.get('UAZAPI_BASE_URL')),
+    evolutionBaseUrl: normalizeBaseUrl(value.evolution_base_url || Deno.env.get('EVOLUTION_BASE_URL')),
+    evolutionApiKey: value.evolution_api_key || Deno.env.get('EVOLUTION_API_KEY') || '',
+  };
+}
+
+function getProvider(instance: any): Provider {
+  if (instance?.provider === 'evolution' || instance?.evolution_instance_name || instance?.evolution_instance_id) {
+    return 'evolution';
+  }
+  return 'uazapi';
+}
+
+function guessMimeType(type: string, mediaUrl?: string): string {
+  const lower = (mediaUrl || '').toLowerCase();
+  if (type === 'image') {
+    if (lower.includes('.png')) return 'image/png';
+    if (lower.includes('.webp')) return 'image/webp';
+    return 'image/jpeg';
+  }
+  if (type === 'audio') {
+    if (lower.includes('.ogg')) return 'audio/ogg';
+    if (lower.includes('.mpeg') || lower.includes('.mp3')) return 'audio/mpeg';
+    if (lower.includes('.webm')) return 'audio/webm';
+    return 'audio/mp4';
+  }
+  if (type === 'video') {
+    if (lower.includes('.webm')) return 'video/webm';
+    if (lower.includes('.3gp')) return 'video/3gpp';
+    return 'video/mp4';
+  }
+  if (type === 'document') {
+    if (lower.includes('.pdf')) return 'application/pdf';
+    return 'application/octet-stream';
+  }
+  return 'application/octet-stream';
+}
+
+function fileNameFromUrl(mediaUrl?: string, fallback = 'arquivo') {
+  if (!mediaUrl) return fallback;
+  try {
+    const pathname = new URL(mediaUrl).pathname;
+    const name = pathname.split('/').filter(Boolean).pop();
+    return name || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+async function parseProviderMessageId(response: Response): Promise<string | null> {
+  try {
+    const result = await response.clone().json();
+    return result?.messageId || result?.id || result?.ID || result?.key?.id || null;
+  } catch {
+    return null;
+  }
+}
+
+async function loadConversationInstance(supabase: any, organizationId: string, conversationInstanceId?: string | null) {
+  if (conversationInstanceId) {
+    const { data } = await supabase
+      .from('whatsapp_instances')
+      .select('*')
+      .eq('id', conversationInstanceId)
+      .eq('organization_id', organizationId)
+      .eq('status', 'connected')
+      .maybeSingle();
+    if (data) return data;
+  }
+
+  const { data } = await supabase
+    .from('whatsapp_instances')
+    .select('*')
+    .eq('organization_id', organizationId)
+    .eq('status', 'connected')
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return data || null;
+}
+
+async function sendFollowUpProviderMessage(params: {
+  settings: Awaited<ReturnType<typeof loadConnectionSettings>>;
+  instance: any;
+  phone: string;
+  messageText: string;
+  mediaUrl?: string | null;
+  mediaType?: string | null;
+}) {
+  const { settings, instance, phone, messageText, mediaUrl } = params;
+  const provider = getProvider(instance);
+  const normalizedPhone = phone.replace(/\D/g, '');
+  const mediaType = (params.mediaType || 'image') as 'image' | 'video' | 'audio' | 'document';
+  const hasMedia = !!mediaUrl;
+
+  if (provider === 'evolution') {
+    const evolutionBaseUrl = settings.evolutionBaseUrl;
+    const evolutionApiKey = instance.evolution_api_key || settings.evolutionApiKey || instance.zapi_token;
+    const evolutionInstanceName = instance.evolution_instance_name || instance.zapi_instance_id || instance.evolution_instance_id;
+    if (!evolutionBaseUrl || !evolutionApiKey || !evolutionInstanceName) {
+      throw new Error('Evolution API not configured for follow-up');
+    }
+
+    if (hasMedia) {
+      const body: Record<string, unknown> = mediaType === 'audio'
+        ? { number: normalizedPhone, audio: mediaUrl, delay: 1000, linkPreview: true }
+        : {
+          number: normalizedPhone,
+          mediatype: mediaType,
+          mimetype: guessMimeType(mediaType, mediaUrl || undefined),
+          caption: messageText || undefined,
+          media: mediaUrl,
+          fileName: fileNameFromUrl(mediaUrl || undefined, `${mediaType}-${Date.now()}`),
+          delay: 1000,
+          linkPreview: true,
+        };
+      const endpoint = mediaType === 'audio'
+        ? `${evolutionBaseUrl}/message/sendWhatsAppAudio/${evolutionInstanceName}`
+        : `${evolutionBaseUrl}/message/sendMedia/${evolutionInstanceName}`;
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: evolutionApiKey },
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) throw new Error(`Evolution media send failed: ${response.status} ${await response.text()}`);
+      return { provider, zapiMessageId: await parseProviderMessageId(response), msgType: mediaType };
+    }
+
+    const response = await fetch(`${evolutionBaseUrl}/message/sendText/${evolutionInstanceName}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: evolutionApiKey },
+      body: JSON.stringify({ number: normalizedPhone, text: messageText, delay: 1000, linkPreview: true }),
+    });
+    if (!response.ok) throw new Error(`Evolution text send failed: ${response.status} ${await response.text()}`);
+    return { provider, zapiMessageId: await parseProviderMessageId(response), msgType: 'text' };
+  }
+
+  if (!settings.uazapiBaseUrl || !instance.zapi_token) {
+    throw new Error('UAZAPI not configured for follow-up');
+  }
+
+  if (hasMedia) {
+    const body: Record<string, unknown> = {
+      number: normalizedPhone,
+      file: mediaUrl,
+      type: mediaType,
+      mimetype: guessMimeType(mediaType, mediaUrl || undefined),
+      mimeType: guessMimeType(mediaType, mediaUrl || undefined),
+      fileName: fileNameFromUrl(mediaUrl || undefined, `${mediaType}-${Date.now()}`),
+    };
+    if (messageText) body.caption = messageText;
+    if (mediaType === 'audio') body.ptt = true;
+    const response = await fetch(`${settings.uazapiBaseUrl}/send/media`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', token: instance.zapi_token },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) throw new Error(`UAZAPI media send failed: ${response.status} ${await response.text()}`);
+    return { provider, zapiMessageId: await parseProviderMessageId(response), msgType: mediaType };
+  }
+
+  const response = await fetch(`${settings.uazapiBaseUrl}/send/text`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', token: instance.zapi_token },
+    body: JSON.stringify({ number: normalizedPhone, text: messageText }),
+  });
+  if (!response.ok) throw new Error(`UAZAPI text send failed: ${response.status} ${await response.text()}`);
+  return { provider, zapiMessageId: await parseProviderMessageId(response), msgType: 'text' };
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -110,8 +294,8 @@ Deno.serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const uazapiBaseUrl = Deno.env.get('UAZAPI_BASE_URL')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
+    const connectionSettings = await loadConnectionSettings(supabase);
 
     console.log('[FLOW TIMEOUTS] Checking for timed-out flow executions...');
 
@@ -359,6 +543,7 @@ Deno.serve(async (req) => {
         if (remarketingSteps.length > 0 && currentStep < remarketingSteps.length) {
           const step = remarketingSteps[currentStep];
           console.log(`[FLOW TIMEOUTS] Exec ${exec.id}: sending remarketing step ${currentStep + 1}/${remarketingSteps.length}`);
+          let followUpSent = !(step.message || step.mediaUrl);
 
           if (step.message || step.mediaUrl) {
             const { data: conv } = await supabase
@@ -374,91 +559,32 @@ Deno.serve(async (req) => {
                 .eq('id', conv.contact_id)
                 .single();
 
-              const { data: instance } = await supabase
-                .from('whatsapp_instances')
-                .select('zapi_instance_id, zapi_token')
-                .eq('organization_id', conv.organization_id)
-                .eq('status', 'connected')
-                .limit(1)
-                .single();
+              const instance = await loadConversationInstance(
+                supabase,
+                conv.organization_id,
+                conv.whatsapp_instance_id,
+              );
 
-              if (contact?.phone && instance?.zapi_token) {
+              if (contact?.phone && instance) {
                 const variables = exec.variables || {};
                 let messageText = step.message || '';
                 for (const [key, val] of Object.entries(variables as Record<string, any>)) {
                   messageText = messageText.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), String(val));
                 }
 
-                const normalizedPhone = contact.phone.replace(/\D/g, '');
                 const hasMedia = !!step.mediaUrl;
                 const mediaType = step.mediaType || 'image';
 
                 try {
-                  // Send media first if attached, then text (or caption with media)
-                  let zapiMessageId: string | null = null;
-                  let msgType: string = 'text';
-
-                  if (hasMedia) {
-                    console.log(`[FLOW TIMEOUTS] Sending media via UAZAPI: phone=${normalizedPhone}, step=${currentStep + 1}, type=${mediaType}`);
-                    
-                    const mediaBody: Record<string, any> = {
-                      number: normalizedPhone,
-                      file: step.mediaUrl,
-                      type: mediaType === 'video' ? 'video' : mediaType === 'document' ? 'document' : 'image',
-                    };
-                    // Add caption for image/video
-                    if (messageText && (mediaType === 'image' || mediaType === 'video')) {
-                      mediaBody.caption = messageText;
-                    }
-
-                    const mediaResp = await fetch(`${uazapiBaseUrl}/send/media`, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json', 'token': instance.zapi_token },
-                      body: JSON.stringify(mediaBody),
-                    });
-
-                    if (!mediaResp.ok) {
-                      const errText = await mediaResp.text();
-                      console.error(`[FLOW TIMEOUTS] UAZAPI media send failed: ${mediaResp.status} ${errText}`);
-                    } else {
-                      try {
-                        const result = await mediaResp.json();
-                        zapiMessageId = result?.messageId || result?.id || result?.ID || result?.key?.id || null;
-                      } catch { /* ignore */ }
-                      msgType = mediaType;
-                    }
-
-                    // For documents, send the text message separately if there's a caption
-                    if (messageText && mediaType === 'document') {
-                      const textResp = await fetch(`${uazapiBaseUrl}/send/text`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json', 'token': instance.zapi_token },
-                        body: JSON.stringify({ number: normalizedPhone, text: messageText }),
-                      });
-                      if (!textResp.ok) {
-                        console.error(`[FLOW TIMEOUTS] UAZAPI text after doc failed`);
-                      }
-                    }
-                  } else {
-                    // Text-only message
-                    console.log(`[FLOW TIMEOUTS] Sending text via UAZAPI: phone=${normalizedPhone}, step=${currentStep + 1}, message=${messageText.substring(0, 50)}...`);
-                    
-                    const uazapiResp = await fetch(`${uazapiBaseUrl}/send/text`, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json', 'token': instance.zapi_token },
-                      body: JSON.stringify({ number: normalizedPhone, text: messageText }),
-                    });
-
-                    if (!uazapiResp.ok) {
-                      const errText = await uazapiResp.text();
-                      console.error(`[FLOW TIMEOUTS] UAZAPI send failed: ${uazapiResp.status} ${errText}`);
-                    } else {
-                      try {
-                        const result = await uazapiResp.json();
-                        zapiMessageId = result?.messageId || result?.id || result?.ID || result?.key?.id || null;
-                      } catch { /* ignore */ }
-                    }
-                  }
+                  console.log(`[FLOW TIMEOUTS] Sending follow-up via ${getProvider(instance)}: step=${currentStep + 1}, media=${hasMedia ? mediaType : 'none'}`);
+                  const { provider, zapiMessageId, msgType } = await sendFollowUpProviderMessage({
+                    settings: connectionSettings,
+                    instance,
+                    phone: contact.phone,
+                    messageText,
+                    mediaUrl: step.mediaUrl,
+                    mediaType,
+                  });
 
                   // Save to messages table
                   if (zapiMessageId || messageText || hasMedia) {
@@ -474,22 +600,35 @@ Deno.serve(async (req) => {
                         source: 'remarketing_followup',
                         remarketing_step: currentStep + 1,
                         flow_name: exec.flow?.name || null,
+                        provider,
                       },
                     });
 
                     await supabase.from('conversations').update({ 
                       last_message_at: new Date().toISOString() 
                     }).eq('id', exec.conversation_id);
+                    followUpSent = true;
 
                     console.log(`[FLOW TIMEOUTS] ✅ Remarketing step ${currentStep + 1} sent for exec ${exec.id}`);
                   }
                 } catch (sendErr) {
-                  console.error(`[FLOW TIMEOUTS] Error sending message via UAZAPI:`, sendErr);
+                  console.error(`[FLOW TIMEOUTS] Error sending follow-up message:`, sendErr);
                 }
               } else {
                 console.error(`[FLOW TIMEOUTS] Missing phone or instance for exec ${exec.id}`);
               }
             }
+          }
+
+          if (!followUpSent) {
+            const retryAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+            await supabase.from('flow_executions').update({
+              timeout_at: retryAt,
+              error_message: 'Follow-up send failed; retry scheduled',
+            }).eq('id', exec.id);
+            console.log(`[FLOW TIMEOUTS] Exec ${exec.id}: follow-up was not sent; retry scheduled at ${retryAt}`);
+            processed++;
+            continue;
           }
 
           // Schedule next step

@@ -79,7 +79,7 @@ export function ContactAvatar({
   // refreshes the DB so future loads use the persisted URL.
   useEffect(() => {
     if (!autoRefetch || !contactId || !session?.access_token) return;
-    if (!isTemporaryUrl(src)) return;
+    if (src && !isTemporaryUrl(src)) return;
     if (inflightRefetch.has(contactId)) return;
     // Fire and forget — won't show a loading state
     const t = setTimeout(() => {

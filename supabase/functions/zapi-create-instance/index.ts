@@ -150,6 +150,8 @@ async function createEvolutionInstance(config: any, instanceName: string) {
       url: config.webhookUrl,
       byEvents: false,
       base64: true,
+      webhookByEvents: false,
+      webhookBase64: true,
       events: ['QRCODE_UPDATED', 'CONNECTION_UPDATE', 'MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'SEND_MESSAGE', 'PRESENCE_UPDATE'],
     },
   };

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useDocumentSignatures, useUpdateSignatureStatus, useArchiveSignature, useDeleteSignature } from '@/hooks/useDocumentSignatures';
 import { useGeneratedDocuments } from '@/hooks/useGeneratedDocuments';
 import { CreateSignatureDialog } from './CreateSignatureDialog';
@@ -38,8 +39,100 @@ const METHOD_MAP: Record<string, { label: string; cls: string }> = {
   internal: { label: 'OTP + Selfie',     cls: 'bg-gradient-to-r from-pink-500/15 to-rose-500/15 text-pink-300 border border-pink-500/30' },
   manual:   { label: 'Manual',           cls: 'bg-zinc-500/10 text-zinc-300 border border-zinc-500/30' },
   govbr:    { label: 'Gov.br',           cls: 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30' },
-  zapsign:  { label: 'ZapSign',          cls: 'bg-sky-500/10 text-sky-300 border border-sky-500/30' },
+  zapsign:  { label: 'Wizzy Sign',       cls: 'bg-sky-500/10 text-sky-300 border border-sky-500/30' },
 };
+
+const PAGE_SIZE_OPTIONS = [10, 50, 100, 500];
+type SignatureFilter = 'all' | 'signed' | 'partial' | 'pending' | 'rejected' | 'expired';
+
+function getSigningSummary(signatures: any[]) {
+  const signerBuckets = new Map<string, any[]>();
+  for (const sig of signatures) {
+    const key = sig.signer_email || sig.signer_phone || sig.signer_name || sig.id;
+    const bucket = signerBuckets.get(key) || [];
+    bucket.push(sig);
+    signerBuckets.set(key, bucket);
+  }
+
+  const totalSigners = signerBuckets.size || signatures.length;
+  const signedSigners = Array.from(signerBuckets.values()).filter(items => items.some(s => s.status === 'signed')).length;
+  const hasRejected = signatures.some(sig => sig.status === 'rejected');
+  const hasExpired = signatures.some(sig => sig.status === 'expired');
+
+  return { totalSigners, signedSigners, hasRejected, hasExpired };
+}
+
+function getSignatureGroupStatus(signatures: any[]): SignatureFilter {
+  const { totalSigners, signedSigners, hasRejected, hasExpired } = getSigningSummary(signatures);
+  if (hasRejected) return 'rejected';
+  if (hasExpired) return 'expired';
+  if (signedSigners === totalSigners && totalSigners > 0) return 'signed';
+  if (signedSigners > 0) return 'partial';
+  return 'pending';
+}
+
+function PaginationControls({
+  page,
+  pageSize,
+  total,
+  onPageChange,
+  onPageSizeChange,
+}: {
+  page: number;
+  pageSize: number;
+  total: number;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (pageSize: number) => void;
+}) {
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const start = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const end = Math.min(total, page * pageSize);
+  const pages = Array.from({ length: totalPages }, (_, index) => index + 1)
+    .filter((pageNumber) => totalPages <= 7 || pageNumber === 1 || pageNumber === totalPages || Math.abs(pageNumber - page) <= 2);
+
+  return (
+    <div className="flex flex-col gap-3 border-t pt-3 md:flex-row md:items-center md:justify-between">
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <span>Exibir</span>
+        <Select value={String(pageSize)} onValueChange={(value) => onPageSizeChange(Number(value))}>
+          <SelectTrigger className="h-8 w-24">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {PAGE_SIZE_OPTIONS.map((option) => (
+              <SelectItem key={option} value={String(option)}>{option}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <span>{start}-{end} de {total}</span>
+      </div>
+      <div className="flex flex-wrap items-center gap-1">
+        <Button variant="outline" size="sm" onClick={() => onPageChange(page - 1)} disabled={page <= 1}>
+          Anterior
+        </Button>
+        {pages.map((pageNumber, index) => {
+          const previous = pages[index - 1];
+          return (
+            <span key={pageNumber} className="flex items-center gap-1">
+              {previous && pageNumber - previous > 1 && <span className="px-1 text-xs text-muted-foreground">...</span>}
+              <Button
+                variant={pageNumber === page ? 'default' : 'outline'}
+                size="sm"
+                className="h-8 min-w-8 px-2"
+                onClick={() => onPageChange(pageNumber)}
+              >
+                {pageNumber}
+              </Button>
+            </span>
+          );
+        })}
+        <Button variant="outline" size="sm" onClick={() => onPageChange(page + 1)} disabled={page >= totalPages}>
+          Próxima
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 export function SignaturesList() {
   const [showArchived, setShowArchived] = useState(false);
@@ -50,6 +143,9 @@ export function SignaturesList() {
   const deleteMut = useDeleteSignature();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<SignatureFilter>('all');
+  const [pageSize, setPageSize] = useState(10);
+  const [page, setPage] = useState(1);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -167,6 +263,20 @@ export function SignaturesList() {
   const pendingCount = signatures?.filter(s => s.status === 'pending' || s.status === 'sent' || s.status === 'opened').length || 0;
   const signedCount = signatures?.filter(s => s.status === 'signed').length || 0;
   const totalCount = signatures?.length || 0;
+  const filteredGroups = grouped.filter(group => statusFilter === 'all' || getSignatureGroupStatus(group.signatures) === statusFilter);
+  const totalPages = Math.max(1, Math.ceil(filteredGroups.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const visibleGroups = filteredGroups.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+  const handlePageSizeChange = (nextPageSize: number) => {
+    setPageSize(nextPageSize);
+    setPage(1);
+  };
+
+  const handleFilterChange = (nextFilter: SignatureFilter) => {
+    setStatusFilter(nextFilter);
+    setPage(1);
+  };
 
   const availableDocuments = documents?.filter(d => d.pdf_url && d.status !== 'draft') || [];
   const selectedGroup = selectedGroupKey ? grouped.find(group => group.key === selectedGroupKey) : null;
@@ -494,14 +604,29 @@ export function SignaturesList() {
       </div>
 
       {/* Search */}
-      <div className="relative max-w-md">
+      <div className="flex flex-col gap-2 md:flex-row md:items-center">
+        <div className="relative max-w-md flex-1">
         <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
           placeholder="Buscar por documento ou signatário..."
           value={search}
-          onChange={e => setSearch(e.target.value)}
+          onChange={e => { setSearch(e.target.value); setPage(1); }}
           className="pl-9"
         />
+        </div>
+        <Select value={statusFilter} onValueChange={(value) => handleFilterChange(value as SignatureFilter)}>
+          <SelectTrigger className="w-full md:w-56">
+            <SelectValue placeholder="Filtrar status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos</SelectItem>
+            <SelectItem value="signed">Todos assinados</SelectItem>
+            <SelectItem value="partial">Assinado parcialmente</SelectItem>
+            <SelectItem value="pending">Em assinatura</SelectItem>
+            <SelectItem value="rejected">Rejeitados</SelectItem>
+            <SelectItem value="expired">Expirados</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {isLoading ? (
@@ -512,7 +637,7 @@ export function SignaturesList() {
             </Card>
           ))}
         </div>
-      ) : filtered.length === 0 ? (
+      ) : filteredGroups.length === 0 ? (
         <Card className="p-12 text-center">
           <FileSignature className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
           <h3 className="text-lg font-medium mb-2">Nenhuma assinatura</h3>
@@ -524,8 +649,9 @@ export function SignaturesList() {
           </Button>
         </Card>
       ) : (
+        <>
         <div className="space-y-2.5">
-          {grouped.map(group => {
+          {visibleGroups.map(group => {
             const docSignatures = group.signatures;
             const signerBuckets = new Map<string, typeof docSignatures>();
             for (const sig of docSignatures) {
@@ -639,6 +765,14 @@ export function SignaturesList() {
             );
           })}
         </div>
+        <PaginationControls
+          page={safePage}
+          pageSize={pageSize}
+          total={filteredGroups.length}
+          onPageChange={setPage}
+          onPageSizeChange={handlePageSizeChange}
+        />
+        </>
       )}
 
       <CreateSignatureDialog

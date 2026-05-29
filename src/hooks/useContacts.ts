@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './useAuth';
 import { toast } from './use-toast';
+import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 
 export interface Contact {
   id: string;
@@ -10,6 +11,7 @@ export interface Contact {
   email: string | null;
   avatar_url: string | null;
   organization_id: string;
+  workspace_id?: string | null;
   created_at: string;
   updated_at: string;
   metadata: { note?: string } | null;
@@ -25,11 +27,12 @@ export interface Contact {
 
 export function useContacts() {
   const { session } = useAuth();
+  const { selectedWorkspaceId } = useWorkspaceContext();
 
   return useQuery({
-    queryKey: ['contacts'],
+    queryKey: ['contacts', selectedWorkspaceId],
     queryFn: async (): Promise<Contact[]> => {
-      const { data, error } = await supabase
+      let query = supabase
         .from('contacts')
         .select(`
           *,
@@ -39,6 +42,12 @@ export function useContacts() {
           )
         `)
         .order('created_at', { ascending: false });
+
+      if (selectedWorkspaceId) {
+        query = query.eq('workspace_id', selectedWorkspaceId);
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
       return (data || []) as Contact[];

@@ -10,7 +10,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useSignatureSettings } from '@/hooks/useSignatureSettings';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Bot, User, Send, Loader2, MessageCircle, Mic, Check, CheckCheck, ArrowUp, FileText, MapPin, Play, UserCircle, X, Variable, PenLine, Archive, Search, Reply, Clock, Sparkles, Timer, ChevronDown, RefreshCw } from 'lucide-react';
+import { Bot, User, Send, Loader2, MessageCircle, Mic, Check, CheckCheck, ArrowUp, FileText, MapPin, Play, UserCircle, X, Variable, PenLine, Archive, Search, Reply, Clock, Sparkles, Timer, ChevronDown, RefreshCw, Trash2 } from 'lucide-react';
 import { formatWhatsAppMessage, parseMessageVariables, messageVariables } from '@/lib/whatsappFormatter';
 import {
   DropdownMenu,
@@ -30,6 +30,7 @@ import { ScrollToBottomButton } from './ScrollToBottomButton';
 import { MessageSearch } from './MessageSearch';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
@@ -809,6 +810,15 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
                        highlightedMessageId={highlightedMessageId}
                        followUpMap={followUpMap || {}}
                        onReply={(msg) => setReplyingTo(msg)}
+                       onDelete={async (msg) => {
+                         const { data, error } = await supabase.functions.invoke('zapi-message-actions', {
+                           body: { action: 'delete', messageId: msg.id, instanceId: conversation.whatsapp_instance_id },
+                         });
+                         if (error || data?.error || data?.success === false) {
+                           throw new Error(data?.error || error?.message || 'Nao foi possivel apagar a mensagem.');
+                         }
+                         await queryClient.invalidateQueries({ queryKey: ['messages', msg.conversation_id] });
+                       }}
                        onFollowUp={(msg) => {
                          setFollowUpMessage(msg);
                          setFollowUpDialogOpen(true);
@@ -989,7 +999,7 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
               </TooltipContent>
             </Tooltip>
 
-            <Input
+            <Textarea
               value={newMessage}
               onChange={(e) => handleInputChange(e.target.value)}
               onPaste={handlePaste}
@@ -1000,9 +1010,15 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
                     ? "A IA está respondendo... Digite para assumir"
                     : "Digite sua mensagem ou cole uma imagem..."
               }
-              className="flex-1"
-              onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleSend()}
-              disabled={sendMessage.isPending || isSendingMedia}
+              rows={1}
+              className="flex-1 min-h-10 max-h-32 resize-none py-2"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSend();
+                }
+              }}
+              disabled={isSendingMedia}
             />
             {(newMessage.trim() || attachedMedia) ? (
               <Button
@@ -1096,11 +1112,12 @@ interface MessageBubbleListProps {
   highlightedMessageId?: string | null;
   followUpMap?: Record<string, { step: number; triggerMessageId?: string }>;
   onReply?: (message: DbMessage) => void;
+  onDelete?: (message: DbMessage) => Promise<void>;
   onFollowUp?: (message: DbMessage) => void;
   onAdjustPrompt?: (message: DbMessage) => void;
 }
 
-function MessageBubbleList({ messages, mediaMessageIds, contactAvatar, contactName, contactPhone, contactId, senderAvatar, senderName, highlightedMessageId, followUpMap, onReply, onFollowUp, onAdjustPrompt }: MessageBubbleListProps) {
+function MessageBubbleList({ messages, mediaMessageIds, contactAvatar, contactName, contactPhone, contactId, senderAvatar, senderName, highlightedMessageId, followUpMap, onReply, onDelete, onFollowUp, onAdjustPrompt }: MessageBubbleListProps) {
   const { transcriptions, isLoading: transcriptionsLoading } = useMediaTranscriptions(mediaMessageIds);
   const [localTranscriptions, setLocalTranscriptions] = useState<Record<string, string>>({});
 
@@ -1179,6 +1196,7 @@ function MessageBubbleList({ messages, mediaMessageIds, contactAvatar, contactNa
               isHighlighted={highlightedMessageId === message.id}
               hasFollowUp={!!(conversationFollowUp && message.id === followUpTargetId)}
               onReply={onReply}
+              onDelete={onDelete}
               onFollowUp={onFollowUp}
               onTranscriptionUpdate={handleTranscriptionUpdate}
               onAdjustPrompt={onAdjustPrompt}
@@ -1203,16 +1221,23 @@ interface MessageBubbleProps {
   isHighlighted?: boolean;
   hasFollowUp?: boolean;
   onReply?: (message: DbMessage) => void;
+  onDelete?: (message: DbMessage) => Promise<void>;
   onFollowUp?: (message: DbMessage) => void;
   onTranscriptionUpdate?: (messageId: string, transcription: string) => void;
   onAdjustPrompt?: (message: DbMessage) => void;
 }
 
-function MessageBubble({ message, contactAvatar, contactName, contactPhone, contactId, transcription, isTranscriptionLoading, senderAvatar, senderName, isHighlighted, hasFollowUp, onReply, onFollowUp, onTranscriptionUpdate, onAdjustPrompt }: MessageBubbleProps) {
+function MessageBubble({ message, contactAvatar, contactName, contactPhone, contactId, transcription, isTranscriptionLoading, senderAvatar, senderName, isHighlighted, hasFollowUp, onReply, onDelete, onFollowUp, onTranscriptionUpdate, onAdjustPrompt }: MessageBubbleProps) {
   const isInbound = message.direction === 'inbound';
   const isBot = message.is_from_bot;
   const queryClient = useQueryClient();
   const [isRecoveringMedia, setIsRecoveringMedia] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const metadata = message.metadata as any;
+  const isDeletedMessage = !!metadata?.whatsapp_deleted;
+  const deletedAt = metadata?.whatsapp_deleted_at ? new Date(metadata.whatsapp_deleted_at) : null;
+  const deletedBy = metadata?.deleted_by_name || (metadata?.deleted_by_user_id ? 'Usuario da Wizzy' : metadata?.whatsapp_delete_source === 'whatsapp' ? 'WhatsApp' : 'Usuario da Wizzy');
+  const originalType = metadata?.original_type || message.type;
 
   const recoverMissingMedia = async () => {
     if (isRecoveringMedia) return;
@@ -1242,9 +1267,62 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
     }
   };
 
+  const deleteMessageForEveryone = async () => {
+    if (!onDelete || isDeleting) return;
+    if (!message.zapi_message_id) {
+      toast({
+        title: 'Mensagem sem ID do WhatsApp',
+        description: 'Nao foi possivel apagar no WhatsApp porque esta mensagem nao tem ID remoto.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      await onDelete(message);
+      toast({ title: 'Mensagem apagada' });
+    } catch (error) {
+      toast({
+        title: 'Erro ao apagar mensagem',
+        description: error instanceof Error ? error.message : 'Nao foi possivel apagar a mensagem.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   // Render media content based on type
   const renderMediaContent = () => {
     const { type, media_url, content } = message;
+
+    if (isDeletedMessage) {
+      const deletedLabel = originalType === 'image'
+        ? 'Imagem apagada'
+        : originalType === 'audio'
+          ? 'Audio apagado'
+          : originalType === 'video'
+            ? 'Video apagado'
+            : originalType === 'document'
+              ? 'Documento apagado'
+              : 'Mensagem apagada';
+
+      return (
+        <div className="flex min-w-[220px] items-start gap-3 rounded-lg border border-dashed border-border/70 bg-background/40 p-3 text-muted-foreground">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">
+            <Trash2 className="h-4 w-4" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-medium">{deletedLabel}</p>
+            <p className="text-xs">
+              Apagada por {deletedBy}
+              {deletedAt && ` em ${format(deletedAt, 'dd/MM/yyyy HH:mm', { locale: ptBR })}`}
+            </p>
+          </div>
+        </div>
+      );
+    }
 
     if (type === 'image' && media_url) {
       return (
@@ -1466,7 +1544,7 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
       {/* Hover Action Buttons - inline next to bubble */}
       {!isInbound && (
         <div className="flex items-center gap-0.5 opacity-0 group-hover/msg:opacity-100 transition-opacity self-start mt-1">
-          {!isBot && (
+          {!isBot && !isDeletedMessage && (
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
@@ -1495,6 +1573,24 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
             </TooltipTrigger>
             <TooltipContent side="top" className="text-xs">Responder</TooltipContent>
           </Tooltip>
+          {onDelete && !isDeletedMessage && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={deleteMessageForEveryone}
+                  disabled={isDeleting}
+                  className="h-6 w-6 rounded-full bg-card border border-border shadow-sm flex items-center justify-center hover:bg-destructive/10 transition-colors disabled:opacity-50"
+                >
+                  {isDeleting ? (
+                    <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+                  ) : (
+                    <Trash2 className="h-3 w-3 text-destructive" />
+                  )}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="text-xs">Apagar para todos</TooltipContent>
+            </Tooltip>
+          )}
         </div>
       )}
       {isInbound && (
@@ -1516,14 +1612,16 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
       <div 
         className={cn(
           "max-w-[70%] rounded-2xl px-4 py-3 relative transition-all",
-          isInbound
+          isDeletedMessage
+            ? "bg-muted/40 border border-dashed border-border text-muted-foreground rounded-tr-sm"
+            : isInbound
             ? "bg-card border border-border rounded-tl-sm"
             : isBot
               ? "bg-gradient-to-br from-primary to-purple-500 text-white rounded-tr-sm cursor-pointer hover:shadow-lg hover:scale-[1.01] active:scale-[0.99]"
               : "bg-green-500 text-white rounded-tr-sm"
         )}
         onClick={() => {
-          if (!isInbound && isBot && onAdjustPrompt) {
+          if (!isDeletedMessage && !isInbound && isBot && onAdjustPrompt) {
             onAdjustPrompt(message);
           }
         }}

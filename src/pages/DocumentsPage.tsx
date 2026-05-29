@@ -29,7 +29,7 @@ export default function DocumentsPage() {
   ];
 
   return (
-    <MainLayout title="Documentos" subtitle="Gerencie templates, packs, documentos e assinaturas">
+    <MainLayout title="Wizzy Sign" subtitle="Gerencie templates, packs, documentos e assinaturas">
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4 md:space-y-5">
         <TabsList className="grid h-auto w-full grid-cols-2 gap-2 bg-transparent p-0 md:grid-cols-4">
           {navItems.map((item) => {

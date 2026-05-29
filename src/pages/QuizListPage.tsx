@@ -16,7 +16,7 @@ export default function QuizListPage() {
   const { data: quizzes, isLoading, createQuiz, deleteQuiz } = useQuizzes();
 
   const handleCreate = async () => {
-    const result = await createQuiz.mutateAsync({ name: 'Novo Quizz' });
+    const result = await createQuiz.mutateAsync({ name: 'Novo Wizzy Quiz' });
     navigate(`/tools/quiz/builder?id=${result.id}`);
   };
 
@@ -30,12 +30,12 @@ export default function QuizListPage() {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Quizz</h1>
+            <h1 className="text-2xl font-bold text-foreground">Wizzy Quiz</h1>
             <p className="text-muted-foreground">Crie questionários interativos para qualificar e capturar leads.</p>
           </div>
           <Button onClick={handleCreate} disabled={createQuiz.isPending}>
             <Plus className="h-4 w-4 mr-2" />
-            Criar Quizz
+            Criar Wizzy Quiz
           </Button>
         </div>
 
@@ -82,7 +82,7 @@ export default function QuizListPage() {
                           {quiz.public_token && quiz.is_active && (
                             <DropdownMenuItem onClick={(e) => { e.stopPropagation(); window.open(`${getPublicAppOrigin()}/q/${quiz.public_token}`, '_blank'); }}>
                               <ExternalLink className="h-3.5 w-3.5 mr-2" />
-                              Abrir quizz
+                              Abrir Wizzy Quiz
                             </DropdownMenuItem>
                           )}
                           <DropdownMenuItem
@@ -108,13 +108,13 @@ export default function QuizListPage() {
             <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 mb-4">
               <HelpCircle className="h-8 w-8 text-primary" />
             </div>
-            <h3 className="text-lg font-semibold">Nenhum quizz criado</h3>
+            <h3 className="text-lg font-semibold">Nenhum Wizzy Quiz criado</h3>
             <p className="text-muted-foreground mt-1 max-w-md">
-              Crie seu primeiro quizz interativo para capturar leads e iniciar atendimentos automáticos via WhatsApp.
+              Crie seu primeiro Wizzy Quiz interativo para capturar leads e iniciar atendimentos automáticos via WhatsApp.
             </p>
             <Button className="mt-4" onClick={handleCreate} disabled={createQuiz.isPending}>
               <Plus className="h-4 w-4 mr-2" />
-              Criar primeiro quizz
+              Criar primeiro Wizzy Quiz
             </Button>
           </div>
         )}

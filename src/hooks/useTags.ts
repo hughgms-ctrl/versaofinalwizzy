@@ -226,6 +226,13 @@ export function useAddTagToContact() {
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['contact-tags', variables.contactId] });
+      if (variables.addedByType === 'manual') {
+        supabase.functions.invoke('zapi-contact-tags', {
+          body: { contactId: variables.contactId, tagId: variables.tagId },
+        }).catch((error) => {
+          console.warn('WhatsApp tag sync failed:', error);
+        });
+      }
     },
     onError: (error: any) => {
       if (error.code === '23505') {

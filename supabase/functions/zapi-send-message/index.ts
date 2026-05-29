@@ -140,6 +140,14 @@ async function validatePublicMediaUrl(mediaUrl: string): Promise<{
   }
 }
 
+function sanitizeSendBody(body: Record<string, any>) {
+  const sanitized = { ...body };
+  for (const key of ['media', 'file', 'audio']) {
+    if (sanitized[key]) sanitized[key] = '[media_url]';
+  }
+  return sanitized;
+}
+
 function normalizeReplyMessageId(messageId: string | null | undefined): string | null {
   if (!messageId) return null;
   const trimmed = messageId.trim();
@@ -267,8 +275,8 @@ Deno.serve(async (req) => {
 
     const { conversationId, content, type = 'text', mediaUrl, quotedMessageId, quotedContent, quotedSender } = await req.json() as SendMessageRequest;
 
-    if (!conversationId || !content) {
-      return new Response(JSON.stringify({ error: 'conversationId and content are required' }), {
+    if (!conversationId || (type === 'text' && !content)) {
+      return new Response(JSON.stringify({ error: type === 'text' ? 'conversationId and content are required' : 'conversationId is required' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -319,6 +327,14 @@ Deno.serve(async (req) => {
     const instanceToken = instance.zapi_token;
     const phone = conversation.contact.phone;
     const normalizedPhone = phone.replace(/\D/g, '');
+    const mediaSendDiagnostics: Record<string, any> | null = type !== 'text'
+      ? {
+        provider,
+        type,
+        media_url: mediaUrl || null,
+        created_at: new Date().toISOString(),
+      }
+      : null;
 
     if (type !== 'text') {
       if (!mediaUrl) {
@@ -329,9 +345,34 @@ Deno.serve(async (req) => {
       }
 
       const mediaValidation = await validatePublicMediaUrl(mediaUrl);
+      if (mediaSendDiagnostics) mediaSendDiagnostics.media_validation = mediaValidation;
       if (!mediaValidation.ok) {
+        const { data: failedMessage } = await supabase
+          .from('messages')
+          .insert({
+            conversation_id: conversationId,
+            content: content || '',
+            type,
+            direction: 'outbound',
+            is_from_bot: false,
+            sent_by: user.id,
+            media_url: mediaUrl || null,
+            metadata: {
+              provider,
+              media_send: {
+                ...mediaSendDiagnostics,
+                failed_stage: 'media_url_validation',
+              },
+            },
+            failed_at: new Date().toISOString(),
+            error_message: 'Arquivo de midia nao esta acessivel publicamente para o provedor WhatsApp.',
+          })
+          .select()
+          .maybeSingle();
+
         return new Response(JSON.stringify({
           error: 'Arquivo de midia nao esta acessivel publicamente para o provedor WhatsApp.',
+          messageId: failedMessage?.id || null,
           details: mediaValidation,
         }), {
           status: 400,
@@ -456,6 +497,10 @@ Deno.serve(async (req) => {
 
       console.log('Evolution send URL:', endpoint);
       console.log('Evolution send body:', JSON.stringify({ ...body, media: body.media ? '[media]' : undefined }));
+      if (mediaSendDiagnostics) {
+        mediaSendDiagnostics.endpoint = endpoint;
+        mediaSendDiagnostics.request_body = sanitizeSendBody(body);
+      }
 
       const response = await fetch(endpoint, {
         method: 'POST',
@@ -472,12 +517,22 @@ Deno.serve(async (req) => {
       let sendErrorText = '';
 
       const raw = await response.text();
+      if (mediaSendDiagnostics) {
+        mediaSendDiagnostics.response_status = response.status;
+        mediaSendDiagnostics.response_ok = response.ok;
+      }
       if (!response.ok) {
         sendErrorText = raw;
+        if (mediaSendDiagnostics) mediaSendDiagnostics.response_error = raw.substring(0, 500);
         console.error('Evolution send error (will save to DB anyway):', sendErrorText);
         sendFailed = true;
       } else {
         try { evolutionResult = raw ? JSON.parse(raw) : {}; } catch { evolutionResult = { raw }; }
+        if (mediaSendDiagnostics) {
+          mediaSendDiagnostics.response_keys = evolutionResult && typeof evolutionResult === 'object'
+            ? Object.keys(evolutionResult).slice(0, 12)
+            : ['raw'];
+        }
         zapiMsgId = evolutionResult.messageId || evolutionResult.id || evolutionResult.key?.id || null;
 
         if (zapiMsgId) {
@@ -497,6 +552,12 @@ Deno.serve(async (req) => {
       const messageMetadata: Record<string, any> = sendFailed
         ? { provider, send_error: sendErrorText, failed_at: new Date().toISOString() }
         : { provider, evolution_response: evolutionResult };
+      if (mediaSendDiagnostics) {
+        messageMetadata.media_send = {
+          ...mediaSendDiagnostics,
+          failed_stage: sendFailed ? 'provider_send' : null,
+        };
+      }
 
       if (quotedMessageId) {
         messageMetadata.quoted_message = {
@@ -510,7 +571,7 @@ Deno.serve(async (req) => {
         .from('messages')
         .insert({
           conversation_id: conversationId,
-          content,
+          content: content || '',
           type,
           direction: 'outbound',
           is_from_bot: false,
@@ -595,6 +656,10 @@ Deno.serve(async (req) => {
 
     console.log('UAZAPI send URL:', endpoint.replace(instanceToken, '***'));
     console.log('UAZAPI send body:', JSON.stringify(body));
+    if (mediaSendDiagnostics) {
+      mediaSendDiagnostics.endpoint = endpoint;
+      mediaSendDiagnostics.request_body = sanitizeSendBody(body);
+    }
 
     const response = await fetch(endpoint, {
       method: 'POST',
@@ -612,10 +677,22 @@ Deno.serve(async (req) => {
 
     if (!response.ok) {
       sendErrorText = await response.text();
+      if (mediaSendDiagnostics) {
+        mediaSendDiagnostics.response_status = response.status;
+        mediaSendDiagnostics.response_ok = false;
+        mediaSendDiagnostics.response_error = sendErrorText.substring(0, 500);
+      }
       console.error('UAZAPI send error (will save to DB anyway):', sendErrorText);
       sendFailed = true;
     } else {
       uazapiResult = await response.json();
+      if (mediaSendDiagnostics) {
+        mediaSendDiagnostics.response_status = response.status;
+        mediaSendDiagnostics.response_ok = true;
+        mediaSendDiagnostics.response_keys = uazapiResult && typeof uazapiResult === 'object'
+          ? Object.keys(uazapiResult).slice(0, 12)
+          : [];
+      }
       zapiMsgId = uazapiResult.messageId || uazapiResult.id || uazapiResult.ID || uazapiResult.key?.id || null;
 
       // Manual check since we don't have UNIQUE constraint yet
@@ -637,6 +714,13 @@ Deno.serve(async (req) => {
     const messageMetadata: Record<string, any> = sendFailed
       ? { send_error: sendErrorText, failed_at: new Date().toISOString() }
       : { uazapi_response: uazapiResult };
+    if (mediaSendDiagnostics) {
+      messageMetadata.provider = provider;
+      messageMetadata.media_send = {
+        ...mediaSendDiagnostics,
+        failed_stage: sendFailed ? 'provider_send' : null,
+      };
+    }
 
     if (quotedMessageId) {
       messageMetadata.quoted_message = {
@@ -651,7 +735,7 @@ Deno.serve(async (req) => {
       .from('messages')
       .insert({
         conversation_id: conversationId,
-        content,
+        content: content || '',
         type,
         direction: 'outbound',
         is_from_bot: false,

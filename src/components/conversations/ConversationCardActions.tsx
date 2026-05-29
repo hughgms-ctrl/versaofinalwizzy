@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { 
   MoreHorizontal, 
   Archive, 
@@ -33,27 +33,37 @@ import { DbConversation } from '@/hooks/useConversations';
 import { usePipelines, usePipelineColumns, useMoveConversation, useTransferConversation } from '@/hooks/usePipelines';
 import { useNavigate } from 'react-router-dom';
 import { ShareConversationDialog } from './ShareConversationDialog';
+import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 
 interface ConversationCardActionsProps {
   conversation: DbConversation;
   variant?: 'icon' | 'minimal';
   onOpenChat?: () => void;
   onSpyView?: () => void;
+  workspaceId?: string | null;
 }
 
 export function ConversationCardActions({ 
   conversation, 
   variant = 'icon',
   onOpenChat,
-  onSpyView
+  onSpyView,
+  workspaceId
 }: ConversationCardActionsProps) {
   const [isUpdating, setIsUpdating] = useState(false);
   const [showShareDialog, setShowShareDialog] = useState(false);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { data: pipelines } = usePipelines();
+  const { selectedWorkspaceId } = useWorkspaceContext();
   const moveConversation = useMoveConversation();
   const transferConversation = useTransferConversation();
+  const activeWorkspaceId = workspaceId ?? selectedWorkspaceId;
+  const visiblePipelines = useMemo(() => {
+    if (!pipelines) return [];
+    if (!activeWorkspaceId) return pipelines.filter(pipeline => Array.isArray(pipeline.workspace_ids) && pipeline.workspace_ids.length > 0);
+    return pipelines.filter(pipeline => pipeline.workspace_ids?.includes(activeWorkspaceId));
+  }, [pipelines, activeWorkspaceId]);
 
   const isClosed = (conversation as any).status === 'closed' || !!(conversation as any).closed_at;
 
@@ -134,6 +144,7 @@ export function ConversationCardActions({
         conversationId: conversation.id,
         pipelineId,
         columnId,
+        skipAutoTransition: true,
       });
       console.log('Move successful');
       toast({
@@ -292,10 +303,10 @@ export function ConversationCardActions({
             Transferir para...
           </DropdownMenuSubTrigger>
           <DropdownMenuSubContent className="w-48">
-            {!pipelines || pipelines.length <= 1 ? (
+            {visiblePipelines.length <= 1 ? (
               <DropdownMenuItem disabled>Nenhum outro pipeline</DropdownMenuItem>
             ) : (
-              pipelines.map(pipeline => (
+              visiblePipelines.map(pipeline => (
                 <DropdownMenuItem
                   key={pipeline.id}
                   onClick={(e) => {
@@ -317,10 +328,10 @@ export function ConversationCardActions({
             Mover para
           </DropdownMenuSubTrigger>
           <DropdownMenuSubContent className="w-48">
-            {!pipelines || pipelines.length === 0 ? (
+            {visiblePipelines.length === 0 ? (
               <DropdownMenuItem disabled>Nenhum pipeline</DropdownMenuItem>
             ) : (
-              pipelines.map(pipeline => (
+              visiblePipelines.map(pipeline => (
                 <PipelineColumnSubmenu 
                   key={pipeline.id}
                   pipeline={pipeline}
@@ -360,9 +371,8 @@ function PipelineColumnSubmenu({
 }) {
   const { data: columns } = usePipelineColumns(pipeline.id);
   
-  const handleColumnClick = async (columnId: string, e: React.MouseEvent) => {
+  const handleColumnSelect = async (columnId: string, e: Event) => {
     e.preventDefault();
-    e.stopPropagation();
     await onSelectColumn(columnId);
   };
   
@@ -378,10 +388,7 @@ function PipelineColumnSubmenu({
           columns.map(column => (
             <DropdownMenuItem 
               key={column.id}
-              onSelect={(e) => {
-                e.preventDefault();
-              }}
-              onClick={(e) => handleColumnClick(column.id, e)}
+              onSelect={(e) => handleColumnSelect(column.id, e)}
             >
               <div 
                 className="h-2 w-2 rounded-full mr-2" 

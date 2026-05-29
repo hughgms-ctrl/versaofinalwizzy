@@ -15,6 +15,27 @@ function normalizeBaseUrl(value?: string | null): string {
   return (value || "").trim().replace(/\/$/, "");
 }
 
+function normalizeNotificationPhone(value?: string | null): string {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.length >= 12) return digits;
+  if (digits.length >= 10 && digits.length <= 11) return `55${digits}`;
+  return "";
+}
+
+function safeJsonParse(value: string): any {
+  try {
+    return value ? JSON.parse(value) : null;
+  } catch {
+    return null;
+  }
+}
+
+function extractProviderMessageId(payload: any): string | null {
+  if (!payload) return null;
+  return payload.messageId || payload.zapiMessageId || payload.id || payload.ID || payload.key?.id || null;
+}
+
 type Provider = "evolution" | "uazapi";
 
 async function loadConnectionSettings(supabase: any) {
@@ -76,13 +97,196 @@ function selectInstanceByStrategy(instances: any[] | null | undefined, strategy:
   return candidates[0] || null;
 }
 
+async function ensureRecipientConversation(
+  supabase: any,
+  {
+    organizationId,
+    phone,
+    name,
+    workspaceId,
+    instance,
+  }: {
+    organizationId: string;
+    phone: string;
+    name?: string | null;
+    workspaceId?: string | null;
+    instance: any;
+  },
+): Promise<string | null> {
+  let { data: contact } = await supabase
+    .from("contacts")
+    .select("id")
+    .eq("organization_id", organizationId)
+    .eq("phone", phone)
+    .maybeSingle();
+
+  if (!contact?.id) {
+    const { data: insertedContact, error: contactError } = await supabase
+      .from("contacts")
+      .insert({
+        organization_id: organizationId,
+        phone,
+        name: name || phone,
+        workspace_id: workspaceId || null,
+        metadata: {
+          internal_notification_recipient: true,
+          source: "stage-notification",
+        },
+      })
+      .select("id")
+      .maybeSingle();
+
+    if (contactError) {
+      const { data: existingContact } = await supabase
+        .from("contacts")
+        .select("id")
+        .eq("organization_id", organizationId)
+        .eq("phone", phone)
+        .maybeSingle();
+      contact = existingContact;
+    } else {
+      contact = insertedContact;
+    }
+  }
+
+  if (!contact?.id) return null;
+
+  let { data: conversation } = await supabase
+    .from("conversations")
+    .select("id")
+    .eq("organization_id", organizationId)
+    .eq("contact_id", contact.id)
+    .maybeSingle();
+
+  if (!conversation?.id) {
+    const { data: insertedConversation, error: conversationError } = await supabase
+      .from("conversations")
+      .insert({
+        organization_id: organizationId,
+        contact_id: contact.id,
+        whatsapp_instance_id: instance?.id || null,
+        source_phone: instance?.phone_number || instance?.logical_phone || null,
+        workspace_id: workspaceId || null,
+        status: "open",
+        unread_count: 0,
+        last_message_at: new Date().toISOString(),
+        metadata: {
+          internal_notification_recipient: true,
+          source: "stage-notification",
+        },
+      })
+      .select("id")
+      .maybeSingle();
+
+    if (conversationError) {
+      const { data: existingConversation } = await supabase
+        .from("conversations")
+        .select("id")
+        .eq("organization_id", organizationId)
+        .eq("contact_id", contact.id)
+        .maybeSingle();
+      conversation = existingConversation;
+    } else {
+      conversation = insertedConversation;
+    }
+  }
+
+  return conversation?.id || null;
+}
+
+async function saveNotificationMessage(
+  supabase: any,
+  {
+    organizationId,
+    workspaceId,
+    profile,
+    normalizedPhone,
+    message,
+    instance,
+    provider,
+    responseOk,
+    responseStatus,
+    responseText,
+    providerResponse,
+    sourceConversationId,
+    columnId,
+  }: {
+    organizationId: string;
+    workspaceId?: string | null;
+    profile: any;
+    normalizedPhone: string;
+    message: string;
+    instance: any;
+    provider: Provider;
+    responseOk: boolean;
+    responseStatus: number;
+    responseText: string;
+    providerResponse: any;
+    sourceConversationId: string;
+    columnId: string;
+  }) {
+  const conversationId = await ensureRecipientConversation(supabase, {
+    organizationId,
+    phone: normalizedPhone,
+    name: profile.full_name,
+    workspaceId,
+    instance,
+  });
+
+  if (!conversationId) {
+    console.log("Could not create/find recipient conversation for", profile.full_name, normalizedPhone);
+    return null;
+  }
+
+  const zapiMessageId = responseOk ? extractProviderMessageId(providerResponse) : null;
+  const now = new Date().toISOString();
+  const { data: savedMessage, error: messageError } = await supabase
+    .from("messages")
+    .insert({
+      conversation_id: conversationId,
+      direction: "outbound",
+      type: "text",
+      content: message,
+      is_from_bot: true,
+      zapi_message_id: zapiMessageId,
+      metadata: {
+        provider,
+        stage_notification: true,
+        source_conversation_id: sourceConversationId,
+        source_column_id: columnId,
+        recipient_user_id: profile.user_id,
+        provider_response: providerResponse || responseText || null,
+      },
+      ...(responseOk ? {} : { failed_at: now, error_message: responseText || "Provider send failed" }),
+    })
+    .select("id")
+    .maybeSingle();
+
+  if (messageError) {
+    console.error("Error saving stage notification message:", messageError);
+    return null;
+  }
+
+  await supabase
+    .from("conversations")
+    .update({
+      last_message_at: now,
+      status: "open",
+      whatsapp_instance_id: instance?.id || null,
+      source_phone: instance?.phone_number || instance?.logical_phone || null,
+    })
+    .eq("id", conversationId);
+
+  return savedMessage?.id || null;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    const { conversationId, columnId, organizationId, workspaceId: explicitWorkspaceId } = await req.json();
+    const { conversationId, pipelineId, columnId, organizationId, workspaceId: explicitWorkspaceId } = await req.json();
 
     if (!conversationId || !columnId || !organizationId) {
       return new Response(
@@ -96,6 +300,51 @@ Deno.serve(async (req) => {
     const supabase = createClient(supabaseUrl, serviceRoleKey);
     const connectionSettings = await loadConnectionSettings(supabase);
     const providerStrategy = await loadProviderStrategy(supabase);
+
+    const { data: currentPosition } = await supabase
+      .from("conversation_pipeline_positions")
+      .select("pipeline_id, column_id")
+      .eq("conversation_id", conversationId)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (currentPosition?.column_id !== columnId || (pipelineId && currentPosition?.pipeline_id !== pipelineId)) {
+      console.log("Skipping stale stage notification", {
+        conversationId,
+        requestedPipelineId: pipelineId || null,
+        requestedColumnId: columnId,
+        currentPipelineId: currentPosition?.pipeline_id || null,
+        currentColumnId: currentPosition?.column_id || null,
+      });
+      return new Response(
+        JSON.stringify({ message: "Skipped stale notification" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const { data: duplicateMessage } = await supabase
+      .from("messages")
+      .select("id")
+      .eq("metadata->>stage_notification", "true")
+      .eq("metadata->>source_conversation_id", conversationId)
+      .eq("metadata->>source_column_id", columnId)
+      .gte("created_at", fiveMinutesAgo)
+      .limit(1)
+      .maybeSingle();
+
+    if (duplicateMessage?.id) {
+      console.log("Skipping duplicate stage notification", {
+        conversationId,
+        columnId,
+        duplicateMessageId: duplicateMessage.id,
+      });
+      return new Response(
+        JSON.stringify({ message: "Skipped duplicate notification" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     // Resolve workspaceId from conversation if not provided
     let workspaceId: string | null = explicitWorkspaceId || null;
@@ -212,7 +461,18 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      const normalizedPhone = profile.phone.replace(/\D/g, '');
+      const normalizedPhone = normalizeNotificationPhone(profile.phone);
+      if (!normalizedPhone) {
+        console.log("User", profile.full_name, "has invalid phone number, skipping:", profile.phone);
+        results.push({
+          userId: profile.user_id,
+          name: profile.full_name,
+          success: false,
+          error: "Invalid phone number",
+        });
+        continue;
+      }
+
       console.log("Sending notification to", profile.full_name, "at", normalizedPhone);
 
       try {
@@ -257,13 +517,31 @@ Deno.serve(async (req) => {
         });
 
         const responseText = await response.text();
+        const providerResponse = safeJsonParse(responseText);
         console.log(`${provider} response for`, profile.full_name, ":", response.status, responseText);
+
+        const savedMessageId = await saveNotificationMessage(supabase, {
+          organizationId,
+          workspaceId,
+          profile,
+          normalizedPhone,
+          message,
+          instance,
+          provider,
+          responseOk: response.ok,
+          responseStatus: response.status,
+          responseText,
+          providerResponse,
+          sourceConversationId: conversationId,
+          columnId,
+        });
 
         results.push({
           userId: profile.user_id,
           name: profile.full_name,
           success: response.ok,
           status: response.status,
+          savedMessageId,
           error: response.ok ? undefined : responseText,
         });
       } catch (err) {
