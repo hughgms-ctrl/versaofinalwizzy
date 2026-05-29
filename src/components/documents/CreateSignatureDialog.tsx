@@ -119,7 +119,7 @@ export function CreateSignatureDialog({ open, onOpenChange, documents, preSelect
                   <span className="flex items-center gap-2">🏛️ Gov.br</span>
                 </SelectItem>
                 <SelectItem value="zapsign">
-                  <span className="flex items-center gap-2">✍️ ZapSign</span>
+                  <span className="flex items-center gap-2">✍️ Wizzy Sign</span>
                 </SelectItem>
               </SelectContent>
             </Select>
@@ -205,7 +205,7 @@ export function CreateSignatureDialog({ open, onOpenChange, documents, preSelect
           {method === 'zapsign' && (
             <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
               <p className="text-xs text-blue-700 dark:text-blue-300">
-                ✍️ A integração com ZapSign gerará um link de assinatura automático.
+                ✍️ A integração com Wizzy Sign gerará um link de assinatura automático.
               </p>
             </div>
           )}

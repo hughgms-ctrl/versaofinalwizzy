@@ -14,7 +14,7 @@ CREATE TABLE public.document_signatures (
   status TEXT NOT NULL DEFAULT 'pending', -- 'pending', 'sent', 'opened', 'signed', 'rejected', 'expired'
   signature_url TEXT, -- public page URL for gov.br or zapsign link
   signed_pdf_url TEXT, -- URL of the signed document
-  external_id TEXT, -- ZapSign document ID or gov.br reference
+  external_id TEXT, -- Wizzy Sign document ID or gov.br reference
   metadata JSONB DEFAULT '{}'::jsonb,
   sent_at TIMESTAMPTZ,
   signed_at TIMESTAMPTZ,

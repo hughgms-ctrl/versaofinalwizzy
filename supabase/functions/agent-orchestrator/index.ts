@@ -2117,7 +2117,7 @@ async function invokeDocumentAgentAI(
               ? `${generatedDocs.length} documento(s) gerado(s) com sucesso!`
               : 'Documento gerado com sucesso!';
             if (docCtx.signature_requested) {
-              resultMsg += ` Solicitação de assinatura via ${docCtx.signing_method === 'govbr' ? 'Gov.br' : 'ZapSign'} criada.`;
+              resultMsg += ` Solicitação de assinatura via ${docCtx.signing_method === 'govbr' ? 'Gov.br' : 'Wizzy Sign'} criada.`;
             }
 
             // Send signature link if needed

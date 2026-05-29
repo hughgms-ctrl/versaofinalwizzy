@@ -128,7 +128,7 @@ export default function SignaturePage() {
             <div>
               <h1 className="font-semibold text-sm">Assinatura Digital</h1>
               <p className="text-xs text-muted-foreground">
-                {signature.signing_method === 'govbr' ? 'Via Gov.br' : 'ZapSign'}
+                {signature.signing_method === 'govbr' ? 'Via Gov.br' : 'Wizzy Sign'}
               </p>
             </div>
           </div>
@@ -230,15 +230,15 @@ export default function SignaturePage() {
           </Card>
         )}
 
-        {/* ZapSign section */}
+        {/* Wizzy Sign section */}
         {signature.signing_method === 'zapsign' && (
           <Card className="p-6 border-blue-200 dark:border-blue-800 bg-blue-50/50 dark:bg-blue-950/20">
             <div className="flex items-center gap-3 mb-4">
               <FileSignature className="h-6 w-6 text-blue-600" />
-              <h3 className="font-semibold text-blue-800 dark:text-blue-300">Assinatura via ZapSign</h3>
+              <h3 className="font-semibold text-blue-800 dark:text-blue-300">Assinatura via Wizzy Sign</h3>
             </div>
             <p className="text-sm text-blue-700 dark:text-blue-300 mb-4">
-              O link de assinatura será enviado automaticamente quando a integração ZapSign estiver configurada.
+              O link de assinatura será enviado automaticamente quando a integração Wizzy Sign estiver configurada.
             </p>
             <Button
               onClick={handleMarkSigned}

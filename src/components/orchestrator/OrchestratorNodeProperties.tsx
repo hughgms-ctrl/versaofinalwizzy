@@ -488,7 +488,7 @@ export function OrchestratorNodeProperties({ node, onClose, onUpdate, onDelete, 
                   <SelectItem value="none">Sem assinatura</SelectItem>
                   <SelectItem value="manual">📝 Manual</SelectItem>
                   <SelectItem value="govbr">🏛️ Gov.br</SelectItem>
-                  <SelectItem value="zapsign">✍️ ZapSign</SelectItem>
+                  <SelectItem value="zapsign">✍️ Wizzy Sign</SelectItem>
                 </SelectContent>
               </Select>
             </div>

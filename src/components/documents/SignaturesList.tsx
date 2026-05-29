@@ -38,7 +38,7 @@ const METHOD_MAP: Record<string, { label: string; cls: string }> = {
   internal: { label: 'OTP + Selfie',     cls: 'bg-gradient-to-r from-pink-500/15 to-rose-500/15 text-pink-300 border border-pink-500/30' },
   manual:   { label: 'Manual',           cls: 'bg-zinc-500/10 text-zinc-300 border border-zinc-500/30' },
   govbr:    { label: 'Gov.br',           cls: 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30' },
-  zapsign:  { label: 'ZapSign',          cls: 'bg-sky-500/10 text-sky-300 border border-sky-500/30' },
+  zapsign:  { label: 'Wizzy Sign',       cls: 'bg-sky-500/10 text-sky-300 border border-sky-500/30' },
 };
 
 export function SignaturesList() {

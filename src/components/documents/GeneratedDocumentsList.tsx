@@ -68,7 +68,7 @@ function DocCard({ doc, onDelete, onRegenerate, onDownload, onEdit, isRegenerati
           <Badge variant={status.variant}>{status.label}</Badge>
           {doc.signing_method && (
             <Badge variant="outline" className="text-xs">
-              {doc.signing_method === 'manual' ? 'Manual' : doc.signing_method === 'govbr' ? 'Gov.br' : 'ZapSign'}
+              {doc.signing_method === 'manual' ? 'Manual' : doc.signing_method === 'govbr' ? 'Gov.br' : 'Wizzy Sign'}
             </Badge>
           )}
           {isMissingPdf && (
