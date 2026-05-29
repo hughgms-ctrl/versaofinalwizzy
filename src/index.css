@@ -250,7 +250,7 @@
   }
 
   .pipeline-card {
-    @apply bg-card rounded-lg p-4 border border-border cursor-grab active:cursor-grabbing transition-all duration-200;
+    @apply bg-card rounded-lg p-4 border border-border cursor-grab active:cursor-grabbing transition-colors duration-100;
     box-shadow: var(--shadow-sm);
   }
 
@@ -261,11 +261,11 @@
   }
 
   .pipeline-card:active {
-    @apply shadow-lg scale-[1.02] ring-2 ring-primary/30;
+    @apply shadow-lg ring-2 ring-primary/30;
   }
 
   .pipeline-card.dragging {
-    @apply opacity-60 scale-95 rotate-2 shadow-xl ring-2 ring-primary;
+    @apply opacity-60 shadow-xl ring-2 ring-primary;
   }
 
   /* Conversation List Item */

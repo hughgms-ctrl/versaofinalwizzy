@@ -13,6 +13,7 @@ import { highlightTerm } from '@/lib/highlightTerm';
 import { useIsMobile } from '@/hooks/use-mobile';
 import {
   Pipeline,
+  ConversationPipelinePosition,
   usePipelineColumns,
   useConversationPositions,
   useMoveConversation
@@ -50,6 +51,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
 
   const [draggedCard, setDraggedCard] = useState<string | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
+  const [dragOverCard, setDragOverCard] = useState<{ id: string; placement: 'before' | 'after' } | null>(null);
 
   // Admin preference to hide unassigned column (localStorage)
   const [adminHideUnassigned, setAdminHideUnassigned] = useState(() => {
@@ -235,17 +237,114 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
     });
   }, [conversations, filters, searchQuery, allContactTags, selectedWorkspaceId, selectedWorkspace, messageSearchResult, sharedConversationIds]);
 
-  // Map conversations to columns
-  const getConversationsByColumn = (columnId: string) => {
-    const positionMap = new Map(positions.map(p => [p.conversation_id, p.column_id]));
-    return filteredConversations.filter(c => positionMap.get(c.id) === columnId);
-  };
+  const positionByConversation = useMemo(
+    () => new Map(positions.map(p => [p.conversation_id, p])),
+    [positions]
+  );
+
+  // Map conversations to columns, preserving the persisted card order.
+  const getConversationsByColumn = useCallback((columnId: string) => {
+    return filteredConversations
+      .filter(c => positionByConversation.get(c.id)?.column_id === columnId)
+      .sort((a, b) => {
+        const orderA = positionByConversation.get(a.id)?.order ?? Number.MAX_SAFE_INTEGER;
+        const orderB = positionByConversation.get(b.id)?.order ?? Number.MAX_SAFE_INTEGER;
+        if (orderA !== orderB) return orderA - orderB;
+        return new Date(b.last_message_at || 0).getTime() - new Date(a.last_message_at || 0).getTime();
+      });
+  }, [filteredConversations, positionByConversation]);
 
   // Get unassigned conversations (not in any column of this pipeline)
   const unassignedConversations = useMemo(() => {
     const assignedIds = new Set(positions.map(p => p.conversation_id));
     return filteredConversations.filter(c => !assignedIds.has(c.id));
   }, [filteredConversations, positions]);
+
+  const buildOptimisticPositions = useCallback((
+    conversationId: string,
+    columnId: string | null,
+    targetCardId: string | null,
+    placement: 'before' | 'after',
+  ) => {
+    const existing = positions.find(p => p.conversation_id === conversationId);
+    const withoutDragged = positions.filter(p => p.conversation_id !== conversationId);
+
+    if (columnId === null) {
+      const affectedColumnId = existing?.column_id;
+      const nextPositions = affectedColumnId
+        ? withoutDragged.map((pos) => pos.column_id === affectedColumnId
+          ? {
+              ...pos,
+              order: withoutDragged
+                .filter(p => p.column_id === affectedColumnId)
+                .sort((a, b) => a.order - b.order)
+                .findIndex(p => p.conversation_id === pos.conversation_id),
+              updated_at: new Date().toISOString(),
+            }
+          : pos)
+        : withoutDragged;
+      return { nextPositions, positionUpdates: [] };
+    }
+
+    const sourceColumnId = existing?.column_id ?? null;
+    const targetColumnPositions = withoutDragged
+      .filter(p => p.column_id === columnId)
+      .sort((a, b) => a.order - b.order);
+
+    const movedPosition: ConversationPipelinePosition = {
+      id: existing?.id || `optimistic-${conversationId}`,
+      conversation_id: conversationId,
+      pipeline_id: pipeline!.id,
+      column_id: columnId,
+      order: 0,
+      created_at: existing?.created_at || new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    let insertIndex = targetColumnPositions.length;
+    if (targetCardId) {
+      const targetIndex = targetColumnPositions.findIndex(p => p.conversation_id === targetCardId);
+      if (targetIndex >= 0) {
+        insertIndex = targetIndex + (placement === 'after' ? 1 : 0);
+      }
+    }
+
+    const nextTargetColumn = [...targetColumnPositions];
+    nextTargetColumn.splice(insertIndex, 0, movedPosition);
+    const reindexedTarget = nextTargetColumn.map((pos, index) => ({
+      ...pos,
+      column_id: columnId,
+      order: index,
+      updated_at: new Date().toISOString(),
+    }));
+
+    const sourceColumnPositions = sourceColumnId && sourceColumnId !== columnId
+      ? withoutDragged
+          .filter(p => p.column_id === sourceColumnId)
+          .sort((a, b) => a.order - b.order)
+          .map((pos, index) => ({ ...pos, order: index, updated_at: new Date().toISOString() }))
+      : [];
+
+    const changedIds = new Set([
+      ...reindexedTarget.map(p => p.conversation_id),
+      ...sourceColumnPositions.map(p => p.conversation_id),
+    ]);
+
+    const nextPositions = [
+      ...withoutDragged.filter(p => !changedIds.has(p.conversation_id)),
+      ...sourceColumnPositions,
+      ...reindexedTarget,
+    ].sort((a, b) => a.order - b.order);
+
+    return {
+      nextPositions,
+      positionUpdates: [...sourceColumnPositions, ...reindexedTarget].map(pos => ({
+        conversationId: pos.conversation_id,
+        columnId: pos.column_id,
+        order: pos.order,
+      })),
+    };
+  }, [pipeline, positions]);
 
   const handleDragStart = (e: React.DragEvent, conversationId: string) => {
     setDraggedCard(conversationId);
@@ -257,6 +356,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
     e.preventDefault();
     e.stopPropagation();
     setDragOverColumn(columnId);
+    setDragOverCard(null);
 
     // Auto-scroll horizontally when dragging near edges
     const container = scrollContainerRef.current;
@@ -273,34 +373,84 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
     }
   };
 
-  const handleDrop = async (e: React.DragEvent, columnId: string | null) => {
+  const handleCardDragOver = (e: React.DragEvent, columnId: string, conversationId: string) => {
     e.preventDefault();
+    e.stopPropagation();
+    if (conversationId === draggedCard) return;
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const placement = e.clientY > rect.top + rect.height / 2 ? 'after' : 'before';
+    setDragOverColumn(columnId);
+    setDragOverCard(prev => (
+      prev?.id === conversationId && prev.placement === placement
+        ? prev
+        : { id: conversationId, placement }
+    ));
+  };
+
+  const handleDrop = async (e: React.DragEvent, columnId: string | null, targetCardId?: string | null, placement?: 'before' | 'after') => {
+    e.preventDefault();
+    e.stopPropagation();
     if (draggedCard && pipeline) {
+      const previousPositions = queryClient.getQueryData<ConversationPipelinePosition[]>(['conversation-positions', pipeline.id]) || positions;
+      const finalTargetCardId = targetCardId ?? dragOverCard?.id ?? null;
+      const finalPlacement = placement ?? dragOverCard?.placement ?? 'after';
+      const { nextPositions, positionUpdates } = buildOptimisticPositions(draggedCard, columnId, finalTargetCardId, finalPlacement);
+      queryClient.setQueryData(['conversation-positions', pipeline.id], nextPositions);
+
       if (columnId === null) {
-        // Remove from pipeline (move to unassigned)
-        await supabase
-          .from('conversation_pipeline_positions')
-          .delete()
-          .eq('conversation_id', draggedCard)
-          .eq('pipeline_id', pipeline.id);
-        // Invalidate positions query to refresh UI
-        queryClient.invalidateQueries({ queryKey: ['conversation-positions', pipeline.id] });
-        queryClient.invalidateQueries({ queryKey: ['conversation-positions'] });
+        try {
+          await supabase
+            .from('conversation_pipeline_positions')
+            .delete()
+            .eq('conversation_id', draggedCard)
+            .eq('pipeline_id', pipeline.id);
+          queryClient.invalidateQueries({ queryKey: ['conversation-positions', pipeline.id] });
+          queryClient.invalidateQueries({ queryKey: ['conversation-positions'] });
+        } catch (error) {
+          queryClient.setQueryData(['conversation-positions', pipeline.id], previousPositions);
+          console.error('Error removing conversation from pipeline:', error);
+        }
       } else {
-        await moveConversation.mutateAsync({
-          conversationId: draggedCard,
-          pipelineId: pipeline.id,
-          columnId,
-        });
+        const movedOrder = positionUpdates.find(pos => pos.conversationId === draggedCard)?.order ?? 0;
+        const currentPosition = positions.find(pos => pos.conversation_id === draggedCard);
+        try {
+          if (currentPosition?.column_id === columnId) {
+            await Promise.all(positionUpdates.map(async (pos) => {
+              const { error } = await supabase
+                .from('conversation_pipeline_positions')
+                .update({ order: pos.order, updated_at: new Date().toISOString() })
+                .eq('conversation_id', pos.conversationId)
+                .eq('pipeline_id', pipeline.id);
+              if (error) throw error;
+            }));
+            queryClient.invalidateQueries({ queryKey: ['conversation-positions', pipeline.id] });
+            queryClient.invalidateQueries({ queryKey: ['conversation-positions'] });
+          } else {
+            await moveConversation.mutateAsync({
+              conversationId: draggedCard,
+              pipelineId: pipeline.id,
+              columnId,
+              order: movedOrder,
+              positionUpdates,
+              showToast: false,
+            });
+          }
+        } catch (error) {
+          queryClient.setQueryData(['conversation-positions', pipeline.id], previousPositions);
+          console.error('Error moving conversation:', error);
+        }
       }
     }
     setDraggedCard(null);
     setDragOverColumn(null);
+    setDragOverCard(null);
   };
 
   const handleDragEnd = () => {
     setDraggedCard(null);
     setDragOverColumn(null);
+    setDragOverCard(null);
   };
 
   const getInitials = (name: string | null, phone: string) => {
@@ -393,7 +543,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
     );
   }
 
-  const renderConversationCard = (conversation: DbConversation) => {
+  const renderConversationCard = (conversation: DbConversation, columnId: string | null = null) => {
     const hasName = !!conversation.contact?.name;
     const contactName = conversation.contact?.name;
     const contactPhone = conversation.contact?.phone || '';
@@ -418,11 +568,14 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
         key={conversation.id}
         draggable
         onDragStart={(e) => handleDragStart(e, conversation.id)}
+        onDragOver={columnId ? (e) => handleCardDragOver(e, columnId, conversation.id) : undefined}
+        onDrop={columnId ? (e) => handleDrop(e, columnId, conversation.id, dragOverCard?.placement || 'after') : undefined}
         onDragEnd={handleDragEnd}
         onClick={() => onConversationClick(conversation)}
         className={cn(
           "pipeline-card",
           draggedCard === conversation.id && "dragging",
+          dragOverCard?.id === conversation.id && "ring-2 ring-primary/40",
           hasUnread && "bg-primary/5"
         )}
       >
@@ -733,7 +886,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
             )}
           </div>
           <div className="space-y-2 min-h-[200px] overflow-y-auto flex-1" style={{ WebkitOverflowScrolling: 'touch' }}>
-            {unassignedConversations.map(renderConversationCard)}
+            {unassignedConversations.map((conversation) => renderConversationCard(conversation, null))}
           </div>
         </div>
       )}
@@ -777,7 +930,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
             </div>
 
             <div className="space-y-2 min-h-[200px] overflow-y-auto flex-1" style={{ WebkitOverflowScrolling: 'touch' }}>
-              {columnConversations.map(renderConversationCard)}
+              {columnConversations.map((conversation) => renderConversationCard(conversation, column.id))}
             </div>
           </div>
         );

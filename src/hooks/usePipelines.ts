@@ -38,6 +38,12 @@ export interface ConversationPipelinePosition {
   updated_at: string;
 }
 
+export interface ConversationPositionOrderUpdate {
+  conversationId: string;
+  columnId: string;
+  order: number;
+}
+
 export function usePipelines() {
   const { session } = useAuth();
 
@@ -388,6 +394,8 @@ export function useMoveConversation() {
       order = 0,
       changedByType = 'manual',
       skipAutoTransition = false,
+      positionUpdates,
+      showToast = true,
     }: { 
       conversationId: string;
       pipelineId: string;
@@ -395,6 +403,8 @@ export function useMoveConversation() {
       order?: number;
       changedByType?: string;
       skipAutoTransition?: boolean;
+      positionUpdates?: ConversationPositionOrderUpdate[];
+      showToast?: boolean;
     }) => {
       // Check if position already exists (unique per conversation_id globally)
       const { data: existing } = await supabase
@@ -441,6 +451,22 @@ export function useMoveConversation() {
           });
 
         if (error) throw error;
+      }
+
+      if (positionUpdates?.length) {
+        await Promise.all(positionUpdates.map(async (pos) => {
+          const { error } = await supabase
+            .from('conversation_pipeline_positions')
+            .update({
+              pipeline_id: pipelineId,
+              column_id: pos.columnId,
+              order: pos.order,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('conversation_id', pos.conversationId)
+            .eq('pipeline_id', pipelineId);
+          if (error) throw error;
+        }));
       }
 
       // Log stage change
@@ -577,7 +603,9 @@ export function useMoveConversation() {
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['conversation-positions'] });
       queryClient.invalidateQueries({ queryKey: ['stage-history', variables.conversationId] });
-      toast({ title: 'Conversa movida!' });
+      if (variables.showToast !== false) {
+        toast({ title: 'Conversa movida!' });
+      }
     },
     onError: (error) => {
       console.error('Error moving conversation:', error);

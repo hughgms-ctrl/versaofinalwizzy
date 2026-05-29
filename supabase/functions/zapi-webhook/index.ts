@@ -1149,9 +1149,17 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
     ? 'evolution'
     : 'uazapi';
   const mediaRecoveryDiagnostics: any[] = [];
+  if (isMediaType && base64Data && !isProbablyBase64(base64Data)) {
+    mediaRecoveryDiagnostics.push({
+      provider: webhookProvider,
+      reason: 'invalid_initial_base64',
+      messageType,
+      base64Length: String(base64Data).length,
+    });
+  }
 
   // Fetch missing Base64 directly from UAZAPI if not in payload
-  if (!base64Data && isMediaType && whatsappInstance && msgId && webhookProvider === 'uazapi') {
+  if (!isProbablyBase64(base64Data) && isMediaType && whatsappInstance && msgId && webhookProvider === 'uazapi') {
     try {
       console.log(`[WEBHOOK] Fetching decrypted media via /message/download for ID: ${msgId}...`);
       const uazapiBaseUrl = connectionSettings.uazapiBaseUrl;
@@ -1230,119 +1238,153 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
 
   // Evolution webhooks often include only the WhatsApp media stub. Convert it
   // to base64 through Evolution before falling back to a temporary URL.
-  if (!base64Data && isMediaType && whatsappInstance && msgId && webhookProvider === 'evolution') {
-    try {
-      const evolutionBaseUrl = connectionSettings.evolutionBaseUrl;
-      const evolutionApiKey = whatsappInstance.evolution_api_key || connectionSettings.evolutionApiKey;
-      const evolutionInstanceName = whatsappInstance.evolution_instance_name || instanceName || whatsappInstance.zapi_instance_id;
-      if (evolutionBaseUrl && evolutionApiKey && evolutionInstanceName) {
-        console.log(`[WEBHOOK] Fetching decrypted media via Evolution for ID: ${msgId}...`);
-        const mediaMessage = evolutionMessage || eventMessage || {};
-        const mediaKey = {
-          id: msgId,
-          remoteJid: evolutionRemoteJid || chatJid || `${phone}@s.whatsapp.net`,
-          fromMe,
-          participant: evolutionParticipantAlt || evolutionKey.participant || senderJid || undefined,
-        };
-        const bodyCandidates = [
-          {
-            message: {
-              key: {
-                id: msgId,
-              },
-            },
-            convertToMp4: false,
-          },
-          {
-            message: {
-              key: mediaKey,
-            },
-            convertToMp4: false,
-          },
-          {
-            message: {
-              key: mediaKey,
-              message: mediaMessage,
-            },
-            convertToMp4: false,
-          },
-          {
-            message: {
-              key: mediaKey,
-              message: { [messageType === 'audio' ? 'audioMessage' : `${messageType}Message`]: audioMsg || imageMsg || videoMsg || documentMsg || stickerMsg || mediaMessage },
-            },
-            convertToMp4: false,
-          },
-          {
-            key: mediaKey,
-            message: mediaMessage,
-            convertToMp4: false,
-          },
-          {
-            messageId: msgId,
-            key: mediaKey,
-            convertToMp4: false,
-          },
-        ];
+  if (!isProbablyBase64(base64Data) && isMediaType && whatsappInstance && msgId && webhookProvider === 'evolution') {
+    const evolutionBaseUrl = connectionSettings.evolutionBaseUrl;
+    const evolutionApiKey = whatsappInstance.evolution_api_key || connectionSettings.evolutionApiKey;
+    const evolutionInstanceName = whatsappInstance.evolution_instance_name || instanceName || whatsappInstance.zapi_instance_id;
 
-        for (const requestBody of bodyCandidates) {
-          const resp = await fetch(`${evolutionBaseUrl}/chat/getBase64FromMediaMessage/${evolutionInstanceName}`, {
+    if (!evolutionBaseUrl || !evolutionApiKey || !evolutionInstanceName) {
+      console.warn('[WEBHOOK] Evolution media recovery skipped: missing config', {
+        hasBaseUrl: !!evolutionBaseUrl,
+        hasApiKey: !!evolutionApiKey,
+        hasInstanceName: !!evolutionInstanceName,
+      });
+      mediaRecoveryDiagnostics.push({
+        provider: 'evolution',
+        skipped: 'missing_config',
+        hasBaseUrl: !!evolutionBaseUrl,
+        hasApiKey: !!evolutionApiKey,
+        hasInstanceName: !!evolutionInstanceName,
+      });
+    } else {
+      console.log(`[WEBHOOK] Fetching decrypted media via Evolution for msgId=${msgId}, instance=${evolutionInstanceName}`);
+
+      const remoteJidForRecovery =
+        evolutionRemoteJid ||
+        (chatJid && !chatJid.includes('@lid') ? chatJid : null) ||
+        (phone ? `${phone}@s.whatsapp.net` : null);
+
+      const bodyCandidates: Array<{ label: string; body: Record<string, unknown> }> = [
+        {
+          label: 'v2_key_id_only',
+          body: {
+            message: { key: { id: msgId } },
+            convertToMp4: false,
+          },
+        },
+        ...(remoteJidForRecovery
+          ? [
+              {
+                label: 'v2_key_full',
+                body: {
+                  message: {
+                    key: {
+                      id: msgId,
+                      remoteJid: remoteJidForRecovery,
+                      fromMe,
+                      participant: evolutionParticipantAlt || evolutionKey.participant || senderJid || undefined,
+                    },
+                  },
+                  convertToMp4: false,
+                },
+              },
+            ]
+          : []),
+        {
+          label: 'flat_messageId',
+          body: { messageId: msgId, convertToMp4: false },
+        },
+        ...(remoteJidForRecovery
+          ? [
+              {
+                label: 'flat_key',
+                body: {
+                  key: {
+                    id: msgId,
+                    remoteJid: remoteJidForRecovery,
+                    fromMe,
+                  },
+                  convertToMp4: false,
+                },
+              },
+            ]
+          : []),
+      ];
+
+      const endpoint = `${evolutionBaseUrl}/chat/getBase64FromMediaMessage/${evolutionInstanceName}`;
+
+      for (const { label, body } of bodyCandidates) {
+        const diagEntry: Record<string, unknown> = {
+          provider: 'evolution',
+          label,
+          endpoint,
+          bodyKeys: Object.keys(body),
+        };
+
+        try {
+          const resp = await fetch(endpoint, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
               'apikey': evolutionApiKey,
             },
-            body: JSON.stringify(requestBody),
+            body: JSON.stringify(body),
           });
 
           const raw = await resp.text();
+          diagEntry.status = resp.status;
+
           if (!resp.ok) {
-            console.error(`[WEBHOOK] Evolution media download failed: ${resp.status} ${raw}`);
-            mediaRecoveryDiagnostics.push({
-              provider: 'evolution',
-              status: resp.status,
-              error: raw.substring(0, 300),
-              bodyKeys: Object.keys(requestBody || {}),
-              messageKeys: Object.keys((requestBody as any)?.message || {}),
-            });
+            diagEntry.error = raw.substring(0, 400);
+            console.error(`[WEBHOOK] Evolution media recovery (${label}) failed ${resp.status}: ${raw.substring(0, 300)}`);
+            mediaRecoveryDiagnostics.push(diagEntry);
             continue;
           }
 
           let data: any = null;
-          try { data = raw ? JSON.parse(raw) : {}; } catch { data = { base64: raw }; }
+          try { data = raw ? JSON.parse(raw) : {}; } catch { data = raw; }
+
+          diagEntry.responseKeys = data && typeof data === 'object'
+            ? Object.keys(data).slice(0, 16)
+            : ['raw_string'];
+
           const downloaded = extractDownloadedMedia(data);
-          if (isProbablyBase64(downloaded.base64)) base64Data = downloaded.base64;
-          mimeType = mimeType || downloaded.mimeType;
-          directMediaUrl = directMediaUrl || downloaded.url;
-          mediaRecoveryDiagnostics.push({
-            provider: 'evolution',
-            status: resp.status,
-            hasBase64: !!base64Data,
-            hasUrl: !!directMediaUrl,
-            mimeType: mimeType || null,
-            responseKeys: data && typeof data === 'object' ? Object.keys(data).slice(0, 12) : ['raw'],
-          });
-          console.log(`[WEBHOOK] Evolution media result: hasBase64=${!!base64Data}, mimeType=${mimeType || 'none'}, hasUrl=${!!directMediaUrl}`);
-          if (base64Data || directMediaUrl) break;
+          diagEntry.hasBase64 = isProbablyBase64(downloaded.base64);
+          diagEntry.hasUrl = !!downloaded.url;
+          diagEntry.mimeType = downloaded.mimeType || null;
+
+          if (isProbablyBase64(downloaded.base64)) {
+            base64Data = downloaded.base64;
+            if (!mimeType) mimeType = downloaded.mimeType;
+            diagEntry.result = 'base64_ok';
+            console.log(`[WEBHOOK] Evolution media recovery OK (${label}): base64=${base64Data.length} chars, mimeType=${mimeType || 'unknown'}`);
+            mediaRecoveryDiagnostics.push(diagEntry);
+            break;
+          }
+
+          if (downloaded.url && !isEncryptedWhatsAppMediaUrl(downloaded.url)) {
+            directMediaUrl = downloaded.url;
+            if (!mimeType) mimeType = downloaded.mimeType;
+            diagEntry.result = 'url_ok';
+            console.log(`[WEBHOOK] Evolution media recovery OK (${label}): url=${directMediaUrl}`);
+            mediaRecoveryDiagnostics.push(diagEntry);
+            break;
+          }
+
+          diagEntry.result = 'no_usable_data';
+          console.warn(`[WEBHOOK] Evolution media recovery (${label}): response had no usable base64/url`);
+          mediaRecoveryDiagnostics.push(diagEntry);
+        } catch (err) {
+          diagEntry.exception = err instanceof Error ? err.message : String(err);
+          diagEntry.result = 'exception';
+          console.error(`[WEBHOOK] Evolution media recovery (${label}) exception:`, err);
+          mediaRecoveryDiagnostics.push(diagEntry);
         }
-      } else {
-        console.warn('[WEBHOOK] Evolution media download skipped: missing base URL, API key, or instance name');
-        mediaRecoveryDiagnostics.push({
-          provider: 'evolution',
-          skipped: 'missing_config',
-          hasBaseUrl: !!evolutionBaseUrl,
-          hasApiKey: !!evolutionApiKey,
-          hasInstanceName: !!evolutionInstanceName,
-        });
       }
-    } catch (e) {
-      console.error('[WEBHOOK] Evolution media download exception:', e);
-      mediaRecoveryDiagnostics.push({
-        provider: 'evolution',
-        exception: e instanceof Error ? e.message : String(e),
-      });
+
+      console.log(`[WEBHOOK] Evolution media recovery final: hasBase64=${isProbablyBase64(base64Data)}, hasUrl=${!!directMediaUrl}, attempts=${mediaRecoveryDiagnostics.length}`);
     }
-  } else if (isMediaType && !base64Data && !msgId) {
+  } else if (isMediaType && !isProbablyBase64(base64Data) && !msgId) {
     mediaRecoveryDiagnostics.push({
       provider: webhookProvider,
       skipped: 'missing_message_id',
@@ -1350,7 +1392,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
       instanceProvider: whatsappInstance.provider || null,
       instanceId: whatsappInstance.id || null,
     });
-  } else if (isMediaType && !base64Data && webhookProvider !== 'evolution') {
+  } else if (isMediaType && !isProbablyBase64(base64Data) && webhookProvider !== 'evolution') {
     mediaRecoveryDiagnostics.push({
       provider: webhookProvider,
       skipped: 'not_evolution',
@@ -1385,7 +1427,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
     else mimeType = 'application/octet-stream';
   }
 
-  if (!base64Data && directMediaUrl && isMediaType && !isLocalStorageUrl(directMediaUrl)) {
+  if (!isProbablyBase64(base64Data) && directMediaUrl && isMediaType && !isLocalStorageUrl(directMediaUrl)) {
     try {
       console.log(`[WEBHOOK] Fetching external media URL before storing: ${directMediaUrl.substring(0, 100)}`);
       const headers: Record<string, string> = {};
@@ -1415,7 +1457,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
     }
   }
 
-  if (base64Data && mimeType) {
+  if (isProbablyBase64(base64Data) && mimeType) {
     try {
       const normalizedMimeType = mimeType.toLowerCase().split(';')[0].trim();
       const extMap: Record<string, string> = {

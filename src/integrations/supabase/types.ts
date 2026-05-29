@@ -1133,6 +1133,7 @@ export type Database = {
           order: number
           organization_id: string
           status: string
+          template_task_id: string | null
           title: string
           updated_at: string
         }
@@ -1150,6 +1151,7 @@ export type Database = {
           order?: number
           organization_id: string
           status?: string
+          template_task_id?: string | null
           title: string
           updated_at?: string
         }
@@ -1167,6 +1169,7 @@ export type Database = {
           order?: number
           organization_id?: string
           status?: string
+          template_task_id?: string | null
           title?: string
           updated_at?: string
         }
@@ -1204,6 +1207,13 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "case_tasks_template_task_id_fkey"
+            columns: ["template_task_id"]
+            isOneToOne: false
+            referencedRelation: "case_template_tasks"
             referencedColumns: ["id"]
           },
         ]

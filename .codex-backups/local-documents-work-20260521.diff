@@ -1,0 +1,693 @@
+﻿diff --git a/src/components/documents/PackEditor.tsx b/src/components/documents/PackEditor.tsx
+index 68ffa3b8a79b706d5f7ec86bb0f9c2a052f24612..ad09e6d9cfb9673ef14a1c8ad96dbc2443ce7a50 100644
+--- a/src/components/documents/PackEditor.tsx
++++ b/src/components/documents/PackEditor.tsx
+@@ -1,5 +1,5 @@
+ import { useState, useMemo, useCallback } from 'react';
+-import { ArrowLeft, Save, Link2, GripVertical, Pencil, Info, Sparkles, Loader2, MessageCircle } from 'lucide-react';
++import { ArrowLeft, Save, Link2, GripVertical, Pencil, Info, Sparkles, Loader2, MessageCircle, FileText } from 'lucide-react';
+ import { Button } from '@/components/ui/button';
+ import { Input } from '@/components/ui/input';
+ import { Label } from '@/components/ui/label';
+@@ -10,9 +10,12 @@ import { Switch } from '@/components/ui/switch';
+ import { Textarea } from '@/components/ui/textarea';
+ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+ import { useCreateDocumentPack, useUpdateDocumentPack, DocumentPack } from '@/hooks/useDocumentPacks';
+-import { useDocumentTemplates } from '@/hooks/useDocumentTemplates';
++import { useDocumentTemplates, DocumentTemplate } from '@/hooks/useDocumentTemplates';
+ import { useToast } from '@/hooks/use-toast';
+ import { supabase } from '@/integrations/supabase/client';
++import { SignersManager } from '@/components/documents/SignersManager';
++import { SignerInput } from '@/hooks/useDocumentSigners';
++import { TemplateEditor } from '@/components/documents/TemplateEditor';
+ import {
+   DndContext,
+   closestCenter,
+@@ -63,6 +66,10 @@ export function PackEditor({ pack, onBack }: PackEditorProps) {
+   const [expandedField, setExpandedField] = useState<string | null>(null);
+   const [isUnifying, setIsUnifying] = useState(false);
+   const [autoSendWhatsApp, setAutoSendWhatsApp] = useState((pack as any)?.auto_send_whatsapp || false);
++  const [defaultSigners, setDefaultSigners] = useState<SignerInput[]>(
++    ((pack as any)?.default_signers as SignerInput[]) || []
++  );
++  const [editingTemplate, setEditingTemplate] = useState<DocumentTemplate | null>(null);
+ 
+   const sensors = useSensors(
+     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+@@ -238,6 +245,7 @@ export function PackEditor({ pack, onBack }: PackEditorProps) {
+       template_ids: selectedIds,
+       field_config: finalConfigs,
+       auto_send_whatsapp: autoSendWhatsApp,
++      default_signers: defaultSigners,
+     };
+ 
+     if (isEditing) {
+@@ -256,6 +264,10 @@ export function PackEditor({ pack, onBack }: PackEditorProps) {
+     return uniqueTemplates <= 1 && (f.mappedFields?.length ? true : f.count <= 1);
+   });
+ 
++  if (editingTemplate) {
++    return <TemplateEditor template={editingTemplate} onBack={() => setEditingTemplate(null)} />;
++  }
++
+   return (
+     <div className="space-y-4">
+       <div className="flex items-center justify-between">
+@@ -267,34 +279,35 @@ export function PackEditor({ pack, onBack }: PackEditorProps) {
+         </Button>
+       </div>
+ 
+-      <div className="grid gap-4 max-w-lg">
+-        <div>
+-          <Label>Nome do pack</Label>
+-          <Input value={name} onChange={e => setName(e.target.value)} placeholder="Ex: Pack Auxílio Reclusão" />
+-        </div>
+-        <div>
+-          <Label>Descrição (opcional)</Label>
+-          <Input value={description} onChange={e => setDescription(e.target.value)} placeholder="Breve descrição" />
+-        </div>
+-      </div>
+-
+-      {/* Auto-send WhatsApp toggle */}
+-      <Card className="p-4 flex items-center justify-between max-w-lg">
+-        <div className="flex items-center gap-3">
+-          <MessageCircle className="h-5 w-5 text-green-600 shrink-0" />
+-          <div>
+-            <p className="text-sm font-medium">Enviar automaticamente pelo WhatsApp</p>
+-            <p className="text-xs text-muted-foreground">
+-              Ao preencher o formulário, os documentos serão enviados automaticamente pelo WhatsApp
+-            </p>
++      <div className="grid gap-6 lg:grid-cols-3">
++        <div className="lg:col-span-2 space-y-4">
++          <div className="grid gap-4 sm:grid-cols-2">
++            <div>
++              <Label>Nome do pack</Label>
++              <Input value={name} onChange={e => setName(e.target.value)} placeholder="Ex: Pack Auxílio Reclusão" />
++            </div>
++            <div>
++              <Label>Descrição (opcional)</Label>
++              <Input value={description} onChange={e => setDescription(e.target.value)} placeholder="Breve descrição" />
++            </div>
+           </div>
+-        </div>
+-        <Switch checked={autoSendWhatsApp} onCheckedChange={setAutoSendWhatsApp} />
+-      </Card>
+ 
+-      <div className="grid gap-6 lg:grid-cols-2">
+-        <div>
+-          <Label>Selecione os templates</Label>
++          <Card className="p-4">
++            <div className="flex items-center justify-between gap-4">
++              <div className="flex items-center gap-3">
++                <MessageCircle className="h-5 w-5 text-primary shrink-0" />
++                <div>
++                  <p className="text-sm font-medium">Enviar automaticamente pelo WhatsApp</p>
++                  <p className="text-xs text-muted-foreground">
++                    No formulário público do pack, envia os documentos automaticamente ao finalizar.
++                  </p>
++                </div>
++              </div>
++              <Switch checked={autoSendWhatsApp} onCheckedChange={setAutoSendWhatsApp} />
++            </div>
++          </Card>
++
++          <Label>Documentos do pack</Label>
+           <div className="grid gap-2 mt-2">
+             {templates?.map(t => (
+               <Card
+@@ -304,10 +317,25 @@ export function PackEditor({ pack, onBack }: PackEditorProps) {
+               >
+                 <div className="flex items-center gap-3">
+                   <Checkbox checked={selectedIds.includes(t.id)} />
+-                  <div>
++                  <div className="flex-1 min-w-0">
+                     <p className="text-sm font-medium">{t.name}</p>
+                     <p className="text-xs text-muted-foreground">{(t.fields as any[])?.length || 0} campos</p>
+                   </div>
++                  {selectedIds.includes(t.id) && (
++                    <Button
++                      type="button"
++                      variant="ghost"
++                      size="sm"
++                      className="h-8 gap-1.5 text-xs"
++                      onClick={(e) => {
++                        e.stopPropagation();
++                        setEditingTemplate(t);
++                      }}
++                    >
++                      <Pencil className="h-3.5 w-3.5" />
++                      Editar modelo
++                    </Button>
++                  )}
+                 </div>
+               </Card>
+             )) || (
+@@ -316,9 +344,35 @@ export function PackEditor({ pack, onBack }: PackEditorProps) {
+           </div>
+         </div>
+ 
++        <div className="space-y-4">
++          <Card className="p-4">
++            <h3 className="font-medium text-sm mb-3">Signatários padrão</h3>
++            <p className="text-[11px] text-muted-foreground mb-3">
++              Estes signatários serão aplicados a todos os documentos gerados pelo pack.
++            </p>
++            <SignersManager
++              signers={defaultSigners}
++              onChange={setDefaultSigners}
++              availableFields={mergedFields.map((f) => ({ name: f.originalName, label: f.label, type: f.type }))}
++            />
++          </Card>
++
++          <Card className="p-4">
++            <div className="flex items-center gap-2 mb-2">
++              <FileText className="h-4 w-4 text-muted-foreground" />
++              <h3 className="font-medium text-sm">Resumo</h3>
++            </div>
++            <div className="text-xs text-muted-foreground space-y-1">
++              <p>Documentos: {selectedIds.length}</p>
++              <p>Campos variáveis: {mergedFields.length}</p>
++              <p>Signatários padrão: {defaultSigners.length}</p>
++            </div>
++          </Card>
++        </div>
++
+         {/* Field Configuration Panel */}
+         {selectedIds.length >= 1 && (
+-          <div>
++          <div className="lg:col-span-3">
+             <div className="flex items-center justify-between mb-1">
+               <Label>Configuração dos campos ({mergedFields.length})</Label>
+               <Button
+diff --git a/src/components/documents/PackFillForm.tsx b/src/components/documents/PackFillForm.tsx
+index 575add29fad0c23e7b087ce4f6360ee294dbf7f3..a2d6c521decd60c7776bc3026bbb11d02e86b4c7 100644
+--- a/src/components/documents/PackFillForm.tsx
++++ b/src/components/documents/PackFillForm.tsx
+@@ -1,5 +1,5 @@
+ import { useState, useMemo } from 'react';
+-import { ArrowLeft, FileText, Send, Loader2, Users, Copy, Check } from 'lucide-react';
++import { ArrowLeft, FileText, Send, Loader2, Users, Copy, Check, Printer, MessageCircle } from 'lucide-react';
+ import { Button } from '@/components/ui/button';
+ import { Input } from '@/components/ui/input';
+ import { Label } from '@/components/ui/label';
+@@ -16,6 +16,7 @@ import { SignersManager } from './SignersManager';
+ import { SignerLinksList } from './SignerLinksList';
+ import { SignerInput, useCreateSigners } from '@/hooks/useDocumentSigners';
+ import { getPublicAppOrigin } from '@/lib/publicOrigin';
++import { cn } from '@/lib/utils';
+ 
+ interface PackFillFormProps {
+   pack: DocumentPack;
+@@ -28,8 +29,11 @@ interface FieldInfo {
+   name: string;
+   label: string;
+   type: string;
++  required?: boolean;
++  hint?: string;
+   templateIds: string[];
+   templateNames: string[];
++  mappedFields?: Array<{ fieldName: string; templateId: string }>;
+ }
+ 
+ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature }: PackFillFormProps) {
+@@ -37,9 +41,12 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature
+   const { profile } = useAuth();
+   const createSigners = useCreateSigners();
+ 
++  const [outputMode, setOutputMode] = useState<'print' | 'sign'>('print');
+   const [fillMode, setFillMode] = useState<FillMode>('internal');
+   const [values, setValues] = useState<Record<string, string>>({});
+-  const [signers, setSigners] = useState<SignerInput[]>([]);
++  const [signers, setSigners] = useState<SignerInput[]>(
++    ((pack as any).default_signers as SignerInput[]) || []
++  );
+   const [isGenerating, setIsGenerating] = useState(false);
+   const [publicLink, setPublicLink] = useState<string | null>(null);
+   const [generatedDocIds, setGeneratedDocIds] = useState<string[]>([]);
+@@ -51,12 +58,38 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature
+   }, [allTemplates, pack.template_ids]);
+ 
+   const { sharedFields, uniqueFields, allFields } = useMemo(() => {
++    const configured = ((pack as any).field_config || []) as any[];
++    if (configured.length > 0) {
++      const fields = configured.map((field) => {
++        const mappedFields = (field.mappedFields || []) as Array<{ fieldName: string; templateId: string }>;
++        const templateIds = mappedFields.length > 0
++          ? [...new Set(mappedFields.map((m) => m.templateId))]
++          : field.sourceTemplateIds || [];
++        const templateNames = templateIds.map((id) => templates.find((t) => t.id === id)?.name || 'Documento');
++        return {
++          name: field.originalName,
++          label: field.label || field.originalName,
++          type: field.type || 'text',
++          required: field.required ?? true,
++          hint: field.description,
++          templateIds,
++          templateNames,
++          mappedFields,
++        } as FieldInfo;
++      });
++      return {
++        sharedFields: fields.filter((f) => f.templateIds.length > 1),
++        uniqueFields: fields.filter((f) => f.templateIds.length <= 1),
++        allFields: fields,
++      };
++    }
++
+     const fieldMap = new Map<string, FieldInfo>();
+     templates.forEach((template) => {
+       const fs = (template.fields as any[]) || [];
+       fs.forEach((field: any) => {
+         const name = field.name || field;
+-        if (!fieldMap.has(name)) fieldMap.set(name, { name, label: field.label || name, type: field.type || 'text', templateIds: [], templateNames: [] });
++        if (!fieldMap.has(name)) fieldMap.set(name, { name, label: field.label || name, type: field.type || 'text', required: field.required ?? true, hint: field.hint, templateIds: [], templateNames: [] });
+         const info = fieldMap.get(name)!;
+         if (!info.templateIds.includes(template.id)) {
+           info.templateIds.push(template.id);
+@@ -68,7 +101,15 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature
+     const unique: FieldInfo[] = [];
+     fieldMap.forEach((info) => (info.templateIds.length > 1 ? shared.push(info) : unique.push(info)));
+     return { sharedFields: shared, uniqueFields: unique, allFields: Array.from(fieldMap.values()) };
+-  }, [templates]);
++  }, [templates, pack]);
++
++  const getValueForTemplateField = (templateId: string, fieldName: string) => {
++    const configured = allFields.find((field) => {
++      if (field.mappedFields?.some((m) => m.templateId === templateId && m.fieldName === fieldName)) return true;
++      return field.name === fieldName;
++    });
++    return values[configured?.name || fieldName] || '';
++  };
+ 
+   const handleGenerateInternal = async (advanceToSignature = false) => {
+     if (!profile?.organization_id) return;
+@@ -82,9 +123,22 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature
+         const filledData: Record<string, string> = {};
+         templateFields.forEach((field: any) => {
+           const name = field.name || field;
+-          filledData[name] = values[name] || '';
++          filledData[name] = getValueForTemplateField(template.id, name);
+         });
+ 
++        const { data: pdfData, error: pdfError } = await supabase.functions.invoke('generate-document-pdf', {
++          body: {
++            template_content: template.content,
++            template_content_html: template.content_html,
++            fields: templateFields,
++            filled_data: filledData,
++            document_name: `${pack.name} - ${template.name}`,
++            logo_url: template.logo_url || null,
++            template_id: template.id,
++          },
++        });
++        if (pdfError) throw pdfError;
++
+         const { data: docData, error } = await (supabase as any)
+           .from('generated_documents')
+           .insert({
+@@ -93,6 +147,7 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature
+             pack_id: pack.id,
+             name: `${pack.name} - ${template.name}`,
+             filled_data: filledData,
++            pdf_url: pdfData?.pdf_url || null,
+             status: 'generated',
+             signing_method: 'internal',
+             fill_mode: 'internal',
+@@ -109,11 +164,11 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature
+       }
+ 
+       // Apply signers to all docs in pack
+-      if (signers.length > 0 && docIds.length > 0) {
++      if (outputMode === 'sign' && signers.length > 0 && docIds.length > 0) {
+         await createSigners.mutateAsync({ documentIds: docIds, packId: pack.id, signers, signing_method: 'internal' });
+       }
+ 
+-      if (signers.length > 0 && docIds.length > 0) {
++      if (outputMode === 'sign' && signers.length > 0 && docIds.length > 0) {
+         setGeneratedDocIds(docIds);
+         toast.success(`${templates.length} documentos gerados! Envie os links abaixo.`);
+         return;
+@@ -137,7 +192,7 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature
+ 
+   const handleGeneratePublicLink = async () => {
+     if (!profile?.organization_id) return;
+-    if (signers.length === 0) {
++    if (outputMode === 'sign' && signers.length === 0) {
+       toast.error('Adicione ao menos 1 signatário');
+       return;
+     }
+@@ -204,7 +259,7 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature
+     setTimeout(() => setCopied(false), 2000);
+   };
+ 
+-  const allFieldsFilled = useMemo(() => allFields.every((f) => values[f.name]?.trim()), [allFields, values]);
++  const allFieldsFilled = useMemo(() => allFields.every((f) => !f.required || values[f.name]?.trim()), [allFields, values]);
+ 
+   const renderFieldInput = (field: FieldInfo) => {
+     if (field.type === 'date') {
+@@ -296,11 +351,61 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature
+         ))}
+       </div>
+ 
+-      {/* Step 1: Mode */}
+       <Card>
+         <CardHeader className="pb-3">
+           <CardTitle className="text-sm flex items-center gap-2">
+             <span className="h-6 w-6 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center">1</span>
++            O que você quer gerar?
++          </CardTitle>
++        </CardHeader>
++        <CardContent>
++          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
++            <Card
++              className={cn('p-4 cursor-pointer transition-all border-2', outputMode === 'print' ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50')}
++              onClick={() => {
++                setOutputMode('print');
++                setFillMode('internal');
++              }}
++            >
++              <div className="flex items-start gap-3">
++                <div className={cn('h-9 w-9 rounded-lg flex items-center justify-center shrink-0', outputMode === 'print' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground')}>
++                  <Printer className="h-5 w-5" />
++                </div>
++                <div>
++                  <h4 className="font-semibold text-sm mb-1">Arquivos para imprimir</h4>
++                  <p className="text-[11px] text-muted-foreground leading-snug">
++                    Preencha uma vez e gere os PDFs individuais do pack sem assinatura digital.
++                  </p>
++                </div>
++              </div>
++            </Card>
++
++            <Card
++              className={cn('p-4 cursor-pointer transition-all border-2', outputMode === 'sign' ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50')}
++              onClick={() => setOutputMode('sign')}
++            >
++              <div className="flex items-start gap-3">
++                <div className={cn('h-9 w-9 rounded-lg flex items-center justify-center shrink-0', outputMode === 'sign' ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground')}>
++                  <MessageCircle className="h-5 w-5" />
++                </div>
++                <div>
++                  <h4 className="font-semibold text-sm mb-1">Assinar no Wizzy Chat</h4>
++                  <p className="text-[11px] text-muted-foreground leading-snug">
++                    Use os mesmos signatários em todos os documentos, mantendo relatórios individuais.
++                  </p>
++                </div>
++              </div>
++            </Card>
++          </div>
++        </CardContent>
++      </Card>
++
++      {/* Step 2: Mode */}
++      {outputMode === 'sign' && (
++      <Card>
++        <CardHeader className="pb-3">
++          <CardTitle className="text-sm flex items-center gap-2">
++            <span className="h-6 w-6 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center">2</span>
+             Quem preenche os dados?
+           </CardTitle>
+         </CardHeader>
+@@ -308,6 +413,7 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature
+           <FillModeStep value={fillMode} onChange={setFillMode} />
+         </CardContent>
+       </Card>
++      )}
+ 
+       {fillMode === 'internal' && (
+         <div className="grid gap-6 lg:grid-cols-2">
+@@ -358,10 +464,11 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature
+       )}
+ 
+       {/* Signers */}
++      {outputMode === 'sign' && (
+       <Card>
+         <CardHeader className="pb-3">
+           <CardTitle className="text-sm flex items-center gap-2">
+-            <span className="h-6 w-6 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center">{fillMode === 'internal' ? 3 : 2}</span>
++            <span className="h-6 w-6 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center">{fillMode === 'internal' ? 4 : 3}</span>
+             <Users className="h-4 w-4" /> Signatários (válidos para todos os documentos do pack)
+           </CardTitle>
+         </CardHeader>
+@@ -373,9 +480,15 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature
+           />
+         </CardContent>
+       </Card>
++      )}
+ 
+       <div className="flex flex-col sm:flex-row gap-2 sticky bottom-4 bg-background/80 backdrop-blur p-3 rounded-lg border shadow-lg">
+-        {fillMode === 'internal' ? (
++        {outputMode === 'print' ? (
++          <Button onClick={() => handleGenerateInternal(false)} disabled={!allFieldsFilled || isGenerating} className="flex-1" size="lg">
++            {isGenerating ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Printer className="h-4 w-4 mr-2" />}
++            Gerar PDFs para imprimir
++          </Button>
++        ) : fillMode === 'internal' ? (
+           <>
+             <Button onClick={() => handleGenerateInternal(false)} disabled={!allFieldsFilled || isGenerating} className="flex-1" size="lg">
+               {isGenerating ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Send className="h-4 w-4 mr-2" />}
+diff --git a/src/components/documents/PacksList.tsx b/src/components/documents/PacksList.tsx
+index e9fabe447e3dba032a31c99d74c15c3ff6925159..21b085e3fc630df833848e224d85ed03cf6ef998 100644
+--- a/src/components/documents/PacksList.tsx
++++ b/src/components/documents/PacksList.tsx
+@@ -1,8 +1,7 @@
+ import { useState } from 'react';
+-import { Package, Plus, Edit, Trash2, MoreHorizontal, Search, FileText, ClipboardList, Link2, Copy, Check, Folder, FolderPlus, ChevronRight, ChevronDown, Pencil, FolderInput, MapPinned } from 'lucide-react';
++import { Package, Plus, Edit, Trash2, MoreHorizontal, Search, ClipboardList, Link2, Copy, Check, Folder, FolderPlus, ChevronRight, ChevronDown, Pencil, FolderInput, MapPinned } from 'lucide-react';
+ import { Button } from '@/components/ui/button';
+ import { Input } from '@/components/ui/input';
+-import { Badge } from '@/components/ui/badge';
+ import { Card } from '@/components/ui/card';
+ import { Label } from '@/components/ui/label';
+ import {
+@@ -40,7 +39,7 @@ import {
+   AlertDialogTitle,
+   AlertDialogTrigger,
+ } from '@/components/ui/alert-dialog';
+-import { useDocumentPacks, useDeleteDocumentPack, useGeneratePackToken, DocumentPack } from '@/hooks/useDocumentPacks';
++import { useDocumentPacks, useDeleteDocumentPack, useGeneratePackToken, useCreateDocumentPack, DocumentPack } from '@/hooks/useDocumentPacks';
+ import { useDocumentTemplates } from '@/hooks/useDocumentTemplates';
+ import {
+   useDocumentFolders,
+@@ -64,6 +63,7 @@ export function PacksList({ onGeneratedForSignature }: { onGeneratedForSignature
+   const { data: templates } = useDocumentTemplates();
+   const { data: folders = [] } = useDocumentFolders('pack');
+   const deletePack = useDeleteDocumentPack();
++  const createPack = useCreateDocumentPack();
+   const generateToken = useGeneratePackToken();
+   const createFolder = useCreateDocumentFolder();
+   const deleteFolder = useDeleteDocumentFolder();
+@@ -99,8 +99,6 @@ export function PacksList({ onGeneratedForSignature }: { onGeneratedForSignature
+   const rootPacks = filtered.filter(p => !(p as any).folder_id);
+   const getPacksInFolder = (folderId: string) => filtered.filter(p => (p as any).folder_id === folderId);
+ 
+-  const getTemplateNames = (ids: string[]) => ids.map(id => templates?.find(t => t.id === id)?.name || 'Template removido');
+-
+   const handleCopyLink = async (pack: DocumentPack) => {
+     let token = pack.public_token;
+     if (!token) {
+@@ -157,6 +155,17 @@ export function PacksList({ onGeneratedForSignature }: { onGeneratedForSignature
+     moveToFolder.mutate({ type: 'pack', itemId: packId, folderId, folderWorkspaceId: folder?.workspace_id || null });
+   };
+ 
++  const handleDuplicate = (pack: DocumentPack) => {
++    createPack.mutate({
++      name: `${pack.name} (cópia)`,
++      description: pack.description || null,
++      template_ids: pack.template_ids,
++      field_config: pack.field_config || [],
++      default_signers: (pack as any).default_signers || [],
++      auto_send_whatsapp: (pack as any).auto_send_whatsapp || false,
++    });
++  };
++
+   const WorkspaceBadge = ({ workspaceId }: { workspaceId: string | null }) => {
+     if (!workspaceId) return null;
+     const ws = availableWorkspaces.find(w => w.id === workspaceId);
+@@ -183,35 +192,39 @@ export function PacksList({ onGeneratedForSignature }: { onGeneratedForSignature
+         <h3 className="font-medium text-foreground text-sm">{pack.name}</h3>
+         <p className="text-[11px] text-muted-foreground">{pack.template_ids.length} templates</p>
+       </div>
+-      <div className="hidden md:flex items-center gap-2 text-xs text-muted-foreground">
++      <div className="hidden md:flex items-center gap-2 text-muted-foreground text-xs">
++        <span>{pack.template_ids.length} templates</span>
++        <span>•</span>
+         <span>{format(new Date(pack.created_at), "dd MMM yyyy", { locale: ptBR })}</span>
+-        {pack.public_token && (
+-          <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-primary border-primary/30">
+-            <Link2 className="h-2.5 w-2.5 mr-0.5" /> Link ativo
+-          </Badge>
+-        )}
+       </div>
+       <WorkspaceBadge workspaceId={pack.workspace_id} />
+-      <Button size="sm" variant="outline" onClick={() => setFillingPack(pack)} className="shrink-0">
+-        <ClipboardList className="h-3.5 w-3.5 mr-1.5" /> Preencher
+-      </Button>
++      <div className="flex items-center gap-1.5 shrink-0">
++        <Button variant="ghost" size="sm" className="text-xs h-8" onClick={() => setEditingPack(pack)}>
++          Gerenciar
++        </Button>
++        <Button size="sm" className="text-xs h-8 gap-1.5" onClick={() => handleCopyLink(pack)}>
++          <Link2 className="h-3.5 w-3.5" /> Enviar documento
++        </Button>
++      </div>
+       <DropdownMenu>
+         <DropdownMenuTrigger asChild onClick={e => e.stopPropagation()}>
+-          <Button variant="ghost" size="icon" className="h-8 w-8 opacity-0 group-hover:opacity-100">
++          <Button variant="ghost" size="icon" className="h-8 w-8 opacity-60 group-hover:opacity-100">
+             <MoreHorizontal className="h-4 w-4" />
+           </Button>
+         </DropdownMenuTrigger>
+         <DropdownMenuContent align="end" className="w-52">
+           <DropdownMenuItem onClick={() => setFillingPack(pack)}>
+-            <ClipboardList className="h-4 w-4 mr-2" /> Preencher
++            <ClipboardList className="h-4 w-4 mr-2" /> Preencher internamente
+           </DropdownMenuItem>
+           <DropdownMenuItem onClick={() => handleCopyLink(pack)}>
+             {copiedId === pack.id ? <Check className="h-4 w-4 mr-2 text-primary" /> : <Link2 className="h-4 w-4 mr-2" />}
+             Copiar link público
+           </DropdownMenuItem>
+-          <DropdownMenuSeparator />
+           <DropdownMenuItem onClick={() => setEditingPack(pack)}>
+-            <Edit className="h-4 w-4 mr-2" /> Editar
++            <Edit className="h-4 w-4 mr-2" /> Editar modelo
++          </DropdownMenuItem>
++          <DropdownMenuItem onClick={() => handleDuplicate(pack)}>
++            <Copy className="h-4 w-4 mr-2" /> Duplicar
+           </DropdownMenuItem>
+ 
+           <DropdownMenuSub>
+@@ -387,7 +400,6 @@ export function PacksList({ onGeneratedForSignature }: { onGeneratedForSignature
+             <div className="flex-1">Nome</div>
+             <div className="hidden md:block w-40 text-right">Detalhes</div>
+             <div className="w-24 text-center">Workspace</div>
+-            <div className="w-32" />
+             <div className="w-10" />
+           </div>
+           {filteredFolders.map(f => <FolderSection key={f.id} folder={f} />)}
+diff --git a/src/hooks/useDocumentPacks.ts b/src/hooks/useDocumentPacks.ts
+index 467856e8a5b2376141cebbebba5af2f6195f8dc9..66c72841a14b1cc7e7f65bdd667192d296d8b768 100644
+--- a/src/hooks/useDocumentPacks.ts
++++ b/src/hooks/useDocumentPacks.ts
+@@ -10,6 +10,8 @@ export interface DocumentPack {
+   description: string | null;
+   template_ids: string[];
+   field_config: any[];
++  default_signers?: any[];
++  auto_send_whatsapp?: boolean;
+   public_token: string | null;
+   folder_id: string | null;
+   workspace_id: string | null;
+@@ -42,7 +44,14 @@ export function useCreateDocumentPack() {
+   const { toast } = useToast();
+ 
+   return useMutation({
+-    mutationFn: async (pack: { name: string; description?: string; template_ids: string[]; field_config?: any[] }) => {
++    mutationFn: async (pack: {
++      name: string;
++      description?: string | null;
++      template_ids: string[];
++      field_config?: any[];
++      default_signers?: any[];
++      auto_send_whatsapp?: boolean;
++    }) => {
+       const { data, error } = await (supabase as any)
+         .from('document_packs')
+         .insert({
+diff --git a/src/pages/PublicDocumentFillPage.tsx b/src/pages/PublicDocumentFillPage.tsx
+index 7a1014c710d2988157bd08b421e88317ace0e4a0..998ec4fefe11d2fdadf9e73bea5766b27cbd7b49 100644
+--- a/src/pages/PublicDocumentFillPage.tsx
++++ b/src/pages/PublicDocumentFillPage.tsx
+@@ -10,7 +10,14 @@ import { DatePicker } from '@/components/ui/date-picker';
+ import { FileText, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
+ import { toast } from 'sonner';
+ 
+-interface FieldDef { name: string; label: string; type: string; required?: boolean }
++interface FieldDef {
++  name: string;
++  label: string;
++  type: string;
++  required?: boolean;
++  hint?: string;
++  mappedFields?: Array<{ fieldName: string; templateId: string }>;
++}
+ 
+ export default function PublicDocumentFillPage() {
+   const { token } = useParams<{ token: string }>();
+@@ -50,6 +57,17 @@ export default function PublicDocumentFillPage() {
+   const allFields = useMemo<FieldDef[]>(() => {
+     if (!doc) return [];
+     if (packDocs.length > 0) {
++      const configured = (doc.pack_field_config || []) as FieldDef[];
++      if (configured.length > 0) {
++        return configured.map((f: any) => ({
++          name: f.originalName || f.name,
++          label: f.label || f.originalName || f.name,
++          type: f.type || 'text',
++          required: f.required ?? true,
++          hint: f.description || f.hint,
++          mappedFields: f.mappedFields || [],
++        }));
++      }
+       // unique fields across pack
+       const map = new Map<string, FieldDef>();
+       packDocs.forEach((d) => {
+@@ -80,7 +98,11 @@ export default function PublicDocumentFillPage() {
+           const fd: Record<string, string> = {};
+           fs.forEach((f: any) => {
+             const key = f.name || f;
+-            fd[key] = values[key] || '';
++            const configured = allFields.find((field) => {
++              if (field.mappedFields?.some((m) => m.templateId === d.template_id && m.fieldName === key)) return true;
++              return field.name === key;
++            });
++            fd[key] = values[configured?.name || key] || '';
+           });
+           body.pack_filled_data[d.id] = fd;
+         });
+@@ -184,6 +206,7 @@ export default function PublicDocumentFillPage() {
+                     className="mt-1"
+                   />
+                 )}
++                {field.hint && <p className="text-[10px] text-muted-foreground mt-0.5">{field.hint}</p>}
+               </div>
+             ))}
+           </CardContent>
+diff --git a/supabase/functions/public-document-fill/index.ts b/supabase/functions/public-document-fill/index.ts
+index f3901732ee7ac88201d5c93aac0753530db212ed..2024298ef6dbe004948e071c6629ca2b55e9ace2 100644
+--- a/supabase/functions/public-document-fill/index.ts
++++ b/supabase/functions/public-document-fill/index.ts
+@@ -65,12 +65,14 @@ serve(async (req) => {
+ 
+       // For pack: collect all docs with same pack_id and same fill token group
+       let packDocs: any[] = [];
++      let pack: any = null;
+       if (doc.pack_id) {
+-        const { data: pack } = await (supabase as any)
++        const { data: packData } = await (supabase as any)
+           .from("document_packs")
+-          .select("name, template_ids")
++          .select("name, template_ids, field_config")
+           .eq("id", doc.pack_id)
+           .maybeSingle();
++        pack = packData;
+ 
+         const { data: docs } = await (supabase as any)
+           .from("generated_documents")
+@@ -93,7 +95,7 @@ serve(async (req) => {
+ 
+       return jsonResponse({
+         success: true,
+-        document: { ...doc, template },
++        document: { ...doc, template, pack_field_config: pack?.field_config || [] },
+         pack_documents: packDocs,
+       });
+     }
+diff --git a/supabase/migrations/20260521150500_add_pack_default_signers.sql b/supabase/migrations/20260521150500_add_pack_default_signers.sql
+new file mode 100644
+index 0000000000000000000000000000000000000000..bee88a72576da08f505f8ce3cb0cbb6810f2c273
+--- /dev/null
++++ b/supabase/migrations/20260521150500_add_pack_default_signers.sql
+@@ -0,0 +1,2 @@
++ALTER TABLE public.document_packs
++ADD COLUMN IF NOT EXISTS default_signers jsonb DEFAULT '[]'::jsonb;
