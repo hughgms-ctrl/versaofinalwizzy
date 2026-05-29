@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useGeneratedDocuments, useDeleteGeneratedDocument, useRegenerateDocumentPdf } from '@/hooks/useGeneratedDocuments';
 import { EditFilledDataDialog } from './EditFilledDataDialog';
 import { format } from 'date-fns';
@@ -29,10 +30,91 @@ const STATUS_MAP: Record<string, { label: string; variant: 'default' | 'secondar
   signed: { label: 'Assinado', variant: 'default' },
 };
 
+const PAGE_SIZE_OPTIONS = [10, 50, 100, 500];
+type DocumentFilter = 'all' | 'signed' | 'partial' | 'pending' | 'unsigned' | 'failed';
+
 interface SubmittedBy {
   name: string;
   phone: string;
   submitted_at?: string;
+}
+
+function PaginationControls({
+  page,
+  pageSize,
+  total,
+  onPageChange,
+  onPageSizeChange,
+}: {
+  page: number;
+  pageSize: number;
+  total: number;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (pageSize: number) => void;
+}) {
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const start = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const end = Math.min(total, page * pageSize);
+  const pages = Array.from({ length: totalPages }, (_, index) => index + 1)
+    .filter((pageNumber) => totalPages <= 7 || pageNumber === 1 || pageNumber === totalPages || Math.abs(pageNumber - page) <= 2);
+
+  return (
+    <div className="flex flex-col gap-3 border-t pt-3 md:flex-row md:items-center md:justify-between">
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <span>Exibir</span>
+        <Select value={String(pageSize)} onValueChange={(value) => onPageSizeChange(Number(value))}>
+          <SelectTrigger className="h-8 w-24">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {PAGE_SIZE_OPTIONS.map((option) => (
+              <SelectItem key={option} value={String(option)}>{option}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <span>{start}-{end} de {total}</span>
+      </div>
+      <div className="flex flex-wrap items-center gap-1">
+        <Button variant="outline" size="sm" onClick={() => onPageChange(page - 1)} disabled={page <= 1}>
+          Anterior
+        </Button>
+        {pages.map((pageNumber, index) => {
+          const previous = pages[index - 1];
+          return (
+            <span key={pageNumber} className="flex items-center gap-1">
+              {previous && pageNumber - previous > 1 && <span className="px-1 text-xs text-muted-foreground">...</span>}
+              <Button
+                variant={pageNumber === page ? 'default' : 'outline'}
+                size="sm"
+                className="h-8 min-w-8 px-2"
+                onClick={() => onPageChange(pageNumber)}
+              >
+                {pageNumber}
+              </Button>
+            </span>
+          );
+        })}
+        <Button variant="outline" size="sm" onClick={() => onPageChange(page + 1)} disabled={page >= totalPages}>
+          Próxima
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function getDocumentItemStatus(docs: any[]): DocumentFilter {
+  const hasPdfFailure = docs.some((doc) => !doc.pdf_url && doc.status === 'generated');
+  if (hasPdfFailure) return 'failed';
+
+  const signedCount = docs.filter((doc) => doc.signing_status === 'signed' || doc.status === 'signed').length;
+  const hasSigning = docs.some((doc) => Boolean(doc.signing_method || doc.signing_status));
+  const hasPending = docs.some((doc) => ['pending', 'sent', 'opened'].includes(doc.signing_status));
+
+  if (signedCount === docs.length && docs.length > 0) return 'signed';
+  if (signedCount > 0) return 'partial';
+  if (hasPending) return 'pending';
+  if (!hasSigning) return 'unsigned';
+  return 'pending';
 }
 
 function DocCard({ doc, onDelete, onRegenerate, onDownload, onEdit, isRegenerating }: { doc: any; onDelete: (id: string) => void; onRegenerate: (doc: any) => void; onDownload: (doc: any) => void; onEdit: (id: string) => void; isRegenerating: boolean }) {
@@ -117,6 +199,9 @@ export function GeneratedDocumentsList() {
   const deleteDocument = useDeleteGeneratedDocument();
   const regeneratePdf = useRegenerateDocumentPdf();
   const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<DocumentFilter>('all');
+  const [pageSize, setPageSize] = useState(10);
+  const [page, setPage] = useState(1);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [editingDocId, setEditingDocId] = useState<string | null>(null);
 
@@ -155,8 +240,7 @@ export function GeneratedDocumentsList() {
     });
   };
 
-  // Group documents: those with submission_group are grouped, others are standalone
-  const { grouped, standalone } = useMemo(() => {
+  const allItems = useMemo(() => {
     const filtered = documents?.filter(d =>
       d.name.toLowerCase().includes(search.toLowerCase()) ||
       (d as any).submitted_by?.name?.toLowerCase().includes(search.toLowerCase())
@@ -175,14 +259,50 @@ export function GeneratedDocumentsList() {
       }
     });
 
-    return { grouped: Array.from(groups.entries()), standalone: singles };
-  }, [documents, search]);
+    return [
+      ...Array.from(groups.entries()).map(([groupKey, docs]) => ({ type: 'group' as const, groupKey, docs })),
+      ...singles.map((doc) => ({ type: 'single' as const, doc })),
+    ].filter((item) => {
+      if (statusFilter === 'all') return true;
+      const itemDocs = item.type === 'group' ? item.docs : [item.doc];
+      return getDocumentItemStatus(itemDocs) === statusFilter;
+    });
+  }, [documents, search, statusFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(allItems.length / pageSize));
+  const safePage = Math.min(page, totalPages);
+  const visibleItems = allItems.slice((safePage - 1) * pageSize, safePage * pageSize);
+
+  const handlePageSizeChange = (nextPageSize: number) => {
+    setPageSize(nextPageSize);
+    setPage(1);
+  };
+
+  const handleFilterChange = (nextFilter: DocumentFilter) => {
+    setStatusFilter(nextFilter);
+    setPage(1);
+  };
 
   return (
     <div className="space-y-4">
-      <div className="relative max-w-sm">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input placeholder="Buscar documentos..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
+      <div className="flex flex-col gap-2 md:flex-row md:items-center">
+        <div className="relative max-w-sm flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input placeholder="Buscar documentos..." value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} className="pl-9" />
+        </div>
+        <Select value={statusFilter} onValueChange={(value) => handleFilterChange(value as DocumentFilter)}>
+          <SelectTrigger className="w-full md:w-56">
+            <SelectValue placeholder="Filtrar status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos</SelectItem>
+            <SelectItem value="signed">Todos assinados</SelectItem>
+            <SelectItem value="partial">Assinado parcialmente</SelectItem>
+            <SelectItem value="pending">Em assinatura</SelectItem>
+            <SelectItem value="unsigned">Sem assinatura</SelectItem>
+            <SelectItem value="failed">PDF falhou</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {isLoading ? (
@@ -193,18 +313,34 @@ export function GeneratedDocumentsList() {
             </Card>
           ))}
         </div>
-      ) : (grouped.length === 0 && standalone.length === 0) ? (
+      ) : (allItems.length === 0) ? (
         <Card className="p-12 text-center">
           <FileText className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-          <h3 className="text-lg font-medium mb-2">Nenhum documento gerado</h3>
+          <h3 className="text-lg font-medium mb-2">Nenhum documento encontrado</h3>
           <p className="text-sm text-muted-foreground">
             Documentos gerados a partir de templates aparecerão aqui.
           </p>
         </Card>
       ) : (
+        <>
         <div className="space-y-3">
           {/* Grouped documents (from packs) */}
-          {grouped.map(([groupKey, docs]) => {
+          {visibleItems.map((item) => {
+            if (item.type === 'single') {
+              return (
+                <DocCard
+                  key={item.doc.id}
+                  doc={item.doc}
+                  onDelete={handleDelete}
+                  onRegenerate={(d) => regeneratePdf.mutate(d)}
+                  onDownload={handleDownload}
+                  onEdit={setEditingDocId}
+                  isRegenerating={regeneratePdf.isPending}
+                />
+              );
+            }
+
+            const { groupKey, docs } = item;
             const firstDoc = docs[0];
             const submittedBy = firstDoc?.submitted_by as SubmittedBy | null;
             const isCollapsed = !expandedGroups.has(groupKey);
@@ -318,11 +454,15 @@ export function GeneratedDocumentsList() {
             );
           })}
 
-          {/* Standalone documents */}
-          {standalone.map(doc => (
-            <DocCard key={doc.id} doc={doc} onDelete={handleDelete} onRegenerate={(d) => regeneratePdf.mutate(d)} onDownload={handleDownload} onEdit={setEditingDocId} isRegenerating={regeneratePdf.isPending} />
-          ))}
         </div>
+        <PaginationControls
+          page={safePage}
+          pageSize={pageSize}
+          total={allItems.length}
+          onPageChange={setPage}
+          onPageSizeChange={handlePageSizeChange}
+        />
+        </>
       )}
       {editingDocId && (
         <EditFilledDataDialog
