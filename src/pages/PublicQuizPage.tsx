@@ -96,7 +96,7 @@ export default function PublicQuizPage({ inlineQuiz, inlineNodes, inlineEdges }:
     try {
       const { data: q, error: e1 } = await supabase
         .from('quizzes').select('*').eq('public_token', token).eq('is_active', true).single();
-      if (e1 || !q) throw new Error('Quizz não encontrado');
+      if (e1 || !q) throw new Error('Wizzy Quiz não encontrado');
       const quizData = q as any;
       setQuiz(quizData);
 
@@ -469,8 +469,8 @@ export default function PublicQuizPage({ inlineQuiz, inlineNodes, inlineEdges }:
   if (loading) return <FullScreenCenter><Loader2 className="h-8 w-8 animate-spin text-primary" /></FullScreenCenter>;
   if (error || !quiz) return (
     <FullScreenCenter>
-      <h2 className="text-xl font-bold">Quizz não encontrado</h2>
-      <p className="text-muted-foreground mt-2">Este quizz não existe ou não está ativo.</p>
+      <h2 className="text-xl font-bold">Wizzy Quiz não encontrado</h2>
+      <p className="text-muted-foreground mt-2">Este Wizzy Quiz não existe ou não está ativo.</p>
     </FullScreenCenter>
   );
 

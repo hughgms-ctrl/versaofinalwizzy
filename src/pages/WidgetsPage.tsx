@@ -286,7 +286,7 @@ export default function WidgetsPage() {
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold">Widgets de Captação</h1>
+            <h1 className="text-2xl font-bold">Wizzy Forms</h1>
             <p className="text-muted-foreground text-sm">
               Crie formulários embeddables para captar leads em sites externos
             </p>
@@ -298,7 +298,7 @@ export default function WidgetsPage() {
             </Button>
             <Button onClick={openNewWidgetDialog}>
               <Plus className="h-4 w-4 mr-2" />
-              Novo Widget
+              Novo Form
             </Button>
           </div>
         </div>
@@ -307,7 +307,7 @@ export default function WidgetsPage() {
         <div className="relative max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input 
-            placeholder="Buscar widgets..." 
+            placeholder="Buscar forms..." 
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-10"
@@ -323,13 +323,13 @@ export default function WidgetsPage() {
           <Card className="p-12">
             <div className="text-center">
               <FileCode className="h-12 w-12 mx-auto text-muted-foreground/50 mb-4" />
-              <h3 className="text-lg font-medium mb-1">Nenhum widget criado</h3>
+              <h3 className="text-lg font-medium mb-1">Nenhum form criado</h3>
               <p className="text-sm text-muted-foreground mb-4">
-                Crie seu primeiro widget de captação para começar a coletar leads.
+                Crie seu primeiro form de captação para começar a coletar leads.
               </p>
               <Button onClick={openNewWidgetDialog}>
                 <Plus className="h-4 w-4 mr-2" />
-                Criar Widget
+                Criar Form
               </Button>
             </div>
           </Card>
@@ -397,11 +397,11 @@ export default function WidgetsPage() {
       <Dialog open={showNewWidgetDialog} onOpenChange={setShowNewWidgetDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Novo Widget</DialogTitle>
+            <DialogTitle>Novo Form</DialogTitle>
           </DialogHeader>
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
-              <Label>Nome do widget</Label>
+              <Label>Nome do form</Label>
               <Input 
                 placeholder="Ex: Formulário Landing Page"
                 value={newWidgetName}
@@ -448,7 +448,7 @@ export default function WidgetsPage() {
               Cancelar
             </Button>
             <Button onClick={handleCreateWidget} disabled={!newWidgetName.trim() || createWidget.isPending}>
-              Criar Widget
+              Criar Form
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -492,7 +492,7 @@ export default function WidgetsPage() {
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground">Widgets movidos para esta pasta herdarão o workspace selecionado.</p>
+                <p className="text-xs text-muted-foreground">Forms movidos para esta pasta herdarão o workspace selecionado.</p>
               </div>
             ) : selectedWorkspaceId ? (
               <div className="grid gap-2">
@@ -520,9 +520,9 @@ export default function WidgetsPage() {
       <AlertDialog open={!!widgetToDelete} onOpenChange={() => setWidgetToDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Excluir widget?</AlertDialogTitle>
+            <AlertDialogTitle>Excluir form?</AlertDialogTitle>
             <AlertDialogDescription>
-              Esta ação não pode ser desfeita. O widget "{widgetToDelete?.name}" será permanentemente removido.
+              Esta ação não pode ser desfeita. O form "{widgetToDelete?.name}" será permanentemente removido.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -540,7 +540,7 @@ export default function WidgetsPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Excluir pasta?</AlertDialogTitle>
             <AlertDialogDescription>
-              Os widgets dentro desta pasta serão movidos para a raiz. A pasta "{folderToDelete?.name}" será removida.
+              Os forms dentro desta pasta serão movidos para a raiz. A pasta "{folderToDelete?.name}" será removida.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -582,7 +582,7 @@ export default function WidgetsPage() {
                 </SelectContent>
               </Select>
               <p className="text-xs text-muted-foreground">
-                O widget herdará o workspace da pasta selecionada.
+                O form herdará o workspace da pasta selecionada.
               </p>
             </div>
           </div>

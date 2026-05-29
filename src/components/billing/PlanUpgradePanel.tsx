@@ -11,10 +11,10 @@ import { toast } from "sonner";
 
 const moduleLabels: Record<string, string> = {
   conversations: "Conversas", pipeline: "Pipeline", contacts: "Contatos",
-  flows: "Fluxos", documents: "Documentos", agents: "Agentes IA",
+  flows: "Fluxos", documents: "Wizzy Sign", agents: "Agentes IA",
   reports: "Relatórios", campaigns: "Campanhas", calendar: "Agenda",
   orchestrator: "Orquestrador", ai: "Inteligência Artificial",
-  widgets: "Widgets", settings: "Configurações", team: "Equipe",
+  widgets: "Wizzy Forms", settings: "Configurações", team: "Equipe",
   scheduled: "Agendamento", integrations: "Integrações",
 };
 

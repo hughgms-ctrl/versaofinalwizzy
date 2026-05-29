@@ -164,7 +164,7 @@ export function useCreateWidget() {
       if (!profile?.organization_id) throw new Error('No organization');
       
       const insertData: Record<string, unknown> = {
-        name: data.name || 'Novo Widget',
+        name: data.name || 'Novo Form',
         organization_id: profile.organization_id,
         created_by: profile.id,
         folder_id: data.folder_id || null,
@@ -183,14 +183,14 @@ export function useCreateWidget() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['widgets'] });
       toast({
-        title: 'Widget criado',
-        description: 'O widget foi criado com sucesso.',
+        title: 'Form criado',
+        description: 'O form foi criado com sucesso.',
       });
     },
     onError: () => {
       toast({
         title: 'Erro ao criar',
-        description: 'Não foi possível criar o widget.',
+        description: 'Não foi possível criar o form.',
         variant: 'destructive',
       });
     },
@@ -217,7 +217,7 @@ export function useUpdateWidget() {
       queryClient.invalidateQueries({ queryKey: ['widgets'] });
       queryClient.invalidateQueries({ queryKey: ['widget', variables.id] });
       toast({
-        title: 'Widget atualizado',
+        title: 'Form atualizado',
         description: 'As alterações foram salvas.',
       });
     },
@@ -247,14 +247,14 @@ export function useDeleteWidget() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['widgets'] });
       toast({
-        title: 'Widget removido',
-        description: 'O widget foi removido com sucesso.',
+        title: 'Form removido',
+        description: 'O form foi removido com sucesso.',
       });
     },
     onError: () => {
       toast({
         title: 'Erro ao remover',
-        description: 'Não foi possível remover o widget.',
+        description: 'Não foi possível remover o form.',
         variant: 'destructive',
       });
     },

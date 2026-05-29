@@ -264,7 +264,7 @@ function QuizBuilderInner() {
         id: quizId,
         theme: { nodes, edges } as any,
       });
-      toast.success('Quizz salvo!');
+      toast.success('Wizzy Quiz salvo!');
     } catch (e: any) {
       toast.error(e.message);
     } finally {
@@ -487,7 +487,7 @@ function QuizBuilderInner() {
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
         <DialogContent className="max-w-sm p-0 overflow-hidden flex flex-col" style={{ height: '600px' }}>
           <DialogHeader className="p-4 pb-0 shrink-0">
-            <DialogTitle className="text-sm">Visualização do Quizz</DialogTitle>
+            <DialogTitle className="text-sm">Visualização do Wizzy Quiz</DialogTitle>
           </DialogHeader>
           <div className="flex-1 min-h-0 overflow-auto">
             {previewOpen && (
@@ -579,7 +579,7 @@ function QuizSettingsSheet({ open, onClose, quiz, onUpdate }: {
     <Sheet open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
       <SheetContent className="w-80 sm:w-96 p-0 flex flex-col">
         <SheetHeader className="p-4 border-b">
-          <SheetTitle className="text-sm">Configurações do Quizz</SheetTitle>
+          <SheetTitle className="text-sm">Configurações do Wizzy Quiz</SheetTitle>
         </SheetHeader>
         <ScrollArea className="flex-1">
           <div className="p-4 space-y-6">
