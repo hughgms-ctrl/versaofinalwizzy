@@ -7,16 +7,13 @@ import {
   Trash2, 
   FolderPlus,
   Folder,
-  FolderOpen,
   Image,
   Video,
   FileAudio,
   FileText,
   Upload,
-  ChevronDown,
-  ChevronUp,
-  ChevronRight,
   MoreVertical,
+  ArrowLeft,
   ArrowRight,
   ExternalLink,
   Paperclip,
@@ -99,8 +96,6 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
   const moveFile = useMoveContactFile();
   const deleteFile = useDeleteContactFile();
 
-  const [isExpanded, setIsExpanded] = useState(true);
-  const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
@@ -112,11 +107,11 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Filter files by selected folder
-  const filteredFiles = files?.filter(f => {
-    if (selectedFolderId === null) return true; // Show all
-    return f.folder_id === selectedFolderId;
-  }) || [];
+  const selectedFolder = folders?.find((folder) => folder.id === selectedFolderId) || null;
+  const rootFiles = files?.filter((file) => !file.folder_id) || [];
+  const filteredFiles = selectedFolderId
+    ? files?.filter((file) => file.folder_id === selectedFolderId) || []
+    : rootFiles;
 
   const handleCreateFolder = async () => {
     if (!newFolderName.trim()) return;
@@ -345,10 +340,7 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <button 
-          className="flex items-center gap-2 text-xs text-muted-foreground uppercase tracking-wider hover:text-foreground transition-colors"
-          onClick={() => setIsExpanded(!isExpanded)}
-        >
+        <div className="flex items-center gap-2 text-xs text-muted-foreground uppercase tracking-wider">
           <Paperclip className="h-3.5 w-3.5" />
           <span>Mídias e Docs</span>
           {totalFiles > 0 && (
@@ -356,14 +348,8 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
               {totalFiles}
             </span>
           )}
-          {isExpanded ? (
-            <ChevronUp className="h-3 w-3" />
-          ) : (
-            <ChevronDown className="h-3 w-3" />
-          )}
-        </button>
-        {isExpanded && (
-          <div className="flex gap-1">
+        </div>
+        <div className="flex gap-1">
             <Button 
               variant="ghost" 
               size="sm" 
@@ -390,8 +376,7 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
                 </>
               )}
             </Button>
-          </div>
-        )}
+        </div>
       </div>
 
       {/* Hidden file input */}
@@ -403,8 +388,7 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
         accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt"
       />
 
-      {isExpanded && (
-        <>
+      <>
           {/* Create Folder Form */}
           {isCreatingFolder && (
             <div className="flex items-center gap-2 p-2 rounded-lg bg-muted/50 border border-border">
@@ -438,141 +422,68 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
             </div>
           )}
 
-          {/* Folders List */}
-          {loadingFolders ? (
+          {selectedFolder ? (
+            <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 p-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 shrink-0"
+                onClick={() => setSelectedFolderId(null)}
+                title="Voltar"
+              >
+                <ArrowLeft className="h-4 w-4" />
+              </Button>
+              <Folder className="h-4 w-4 shrink-0 text-primary" />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium">{selectedFolder.name}</p>
+                <p className="text-[10px] text-muted-foreground">
+                  {filteredFiles.length} {filteredFiles.length === 1 ? 'arquivo' : 'arquivos'}
+                </p>
+              </div>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-7 w-7"
+                onClick={() => setDeleteFolderId(selectedFolder.id)}
+                title="Remover pasta"
+              >
+                <Trash2 className="h-3.5 w-3.5 text-destructive" />
+              </Button>
+            </div>
+          ) : loadingFolders ? (
             <div className="flex justify-center py-2">
               <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
             </div>
           ) : folders && folders.length > 0 ? (
-            <div className="space-y-1">
-              {/* All Files option */}
-              <button
-                className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left text-sm transition-colors ${
-                  selectedFolderId === null 
-                    ? 'bg-primary/10 text-primary' 
-                    : 'hover:bg-muted'
-                }`}
-                onClick={() => setSelectedFolderId(null)}
-              >
-                <Folder className="h-4 w-4" />
-                <span>Todos os arquivos</span>
-                <span className="text-[10px] text-muted-foreground ml-auto">
-                  {totalFiles}
-                </span>
-              </button>
-              
+            <div className="grid grid-cols-2 gap-2">
               {folders.map((folder) => {
                 const folderFileCount = files?.filter(f => f.folder_id === folder.id).length || 0;
-                const isSelected = selectedFolderId === folder.id;
-                const isFolderExpanded = expandedFolders[folder.id] ?? false;
-                const folderFiles = files?.filter(f => f.folder_id === folder.id) || [];
-                
+
                 return (
-                  <div key={folder.id} className="space-y-0.5">
-                    <div className="flex items-center gap-1 group">
-                      <button
-                        className={`flex-1 flex items-center gap-2 px-2 py-1.5 rounded-md text-left text-sm transition-colors ${
-                          isSelected 
-                            ? 'bg-primary/10 text-primary' 
-                            : 'hover:bg-muted'
-                        }`}
-                        onClick={() => {
-                          setSelectedFolderId(isSelected ? null : folder.id);
-                          setExpandedFolders(prev => ({ ...prev, [folder.id]: !isFolderExpanded }));
-                        }}
-                      >
-                        {isFolderExpanded ? (
-                          <ChevronDown className="h-3 w-3 flex-shrink-0" />
-                        ) : (
-                          <ChevronRight className="h-3 w-3 flex-shrink-0" />
-                        )}
-                        {isFolderExpanded ? (
-                          <FolderOpen className="h-4 w-4 flex-shrink-0" />
-                        ) : (
-                          <Folder className="h-4 w-4 flex-shrink-0" />
-                        )}
-                        <span className="truncate">{folder.name}</span>
-                        <span className="text-[10px] text-muted-foreground ml-auto">
-                          {folderFileCount}
+                  <div
+                    key={folder.id}
+                    className="group flex min-w-0 items-center gap-2 rounded-lg border border-border bg-muted/30 p-2 transition-colors hover:bg-muted/60"
+                  >
+                    <button
+                      className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                      onClick={() => setSelectedFolderId(folder.id)}
+                    >
+                      <Folder className="h-5 w-5 shrink-0 text-primary" />
+                      <span className="min-w-0">
+                        <span className="block truncate text-xs font-medium">{folder.name}</span>
+                        <span className="block text-[10px] text-muted-foreground">
+                          {folderFileCount} {folderFileCount === 1 ? 'arquivo' : 'arquivos'}
                         </span>
-                      </button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-6 w-6 opacity-0 group-hover:opacity-100"
-                        onClick={() => setDeleteFolderId(folder.id)}
-                      >
-                        <Trash2 className="h-3 w-3 text-destructive" />
-                      </Button>
-                    </div>
-                    
-                    {/* Inline folder files when expanded */}
-                    {isFolderExpanded && folderFiles.length > 0 && (
-                      <div className="ml-6 space-y-1">
-                        {folderFiles.map((file) => (
-                          <div 
-                            key={file.id} 
-                            className="flex items-center gap-2 p-1.5 rounded-md bg-muted/30 border border-border/50 group cursor-pointer hover:bg-muted/60 transition-colors"
-                            onClick={() => handleFileClick(file)}
-                          >
-                            {file.file_type === 'image' ? (
-                              <img 
-                                src={file.file_url} 
-                                alt={file.name}
-                                className="h-7 w-7 rounded object-cover flex-shrink-0"
-                              />
-                            ) : (
-                              <div className="h-7 w-7 rounded bg-muted flex items-center justify-center flex-shrink-0">
-                                <FileIcon type={file.file_type} />
-                              </div>
-                            )}
-                            <div className="flex-1 min-w-0">
-                              <p className="text-[11px] font-medium truncate">{file.name}</p>
-                              <p className="text-[10px] text-muted-foreground">
-                                {formatFileSize(file.file_size)}
-                              </p>
-                            </div>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button size="icon" variant="ghost" className="h-5 w-5 opacity-0 group-hover:opacity-100" onClick={(e) => e.stopPropagation()}>
-                                  <MoreVertical className="h-3 w-3" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-                                <DropdownMenuItem asChild>
-                                  <a href={file.file_url} target="_blank" rel="noopener noreferrer">
-                                    <ExternalLink className="h-3.5 w-3.5 mr-2" />
-                                    Abrir em nova aba
-                                  </a>
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleDownloadFile(file)}>
-                                  <Download className="h-3.5 w-3.5 mr-2" />
-                                  Baixar
-                                </DropdownMenuItem>
-                                
-                                {file.file_type === 'image' && (
-                                  <DropdownMenuItem onClick={() => handleSaveAsPdf(file)}>
-                                    <FileDown className="h-3.5 w-3.5 mr-2" />
-                                    Salvar como PDF
-                                  </DropdownMenuItem>
-                                )}
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem 
-                                  className="text-destructive"
-                                  onClick={() => {
-                                    setDeleteFileId(file.id);
-                                    setDeleteFilePath(file.storage_path);
-                                  }}
-                                >
-                                  <Trash2 className="h-3.5 w-3.5 mr-2" />
-                                  Remover
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                      </span>
+                    </button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-6 w-6 shrink-0 opacity-0 group-hover:opacity-100"
+                      onClick={() => setDeleteFolderId(folder.id)}
+                    >
+                      <Trash2 className="h-3 w-3 text-destructive" />
+                    </Button>
                   </div>
                 );
               })}
@@ -608,7 +519,7 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
                     <p className="text-xs font-medium truncate">{file.name}</p>
                     <p className="text-[10px] text-muted-foreground">
                       {formatFileSize(file.file_size)}
-                      {file.folder && ` • ${file.folder.name}`}
+                      {!selectedFolderId && file.folder && ` • ${file.folder.name}`}
                     </p>
                   </div>
 
@@ -691,8 +602,10 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
             <div className="text-center py-4">
               <p className="text-xs text-muted-foreground mb-2">
                 {selectedFolderId 
-                  ? 'Nenhum arquivo nesta pasta' 
-                  : 'Nenhuma mídia ou documento salvo'}
+                  ? 'Nenhum arquivo nesta pasta'
+                  : folders && folders.length > 0
+                    ? 'Nenhum arquivo fora de pasta'
+                    : 'Nenhuma mídia ou documento salvo'}
               </p>
               <Button
                 size="sm"
@@ -705,8 +618,7 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
               </Button>
             </div>
           )}
-        </>
-      )}
+      </>
 
       {/* Delete Folder Confirmation */}
       <AlertDialog open={!!deleteFolderId} onOpenChange={() => setDeleteFolderId(null)}>
