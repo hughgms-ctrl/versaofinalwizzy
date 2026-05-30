@@ -126,7 +126,6 @@ async function sendRecoveryEmail(email: string, actionLink: string) {
       from: "Wizzy <suporte@wizzybr.com>",
       to: [email],
       subject: "Criar nova senha na Wizzy",
-      reply_to: "suporte@wizzybr.com",
       text: buildRecoveryEmailText(actionLink),
       html: buildRecoveryEmailHtml(actionLink),
     }),
