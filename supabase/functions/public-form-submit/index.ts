@@ -4,6 +4,7 @@ const corsHeaders = {
 };
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { sendWhatsAppMessage } from "../_shared/whatsappProvider.ts";
 
 const normalizeKey = (value: string) =>
   String(value || "")
@@ -40,7 +41,6 @@ Deno.serve(async (req) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const uazapiBaseUrl = Deno.env.get("UAZAPI_BASE_URL")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const { data: template, error: tErr } = await supabase
@@ -287,34 +287,22 @@ Deno.serve(async (req) => {
       let normalizedPhone = fillerPhone;
       if (!normalizedPhone.startsWith('55')) normalizedPhone = `55${normalizedPhone}`;
 
-      const { data: instance } = await supabase
-        .from("whatsapp_instances")
-        .select("zapi_token")
-        .eq("organization_id", template.organization_id)
-        .eq("status", "connected")
-        .limit(1)
-        .maybeSingle();
-
-      if (instance?.zapi_token) {
-        const baseUrl = uazapiBaseUrl.endsWith('/') ? uazapiBaseUrl.slice(0, -1) : uazapiBaseUrl;
-        const sendResp = await fetch(`${baseUrl}/send/media`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "token": instance.zapi_token,
-          },
-          body: JSON.stringify({
-            number: normalizedPhone,
-            file: pdfData.pdf_url,
-            caption: `📄 *${document_name || template.name}*\n\nSegue seu documento:`,
-            type: "document",
-          }),
+      try {
+        const sendResult = await sendWhatsAppMessage(supabase, {
+          organizationId: template.organization_id,
+          phone: normalizedPhone,
+          type: "document",
+          mediaUrl: pdfData.pdf_url,
+          caption: `Documento - ${document_name || template.name}\n\nSegue seu documento:`,
         });
-        whatsappSent = sendResp.ok;
-        if (!sendResp.ok) {
-          console.error("public-form-submit whatsapp error:", await sendResp.text());
+        whatsappSent = sendResult.ok;
+        if (!sendResult.ok) {
+          console.error("public-form-submit whatsapp error:", sendResult.responseText);
         }
+      } catch (sendError) {
+        console.error("public-form-submit whatsapp error:", sendError);
       }
+
     }
 
     const signatureToken = fillerToken || rows[0]?.signature_token || null;

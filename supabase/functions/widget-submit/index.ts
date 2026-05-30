@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { sendWhatsAppMessage } from '../_shared/whatsappProvider.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -235,51 +236,36 @@ Deno.serve(async (req) => {
         .replace(/{whatsapp}/g, body.whatsapp || '')
         .replace(/{cpf}/g, body.cpf || '');
 
-      // Get active WhatsApp instance
-      const { data: instance } = await supabase
-        .from('whatsapp_instances')
-        .select('id, zapi_instance_id, zapi_token')
-        .eq('organization_id', widget.organization_id)
-        .eq('is_active', true)
-        .eq('status', 'connected')
-        .maybeSingle();
+      try {
+        const sendResult = await sendWhatsAppMessage(supabase, {
+          organizationId: widget.organization_id,
+          phone: cleanPhone,
+          text: messageContent,
+          type: 'text',
+        });
+        console.log('[widget-submit] WhatsApp response:', sendResult.provider, sendResult.status);
 
-      if (instance?.zapi_instance_id && instance?.zapi_token) {
-        // Send message via Z-API
-        const zapiUrl = `https://api.z-api.io/instances/${instance.zapi_instance_id}/token/${instance.zapi_token}/send-text`;
-        
-        try {
-          const zapiResponse = await fetch(zapiUrl, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Client-Token': Deno.env.get('ZAPI_CLIENT_TOKEN') || '',
+        await supabase
+          .from('messages')
+          .insert({
+            conversation_id: conversationId,
+            content: messageContent,
+            direction: 'outbound',
+            type: 'text',
+            is_from_bot: true,
+            zapi_message_id: sendResult.zapiMessageId,
+            metadata: {
+              source: 'widget',
+              provider: sendResult.provider,
+              provider_response: sendResult.responseJson || sendResult.responseText,
             },
-            body: JSON.stringify({
-              phone: cleanPhone,
-              message: messageContent,
+            ...(sendResult.ok ? {} : {
+              failed_at: new Date().toISOString(),
+              error_message: sendResult.responseText || 'Falha ao enviar mensagem do widget',
             }),
           });
-
-          const zapiResult = await zapiResponse.json();
-          console.log('[widget-submit] Z-API response:', zapiResult);
-
-          if (zapiResult.zapiMessageId) {
-            // Save message to database
-            await supabase
-              .from('messages')
-              .insert({
-                conversation_id: conversationId,
-                content: messageContent,
-                direction: 'outbound',
-                type: 'text',
-                is_from_bot: true,
-                zapi_message_id: zapiResult.zapiMessageId,
-              });
-          }
-        } catch (zapiError) {
-          console.error('[widget-submit] Z-API error:', zapiError);
-        }
+      } catch (sendError) {
+        console.error('[widget-submit] WhatsApp error:', sendError);
       }
     } else if (widget.integration_type === 'trigger_flow' && widget.flow_id && conversationId) {
       // Create flow execution

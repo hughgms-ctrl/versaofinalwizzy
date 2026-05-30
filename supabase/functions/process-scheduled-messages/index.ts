@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { sendWhatsAppMessage } from '../_shared/whatsappProvider.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -86,30 +87,10 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        // Get WhatsApp instance for this organization
-        const { data: instance } = await supabase
-          .from('whatsapp_instances')
-          .select('id, zapi_instance_id, zapi_token')
-          .eq('organization_id', scheduled.organization_id)
-          .eq('status', 'connected')
-          .single();
-
-        if (!instance?.zapi_token) {
-          await supabase
-            .from('scheduled_messages')
-            .update({ 
-              status: 'failed', 
-              error_message: 'WhatsApp não conectado' 
-            })
-            .eq('id', scheduled.id);
-          failed++;
-          continue;
-        }
-
       // Process based on content type
         let result: { successCount: number; failCount: number; lastError?: string } = { successCount: 0, failCount: 0 };
         if (scheduled.content_type === 'message') {
-          result = await sendMessageToContacts(supabase, scheduled, contacts, instance);
+          result = await sendMessageToContacts(supabase, scheduled, contacts);
         } else if (scheduled.content_type === 'flow' && scheduled.flow_id) {
           result = await executeFlowForContacts(supabase, scheduled, contacts);
         }
@@ -214,9 +195,7 @@ async function sendMessageToContacts(
   supabase: any,
   scheduled: ScheduledMessage,
   contacts: Contact[],
-  instance: { id: string; zapi_instance_id: string; zapi_token: string }
 ): Promise<{ successCount: number; failCount: number; lastError?: string }> {
-  const uazapiBaseUrl = (Deno.env.get('UAZAPI_BASE_URL') || '').replace(/\/$/, '');
   const delayMs = ((scheduled as any).delay_between_contacts || 0) * 1000;
 
   let successCount = 0;
@@ -234,8 +213,9 @@ async function sendMessageToContacts(
       // Get or create conversation
       let { data: conversation } = await supabase
         .from('conversations')
-        .select('id')
+        .select('id, whatsapp_instance_id')
         .eq('contact_id', contact.id)
+        .eq('organization_id', contact.organization_id)
         .maybeSingle();
 
       if (!conversation) {
@@ -247,57 +227,44 @@ async function sendMessageToContacts(
             workspace_id: scheduled.workspace_id || null,
             status: 'open'
           })
-          .select('id')
+          .select('id, whatsapp_instance_id')
           .single();
         conversation = newConv;
       }
 
       if (!conversation) continue;
 
-      // Send via UAZAPI v2 — endpoints are /send/text and /send/media
+      // Send through the configured WhatsApp provider.
       const phone = contact.phone.replace(/\D/g, '');
-      let endpoint = '/send/text';
-      let body: any = { number: phone, text: scheduled.message_content };
+      let sendType: 'text' | 'image' | 'video' | 'audio' | 'document' = 'text';
 
       if (scheduled.media_url) {
-        endpoint = '/send/media';
         if (scheduled.media_type?.startsWith('image')) {
-          body = { number: phone, file: scheduled.media_url, type: 'image' };
-          if (scheduled.message_content) body.caption = scheduled.message_content;
+          sendType = 'image';
         } else if (scheduled.media_type?.startsWith('audio')) {
-          body = { number: phone, file: scheduled.media_url, type: 'audio' };
+          sendType = 'audio';
         } else if (scheduled.media_type?.startsWith('video')) {
-          body = { number: phone, file: scheduled.media_url, type: 'video' };
-          if (scheduled.message_content) body.caption = scheduled.message_content;
+          sendType = 'video';
         } else {
-          body = { number: phone, file: scheduled.media_url, type: 'document' };
-          if (scheduled.message_content) body.caption = scheduled.message_content;
+          sendType = 'document';
         }
       }
 
-      console.log(`[scheduled ${scheduled.id}] POST ${uazapiBaseUrl}${endpoint} -> ${phone}`);
+      const sendResult = await sendWhatsAppMessage(supabase, {
+        organizationId: scheduled.organization_id,
+        phone,
+        text: scheduled.message_content,
+        type: sendType,
+        mediaUrl: scheduled.media_url,
+        caption: scheduled.message_content,
+        conversationInstanceId: conversation.whatsapp_instance_id,
+      });
 
-      const response = await fetch(
-        `${uazapiBaseUrl}${endpoint}`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'token': instance.zapi_token,
-          },
-          body: JSON.stringify(body),
-        }
-      );
+      console.log(`[scheduled ${scheduled.id}] ${sendResult.provider} -> ${phone}: ${sendResult.status}`);
 
-      const responseText = await response.text();
-      let uazapiResult: any = null;
-      try { uazapiResult = JSON.parse(responseText); } catch { /* keep as text */ }
-
-      if (!response.ok) {
-        throw new Error(`UAZAPI ${response.status}: ${responseText.slice(0, 300)}`);
+      if (!sendResult.ok) {
+        throw new Error(`${sendResult.provider} ${sendResult.status}: ${sendResult.responseText.slice(0, 300)}`);
       }
-
-      const zapiMsgId = uazapiResult?.messageId || uazapiResult?.id || uazapiResult?.ID || uazapiResult?.key?.id || null;
 
       // Save message to database
       await supabase.from('messages').insert({
@@ -307,8 +274,13 @@ async function sendMessageToContacts(
         media_url: scheduled.media_url,
         direction: 'outbound',
         is_from_bot: true,
-        zapi_message_id: zapiMsgId,
-        metadata: { source: 'scheduled_message', scheduled_id: scheduled.id, uazapi_response: uazapiResult },
+        zapi_message_id: sendResult.zapiMessageId,
+        metadata: {
+          source: 'scheduled_message',
+          scheduled_id: scheduled.id,
+          provider: sendResult.provider,
+          provider_response: sendResult.responseJson || sendResult.responseText,
+        },
       });
 
       // Update conversation

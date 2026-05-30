@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { sendWhatsAppMessage } from '../_shared/whatsappProvider.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -2223,58 +2224,47 @@ async function invokeDocumentAgentAI(
   return { replies: replyText ? [replyText] : [], shouldAdvance, toolsExecuted };
 }
 
-// Helper: Send media (PDF) via Z-API
+// Helper: Send media (PDF) through the configured WhatsApp provider.
 async function sendMediaViaZAPI(supabase: any, conversation: any, mediaUrl: string, caption: string) {
   const contactPhone = conversation.contact?.phone;
   if (!contactPhone) return;
 
-  let instance = null;
-  if (conversation.whatsapp_instance_id) {
-    const { data } = await supabase.from('whatsapp_instances').select('*')
-      .eq('id', conversation.whatsapp_instance_id).eq('status', 'connected').maybeSingle();
-    instance = data;
-  }
-  if (!instance) {
-    const { data } = await supabase.from('whatsapp_instances').select('*')
-      .eq('organization_id', conversation.organization_id).eq('status', 'connected')
-      .order('created_at', { ascending: true }).limit(1).maybeSingle();
-    instance = data;
-  }
-  if (!instance) return;
-
-  const normalizedPhone = contactPhone.replace(/\D/g, '');
-  const clientToken = Deno.env.get('ZAPI_CLIENT_TOKEN');
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (clientToken) headers['Client-Token'] = clientToken;
-
   try {
-    const resp = await fetch(`https://api.z-api.io/instances/${instance.zapi_instance_id}/token/${instance.zapi_token}/send-document/pdf`, {
-      method: 'POST', headers,
-      body: JSON.stringify({ phone: normalizedPhone, document: mediaUrl, fileName: caption }),
+    const sendResult = await sendWhatsAppMessage(supabase, {
+      organizationId: conversation.organization_id,
+      phone: contactPhone,
+      type: 'document',
+      mediaUrl,
+      caption,
+      conversationInstanceId: conversation.whatsapp_instance_id,
     });
 
-    if (!resp.ok) {
-      console.error('Z-API send document error:', await resp.text());
-      return;
-    }
-
-    const zapiResult = await resp.json();
     await supabase.from('messages').insert({
       conversation_id: conversation.id,
-      content: `📄 Documento gerado: ${caption}`,
+      content: caption,
       type: 'document',
       direction: 'outbound',
       is_from_bot: true,
       media_url: mediaUrl,
-      zapi_message_id: zapiResult.messageId || zapiResult.zapiMessageId || null,
-      metadata: { zapi_response: zapiResult, ai_generated: true, document_type: 'contract' },
+      zapi_message_id: sendResult.zapiMessageId,
+      metadata: {
+        provider: sendResult.provider,
+        provider_response: sendResult.responseJson || sendResult.responseText,
+        ai_generated: true,
+        document_type: 'contract',
+      },
+      ...(sendResult.ok ? {} : {
+        failed_at: new Date().toISOString(),
+        error_message: sendResult.responseText || 'Falha ao enviar documento',
+      }),
     });
-
-    await supabase.from('conversations').update({ last_message_at: new Date().toISOString() }).eq('id', conversation.id);
-    console.log('Document sent via Z-API');
-  } catch (e) {
-    console.error('Send media error:', e);
+    console.log(`Document sent via ${sendResult.provider}`);
+    return;
+  } catch (error) {
+    console.error('Provider document send error:', error);
+    return;
   }
+
 }
 
 // ==================== CONDITION EVALUATION ====================

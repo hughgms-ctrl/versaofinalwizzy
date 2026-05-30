@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0';
+import { sendWhatsAppMessage } from '../_shared/whatsappProvider.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -24,29 +25,14 @@ async function sendWhatsAppNotification(
   recipientPhone: string,
   message: string
 ) {
-  // Busca a instância ativa
-  const { data: instance } = await supabase
-    .from('whatsapp_instances')
-    .select('id')
-    .eq('organization_id', organizationId)
-    .eq('is_active', true)
-    .maybeSingle();
-
-  if (!instance?.id) {
-    console.warn('No active WhatsApp instance for org', organizationId);
-    return false;
-  }
-
-  // Chama a edge function zapi-send-message
   try {
-    const { error } = await supabase.functions.invoke('zapi-send-message', {
-      body: {
-        instance_id: instance.id,
-        phone: recipientPhone,
-        message,
-      },
+    const result = await sendWhatsAppMessage(supabase, {
+      organizationId,
+      phone: recipientPhone,
+      type: 'text',
+      text: message,
     });
-    if (error) throw error;
+    if (!result.ok) throw new Error(result.responseText || `Provider status ${result.status}`);
     return true;
   } catch (err) {
     console.error('Failed to send WhatsApp:', err);

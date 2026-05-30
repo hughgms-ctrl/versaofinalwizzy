@@ -4,6 +4,7 @@ const corsHeaders = {
 };
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { sendWhatsAppMessage } from "../_shared/whatsappProvider.ts";
 
 const PUBLIC_APP_ORIGIN = "https://wizzybr.com";
 
@@ -55,7 +56,6 @@ Deno.serve(async (req) => {
     const { action, token } = body;
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const uazapiBaseUrl = Deno.env.get("UAZAPI_BASE_URL")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     if (!token) {
@@ -105,44 +105,27 @@ Deno.serve(async (req) => {
       });
     }
 
-    async function getWhatsAppInstance(orgId: string) {
-      const { data: instance } = await supabase
-        .from("whatsapp_instances")
-        .select("id, label, zapi_token")
-        .eq("organization_id", orgId)
-        .eq("status", "connected")
-        .limit(1)
-        .maybeSingle();
-      return instance;
-    }
-
     async function sendSignatureLinkViaWhatsApp(
       phone: string,
       packName: string,
       signatureUrl: string,
-      instanceToken: string,
+      organizationId: string,
     ): Promise<boolean> {
       try {
-        const baseUrl = uazapiBaseUrl.endsWith("/") ? uazapiBaseUrl.slice(0, -1) : uazapiBaseUrl;
-        const response = await fetch(`${baseUrl}/send/text`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "token": instanceToken,
-          },
-          body: JSON.stringify({
-            number: phone,
-            text: `Assinatura solicitada - ${packName}\n\nRevise e assine seus documentos neste link:\n${signatureUrl}`,
-          }),
+        const response = await sendWhatsAppMessage(supabase, {
+          organizationId,
+          phone,
+          type: "text",
+          text: `Assinatura solicitada - ${packName}\n\nRevise e assine seus documentos neste link:\n${signatureUrl}`,
         });
 
         if (!response.ok) {
-          console.error("UAZAPI signature-link error:", await response.text());
+          console.error("WhatsApp signature-link error:", response.responseText);
           return false;
         }
         return true;
       } catch (e) {
-        console.error("UAZAPI signature-link error:", e);
+        console.error("WhatsApp signature-link error:", e);
         return false;
       }
     }
@@ -450,11 +433,8 @@ Deno.serve(async (req) => {
 
       let whatsappSentCount = 0;
       if (auto_send_whatsapp && signatureUrl && normalizedPhone) {
-        const instance = await getWhatsAppInstance(pack.organization_id);
-        if (instance?.zapi_token) {
-          const sent = await sendSignatureLinkViaWhatsApp(normalizedPhone, pack.name, signatureUrl, instance.zapi_token);
-          if (sent) whatsappSentCount = 1;
-        }
+        const sent = await sendSignatureLinkViaWhatsApp(normalizedPhone, pack.name, signatureUrl, pack.organization_id);
+        if (sent) whatsappSentCount = 1;
       }
 
       return new Response(JSON.stringify({
@@ -496,14 +476,6 @@ Deno.serve(async (req) => {
         });
       }
 
-      const instance = await getWhatsAppInstance(pack.organization_id);
-      if (!instance?.zapi_token) {
-        return new Response(JSON.stringify({ error: "Nenhuma instancia WhatsApp conectada" }), {
-          status: 400,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-
       const { data: signer } = await supabase
         .from("document_signers")
         .select("signature_token")
@@ -521,7 +493,7 @@ Deno.serve(async (req) => {
       }
 
       const signatureUrl = `${PUBLIC_APP_ORIGIN}/sign/${signer.signature_token}`;
-      const sent = await sendSignatureLinkViaWhatsApp(normalizedPhone, pack.name, signatureUrl, instance.zapi_token);
+      const sent = await sendSignatureLinkViaWhatsApp(normalizedPhone, pack.name, signatureUrl, pack.organization_id);
 
       return new Response(JSON.stringify({
         success: true,

@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
+import { sendWhatsAppMessage } from "../_shared/whatsappProvider.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -149,40 +150,21 @@ Deno.serve(async (req) => {
     if (action === "send_whatsapp" && phone) {
       const normalizedPhone = String(phone).replace(/\D/g, "");
 
-      // Get active WhatsApp instance for org
-      const { data: instance } = await supabaseAdmin
-        .from("whatsapp_instances")
-        .select("id, zapi_instance_id, zapi_token, zapi_base_url")
-        .eq("organization_id", organization_id)
-        .eq("is_active", true)
-        .limit(1)
-        .single();
-
-      if (instance) {
-        const baseUrl = instance.zapi_base_url || Deno.env.get("UAZAPI_BASE_URL") || "";
-        const token = instance.zapi_token || Deno.env.get("UAZAPI_ADMIN_TOKEN") || "";
-        const instanceId = instance.zapi_instance_id || "";
-
-        const sendUrl = `${baseUrl}/message/send-text/${instanceId}`;
-        const resp = await fetch(sendUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Client-Token": token,
-          },
-          body: JSON.stringify({
-            phone: normalizedPhone,
-            message: message || "",
-          }),
+      try {
+        const resp = await sendWhatsAppMessage(supabaseAdmin, {
+          organizationId: organization_id,
+          phone: normalizedPhone,
+          type: "text",
+          text: message || "",
         });
 
         results.whatsapp_sent = resp.ok;
         if (!resp.ok) {
-          results.whatsapp_error = await resp.text();
+          results.whatsapp_error = resp.responseText;
         }
-      } else {
+      } catch (sendError) {
         results.whatsapp_sent = false;
-        results.whatsapp_error = "No active instance";
+        results.whatsapp_error = String(sendError);
       }
     }
 
