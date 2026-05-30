@@ -34,22 +34,22 @@ function resolveRedirectTo(value?: string | null) {
 
 function buildRecoveryEmailHtml(actionLink: string) {
   return `
-    <div style="margin:0;padding:0;background:#f6f7fb;font-family:Arial,Helvetica,sans-serif;color:#111827;">
+    <div style="margin:0;padding:0;background:#ffffff;font-family:Arial,Helvetica,sans-serif;color:#111827;">
       <div style="display:none;max-height:0;overflow:hidden;opacity:0;">
         Use este link para criar uma nova senha na sua conta Wizzy.
       </div>
-      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f6f7fb;padding:32px 16px;">
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#ffffff;padding:28px 16px;">
         <tr>
           <td align="center">
-            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;">
+            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:540px;background:#ffffff;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
               <tr>
-                <td style="padding:28px 32px 18px 32px;border-bottom:1px solid #eef0f4;">
+                <td style="padding:26px 30px 16px 30px;border-bottom:1px solid #eef0f4;">
                   <div style="font-size:22px;font-weight:700;letter-spacing:.2px;color:#111827;">Wizzy</div>
                   <div style="font-size:13px;color:#6b7280;margin-top:4px;">Gestao inteligente de conversas</div>
                 </td>
               </tr>
               <tr>
-                <td style="padding:32px;">
+                <td style="padding:30px;">
                   <h1 style="margin:0 0 12px 0;font-size:24px;line-height:1.25;color:#111827;">Redefinir sua senha</h1>
                   <p style="margin:0 0 18px 0;font-size:15px;line-height:1.6;color:#374151;">
                     Recebemos uma solicitacao para redefinir a senha da sua conta Wizzy.
@@ -66,17 +66,14 @@ function buildRecoveryEmailHtml(actionLink: string) {
                       </td>
                     </tr>
                   </table>
-                  <p style="margin:0 0 10px 0;font-size:13px;line-height:1.6;color:#6b7280;">
-                    Se o botao nao funcionar, copie e cole este link no navegador:
-                  </p>
-                  <p style="margin:0;font-size:12px;line-height:1.6;color:#6b7280;word-break:break-all;">
-                    <a href="${actionLink}" style="color:#2563eb;">${actionLink}</a>
+                  <p style="margin:0;font-size:13px;line-height:1.6;color:#6b7280;">
+                    Por seguranca, este link expira automaticamente. Se voce nao pediu essa alteracao, nenhuma acao e necessaria.
                   </p>
                 </td>
               </tr>
               <tr>
-                <td style="padding:20px 32px 28px 32px;border-top:1px solid #eef0f4;color:#6b7280;font-size:12px;line-height:1.6;">
-                  Se voce nao solicitou esta redefinicao, ignore este e-mail. Sua senha atual continuara a mesma.
+                <td style="padding:20px 30px 26px 30px;border-top:1px solid #eef0f4;color:#6b7280;font-size:12px;line-height:1.6;">
+                  Este e um e-mail transacional da Wizzy enviado para proteger o acesso a sua conta.
                 </td>
               </tr>
             </table>
@@ -85,6 +82,21 @@ function buildRecoveryEmailHtml(actionLink: string) {
       </table>
     </div>
   `;
+}
+
+function buildRecoveryEmailText(actionLink: string) {
+  return [
+    "Wizzy",
+    "",
+    "Redefinir sua senha",
+    "",
+    "Recebemos uma solicitacao para redefinir a senha da sua conta Wizzy.",
+    "Use o link seguro abaixo para criar uma nova senha:",
+    "",
+    actionLink,
+    "",
+    "Se voce nao solicitou esta redefinicao, ignore este e-mail. Sua senha atual continuara a mesma.",
+  ].join("\n");
 }
 
 async function sendRecoveryEmail(email: string, actionLink: string) {
@@ -102,7 +114,8 @@ async function sendRecoveryEmail(email: string, actionLink: string) {
     body: JSON.stringify({
       from: "Wizzy <no-reply@wizzybr.com>",
       to: [email],
-      subject: "Redefinicao de senha - Wizzy",
+      subject: "Criar nova senha na Wizzy",
+      text: buildRecoveryEmailText(actionLink),
       html: buildRecoveryEmailHtml(actionLink),
     }),
   });
