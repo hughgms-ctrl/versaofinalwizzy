@@ -630,6 +630,9 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
               : position)
             : withoutMoved;
           queryClient.setQueryData(['conversation-positions', pipeline.id], nextPositions);
+          setDraggedCard(null);
+          setDragOverColumn(null);
+          setDragOverCard(null);
 
           // Remove from pipeline (move to unassigned)
           await supabase
@@ -678,12 +681,16 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
             ...sourceColumnPositions,
             ...reindexedTarget,
           ]);
+          setDraggedCard(null);
+          setDragOverColumn(null);
+          setDragOverCard(null);
 
           const result = await moveConversation.mutateAsync({
             conversationId: movedConversationId,
             pipelineId: pipeline.id,
             columnId,
             order,
+            skipInvalidate: true,
           });
           await normalizeColumnOrder(columnId, movedConversationId, order);
           if (result?.changed) {

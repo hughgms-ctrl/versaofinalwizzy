@@ -418,6 +418,7 @@ export function useMoveConversation() {
       order = 0,
       changedByType = 'manual',
       skipAutoTransition = false,
+      skipInvalidate = false,
     }: { 
       conversationId: string;
       pipelineId: string;
@@ -425,6 +426,7 @@ export function useMoveConversation() {
       order?: number;
       changedByType?: string;
       skipAutoTransition?: boolean;
+      skipInvalidate?: boolean;
     }) => {
       const { data: targetColumn, error: targetColumnError } = await (supabase as any)
         .from('pipeline_columns')
@@ -668,8 +670,10 @@ export function useMoveConversation() {
       return { changed: stageChanged, orderChanged: !stageChanged, fromColumnId, toColumnId: columnId, pipelineId };
     },
     onSuccess: (result, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['conversation-positions'] });
-      queryClient.invalidateQueries({ queryKey: ['conversation-positions', result?.pipelineId] });
+      if (!variables.skipInvalidate) {
+        queryClient.invalidateQueries({ queryKey: ['conversation-positions'] });
+        queryClient.invalidateQueries({ queryKey: ['conversation-positions', result?.pipelineId] });
+      }
       queryClient.invalidateQueries({ queryKey: ['stage-history', variables.conversationId] });
       if (result?.changed) {
         toast({ title: 'Conversa movida!' });
