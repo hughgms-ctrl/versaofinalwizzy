@@ -179,8 +179,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const resetPassword = async (email: string) => {
     try {
       const publicOrigin = getPublicAppOrigin();
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${publicOrigin}/auth?mode=reset`,
+      const { error } = await supabase.functions.invoke('auth-password-recovery', {
+        body: {
+          email,
+          redirectTo: `${publicOrigin}/auth?mode=reset`,
+        },
       });
 
       return { error: error as Error | null };

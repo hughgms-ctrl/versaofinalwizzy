@@ -69,6 +69,9 @@ verify_jwt = false
 [functions.analyze-conversation]
 verify_jwt = false
 
+[functions.auth-password-recovery]
+verify_jwt = false
+
 [functions.zapi-cleanup]
 verify_jwt = false
 [functions.flow-execute]
