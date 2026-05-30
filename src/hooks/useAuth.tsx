@@ -21,6 +21,7 @@ interface AuthContextType {
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signInWithGoogle: () => Promise<{ error: Error | null }>;
   resetPassword: (email: string) => Promise<{ error: Error | null }>;
+  verifyRecoveryToken: (tokenHash: string) => Promise<{ error: Error | null }>;
   updatePassword: (password: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
 }
@@ -192,6 +193,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const verifyRecoveryToken = async (tokenHash: string) => {
+    try {
+      const { error } = await supabase.auth.verifyOtp({
+        token_hash: tokenHash,
+        type: 'recovery',
+      });
+
+      return { error: error as Error | null };
+    } catch (error) {
+      return { error: error as Error };
+    }
+  };
+
   const updatePassword = async (password: string) => {
     try {
       const { error } = await supabase.auth.updateUser({ password });
@@ -207,7 +221,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, profile, loading, signUp, signIn, signInWithGoogle, resetPassword, updatePassword, signOut }}>
+    <AuthContext.Provider value={{ user, session, profile, loading, signUp, signIn, signInWithGoogle, resetPassword, verifyRecoveryToken, updatePassword, signOut }}>
       {children}
     </AuthContext.Provider>
   );

@@ -15,10 +15,12 @@ type AuthMode = 'auth' | 'forgot' | 'reset';
 
 export default function AuthPage() {
   const navigate = useNavigate();
-  const { user, loading: authLoading, signIn, signUp, signInWithGoogle, resetPassword, updatePassword } = useAuth();
+  const { user, loading: authLoading, signIn, signUp, signInWithGoogle, resetPassword, verifyRecoveryToken, updatePassword } = useAuth();
   const { toast } = useToast();
   
   const [isLoading, setIsLoading] = useState(false);
+  const [isVerifyingRecovery, setIsVerifyingRecovery] = useState(false);
+  const [recoveryReady, setRecoveryReady] = useState(false);
   const [authMode, setAuthMode] = useState<AuthMode>(() => {
     const params = new URLSearchParams(window.location.search);
     return params.get('mode') === 'reset' ? 'reset' : 'auth';
@@ -40,6 +42,47 @@ export default function AuthPage() {
       navigate('/dashboard');
     }
   }, [user, authLoading, authMode, navigate]);
+
+  useEffect(() => {
+    if (authMode !== 'reset' || recoveryReady) return;
+
+    const params = new URLSearchParams(window.location.search);
+    const tokenHash = params.get('token_hash');
+
+    if (!tokenHash) {
+      setRecoveryReady(true);
+      return;
+    }
+
+    let cancelled = false;
+
+    const verifyToken = async () => {
+      setIsVerifyingRecovery(true);
+      const { error } = await verifyRecoveryToken(tokenHash);
+
+      if (cancelled) return;
+
+      if (error) {
+        toast({
+          title: 'Link invalido ou expirado',
+          description: 'Solicite um novo link de recuperacao de senha.',
+          variant: 'destructive',
+        });
+        setAuthMode('forgot');
+      } else {
+        setRecoveryReady(true);
+        window.history.replaceState({}, document.title, '/auth?mode=reset');
+      }
+
+      setIsVerifyingRecovery(false);
+    };
+
+    verifyToken();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authMode, recoveryReady, toast, verifyRecoveryToken]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -187,6 +230,14 @@ export default function AuthPage() {
   };
 
   if (authLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (isVerifyingRecovery) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />

@@ -32,6 +32,17 @@ function resolveRedirectTo(value?: string | null) {
   }
 }
 
+function buildBrandedRecoveryLink(redirectTo: string, hashedToken?: string | null, fallbackLink?: string | null) {
+  if (!hashedToken) {
+    return fallbackLink || redirectTo;
+  }
+
+  const url = new URL(redirectTo);
+  url.searchParams.set("token_hash", hashedToken);
+  url.searchParams.set("type", "recovery");
+  return url.toString();
+}
+
 function buildRecoveryEmailHtml(actionLink: string) {
   return `
     <div style="margin:0;padding:0;background:#ffffff;font-family:Arial,Helvetica,sans-serif;color:#111827;">
@@ -154,11 +165,12 @@ serve(async (req) => {
     }
 
     const supabase = createServiceClient();
+    const resolvedRedirectTo = resolveRedirectTo(redirectTo);
     const { data, error } = await supabase.auth.admin.generateLink({
       type: "recovery",
       email,
       options: {
-        redirectTo: resolveRedirectTo(redirectTo),
+        redirectTo: resolvedRedirectTo,
       },
     });
 
@@ -167,7 +179,12 @@ serve(async (req) => {
       return jsonResponse({ success: true });
     }
 
-    const actionLink = data?.properties?.action_link;
+    const actionLink = buildBrandedRecoveryLink(
+      resolvedRedirectTo,
+      data?.properties?.hashed_token,
+      data?.properties?.action_link,
+    );
+
     if (actionLink) {
       await sendRecoveryEmail(email, actionLink);
     }
