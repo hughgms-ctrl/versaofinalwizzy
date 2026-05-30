@@ -29,7 +29,7 @@ const ALL_MODULES = [
   { value: 'widgets', label: 'Wizzy Forms' },
   { value: 'settings', label: 'Configurações' },
   { value: 'team', label: 'Equipe' },
-  { value: 'scheduled', label: 'Agendamento' },
+  { value: 'scheduled', label: 'Programados' },
   { value: 'integrations', label: 'Integrações' },
 ];
 

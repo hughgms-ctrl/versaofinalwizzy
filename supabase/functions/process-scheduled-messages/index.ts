@@ -8,6 +8,7 @@ const corsHeaders = {
 interface ScheduledMessage {
   id: string;
   organization_id: string;
+  workspace_id: string | null;
   content_type: 'message' | 'flow';
   message_content: string | null;
   media_url: string | null;
@@ -243,6 +244,7 @@ async function sendMessageToContacts(
           .insert({
             contact_id: contact.id,
             organization_id: contact.organization_id,
+            workspace_id: scheduled.workspace_id || null,
             status: 'open'
           })
           .select('id')

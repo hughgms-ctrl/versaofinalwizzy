@@ -43,10 +43,12 @@ export interface CreateScheduledMessageInput {
   media_url?: string | null;
   media_type?: string | null;
   flow_id?: string | null;
-  target_type: 'single' | 'tag' | 'manual';
+  target_type: 'single' | 'tag' | 'manual' | 'phone';
   contact_id?: string | null;
   tag_id?: string | null;
   contact_ids?: string[]; // For manual selection
+  manual_phone?: string | null;
+  manual_name?: string | null;
   name?: string | null;
   workspace_id?: string | null;
   delay_between_contacts?: number | null; // seconds between each contact
@@ -59,6 +61,8 @@ export interface UpdateScheduledMessageInput {
   recurrence_end_at?: string | null;
   content_type?: 'message' | 'flow';
   message_content?: string | null;
+  media_url?: string | null;
+  media_type?: string | null;
   flow_id?: string | null;
   target_type?: 'single' | 'tag' | 'manual';
   contact_id?: string | null;
@@ -106,13 +110,63 @@ export function useCreateScheduledMessage() {
 
       if (!profile) throw new Error('Perfil não encontrado');
 
-      const { contact_ids, workspace_id, delay_between_contacts, ...messageData } = input;
+      const { contact_ids, workspace_id, delay_between_contacts, manual_phone, manual_name, ...messageData } = input;
+      let resolvedMessageData: Record<string, unknown> = { ...messageData };
+
+      if (input.target_type === 'phone') {
+        let formattedPhone = (manual_phone || '').replace(/\D/g, '');
+        if (formattedPhone.length === 10 || formattedPhone.length === 11) {
+          formattedPhone = `55${formattedPhone}`;
+        }
+
+        if (formattedPhone.length < 10) {
+          throw new Error('Telefone inválido. Informe DDD e número.');
+        }
+
+        const { data: existingContact, error: existingError } = await supabase
+          .from('contacts')
+          .select('id, workspace_id')
+          .eq('phone', formattedPhone)
+          .eq('organization_id', profile.organization_id)
+          .maybeSingle();
+
+        if (existingError) throw existingError;
+
+        let resolvedContactId = existingContact?.id;
+        if (!resolvedContactId) {
+          const { data: newContact, error: contactError } = await supabase
+            .from('contacts')
+            .insert({
+              organization_id: profile.organization_id,
+              phone: formattedPhone,
+              name: manual_name?.trim() || null,
+              workspace_id: workspace_id || null,
+            } as any)
+            .select('id')
+            .single();
+
+          if (contactError) throw contactError;
+          resolvedContactId = newContact.id;
+        } else if (workspace_id && existingContact.workspace_id !== workspace_id) {
+          await supabase
+            .from('contacts')
+            .update({ workspace_id })
+            .eq('id', resolvedContactId);
+        }
+
+        resolvedMessageData = {
+          ...resolvedMessageData,
+          target_type: 'single',
+          contact_id: resolvedContactId,
+          tag_id: null,
+        };
+      }
 
       // Create scheduled message
       const { data: scheduled, error } = await supabase
         .from('scheduled_messages')
         .insert({
-          ...messageData,
+          ...resolvedMessageData,
           organization_id: profile.organization_id,
           created_by: session!.user.id,
           next_execution_at: input.scheduled_at,

@@ -53,7 +53,7 @@ const navigation: NavItem[] = [
   { name: 'Fluxos', href: '/flows', icon: Workflow, module: 'flows', planModule: 'flows' },
   { name: 'Campanhas', href: '/campaigns', icon: Megaphone, module: 'flows', planModule: 'campaigns' },
   { name: 'Ferramentas', href: '/tools', icon: MousePointerClick, module: 'flows', planModule: 'tools' },
-  { name: 'Agendamentos', href: '/scheduled', icon: CalendarClock, module: 'scheduled', planModule: 'scheduled' },
+  { name: 'Programados', href: '/scheduled', icon: CalendarClock, module: 'scheduled', planModule: 'scheduled' },
   { name: 'Agentes IA', href: '/agents', icon: Bot, module: 'agents', planModule: 'agents' },
   { name: 'Equipe', href: '/team', icon: Users, module: 'team', planModule: 'team' },
   { name: 'Relatórios', href: '/reports', icon: BarChart3, module: 'reports', planModule: 'reports' },

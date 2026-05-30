@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -65,6 +66,71 @@ const recurrenceLabels = {
   monthly: 'Mensal',
 };
 
+const PAGE_SIZE_OPTIONS = [10, 50, 100, 500];
+
+function PaginationControls({
+  page,
+  pageSize,
+  total,
+  onPageChange,
+  onPageSizeChange,
+}: {
+  page: number;
+  pageSize: number;
+  total: number;
+  onPageChange: (page: number) => void;
+  onPageSizeChange: (pageSize: number) => void;
+}) {
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const start = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const end = Math.min(total, page * pageSize);
+  const pages = Array.from({ length: totalPages }, (_, index) => index + 1)
+    .filter(pageNumber => totalPages <= 7 || pageNumber === 1 || pageNumber === totalPages || Math.abs(pageNumber - page) <= 2);
+
+  return (
+    <div className="flex flex-col gap-3 border-t pt-3 md:flex-row md:items-center md:justify-between">
+      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <span>Exibir</span>
+        <Select value={String(pageSize)} onValueChange={(value) => onPageSizeChange(Number(value))}>
+          <SelectTrigger className="h-8 w-24">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {PAGE_SIZE_OPTIONS.map(option => (
+              <SelectItem key={option} value={String(option)}>{option}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <span>{start}-{end} de {total}</span>
+      </div>
+      <div className="flex flex-wrap items-center gap-1">
+        <Button variant="outline" size="sm" onClick={() => onPageChange(page - 1)} disabled={page <= 1}>
+          Anterior
+        </Button>
+        {pages.map((pageNumber, index) => {
+          const previous = pages[index - 1];
+          return (
+            <span key={pageNumber} className="flex items-center gap-1">
+              {previous && pageNumber - previous > 1 && <span className="px-1 text-xs text-muted-foreground">...</span>}
+              <Button
+                variant={pageNumber === page ? 'default' : 'outline'}
+                size="sm"
+                className="h-8 min-w-8 px-2"
+                onClick={() => onPageChange(pageNumber)}
+              >
+                {pageNumber}
+              </Button>
+            </span>
+          );
+        })}
+        <Button variant="outline" size="sm" onClick={() => onPageChange(page + 1)} disabled={page >= totalPages}>
+          Próxima
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function ScheduledMessagesList() {
   const { data: scheduledMessages = [], isLoading } = useScheduledMessages();
   const cancelMutation = useCancelScheduledMessage();
@@ -73,6 +139,9 @@ export function ScheduledMessagesList() {
   
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [editMessage, setEditMessage] = useState<ScheduledMessage | null>(null);
+  const [pageSize, setPageSize] = useState(10);
+  const [pendingPage, setPendingPage] = useState(1);
+  const [historyPage, setHistoryPage] = useState(1);
 
   const filteredMessages = useMemo(() => {
     if (!selectedWorkspaceId) return scheduledMessages;
@@ -104,7 +173,7 @@ export function ScheduledMessagesList() {
         <Calendar className="h-16 w-16 mb-4 opacity-30" />
         <p className="text-lg font-medium">Nenhum agendamento</p>
         <p className="text-sm text-center mt-2">
-          Crie um novo agendamento para enviar mensagens ou executar fluxos automaticamente.
+          Crie uma nova programação para enviar mensagens, mídias ou fluxos automaticamente.
         </p>
       </div>
     );
@@ -112,6 +181,18 @@ export function ScheduledMessagesList() {
 
   const pendingMessages = filteredMessages.filter(m => m.status === 'pending');
   const completedMessages = filteredMessages.filter(m => ['sent', 'failed', 'cancelled'].includes(m.status));
+  const pendingTotalPages = Math.max(1, Math.ceil(pendingMessages.length / pageSize));
+  const historyTotalPages = Math.max(1, Math.ceil(completedMessages.length / pageSize));
+  const safePendingPage = Math.min(pendingPage, pendingTotalPages);
+  const safeHistoryPage = Math.min(historyPage, historyTotalPages);
+  const visiblePendingMessages = pendingMessages.slice((safePendingPage - 1) * pageSize, safePendingPage * pageSize);
+  const visibleCompletedMessages = completedMessages.slice((safeHistoryPage - 1) * pageSize, safeHistoryPage * pageSize);
+
+  const handlePageSizeChange = (nextPageSize: number) => {
+    setPageSize(nextPageSize);
+    setPendingPage(1);
+    setHistoryPage(1);
+  };
 
   return (
     <div className="space-y-8">
@@ -119,10 +200,10 @@ export function ScheduledMessagesList() {
         <div>
           <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
             <Clock className="h-5 w-5 text-blue-500" />
-            Agendamentos Pendentes ({pendingMessages.length})
+            Programações pendentes ({pendingMessages.length})
           </h2>
           <div className="space-y-3">
-            {pendingMessages.map(message => (
+            {visiblePendingMessages.map(message => (
               <ScheduledMessageCard 
                 key={message.id} 
                 message={message}
@@ -132,6 +213,13 @@ export function ScheduledMessagesList() {
               />
             ))}
           </div>
+          <PaginationControls
+            page={safePendingPage}
+            pageSize={pageSize}
+            total={pendingMessages.length}
+            onPageChange={setPendingPage}
+            onPageSizeChange={handlePageSizeChange}
+          />
         </div>
       )}
 
@@ -142,7 +230,7 @@ export function ScheduledMessagesList() {
             Histórico ({completedMessages.length})
           </h2>
           <div className="space-y-3">
-            {completedMessages.map(message => (
+            {visibleCompletedMessages.map(message => (
               <ScheduledMessageCard 
                 key={message.id} 
                 message={message}
@@ -152,6 +240,13 @@ export function ScheduledMessagesList() {
               />
             ))}
           </div>
+          <PaginationControls
+            page={safeHistoryPage}
+            pageSize={pageSize}
+            total={completedMessages.length}
+            onPageChange={setHistoryPage}
+            onPageSizeChange={handlePageSizeChange}
+          />
         </div>
       )}
 
@@ -166,7 +261,7 @@ export function ScheduledMessagesList() {
       <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Excluir agendamento?</AlertDialogTitle>
+          <AlertDialogTitle>Excluir programação?</AlertDialogTitle>
             <AlertDialogDescription>
               Esta ação não pode ser desfeita. O agendamento será excluído permanentemente.
             </AlertDialogDescription>

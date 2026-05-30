@@ -15,7 +15,7 @@ const moduleLabels: Record<string, string> = {
   reports: "Relatórios", campaigns: "Campanhas", calendar: "Agenda",
   orchestrator: "Orquestrador", ai: "Inteligência Artificial",
   widgets: "Wizzy Forms", settings: "Configurações", team: "Equipe",
-  scheduled: "Agendamento", integrations: "Integrações",
+  scheduled: "Programados", integrations: "Integrações",
 };
 
 const visibleModules = [

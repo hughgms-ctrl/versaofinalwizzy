@@ -181,14 +181,14 @@ export function EditScheduledMessageDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[600px] max-h-[90vh] flex flex-col">
         <DialogHeader>
-          <DialogTitle>Editar Agendamento</DialogTitle>
+          <DialogTitle>Editar programação</DialogTitle>
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto pr-2">
           <div className="space-y-6 py-4">
             {/* Name */}
             <div className="space-y-2">
-              <Label>Nome do agendamento (opcional)</Label>
+              <Label>Nome da programação (opcional)</Label>
               <Input
                 placeholder="Ex: Promoção Black Friday"
                 value={name}

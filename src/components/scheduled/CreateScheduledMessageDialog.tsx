@@ -1,4 +1,5 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
+import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { 
@@ -39,15 +40,29 @@ import {
   Search,
   X,
   Loader2,
-  Timer
+  Timer,
+  Upload,
+  Image,
+  Mic,
+  Square,
+  Trash2,
+  Phone
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { toast } from '@/hooks/use-toast';
 
 interface CreateScheduledMessageDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   defaultContactId?: string;
 }
+
+const getMediaKind = (type: string) => {
+  if (type.startsWith('image/')) return 'Imagem';
+  if (type.startsWith('audio/')) return 'Áudio';
+  if (type.startsWith('video/')) return 'Vídeo';
+  return 'Arquivo';
+};
 
 export function CreateScheduledMessageDialog({ 
   open, 
@@ -62,10 +77,17 @@ export function CreateScheduledMessageDialog({
 
   // Form state
   const [contentType, setContentType] = useState<'message' | 'flow'>('message');
-  const [targetType, setTargetType] = useState<'single' | 'tag' | 'manual'>('single');
+  const [targetType, setTargetType] = useState<'single' | 'tag' | 'manual' | 'phone'>('single');
   const [messageContent, setMessageContent] = useState('');
+  const [mediaUrl, setMediaUrl] = useState('');
+  const [mediaType, setMediaType] = useState('');
+  const [mediaName, setMediaName] = useState('');
+  const [isUploadingMedia, setIsUploadingMedia] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
   const [flowId, setFlowId] = useState<string>('');
   const [contactId, setContactId] = useState<string>('');
+  const [manualPhone, setManualPhone] = useState('');
+  const [manualName, setManualName] = useState('');
   const [tagId, setTagId] = useState<string>('');
   const [selectedContactIds, setSelectedContactIds] = useState<string[]>([]);
   const [scheduledDate, setScheduledDate] = useState('');
@@ -75,6 +97,9 @@ export function CreateScheduledMessageDialog({
   const [name, setName] = useState('');
   const [contactSearch, setContactSearch] = useState('');
   const [delayBetweenContacts, setDelayBetweenContacts] = useState<number>(10);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
 
   // Get unique contacts from conversations
   const contacts = useMemo(() => {
@@ -102,6 +127,92 @@ export function CreateScheduledMessageDialog({
     return flows.filter(f => f.is_active);
   }, [flows]);
 
+  const uploadScheduledMedia = async (file: File) => {
+    setIsUploadingMedia(true);
+    try {
+      const ext = file.name.split('.').pop() || 'bin';
+      const safeWorkspace = selectedWorkspaceId || 'global';
+      const fileName = `${safeWorkspace}/${Date.now()}-${crypto.randomUUID()}.${ext}`;
+      const { data, error } = await supabase.storage
+        .from('chat-media')
+        .upload(`scheduled/${fileName}`, file, {
+          cacheControl: '3600',
+          upsert: false,
+          contentType: file.type || undefined,
+        });
+
+      if (error) throw error;
+
+      const { data: urlData } = supabase.storage
+        .from('chat-media')
+        .getPublicUrl(data.path);
+
+      setMediaUrl(urlData.publicUrl);
+      setMediaType(file.type || 'application/octet-stream');
+      setMediaName(file.name);
+    } catch (error: any) {
+      toast({
+        title: 'Erro no upload',
+        description: error.message || 'Não foi possível anexar a mídia.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsUploadingMedia(false);
+    }
+  };
+
+  const handlePaste = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const file = Array.from(event.clipboardData.files || []).find(item => item.type.startsWith('image/'));
+    if (file) {
+      event.preventDefault();
+      void uploadScheduledMedia(file);
+    }
+  };
+
+  const startRecording = async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      toast({ title: 'Gravação indisponível', description: 'Seu navegador não permitiu gravar áudio.', variant: 'destructive' });
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) audioChunksRef.current.push(event.data);
+      };
+      recorder.onstop = () => {
+        const type = recorder.mimeType || 'audio/webm';
+        const blob = new Blob(audioChunksRef.current, { type });
+        const ext = type.includes('ogg') ? 'ogg' : type.includes('mp4') ? 'm4a' : 'webm';
+        const file = new File([blob], `audio-programado.${ext}`, { type });
+        stream.getTracks().forEach(track => track.stop());
+        void uploadScheduledMedia(file);
+      };
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+      setIsRecording(true);
+    } catch (error: any) {
+      toast({
+        title: 'Microfone bloqueado',
+        description: error.message || 'Permita acesso ao microfone para gravar áudio.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const stopRecording = () => {
+    mediaRecorderRef.current?.stop();
+    setIsRecording(false);
+  };
+
+  const clearMedia = () => {
+    setMediaUrl('');
+    setMediaType('');
+    setMediaName('');
+  };
+
   const handleSubmit = async () => {
     if (!scheduledDate || !scheduledTime) return;
     
@@ -113,11 +224,15 @@ export function CreateScheduledMessageDialog({
       recurrence_end_at: recurrenceEndDate ? new Date(`${recurrenceEndDate}T23:59:59`).toISOString() : null,
       content_type: contentType,
       message_content: contentType === 'message' ? messageContent : null,
+      media_url: contentType === 'message' ? mediaUrl || null : null,
+      media_type: contentType === 'message' ? mediaType || null : null,
       flow_id: contentType === 'flow' ? flowId : null,
       target_type: targetType,
       contact_id: targetType === 'single' ? contactId : null,
       tag_id: targetType === 'tag' ? tagId : null,
       contact_ids: targetType === 'manual' ? selectedContactIds : undefined,
+      manual_phone: targetType === 'phone' ? manualPhone : null,
+      manual_name: targetType === 'phone' ? manualName : null,
       name: name || null,
       workspace_id: selectedWorkspaceId || null,
       delay_between_contacts: delayBetweenContacts > 0 ? delayBetweenContacts : null,
@@ -132,8 +247,11 @@ export function CreateScheduledMessageDialog({
     setContentType('message');
     setTargetType('single');
     setMessageContent('');
+    clearMedia();
     setFlowId('');
     setContactId(defaultContactId || '');
+    setManualPhone('');
+    setManualName('');
     setTagId('');
     setSelectedContactIds([]);
     setScheduledDate('');
@@ -170,11 +288,12 @@ export function CreateScheduledMessageDialog({
 
   const isValid = () => {
     if (!scheduledDate || !scheduledTime) return false;
-    if (contentType === 'message' && !messageContent.trim()) return false;
+    if (contentType === 'message' && !messageContent.trim() && !mediaUrl) return false;
     if (contentType === 'flow' && !flowId) return false;
     if (targetType === 'single' && !contactId) return false;
     if (targetType === 'tag' && !tagId) return false;
     if (targetType === 'manual' && selectedContactIds.length === 0) return false;
+    if (targetType === 'phone' && manualPhone.replace(/\D/g, '').length < 10) return false;
     return true;
   };
 
@@ -182,14 +301,14 @@ export function CreateScheduledMessageDialog({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[600px] max-h-[90vh] flex flex-col">
         <DialogHeader>
-          <DialogTitle>Novo Agendamento</DialogTitle>
+          <DialogTitle>Nova programação</DialogTitle>
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto pr-2">
           <div className="space-y-6 py-4">
             {/* Name (optional) */}
             <div className="space-y-2">
-              <Label>Nome do agendamento (opcional)</Label>
+              <Label>Nome da programação (opcional)</Label>
               <Input
                 placeholder="Ex: Promoção Black Friday"
                 value={name}
@@ -236,8 +355,45 @@ export function CreateScheduledMessageDialog({
                   placeholder="Digite a mensagem que será enviada..."
                   value={messageContent}
                   onChange={(e) => setMessageContent(e.target.value)}
+                  onPaste={handlePaste}
                   rows={4}
                 />
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    className="hidden"
+                    accept="image/*,audio/*,video/*,application/pdf"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (file) void uploadScheduledMedia(file);
+                      event.currentTarget.value = '';
+                    }}
+                  />
+                  <Button type="button" variant="outline" size="sm" className="gap-2" onClick={() => fileInputRef.current?.click()} disabled={isUploadingMedia}>
+                    {isUploadingMedia ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                    Anexar mídia
+                  </Button>
+                  <Button type="button" variant={isRecording ? 'destructive' : 'outline'} size="sm" className="gap-2" onClick={isRecording ? stopRecording : startRecording} disabled={isUploadingMedia}>
+                    {isRecording ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                    {isRecording ? 'Parar gravação' : 'Gravar áudio'}
+                  </Button>
+                  <span className="text-xs text-muted-foreground">Cole prints com Ctrl+V no campo de mensagem.</span>
+                </div>
+                {mediaUrl && (
+                  <div className="flex items-center justify-between gap-3 rounded-md border bg-muted/40 p-3">
+                    <div className="flex min-w-0 items-center gap-2">
+                      {mediaType.startsWith('image/') ? <Image className="h-4 w-4 text-primary" /> : <Upload className="h-4 w-4 text-primary" />}
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{mediaName || getMediaKind(mediaType)}</p>
+                        <p className="text-xs text-muted-foreground">{getMediaKind(mediaType)} anexado</p>
+                      </div>
+                    </div>
+                    <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={clearMedia}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
 
@@ -270,8 +426,8 @@ export function CreateScheduledMessageDialog({
               <Label>Para quem enviar?</Label>
               <RadioGroup 
                 value={targetType} 
-                onValueChange={(v) => setTargetType(v as 'single' | 'tag' | 'manual')}
-                className="flex gap-4"
+                onValueChange={(v) => setTargetType(v as 'single' | 'tag' | 'manual' | 'phone')}
+                className="grid gap-3 md:grid-cols-4"
               >
                 <div className={cn(
                   "flex-1 flex items-center gap-3 p-4 rounded-lg border cursor-pointer transition-colors",
@@ -301,6 +457,16 @@ export function CreateScheduledMessageDialog({
                   <Label htmlFor="manual" className="flex items-center gap-2 cursor-pointer flex-1">
                     <Users className="h-4 w-4" />
                     Selecionar
+                  </Label>
+                </div>
+                <div className={cn(
+                  "flex-1 flex items-center gap-3 p-4 rounded-lg border cursor-pointer transition-colors",
+                  targetType === 'phone' ? "border-primary bg-primary/5" : "border-border hover:bg-accent"
+                )}>
+                  <RadioGroupItem value="phone" id="phone" />
+                  <Label htmlFor="phone" className="flex items-center gap-2 cursor-pointer flex-1">
+                    <Phone className="h-4 w-4" />
+                    Novo número
                   </Label>
                 </div>
               </RadioGroup>
@@ -426,6 +592,27 @@ export function CreateScheduledMessageDialog({
                       </div>
                     ))
                   )}
+                </div>
+              </div>
+            )}
+
+            {targetType === 'phone' && (
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Número do WhatsApp</Label>
+                  <Input
+                    placeholder="(11) 99999-9999"
+                    value={manualPhone}
+                    onChange={(e) => setManualPhone(e.target.value.replace(/[^\d+\s()\-]/g, ''))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Nome (opcional)</Label>
+                  <Input
+                    placeholder="Ex: Cliente novo"
+                    value={manualName}
+                    onChange={(e) => setManualName(e.target.value)}
+                  />
                 </div>
               </div>
             )}
