@@ -123,9 +123,10 @@ async function sendRecoveryEmail(email: string, actionLink: string) {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      from: "Wizzy <no-reply@wizzybr.com>",
+      from: "Wizzy <suporte@wizzybr.com>",
       to: [email],
       subject: "Criar nova senha na Wizzy",
+      reply_to: "suporte@wizzybr.com",
       text: buildRecoveryEmailText(actionLink),
       html: buildRecoveryEmailHtml(actionLink),
     }),
