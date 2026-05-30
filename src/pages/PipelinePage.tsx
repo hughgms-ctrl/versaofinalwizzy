@@ -28,6 +28,10 @@ import { useUserPermissions, useCurrentUserRole } from '@/hooks/useUserPermissio
 import { useAuth } from '@/hooks/useAuth';
 import { useConversationShares } from '@/hooks/useConversationShares';
 
+const getLastSelectedPipelineStorageKey = (workspaceId?: string | null) => (
+  `pipeline_last_selected:${workspaceId || 'global'}`
+);
+
 const PipelinePage = () => {
   const queryClient = useQueryClient();
   const { data: allPipelines = [], isLoading: pipelinesLoading } = usePipelines();
@@ -88,27 +92,33 @@ const PipelinePage = () => {
   const [chatOpen, setChatOpen] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  // Auto-select first pipeline
-  useEffect(() => {
-    if (pipelines.length > 0 && !selectedPipeline) {
-      const defaultPipeline = pipelines.find(p => p.is_default) || pipelines[0];
-      setSelectedPipeline(defaultPipeline);
-    }
-  }, [pipelines, selectedPipeline]);
+  const selectPipeline = (pipeline: Pipeline) => {
+    setSelectedPipeline(pipeline);
+    localStorage.setItem(getLastSelectedPipelineStorageKey(selectedWorkspaceId), pipeline.id);
+  };
 
-  // Keep selected pipeline in sync
+  // Keep selected pipeline in sync and reopen the last accessed pipeline.
   useEffect(() => {
-    if (selectedPipeline && pipelines.length > 0) {
+    if (pipelines.length === 0) {
+      setSelectedPipeline(null);
+      return;
+    }
+
+    if (selectedPipeline) {
       const updated = pipelines.find(p => p.id === selectedPipeline.id);
       if (updated) {
         setSelectedPipeline(updated);
-      } else if (pipelines.length > 0) {
-        setSelectedPipeline(pipelines[0]);
-      } else {
-        setSelectedPipeline(null);
+        return;
       }
     }
-  }, [pipelines]);
+
+    const lastSelectedId = localStorage.getItem(getLastSelectedPipelineStorageKey(selectedWorkspaceId));
+    const lastSelectedPipeline = lastSelectedId
+      ? pipelines.find(p => p.id === lastSelectedId)
+      : null;
+    const defaultPipeline = pipelines.find(p => p.is_default) || pipelines[0];
+    setSelectedPipeline(lastSelectedPipeline || defaultPipeline);
+  }, [pipelines, selectedPipeline?.id, selectedWorkspaceId]);
 
   const handleConversationClick = async (conversation: DbConversation) => {
     setChatConversation(conversation);
@@ -200,7 +210,7 @@ const PipelinePage = () => {
             <PipelineSelector
               pipelines={pipelines}
               selectedPipeline={selectedPipeline}
-              onSelect={setSelectedPipeline}
+              onSelect={selectPipeline}
               onDelete={setDeleteId}
             />
 

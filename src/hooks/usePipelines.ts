@@ -14,6 +14,8 @@ export interface Pipeline {
   next_pipeline_column_id: string | null;
   default_assigned_to: string | null;
   completion_column_id: string | null;
+  board_background_color: string | null;
+  board_background_image: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -197,7 +199,7 @@ export function useUpdatePipeline() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ id, name, description, workspace_ids, next_pipeline_id, next_pipeline_column_id, default_assigned_to, completion_column_id }: { 
+    mutationFn: async ({ id, name, description, workspace_ids, next_pipeline_id, next_pipeline_column_id, default_assigned_to, completion_column_id, board_background_color, board_background_image }: { 
       id: string;
       name?: string; 
       description?: string;
@@ -206,6 +208,8 @@ export function useUpdatePipeline() {
       next_pipeline_column_id?: string | null;
       default_assigned_to?: string | null;
       completion_column_id?: string | null;
+      board_background_color?: string | null;
+      board_background_image?: string | null;
     }) => {
       const updates: Record<string, unknown> = {};
       if (name !== undefined) updates.name = name;
@@ -215,6 +219,8 @@ export function useUpdatePipeline() {
       if (next_pipeline_column_id !== undefined) updates.next_pipeline_column_id = next_pipeline_column_id;
       if (default_assigned_to !== undefined) updates.default_assigned_to = default_assigned_to;
       if (completion_column_id !== undefined) updates.completion_column_id = completion_column_id;
+      if (board_background_color !== undefined) updates.board_background_color = board_background_color;
+      if (board_background_image !== undefined) updates.board_background_image = board_background_image;
 
       const { error } = await (supabase as any)
         .from('pipelines')

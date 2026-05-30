@@ -160,6 +160,18 @@ const getColumnChecklistStorageKey = (workspaceId?: string | null, pipelineId?: 
 const getBoardBackgroundStorageKey = (workspaceId?: string | null) => `pipeline_board_background:${workspaceId || 'global'}`;
 const getBoardBackgroundImageStorageKey = (workspaceId?: string | null) => `pipeline_board_background_image:${workspaceId || 'global'}`;
 
+const getPipelineBoardBackground = (pipeline?: Pipeline | null, workspaceId?: string | null) => (
+  pipeline?.board_background_color ||
+  localStorage.getItem(getBoardBackgroundStorageKey(workspaceId)) ||
+  BOARD_BACKGROUNDS[0]
+);
+
+const getPipelineBoardBackgroundImage = (pipeline?: Pipeline | null, workspaceId?: string | null) => (
+  pipeline?.board_background_image ||
+  localStorage.getItem(getBoardBackgroundImageStorageKey(workspaceId)) ||
+  ''
+);
+
 function loadChecklistTemplates(workspaceId?: string | null): ChecklistTemplate[] {
   try {
     const stored = JSON.parse(localStorage.getItem(getChecklistTemplateStorageKey(workspaceId)) || '[]');
@@ -226,8 +238,8 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
     const stored = localStorage.getItem('pipeline_tag_display_mode');
     return stored === 'bars' ? 'bars' : 'labels';
   });
-  const [boardBackground, setBoardBackground] = useState(() => localStorage.getItem(getBoardBackgroundStorageKey(selectedWorkspaceId)) || BOARD_BACKGROUNDS[0]);
-  const [boardBackgroundImage, setBoardBackgroundImage] = useState(() => localStorage.getItem(getBoardBackgroundImageStorageKey(selectedWorkspaceId)) || '');
+  const [boardBackground, setBoardBackground] = useState(() => getPipelineBoardBackground(pipeline, selectedWorkspaceId));
+  const [boardBackgroundImage, setBoardBackgroundImage] = useState(() => getPipelineBoardBackgroundImage(pipeline, selectedWorkspaceId));
   const [checklistTemplates, setChecklistTemplates] = useState<ChecklistTemplate[]>(() => loadChecklistTemplates(selectedWorkspaceId));
   const [columnChecklistConfig, setColumnChecklistConfig] = useState<Record<string, string>>(() => (
     loadColumnChecklistConfig(selectedWorkspaceId, pipeline?.id)
@@ -241,17 +253,52 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
     });
   }, []);
 
+  const persistBoardBackground = useCallback(async (patch: Partial<Pick<Pipeline, 'board_background_color' | 'board_background_image'>>) => {
+    if (!pipeline?.id) return;
+
+    queryClient.setQueryData(['pipelines'], (old: Pipeline[] | undefined) => (
+      Array.isArray(old)
+        ? old.map(item => item.id === pipeline.id ? { ...item, ...patch } : item)
+        : old
+    ));
+
+    const { error } = await supabase
+      .from('pipelines')
+      .update(patch)
+      .eq('id', pipeline.id);
+
+    if (error) {
+      toast({
+        title: 'Erro ao salvar fundo',
+        description: error.message,
+        variant: 'destructive',
+      });
+      queryClient.invalidateQueries({ queryKey: ['pipelines'] });
+      return;
+    }
+
+    queryClient.invalidateQueries({ queryKey: ['pipelines'] });
+  }, [pipeline?.id, queryClient, toast]);
+
   const changeBoardBackground = useCallback((color: string) => {
     setBoardBackground(color);
     setBoardBackgroundImage('');
     localStorage.setItem(getBoardBackgroundStorageKey(selectedWorkspaceId), color);
     localStorage.removeItem(getBoardBackgroundImageStorageKey(selectedWorkspaceId));
-  }, [selectedWorkspaceId]);
+    void persistBoardBackground({
+      board_background_color: color,
+      board_background_image: null,
+    });
+  }, [persistBoardBackground, selectedWorkspaceId]);
 
   const changeBoardBackgroundImage = useCallback((url: string) => {
     setBoardBackgroundImage(url);
     localStorage.setItem(getBoardBackgroundImageStorageKey(selectedWorkspaceId), url);
-  }, [selectedWorkspaceId]);
+    void persistBoardBackground({
+      board_background_color: boardBackground,
+      board_background_image: url || null,
+    });
+  }, [boardBackground, persistBoardBackground, selectedWorkspaceId]);
 
   useEffect(() => {
     setChecklistTemplates(loadChecklistTemplates(selectedWorkspaceId));
@@ -259,9 +306,9 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
   }, [selectedWorkspaceId, pipeline?.id]);
 
   useEffect(() => {
-    setBoardBackground(localStorage.getItem(getBoardBackgroundStorageKey(selectedWorkspaceId)) || BOARD_BACKGROUNDS[0]);
-    setBoardBackgroundImage(localStorage.getItem(getBoardBackgroundImageStorageKey(selectedWorkspaceId)) || '');
-  }, [selectedWorkspaceId]);
+    setBoardBackground(getPipelineBoardBackground(pipeline, selectedWorkspaceId));
+    setBoardBackgroundImage(getPipelineBoardBackgroundImage(pipeline, selectedWorkspaceId));
+  }, [pipeline?.id, pipeline?.board_background_color, pipeline?.board_background_image, selectedWorkspaceId]);
 
   // Admin preference to hide unassigned column (localStorage)
   const [adminHideUnassigned, setAdminHideUnassigned] = useState(() => {
