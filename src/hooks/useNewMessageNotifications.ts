@@ -1,9 +1,11 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useNotificationSettings } from '@/hooks/useNotificationSettings';
 import { toast } from '@/hooks/use-toast';
 import { useQueryClient } from '@tanstack/react-query';
+import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
+import { useCurrentUserRole, useUserPermissions } from '@/hooks/useUserPermissions';
 
 // Notification sound
 const NOTIFICATION_SOUND_URL = '/sounds/new-message.mp3';
@@ -12,12 +14,18 @@ const NOTIFICATION_SOUND_URL = '/sounds/new-message.mp3';
 const SOUND_DEBOUNCE_MS = 2000;
 
 export function useNewMessageNotifications() {
-  const { session } = useAuth();
+  const { session, user } = useAuth();
   const { settings } = useNotificationSettings();
   const queryClient = useQueryClient();
+  const { availableWorkspaces, isAdmin, loading: workspacesLoading } = useWorkspaceContext();
+  const { data: userRole, isLoading: roleLoading } = useCurrentUserRole();
+  const { data: userPermissions, isLoading: permissionsLoading } = useUserPermissions();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const lastNotifiedMessageId = useRef<string | null>(null);
   const lastSoundPlayedAt = useRef<number>(0);
+  const availableWorkspaceIds = useMemo(() => (
+    availableWorkspaces.map(workspace => workspace.id)
+  ), [availableWorkspaces]);
 
   // Initialize audio element once
   useEffect(() => {
@@ -70,8 +78,89 @@ export function useNewMessageNotifications() {
     queryClient.invalidateQueries({ queryKey: ['conversations'] });
   }, [playNotificationSound, queryClient]);
 
+  const canNotifyConversation = useCallback(async (conversation: {
+    id: string;
+    workspace_id: string | null;
+    assigned_to: string | null;
+    contact?: { id: string | null; workspace_id?: string | null } | null;
+  }) => {
+    const isPrivileged = isAdmin || userRole === 'owner' || userRole === 'admin';
+    if (isPrivileged) return true;
+
+    const conversationWorkspaceId = conversation.workspace_id || conversation.contact?.workspace_id || null;
+    if (conversationWorkspaceId && !availableWorkspaceIds.includes(conversationWorkspaceId)) {
+      return false;
+    }
+
+    if (!userPermissions) return false;
+
+    const { data: positions, error: positionsError } = await supabase
+      .from('conversation_pipeline_positions')
+      .select('pipeline_id')
+      .eq('conversation_id', conversation.id);
+
+    if (positionsError) {
+      console.error('[NOTIFICATION] Failed to load pipeline positions:', positionsError);
+      return false;
+    }
+
+    const pipelineIds = (positions || []).map(position => position.pipeline_id);
+    const allowedPipelineIds = userPermissions.allowed_pipeline_ids || [];
+    const hasSpecificPipelineRestriction =
+      userPermissions.pipeline_access_type === 'specific' && allowedPipelineIds.length > 0;
+    const isInAllowedPipeline = pipelineIds.some(pipelineId => allowedPipelineIds.includes(pipelineId));
+
+    if (userPermissions.pipeline_access_type === 'specific' && pipelineIds.length > 0 && !isInAllowedPipeline) {
+      return false;
+    }
+
+    const canAccessPipelineMessage =
+      userPermissions.can_access_pipeline &&
+      (
+        userPermissions.pipeline_access_type === 'all' ||
+        (hasSpecificPipelineRestriction && isInAllowedPipeline)
+      );
+
+    if (canAccessPipelineMessage) return true;
+
+    if (!userPermissions.can_access_conversations) return false;
+
+    const filterType = userPermissions.conversations_filter_type || 'all';
+    if (filterType === 'all') return true;
+
+    const isAssigned = conversation.assigned_to === user?.id;
+    if (filterType === 'assigned') return isAssigned;
+
+    const allowedTags = userPermissions.conversations_allowed_tags || [];
+    let hasAllowedTag = false;
+    if (conversation.contact?.id && allowedTags.length > 0) {
+      const { data: contactTags, error: tagsError } = await supabase
+        .from('contact_tags')
+        .select('tag_id')
+        .eq('contact_id', conversation.contact.id);
+
+      if (tagsError) {
+        console.error('[NOTIFICATION] Failed to load contact tags:', tagsError);
+        return false;
+      }
+
+      hasAllowedTag = (contactTags || []).some(tag => allowedTags.includes(tag.tag_id));
+    }
+
+    if (filterType === 'tags') return hasAllowedTag;
+    if (filterType === 'assigned_and_tags') return isAssigned || hasAllowedTag;
+
+    return false;
+  }, [availableWorkspaceIds, isAdmin, user?.id, userPermissions, userRole]);
+
   useEffect(() => {
-    if (!session?.user?.id || !settings.newMessageEnabled) return;
+    if (
+      !session?.user?.id ||
+      !settings.newMessageEnabled ||
+      roleLoading ||
+      permissionsLoading ||
+      workspacesLoading
+    ) return;
 
     console.log('Setting up real-time message notifications...');
 
@@ -98,11 +187,17 @@ export function useNewMessageNotifications() {
           // Fetch contact info for the conversation
           const { data: conversation } = await supabase
             .from('conversations')
-            .select('contact:contacts(name, phone)')
+            .select('id, workspace_id, assigned_to, contact:contacts(id, name, phone, workspace_id)')
             .eq('id', message.conversation_id)
             .single();
 
           if (conversation?.contact) {
+            const canNotify = await canNotifyConversation(conversation as any);
+            if (!canNotify) {
+              console.log('[NOTIFICATION] Message ignored by access rules:', message.id);
+              return;
+            }
+
             const contact = conversation.contact as unknown as { name: string | null; phone: string };
             const contactName = contact.name || contact.phone || 'Contato';
             const messagePreview = message.content || (message.type !== 'text' ? `[${message.type}]` : 'Nova mensagem');
@@ -117,7 +212,15 @@ export function useNewMessageNotifications() {
       console.log('Cleaning up message notifications subscription...');
       supabase.removeChannel(channel);
     };
-  }, [session?.user?.id, settings.newMessageEnabled, showNotification]);
+  }, [
+    canNotifyConversation,
+    permissionsLoading,
+    roleLoading,
+    session?.user?.id,
+    settings.newMessageEnabled,
+    showNotification,
+    workspacesLoading,
+  ]);
 
   return { playNotificationSound };
 }
