@@ -7,6 +7,8 @@ export function getPublicAppOrigin() {
 
   const hostname = window.location.hostname;
   const isInternalHost =
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
     hostname.includes('preview') ||
     hostname.includes('lovableproject.com') ||
     hostname.includes('lovable.app');

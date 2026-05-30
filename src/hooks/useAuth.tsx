@@ -1,5 +1,6 @@
 import React, { useState, useEffect, createContext, useContext, ReactNode } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { getPublicAppOrigin } from '@/lib/publicOrigin';
 import { User, Session } from '@supabase/supabase-js';
 
 interface Profile {
@@ -121,11 +122,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signUp = async (email: string, password: string, fullName: string, companyName: string, timezone?: string) => {
     try {
+      const publicOrigin = getPublicAppOrigin();
       const { error } = await supabase.auth.signUp({
         email,
         password,
         options: {
-          emailRedirectTo: window.location.origin,
+          emailRedirectTo: `${publicOrigin}/auth`,
           data: {
             full_name: fullName,
             company_name: companyName,
@@ -160,10 +162,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signInWithGoogle = async () => {
     try {
+      const publicOrigin = getPublicAppOrigin();
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/auth`,
+          redirectTo: `${publicOrigin}/auth`,
         },
       });
 
@@ -175,8 +178,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const resetPassword = async (email: string) => {
     try {
+      const publicOrigin = getPublicAppOrigin();
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/auth?mode=reset`,
+        redirectTo: `${publicOrigin}/auth?mode=reset`,
       });
 
       return { error: error as Error | null };
