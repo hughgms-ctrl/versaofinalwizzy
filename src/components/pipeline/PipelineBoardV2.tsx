@@ -34,6 +34,8 @@ import {
   Trash2,
   CheckSquare,
   Pencil,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ConversationCardActions } from '@/components/conversations/ConversationCardActions';
@@ -1383,6 +1385,7 @@ function PipelineCardDetailDialog({
   const [newChecklistItem, setNewChecklistItem] = useState('');
   const [checklistTemplates, setChecklistTemplates] = useState<ChecklistTemplate[]>(() => loadChecklistTemplates(workspaceId));
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+  const [isTemplateTrayOpen, setIsTemplateTrayOpen] = useState(false);
   const [isTemplateEditorOpen, setIsTemplateEditorOpen] = useState(false);
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
   const [templateDraftName, setTemplateDraftName] = useState('');
@@ -1404,6 +1407,7 @@ function PipelineCardDetailDialog({
     setChecklistItems(((conversation?.metadata as any)?.pipeline_checklist || []) as ChecklistItem[]);
     setChecklistTemplates(loadChecklistTemplates(workspaceId));
     setSelectedTemplateId(((conversation?.metadata as any)?.pipeline_checklist_template_id as string | undefined) || null);
+    setIsTemplateTrayOpen(false);
     setIsTemplateEditorOpen(false);
     setEditingTemplateId(null);
     setTemplateDraftName('');
@@ -1561,6 +1565,7 @@ function PipelineCardDetailDialog({
   };
 
   const startNewChecklistTemplate = () => {
+    setIsTemplateTrayOpen(true);
     setIsTemplateEditorOpen(true);
     setEditingTemplateId(null);
     setTemplateDraftName('');
@@ -1571,6 +1576,7 @@ function PipelineCardDetailDialog({
   };
 
   const editChecklistTemplate = (template: ChecklistTemplate) => {
+    setIsTemplateTrayOpen(true);
     setIsTemplateEditorOpen(true);
     setEditingTemplateId(template.id);
     setTemplateDraftName(template.name);
@@ -1882,65 +1888,90 @@ function PipelineCardDetailDialog({
                 <div className="max-w-2xl space-y-5">
                   <div className="rounded-md bg-zinc-900/30 p-4 space-y-3">
                     <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <h3 className="text-sm font-semibold text-zinc-100">Modelos de checklist</h3>
-                        <p className="text-xs text-zinc-500">{checklistTemplates.length} modelos salvos</p>
-                      </div>
-                      <Button size="sm" onClick={startNewChecklistTemplate}>
-                        <Plus className="mr-2 h-3.5 w-3.5" />
-                        Novo modelo
+                      <button
+                        type="button"
+                        className="flex min-w-0 items-center gap-2 text-left"
+                        onClick={() => setIsTemplateTrayOpen(prev => !prev)}
+                      >
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-zinc-950/45 text-zinc-400">
+                          {isTemplateTrayOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block text-sm font-semibold text-zinc-100">Modelos de checklist</span>
+                          <span className="block text-xs text-zinc-500">
+                            {isTemplateTrayOpen ? `${checklistTemplates.length} modelos salvos` : 'Clique para ver a bandeja de modelos'}
+                          </span>
+                        </span>
+                      </button>
+                      <Button
+                        variant={isTemplateTrayOpen ? 'ghost' : 'outline'}
+                        size="sm"
+                        onClick={() => setIsTemplateTrayOpen(prev => !prev)}
+                      >
+                        {isTemplateTrayOpen ? 'Ocultar' : 'Mostrar'}
                       </Button>
                     </div>
 
-                    <div className="space-y-2">
-                      {checklistTemplates.length === 0 ? (
-                        <p className="text-sm text-zinc-500">Nenhum modelo salvo.</p>
-                      ) : checklistTemplates.map(template => (
-                        <div
-                          key={template.id}
-                          className={cn(
-                            "flex w-full flex-wrap items-center justify-between gap-2 rounded-md bg-zinc-950/35 px-3 py-2 text-sm",
-                            selectedTemplateId === template.id && "ring-1 ring-primary/50"
-                          )}
-                        >
-                          <div className="min-w-[160px] flex-1">
-                            <span className="block truncate text-zinc-100">{template.name}</span>
-                            {selectedTemplateId === template.id && (
-                              <span className="text-xs text-primary">Aplicado neste card</span>
-                            )}
-                          </div>
-                          <Badge variant="secondary">{template.items.length} itens</Badge>
-                          <Button
-                            variant={selectedTemplateId === template.id ? 'secondary' : 'outline'}
-                            size="sm"
-                            className="h-7"
-                            onClick={() => applyChecklistTemplate(template.id)}
-                          >
-                            Aplicar
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-zinc-500 hover:text-zinc-100"
-                            onClick={() => editChecklistTemplate(template)}
-                            title="Editar modelo"
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-zinc-500 hover:text-destructive"
-                            onClick={() => deleteChecklistTemplate(template.id)}
-                            title="Remover modelo"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
+                    {isTemplateTrayOpen && (
+                      <>
+                        <div className="flex justify-end">
+                          <Button size="sm" onClick={startNewChecklistTemplate}>
+                            <Plus className="mr-2 h-3.5 w-3.5" />
+                            Novo modelo
                           </Button>
                         </div>
-                      ))}
-                    </div>
 
-                    {isTemplateEditorOpen && (
+                        <div className="space-y-2">
+                          {checklistTemplates.length === 0 ? (
+                            <p className="text-sm text-zinc-500">Nenhum modelo salvo.</p>
+                          ) : checklistTemplates.map(template => (
+                            <div
+                              key={template.id}
+                              className={cn(
+                                "flex w-full flex-wrap items-center justify-between gap-2 rounded-md bg-zinc-950/35 px-3 py-2 text-sm",
+                                selectedTemplateId === template.id && "ring-1 ring-primary/50"
+                              )}
+                            >
+                              <div className="min-w-[160px] flex-1">
+                                <span className="block truncate text-zinc-100">{template.name}</span>
+                                {selectedTemplateId === template.id && (
+                                  <span className="text-xs text-primary">Aplicado neste card</span>
+                                )}
+                              </div>
+                              <Badge variant="secondary">{template.items.length} itens</Badge>
+                              <Button
+                                variant={selectedTemplateId === template.id ? 'secondary' : 'outline'}
+                                size="sm"
+                                className="h-7"
+                                onClick={() => applyChecklistTemplate(template.id)}
+                              >
+                                Aplicar
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-zinc-500 hover:text-zinc-100"
+                                onClick={() => editChecklistTemplate(template)}
+                                title="Editar modelo"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 text-zinc-500 hover:text-destructive"
+                                onClick={() => deleteChecklistTemplate(template.id)}
+                                title="Remover modelo"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    )}
+
+                    {isTemplateTrayOpen && isTemplateEditorOpen && (
                       <div className="rounded-md border border-zinc-800 bg-zinc-950/25 p-3">
                         <div className="mb-3 flex items-center justify-between gap-3">
                           <div>
