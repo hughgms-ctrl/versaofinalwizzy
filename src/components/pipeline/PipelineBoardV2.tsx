@@ -1386,6 +1386,8 @@ function PipelineCardDetailDialog({
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [newComment, setNewComment] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [draggedChecklistItemId, setDraggedChecklistItemId] = useState<string | null>(null);
+  const [dragOverChecklistItemId, setDragOverChecklistItemId] = useState<string | null>(null);
 
   useEffect(() => {
     setActiveTab(initialTab);
@@ -1397,6 +1399,8 @@ function PipelineCardDetailDialog({
     setChecklistTemplates(loadChecklistTemplates(workspaceId));
     setSelectedTemplateId(((conversation?.metadata as any)?.pipeline_checklist_template_id as string | undefined) || null);
     setChecklistTemplateName('');
+    setDraggedChecklistItemId(null);
+    setDragOverChecklistItemId(null);
   }, [conversation?.id, conversation?.contact?.name, conversation?.contact?.metadata, workspaceId, initialTab]);
 
   if (!conversation) return null;
@@ -1493,6 +1497,30 @@ function PipelineCardDetailDialog({
   const updateChecklistItemText = async (itemId: string, text: string) => {
     const next = checklistItems.map(item => item.id === itemId ? { ...item, text } : item);
     setChecklistItems(next);
+    await saveChecklist(next);
+  };
+
+  const reorderChecklistItem = async (targetItemId: string) => {
+    if (!draggedChecklistItemId || draggedChecklistItemId === targetItemId) {
+      setDraggedChecklistItemId(null);
+      setDragOverChecklistItemId(null);
+      return;
+    }
+
+    const fromIndex = checklistItems.findIndex(item => item.id === draggedChecklistItemId);
+    const toIndex = checklistItems.findIndex(item => item.id === targetItemId);
+    if (fromIndex === -1 || toIndex === -1) {
+      setDraggedChecklistItemId(null);
+      setDragOverChecklistItemId(null);
+      return;
+    }
+
+    const next = [...checklistItems];
+    const [moved] = next.splice(fromIndex, 1);
+    next.splice(toIndex, 0, moved);
+    setChecklistItems(next);
+    setDraggedChecklistItemId(null);
+    setDragOverChecklistItemId(null);
     await saveChecklist(next);
   };
 
@@ -1829,7 +1857,45 @@ function PipelineCardDetailDialog({
 
                     <div className="space-y-2">
                       {checklistItems.map(item => (
-                        <div key={item.id} className="flex items-center gap-2 rounded-md bg-zinc-950/35 p-2">
+                        <div
+                          key={item.id}
+                          className={cn(
+                            "flex items-center gap-2 rounded-md bg-zinc-950/35 p-2 transition-colors",
+                            dragOverChecklistItemId === item.id && draggedChecklistItemId !== item.id && "bg-primary/10 ring-1 ring-primary/40",
+                            draggedChecklistItemId === item.id && "opacity-60"
+                          )}
+                          onDragOver={(event) => {
+                            if (!draggedChecklistItemId || draggedChecklistItemId === item.id) return;
+                            event.preventDefault();
+                            setDragOverChecklistItemId(item.id);
+                          }}
+                          onDragLeave={(event) => {
+                            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                              setDragOverChecklistItemId(prev => prev === item.id ? null : prev);
+                            }
+                          }}
+                          onDrop={(event) => {
+                            event.preventDefault();
+                            reorderChecklistItem(item.id);
+                          }}
+                        >
+                          <button
+                            type="button"
+                            draggable
+                            onDragStart={(event) => {
+                              setDraggedChecklistItemId(item.id);
+                              event.dataTransfer.effectAllowed = 'move';
+                              event.dataTransfer.setData('text/plain', item.id);
+                            }}
+                            onDragEnd={() => {
+                              setDraggedChecklistItemId(null);
+                              setDragOverChecklistItemId(null);
+                            }}
+                            className="flex h-7 w-5 shrink-0 cursor-grab items-center justify-center rounded text-zinc-500 hover:bg-white/5 hover:text-zinc-200 active:cursor-grabbing"
+                            title="Reordenar tarefa"
+                          >
+                            <GripVertical className="h-4 w-4" />
+                          </button>
                           <input
                             type="checkbox"
                             checked={item.done}
