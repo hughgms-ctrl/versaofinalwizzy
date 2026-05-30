@@ -52,8 +52,7 @@ export function useMediaTranscription(
         .eq('message_id', messageId)
         .maybeSingle();
 
-      const hasFailedCache = isFailedMediaAnalysis(cached?.transcription);
-      if (cached?.transcription && !hasFailedCache) {
+      if (cached?.transcription && !isFailedMediaAnalysis(cached.transcription)) {
         setTranscription(cached.transcription);
         setIsLoading(false);
         return;
@@ -62,7 +61,7 @@ export function useMediaTranscription(
       // If not cached, trigger the analyze-conversation edge function
       // which will analyze and cache this media
       const { data, error: fnError } = await supabase.functions.invoke('transcribe-media', {
-        body: { messageId, mediaUrl, mediaType, force: hasFailedCache },
+        body: { messageId, mediaUrl, mediaType },
       });
 
       if (fnError) throw fnError;
@@ -137,7 +136,7 @@ export function useMediaTranscriptions(messageIds: string[]) {
                 pendingRef.current.add(msg.id);
                 // Trigger transcription in background
                 supabase.functions.invoke('transcribe-media', {
-                  body: { messageId: msg.id, mediaUrl: msg.media_url, mediaType: msg.type, force: true },
+                  body: { messageId: msg.id, mediaUrl: msg.media_url, mediaType: msg.type },
                 }).then(({ data: result }) => {
                   if (result?.transcription) {
                     setTranscriptions(prev => ({ ...prev, [msg.id]: result.transcription }));

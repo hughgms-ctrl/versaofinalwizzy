@@ -29,18 +29,18 @@ export function MediaTranscription({
 }: MediaTranscriptionProps) {
   const [isForcing, setIsForcing] = useState(false);
 
-  const handleForceTranscribe = async () => {
+  const handleTranscribe = async (force = false) => {
     if (!messageId || !mediaUrl || isForcing) return;
     setIsForcing(true);
     try {
       const { data, error } = await supabase.functions.invoke('transcribe-media', {
-        body: { messageId, mediaUrl, mediaType: type, force: true },
+        body: { messageId, mediaUrl, mediaType: type, force },
       });
       if (!error && data?.transcription) {
         onTranscriptionUpdate?.(data.transcription);
       }
     } catch (err) {
-      console.error('Force transcribe error:', err);
+      console.error('Transcribe error:', err);
     } finally {
       setIsForcing(false);
     }
@@ -66,7 +66,7 @@ export function MediaTranscription({
       <Tooltip>
         <TooltipTrigger asChild>
           <button
-            onClick={handleForceTranscribe}
+            onClick={() => handleTranscribe(false)}
             className={cn(
               "flex items-center gap-1 mt-1.5 text-[10px] opacity-50 hover:opacity-80 transition-opacity cursor-pointer",
               isInbound ? "text-muted-foreground" : "text-white/60"
@@ -100,7 +100,7 @@ export function MediaTranscription({
         <Tooltip>
           <TooltipTrigger asChild>
             <button
-              onClick={handleForceTranscribe}
+              onClick={() => handleTranscribe(true)}
               className="opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity flex-shrink-0 mt-0.5 cursor-pointer"
             >
               <RefreshCw className="h-2.5 w-2.5" />

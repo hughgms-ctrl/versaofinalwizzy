@@ -53,6 +53,20 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return btoa(binary);
 }
 
+function isFailedMediaAnalysis(value?: string | null) {
+  if (!value) return false;
+  return [
+    '[Imagem nÃ£o analisada]',
+    '[Imagem nÃƒÂ£o analisada]',
+    '[TranscriÃ§Ã£o nÃ£o disponÃ­vel]',
+    '[TranscriÃƒÂ§ÃƒÂ£o nÃƒÂ£o disponÃƒÂ­vel]',
+    '[Ãudio nÃ£o disponÃ­vel]',
+    '[ÃƒÂudio nÃƒÂ£o disponÃƒÂ­vel]',
+    '[Erro na transcriÃ§Ã£o]',
+    '[Erro na transcriÃƒÂ§ÃƒÂ£o]',
+  ].includes(value.trim());
+}
+
 async function imageUrlForVision(mediaUrl: string): Promise<string> {
   try {
     const response = await fetch(mediaUrl);
@@ -325,7 +339,7 @@ Deno.serve(async (req) => {
         .eq('message_id', messageId)
         .maybeSingle();
 
-      if (cached?.transcription) {
+      if (cached?.transcription && !isFailedMediaAnalysis(cached.transcription)) {
         console.log(`Cache hit for message ${messageId}`);
         return new Response(JSON.stringify({ transcription: cached.transcription, cached: true }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -339,7 +353,7 @@ Deno.serve(async (req) => {
         .eq('media_url', mediaUrl)
         .maybeSingle();
 
-      if (cachedByUrl?.transcription) {
+      if (cachedByUrl?.transcription && !isFailedMediaAnalysis(cachedByUrl.transcription)) {
         console.log(`Cache hit by media_url for message ${messageId}`);
         // Save association for this message_id too
         await supabase.from('media_transcriptions').upsert({
