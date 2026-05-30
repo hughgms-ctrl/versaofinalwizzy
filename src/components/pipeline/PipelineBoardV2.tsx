@@ -1381,13 +1381,19 @@ function PipelineCardDetailDialog({
   const [editedDescription, setEditedDescription] = useState('');
   const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>([]);
   const [newChecklistItem, setNewChecklistItem] = useState('');
-  const [checklistTemplateName, setChecklistTemplateName] = useState('');
   const [checklistTemplates, setChecklistTemplates] = useState<ChecklistTemplate[]>(() => loadChecklistTemplates(workspaceId));
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+  const [isTemplateEditorOpen, setIsTemplateEditorOpen] = useState(false);
+  const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
+  const [templateDraftName, setTemplateDraftName] = useState('');
+  const [templateDraftItems, setTemplateDraftItems] = useState<ChecklistItem[]>([]);
+  const [newTemplateItem, setNewTemplateItem] = useState('');
   const [newComment, setNewComment] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [draggedChecklistItemId, setDraggedChecklistItemId] = useState<string | null>(null);
   const [dragOverChecklistItemId, setDragOverChecklistItemId] = useState<string | null>(null);
+  const [draggedTemplateItemId, setDraggedTemplateItemId] = useState<string | null>(null);
+  const [dragOverTemplateItemId, setDragOverTemplateItemId] = useState<string | null>(null);
 
   useEffect(() => {
     setActiveTab(initialTab);
@@ -1398,9 +1404,15 @@ function PipelineCardDetailDialog({
     setChecklistItems(((conversation?.metadata as any)?.pipeline_checklist || []) as ChecklistItem[]);
     setChecklistTemplates(loadChecklistTemplates(workspaceId));
     setSelectedTemplateId(((conversation?.metadata as any)?.pipeline_checklist_template_id as string | undefined) || null);
-    setChecklistTemplateName('');
+    setIsTemplateEditorOpen(false);
+    setEditingTemplateId(null);
+    setTemplateDraftName('');
+    setTemplateDraftItems([]);
+    setNewTemplateItem('');
     setDraggedChecklistItemId(null);
     setDragOverChecklistItemId(null);
+    setDraggedTemplateItemId(null);
+    setDragOverTemplateItemId(null);
   }, [conversation?.id, conversation?.contact?.name, conversation?.contact?.metadata, workspaceId, initialTab]);
 
   if (!conversation) return null;
@@ -1548,31 +1560,89 @@ function PipelineCardDetailDialog({
     queryClient.invalidateQueries({ queryKey: ['pipeline-conversations'] });
   };
 
-  const saveChecklistTemplate = async () => {
-    if (!checklistTemplateName.trim() || checklistItems.length === 0) return;
-    const template: ChecklistTemplate = {
-      id: selectedTemplateId || crypto.randomUUID(),
-      name: checklistTemplateName.trim(),
-      workspaceId: workspaceId || null,
-      items: checklistItems.map(item => ({ id: item.id || crypto.randomUUID(), text: item.text, done: false })),
-    };
-    const next = selectedTemplateId
-      ? checklistTemplates.map(item => item.id === selectedTemplateId ? template : item)
-      : [...checklistTemplates, template];
-    setChecklistTemplates(next);
-    setSelectedTemplateId(template.id);
-    localStorage.setItem(getChecklistTemplateStorageKey(workspaceId), JSON.stringify(next));
-    await saveChecklist(buildChecklistFromTemplate(template, checklistItems), template.id);
-    await syncTemplateToCards(template);
-    toast({ title: selectedTemplateId ? 'Modelo de checklist atualizado' : 'Modelo de checklist salvo' });
+  const startNewChecklistTemplate = () => {
+    setIsTemplateEditorOpen(true);
+    setEditingTemplateId(null);
+    setTemplateDraftName('');
+    setTemplateDraftItems([]);
+    setNewTemplateItem('');
+    setDraggedTemplateItemId(null);
+    setDragOverTemplateItemId(null);
   };
 
   const editChecklistTemplate = (template: ChecklistTemplate) => {
-    setSelectedTemplateId(template.id);
-    setChecklistTemplateName(template.name);
-    const next = buildChecklistFromTemplate(template, checklistItems);
-    setChecklistItems(next);
-    saveChecklist(next, template.id);
+    setIsTemplateEditorOpen(true);
+    setEditingTemplateId(template.id);
+    setTemplateDraftName(template.name);
+    setTemplateDraftItems(template.items.map(item => ({ ...item, done: false })));
+    setNewTemplateItem('');
+    setDraggedTemplateItemId(null);
+    setDragOverTemplateItemId(null);
+  };
+
+  const addTemplateDraftItem = () => {
+    if (!newTemplateItem.trim()) return;
+    setTemplateDraftItems(prev => [...prev, { id: crypto.randomUUID(), text: newTemplateItem.trim(), done: false }]);
+    setNewTemplateItem('');
+  };
+
+  const updateTemplateDraftItemText = (itemId: string, text: string) => {
+    setTemplateDraftItems(prev => prev.map(item => item.id === itemId ? { ...item, text } : item));
+  };
+
+  const removeTemplateDraftItem = (itemId: string) => {
+    setTemplateDraftItems(prev => prev.filter(item => item.id !== itemId));
+  };
+
+  const reorderTemplateDraftItem = (targetItemId: string) => {
+    if (!draggedTemplateItemId || draggedTemplateItemId === targetItemId) {
+      setDraggedTemplateItemId(null);
+      setDragOverTemplateItemId(null);
+      return;
+    }
+
+    setTemplateDraftItems(prev => {
+      const fromIndex = prev.findIndex(item => item.id === draggedTemplateItemId);
+      const toIndex = prev.findIndex(item => item.id === targetItemId);
+      if (fromIndex === -1 || toIndex === -1) return prev;
+
+      const next = [...prev];
+      const [moved] = next.splice(fromIndex, 1);
+      next.splice(toIndex, 0, moved);
+      return next;
+    });
+    setDraggedTemplateItemId(null);
+    setDragOverTemplateItemId(null);
+  };
+
+  const saveChecklistTemplate = async () => {
+    const cleanItems = templateDraftItems
+      .map(item => ({ id: item.id || crypto.randomUUID(), text: item.text.trim(), done: false }))
+      .filter(item => item.text);
+
+    if (!templateDraftName.trim() || cleanItems.length === 0) return;
+
+    const template: ChecklistTemplate = {
+      id: editingTemplateId || crypto.randomUUID(),
+      name: templateDraftName.trim(),
+      workspaceId: workspaceId || null,
+      items: cleanItems,
+    };
+    const next = editingTemplateId
+      ? checklistTemplates.map(item => item.id === editingTemplateId ? template : item)
+      : [...checklistTemplates, template];
+
+    setChecklistTemplates(next);
+    setEditingTemplateId(template.id);
+    setIsTemplateEditorOpen(true);
+    localStorage.setItem(getChecklistTemplateStorageKey(workspaceId), JSON.stringify(next));
+    if (selectedTemplateId === template.id) {
+      const nextItems = buildChecklistFromTemplate(template, checklistItems);
+      setChecklistItems(nextItems);
+      await saveChecklist(nextItems, template.id);
+    }
+    if (editingTemplateId) await syncTemplateToCards(template);
+    toast({ title: editingTemplateId ? 'Modelo de checklist atualizado' : 'Modelo de checklist criado' });
   };
 
   const deleteChecklistTemplate = (templateId: string) => {
@@ -1581,7 +1651,10 @@ function PipelineCardDetailDialog({
     localStorage.setItem(getChecklistTemplateStorageKey(workspaceId), JSON.stringify(next));
     if (selectedTemplateId === templateId) {
       setSelectedTemplateId(null);
-      setChecklistTemplateName('');
+    }
+    if (editingTemplateId === templateId) {
+      startNewChecklistTemplate();
+      setIsTemplateEditorOpen(false);
     }
     toast({ title: 'Modelo removido' });
   };
@@ -1604,9 +1677,27 @@ function PipelineCardDetailDialog({
     if (!template) return;
     const next = buildChecklistFromTemplate(template, checklistItems);
     setSelectedTemplateId(template.id);
-    setChecklistTemplateName(template.name);
     setChecklistItems(next);
     await saveChecklist(next, template.id);
+  };
+
+  const updateSelectedTemplateFromCard = async () => {
+    const template = checklistTemplates.find(item => item.id === selectedTemplateId);
+    if (!template) return;
+    const nextTemplate: ChecklistTemplate = {
+      ...template,
+      items: checklistItems
+        .map(item => ({ id: item.id || crypto.randomUUID(), text: item.text.trim(), done: false }))
+        .filter(item => item.text),
+    };
+    const next = checklistTemplates.map(item => item.id === nextTemplate.id ? nextTemplate : item);
+    setChecklistTemplates(next);
+    localStorage.setItem(getChecklistTemplateStorageKey(workspaceId), JSON.stringify(next));
+    if (editingTemplateId === nextTemplate.id) {
+      setTemplateDraftItems(nextTemplate.items);
+    }
+    await syncTemplateToCards(nextTemplate);
+    toast({ title: 'Modelo atualizado com este card' });
   };
 
   const addComment = async () => {
@@ -1639,6 +1730,7 @@ function PipelineCardDetailDialog({
   ];
   const comments = (((conversation.metadata as any)?.pipeline_comments || []) as Array<{ id: string; text: string; created_at: string; author: string }>);
   const completedChecklistItems = checklistItems.filter(item => item.done).length;
+  const selectedChecklistTemplate = checklistTemplates.find(item => item.id === selectedTemplateId) || null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1789,18 +1881,17 @@ function PipelineCardDetailDialog({
               {activeTab === 'checklist' && (
                 <div className="max-w-2xl space-y-5">
                   <div className="rounded-md bg-zinc-900/30 p-4 space-y-3">
-                    <h3 className="text-sm font-semibold text-zinc-100">Modelos de checklist</h3>
-                    <div className="flex gap-2">
-                      <Input
-                        value={checklistTemplateName}
-                        onChange={(event) => setChecklistTemplateName(event.target.value)}
-                        placeholder="Nome do modelo"
-                        className="bg-zinc-900/60 border-zinc-700 text-zinc-100"
-                      />
-                      <Button variant="outline" onClick={saveChecklistTemplate} disabled={!checklistTemplateName.trim() || checklistItems.length === 0}>
-                        {selectedTemplateId ? 'Atualizar modelo' : 'Salvar modelo'}
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <h3 className="text-sm font-semibold text-zinc-100">Modelos de checklist</h3>
+                        <p className="text-xs text-zinc-500">{checklistTemplates.length} modelos salvos</p>
+                      </div>
+                      <Button size="sm" onClick={startNewChecklistTemplate}>
+                        <Plus className="mr-2 h-3.5 w-3.5" />
+                        Novo modelo
                       </Button>
                     </div>
+
                     <div className="space-y-2">
                       {checklistTemplates.length === 0 ? (
                         <p className="text-sm text-zinc-500">Nenhum modelo salvo.</p>
@@ -1808,18 +1899,25 @@ function PipelineCardDetailDialog({
                         <div
                           key={template.id}
                           className={cn(
-                            "flex w-full items-center justify-between gap-2 rounded-md bg-zinc-950/35 px-3 py-2 text-sm",
+                            "flex w-full flex-wrap items-center justify-between gap-2 rounded-md bg-zinc-950/35 px-3 py-2 text-sm",
                             selectedTemplateId === template.id && "ring-1 ring-primary/50"
                           )}
                         >
-                          <button
-                            type="button"
-                            className="min-w-0 flex-1 text-left hover:text-primary"
+                          <div className="min-w-[160px] flex-1">
+                            <span className="block truncate text-zinc-100">{template.name}</span>
+                            {selectedTemplateId === template.id && (
+                              <span className="text-xs text-primary">Aplicado neste card</span>
+                            )}
+                          </div>
+                          <Badge variant="secondary">{template.items.length} itens</Badge>
+                          <Button
+                            variant={selectedTemplateId === template.id ? 'secondary' : 'outline'}
+                            size="sm"
+                            className="h-7"
                             onClick={() => applyChecklistTemplate(template.id)}
                           >
-                            <span className="block truncate">{template.name}</span>
-                          </button>
-                          <Badge variant="secondary">{template.items.length} itens</Badge>
+                            Aplicar
+                          </Button>
                           <Button
                             variant="ghost"
                             size="icon"
@@ -1841,18 +1939,134 @@ function PipelineCardDetailDialog({
                         </div>
                       ))}
                     </div>
+
+                    {isTemplateEditorOpen && (
+                      <div className="rounded-md border border-zinc-800 bg-zinc-950/25 p-3">
+                        <div className="mb-3 flex items-center justify-between gap-3">
+                          <div>
+                            <h4 className="text-sm font-semibold text-zinc-100">
+                              {editingTemplateId ? 'Editar modelo' : 'Novo modelo'}
+                            </h4>
+                            <p className="text-xs text-zinc-500">{templateDraftItems.length} tarefas no modelo</p>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 text-zinc-400 hover:text-zinc-100"
+                            onClick={() => setIsTemplateEditorOpen(false)}
+                          >
+                            Fechar
+                          </Button>
+                        </div>
+
+                        <Input
+                          value={templateDraftName}
+                          onChange={(event) => setTemplateDraftName(event.target.value)}
+                          placeholder="Nome do modelo"
+                          className="mb-3 bg-zinc-900/60 border-zinc-700 text-zinc-100"
+                        />
+
+                        <div className="space-y-2">
+                          {templateDraftItems.map(item => (
+                            <div
+                              key={item.id}
+                              className={cn(
+                                "flex items-center gap-2 rounded-md bg-zinc-950/45 p-2 transition-colors",
+                                dragOverTemplateItemId === item.id && draggedTemplateItemId !== item.id && "bg-primary/10 ring-1 ring-primary/40",
+                                draggedTemplateItemId === item.id && "opacity-60"
+                              )}
+                              onDragOver={(event) => {
+                                if (!draggedTemplateItemId || draggedTemplateItemId === item.id) return;
+                                event.preventDefault();
+                                setDragOverTemplateItemId(item.id);
+                              }}
+                              onDragLeave={(event) => {
+                                if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                                  setDragOverTemplateItemId(prev => prev === item.id ? null : prev);
+                                }
+                              }}
+                              onDrop={(event) => {
+                                event.preventDefault();
+                                reorderTemplateDraftItem(item.id);
+                              }}
+                            >
+                              <button
+                                type="button"
+                                draggable
+                                onDragStart={(event) => {
+                                  setDraggedTemplateItemId(item.id);
+                                  event.dataTransfer.effectAllowed = 'move';
+                                  event.dataTransfer.setData('text/plain', item.id);
+                                }}
+                                onDragEnd={() => {
+                                  setDraggedTemplateItemId(null);
+                                  setDragOverTemplateItemId(null);
+                                }}
+                                className="flex h-7 w-5 shrink-0 cursor-grab items-center justify-center rounded text-zinc-500 hover:bg-white/5 hover:text-zinc-200 active:cursor-grabbing"
+                                title="Reordenar tarefa"
+                              >
+                                <GripVertical className="h-4 w-4" />
+                              </button>
+                              <Input
+                                value={item.text}
+                                onChange={(event) => updateTemplateDraftItemText(item.id, event.target.value)}
+                                className="h-8 flex-1 border-transparent bg-transparent px-1 text-sm text-zinc-100 focus-visible:border-zinc-700 focus-visible:bg-zinc-900/60"
+                              />
+                              <Button variant="ghost" size="icon" className="h-7 w-7 text-zinc-500 hover:text-destructive" onClick={() => removeTemplateDraftItem(item.id)}>
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          ))}
+
+                          <div className="flex gap-2">
+                            <Input
+                              value={newTemplateItem}
+                              onChange={(event) => setNewTemplateItem(event.target.value)}
+                              placeholder="Adicionar tarefa ao modelo..."
+                              className="bg-zinc-900/60 border-zinc-700 text-zinc-100"
+                              onKeyDown={(event) => {
+                                if (event.key === 'Enter') addTemplateDraftItem();
+                              }}
+                            />
+                            <Button onClick={addTemplateDraftItem}>
+                              <Plus className="h-4 w-4" />
+                            </Button>
+                          </div>
+
+                          <div className="flex justify-end gap-2 pt-1">
+                            <Button variant="outline" onClick={() => setIsTemplateEditorOpen(false)}>
+                              Cancelar
+                            </Button>
+                            <Button onClick={saveChecklistTemplate} disabled={!templateDraftName.trim() || templateDraftItems.length === 0}>
+                              <Save className="mr-2 h-3.5 w-3.5" />
+                              Salvar modelo
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div className="rounded-md bg-zinc-900/30 p-4">
-                    <div className="mb-3 flex items-center justify-between">
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                       <div>
-                        <h3 className="text-sm font-semibold text-zinc-100">Checklist</h3>
-                        <p className="text-xs text-zinc-500">{completedChecklistItems}/{checklistItems.length} concluidos</p>
+                        <h3 className="text-sm font-semibold text-zinc-100">Checklist deste card</h3>
+                        <p className="text-xs text-zinc-500">
+                          {completedChecklistItems}/{checklistItems.length} concluidos
+                          {selectedChecklistTemplate ? ` · ${selectedChecklistTemplate.name}` : ''}
+                        </p>
                       </div>
-                      <Button size="sm" onClick={() => saveChecklist()} disabled={isSaving}>
-                        {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="mr-2 h-3.5 w-3.5" />}
-                        Salvar
-                      </Button>
+                      <div className="flex flex-wrap items-center justify-end gap-2">
+                        {selectedChecklistTemplate && (
+                          <Button variant="outline" size="sm" onClick={updateSelectedTemplateFromCard} disabled={isSaving || checklistItems.length === 0}>
+                            Atualizar modelo
+                          </Button>
+                        )}
+                        <Button size="sm" onClick={() => saveChecklist()} disabled={isSaving}>
+                          {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="mr-2 h-3.5 w-3.5" />}
+                          Salvar
+                        </Button>
+                      </div>
                     </div>
 
                     <div className="space-y-2">
