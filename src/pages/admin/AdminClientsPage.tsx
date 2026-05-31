@@ -114,7 +114,7 @@ function OrgUsersRow({ orgId }: { orgId: string }) {
 
   if (isLoading) return (
     <TableRow>
-      <TableCell colSpan={8} className="bg-muted/30 p-4">
+      <TableCell colSpan={9} className="bg-muted/30 p-4">
         <Skeleton className="h-8 w-full" />
       </TableCell>
     </TableRow>
@@ -125,7 +125,7 @@ function OrgUsersRow({ orgId }: { orgId: string }) {
   return (
     <>
       <TableRow>
-        <TableCell colSpan={8} className="bg-muted/30 p-0">
+        <TableCell colSpan={9} className="bg-muted/30 p-0">
           <div className="px-6 py-3">
             <p className="text-xs font-semibold text-muted-foreground uppercase mb-2">Usuários ({users.length})</p>
             <div className="space-y-1">
@@ -482,6 +482,41 @@ export default function AdminClientsPage() {
     return `${(bytes / 1024).toFixed(1)} KB`;
   };
 
+  const formatLimit = (value: number | null | undefined) => value ? String(value) : '∞';
+  const getUsageState = (used: number, limit?: number | null) => {
+    if (!limit || limit <= 0) return { percent: 0, color: 'bg-primary', text: 'text-foreground' };
+    const percent = Math.round((used / limit) * 100);
+    if (used > limit) return { percent: 100, color: 'bg-destructive', text: 'text-destructive' };
+    if (percent >= 80) return { percent, color: 'bg-yellow-500', text: 'text-yellow-500' };
+    return { percent, color: 'bg-primary', text: 'text-foreground' };
+  };
+  const UsageMeter = ({
+    icon,
+    used,
+    limit,
+    label,
+  }: {
+    icon: React.ReactNode;
+    used: number;
+    limit?: number | null;
+    label?: string;
+  }) => {
+    const state = getUsageState(used, limit);
+    return (
+      <div className="space-y-1 min-w-[112px]">
+        <div className={`flex items-center justify-center gap-1 text-sm font-medium ${state.text}`}>
+          {icon}
+          <span>{label || `${used}/${formatLimit(limit)}`}</span>
+        </div>
+        {limit ? (
+          <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+            <div className={`h-full rounded-full ${state.color}`} style={{ width: `${Math.min(100, state.percent)}%` }} />
+          </div>
+        ) : null}
+      </div>
+    );
+  };
+
   return (
     <AdminLayout>
       <div className="space-y-6">
@@ -534,6 +569,7 @@ export default function AdminClientsPage() {
                     <TableHead>Organização</TableHead>
                     <TableHead>Plano</TableHead>
                     <TableHead className="text-center">Usuários</TableHead>
+                    <TableHead className="text-center">Workspaces</TableHead>
                     <TableHead className="text-center">Instâncias</TableHead>
                     <TableHead className="text-center">Conversas</TableHead>
                     <TableHead>Storage</TableHead>
@@ -562,23 +598,36 @@ export default function AdminClientsPage() {
                           )}
                         </TableCell>
                         <TableCell className="text-center">
-                          <div className="flex items-center justify-center gap-1">
-                            <Users className="h-3.5 w-3.5 text-muted-foreground" />
-                            {org.user_count}
-                          </div>
+                          <UsageMeter
+                            icon={<Users className="h-3.5 w-3.5 text-muted-foreground" />}
+                            used={org.user_count || 0}
+                            limit={org.max_team_members}
+                          />
                         </TableCell>
                         <TableCell className="text-center">
-                          <div className="flex items-center justify-center gap-1">
-                            <Phone className="h-3.5 w-3.5 text-muted-foreground" />
-                            {org.active_instances}/{org.instance_count}
-                          </div>
+                          <UsageMeter
+                            icon={<Building2 className="h-3.5 w-3.5 text-muted-foreground" />}
+                            used={org.active_workspaces ?? org.workspace_count ?? 0}
+                            limit={org.max_workspaces}
+                          />
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <UsageMeter
+                            icon={<Phone className="h-3.5 w-3.5 text-muted-foreground" />}
+                            used={org.active_instances || 0}
+                            limit={org.max_whatsapp_numbers}
+                          />
                         </TableCell>
                         <TableCell className="text-center">{org.conversation_count}</TableCell>
                         <TableCell>
-                          <div className="flex items-center gap-1">
-                            <HardDrive className="h-3.5 w-3.5 text-muted-foreground" />
-                            {formatBytes(org.storage_used_bytes || 0)}
-                          </div>
+                          <UsageMeter
+                            icon={<HardDrive className="h-3.5 w-3.5 text-muted-foreground" />}
+                            used={org.storage_used_bytes || 0}
+                            limit={org.storage_limit_bytes}
+                            label={org.storage_limit_bytes
+                              ? `${formatBytes(org.storage_used_bytes || 0)} / ${formatBytes(org.storage_limit_bytes)}`
+                              : formatBytes(org.storage_used_bytes || 0)}
+                          />
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground">
                           {new Date(org.created_at).toLocaleDateString('pt-BR')}
@@ -622,7 +671,7 @@ export default function AdminClientsPage() {
                   ))}
                   {orgs.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                         Nenhuma organização encontrada.
                       </TableCell>
                     </TableRow>
