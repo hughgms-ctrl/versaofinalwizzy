@@ -1,6 +1,6 @@
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { MousePointerClick, FileText, HelpCircle } from 'lucide-react';
+import { MousePointerClick, FileText, HelpCircle, GitBranch } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useOrganizationPlan } from '@/hooks/useOrganizationPlan';
 import { Lock } from 'lucide-react';
@@ -28,6 +28,13 @@ const tools = [
     icon: HelpCircle,
     href: '/tools/quiz',
     planModule: 'quiz',
+  },
+  {
+    name: 'Wizzy Flow',
+    description: 'Organize processos, projetos, tarefas e fluxos operacionais dentro do workspace atual.',
+    icon: GitBranch,
+    href: '/tools/wizzy-flow',
+    planModule: 'wizzy_flow',
   },
 ];
 

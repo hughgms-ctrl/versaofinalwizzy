@@ -19,8 +19,7 @@ const moduleLabels: Record<string, string> = {
 };
 
 const visibleModules = [
-  "conversations", "pipeline", "contacts", "flows", "documents",
-  "agents", "reports", "campaigns", "calendar", "orchestrator", "ai"
+  "documents", "widgets", "quiz"
 ];
 
 interface Plan {
@@ -32,12 +31,14 @@ interface Plan {
   allowed_modules: string[];
   max_team_members: number;
   storage_limit_bytes: number;
+  ai_mode?: string;
   is_active: boolean;
 }
 
 const PlanUpgradePanel = () => {
   const { profile } = useAuth();
   const [isYearly, setIsYearly] = useState(false);
+  const [loadingPlanId, setLoadingPlanId] = useState<string | null>(null);
 
   const { data: plans } = useQuery({
     queryKey: ['platform-plans'],
@@ -74,8 +75,25 @@ const PlanUpgradePanel = () => {
     return `${gb} GB`;
   };
 
-  const handleUpgrade = (plan: Plan) => {
-    toast.info("Integração com Asaas será habilitada em breve. Entre em contato para fazer upgrade.");
+  const handleUpgrade = async (plan: Plan) => {
+    try {
+      setLoadingPlanId(plan.id);
+      const { data, error } = await supabase.functions.invoke('billing-checkout', {
+        body: {
+          plan_id: plan.id,
+          billing_cycle: isYearly ? 'yearly' : 'monthly',
+        },
+      });
+
+      if (error) throw error;
+      if (!data?.url) throw new Error('Checkout não retornou uma URL de pagamento.');
+
+      window.location.href = data.url;
+    } catch (error: any) {
+      toast.error(error?.message || 'Não foi possível iniciar o checkout.');
+    } finally {
+      setLoadingPlanId(null);
+    }
   };
 
   return (
@@ -132,6 +150,7 @@ const PlanUpgradePanel = () => {
         {plans?.map((plan) => {
           const isCurrent = plan.id === currentPlanId;
           const isPro = plan.slug === 'pro';
+          const isWizzyAI = plan.ai_mode === 'platform_api' || plan.slug === 'wizzy-ai' || plan.slug === 'max';
           const modules = (plan.allowed_modules || []) as string[];
 
           return (
@@ -176,12 +195,33 @@ const PlanUpgradePanel = () => {
                 <div className="space-y-1.5 flex-1">
                   <div className="flex items-center gap-2 text-sm py-1">
                     <Check className="w-4 h-4 text-green-500 shrink-0" />
+                    <span className="text-muted-foreground">Wizzy CRM completo</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm py-1">
+                    <Check className="w-4 h-4 text-green-500 shrink-0" />
                     <span className="text-muted-foreground">Até {plan.max_team_members} membros</span>
                   </div>
                   <div className="flex items-center gap-2 text-sm py-1">
                     <Check className="w-4 h-4 text-green-500 shrink-0" />
                     <span className="text-muted-foreground">{formatStorage(plan.storage_limit_bytes)}</span>
                   </div>
+                  {isWizzyAI ? (
+                    <>
+                      <div className="flex items-center gap-2 text-sm py-1">
+                        <Check className="w-4 h-4 text-green-500 shrink-0" />
+                        <span className="text-muted-foreground">Wizzy AI disponÃ­vel apenas no plano Max</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm py-1">
+                        <Check className="w-4 h-4 text-green-500 shrink-0" />
+                        <span className="text-muted-foreground">Todo consumo de IA Ã© por nossa conta</span>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex items-center gap-2 text-sm py-1">
+                      <Check className="w-4 h-4 text-green-500 shrink-0" />
+                      <span className="text-muted-foreground">Use sua chave OpenAI</span>
+                    </div>
+                  )}
                   {visibleModules.map((mod) => {
                     const has = modules.includes(mod);
                     return (
@@ -199,10 +239,10 @@ const PlanUpgradePanel = () => {
                 <Button
                   className="w-full mt-6"
                   variant={isCurrent ? "outline" : isPro ? "default" : "outline"}
-                  disabled={isCurrent}
+                  disabled={isCurrent || loadingPlanId === plan.id}
                   onClick={() => handleUpgrade(plan)}
                 >
-                  {isCurrent ? "Plano atual" : "Fazer upgrade"}
+                  {isCurrent ? "Plano atual" : loadingPlanId === plan.id ? "Abrindo checkout..." : "Fazer upgrade"}
                   {!isCurrent && <ArrowRight className="w-4 h-4 ml-1" />}
                 </Button>
               </CardContent>

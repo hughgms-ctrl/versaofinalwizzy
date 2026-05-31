@@ -1,4 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "npm:@supabase/supabase-js@2";
+import { getOrganizationIdFromRequest, resolveOpenAIConfig } from "../_shared/aiStrategy.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -9,7 +11,7 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { templates } = await req.json();
+    const { templates, organizationId: bodyOrganizationId } = await req.json();
     // templates: Array<{ id, name, fields: Array<{ name, label?, type? }> }>
 
     if (!templates || templates.length < 1) {
@@ -19,8 +21,10 @@ serve(async (req) => {
       });
     }
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY not configured");
+    const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+    const organizationId = await getOrganizationIdFromRequest(supabase, req, bodyOrganizationId);
+    const aiConfig = await resolveOpenAIConfig(supabase, organizationId, "document_field_unification");
+    if (!aiConfig) throw new Error("OpenAI não configurada para unificar campos");
 
     // Build a clear prompt for the AI
     const templateDescriptions = templates.map((t: any) => {
@@ -65,14 +69,14 @@ Para cada grupo de campos similares, defina:
 
 Campos que são únicos de um template devem aparecer sozinhos com um label melhorado.`;
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const response = await fetch(aiConfig.endpoint, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        Authorization: `Bearer ${aiConfig.apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
+        model: aiConfig.model,
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },

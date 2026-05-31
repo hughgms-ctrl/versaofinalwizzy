@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { getOrganizationIdFromRequest, resolveOpenAIConfig } from "../_shared/aiStrategy.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -18,7 +19,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { context, steps } = await req.json();
+    const { context, steps, organizationId: bodyOrganizationId } = await req.json();
 
     if (!context || !steps?.length) {
       return new Response(JSON.stringify({ error: 'context and steps are required' }), {
@@ -27,8 +28,10 @@ Deno.serve(async (req) => {
       });
     }
 
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-    if (!LOVABLE_API_KEY) throw new Error('LOVABLE_API_KEY not configured');
+    const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+    const organizationId = await getOrganizationIdFromRequest(supabase, req, bodyOrganizationId);
+    const aiConfig = await resolveOpenAIConfig(supabase, organizationId, 'remarketing');
+    if (!aiConfig) throw new Error('OpenAI não configurada para gerar remarketing');
 
     const stepsDescription = steps.map((s: any, i: number) =>
       `Tentativa ${i + 1}: após ${formatDelay(s.delayMinutes)} sem resposta`
@@ -53,14 +56,14 @@ ${stepsDescription}
 
 Retorne usando a tool "set_messages" com as mensagens geradas.`;
 
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    const response = await fetch(aiConfig.endpoint, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+        'Authorization': `Bearer ${aiConfig.apiKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'google/gemini-3-flash-preview',
+        model: aiConfig.model,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },

@@ -1,44 +1,18 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Separator } from '@/components/ui/separator';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import {
-  useIntegrationConfig,
-  useUpsertIntegrationConfig,
-  PROVIDER_LABELS,
-  MODELS_BY_PROVIDER,
-  FEATURE_LABELS,
-  type AIProvider,
-  type AIFeature,
-  type IntegrationConfig,
-} from '@/hooks/useIntegrationConfigs';
-import {
-  Brain,
-  Key,
-  Eye,
-  EyeOff,
-  CheckCircle,
-  XCircle,
-  Loader2,
-  Save,
-  AlertTriangle,
-  Settings2,
-} from 'lucide-react';
+import { useIntegrationConfig, useUpsertIntegrationConfig, type IntegrationConfig } from '@/hooks/useIntegrationConfigs';
+import { useOpenAIUsageStatus, useUpdateOpenAIUsageSettings } from '@/hooks/useOpenAIUsageStatus';
+import { useOrganizationPlan } from '@/hooks/useOrganizationPlan';
+import { Brain, CheckCircle, Eye, EyeOff, Loader2, Save, Sparkles, XCircle } from 'lucide-react';
 
 const DEFAULT_CONFIG: Partial<IntegrationConfig> = {
-  ai_provider: 'lovable',
-  default_model: 'google/gemini-3-flash-preview',
+  ai_provider: 'openai',
+  default_model: 'gpt-4o-mini',
   openai_api_key: null,
   gemini_api_key: null,
   agents_provider: null,
@@ -53,83 +27,82 @@ const DEFAULT_CONFIG: Partial<IntegrationConfig> = {
   transcription_model: null,
 };
 
-const FEATURES: AIFeature[] = ['agents', 'conversation_summary', 'prompt_generation', 'flow_generation', 'transcription'];
-
 export function AITab() {
   const { toast } = useToast();
   const { data: config, isLoading } = useIntegrationConfig();
+  const { isLoading: isPlanLoading, isWizzyAI, planName, usage } = useOrganizationPlan();
+  const { data: openAIUsage, isLoading: isOpenAIUsageLoading } = useOpenAIUsageStatus(!isWizzyAI);
   const upsertConfig = useUpsertIntegrationConfig();
-
-  const [formData, setFormData] = useState<Partial<IntegrationConfig>>(DEFAULT_CONFIG);
+  const updateOpenAIUsage = useUpdateOpenAIUsageSettings();
+  const [openaiKey, setOpenaiKey] = useState('');
+  const [openaiAdminKey, setOpenaiAdminKey] = useState('');
+  const [creditBalance, setCreditBalance] = useState('0');
+  const [alertThreshold, setAlertThreshold] = useState('80');
   const [showOpenAIKey, setShowOpenAIKey] = useState(false);
-  const [showGeminiKey, setShowGeminiKey] = useState(false);
-  const [showApiKeys, setShowApiKeys] = useState(false);
+  const [showAdminKey, setShowAdminKey] = useState(false);
 
   useEffect(() => {
-    if (config) {
-      setFormData(config);
+    if (config?.openai_api_key) {
+      setOpenaiKey(config.openai_api_key);
     }
   }, [config]);
 
+  useEffect(() => {
+    if (!openAIUsage?.settings) return;
+    setOpenaiAdminKey(openAIUsage.settings.openai_admin_key_masked || '');
+    setCreditBalance(String(openAIUsage.settings.credit_balance_usd ?? 0));
+    setAlertThreshold(String(openAIUsage.settings.alert_threshold_percent ?? 80));
+  }, [
+    openAIUsage?.settings?.openai_admin_key_masked,
+    openAIUsage?.settings?.credit_balance_usd,
+    openAIUsage?.settings?.alert_threshold_percent,
+  ]);
+
+  const openAIUsed = Number(openAIUsage?.usage?.used_usd || 0);
+  const openAIRemaining = Number(openAIUsage?.usage?.remaining_usd || 0);
+  const openAIPercent = Math.min(Number(openAIUsage?.usage?.usage_percent || 0), 100);
+  const openAIHasCredit = Number(openAIUsage?.settings?.credit_balance_usd || 0) > 0;
+
+  const formatCurrency = (value: number) => (
+    `US$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  );
+
   const handleSave = () => {
-    const payload = { ...formData };
-
-    if (payload.ai_provider === 'openai' && !payload.openai_api_key) {
-      toast({ title: 'API Key obrigatória', description: 'Configure a chave da OpenAI para usar como provedor padrão.', variant: 'destructive' });
+    if (!openaiKey.trim()) {
+      toast({
+        title: 'Chave OpenAI obrigatoria',
+        description: 'Cole sua API key da OpenAI para ativar os recursos de IA do Wizzy.',
+        variant: 'destructive',
+      });
       return;
     }
-    if (payload.ai_provider === 'gemini' && !payload.gemini_api_key) {
-      toast({ title: 'API Key obrigatória', description: 'Configure a chave do Gemini para usar como provedor padrão.', variant: 'destructive' });
-      return;
-    }
 
-    upsertConfig.mutate(payload);
+    upsertConfig.mutate({
+      ...(config || DEFAULT_CONFIG),
+      ai_provider: 'openai',
+      default_model: 'gpt-4o-mini',
+      openai_api_key: openaiKey.trim(),
+      gemini_api_key: null,
+      agents_provider: null,
+      agents_model: null,
+      conversation_summary_provider: null,
+      conversation_summary_model: null,
+      prompt_generation_provider: null,
+      prompt_generation_model: null,
+      flow_generation_provider: null,
+      flow_generation_model: null,
+      transcription_provider: null,
+      transcription_model: null,
+    });
+
+    updateOpenAIUsage.mutate({
+      openai_admin_key: openaiAdminKey,
+      credit_balance_usd: Number(creditBalance || 0),
+      alert_threshold_percent: Number(alertThreshold || 80),
+    });
   };
 
-  const updateField = (field: string, value: any) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
-  };
-
-  const getProviderStatus = (provider: AIProvider): { connected: boolean; label: string } => {
-    if (provider === 'lovable') return { connected: true, label: 'Incluso' };
-    if (provider === 'openai') return { connected: !!formData.openai_api_key, label: formData.openai_api_key ? 'Configurado' : 'Não configurado' };
-    if (provider === 'gemini') return { connected: !!formData.gemini_api_key, label: formData.gemini_api_key ? 'Configurado' : 'Não configurado' };
-    return { connected: false, label: 'Desconhecido' };
-  };
-
-  const getEffectiveProvider = (feature: AIFeature): AIProvider => {
-    const featureProvider = formData[`${feature}_provider` as keyof IntegrationConfig] as AIProvider | null;
-    return featureProvider || formData.ai_provider || 'lovable';
-  };
-
-  const getEffectiveModel = (feature: AIFeature): string => {
-    const featureModel = formData[`${feature}_model` as keyof IntegrationConfig] as string | null;
-    return featureModel || formData.default_model || '';
-  };
-
-  const handleFeatureProviderChange = (feature: AIFeature, provider: string) => {
-    if (provider === '__default__') {
-      updateField(`${feature}_provider`, null);
-      updateField(`${feature}_model`, null);
-    } else {
-      updateField(`${feature}_provider`, provider);
-      const models = MODELS_BY_PROVIDER[provider as AIProvider];
-      if (models.length > 0) {
-        updateField(`${feature}_model`, models[0].value);
-      }
-    }
-  };
-
-  const handleFeatureModelChange = (feature: AIFeature, model: string) => {
-    const featureProvider = formData[`${feature}_provider` as keyof IntegrationConfig] as AIProvider | null;
-    if (!featureProvider) {
-      // Set provider explicitly when choosing a different model
-      updateField(`${feature}_provider`, formData.ai_provider || 'lovable');
-    }
-    updateField(`${feature}_model`, model);
-  };
-
-  if (isLoading) {
+  if (isLoading || isPlanLoading) {
     return (
       <div className="flex items-center justify-center py-20">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -138,314 +111,182 @@ export function AITab() {
   }
 
   return (
-    <div className="space-y-6 max-w-4xl">
-      {/* Provider Selection */}
-      <Card className="bg-card border-border">
+    <div className="max-w-3xl space-y-6">
+      <Card className="border-border bg-card">
         <CardHeader>
           <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-primary/10">
+            <div className="rounded-lg bg-primary/10 p-2">
               <Brain className="h-5 w-5 text-primary" />
             </div>
             <div>
-              <CardTitle className="text-foreground">Provedor de IA Padrão</CardTitle>
+              <CardTitle className="text-foreground">{isWizzyAI ? 'Wizzy AI' : 'OpenAI'}</CardTitle>
               <CardDescription>
-                Escolha qual provedor alimentará todos os recursos de IA do sistema
-              </CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {(['lovable', 'openai', 'gemini'] as AIProvider[]).map((provider) => {
-              const status = getProviderStatus(provider);
-              const isSelected = formData.ai_provider === provider;
-              return (
-                <button
-                  key={provider}
-                  onClick={() => {
-                    updateField('ai_provider', provider);
-                    const models = MODELS_BY_PROVIDER[provider];
-                    if (models.length > 0) {
-                      updateField('default_model', models[0].value);
-                    }
-                  }}
-                  className={`relative p-4 rounded-xl border-2 transition-all text-left ${isSelected
-                      ? 'border-primary bg-primary/5 shadow-md'
-                      : 'border-border hover:border-primary/30 bg-card'
-                    }`}
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-semibold text-foreground">{PROVIDER_LABELS[provider]}</span>
-                    {isSelected && <CheckCircle className="h-5 w-5 text-primary" />}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {status.connected ? (
-                      <Badge variant="outline" className="text-xs bg-green-500/10 text-green-600 border-green-500/30">
-                        {status.label}
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-600 border-amber-500/30">
-                        {status.label}
-                      </Badge>
-                    )}
-                  </div>
-                  {provider === 'lovable' && (
-                    <p className="text-xs text-muted-foreground mt-2">Sem necessidade de API Key</p>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="space-y-2">
-            <Label className="text-foreground">Modelo Padrão</Label>
-            <Select
-              value={formData.default_model || ''}
-              onValueChange={(v) => updateField('default_model', v)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Selecione o modelo" />
-              </SelectTrigger>
-              <SelectContent>
-                {MODELS_BY_PROVIDER[formData.ai_provider || 'lovable'].map((m) => (
-                  <SelectItem key={m.value} value={m.value}>
-                    <div className="flex flex-col">
-                      <span>{m.label}</span>
-                      <span className="text-[10px] text-muted-foreground">
-                        {m.value.includes('pro') ? 'Ideal para raciocínio complexo' :
-                          m.value.includes('flash') ? 'Ideal para velocidade e triagem' :
-                            'Equilíbrio entre inteligência e custo'}
-                      </span>
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Per-Feature Model Selection */}
-      <Card className="bg-card border-border">
-        <CardHeader>
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-violet-500/10">
-              <Settings2 className="h-5 w-5 text-violet-500" />
-            </div>
-            <div>
-              <CardTitle className="text-foreground">Modelo por Função</CardTitle>
-              <CardDescription>
-                Escolha modelos específicos para cada função. Se não configurado, usa o modelo padrão.
+                {isWizzyAI
+                  ? 'Disponivel apenas no plano Max. Todo consumo de IA e por nossa conta.'
+                  : 'Informe sua chave de acesso OpenAI para ativar os recursos de IA.'}
               </CardDescription>
             </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-5">
-          {FEATURES.map((feature) => {
-            const featureMeta = FEATURE_LABELS[feature];
-            const featureProvider = formData[`${feature}_provider` as keyof IntegrationConfig] as AIProvider | null;
-            const isCustom = !!featureProvider;
-            const effectiveProvider = getEffectiveProvider(feature);
-            const effectiveModel = getEffectiveModel(feature);
-
-            return (
-              <div key={feature} className="space-y-3 p-4 rounded-lg border border-border bg-muted/30">
-                <div className="flex items-center justify-between">
+          {isWizzyAI ? (
+            <div className="rounded-md border border-primary/20 bg-primary/5 p-4">
+              <div className="flex items-start gap-3">
+                <div className="rounded-lg bg-primary/10 p-2">
+                  <Sparkles className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <p className="font-medium text-foreground">Plano {planName || 'Max'} com Wizzy AI</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Voce nao precisa cadastrar chave de API. O consumo e processado pela chave da plataforma.
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="rounded-md border bg-muted/30 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <p className="font-medium text-foreground text-sm">{featureMeta.label}</p>
-                    <p className="text-xs text-muted-foreground">{featureMeta.description}</p>
+                    <p className="font-medium text-foreground">Saldo OpenAI</p>
+                    <p className="text-sm text-muted-foreground">
+                      {openAIUsage?.settings?.openai_admin_key_configured
+                        ? `Usado ${formatCurrency(openAIUsed)} desde a ultima recarga informada`
+                        : 'Informe a Admin Key somente leitura para calcular o consumo real automaticamente.'}
+                    </p>
                   </div>
-                  {isCustom ? (
-                    <Badge variant="outline" className="text-xs bg-violet-500/10 text-violet-600 border-violet-500/30">
-                      Personalizado
+                  {openAIHasCredit && (
+                    <Badge variant={openAIPercent >= Number(alertThreshold || 80) ? 'destructive' : 'secondary'}>
+                      {formatCurrency(openAIRemaining)} restantes
+                    </Badge>
+                  )}
+                </div>
+                {openAIHasCredit && (
+                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted">
+                    <div
+                      className={openAIPercent >= Number(alertThreshold || 80) ? 'h-full rounded-full bg-amber-500' : 'h-full rounded-full bg-primary'}
+                      style={{ width: `${openAIPercent}%` }}
+                    />
+                  </div>
+                )}
+                <div className="mt-3 grid gap-3 text-sm sm:grid-cols-3">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Saldo informado</p>
+                    <p className="font-medium">{formatCurrency(Number(openAIUsage?.settings?.credit_balance_usd || 0))}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Usado</p>
+                    <p className="font-medium">{isOpenAIUsageLoading ? 'Atualizando...' : formatCurrency(openAIUsed)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Uso</p>
+                    <p className="font-medium">{openAIHasCredit ? `${openAIPercent}%` : '-'}</p>
+                  </div>
+                </div>
+                {openAIUsage?.usage?.costs_error && (
+                  <div className="mt-3 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-700">
+                    Nao foi possivel consultar a OpenAI: {openAIUsage.usage.costs_error}
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <Label className="font-medium text-foreground">OpenAI API Key</Label>
+                    <p className="text-xs text-muted-foreground">Use uma chave criada em platform.openai.com/api-keys.</p>
+                  </div>
+                  {openaiKey ? (
+                    <Badge variant="outline" className="border-green-500/30 bg-green-500/10 text-green-600">
+                      <CheckCircle className="mr-1 h-3 w-3" /> Configurada
                     </Badge>
                   ) : (
-                    <Badge variant="outline" className="text-xs bg-muted text-muted-foreground">
-                      Padrão
+                    <Badge variant="outline" className="bg-muted text-muted-foreground">
+                      <XCircle className="mr-1 h-3 w-3" /> Nao configurada
                     </Badge>
                   )}
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <Label className="text-xs text-muted-foreground">Provedor</Label>
-                    <Select
-                      value={featureProvider || '__default__'}
-                      onValueChange={(v) => handleFeatureProviderChange(feature, v)}
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <div className="relative flex-1">
+                    <Input
+                      type={showOpenAIKey ? 'text' : 'password'}
+                      placeholder="sk-..."
+                      value={openaiKey}
+                      onChange={(event) => setOpenaiKey(event.target.value)}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowOpenAIKey(!showOpenAIKey)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      aria-label={showOpenAIKey ? 'Ocultar chave' : 'Mostrar chave'}
                     >
-                      <SelectTrigger className="h-9 text-sm">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="__default__">
-                          Usar padrão ({PROVIDER_LABELS[formData.ai_provider || 'lovable']})
-                        </SelectItem>
-                        {(['lovable', 'openai', 'gemini'] as AIProvider[]).map((p) => (
-                          <SelectItem key={p} value={p}>
-                            {PROVIDER_LABELS[p]}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                      {showOpenAIKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
                   </div>
+                  <Button onClick={handleSave} disabled={upsertConfig.isPending} className="gap-2">
+                    {upsertConfig.isPending || updateOpenAIUsage.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                    Salvar
+                  </Button>
+                </div>
+              </div>
 
-                  <div className="space-y-1">
-                    <Label className="text-xs text-muted-foreground">Modelo</Label>
-                    <Select
-                      value={effectiveModel}
-                      onValueChange={(v) => handleFeatureModelChange(feature, v)}
+              <div className="grid gap-4 rounded-md border p-4 md:grid-cols-3">
+                <div className="space-y-2 md:col-span-3">
+                  <Label className="font-medium text-foreground">OpenAI Admin Key somente leitura</Label>
+                  <div className="relative">
+                    <Input
+                      type={showAdminKey ? 'text' : 'password'}
+                      placeholder="sk-admin-..."
+                      value={openaiAdminKey}
+                      onChange={(event) => setOpenaiAdminKey(event.target.value)}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowAdminKey(!showAdminKey)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      aria-label={showAdminKey ? 'Ocultar chave admin' : 'Mostrar chave admin'}
                     >
-                      <SelectTrigger className="h-9 text-sm">
-                        <SelectValue placeholder="Modelo padrão" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {MODELS_BY_PROVIDER[effectiveProvider].map((m) => (
-                          <SelectItem key={m.value} value={m.value}>
-                            {m.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                      {showAdminKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Usada apenas para ler custos reais na OpenAI e calcular o saldo restante.
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <Label>Saldo atual OpenAI (US$)</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={creditBalance}
+                    onChange={(event) => setCreditBalance(event.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Avisar em (%)</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    max="100"
+                    value={alertThreshold}
+                    onChange={(event) => setAlertThreshold(event.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Ultima recarga</Label>
+                  <div className="flex h-10 items-center rounded-md border bg-muted/40 px-3 text-sm text-muted-foreground">
+                    {openAIUsage?.settings?.balance_reference_at
+                      ? new Date(openAIUsage.settings.balance_reference_at).toLocaleDateString('pt-BR')
+                      : '-'}
                   </div>
                 </div>
               </div>
-            );
-          })}
-        </CardContent>
-      </Card>
-
-      {/* API Keys */}
-      <Card className="bg-card border-border">
-        <CardHeader className="cursor-pointer" onClick={() => setShowApiKeys(!showApiKeys)}>
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-amber-500/10">
-              <Key className="h-5 w-5 text-amber-500" />
-            </div>
-            <div className="flex-1">
-              <CardTitle className="text-foreground">Chaves de API</CardTitle>
-              <CardDescription>
-                Configure suas chaves para usar provedores externos
-              </CardDescription>
-            </div>
-            <Button variant="ghost" size="sm" className="text-muted-foreground">
-              {showApiKeys ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-            </Button>
-          </div>
-        </CardHeader>
-        {showApiKeys && (
-        <CardContent className="space-y-6">
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <Label className="text-foreground font-medium">OpenAI API Key</Label>
-                <p className="text-xs text-muted-foreground">Obtenha em platform.openai.com/api-keys</p>
-              </div>
-              {formData.openai_api_key ? (
-                <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-500/30">
-                  <CheckCircle className="h-3 w-3 mr-1" /> Configurada
-                </Badge>
-              ) : (
-                <Badge variant="outline" className="bg-muted text-muted-foreground">
-                  <XCircle className="h-3 w-3 mr-1" /> Não configurada
-                </Badge>
-              )}
-            </div>
-            <div className="flex gap-2">
-              <div className="relative flex-1">
-                <Input
-                  type={showOpenAIKey ? 'text' : 'password'}
-                  placeholder="sk-..."
-                  value={formData.openai_api_key || ''}
-                  onChange={(e) => updateField('openai_api_key', e.target.value || null)}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowOpenAIKey(!showOpenAIKey)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                >
-                  {showOpenAIKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
-              </div>
-              <Button
-                size="sm"
-                onClick={handleSave}
-                disabled={upsertConfig.isPending}
-                className="bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20"
-              >
-                Confirmar Chave OpenAI
-              </Button>
-            </div>
-          </div>
-
-          <Separator />
-
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <Label className="text-foreground font-medium">Google Gemini API Key</Label>
-                <p className="text-xs text-muted-foreground">Obtenha em aistudio.google.com/apikey</p>
-              </div>
-              {formData.gemini_api_key ? (
-                <Badge variant="outline" className="bg-green-500/10 text-green-600 border-green-500/30">
-                  <CheckCircle className="h-3 w-3 mr-1" /> Configurada
-                </Badge>
-              ) : (
-                <Badge variant="outline" className="bg-muted text-muted-foreground">
-                  <XCircle className="h-3 w-3 mr-1" /> Não configurada
-                </Badge>
-              )}
-            </div>
-            <div className="flex gap-2">
-              <div className="relative flex-1">
-                <Input
-                  type={showGeminiKey ? 'text' : 'password'}
-                  placeholder="AIza..."
-                  value={formData.gemini_api_key || ''}
-                  onChange={(e) => updateField('gemini_api_key', e.target.value || null)}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowGeminiKey(!showGeminiKey)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                >
-                  {showGeminiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
-              </div>
-              <Button
-                size="sm"
-                onClick={handleSave}
-                disabled={upsertConfig.isPending}
-                className="bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20"
-              >
-                Confirmar Chave Gemini
-              </Button>
-            </div>
-          </div>
-
-          {(formData.ai_provider !== 'lovable') && !formData.openai_api_key && !formData.gemini_api_key && (
-            <div className="flex items-start gap-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
-              <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
-              <div className="text-sm">
-                <p className="font-medium text-amber-600">API Key necessária</p>
-                <p className="text-muted-foreground">Configure pelo menos uma API Key para usar provedores externos.</p>
-              </div>
-            </div>
+            </>
           )}
         </CardContent>
-        )}
       </Card>
-
-      {/* Save Button */}
-      <div className="flex justify-end">
-        <Button onClick={handleSave} disabled={upsertConfig.isPending} size="lg">
-          {upsertConfig.isPending ? (
-            <Loader2 className="h-4 w-4 animate-spin mr-2" />
-          ) : (
-            <Save className="h-4 w-4 mr-2" />
-          )}
-          Salvar Configurações
-        </Button>
-      </div>
     </div>
   );
 }

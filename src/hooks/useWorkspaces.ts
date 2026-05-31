@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './useAuth';
+import { useOrganizationPlan } from './useOrganizationPlan';
 
 export interface Workspace {
   id: string;
@@ -100,6 +101,7 @@ export function useUserWorkspaces() {
 export function useCreateWorkspace() {
   const queryClient = useQueryClient();
   const { profile } = useAuth();
+  const { usage } = useOrganizationPlan();
 
   return useMutation({
     mutationFn: async (workspace: {
@@ -110,6 +112,9 @@ export function useCreateWorkspace() {
       whatsapp_instance_id?: string | null;
     }) => {
       if (!profile?.organization_id) throw new Error('No organization');
+      if (usage.workspaceLimit > 0 && usage.workspaceCount >= usage.workspaceLimit) {
+        throw new Error(`Limite de workspaces atingido neste plano (${usage.workspaceCount}/${usage.workspaceLimit}). Faça upgrade para criar mais workspaces.`);
+      }
       const { data, error } = await supabase
         .from('workspaces')
         .insert({

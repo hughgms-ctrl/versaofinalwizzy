@@ -84,6 +84,126 @@ export function useAdminWhatsAppIntegrations() {
   });
 }
 
+export type PaymentGatewayProvider = 'asaas' | 'stripe';
+
+export function useAdminPaymentGateways() {
+  return useQuery({
+    queryKey: ['admin', 'payment-gateways'],
+    queryFn: () => adminFetch('payment_gateways'),
+    staleTime: 30 * 1000,
+  });
+}
+
+export type AIModelFeature =
+  | 'agents'
+  | 'conversation_summary'
+  | 'prompt_generation'
+  | 'flow_generation'
+  | 'transcription'
+  | 'document_processing'
+  | 'document_field_unification'
+  | 'training_rules'
+  | 'remarketing'
+  | 'qualification_rules'
+  | 'flow_ai';
+
+export interface AdminAIModelStrategy {
+  default_model: string;
+  features: Record<AIModelFeature, string>;
+}
+
+export function useAdminAIModels() {
+  return useQuery({
+    queryKey: ['admin', 'ai-models'],
+    queryFn: () => adminFetch('ai_models'),
+    staleTime: 30 * 1000,
+  });
+}
+
+export type AdminAIUsageMode = 'all' | 'own_api' | 'platform_api';
+
+export interface AdminAIUsageFilters {
+  date_from: string;
+  date_to: string;
+  ai_mode: AdminAIUsageMode;
+}
+
+export function useAdminAIUsage(filters: AdminAIUsageFilters) {
+  return useQuery({
+    queryKey: ['admin', 'ai-usage', filters],
+    queryFn: () => adminFetch('ai_usage', filters),
+    enabled: Boolean(filters.date_from && filters.date_to),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useUpdateAdminAIUsageSettings() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (settings: {
+      openai_api_key?: string;
+      openai_admin_key?: string;
+      wizzy_ai_monthly_budget_usd?: number;
+      alert_threshold_percent?: number;
+    }) => adminFetch('update_ai_usage_settings', settings),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'ai-usage'] });
+      toast.success('Configurações de consumo IA salvas');
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+}
+
+export function useUpdateAdminAIModels() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (strategy: AdminAIModelStrategy) => adminFetch('update_ai_models', strategy),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'ai-models'] });
+      toast.success('Modelos de IA salvos');
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+}
+
+export function useUpdatePaymentGatewayStrategy() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (strategy: {
+      active_provider: PaymentGatewayProvider;
+      asaas_enabled: boolean;
+      stripe_enabled: boolean;
+      test_mode: boolean;
+    }) => adminFetch('update_payment_gateway_strategy', strategy),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'payment-gateways'] });
+      toast.success('Gateway de pagamento salvo');
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+}
+
+export function useUpdatePaymentGatewayConnectionSettings() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (settings: {
+      asaas_base_url?: string;
+      asaas_api_key?: string;
+      asaas_webhook_token?: string;
+      stripe_secret_key?: string;
+      stripe_publishable_key?: string;
+      stripe_webhook_secret?: string;
+      checkout_success_url?: string;
+      checkout_cancel_url?: string;
+    }) => adminFetch('update_payment_gateway_connection_settings', settings),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'payment-gateways'] });
+      toast.success('Credenciais de pagamento salvas');
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+}
+
 export function useUpdateWhatsAppStrategy() {
   const queryClient = useQueryClient();
   return useMutation({

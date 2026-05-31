@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { resolveOpenAIConfig } from "../_shared/aiStrategy.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -246,8 +247,8 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Fetch messages, conversation, and integration config in parallel
-    const [messagesResult, conversationResult, integrationResult] = await Promise.all([
+    // Fetch messages and conversation in parallel
+    const [messagesResult, conversationResult] = await Promise.all([
       supabase
         .from('messages')
         .select('id, content, type, direction, is_from_bot, media_url, created_at')
@@ -259,26 +260,18 @@ Deno.serve(async (req) => {
         .select('contact_id, organization_id')
         .eq('id', conversationId)
         .maybeSingle(),
-      (async () => {
-        // Get org_id first from conversation, then fetch config
-        const { data: conv } = await supabase.from('conversations').select('organization_id').eq('id', conversationId).maybeSingle();
-        if (!conv?.organization_id) return null;
-        const { data } = await supabase.from('integration_configs').select('*').eq('organization_id', conv.organization_id).maybeSingle();
-        return data;
-      })(),
     ]);
 
     const { data: messages, error: messagesError } = messagesResult;
     const { data: conversation } = conversationResult;
-    const integrationConfig = integrationResult;
 
     // Resolve AI config for conversation_summary feature
-    const aiConfig = resolveAIConfigHelper(integrationConfig, 'conversation_summary');
+    const aiConfig = await resolveOpenAIConfig(supabase, conversation?.organization_id, 'conversation_summary');
 
     if (!aiConfig) {
       console.error('[analyze-conversation] No AI config resolved!');
       return new Response(JSON.stringify({
-        error: 'Nenhum provedor de IA configurado. Acesse Configurações > Integrações e adicione sua chave de API (OpenAI ou Gemini).'
+        error: 'OpenAI não configurada. Acesse Configurações > Integrações e adicione sua chave de API.'
       }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -540,57 +533,3 @@ Responda no formato JSON:
     });
   }
 });
-
-function resolveAIConfigHelper(integrationConfig: any, feature: string, _lovableApiKey?: string) {
-  const OPENAI_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
-  const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
-
-  if (!integrationConfig) {
-    console.error('[resolveAIConfig] No integration config found. User must configure AI provider in Settings > Integrations.');
-    return null;
-  }
-
-  const featureProvider = integrationConfig[`${feature}_provider`];
-  const featureModel = integrationConfig[`${feature}_model`];
-  let provider = featureProvider || integrationConfig.ai_provider;
-  let model = featureModel || integrationConfig.default_model;
-
-  if (!provider || provider === 'lovable') {
-    // Try openai first, then gemini
-    if (integrationConfig.openai_api_key) {
-      provider = 'openai';
-      model = model || 'gpt-4o-mini';
-    } else if (integrationConfig.gemini_api_key) {
-      provider = 'gemini';
-      model = model || 'gemini-2.0-flash';
-    } else {
-      console.error('[resolveAIConfig] No AI provider or API key configured.');
-      return null;
-    }
-  }
-
-  // Ensure format is correct depending on provider
-  if (provider === 'gemini') {
-    model = (model || 'gemini-2.0-flash').replace('google/', '');
-  } else if (provider === 'openai') {
-    model = (model || 'gpt-4o-mini').replace('openai/', '');
-  }
-
-  switch (provider) {
-    case 'openai':
-      if (!integrationConfig.openai_api_key) {
-        console.error('[resolveAIConfig] OpenAI selected but no API key configured.');
-        return null;
-      }
-      return { endpoint: OPENAI_ENDPOINT, apiKey: integrationConfig.openai_api_key, model };
-    case 'gemini':
-      if (!integrationConfig.gemini_api_key) {
-        console.error('[resolveAIConfig] Gemini selected but no API key configured.');
-        return null;
-      }
-      return { endpoint: GEMINI_ENDPOINT, apiKey: integrationConfig.gemini_api_key, model };
-    default:
-      console.error(`[resolveAIConfig] Unknown provider: ${provider}`);
-      return null;
-  }
-}

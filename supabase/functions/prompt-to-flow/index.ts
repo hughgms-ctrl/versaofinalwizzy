@@ -8,7 +8,6 @@ const corsHeaders = {
 
 function resolveAIConfig(integrationConfig: any, feature: string, _lovableApiKey?: string) {
   const OPENAI_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
-  const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
 
   if (!integrationConfig) {
     return null;
@@ -16,37 +15,20 @@ function resolveAIConfig(integrationConfig: any, feature: string, _lovableApiKey
 
   const featureProvider = integrationConfig[`${feature}_provider`];
   const featureModel = integrationConfig[`${feature}_model`];
-  let provider = featureProvider || integrationConfig.ai_provider;
-  let model = featureModel || integrationConfig.default_model;
+  const model = (featureModel || integrationConfig.default_model || 'gpt-4o-mini').replace('openai/', '').replace('google/', '');
+  if ((featureProvider || integrationConfig.ai_provider) !== 'openai') integrationConfig.ai_provider = 'openai';
+  if (!integrationConfig.openai_api_key) return null;
+  return { endpoint: OPENAI_ENDPOINT, apiKey: integrationConfig.openai_api_key, model };
+}
 
-  if (!provider || provider === 'lovable') {
-    if (integrationConfig.openai_api_key) {
-      provider = 'openai';
-      model = model || 'gpt-4o-mini';
-    } else if (integrationConfig.gemini_api_key) {
-      provider = 'gemini';
-      model = model || 'gemini-2.0-flash';
-    } else {
-      return null;
-    }
-  }
-
-  if (provider === 'gemini') {
-    model = (model || 'gemini-2.0-flash').replace('google/', '');
-  } else if (provider === 'openai') {
-    model = (model || 'gpt-4o-mini').replace('openai/', '');
-  }
-
-  switch (provider) {
-    case 'openai':
-      if (!integrationConfig.openai_api_key) return null;
-      return { endpoint: OPENAI_ENDPOINT, apiKey: integrationConfig.openai_api_key, model };
-    case 'gemini':
-      if (!integrationConfig.gemini_api_key) return null;
-      return { endpoint: GEMINI_ENDPOINT, apiKey: integrationConfig.gemini_api_key, model };
-    default:
-      return null;
-  }
+async function applyAdminAIStrategy(supabase: any, organizationId: string, integrationConfig: any, feature: string) {
+  const { data: planRow } = await supabase.from('organization_plans').select('plan:platform_plans(ai_mode)').eq('organization_id', organizationId).maybeSingle();
+  const { data: settingRow } = await supabase.from('platform_settings').select('value').eq('key', 'ai_model_strategy').maybeSingle();
+  const strategy = settingRow?.value || {};
+  const model = strategy.features?.[feature] || strategy.default_model || 'gpt-4o-mini';
+  const platformKey = Deno.env.get('WIZZY_OPENAI_API_KEY') || Deno.env.get('OPENAI_API_KEY') || '';
+  const usePlatformKey = (planRow as any)?.plan?.ai_mode === 'platform_api';
+  return { ...(integrationConfig || {}), ai_provider: 'openai', default_model: model, [`${feature}_provider`]: 'openai', [`${feature}_model`]: model, openai_api_key: usePlatformKey ? platformKey : integrationConfig?.openai_api_key };
 }
 
 serve(async (req) => {
@@ -60,7 +42,7 @@ serve(async (req) => {
     if (organizationId) {
       const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
       const { data } = await supabase.from('integration_configs').select('*').eq('organization_id', organizationId).maybeSingle();
-      integrationConfig = data;
+      integrationConfig = await applyAdminAIStrategy(supabase, organizationId, data, 'flow_generation');
     }
     const aiConfig = resolveAIConfig(integrationConfig, 'flow_generation');
     if (!aiConfig) {

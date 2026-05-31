@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { getOrganizationIdFromRequest, resolveOpenAIConfig } from "../_shared/aiStrategy.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -43,8 +44,9 @@ Deno.serve(async (req) => {
     if (mode === 'draft') {
       if (!feedback) return fail('O campo de feedback é obrigatório para gerar a regra');
       
-      const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-      if (!LOVABLE_API_KEY) return fail('LOVABLE_API_KEY não está configurada no servidor');
+      const resolvedOrgId = await getOrganizationIdFromRequest(supabase, req, organizationId);
+      const aiConfig = await resolveOpenAIConfig(supabase, resolvedOrgId, 'training_rules');
+      if (!aiConfig) return fail('OpenAI não configurada para gerar regras de treinamento');
 
       // Fetch conversation context
       let conversationContext = '';
@@ -103,14 +105,14 @@ Responda em JSON com exatamente dois campos:
 
 Responda APENAS com o JSON, sem markdown ou comentários.`;
 
-      const resp = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+      const resp = await fetch(aiConfig.endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${LOVABLE_API_KEY}`
+          'Authorization': `Bearer ${aiConfig.apiKey}`
         },
         body: JSON.stringify({
-          model: 'google/gemini-3-flash-preview',
+          model: aiConfig.model,
           messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: feedback }],
           temperature: 0.7,
         })

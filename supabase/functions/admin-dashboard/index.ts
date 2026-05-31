@@ -400,6 +400,266 @@ Deno.serve(async (req) => {
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
+    if (action === 'ai_usage') {
+      const body = req.method === 'POST' ? await req.json() : {}
+      const today = new Date()
+      const defaultFrom = new Date(today)
+      defaultFrom.setDate(defaultFrom.getDate() - 6)
+      const dateFrom = String(body.date_from || defaultFrom.toISOString().slice(0, 10))
+      const dateTo = String(body.date_to || today.toISOString().slice(0, 10))
+      const aiModeFilter = String(body.ai_mode || 'all')
+      const startIso = `${dateFrom}T00:00:00.000Z`
+      const endIso = `${dateTo}T23:59:59.999Z`
+      const currentPeriod = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
+
+      const [logsRes, orgsRes, plansRes, integrationsRes, usageRes, settingsRes] = await Promise.all([
+        adminClient
+          .from('agent_execution_logs')
+          .select('id, organization_id, created_at, execution_time_ms')
+          .gte('created_at', startIso)
+          .lte('created_at', endIso),
+        adminClient
+          .from('organizations')
+          .select('id, name, slug, created_at'),
+        adminClient
+          .from('organization_plans')
+          .select('organization_id, status, plan:platform_plans(id, name, slug, ai_mode, max_ai_requests_month)'),
+        adminClient
+          .from('integration_configs')
+          .select('organization_id, openai_api_key'),
+        adminClient
+          .from('organization_usage')
+          .select('organization_id, period, ai_requests, ai_cost_usd')
+          .eq('period', currentPeriod),
+        adminClient
+          .from('platform_settings')
+          .select('value')
+          .eq('key', 'ai_usage_connection_settings')
+          .maybeSingle(),
+      ])
+
+      if (logsRes.error) throw logsRes.error
+      if (orgsRes.error) throw orgsRes.error
+      if (plansRes.error) throw plansRes.error
+      if (integrationsRes.error) throw integrationsRes.error
+      if (usageRes.error) throw usageRes.error
+      if (settingsRes.error) throw settingsRes.error
+
+      const savedSettings = settingsRes.data?.value || {}
+      const openaiApiKey = savedSettings.openai_api_key || Deno.env.get('WIZZY_OPENAI_API_KEY') || Deno.env.get('OPENAI_API_KEY') || ''
+      const openaiAdminKey = savedSettings.openai_admin_key || Deno.env.get('OPENAI_ADMIN_KEY') || ''
+      const wizzyAIBudget = Number(savedSettings.wizzy_ai_monthly_budget_usd || 0)
+      const alertThreshold = Number(savedSettings.alert_threshold_percent || 80)
+
+      const logs = logsRes.data || []
+      const requestCountByOrg: Record<string, number> = {}
+      const dailyMap: Record<string, { date: string; total_requests: number; own_api_requests: number; wizzy_ai_requests: number }> = {}
+      for (const log of logs as any[]) {
+        const orgId = log.organization_id
+        requestCountByOrg[orgId] = (requestCountByOrg[orgId] || 0) + 1
+      }
+
+      const planByOrg = new Map((plansRes.data || []).map((row: any) => [row.organization_id, row]))
+      const integrationByOrg = new Map((integrationsRes.data || []).map((row: any) => [row.organization_id, row]))
+      const usageByOrg = new Map((usageRes.data || []).map((row: any) => [row.organization_id, row]))
+
+      const rows = (orgsRes.data || []).map((org: any) => {
+        const planRow: any = planByOrg.get(org.id) || {}
+        const plan = planRow.plan || {}
+        const aiMode = plan.ai_mode === 'platform_api' ? 'platform_api' : 'own_api'
+        const monthlyLimit = Number(plan.max_ai_requests_month || 0)
+        const monthlyUsage = usageByOrg.get(org.id) as any
+        const monthlyUsed = Number(monthlyUsage?.ai_requests || 0)
+        const remaining = monthlyLimit > 0 ? Math.max(monthlyLimit - monthlyUsed, 0) : null
+        const usagePercent = monthlyLimit > 0 ? Math.round((monthlyUsed / monthlyLimit) * 100) : null
+        const periodRequests = Number(requestCountByOrg[org.id] || 0)
+        const integration = integrationByOrg.get(org.id) as any
+
+        return {
+          organization_id: org.id,
+          organization_name: org.name || org.slug || 'Sem nome',
+          plan_name: plan.name || 'Sem plano',
+          plan_slug: plan.slug || null,
+          plan_status: planRow.status || null,
+          ai_mode: aiMode,
+          api_type: aiMode === 'platform_api' ? 'Wizzy AI' : 'API propria',
+          has_openai_key: !!integration?.openai_api_key,
+          period_requests: periodRequests,
+          monthly_used: monthlyUsed,
+          monthly_limit: monthlyLimit || null,
+          monthly_remaining: remaining,
+          monthly_usage_percent: usagePercent,
+          ai_cost_usd: Number(monthlyUsage?.ai_cost_usd || 0),
+        }
+      }).filter((row: any) => {
+        if (aiModeFilter === 'platform_api') return row.ai_mode === 'platform_api'
+        if (aiModeFilter === 'own_api') return row.ai_mode === 'own_api'
+        return true
+      }).sort((a: any, b: any) => b.period_requests - a.period_requests)
+
+      const modeByOrg = new Map(rows.map((row: any) => [row.organization_id, row.ai_mode]))
+      for (const log of logs as any[]) {
+        const date = String(log.created_at || '').slice(0, 10)
+        const mode = modeByOrg.get(log.organization_id)
+        if (!mode) continue
+        if (!dailyMap[date]) dailyMap[date] = { date, total_requests: 0, own_api_requests: 0, wizzy_ai_requests: 0 }
+        dailyMap[date].total_requests += 1
+        if (mode === 'platform_api') dailyMap[date].wizzy_ai_requests += 1
+        else dailyMap[date].own_api_requests += 1
+      }
+
+      const summary = rows.reduce((acc: any, row: any) => {
+        acc.total_requests += row.period_requests
+        acc.total_monthly_used += row.monthly_used
+        acc.total_monthly_limit += row.monthly_limit || 0
+        acc.total_cost_usd += row.ai_cost_usd
+        if (row.ai_mode === 'platform_api') {
+          acc.wizzy_ai_requests += row.period_requests
+          acc.wizzy_ai_monthly_used += row.monthly_used
+          acc.wizzy_ai_organizations += 1
+        } else {
+          acc.own_api_requests += row.period_requests
+          acc.own_api_monthly_used += row.monthly_used
+          acc.own_api_organizations += 1
+        }
+        return acc
+      }, {
+        total_requests: 0,
+        total_monthly_used: 0,
+        total_monthly_limit: 0,
+        total_cost_usd: 0,
+        wizzy_ai_requests: 0,
+        wizzy_ai_monthly_used: 0,
+        wizzy_ai_organizations: 0,
+        own_api_requests: 0,
+        own_api_monthly_used: 0,
+        own_api_organizations: 0,
+        total_organizations: rows.length,
+      })
+
+      let openaiCosts: any = null
+      if (openaiAdminKey) {
+        try {
+          const startSeconds = Math.floor(new Date(startIso).getTime() / 1000)
+          const endSeconds = Math.floor(new Date(endIso).getTime() / 1000)
+          const params = new URLSearchParams({
+            start_time: String(startSeconds),
+            end_time: String(endSeconds),
+            limit: '180',
+          })
+          const costResponse = await fetch(`https://api.openai.com/v1/organization/costs?${params.toString()}`, {
+            headers: {
+              Authorization: `Bearer ${openaiAdminKey}`,
+              'Content-Type': 'application/json',
+            },
+          })
+          const costJson = await costResponse.json().catch(() => null)
+          if (costResponse.ok) {
+            const total = (costJson?.data || []).reduce((sum: number, bucket: any) => {
+              const bucketTotal = (bucket.results || []).reduce((inner: number, result: any) => {
+                return inner + Number(result.amount?.value || 0)
+              }, 0)
+              return sum + bucketTotal
+            }, 0)
+            openaiCosts = {
+              configured: true,
+              available: true,
+              total_usd: total,
+              currency: 'usd',
+            }
+          } else {
+            openaiCosts = {
+              configured: true,
+              available: false,
+              error: costJson?.error?.message || 'Falha ao consultar custos OpenAI',
+            }
+          }
+        } catch (err: any) {
+          openaiCosts = {
+            configured: true,
+            available: false,
+            error: err?.message || 'Falha ao consultar custos OpenAI',
+          }
+        }
+      } else {
+        openaiCosts = { configured: false, available: false, total_usd: 0 }
+      }
+
+      summary.wizzy_ai_budget_usd = wizzyAIBudget
+      summary.wizzy_ai_real_cost_usd = Number(openaiCosts?.total_usd || 0)
+      summary.wizzy_ai_budget_usage_percent = wizzyAIBudget > 0 ? Math.round((summary.wizzy_ai_real_cost_usd / wizzyAIBudget) * 100) : null
+
+      return new Response(JSON.stringify({
+        filters: { date_from: dateFrom, date_to: dateTo, ai_mode: aiModeFilter, current_period: currentPeriod },
+        summary,
+        settings: {
+          openai_api_key_configured: !!openaiApiKey,
+          openai_api_key_masked: maskSecret(openaiApiKey),
+          openai_admin_key_configured: !!openaiAdminKey,
+          openai_admin_key_masked: maskSecret(openaiAdminKey),
+          wizzy_ai_monthly_budget_usd: wizzyAIBudget,
+          alert_threshold_percent: alertThreshold,
+          openai_costs: openaiCosts,
+        },
+        daily: Object.values(dailyMap).sort((a: any, b: any) => a.date.localeCompare(b.date)),
+        organizations: rows,
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    if (action === 'update_ai_usage_settings') {
+      const body = await req.json()
+      const { data: existingRow } = await adminClient
+        .from('platform_settings')
+        .select('value')
+        .eq('key', 'ai_usage_connection_settings')
+        .maybeSingle()
+
+      const existing = existingRow?.value || {}
+      const keepSecret = (next: unknown, previous: string | undefined) => {
+        const value = String(next || '').trim()
+        if (!value || value.includes('•') || value.includes('Ã¢') || value.includes('â€¢')) return previous || ''
+        return value
+      }
+
+      const settings = {
+        openai_api_key: keepSecret(body.openai_api_key, existing.openai_api_key || Deno.env.get('WIZZY_OPENAI_API_KEY') || Deno.env.get('OPENAI_API_KEY')),
+        openai_admin_key: keepSecret(body.openai_admin_key, existing.openai_admin_key || Deno.env.get('OPENAI_ADMIN_KEY')),
+        wizzy_ai_monthly_budget_usd: Math.max(0, Number(body.wizzy_ai_monthly_budget_usd || existing.wizzy_ai_monthly_budget_usd || 0)),
+        alert_threshold_percent: Math.min(100, Math.max(1, Number(body.alert_threshold_percent || existing.alert_threshold_percent || 80))),
+        updated_at: new Date().toISOString(),
+        updated_by: user.id,
+      }
+
+      const { error } = await adminClient
+        .from('platform_settings')
+        .upsert({
+          key: 'ai_usage_connection_settings',
+          value: settings,
+          updated_at: new Date().toISOString(),
+          updated_by: user.id,
+        }, { onConflict: 'key' })
+      if (error) throw error
+
+      await adminClient.from('admin_audit_logs').insert({
+        action: 'update_ai_usage_settings',
+        entity_type: 'platform',
+        performed_by: user.id,
+        details: {
+          ...settings,
+          openai_api_key: maskSecret(settings.openai_api_key),
+          openai_admin_key: maskSecret(settings.openai_admin_key),
+        },
+      })
+
+      return new Response(JSON.stringify({
+        settings: {
+          ...settings,
+          openai_api_key: maskSecret(settings.openai_api_key),
+          openai_admin_key: maskSecret(settings.openai_admin_key),
+        },
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
     if (action === 'whatsapp_integrations') {
       const { data: settingsRows } = await adminClient
         .from('platform_settings')
@@ -650,6 +910,296 @@ Deno.serve(async (req) => {
           ...connectionSettings,
           uazapi_admin_token: maskSecret(connectionSettings.uazapi_admin_token),
           evolution_api_key: maskSecret(connectionSettings.evolution_api_key),
+        },
+      })
+
+      return new Response(JSON.stringify({ success: true }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    if (action === 'payment_gateways') {
+      const { data: settingsRows } = await adminClient
+        .from('platform_settings')
+        .select('key, value')
+        .in('key', ['payment_gateway_strategy', 'payment_gateway_connection_settings'])
+
+      const savedStrategy = (settingsRows || []).find((s: any) => s.key === 'payment_gateway_strategy')?.value || {}
+      const savedConnection = (settingsRows || []).find((s: any) => s.key === 'payment_gateway_connection_settings')?.value || {}
+
+      const strategy = {
+        active_provider: savedStrategy.active_provider || 'asaas',
+        asaas_enabled: savedStrategy.asaas_enabled ?? true,
+        stripe_enabled: savedStrategy.stripe_enabled ?? false,
+        test_mode: savedStrategy.test_mode ?? true,
+        updated_at: savedStrategy.updated_at || null,
+        updated_by: savedStrategy.updated_by || null,
+      }
+
+      const rawConnection = {
+        asaas_base_url: normalizeBaseUrl(savedConnection.asaas_base_url || Deno.env.get('ASAAS_BASE_URL') || 'https://sandbox.asaas.com/api/v3'),
+        asaas_api_key: savedConnection.asaas_api_key || Deno.env.get('ASAAS_API_KEY') || '',
+        asaas_webhook_token: savedConnection.asaas_webhook_token || Deno.env.get('ASAAS_WEBHOOK_TOKEN') || '',
+        stripe_secret_key: savedConnection.stripe_secret_key || Deno.env.get('STRIPE_SECRET_KEY') || '',
+        stripe_publishable_key: savedConnection.stripe_publishable_key || Deno.env.get('STRIPE_PUBLISHABLE_KEY') || '',
+        stripe_webhook_secret: savedConnection.stripe_webhook_secret || Deno.env.get('STRIPE_WEBHOOK_SECRET') || '',
+        checkout_success_url: savedConnection.checkout_success_url || `${supabaseUrl}/plans?checkout=success`,
+        checkout_cancel_url: savedConnection.checkout_cancel_url || `${supabaseUrl}/plans?checkout=cancel`,
+      }
+
+      const webhooks = {
+        asaas: `${supabaseUrl}/functions/v1/asaas-webhook`,
+        stripe: `${supabaseUrl}/functions/v1/stripe-webhook`,
+      }
+
+      const connection = {
+        asaas_base_url: rawConnection.asaas_base_url,
+        asaas_api_key_masked: maskSecret(rawConnection.asaas_api_key),
+        asaas_api_key_configured: !!rawConnection.asaas_api_key,
+        asaas_webhook_token_masked: maskSecret(rawConnection.asaas_webhook_token),
+        asaas_webhook_token_configured: !!rawConnection.asaas_webhook_token,
+        stripe_secret_key_masked: maskSecret(rawConnection.stripe_secret_key),
+        stripe_secret_key_configured: !!rawConnection.stripe_secret_key,
+        stripe_publishable_key: rawConnection.stripe_publishable_key,
+        stripe_publishable_key_configured: !!rawConnection.stripe_publishable_key,
+        stripe_webhook_secret_masked: maskSecret(rawConnection.stripe_webhook_secret),
+        stripe_webhook_secret_configured: !!rawConnection.stripe_webhook_secret,
+        checkout_success_url: rawConnection.checkout_success_url,
+        checkout_cancel_url: rawConnection.checkout_cancel_url,
+      }
+
+      return new Response(JSON.stringify({
+        strategy,
+        connection,
+        provider_status: {
+          asaas: {
+            provider: 'asaas',
+            configured: !!rawConnection.asaas_api_key,
+            webhook_url: webhooks.asaas,
+          },
+          stripe: {
+            provider: 'stripe',
+            configured: !!rawConnection.stripe_secret_key && !!rawConnection.stripe_publishable_key,
+            webhook_url: webhooks.stripe,
+          },
+        },
+        summary: {
+          configured_webhooks: `${[
+            rawConnection.asaas_webhook_token,
+            rawConnection.stripe_webhook_secret,
+          ].filter(Boolean).length}/2`,
+        },
+        webhooks,
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    if (action === 'ai_models') {
+      const defaultStrategy = {
+        provider: 'openai',
+        default_model: 'gpt-4o-mini',
+        features: {
+          agents: 'gpt-4o-mini',
+          conversation_summary: 'gpt-4o-mini',
+          prompt_generation: 'gpt-4.1-mini',
+          flow_generation: 'gpt-4.1',
+          transcription: 'gpt-4o-mini-transcribe',
+          document_processing: 'gpt-4.1-mini',
+          document_field_unification: 'gpt-4.1-mini',
+          training_rules: 'gpt-4.1-mini',
+          remarketing: 'gpt-4.1-mini',
+          qualification_rules: 'gpt-4.1-mini',
+          flow_ai: 'gpt-4.1-mini',
+        },
+      }
+
+      const { data: row } = await adminClient
+        .from('platform_settings')
+        .select('value')
+        .eq('key', 'ai_model_strategy')
+        .maybeSingle()
+
+      const saved = row?.value || {}
+      return new Response(JSON.stringify({
+        strategy: {
+          ...defaultStrategy,
+          ...saved,
+          provider: 'openai',
+          features: {
+            ...defaultStrategy.features,
+            ...(saved.features || {}),
+          },
+        },
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    if (action === 'update_ai_models') {
+      const body = await req.json()
+      const textModels = [
+        'gpt-5.2',
+        'gpt-5.1',
+        'gpt-5',
+        'gpt-5-mini',
+        'gpt-5-nano',
+        'gpt-4.1',
+        'gpt-4.1-mini',
+        'gpt-4.1-nano',
+        'gpt-4o',
+        'gpt-4o-mini',
+      ]
+      const transcriptionModels = [
+        'gpt-4o-transcribe',
+        'gpt-4o-mini-transcribe',
+        'whisper-1',
+      ]
+      const allowedFeatures = [
+        'agents',
+        'conversation_summary',
+        'prompt_generation',
+        'flow_generation',
+        'transcription',
+        'document_processing',
+        'document_field_unification',
+        'training_rules',
+        'remarketing',
+        'qualification_rules',
+        'flow_ai',
+      ]
+      const defaultModel = String(body.default_model || 'gpt-4o-mini').trim()
+      if (!textModels.includes(defaultModel)) throw new Error('Modelo padrão inválido')
+
+      const nextFeatures: Record<string, string> = {}
+      for (const feature of allowedFeatures) {
+        const model = String(body.features?.[feature] || defaultModel).trim()
+        const allowedModels = feature === 'transcription' ? transcriptionModels : textModels
+        if (!allowedModels.includes(model)) throw new Error(`Modelo inválido para ${feature}`)
+        nextFeatures[feature] = model
+      }
+
+      const strategy = {
+        provider: 'openai',
+        default_model: defaultModel,
+        features: nextFeatures,
+        updated_at: new Date().toISOString(),
+        updated_by: user.id,
+      }
+
+      const { error } = await adminClient
+        .from('platform_settings')
+        .upsert({
+          key: 'ai_model_strategy',
+          value: strategy,
+          updated_at: new Date().toISOString(),
+          updated_by: user.id,
+        }, { onConflict: 'key' })
+      if (error) throw error
+
+      await adminClient.from('admin_audit_logs').insert({
+        action: 'update_ai_models',
+        entity_type: 'platform',
+        performed_by: user.id,
+        details: strategy,
+      })
+
+      return new Response(JSON.stringify({ strategy }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    if (action === 'update_payment_gateway_strategy') {
+      const body = await req.json()
+      const allowedProviders = ['asaas', 'stripe']
+      const activeProvider = body.active_provider
+
+      if (!allowedProviders.includes(activeProvider)) {
+        throw new Error('Invalid payment gateway')
+      }
+
+      const asaasEnabled = Boolean(body.asaas_enabled)
+      const stripeEnabled = Boolean(body.stripe_enabled)
+      if ((activeProvider === 'asaas' && !asaasEnabled) || (activeProvider === 'stripe' && !stripeEnabled)) {
+        throw new Error('Active payment gateway must be enabled')
+      }
+
+      const strategy = {
+        active_provider: activeProvider,
+        asaas_enabled: asaasEnabled,
+        stripe_enabled: stripeEnabled,
+        test_mode: Boolean(body.test_mode),
+        updated_at: new Date().toISOString(),
+        updated_by: user.id,
+      }
+
+      const { error } = await adminClient
+        .from('platform_settings')
+        .upsert({
+          key: 'payment_gateway_strategy',
+          value: strategy,
+          updated_at: new Date().toISOString(),
+          updated_by: user.id,
+        }, { onConflict: 'key' })
+
+      if (error) throw error
+
+      await adminClient.from('admin_audit_logs').insert({
+        action: 'update_payment_gateway_strategy',
+        entity_type: 'platform',
+        performed_by: user.id,
+        details: strategy,
+      })
+
+      return new Response(JSON.stringify({ strategy }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+      })
+    }
+
+    if (action === 'update_payment_gateway_connection_settings') {
+      const body = await req.json()
+      const { data: existingRow } = await adminClient
+        .from('platform_settings')
+        .select('value')
+        .eq('key', 'payment_gateway_connection_settings')
+        .maybeSingle()
+
+      const existing = existingRow?.value || {}
+      const keepSecret = (next: unknown, previous: string | undefined) => {
+        const value = String(next || '').trim()
+        if (!value || value.includes('•') || value.includes('â€¢')) return previous || ''
+        return value
+      }
+      const connectionSettings = {
+        asaas_base_url: normalizeBaseUrl(body.asaas_base_url ?? existing.asaas_base_url ?? Deno.env.get('ASAAS_BASE_URL') ?? 'https://sandbox.asaas.com/api/v3'),
+        asaas_api_key: keepSecret(body.asaas_api_key, existing.asaas_api_key || Deno.env.get('ASAAS_API_KEY')),
+        asaas_webhook_token: keepSecret(body.asaas_webhook_token, existing.asaas_webhook_token || Deno.env.get('ASAAS_WEBHOOK_TOKEN')),
+        stripe_secret_key: keepSecret(body.stripe_secret_key, existing.stripe_secret_key || Deno.env.get('STRIPE_SECRET_KEY')),
+        stripe_publishable_key: String(body.stripe_publishable_key ?? existing.stripe_publishable_key ?? Deno.env.get('STRIPE_PUBLISHABLE_KEY') ?? '').trim(),
+        stripe_webhook_secret: keepSecret(body.stripe_webhook_secret, existing.stripe_webhook_secret || Deno.env.get('STRIPE_WEBHOOK_SECRET')),
+        checkout_success_url: String(body.checkout_success_url || existing.checkout_success_url || `${supabaseUrl}/plans?checkout=success`).trim(),
+        checkout_cancel_url: String(body.checkout_cancel_url || existing.checkout_cancel_url || `${supabaseUrl}/plans?checkout=cancel`).trim(),
+        updated_at: new Date().toISOString(),
+        updated_by: user.id,
+      }
+
+      const { error } = await adminClient
+        .from('platform_settings')
+        .upsert({
+          key: 'payment_gateway_connection_settings',
+          value: connectionSettings,
+          updated_at: new Date().toISOString(),
+          updated_by: user.id,
+        }, { onConflict: 'key' })
+
+      if (error) throw error
+
+      await adminClient.from('admin_audit_logs').insert({
+        action: 'update_payment_gateway_connection_settings',
+        entity_type: 'platform',
+        performed_by: user.id,
+        details: {
+          ...connectionSettings,
+          asaas_api_key: maskSecret(connectionSettings.asaas_api_key),
+          asaas_webhook_token: maskSecret(connectionSettings.asaas_webhook_token),
+          stripe_secret_key: maskSecret(connectionSettings.stripe_secret_key),
+          stripe_webhook_secret: maskSecret(connectionSettings.stripe_webhook_secret),
         },
       })
 

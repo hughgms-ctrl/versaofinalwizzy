@@ -1,45 +1,11 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'npm:@supabase/supabase-js@2';
+import { getOrganizationIdFromRequest, resolveOpenAIConfig } from "../_shared/aiStrategy.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
-
-function resolveAIConfig(integrationConfig: any, feature: string) {
-  const OPENAI_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
-  const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
-  const LOVABLE_ENDPOINT = 'https://ai.gateway.lovable.dev/v1/chat/completions';
-
-  const featureProvider = integrationConfig?.[`${feature}_provider`];
-  const featureModel = integrationConfig?.[`${feature}_model`];
-  let provider = featureProvider || integrationConfig?.ai_provider || 'lovable';
-  let model = featureModel || integrationConfig?.default_model || 'google/gemini-3-flash-preview';
-
-  if (provider === 'lovable') {
-    const lovableKey = Deno.env.get('LOVABLE_API_KEY');
-    if (lovableKey) {
-      return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableKey, model: model || 'google/gemini-3-flash-preview' };
-    }
-    if (integrationConfig?.openai_api_key) { provider = 'openai'; model = model || 'gpt-4o-mini'; }
-    else if (integrationConfig?.gemini_api_key) { provider = 'gemini'; model = model || 'gemini-2.0-flash'; }
-    else return null;
-  }
-
-  if (provider === 'gemini') model = (model || 'gemini-2.0-flash').replace('google/', '');
-  else if (provider === 'openai') model = (model || 'gpt-4o-mini').replace('openai/', '');
-
-  switch (provider) {
-    case 'openai':
-      if (!integrationConfig?.openai_api_key) return null;
-      return { endpoint: OPENAI_ENDPOINT, apiKey: integrationConfig.openai_api_key, model };
-    case 'gemini':
-      if (!integrationConfig?.gemini_api_key) return null;
-      return { endpoint: GEMINI_ENDPOINT, apiKey: integrationConfig.gemini_api_key, model };
-    default:
-      return null;
-  }
-}
 
 const SYSTEM_PROMPT = `Você é um especialista em análise de prompts de agentes de IA jurídicos/comerciais.
 
@@ -77,14 +43,9 @@ serve(async (req) => {
       });
     }
 
-    let integrationConfig = null;
-    if (organizationId) {
-      const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
-      const { data } = await supabase.from('integration_configs').select('*').eq('organization_id', organizationId).maybeSingle();
-      integrationConfig = data;
-    }
-
-    const aiConfig = resolveAIConfig(integrationConfig, 'prompt_generation');
+    const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+    const resolvedOrgId = await getOrganizationIdFromRequest(supabase, req, organizationId);
+    const aiConfig = await resolveOpenAIConfig(supabase, resolvedOrgId, 'qualification_rules');
     if (!aiConfig) {
       return new Response(JSON.stringify({ error: "Nenhum provedor de IA configurado." }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },

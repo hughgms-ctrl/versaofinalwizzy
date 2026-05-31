@@ -152,6 +152,7 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+    const PLATFORM_OPENAI_API_KEY = Deno.env.get('WIZZY_OPENAI_API_KEY') || Deno.env.get('OPENAI_API_KEY') || '';
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const { 
@@ -329,7 +330,7 @@ Deno.serve(async (req) => {
     const [
       messagesResult, agentsResult, tagsResult, contactTagsResult,
       pipelinesResult, pipelinePositionsResult, flowsResult, workspaceConfig, integrationConfig,
-      trainingRulesResult, qualificationRulesResult,
+      organizationPlanResult, aiModelStrategy, trainingRulesResult, qualificationRulesResult,
     ] = await Promise.all([
       supabase.from('messages').select('*').eq('conversation_id', conversationId)
         .order('created_at', { ascending: false }).limit(80),
@@ -343,6 +344,8 @@ Deno.serve(async (req) => {
       supabase.from('flows').select('id, name, description').eq('organization_id', organizationId).eq('is_active', true),
       resolveWorkspaceConfig(supabase, conversation),
       resolveIntegrationConfig(supabase, organizationId),
+      supabase.from('organization_plans').select('plan:platform_plans(ai_mode)').eq('organization_id', organizationId).maybeSingle(),
+      loadAIModelStrategy(supabase),
       supabase.from('agent_training_rules').select('*')
         .eq('organization_id', organizationId).eq('is_active', true),
       supabase.from('agent_qualification_rules').select('*')
@@ -390,9 +393,25 @@ Deno.serve(async (req) => {
     const qualificationRules = qualificationRulesResult.data || [];
     console.log(`[ORCHESTRATOR] Loaded ${trainingRules.length} training rules and ${qualificationRules.length} qualification rules for org ${organizationId}`);
 
-    // Resolve AI config: activeAgent > masterPrompt > integration_configs > workspace_agent_configs > defaults
-    const finalProvider = activeAgent?.provider || masterPrompt?.provider || integrationConfig?.ai_provider || 'lovable';
-    const finalModel = activeAgent?.model || masterPrompt?.model || integrationConfig?.default_model || 'google/gemini-2.5-flash';
+    const planAIMode = (organizationPlanResult.data as any)?.plan?.ai_mode || 'own_api';
+    const usesPlatformAI = planAIMode === 'platform_api';
+    const adminAgentsModel = aiModelStrategy.features?.agents || aiModelStrategy.default_model || 'gpt-4o-mini';
+    const effectiveIntegrationConfig = usesPlatformAI
+      ? {
+          ...(integrationConfig || {}),
+          ai_provider: PLATFORM_OPENAI_API_KEY ? 'openai' : 'lovable',
+          default_model: PLATFORM_OPENAI_API_KEY ? adminAgentsModel : (integrationConfig?.default_model || 'google/gemini-2.5-flash'),
+          openai_api_key: PLATFORM_OPENAI_API_KEY || integrationConfig?.openai_api_key || null,
+        }
+      : {
+          ...(integrationConfig || {}),
+          ai_provider: 'openai',
+          default_model: adminAgentsModel,
+        };
+
+    // Admin controls the model used for agents. Client only provides the API key on own-api plans.
+    const finalProvider = effectiveIntegrationConfig?.ai_provider || 'openai';
+    const finalModel = effectiveIntegrationConfig?.default_model || adminAgentsModel;
 
     // Enrich messageContent if it's just '[mídia]' — use the last inbound message's enriched content
     let enrichedMessageContent = messageContent;
@@ -404,7 +423,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    const aiConfig = resolveAIConfig(integrationConfig, 'agents', LOVABLE_API_KEY!, finalProvider, finalModel);
+    const aiConfig = resolveAIConfig(effectiveIntegrationConfig, 'agents', LOVABLE_API_KEY!, finalProvider, finalModel);
     const aiModel = aiConfig.model;
     
     console.log(`[ORCHESTRATOR] AI Config: Provider=${finalProvider}, Model=${aiModel} (Target=${finalModel})`);
@@ -425,7 +444,7 @@ Deno.serve(async (req) => {
       messages, agents, allTags, contactTags, pipelines, pipelinePositions,
       flows, aiModel, masterPrompt, LOVABLE_API_KEY,
       aiEndpoint: aiConfig.endpoint, aiApiKey: aiConfig.apiKey,
-      integrationConfig, flowExecutionId, trainingRules, qualificationRules,
+      integrationConfig: effectiveIntegrationConfig, flowExecutionId, trainingRules, qualificationRules,
       forceResponse, // PASS TO CONTEXT
       additionalContext, // NEW: Pass the payload additionalContext
       organizationTimezone, // NEW: For temporal context block in prompts
@@ -493,6 +512,7 @@ Deno.serve(async (req) => {
       tools_executed: result.toolsExecuted,
       execution_time_ms: executionTimeMs,
     });
+    await recordAIUsage(supabase, organizationId);
 
     console.log(`=== ORCHESTRATOR COMPLETE (${executionTimeMs}ms, ${result.toolsExecuted.length} tools) ===`);
 
@@ -3428,6 +3448,67 @@ async function resolveIntegrationConfig(supabase: any, organizationId: string) {
     .eq('organization_id', organizationId)
     .maybeSingle();
   return data;
+}
+
+async function loadAIModelStrategy(supabase: any) {
+  const fallback = {
+    default_model: 'gpt-4o-mini',
+    features: {
+      agents: 'gpt-4o-mini',
+      conversation_summary: 'gpt-4o-mini',
+      prompt_generation: 'gpt-4.1-mini',
+      flow_generation: 'gpt-4.1',
+      transcription: 'gpt-4o-mini-transcribe',
+    },
+  };
+  const { data } = await supabase
+    .from('platform_settings')
+    .select('value')
+    .eq('key', 'ai_model_strategy')
+    .maybeSingle();
+  const saved = data?.value || {};
+  return {
+    ...fallback,
+    ...saved,
+    features: {
+      ...fallback.features,
+      ...(saved.features || {}),
+    },
+  };
+}
+
+function getUsagePeriod(date = new Date()) {
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+async function recordAIUsage(supabase: any, organizationId: string) {
+  const period = getUsagePeriod();
+  const { data: current } = await supabase
+    .from('organization_usage')
+    .select('ai_requests')
+    .eq('organization_id', organizationId)
+    .eq('period', period)
+    .maybeSingle();
+
+  if (current) {
+    await supabase
+      .from('organization_usage')
+      .update({
+        ai_requests: Number(current.ai_requests || 0) + 1,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('organization_id', organizationId)
+      .eq('period', period);
+    return;
+  }
+
+  await supabase
+    .from('organization_usage')
+    .insert({
+      organization_id: organizationId,
+      period,
+      ai_requests: 1,
+    });
 }
 
 function resolveAIConfig(

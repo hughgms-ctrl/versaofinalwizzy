@@ -29,39 +29,39 @@ export interface IntegrationConfig {
 }
 
 export const PROVIDER_LABELS: Record<AIProvider, string> = {
-  lovable: 'Wizzy IA (Em breve)',
+  lovable: 'Wizzy AI',
   openai: 'OpenAI',
   gemini: 'Google Gemini',
 };
 
 export const MODELS_BY_PROVIDER: Record<AIProvider, { value: string; label: string }[]> = {
   lovable: [
-    { value: 'google/gemini-2.0-flash', label: 'Gemini 2.0 Flash' },
-    { value: 'google/gemini-1.5-pro-latest', label: 'Gemini 1.5 Pro (Inteligente)' },
-    { value: 'google/gemini-1.5-flash-latest', label: 'Gemini 1.5 Flash' },
-    { value: 'openai/gpt-4o', label: 'GPT-4o (Premium)' },
     { value: 'openai/gpt-4o-mini', label: 'GPT-4o Mini' },
   ],
   openai: [
-    { value: 'gpt-4o', label: 'GPT-4o (Inteligente)' },
-    { value: 'gpt-4o-mini', label: 'GPT-4o Mini (Rápido)' },
-    { value: 'gpt-4-turbo', label: 'GPT-4 Turbo' },
+    { value: 'gpt-5.2', label: 'GPT-5.2' },
+    { value: 'gpt-5.1', label: 'GPT-5.1' },
+    { value: 'gpt-5', label: 'GPT-5' },
+    { value: 'gpt-5-mini', label: 'GPT-5 Mini' },
+    { value: 'gpt-5-nano', label: 'GPT-5 Nano' },
+    { value: 'gpt-4.1', label: 'GPT-4.1' },
+    { value: 'gpt-4.1-mini', label: 'GPT-4.1 Mini' },
+    { value: 'gpt-4.1-nano', label: 'GPT-4.1 Nano' },
+    { value: 'gpt-4o', label: 'GPT-4o' },
+    { value: 'gpt-4o-mini', label: 'GPT-4o Mini' },
+    { value: 'gpt-4o-transcribe', label: 'GPT-4o Transcribe' },
+    { value: 'gpt-4o-mini-transcribe', label: 'GPT-4o Mini Transcribe' },
+    { value: 'whisper-1', label: 'Whisper 1' },
   ],
-  gemini: [
-    { value: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash (Nova Geração)' },
-    { value: 'gemini-1.5-pro', label: 'Gemini 1.5 Pro (Raciocínio)' },
-    { value: 'gemini-1.5-flash', label: 'Gemini 1.5 Flash (Velocidade)' },
-    { value: 'gemini-1.5-flash-8b', label: 'Gemini 1.5 Flash-8B (Econômico)' },
-    { value: 'gemini-1.0-pro', label: 'Gemini 1.0 Pro' },
-  ],
+  gemini: [],
 };
 
 export const FEATURE_LABELS: Record<AIFeature, { label: string; description: string }> = {
   agents: { label: 'Agentes de IA', description: 'Orquestrador e agentes especializados' },
-  conversation_summary: { label: 'Resumo de Conversas', description: 'Análise e resumo de conversas' },
-  prompt_generation: { label: 'Geração de Prompts', description: 'Assistente de criação de prompts' },
-  flow_generation: { label: 'Geração de Fluxos', description: 'Criação de fluxos via prompt' },
-  transcription: { label: 'Transcrição', description: 'Transcrição de áudio e análise de mídia' },
+  conversation_summary: { label: 'Resumo de Conversas', description: 'Analise e resumo de conversas' },
+  prompt_generation: { label: 'Geracao de Prompts', description: 'Assistente de criacao de prompts' },
+  flow_generation: { label: 'Geracao de Fluxos', description: 'Criacao de fluxos via prompt' },
+  transcription: { label: 'Transcricao', description: 'Transcricao de audio e analise de midia' },
 };
 
 export function useIntegrationConfig() {
@@ -110,7 +110,7 @@ export function useUpsertIntegrationConfig() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['integration-config'] });
-      toast({ title: 'Configurações de integração salvas!' });
+      toast({ title: 'Configuracoes de integracao salvas!' });
     },
     onError: (error) => {
       toast({ title: 'Erro ao salvar', description: error.message, variant: 'destructive' });

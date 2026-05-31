@@ -234,6 +234,30 @@ Deno.serve(async (req) => {
       });
     }
 
+    const { data: orgPlan } = await supabase
+      .from('organization_plans')
+      .select('plan:platform_plans(features)')
+      .eq('organization_id', profile.organization_id)
+      .maybeSingle();
+
+    const maxWhatsappNumbers = Number((orgPlan as any)?.plan?.features?.limits?.max_whatsapp_numbers || 0);
+    if (maxWhatsappNumbers > 0) {
+      const { count: currentWhatsappNumbers, error: countError } = await supabase
+        .from('whatsapp_instances')
+        .select('id', { count: 'exact', head: true })
+        .eq('organization_id', profile.organization_id);
+
+      if (countError) throw countError;
+      if ((currentWhatsappNumbers || 0) >= maxWhatsappNumbers) {
+        return new Response(JSON.stringify({
+          error: `Limite de números WhatsApp atingido neste plano (${currentWhatsappNumbers}/${maxWhatsappNumbers}). Faça upgrade para conectar mais números.`,
+        }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
     const body = req.method === 'POST' ? await req.json().catch(() => ({})) : {};
     const requestedProvider = body.provider as Provider | undefined;
     const config = await loadWhatsAppPlatformConfig(supabase, supabaseUrl);

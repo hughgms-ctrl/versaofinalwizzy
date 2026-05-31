@@ -14,33 +14,13 @@ interface AIConfigResult {
 
 function resolveAIConfig(integrationConfig: any, feature: string): AIConfigResult | null {
   const OPENAI_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
-  const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
 
   if (!integrationConfig) return null;
 
-  const featureProvider = integrationConfig[`${feature}_provider`];
   const featureModel = integrationConfig[`${feature}_model`];
-  let provider = featureProvider || integrationConfig.ai_provider;
-  let model = featureModel || integrationConfig.default_model;
-
-  if (!provider || provider === 'lovable') {
-    if (integrationConfig.openai_api_key) { provider = 'openai'; model = model || 'gpt-4o-mini'; }
-    else if (integrationConfig.gemini_api_key) { provider = 'gemini'; model = model || 'gemini-2.0-flash'; }
-    else return null;
-  }
-  if (provider === 'gemini') model = (model || 'gemini-2.0-flash').replace('google/', '');
-  else if (provider === 'openai') model = (model || 'gpt-4o-mini').replace('openai/', '');
-
-  switch (provider) {
-    case 'openai':
-      if (!integrationConfig.openai_api_key) return null;
-      return { endpoint: OPENAI_ENDPOINT, apiKey: integrationConfig.openai_api_key, model, provider: 'openai' };
-    case 'gemini':
-      if (!integrationConfig.gemini_api_key) return null;
-      return { endpoint: GEMINI_ENDPOINT, apiKey: integrationConfig.gemini_api_key, model, provider: 'gemini' };
-    default:
-      return null;
-  }
+  const model = (featureModel || integrationConfig.default_model || 'gpt-4o-mini').replace('openai/', '').replace('google/', '');
+  if (!integrationConfig.openai_api_key) return null;
+  return { endpoint: OPENAI_ENDPOINT, apiKey: integrationConfig.openai_api_key, model, provider: 'openai' };
 }
 
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
@@ -89,7 +69,7 @@ async function imageUrlForVision(mediaUrl: string): Promise<string> {
   }
 }
 
-async function transcribeAudioWithWhisper(mediaUrl: string, apiKey: string): Promise<string> {
+async function transcribeAudioWithWhisper(mediaUrl: string, apiKey: string, model: string): Promise<string> {
   try {
     console.log(`[WHISPER] Fetching audio from: ${mediaUrl}`);
     const audioResponse = await fetch(mediaUrl);
@@ -134,7 +114,7 @@ async function transcribeAudioWithWhisper(mediaUrl: string, apiKey: string): Pro
     const formData = new FormData();
     const blob = new Blob([audioBuffer], { type: mimeMap[ext] || 'audio/ogg' });
     formData.append('file', blob, `audio.${ext}`);
-    formData.append('model', 'whisper-1');
+    formData.append('model', model || 'whisper-1');
     formData.append('language', 'pt');
     formData.append('response_format', 'text');
 
@@ -228,6 +208,16 @@ async function transcribeAudioWithGemini(mediaUrl: string, apiKey: string, model
   }
 }
 
+async function applyAdminAIStrategy(supabase: any, organizationId: string, integrationConfig: any, feature: string) {
+  const { data: planRow } = await supabase.from('organization_plans').select('plan:platform_plans(ai_mode)').eq('organization_id', organizationId).maybeSingle();
+  const { data: settingRow } = await supabase.from('platform_settings').select('value').eq('key', 'ai_model_strategy').maybeSingle();
+  const strategy = settingRow?.value || {};
+  const model = strategy.features?.[feature] || strategy.default_model || 'gpt-4o-mini';
+  const platformKey = Deno.env.get('WIZZY_OPENAI_API_KEY') || Deno.env.get('OPENAI_API_KEY') || '';
+  const usePlatformKey = (planRow as any)?.plan?.ai_mode === 'platform_api';
+  return { ...(integrationConfig || {}), ai_provider: 'openai', default_model: model, [`${feature}_provider`]: 'openai', [`${feature}_model`]: model, openai_api_key: usePlatformKey ? platformKey : integrationConfig?.openai_api_key };
+}
+
 async function analyzeMedia(
   mediaUrl: string,
   mediaType: string,
@@ -237,7 +227,7 @@ async function analyzeMedia(
     // Audio: use dedicated transcription APIs
     if (mediaType === 'audio') {
       if (aiConfig.provider === 'openai') {
-        return await transcribeAudioWithWhisper(mediaUrl, aiConfig.apiKey);
+        return await transcribeAudioWithWhisper(mediaUrl, aiConfig.apiKey, aiConfig.model);
       } else {
         return await transcribeAudioWithGemini(mediaUrl, aiConfig.apiKey, aiConfig.model);
       }
@@ -395,7 +385,7 @@ Deno.serve(async (req) => {
         .select('*')
         .eq('organization_id', resolvedOrgId)
         .maybeSingle();
-      integrationConfig = data;
+      integrationConfig = await applyAdminAIStrategy(supabase, resolvedOrgId, data, mediaType === 'audio' ? 'transcription' : 'conversation_summary');
     }
 
     const aiConfig = resolveAIConfig(integrationConfig, 'transcription');

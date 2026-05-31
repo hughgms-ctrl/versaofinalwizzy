@@ -32,6 +32,7 @@ const WidgetsPage = lazy(() => import("./pages/WidgetsPage"));
 const WidgetEditorPage = lazy(() => import("./pages/WidgetEditorPage"));
 const DocumentsPage = lazy(() => import("./pages/DocumentsPage"));
 const ToolsPage = lazy(() => import("./pages/ToolsPage"));
+const WizzyFlowPage = lazy(() => import("./pages/WizzyFlowPage"));
 const QuizListPage = lazy(() => import("./pages/QuizListPage"));
 const QuizBuilderPage = lazy(() => import("./pages/QuizBuilderPage"));
 const PublicQuizPage = lazy(() => import("./pages/PublicQuizPage"));
@@ -59,6 +60,9 @@ const AdminHistoryPage = lazy(() => import("./pages/admin/AdminHistoryPage"));
 const AdminMonitoringPage = lazy(() => import("./pages/admin/AdminMonitoringPage"));
 const AdminDocsPage = lazy(() => import("./pages/admin/AdminDocsPage"));
 const AdminWhatsAppIntegrationsPage = lazy(() => import("./pages/admin/AdminWhatsAppIntegrationsPage"));
+const AdminPaymentGatewaysPage = lazy(() => import("./pages/admin/AdminPaymentGatewaysPage"));
+const AdminAIModelsPage = lazy(() => import("./pages/admin/AdminAIModelsPage"));
+const AdminAIUsagePage = lazy(() => import("./pages/admin/AdminAIUsagePage"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -112,6 +116,7 @@ const App = () => (
                       <Route path="/tools/documents" element={<ProtectedRoute><DocumentsPage /></ProtectedRoute>} />
                       <Route path="/tools/quiz" element={<ProtectedRoute><QuizListPage /></ProtectedRoute>} />
                       <Route path="/tools/quiz/builder" element={<ProtectedRoute><QuizBuilderPage /></ProtectedRoute>} />
+                      <Route path="/tools/wizzy-flow/*" element={<ProtectedRoute><WizzyFlowPage /></ProtectedRoute>} />
                       <Route path="/widgets" element={<ProtectedRoute><WidgetsPage /></ProtectedRoute>} />
                       <Route path="/widgets/:widgetId" element={<ProtectedRoute><WidgetEditorPage /></ProtectedRoute>} />
                       <Route path="/documents" element={<ProtectedRoute><DocumentsPage /></ProtectedRoute>} />
@@ -132,6 +137,9 @@ const App = () => (
                       <Route path="/admin" element={<AdminProtectedRoute><AdminPage /></AdminProtectedRoute>} />
                       <Route path="/admin/clients" element={<AdminProtectedRoute><AdminClientsPage /></AdminProtectedRoute>} />
                       <Route path="/admin/plans" element={<AdminProtectedRoute><AdminPlansPage /></AdminProtectedRoute>} />
+                      <Route path="/admin/payment-gateways" element={<AdminProtectedRoute><AdminPaymentGatewaysPage /></AdminProtectedRoute>} />
+                      <Route path="/admin/ai-models" element={<AdminProtectedRoute><AdminAIModelsPage /></AdminProtectedRoute>} />
+                      <Route path="/admin/ai-usage" element={<AdminProtectedRoute><AdminAIUsagePage /></AdminProtectedRoute>} />
                       <Route path="/admin/api" element={<AdminProtectedRoute><AdminApiPage /></AdminProtectedRoute>} />
                       <Route path="/admin/whatsapp-apis" element={<AdminProtectedRoute><AdminWhatsAppIntegrationsPage /></AdminProtectedRoute>} />
                       <Route path="/admin/governance" element={<AdminProtectedRoute><AdminGovernancePage /></AdminProtectedRoute>} />

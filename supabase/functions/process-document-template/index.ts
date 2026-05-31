@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import mammoth from "npm:mammoth@1.8.0";
+import { getOrganizationIdFromRequest, resolveOpenAIConfig } from "../_shared/aiStrategy.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -47,8 +48,12 @@ serve(async (req) => {
       });
     }
 
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    if (!serviceKey) throw new Error("SUPABASE_SERVICE_ROLE_KEY is not configured");
+    const adminClient = createClient(supabaseUrl, serviceKey);
+    const organizationId = await getOrganizationIdFromRequest(adminClient, req);
+    const aiConfig = await resolveOpenAIConfig(adminClient, organizationId, "document_processing");
+    if (!aiConfig) throw new Error("OpenAI não configurada para processar documentos");
 
     // Fetch file content
     const fileResp = await fetch(file_url);
@@ -106,14 +111,14 @@ Retorne OBRIGATORIAMENTE um JSON com esta estrutura:
 
 Os types possíveis para campos são: text, cpf, date, email, phone, number, address, select`;
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    const response = await fetch(aiConfig.endpoint, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
+        Authorization: `Bearer ${aiConfig.apiKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
+        model: aiConfig.model,
         messages: [
           { role: "system", content: systemPrompt },
           {

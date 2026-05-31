@@ -1,6 +1,7 @@
 import { ReactNode } from 'react';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
+import { PlanUsageAlert } from '@/components/billing/PlanUsageAlert';
 
 import { cn } from '@/lib/utils';
 import { useSidebarContext } from '@/contexts/SidebarContext';
@@ -47,6 +48,7 @@ export function MainLayout({
           onNewClick={onNewClick}
           newButtonLabel={newButtonLabel}
         />
+        <PlanUsageAlert />
         <main className={cn(
           "page-transition",
           fullWidth ? "p-0" : "p-3 md:p-6"
