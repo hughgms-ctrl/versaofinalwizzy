@@ -9,13 +9,20 @@ function normalizeBaseUrl(value?: string | null) {
   return (value || '').trim().replace(/\/$/, '')
 }
 
+function normalizeAsaasBaseUrl(value: string, testMode: boolean) {
+  const baseUrl = normalizeBaseUrl(value)
+  if (!baseUrl) return testMode ? 'https://api-sandbox.asaas.com/v3' : 'https://api.asaas.com/v3'
+  if (baseUrl === 'https://sandbox.asaas.com/api/v3') return 'https://api-sandbox.asaas.com/v3'
+  return baseUrl
+}
+
 function toMoney(value: unknown) {
   return Number(Number(value || 0).toFixed(2))
 }
 
-function toAsaasDateTime(date: Date) {
+function toAsaasDate(date: Date) {
   const pad = (value: number) => String(value).padStart(2, '0')
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
 }
 
 function addDays(date: Date, days: number) {
@@ -24,10 +31,9 @@ function addDays(date: Date, days: number) {
   return next
 }
 
-function getAsaasBillingTypes(billingType: string | null | undefined) {
-  if (billingType === 'PIX') return ['PIX']
-  if (billingType === 'CREDIT_CARD') return ['CREDIT_CARD']
-  return ['CREDIT_CARD', 'PIX']
+function getAsaasRecurrentBillingTypes(_billingType: string | null | undefined) {
+  // ASAAS hosted checkout only accepts credit card for RECURRENT charge types.
+  return ['CREDIT_CARD']
 }
 
 async function fetchJson(url: string, options: RequestInit) {
@@ -36,7 +42,8 @@ async function fetchJson(url: string, options: RequestInit) {
   let json: any = null
   try { json = text ? JSON.parse(text) : null } catch (_) {}
   if (!response.ok) {
-    throw new Error(json?.errors?.[0]?.description || json?.error?.message || json?.message || text || 'Falha ao criar checkout')
+    const details = json?.errors?.map((item: any) => item.description).filter(Boolean).join(' | ')
+    throw new Error(details || json?.error?.message || json?.message || text || 'Falha ao criar checkout')
   }
   return json
 }
@@ -109,12 +116,15 @@ Deno.serve(async (req) => {
 
     if (activeProvider === 'asaas') {
       if (savedStrategy.asaas_enabled === false) throw new Error('ASAAS está desabilitado')
-      const baseUrl = normalizeBaseUrl(savedConnection.asaas_base_url || Deno.env.get('ASAAS_BASE_URL') || 'https://api.asaas.com/v3')
+      const baseUrl = normalizeAsaasBaseUrl(
+        savedConnection.asaas_base_url || Deno.env.get('ASAAS_BASE_URL') || '',
+        savedStrategy.test_mode !== false,
+      )
       const apiKey = savedConnection.asaas_api_key || Deno.env.get('ASAAS_API_KEY') || ''
       if (!apiKey) throw new Error('ASAAS API Key não configurada')
 
       const payload = {
-        billingTypes: getAsaasBillingTypes(plan.features?.payment?.asaas?.billing_type),
+        billingTypes: getAsaasRecurrentBillingTypes(plan.features?.payment?.asaas?.billing_type),
         chargeTypes: ['RECURRENT'],
         minutesToExpire: 1440,
         externalReference: reference,
@@ -131,9 +141,13 @@ Deno.serve(async (req) => {
             value: price,
           },
         ],
+        customerData: {
+          name: profile.full_name || user.email || 'Cliente Wizzy',
+          email: user.email,
+        },
         subscription: {
           cycle: billingCycle === 'yearly' ? 'YEARLY' : 'MONTHLY',
-          nextDueDate: toAsaasDateTime(firstChargeDate),
+          nextDueDate: toAsaasDate(firstChargeDate),
         },
       }
 
@@ -195,6 +209,7 @@ Deno.serve(async (req) => {
 
     throw new Error('Gateway ativo inválido')
   } catch (err: any) {
+    console.error('billing-checkout error', err?.message || err)
     return new Response(JSON.stringify({ error: err.message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

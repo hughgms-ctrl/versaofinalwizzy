@@ -35,6 +35,9 @@ interface Plan {
   is_active: boolean;
 }
 
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://zaobtetbjpuzibjymhzw.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY;
+
 const PlanUpgradePanel = () => {
   const { profile } = useAuth();
   const [isYearly, setIsYearly] = useState(false);
@@ -78,19 +81,30 @@ const PlanUpgradePanel = () => {
   const handleUpgrade = async (plan: Plan) => {
     try {
       setLoadingPlanId(plan.id);
-      const { data, error } = await supabase.functions.invoke('billing-checkout', {
-        body: {
+      const { data: session } = await supabase.auth.getSession();
+      const accessToken = session.session?.access_token;
+      if (!accessToken) throw new Error('Sessao expirada. Entre novamente para continuar.');
+
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/billing-checkout`, {
+        method: 'POST',
+        headers: {
+          apikey: SUPABASE_PUBLISHABLE_KEY,
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
           plan_id: plan.id,
           billing_cycle: isYearly ? 'yearly' : 'monthly',
-        },
+        }),
       });
+      const data = await response.json().catch(() => null);
 
-      if (error) throw error;
+      if (!response.ok) throw new Error(data?.error || 'Nao foi possivel iniciar o checkout.');
       if (!data?.url) throw new Error('Checkout não retornou uma URL de pagamento.');
 
       window.location.href = data.url;
     } catch (error: any) {
-      toast.error(error?.message || 'Não foi possível iniciar o checkout.');
+      toast.error(error?.message || 'Nao foi possivel iniciar o checkout.');
     } finally {
       setLoadingPlanId(null);
     }

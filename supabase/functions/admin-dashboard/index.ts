@@ -937,7 +937,7 @@ Deno.serve(async (req) => {
       }
 
       const rawConnection = {
-        asaas_base_url: normalizeBaseUrl(savedConnection.asaas_base_url || Deno.env.get('ASAAS_BASE_URL') || 'https://sandbox.asaas.com/api/v3'),
+        asaas_base_url: normalizeBaseUrl(savedConnection.asaas_base_url || Deno.env.get('ASAAS_BASE_URL') || 'https://api-sandbox.asaas.com/v3'),
         asaas_api_key: savedConnection.asaas_api_key || Deno.env.get('ASAAS_API_KEY') || '',
         asaas_webhook_token: savedConnection.asaas_webhook_token || Deno.env.get('ASAAS_WEBHOOK_TOKEN') || '',
         stripe_secret_key: savedConnection.stripe_secret_key || Deno.env.get('STRIPE_SECRET_KEY') || '',
@@ -1167,7 +1167,7 @@ Deno.serve(async (req) => {
         return value
       }
       const connectionSettings = {
-        asaas_base_url: normalizeBaseUrl(body.asaas_base_url ?? existing.asaas_base_url ?? Deno.env.get('ASAAS_BASE_URL') ?? 'https://sandbox.asaas.com/api/v3'),
+        asaas_base_url: normalizeBaseUrl(body.asaas_base_url ?? existing.asaas_base_url ?? Deno.env.get('ASAAS_BASE_URL') ?? 'https://api-sandbox.asaas.com/v3'),
         asaas_api_key: keepSecret(body.asaas_api_key, existing.asaas_api_key || Deno.env.get('ASAAS_API_KEY')),
         asaas_webhook_token: keepSecret(body.asaas_webhook_token, existing.asaas_webhook_token || Deno.env.get('ASAAS_WEBHOOK_TOKEN')),
         stripe_secret_key: keepSecret(body.stripe_secret_key, existing.stripe_secret_key || Deno.env.get('STRIPE_SECRET_KEY')),

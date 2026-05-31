@@ -236,7 +236,7 @@ export default function AdminPaymentGatewaysPage() {
                     label="Base URL"
                     value={connection.asaas_base_url}
                     onChange={(value) => setConnection((current) => ({ ...current, asaas_base_url: value }))}
-                    placeholder="https://sandbox.asaas.com/api/v3"
+                    placeholder="https://api-sandbox.asaas.com/v3"
                   />
                   <ConnectionField
                     label="API Key"
