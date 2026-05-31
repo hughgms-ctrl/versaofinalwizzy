@@ -141,10 +141,6 @@ Deno.serve(async (req) => {
             value: price,
           },
         ],
-        customerData: {
-          name: profile.full_name || user.email || 'Cliente Wizzy',
-          email: user.email,
-        },
         subscription: {
           cycle: billingCycle === 'yearly' ? 'YEARLY' : 'MONTHLY',
           nextDueDate: toAsaasDate(firstChargeDate),

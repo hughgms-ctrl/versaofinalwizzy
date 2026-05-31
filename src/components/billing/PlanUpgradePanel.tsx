@@ -223,11 +223,11 @@ const PlanUpgradePanel = () => {
                     <>
                       <div className="flex items-center gap-2 text-sm py-1">
                         <Check className="w-4 h-4 text-green-500 shrink-0" />
-                        <span className="text-muted-foreground">Wizzy AI disponÃ­vel apenas no plano Max</span>
+                        <span className="text-muted-foreground">Wizzy AI disponivel apenas no plano Max</span>
                       </div>
                       <div className="flex items-center gap-2 text-sm py-1">
                         <Check className="w-4 h-4 text-green-500 shrink-0" />
-                        <span className="text-muted-foreground">Todo consumo de IA Ã© por nossa conta</span>
+                        <span className="text-muted-foreground">Todo consumo de IA por nossa conta</span>
                       </div>
                     </>
                   ) : (
