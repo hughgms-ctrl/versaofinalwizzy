@@ -21,6 +21,18 @@ function shouldActivatePlan(payload: any) {
   return ['PAYMENT_RECEIVED', 'PAYMENT_CONFIRMED'].includes(event) || ['RECEIVED', 'CONFIRMED'].includes(status)
 }
 
+function shouldMarkPastDue(payload: any) {
+  const event = String(payload?.event || '').toUpperCase()
+  const status = String(payload?.payment?.status || payload?.subscription?.status || '').toUpperCase()
+  return ['PAYMENT_OVERDUE', 'PAYMENT_DELETED'].includes(event) || ['OVERDUE'].includes(status)
+}
+
+function shouldCancelPlan(payload: any) {
+  const event = String(payload?.event || '').toUpperCase()
+  const status = String(payload?.payment?.status || payload?.subscription?.status || '').toUpperCase()
+  return ['SUBSCRIPTION_DELETED', 'SUBSCRIPTION_INACTIVATED'].includes(event) || ['CANCELED', 'CANCELLED', 'INACTIVE'].includes(status)
+}
+
 function addPeriod(start: Date, billingCycle: string) {
   const end = new Date(start)
   if (billingCycle === 'yearly') {
@@ -67,6 +79,28 @@ Deno.serve(async (req) => {
           current_period_end: addPeriod(now, billingCycle).toISOString(),
           updated_at: now.toISOString(),
         }, { onConflict: 'organization_id' })
+      }
+
+      if (shouldMarkPastDue(payload)) {
+        await supabase
+          .from('organization_plans')
+          .update({
+            status: 'active',
+            payment_status: 'past_due',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('organization_id', organizationId)
+      }
+
+      if (shouldCancelPlan(payload)) {
+        await supabase
+          .from('organization_plans')
+          .update({
+            status: 'canceled',
+            payment_status: 'canceled',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('organization_id', organizationId)
       }
     }
 

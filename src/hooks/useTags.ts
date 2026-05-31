@@ -178,15 +178,19 @@ export function useDeleteTag() {
 
   return useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase
-        .from('tags' as any)
-        .delete()
-        .eq('id', id);
+      const { error } = await supabase.functions.invoke('safe-record-actions', {
+        body: { type: 'delete_tag', tagId: id },
+      });
       
       if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tags'] });
+      queryClient.invalidateQueries({ queryKey: ['all-tags'] });
+      queryClient.invalidateQueries({ queryKey: ['contact-tags'] });
+      queryClient.invalidateQueries({ queryKey: ['workspaces'] });
+      queryClient.invalidateQueries({ queryKey: ['widgets'] });
+      queryClient.invalidateQueries({ queryKey: ['pipelines'] });
       toast({
         title: 'Tag excluída',
         description: 'A tag foi excluída com sucesso.',

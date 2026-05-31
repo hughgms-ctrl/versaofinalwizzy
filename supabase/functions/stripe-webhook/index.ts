@@ -19,6 +19,11 @@ function addPeriod(start: Date, billingCycle: string) {
   return end
 }
 
+function getStripeSubscriptionId(payload: any) {
+  const object = payload?.data?.object || {}
+  return object?.subscription || object?.id || null
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
@@ -57,6 +62,29 @@ Deno.serve(async (req) => {
           current_period_end: addPeriod(now, billingCycle).toISOString(),
           updated_at: now.toISOString(),
         }, { onConflict: 'organization_id' })
+      }
+
+      if (payload?.type === 'invoice.payment_failed') {
+        await supabase
+          .from('organization_plans')
+          .update({
+            status: 'active',
+            payment_status: 'past_due',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('organization_id', organizationId)
+      }
+
+      if (['customer.subscription.deleted', 'customer.subscription.paused'].includes(payload?.type)) {
+        await supabase
+          .from('organization_plans')
+          .update({
+            status: 'canceled',
+            payment_status: 'canceled',
+            stripe_subscription_id: getStripeSubscriptionId(payload),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('organization_id', organizationId)
       }
     }
 

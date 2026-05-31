@@ -107,7 +107,8 @@ Deno.serve(async (req) => {
       ? toMoney(plan.price_yearly || Number(plan.price_monthly || 0) * 10)
       : toMoney(plan.price_monthly)
     if (!price || price <= 0) throw new Error('Plano sem preço configurado')
-    const trialDays = Math.max(0, Number(plan.trial_days || plan.features?.trial_days || 0))
+    const trialEnabled = plan.features?.trial_enabled === true
+    const trialDays = trialEnabled ? Math.max(0, Number(plan.trial_days || plan.features?.trial_days || 0)) : 0
     const firstChargeDate = addDays(new Date(), trialDays)
 
     const successUrl = savedConnection.checkout_success_url || `${req.headers.get('origin') || supabaseUrl}/plans?checkout=success`

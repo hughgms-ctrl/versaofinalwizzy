@@ -49,6 +49,7 @@ const CampaignsPage = lazy(() => import("./pages/CampaignsPage"));
 const CalendarPage = lazy(() => import("./pages/CalendarPage"));
 const LandingPage = lazy(() => import("./pages/LandingPage"));
 const PlansPage = lazy(() => import("./pages/PlansPage"));
+const SubscriptionPage = lazy(() => import("./pages/SubscriptionPage"));
 const AdminPage = lazy(() => import("./pages/AdminPage"));
 const AdminLoginPage = lazy(() => import("./pages/AdminLoginPage"));
 const AdminClientsPage = lazy(() => import("./pages/admin/AdminClientsPage"));
@@ -133,6 +134,7 @@ const App = () => (
                       <Route path="/campaigns" element={<ProtectedRoute><CampaignsPage /></ProtectedRoute>} />
                       <Route path="/calendar" element={<ProtectedRoute><CalendarPage /></ProtectedRoute>} />
                       <Route path="/plans" element={<ProtectedRoute><PlansPage /></ProtectedRoute>} />
+                      <Route path="/subscription" element={<ProtectedRoute><SubscriptionPage /></ProtectedRoute>} />
                       <Route path="/admin/login" element={<AdminLoginPage />} />
                       <Route path="/admin" element={<AdminProtectedRoute><AdminPage /></AdminProtectedRoute>} />
                       <Route path="/admin/clients" element={<AdminProtectedRoute><AdminClientsPage /></AdminProtectedRoute>} />

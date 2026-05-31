@@ -150,7 +150,12 @@ export function useUpdateAdminAIUsageSettings() {
       queryClient.invalidateQueries({ queryKey: ['admin', 'ai-usage'] });
       toast.success('Configurações de consumo IA salvas');
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error, _show, context) => {
+      if (context?.previousPlans) {
+        queryClient.setQueryData(['admin', 'plans'], context.previousPlans);
+      }
+      toast.error(err.message);
+    },
   });
 }
 
@@ -256,11 +261,26 @@ export function useToggleClientPlansMenu() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (show: boolean) => adminFetch('toggle_client_plans_menu', { show }),
+    onMutate: async (show) => {
+      await queryClient.cancelQueries({ queryKey: ['admin', 'plans'] });
+      const previousPlans = queryClient.getQueryData(['admin', 'plans']);
+
+      queryClient.setQueryData(['admin', 'plans'], (current: any) => ({
+        ...(current || {}),
+        settings: {
+          ...(current?.settings || {}),
+          show_client_plans_menu: show,
+        },
+      }));
+      queryClient.setQueryData(['platform-setting', 'show_client_plans_menu'], show);
+
+      return { previousPlans };
+    },
     onSuccess: (_, show) => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'plans'] });
       queryClient.invalidateQueries({ queryKey: ['admin', 'settings'] });
       queryClient.invalidateQueries({ queryKey: ['platform-setting', 'show_client_plans_menu'] });
-      toast.success(show ? 'Aba Planos habilitada para clientes' : 'Aba Planos ocultada dos clientes');
+      toast.success(show ? 'Área de Assinatura habilitada para clientes' : 'Área de Assinatura ocultada dos clientes');
     },
     onError: (err: Error) => toast.error(err.message),
   });

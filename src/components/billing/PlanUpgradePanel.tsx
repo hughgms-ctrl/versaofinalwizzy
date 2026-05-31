@@ -28,11 +28,13 @@ interface Plan {
   slug: string;
   price_monthly: number;
   price_yearly: number;
+  trial_days?: number;
   allowed_modules: string[];
   max_team_members: number;
   storage_limit_bytes: number;
   ai_mode?: string;
   is_active: boolean;
+  features?: any;
 }
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://zaobtetbjpuzibjymhzw.supabase.co";
@@ -166,6 +168,8 @@ const PlanUpgradePanel = () => {
           const isPro = plan.slug === 'pro';
           const isWizzyAI = plan.ai_mode === 'platform_api' || plan.slug === 'wizzy-ai' || plan.slug === 'max';
           const modules = (plan.allowed_modules || []) as string[];
+          const trialDays = Number(plan.trial_days || plan.features?.trial_days || 0);
+          const trialEnabled = plan.features?.trial_enabled === true && trialDays > 0;
 
           return (
             <Card
@@ -256,9 +260,14 @@ const PlanUpgradePanel = () => {
                   disabled={isCurrent || loadingPlanId === plan.id}
                   onClick={() => handleUpgrade(plan)}
                 >
-                  {isCurrent ? "Plano atual" : loadingPlanId === plan.id ? "Abrindo checkout..." : "Fazer upgrade"}
+                  {isCurrent ? "Plano atual" : loadingPlanId === plan.id ? "Abrindo checkout..." : "Selecionar plano"}
                   {!isCurrent && <ArrowRight className="w-4 h-4 ml-1" />}
                 </Button>
+                {trialEnabled && !isCurrent && (
+                  <p className="mt-2 text-center text-xs text-muted-foreground">
+                    Teste gratis por {trialDays} dias
+                  </p>
+                )}
               </CardContent>
             </Card>
           );

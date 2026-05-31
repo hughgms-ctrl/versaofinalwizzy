@@ -22,8 +22,9 @@ import { usePipelines, usePipelineColumns, useConversationPositions, useMoveConv
 import { useWorkspaces } from '@/hooks/useWorkspaces';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { toast } from '@/hooks/use-toast';
 
 interface ConversationAttributesPanelProps {
   conversation: DbConversation & {
@@ -56,6 +57,7 @@ export function ConversationAttributesPanel({
   const updateAttributes = useUpdateConversationAttributes();
   const intervene = useInterveneConversation();
   const moveConversation = useMoveConversation();
+  const queryClient = useQueryClient();
 
   // Find which pipeline this conversation is currently in
   const { data: allPositions = [] } = useQuery({
@@ -314,19 +316,27 @@ export function ConversationAttributesPanel({
             <Building2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
             <Select
               value={(conversation as any).workspace_id || 'none'}
-              onValueChange={(value) => {
+              onValueChange={async (value) => {
                 const newValue = value === 'none' ? null : value;
-                updateAttributes.mutate({
-                  conversationId: conversation.id,
-                  data: { workspace_id: newValue } as any,
-                });
-                // Also update the contact's workspace
-                if (conversation.contact_id) {
-                  supabase
-                    .from('contacts')
-                    .update({ workspace_id: newValue } as any)
-                    .eq('id', conversation.contact_id)
-                    .then(() => {});
+                try {
+                  const { error } = await supabase.functions.invoke('safe-record-actions', {
+                    body: {
+                      type: 'set_conversation_workspace',
+                      conversationId: conversation.id,
+                      workspaceId: newValue,
+                    },
+                  });
+
+                  if (error) throw error;
+
+                  queryClient.invalidateQueries({ queryKey: ['conversations'] });
+                  queryClient.invalidateQueries({ queryKey: ['contacts'] });
+                } catch (error: any) {
+                  toast({
+                    title: 'Erro ao atualizar workspace',
+                    description: error.message || 'NÃ£o foi possÃ­vel alterar o workspace da conversa.',
+                    variant: 'destructive',
+                  });
                 }
               }}
             >

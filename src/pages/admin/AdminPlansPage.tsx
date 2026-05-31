@@ -68,6 +68,7 @@ interface PlanForm {
   slug: string;
   price_monthly: number;
   price_yearly: number;
+  trial_enabled: boolean;
   trial_days: number;
   max_team_members: number;
   max_workspaces: number | null;
@@ -85,7 +86,7 @@ interface PlanForm {
 }
 
 const emptyPlan: PlanForm = {
-  name: '', slug: '', price_monthly: 0, price_yearly: 0, trial_days: 0, max_team_members: 3,
+  name: '', slug: '', price_monthly: 0, price_yearly: 0, trial_enabled: false, trial_days: 0, max_team_members: 3,
   max_workspaces: null, max_whatsapp_numbers: null, max_conversations: null, max_ai_requests_month: null,
   storage_limit_bytes: 1073741824, ai_mode: 'own_api', is_active: true,
   allowed_modules: [], features: {}, asaas_billing_type: 'UNDEFINED',
@@ -100,6 +101,7 @@ const toPlanForm = (plan: any): PlanForm => {
     slug: plan.slug,
     price_monthly: plan.price_monthly,
     price_yearly: plan.price_yearly || 0,
+    trial_enabled: features?.trial_enabled === true,
     trial_days: Number(plan.trial_days || features?.trial_days || 0),
     max_team_members: plan.max_team_members,
     max_workspaces: features?.limits?.max_workspaces ?? null,
@@ -124,6 +126,7 @@ const serializePlan = (plan: PlanForm) => {
     stripe_yearly_price_id,
     max_workspaces,
     max_whatsapp_numbers,
+    trial_enabled,
     trial_days,
     ...payload
   } = plan;
@@ -131,6 +134,7 @@ const serializePlan = (plan: PlanForm) => {
     ...payload,
     features: {
       ...(payload.features || {}),
+      trial_enabled,
       trial_days,
       payment: {
         ...((payload.features || {}).payment || {}),
@@ -209,9 +213,9 @@ export default function AdminPlansPage() {
         <Card>
           <CardContent className="flex items-center justify-between gap-4 p-4">
             <div>
-              <p className="font-medium text-foreground">Exibir aba Planos para clientes</p>
+              <p className="font-medium text-foreground">Exibir área de Assinatura para clientes</p>
               <p className="text-sm text-muted-foreground">
-                Controla se o link Planos aparece no menu lateral do app do cliente.
+                Controla se o link Assinatura aparece no menu lateral do app do cliente.
               </p>
             </div>
             <Switch
@@ -272,7 +276,7 @@ export default function AdminPlansPage() {
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-muted-foreground">Teste grátis</span>
                       <span className="font-medium">
-                        {Number(plan.trial_days || plan.features?.trial_days || 0) > 0
+                        {plan.features?.trial_enabled === true && Number(plan.trial_days || plan.features?.trial_days || 0) > 0
                           ? `${plan.trial_days || plan.features?.trial_days} dias`
                           : 'Sem teste'}
                       </span>
@@ -366,16 +370,29 @@ export default function AdminPlansPage() {
                   </div>
                 </div>
                 <div>
+                  <div className="mb-3 flex items-center justify-between rounded-md border border-border p-3">
+                    <div>
+                      <Label>Ativar teste grátis</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Liga ou desliga a oferta de teste deste plano sem apagar os dias configurados.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={editPlan.trial_enabled}
+                      onCheckedChange={checked => setEditPlan({ ...editPlan, trial_enabled: checked })}
+                    />
+                  </div>
                   <Label>Dias grátis de teste</Label>
                   <Input
                     type="number"
                     min={0}
                     value={editPlan.trial_days}
                     placeholder="0"
+                    disabled={!editPlan.trial_enabled}
                     onChange={e => setEditPlan({ ...editPlan, trial_days: Math.max(0, Number(e.target.value || 0)) })}
                   />
                   <p className="mt-1 text-xs text-muted-foreground">
-                    No checkout de assinatura, a primeira cobrança será agendada após esse prazo.
+                    Quando ativo, o checkout agenda a primeira cobrança após esse prazo.
                   </p>
                 </div>
 

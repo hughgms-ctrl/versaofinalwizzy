@@ -362,19 +362,24 @@ export function ConversationActionsMenu({ conversation, onShowMediaGallery }: Co
   const handleDeletePermanently = async () => {
     setIsUpdating(true);
     try {
-      // Delete messages first
+      await clearConversationReference('generated_documents');
+      await clearConversationReference('document_signatures');
+      await clearConversationReference('cases');
+
+      await ignoreMissingOrForbidden(() => clearConversationReference('widget_submissions'));
+      await ignoreMissingOrForbidden(() => clearConversationReference('calendar_bookings'));
+      await ignoreMissingOrForbidden(() => clearConversationReference('quiz_submissions'));
+
       await supabase
         .from('messages')
         .delete()
         .eq('conversation_id', conversation.id);
 
-      // Delete pipeline positions
       await supabase
         .from('conversation_pipeline_positions')
         .delete()
         .eq('conversation_id', conversation.id);
 
-      // Delete conversation
       const { error } = await supabase
         .from('conversations')
         .delete()
@@ -383,6 +388,9 @@ export function ConversationActionsMenu({ conversation, onShowMediaGallery }: Co
       if (error) throw error;
 
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['messages', conversation.id] });
+      queryClient.invalidateQueries({ queryKey: ['all-conversation-positions', conversation.id] });
+      queryClient.invalidateQueries({ queryKey: ['contact-timeline', conversation.id] });
       setShowDeleteDialog(false);
       toast({
         title: 'Conversa excluída',
@@ -392,11 +400,30 @@ export function ConversationActionsMenu({ conversation, onShowMediaGallery }: Co
       console.error('Error deleting conversation:', error);
       toast({
         title: 'Erro ao excluir',
-        description: 'Não foi possível excluir a conversa',
+        description: error instanceof Error ? error.message : 'Não foi possível excluir a conversa',
         variant: 'destructive',
       });
     } finally {
       setIsUpdating(false);
+    }
+  };
+
+  const clearConversationReference = async (table: string) => {
+    const { error } = await (supabase as any)
+      .from(table)
+      .update({ conversation_id: null })
+      .eq('conversation_id', conversation.id)
+      .eq('organization_id', conversation.organization_id);
+
+    if (error) throw error;
+  };
+
+  const ignoreMissingOrForbidden = async (action: () => Promise<void>) => {
+    try {
+      await action();
+    } catch (error: any) {
+      const ignorableCodes = new Set(['42P01', '42703', '42501']);
+      if (!ignorableCodes.has(error?.code)) throw error;
     }
   };
 

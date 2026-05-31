@@ -1,21 +1,19 @@
 import { useState, useEffect } from 'react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { useAuth } from '@/hooks/useAuth';
-import { useCurrentUserRole } from '@/hooks/useUserPermissions';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Separator } from '@/components/ui/separator';
-import { Camera, Loader2, Save, User, Lock, Mail, CreditCard, Phone } from 'lucide-react';
+import { Camera, Loader2, Save, User, Lock, Mail, CreditCard } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { useQueryClient } from '@tanstack/react-query';
+import { SubscriptionManagementPanel } from '@/components/billing/SubscriptionManagementPanel';
 
 export default function ProfilePage() {
   const { profile, session } = useAuth();
-  const { data: userRole, isLoading: roleLoading } = useCurrentUserRole();
   const queryClient = useQueryClient();
   
   const [fullName, setFullName] = useState(profile?.full_name || '');
@@ -27,9 +25,6 @@ export default function ProfilePage() {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-
-  // Check if user is workspace owner (can manage subscriptions)
-  const isWorkspaceOwner = userRole === 'owner';
 
   // Update fullName when profile loads
   useEffect(() => {
@@ -359,8 +354,7 @@ export default function ProfilePage() {
           </CardContent>
         </Card>
 
-        {/* Subscription - Only for workspace owners */}
-        {isWorkspaceOwner && (
+        {false && (
           <Card>
             <CardHeader className="pb-3 md:pb-6">
               <CardTitle className="flex items-center gap-2 text-base md:text-lg">
@@ -372,7 +366,8 @@ export default function ProfilePage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="bg-muted/50 rounded-lg p-4 md:p-6 text-center">
+              <SubscriptionManagementPanel />
+              <div className="hidden">
                 <div className="inline-flex items-center justify-center h-10 w-10 md:h-12 md:w-12 rounded-full bg-primary/10 mb-4">
                   <CreditCard className="h-5 w-5 md:h-6 md:w-6 text-primary" />
                 </div>
