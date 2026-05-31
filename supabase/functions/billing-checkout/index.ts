@@ -18,6 +18,12 @@ function toAsaasDateTime(date: Date) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
 }
 
+function addDays(date: Date, days: number) {
+  const next = new Date(date)
+  next.setDate(next.getDate() + Math.max(0, days))
+  return next
+}
+
 function getAsaasBillingTypes(billingType: string | null | undefined) {
   if (billingType === 'PIX') return ['PIX']
   if (billingType === 'CREDIT_CARD') return ['CREDIT_CARD']
@@ -94,6 +100,8 @@ Deno.serve(async (req) => {
       ? toMoney(plan.price_yearly || Number(plan.price_monthly || 0) * 10)
       : toMoney(plan.price_monthly)
     if (!price || price <= 0) throw new Error('Plano sem preço configurado')
+    const trialDays = Math.max(0, Number(plan.trial_days || plan.features?.trial_days || 0))
+    const firstChargeDate = addDays(new Date(), trialDays)
 
     const successUrl = savedConnection.checkout_success_url || `${req.headers.get('origin') || supabaseUrl}/plans?checkout=success`
     const cancelUrl = savedConnection.checkout_cancel_url || `${req.headers.get('origin') || supabaseUrl}/plans?checkout=cancel`
@@ -125,7 +133,7 @@ Deno.serve(async (req) => {
         ],
         subscription: {
           cycle: billingCycle === 'yearly' ? 'YEARLY' : 'MONTHLY',
-          nextDueDate: toAsaasDateTime(new Date()),
+          nextDueDate: toAsaasDateTime(firstChargeDate),
         },
       }
 
@@ -166,6 +174,7 @@ Deno.serve(async (req) => {
       params.set('metadata[organization_id]', profile.organization_id)
       params.set('metadata[plan_id]', plan.id)
       params.set('metadata[billing_cycle]', billingCycle)
+      if (trialDays > 0) params.set('subscription_data[trial_period_days]', String(trialDays))
       if (user.email) params.set('customer_email', user.email)
 
       const checkout = await fetchJson('https://api.stripe.com/v1/checkout/sessions', {
