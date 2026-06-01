@@ -482,6 +482,7 @@ Deno.serve(async (req) => {
                 flowId: exec.flow_id,
                 conversationId: exec.conversation_id,
                 startNodeId: respondedEdge.target,
+                resumeExecutionId: exec.id,
               }),
             });
           } else {
@@ -675,6 +676,7 @@ Deno.serve(async (req) => {
                 flowId: exec.flow_id,
                 conversationId: exec.conversation_id,
                 startNodeId: nextNodeId,
+                resumeExecutionId: exec.id,
               }),
             });
 
