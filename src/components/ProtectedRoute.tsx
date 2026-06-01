@@ -13,7 +13,7 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   const { user, profile, loading } = useAuth();
   const location = useLocation();
 
-  const allowedWithoutActivePlan = ['/subscription', '/plans', '/profile'];
+  const allowedWithoutPlan = ['/subscription', '/plans', '/profile'];
 
   const { data: onboardingPlan, isLoading: planLoading } = useQuery({
     queryKey: ['onboarding-org-plan', profile?.organization_id],
@@ -22,7 +22,7 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
 
       const { data, error } = await supabase
         .from('organization_plans')
-        .select('status, payment_status, current_period_end, trial_ends_at')
+        .select('id')
         .eq('organization_id', profile.organization_id)
         .maybeSingle();
 
@@ -44,18 +44,12 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
     return <Navigate to="/auth" replace />;
   }
 
-  const status = String((onboardingPlan as any)?.status || '').toLowerCase();
-  const paymentStatus = String((onboardingPlan as any)?.payment_status || '').toLowerCase();
-  const trialEndsAt = (onboardingPlan as any)?.trial_ends_at;
-  const hasValidTrial = ['trial', 'trialing'].includes(paymentStatus)
-    && Boolean(trialEndsAt)
-    && new Date(trialEndsAt).getTime() > Date.now();
-  const hasActivePlan = status === 'active' && (['paid', 'manual'].includes(paymentStatus) || hasValidTrial);
-  const isAllowedOnboardingPath = allowedWithoutActivePlan.some((path) => (
+  const isAllowedOnboardingPath = allowedWithoutPlan.some((path) => (
     location.pathname === path || location.pathname.startsWith(`${path}/`)
   ));
 
-  if (!hasActivePlan && !isAllowedOnboardingPath) {
+  // Only first-signup organizations without any plan record should be sent to subscriptions.
+  if (!onboardingPlan && !isAllowedOnboardingPath) {
     return <Navigate to="/subscription" replace state={{ from: location }} />;
   }
 
