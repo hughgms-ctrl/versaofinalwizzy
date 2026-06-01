@@ -16,6 +16,8 @@ export interface DbConversation {
   metadata: Record<string, any> | null;
   closed_at: string | null;
   workspace_id?: string | null;
+  source_phone?: string | null;
+  whatsapp_instance_id?: string | null;
   created_at: string;
   updated_at: string;
   contact: {

@@ -124,6 +124,26 @@ const PipelinePage = () => {
     setChatConversation(conversation);
     setChatOpen(true);
 
+    try {
+      const { data: freshConversation, error } = await supabase
+        .from('conversations')
+        .select(`
+          *,
+          contact:contacts(id, name, phone, avatar_url, email, workspace_id, created_at, metadata, contact_presence(presence_type, expires_at)),
+          last_message:messages(id, content, type, direction, is_from_bot, read_at, delivered_at)
+        `)
+        .eq('id', conversation.id)
+        .order('created_at', { referencedTable: 'messages', ascending: false })
+        .limit(1, { referencedTable: 'messages' })
+        .maybeSingle();
+
+      if (!error && freshConversation) {
+        setChatConversation(freshConversation as unknown as DbConversation);
+      }
+    } catch (err) {
+      console.error('Error loading full conversation:', err);
+    }
+
     // Mark as read if there are unread messages
     if (conversation.unread_count > 0) {
       try {

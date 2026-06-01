@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { DbConversation } from '@/hooks/useConversations';
 import { ContactAvatar } from './ContactAvatar';
@@ -58,9 +58,44 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const contact = conversation.contact;
+  const conversationMetadata = (conversation.metadata as Record<string, any> | null) || {};
+  const contactId = contact?.id || conversation.contact_id || null;
+
+  const { data: fetchedContact } = useQuery({
+    queryKey: ['contact-profile-fallback', contactId],
+    queryFn: async () => {
+      if (!contactId) return null;
+      const { data, error } = await supabase
+        .from('contacts')
+        .select('id, name, phone, avatar_url, email, workspace_id, created_at, metadata')
+        .eq('id', contactId)
+        .maybeSingle();
+
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!contactId && (!contact?.phone || !contact?.created_at),
+  });
+
+  const profileContact = fetchedContact || contact;
+  const contactMetadata = (profileContact?.metadata as Record<string, unknown> | null) || {};
+  const displayPhone = (
+    profileContact?.phone ||
+    conversationMetadata.recipient_phone ||
+    conversationMetadata.contact_phone ||
+    conversationMetadata.normalizedPhone ||
+    conversationMetadata.phone ||
+    ''
+  );
+  const displayName = (
+    profileContact?.name ||
+    conversationMetadata.recipient_name ||
+    conversationMetadata.contact_name ||
+    null
+  );
 
   const { data: tags } = useTags();
-  const { data: contactTags, isLoading: loadingContactTags } = useContactTags(contact?.id || null);
+  const { data: contactTags, isLoading: loadingContactTags } = useContactTags(contactId);
   const addTagToContact = useAddTagToContact();
   const removeTagFromContact = useRemoveTagFromContact();
   const createTag = useCreateTag();
@@ -70,13 +105,18 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
   const [newTagName, setNewTagName] = useState('');
   const [newTagColor, setNewTagColor] = useState('#6366f1');
   const [isEditingName, setIsEditingName] = useState(false);
-  const [editedName, setEditedName] = useState(contact?.name || '');
+  const [editedName, setEditedName] = useState(displayName || '');
   const [isSavingName, setIsSavingName] = useState(false);
   const [isEditingNote, setIsEditingNote] = useState(false);
-  const [editedNote, setEditedNote] = useState((contact?.metadata as { note?: string } | null)?.note || '');
+  const [editedNote, setEditedNote] = useState((contactMetadata as { note?: string } | null)?.note || '');
   const [isSavingNote, setIsSavingNote] = useState(false);
   const [isScheduleOpen, setIsScheduleOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    setEditedName(displayName || '');
+    setEditedNote((contactMetadata as { note?: string } | null)?.note || '');
+  }, [contactId, displayName, contactMetadata?.note]);
 
   // Get conversation stats
   const { data: conversationStats } = useQuery({
@@ -114,16 +154,16 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
   };
 
   const getInitials = () => {
-    if (contact?.name) {
-      return contact.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
+    if (displayName) {
+      return displayName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
     }
-    return contact?.phone?.slice(-2) || '??';
+    return displayPhone?.slice(-2) || '??';
   };
 
   const handleAddTag = async (tag: Tag) => {
-    if (!contact?.id) return;
+    if (!contactId) return;
     await addTagToContact.mutateAsync({
-      contactId: contact.id,
+      contactId,
       tagId: tag.id,
       addedByType: 'manual',
     });
@@ -131,15 +171,15 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
   };
 
   const handleRemoveTag = async (tagId: string) => {
-    if (!contact?.id) return;
+    if (!contactId) return;
     await removeTagFromContact.mutateAsync({
-      contactId: contact.id,
+      contactId,
       tagId,
     });
   };
 
   const handleCreateTag = async () => {
-    if (!newTagName.trim() || !contact?.id) return;
+    if (!newTagName.trim() || !contactId) return;
 
     try {
       const newTag = await createTag.mutateAsync({
@@ -150,7 +190,7 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
       // Add the new tag to the contact
       if (newTag) {
         await addTagToContact.mutateAsync({
-          contactId: contact.id,
+          contactId,
           tagId: newTag.id,
           addedByType: 'manual',
         });
@@ -166,14 +206,14 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
   };
 
   const handleSaveName = async () => {
-    if (!contact?.id || !editedName.trim()) return;
+    if (!contactId || !editedName.trim()) return;
 
     setIsSavingName(true);
     try {
       const { error } = await supabase
         .from('contacts')
         .update({ name: editedName.trim() })
-        .eq('id', contact.id);
+        .eq('id', contactId);
 
       if (error) throw error;
 
@@ -195,14 +235,13 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
   };
 
   const handleSaveNote = async () => {
-    if (!contact?.id) return;
+    if (!contactId) return;
     setIsSavingNote(true);
     try {
-      const currentMetadata = (contact?.metadata as Record<string, unknown>) || {};
       const { error } = await supabase
         .from('contacts')
-        .update({ metadata: { ...currentMetadata, note: editedNote.trim() || null } })
-        .eq('id', contact.id);
+        .update({ metadata: { ...contactMetadata, note: editedNote.trim() || null } })
+        .eq('id', contactId);
       if (error) throw error;
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
       toast({ title: 'Nota atualizada' });
@@ -228,18 +267,18 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
 
   // Fetch scheduled messages for this contact
   const { data: contactScheduledMessages } = useQuery({
-    queryKey: ['contact-scheduled-messages', contact?.id],
+    queryKey: ['contact-scheduled-messages', contactId],
     queryFn: async () => {
-      if (!contact?.id) return [];
+      if (!contactId) return [];
       const { data, error } = await supabase
         .from('scheduled_messages')
         .select('*')
-        .eq('contact_id', contact.id)
+        .eq('contact_id', contactId)
         .order('scheduled_at', { ascending: true });
       if (error) throw error;
       return (data || []) as any[];
     },
-    enabled: !!contact?.id && isFullscreen,
+    enabled: !!contactId && isFullscreen,
   });
 
   // Fetch favorited/starred messages for this conversation (stored in metadata)
@@ -269,18 +308,18 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
               <ArrowLeft className="h-4 w-4" />
             </Button>
             <ContactAvatar
-              src={contact?.avatar_url}
-              name={contact?.name || null}
-              phone={contact?.phone}
-              contactId={contact?.id}
+              src={profileContact?.avatar_url}
+              name={displayName}
+              phone={displayPhone}
+              contactId={contactId}
               size={48}
               className="shrink-0"
             />
             <div className="flex-1 min-w-0">
-              <h2 data-sensitive className="font-semibold text-foreground text-lg truncate">{contact?.name || 'Sem nome'}</h2>
+              <h2 data-sensitive className="font-semibold text-foreground text-lg truncate">{displayName || 'Sem nome'}</h2>
               <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                <span data-sensitive>{contact?.phone ? formatPhone(contact.phone) : ''}</span>
-                {contact?.email && <span data-sensitive>• {contact.email}</span>}
+                <span data-sensitive>{displayPhone ? formatPhone(displayPhone) : ''}</span>
+                {profileContact?.email && <span data-sensitive>• {profileContact.email}</span>}
               </div>
             </div>
             <Badge variant="secondary" className="shrink-0">
@@ -326,7 +365,7 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
                   <div className="flex items-start gap-2">
                     {isEditingNote ? (
                       <>
-                        <Input value={editedNote} onChange={(e) => setEditedNote(e.target.value)} placeholder="Ex: Cliente VIP, ligar às 14h..." className="text-sm flex-1" autoFocus onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNote(); else if (e.key === 'Escape') { setIsEditingNote(false); setEditedNote((contact?.metadata as { note?: string } | null)?.note || ''); } }} />
+                        <Input value={editedNote} onChange={(e) => setEditedNote(e.target.value)} placeholder="Ex: Cliente VIP, ligar às 14h..." className="text-sm flex-1" autoFocus onKeyDown={(e) => { if (e.key === 'Enter') handleSaveNote(); else if (e.key === 'Escape') { setIsEditingNote(false); setEditedNote((contactMetadata as { note?: string } | null)?.note || ''); } }} />
                         <Button size="icon" className="h-9 w-9 shrink-0" onClick={handleSaveNote} disabled={isSavingNote}>
                           {isSavingNote ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                         </Button>
@@ -424,11 +463,11 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
                   <div className="grid grid-cols-2 gap-2">
                     <div className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/50">
                       <Phone className="h-4 w-4 text-muted-foreground shrink-0" />
-                      <span data-sensitive className="text-sm text-foreground truncate">{contact?.phone ? formatPhone(contact.phone) : 'Sem telefone'}</span>
+                      <span data-sensitive className="text-sm text-foreground truncate">{displayPhone ? formatPhone(displayPhone) : 'Sem telefone'}</span>
                     </div>
                     <div className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/50">
                       <Calendar className="h-4 w-4 text-muted-foreground shrink-0" />
-                      <span className="text-sm text-foreground">Desde {format(new Date(contact?.created_at || conversation.created_at), "dd/MM/yyyy", { locale: ptBR })}</span>
+                      <span className="text-sm text-foreground">Desde {format(new Date(profileContact?.created_at || conversation.created_at), "dd/MM/yyyy", { locale: ptBR })}</span>
                     </div>
                   </div>
                 </div>
@@ -460,16 +499,16 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
               </div>
             )}
 
-            {fullscreenTab === 'timeline' && contact?.id && (
+            {fullscreenTab === 'timeline' && contactId && (
               <ContactLogsSection conversationId={conversation.id} />
             )}
 
-            {fullscreenTab === 'notes' && contact?.id && (
-              <ContactNotesSection contactId={contact.id} />
+            {fullscreenTab === 'notes' && contactId && (
+              <ContactNotesSection contactId={contactId} />
             )}
 
-            {fullscreenTab === 'files' && contact?.id && (
-              <ContactFilesSection contactId={contact.id} />
+            {fullscreenTab === 'files' && contactId && (
+              <ContactFilesSection contactId={contactId} />
             )}
 
             {fullscreenTab === 'scheduled' && (
@@ -537,7 +576,7 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
         <CreateScheduledMessageDialog
           open={isScheduleOpen}
           onOpenChange={setIsScheduleOpen}
-          defaultContactId={contact?.id}
+          defaultContactId={contactId}
         />
       </div>
     );
@@ -567,10 +606,10 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
       )}
 
       {/* Tabs at the TOP - before avatar */}
-      {contact?.id && (
+      {contactId && (
         <ContactProfileTabs
           conversation={conversation}
-          contactId={contact.id}
+          contactId={contactId}
         />
       )}
 
@@ -579,10 +618,10 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
           {/* Avatar & Name */}
           <div className="flex flex-col items-center text-center">
             <ContactAvatar
-              src={contact?.avatar_url}
-              name={contact?.name || null}
-              phone={contact?.phone}
-              contactId={contact?.id}
+              src={profileContact?.avatar_url}
+              name={displayName}
+              phone={displayPhone}
+              contactId={contactId}
               size={80}
               className="mb-3"
             />
@@ -612,11 +651,11 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
                 data-sensitive
                 className="font-semibold text-lg text-foreground hover:text-primary transition-colors"
                 onClick={() => {
-                  setEditedName(contact?.name || '');
+                  setEditedName(displayName || '');
                   setIsEditingName(true);
                 }}
               >
-                {contact?.name || 'Sem nome'}
+                {displayName || 'Sem nome'}
               </button>
             )}
 
@@ -659,7 +698,7 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
                         handleSaveNote();
                       } else if (e.key === 'Escape') {
                         setIsEditingNote(false);
-                        setEditedNote((contact?.metadata as { note?: string } | null)?.note || '');
+                        setEditedNote((contactMetadata as { note?: string } | null)?.note || '');
                       }
                     }}
                   />
@@ -668,7 +707,7 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
                   </Button>
                   <Button size="icon" variant="ghost" className="h-9 w-9 shrink-0" onClick={() => {
                     setIsEditingNote(false);
-                    setEditedNote((contact?.metadata as { note?: string } | null)?.note || '');
+                    setEditedNote((contactMetadata as { note?: string } | null)?.note || '');
                   }}>
                     <X className="h-4 w-4" />
                   </Button>
@@ -831,19 +870,19 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
             <div className="flex items-center gap-3 p-2 rounded-lg bg-muted/50">
               <Phone className="h-4 w-4 text-muted-foreground shrink-0" />
               <span data-sensitive className="text-sm text-foreground truncate">
-                {contact?.phone ? formatPhone(contact.phone) : 'Sem telefone'}
+                {displayPhone ? formatPhone(displayPhone) : 'Sem telefone'}
               </span>
             </div>
-            {contact?.email && (
+            {profileContact?.email && (
               <div className="flex items-center gap-3 p-2 rounded-lg bg-muted/50">
                 <Mail className="h-4 w-4 text-muted-foreground shrink-0" />
-                <span data-sensitive className="text-sm text-foreground truncate">{contact.email}</span>
+                <span data-sensitive className="text-sm text-foreground truncate">{profileContact.email}</span>
               </div>
             )}
             <div className="flex items-center gap-3 p-2 rounded-lg bg-muted/50">
               <Calendar className="h-4 w-4 text-muted-foreground shrink-0" />
               <span className="text-sm text-foreground">
-                Desde {format(new Date(contact?.created_at || conversation.created_at), "dd/MM/yyyy", { locale: ptBR })}
+                Desde {format(new Date(profileContact?.created_at || conversation.created_at), "dd/MM/yyyy", { locale: ptBR })}
               </span>
             </div>
           </div>
@@ -871,7 +910,7 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
       <CreateScheduledMessageDialog
         open={isScheduleOpen}
         onOpenChange={setIsScheduleOpen}
-        defaultContactId={contact?.id}
+        defaultContactId={contactId}
       />
     </div>
   );
