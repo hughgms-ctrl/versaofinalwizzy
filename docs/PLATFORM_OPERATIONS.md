@@ -61,7 +61,7 @@ Campos e regras relevantes:
 - `organization_id`: organização/workspace dono da assinatura.
 - `plan_id`: plano atual em `platform_plans`.
 - `status`: status geral da assinatura, como `active`.
-- `payment_status`: status financeiro, como `paid`, `trial`, `trialing`, `past_due` ou `canceled`.
+- `payment_status`: status financeiro/de acesso, como `paid`, `manual`, `trial`, `trialing`, `past_due` ou `canceled`.
 - `billing_cycle`: `monthly` ou `yearly`.
 - `current_period_end`: próximo vencimento ou fim do ciclo atual.
 - `trial_ends_at`: fim do teste grátis, quando aplicável.
@@ -156,7 +156,8 @@ Regra atual:
 Condição usada pelo app:
 
 - `organization_plans.status === 'active'`
-- `organization_plans.payment_status` em `paid`, `trial` ou `trialing`
+- `organization_plans.payment_status` em `paid` ou `manual`; ou
+- `organization_plans.payment_status` em `trial` ou `trialing` com `trial_ends_at` no futuro.
 
 Se a condição não for atendida, o usuário é redirecionado para `/subscription`.
 
@@ -240,6 +241,7 @@ Responsabilidades:
 Status usados:
 
 - `paid`: pagamento em dia.
+- `manual`: uso liberado manualmente pelo admin, sem etiqueta de teste grátis.
 - `trial`: teste grátis ativo.
 - `trialing`: teste grátis ativo, nomenclatura compatível com gateways.
 - `past_due`: pagamento atrasado.
@@ -247,7 +249,7 @@ Status usados:
 
 Comportamento esperado:
 
-- `paid`, `trial` e `trialing` liberam acesso.
+- `paid`, `manual`, `trial` e `trialing` liberam acesso, sendo que `trial` e `trialing` dependem de `trial_ends_at` no futuro.
 - `past_due` deve permitir direcionamento para pagamento de pendência.
 - `canceled` não deve liberar acesso geral.
 
@@ -287,6 +289,12 @@ Notas fiscais:
 Decisão comercial atual:
 
 - teste grátis deve ser ativável/desativável no painel admin;
+- o admin pode liberar um plano em teste grátis para uma organização pela tela de Clientes;
+- a liberação manual grava `payment_status = 'trial'` e `trial_ends_at`;
+- para estender o teste, o admin salva novamente a organização com uma data maior;
+- ao fim de `trial_ends_at`, o acesso geral deixa de ser liberado e o cliente volta para `/subscription`;
+- o admin também pode usar `Uso liberado`, que grava `payment_status = 'manual'` e libera acesso sem exibir etiqueta de teste grátis;
+- `Plano pago` deve representar assinatura real ou pagamento confirmado.
 - inicialmente deve ser usado somente no Basic;
 - deve preservar os dias configurados quando desligado;
 - desligar o teste não deve obrigar apagar `trial_days`;

@@ -4,18 +4,23 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useAdminOverview } from '@/hooks/useAdminDashboard';
 import { TrendingUp, Building2, Users, MessageSquare, Phone } from 'lucide-react';
 
-export default function AdminHistoryPage() {
+interface AdminHistoryContentProps {
+  showHeader?: boolean;
+}
+
+export function AdminHistoryContent({ showHeader = true }: AdminHistoryContentProps) {
   const { data, isLoading } = useAdminOverview();
   const stats = data?.stats;
   const orgs = data?.organizations || [];
 
   return (
-    <AdminLayout>
-      <div className="space-y-6">
+    <div className="space-y-6">
+        {showHeader && (
         <div>
           <h1 className="text-3xl font-bold text-foreground">Histórico</h1>
           <p className="text-muted-foreground mt-1">Evolução e métricas históricas da plataforma</p>
         </div>
+        )}
 
         {/* Summary cards */}
         <div className="grid gap-4 md:grid-cols-4">
@@ -81,7 +86,14 @@ export default function AdminHistoryPage() {
             )}
           </CardContent>
         </Card>
-      </div>
+    </div>
+  );
+}
+
+export default function AdminHistoryPage() {
+  return (
+    <AdminLayout>
+      <AdminHistoryContent />
     </AdminLayout>
   );
 }

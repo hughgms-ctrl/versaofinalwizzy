@@ -2,8 +2,8 @@ import { ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { WhatsAppDisconnectedBanner } from '@/components/layout/WhatsAppDisconnectedBanner';
 import {
-  LayoutDashboard, Building2, CreditCard, Key, Shield,
-  ScrollText, TrendingUp, LogOut, ShieldCheck, ChevronLeft, ChevronRight, MessageCircle, WalletCards, Brain, Activity
+  LayoutDashboard, Building2, CreditCard, Key,
+  ScrollText, LogOut, ChevronLeft, ChevronRight, MessageCircle, WalletCards
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
@@ -23,15 +23,9 @@ const adminNav = [
   { name: 'Clientes', href: '/admin/clients', icon: Building2 },
   { name: 'Planos', href: '/admin/plans', icon: CreditCard },
   { name: 'Pagamentos', href: '/admin/payment-gateways', icon: WalletCards },
-  { name: 'Modelos IA', href: '/admin/ai-models', icon: Brain },
-  { name: 'Consumo IA', href: '/admin/ai-usage', icon: Activity },
-  { name: 'API & Custos', href: '/admin/api', icon: Key },
+  { name: 'IA & Custos', href: '/admin/ai/usage', icon: Key },
   { name: 'WhatsApp APIs', href: '/admin/whatsapp-apis', icon: MessageCircle },
-  { name: 'Governança', href: '/admin/governance', icon: ScrollText },
-  { name: 'Segurança', href: '/admin/security', icon: Shield },
-  { name: 'Monitoramento', href: '/admin/monitoring', icon: ShieldCheck },
-  { name: 'Documentação', href: '/admin/docs', icon: ScrollText },
-  { name: 'Histórico', href: '/admin/history', icon: TrendingUp },
+  { name: 'Operações', href: '/admin/operations/governance', icon: ScrollText },
 ];
 
 export function AdminLayout({ children }: AdminLayoutProps) {
@@ -83,7 +77,9 @@ export function AdminLayout({ children }: AdminLayoutProps) {
           {/* Navigation */}
           <nav className="flex-1 space-y-1 px-3 py-4 overflow-y-auto">
             {adminNav.map((item) => {
-              const isActive = location.pathname === item.href;
+              const isActive = location.pathname === item.href
+                || (item.href.startsWith('/admin/ai') && location.pathname.startsWith('/admin/ai'))
+                || (item.href.startsWith('/admin/operations') && location.pathname.startsWith('/admin/operations'));
               return (
                 <Link
                   key={item.name}
@@ -179,7 +175,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
         <header className="h-16 border-b flex items-center justify-between px-6 bg-background/50 backdrop-blur-sm sticky top-0 z-30">
           <div className="flex items-center gap-4">
             <h2 className="text-sm font-medium text-muted-foreground">
-              {adminNav.find(n => n.href === location.pathname)?.name || 'Dashboard'}
+              {adminNav.find((n) => location.pathname === n.href || (n.href.startsWith('/admin/ai') && location.pathname.startsWith('/admin/ai')) || (n.href.startsWith('/admin/operations') && location.pathname.startsWith('/admin/operations')))?.name || 'Dashboard'}
             </h2>
           </div>
           <div className="flex items-center gap-4">

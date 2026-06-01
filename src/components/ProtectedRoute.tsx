@@ -22,7 +22,7 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
 
       const { data, error } = await supabase
         .from('organization_plans')
-        .select('status, payment_status, current_period_end')
+        .select('status, payment_status, current_period_end, trial_ends_at')
         .eq('organization_id', profile.organization_id)
         .maybeSingle();
 
@@ -46,7 +46,11 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
 
   const status = String((onboardingPlan as any)?.status || '').toLowerCase();
   const paymentStatus = String((onboardingPlan as any)?.payment_status || '').toLowerCase();
-  const hasActivePlan = status === 'active' && ['paid', 'trial', 'trialing'].includes(paymentStatus);
+  const trialEndsAt = (onboardingPlan as any)?.trial_ends_at;
+  const hasValidTrial = ['trial', 'trialing'].includes(paymentStatus)
+    && Boolean(trialEndsAt)
+    && new Date(trialEndsAt).getTime() > Date.now();
+  const hasActivePlan = status === 'active' && (['paid', 'manual'].includes(paymentStatus) || hasValidTrial);
   const isAllowedOnboardingPath = allowedWithoutActivePlan.some((path) => (
     location.pathname === path || location.pathname.startsWith(`${path}/`)
   ));

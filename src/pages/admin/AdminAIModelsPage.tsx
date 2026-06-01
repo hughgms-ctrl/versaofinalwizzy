@@ -57,7 +57,7 @@ const DEFAULT_STRATEGY: AdminAIModelStrategy = {
   },
 };
 
-export default function AdminAIModelsPage() {
+export function AdminAIModelsContent({ showHeader = true }: { showHeader?: boolean }) {
   const { data, isLoading } = useAdminAIModels();
   const updateModels = useUpdateAdminAIModels();
   const [strategy, setStrategy] = useState<AdminAIModelStrategy>(DEFAULT_STRATEGY);
@@ -111,14 +111,15 @@ export default function AdminAIModelsPage() {
   });
 
   return (
-    <AdminLayout>
       <div className="space-y-6">
+        {showHeader && (
         <div className="flex items-center justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold text-foreground">Modelos de IA</h1>
             <p className="mt-1 text-muted-foreground">Controle central dos modelos OpenAI usados por cada função do Wizzy.</p>
           </div>
         </div>
+        )}
 
         {isLoading ? (
           <Skeleton className="h-96" />
@@ -177,6 +178,13 @@ export default function AdminAIModelsPage() {
           </Card>
         )}
       </div>
+  );
+}
+
+export default function AdminAIModelsPage() {
+  return (
+    <AdminLayout>
+      <AdminAIModelsContent />
     </AdminLayout>
   );
 }

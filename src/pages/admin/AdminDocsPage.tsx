@@ -4,16 +4,21 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { BookOpen, Shield, Code, Server, FileText, CheckCircle2 } from 'lucide-react';
 
-export default function AdminDocsPage() {
+interface AdminDocsContentProps {
+  showHeader?: boolean;
+}
+
+export function AdminDocsContent({ showHeader = true }: AdminDocsContentProps) {
   return (
-    <AdminLayout>
-      <div className="space-y-6">
+    <div className="space-y-6">
+        {showHeader && (
         <div>
           <h1 className="text-3xl font-bold text-foreground">Documentação</h1>
           <p className="text-muted-foreground mt-1">
             Arquitetura, segurança e referência de API da plataforma
           </p>
         </div>
+        )}
 
         <Tabs defaultValue="architecture" className="space-y-4">
           <TabsList className="grid w-full grid-cols-3">
@@ -255,7 +260,14 @@ const res = await fetch(url, {
             </Card>
           </TabsContent>
         </Tabs>
-      </div>
+    </div>
+  );
+}
+
+export default function AdminDocsPage() {
+  return (
+    <AdminLayout>
+      <AdminDocsContent />
     </AdminLayout>
   );
 }

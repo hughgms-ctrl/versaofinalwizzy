@@ -36,6 +36,9 @@ function getStatusLabel(status?: string | null) {
   const labels: Record<string, string> = {
     active: "Ativo",
     paid: "Pago",
+    manual: "Uso liberado",
+    trial: "Teste gratis",
+    trialing: "Teste gratis",
     pending: "Pendente",
     past_due: "Em atraso",
     overdue: "Em atraso",
@@ -48,6 +51,8 @@ function getStatusLabel(status?: string | null) {
 function getStatusVariant(status?: string | null): "default" | "secondary" | "destructive" | "outline" {
   const normalized = String(status || "").toLowerCase();
   if (["active", "paid"].includes(normalized)) return "default";
+  if (normalized === "manual") return "outline";
+  if (["trial", "trialing"].includes(normalized)) return "secondary";
   if (["past_due", "overdue"].includes(normalized)) return "destructive";
   if (["pending", "inactive"].includes(normalized)) return "secondary";
   return "outline";
@@ -105,6 +110,7 @@ export function SubscriptionManagementPanel() {
   const plan = currentPlan?.plan;
   const paymentStatus = currentPlan?.payment_status || currentPlan?.status;
   const isPastDue = ["past_due", "overdue"].includes(String(paymentStatus || "").toLowerCase());
+  const isTrial = ["trial", "trialing"].includes(String(paymentStatus || "").toLowerCase());
   const hasPlan = Boolean(currentPlan?.plan_id);
   const invoiceCount = data?.eventsCount || 0;
   const totalInvoicePages = Math.max(1, Math.ceil(invoiceCount / invoicePageSize));
@@ -198,6 +204,15 @@ export function SubscriptionManagementPanel() {
           </AlertDescription>
         </Alert>
       )}
+      {isTrial && (
+        <Alert>
+          <CheckCircle2 className="h-4 w-4" />
+          <AlertTitle>Teste gratis ativo</AlertTitle>
+          <AlertDescription>
+            Seu workspace esta liberado ate {formatDate(currentPlan?.trial_ends_at)}.
+          </AlertDescription>
+        </Alert>
+      )}
 
       <div className="grid gap-3 md:grid-cols-3">
         <div className="rounded-lg border bg-muted/20 p-4">
@@ -214,10 +229,10 @@ export function SubscriptionManagementPanel() {
           </div>
         </div>
         <div className="rounded-lg border bg-muted/20 p-4">
-          <p className="text-xs text-muted-foreground">Próximo vencimento</p>
+          <p className="text-xs text-muted-foreground">{isTrial ? "Fim do teste" : "Próximo vencimento"}</p>
           <div className="mt-2 flex items-center gap-2">
             <CalendarClock className="h-4 w-4 text-muted-foreground" />
-            <p className="font-semibold">{formatDate(currentPlan?.current_period_end)}</p>
+            <p className="font-semibold">{formatDate(isTrial ? currentPlan?.trial_ends_at : currentPlan?.current_period_end)}</p>
           </div>
         </div>
       </div>

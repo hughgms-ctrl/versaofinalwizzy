@@ -1339,6 +1339,15 @@ Deno.serve(async (req) => {
     if (action === 'assign_plan') {
       const body = await req.json()
       const { organization_id, plan_id } = body
+      const allowedPaymentStatuses = ['trial', 'manual', 'paid']
+      const paymentStatus = allowedPaymentStatuses.includes(body.payment_status) ? body.payment_status : 'paid'
+      const trialEndsAt = paymentStatus === 'trial' && body.trial_ends_at
+        ? new Date(body.trial_ends_at)
+        : null
+
+      if (paymentStatus === 'trial' && (!trialEndsAt || Number.isNaN(trialEndsAt.getTime()))) {
+        throw new Error('Data final do teste gratis invalida')
+      }
 
       const { data, error } = await adminClient
         .from('organization_plans')
@@ -1346,13 +1355,27 @@ Deno.serve(async (req) => {
           organization_id,
           plan_id,
           status: 'active',
+          payment_status: paymentStatus,
+          trial_ends_at: trialEndsAt ? trialEndsAt.toISOString() : null,
           current_period_start: new Date().toISOString(),
+          current_period_end: trialEndsAt ? trialEndsAt.toISOString() : null,
           updated_at: new Date().toISOString(),
         }, { onConflict: 'organization_id' })
         .select()
         .single()
 
       if (error) throw error
+      await adminClient.from('admin_audit_logs').insert({
+        action: paymentStatus === 'trial'
+          ? 'assign_trial_plan'
+          : paymentStatus === 'manual'
+            ? 'assign_manual_access_plan'
+            : 'assign_paid_plan',
+        entity_type: 'organization_plan',
+        entity_id: data.id,
+        performed_by: user.id,
+        details: { organization_id, plan_id, payment_status: paymentStatus, trial_ends_at: trialEndsAt?.toISOString() || null },
+      })
       return new Response(JSON.stringify({ result: data }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 

@@ -47,7 +47,7 @@ const PRESETS = [
   },
 ];
 
-export default function AdminAIUsagePage() {
+export function AdminAIUsageContent({ showHeader = true }: { showHeader?: boolean }) {
   const [dateFrom, setDateFrom] = useState(dateDaysAgo(6));
   const [dateTo, setDateTo] = useState(dateDaysAgo(0));
   const [aiMode, setAiMode] = useState<AdminAIUsageMode>('all');
@@ -87,15 +87,16 @@ export default function AdminAIUsagePage() {
   };
 
   return (
-    <AdminLayout>
       <div className="space-y-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-foreground">Consumo IA</h1>
-            <p className="mt-1 text-muted-foreground">
-              Uso por cliente, plano, API propria e Wizzy AI.
-            </p>
-          </div>
+          {showHeader ? (
+            <div>
+              <h1 className="text-3xl font-bold text-foreground">Consumo IA</h1>
+              <p className="mt-1 text-muted-foreground">
+                Uso por cliente, plano, API propria e Wizzy AI.
+              </p>
+            </div>
+          ) : <div />}
 
           <div className="flex flex-wrap items-center gap-2">
             {PRESETS.map((preset) => (
@@ -391,6 +392,13 @@ export default function AdminAIUsagePage() {
           </CardContent>
         </Card>
       </div>
+  );
+}
+
+export default function AdminAIUsagePage() {
+  return (
+    <AdminLayout>
+      <AdminAIUsageContent />
     </AdminLayout>
   );
 }

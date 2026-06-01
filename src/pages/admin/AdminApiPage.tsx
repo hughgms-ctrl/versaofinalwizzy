@@ -5,16 +5,17 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useAdminApi } from '@/hooks/useAdminDashboard';
 import { Key, Activity, Building2 } from 'lucide-react';
 
-export default function AdminApiPage() {
+export function AdminApiContent({ showHeader = true }: { showHeader?: boolean }) {
   const { data, isLoading } = useAdminApi();
 
   return (
-    <AdminLayout>
       <div className="space-y-6">
+        {showHeader && (
         <div>
           <h1 className="text-3xl font-bold text-foreground">API & Custos</h1>
           <p className="text-muted-foreground mt-1">Monitoramento de uso de APIs e custos de IA</p>
         </div>
+        )}
 
         <div className="grid gap-4 md:grid-cols-2">
           <Card>
@@ -100,6 +101,13 @@ export default function AdminApiPage() {
           </CardContent>
         </Card>
       </div>
+  );
+}
+
+export default function AdminApiPage() {
+  return (
+    <AdminLayout>
+      <AdminApiContent />
     </AdminLayout>
   );
 }

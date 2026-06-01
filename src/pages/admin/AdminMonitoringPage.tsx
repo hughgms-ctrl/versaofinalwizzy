@@ -14,7 +14,11 @@ import { toast } from '@/hooks/use-toast';
 const SENTRY_DSN = "https://e182c0b36f3c05825b22c0b0c5743cab@o4511028911734784.ingest.us.sentry.io/4511028921761792";
 const SENTRY_PROJECT_URL = "https://sentry.io/organizations/wizzy-ai/issues/?project=4511028921761792";
 
-export default function AdminMonitoringPage() {
+interface AdminMonitoringContentProps {
+  showHeader?: boolean;
+}
+
+export function AdminMonitoringContent({ showHeader = true }: AdminMonitoringContentProps) {
   const [testSent, setTestSent] = useState(false);
   const [isSending, setIsSending] = useState(false);
 
@@ -128,14 +132,15 @@ export default function AdminMonitoringPage() {
   ];
 
   return (
-    <AdminLayout>
-      <div className="space-y-6">
+    <div className="space-y-6">
+        {showHeader && (
         <div>
           <h1 className="text-3xl font-bold text-foreground">Monitoramento</h1>
           <p className="text-muted-foreground mt-1">
             Status das integrações de observabilidade, testes e segurança
           </p>
         </div>
+        )}
 
         {/* Status Overview */}
         <div className="grid gap-4 md:grid-cols-4">
@@ -254,7 +259,14 @@ export default function AdminMonitoringPage() {
             </Card>
           ))}
         </div>
-      </div>
+    </div>
+  );
+}
+
+export default function AdminMonitoringPage() {
+  return (
+    <AdminLayout>
+      <AdminMonitoringContent />
     </AdminLayout>
   );
 }

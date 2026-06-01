@@ -289,9 +289,39 @@ export function useToggleClientPlansMenu() {
 export function useAssignPlan() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (data: { organization_id: string; plan_id: string }) => adminFetch('assign_plan', data),
-    onSuccess: () => {
+    mutationFn: async (data: {
+      organization_id: string;
+      plan_id: string;
+      payment_status?: 'paid' | 'trial' | 'manual';
+      trial_ends_at?: string | null;
+    }) => {
+      const paymentStatus = data.payment_status || 'manual';
+      const trialEndsAt = paymentStatus === 'trial' ? data.trial_ends_at : null;
+
+      const { data: result, error } = await supabase
+        .from('organization_plans')
+        .upsert({
+          organization_id: data.organization_id,
+          plan_id: data.plan_id,
+          status: 'active',
+          payment_status: paymentStatus,
+          trial_ends_at: trialEndsAt,
+          current_period_start: new Date().toISOString(),
+          current_period_end: trialEndsAt,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'organization_id' })
+        .select()
+        .single();
+
+      if (error) throw error;
+      return { result };
+    },
+    onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'clients'] });
+      queryClient.invalidateQueries({ queryKey: ['onboarding-org-plan', variables.organization_id] });
+      queryClient.invalidateQueries({ queryKey: ['current-org-plan', variables.organization_id] });
+      queryClient.invalidateQueries({ queryKey: ['profile-subscription-management', variables.organization_id] });
+      queryClient.invalidateQueries({ queryKey: ['org-plan-modules', variables.organization_id] });
       toast.success('Plano atribuído com sucesso');
     },
     onError: (err: Error) => toast.error(err.message),

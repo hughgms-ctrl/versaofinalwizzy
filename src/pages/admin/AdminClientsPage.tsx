@@ -466,6 +466,8 @@ export default function AdminClientsPage() {
   const [assignDialog, setAssignDialog] = useState<{ orgId: string; orgName: string } | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ orgId: string; orgName: string } | null>(null);
   const [selectedPlanId, setSelectedPlanId] = useState('');
+  const [selectedAccessMode, setSelectedAccessMode] = useState<'manual' | 'trial' | 'paid'>('manual');
+  const [trialEndsAt, setTrialEndsAt] = useState('');
   const [expandedOrg, setExpandedOrg] = useState<string | null>(null);
   const [detailOrgId, setDetailOrgId] = useState<string | null>(null);
 
@@ -483,6 +485,12 @@ export default function AdminClientsPage() {
   };
 
   const formatLimit = (value: number | null | undefined) => value ? String(value) : '∞';
+  const formatDateInput = (value?: string | null) => value ? new Date(value).toISOString().slice(0, 10) : '';
+  const getDefaultTrialEndDate = () => {
+    const date = new Date();
+    date.setDate(date.getDate() + 7);
+    return date.toISOString().slice(0, 10);
+  };
   const getUsageState = (used: number, limit?: number | null) => {
     if (!limit || limit <= 0) return { percent: 0, color: 'bg-primary', text: 'text-foreground' };
     const percent = Math.round((used / limit) * 100);
@@ -592,7 +600,19 @@ export default function AdminClientsPage() {
                         </TableCell>
                         <TableCell>
                           {org.plan ? (
-                            <Badge variant="secondary">{org.plan.name}</Badge>
+                            <div className="flex flex-col items-start gap-1">
+                              <Badge variant="secondary">{org.plan.name}</Badge>
+                              {['trial', 'trialing'].includes(String(org.plan.payment_status || '').toLowerCase()) && (
+                                <Badge variant="outline" className="border-primary/40 text-primary">
+                                  Teste gratis ate {org.plan.trial_ends_at ? new Date(org.plan.trial_ends_at).toLocaleDateString('pt-BR') : 'sem data'}
+                                </Badge>
+                              )}
+                              {String(org.plan.payment_status || '').toLowerCase() === 'manual' && (
+                                <Badge variant="outline" className="border-emerald-500/40 text-emerald-600">
+                                  Uso liberado
+                                </Badge>
+                              )}
+                            </div>
                           ) : (
                             <Badge variant="outline" className="text-muted-foreground">Sem plano</Badge>
                           )}
@@ -648,6 +668,10 @@ export default function AdminClientsPage() {
                               onClick={() => {
                                 setAssignDialog({ orgId: org.id, orgName: org.name });
                                 setSelectedPlanId(org.plan?.id || '');
+                                const isTrial = ['trial', 'trialing'].includes(String(org.plan?.payment_status || '').toLowerCase());
+                                const isPaid = String(org.plan?.payment_status || '').toLowerCase() === 'paid';
+                                setSelectedAccessMode(isTrial ? 'trial' : isPaid ? 'paid' : 'manual');
+                                setTrialEndsAt(formatDateInput(org.plan?.trial_ends_at) || getDefaultTrialEndDate());
                               }}
                             >
                               Plano
@@ -694,30 +718,69 @@ export default function AdminClientsPage() {
           <DialogHeader>
             <DialogTitle>Atribuir Plano — {assignDialog?.orgName}</DialogTitle>
           </DialogHeader>
-          <div className="py-4">
-            <Select value={selectedPlanId} onValueChange={setSelectedPlanId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Selecione um plano" />
-              </SelectTrigger>
-              <SelectContent>
-                {(plansData?.plans || []).map((plan: any) => (
-                  <SelectItem key={plan.id} value={plan.id}>
-                    {plan.name} — R$ {plan.price_monthly}/mês
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Plano</p>
+              <Select value={selectedPlanId} onValueChange={setSelectedPlanId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione um plano" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(plansData?.plans || []).map((plan: any) => (
+                    <SelectItem key={plan.id} value={plan.id}>
+                      {plan.name} — R$ {plan.price_monthly}/mês
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Tipo de acesso</p>
+              <Select value={selectedAccessMode} onValueChange={(value) => setSelectedAccessMode(value as 'manual' | 'trial' | 'paid')}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="trial">Teste gratis</SelectItem>
+                  <SelectItem value="manual">Uso liberado</SelectItem>
+                  <SelectItem value="paid">Plano pago</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {selectedAccessMode === 'trial' && (
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Teste gratis ate</p>
+                <Input
+                  type="date"
+                  value={trialEndsAt}
+                  onChange={(e) => setTrialEndsAt(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Para estender o teste, salve novamente com uma data maior.
+                </p>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAssignDialog(null)}>Cancelar</Button>
             <Button
               onClick={() => {
                 if (assignDialog && selectedPlanId) {
-                  assignPlan.mutate({ organization_id: assignDialog.orgId, plan_id: selectedPlanId });
+                  const trialEndIso = selectedAccessMode === 'trial'
+                    ? new Date(`${trialEndsAt}T23:59:59`).toISOString()
+                    : null;
+                  assignPlan.mutate({
+                    organization_id: assignDialog.orgId,
+                    plan_id: selectedPlanId,
+                    payment_status: selectedAccessMode,
+                    trial_ends_at: trialEndIso,
+                  });
                   setAssignDialog(null);
                 }
               }}
-              disabled={!selectedPlanId || assignPlan.isPending}
+              disabled={!selectedPlanId || (selectedAccessMode === 'trial' && !trialEndsAt) || assignPlan.isPending}
             >
               Salvar
             </Button>

@@ -6,7 +6,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useAdminSecurity } from '@/hooks/useAdminDashboard';
 import { Shield, ShieldAlert, ShieldCheck } from 'lucide-react';
 
-export default function AdminSecurityPage() {
+interface AdminSecurityContentProps {
+  showHeader?: boolean;
+}
+
+export function AdminSecurityContent({ showHeader = true }: AdminSecurityContentProps) {
   const { data, isLoading } = useAdminSecurity();
   const logs = data?.logs || [];
 
@@ -18,12 +22,13 @@ export default function AdminSecurityPage() {
   };
 
   return (
-    <AdminLayout>
-      <div className="space-y-6">
+    <div className="space-y-6">
+        {showHeader && (
         <div>
           <h1 className="text-3xl font-bold text-foreground">Segurança</h1>
           <p className="text-muted-foreground mt-1">Logs de auditoria e segurança da plataforma</p>
         </div>
+        )}
 
         <div className="grid gap-4 md:grid-cols-3">
           <Card>
@@ -114,7 +119,14 @@ export default function AdminSecurityPage() {
             )}
           </CardContent>
         </Card>
-      </div>
+    </div>
+  );
+}
+
+export default function AdminSecurityPage() {
+  return (
+    <AdminLayout>
+      <AdminSecurityContent />
     </AdminLayout>
   );
 }

@@ -3,7 +3,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Navigate, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "next-themes";
 import { AuthProvider } from "@/hooks/useAuth";
 import { SidebarProvider } from "@/contexts/SidebarContext";
@@ -54,16 +54,10 @@ const AdminPage = lazy(() => import("./pages/AdminPage"));
 const AdminLoginPage = lazy(() => import("./pages/AdminLoginPage"));
 const AdminClientsPage = lazy(() => import("./pages/admin/AdminClientsPage"));
 const AdminPlansPage = lazy(() => import("./pages/admin/AdminPlansPage"));
-const AdminApiPage = lazy(() => import("./pages/admin/AdminApiPage"));
-const AdminGovernancePage = lazy(() => import("./pages/admin/AdminGovernancePage"));
-const AdminSecurityPage = lazy(() => import("./pages/admin/AdminSecurityPage"));
-const AdminHistoryPage = lazy(() => import("./pages/admin/AdminHistoryPage"));
-const AdminMonitoringPage = lazy(() => import("./pages/admin/AdminMonitoringPage"));
-const AdminDocsPage = lazy(() => import("./pages/admin/AdminDocsPage"));
 const AdminWhatsAppIntegrationsPage = lazy(() => import("./pages/admin/AdminWhatsAppIntegrationsPage"));
 const AdminPaymentGatewaysPage = lazy(() => import("./pages/admin/AdminPaymentGatewaysPage"));
-const AdminAIModelsPage = lazy(() => import("./pages/admin/AdminAIModelsPage"));
-const AdminAIUsagePage = lazy(() => import("./pages/admin/AdminAIUsagePage"));
+const AdminAIPage = lazy(() => import("./pages/admin/AdminAIPage"));
+const AdminOperationsPage = lazy(() => import("./pages/admin/AdminOperationsPage"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -140,15 +134,25 @@ const App = () => (
                       <Route path="/admin/clients" element={<AdminProtectedRoute><AdminClientsPage /></AdminProtectedRoute>} />
                       <Route path="/admin/plans" element={<AdminProtectedRoute><AdminPlansPage /></AdminProtectedRoute>} />
                       <Route path="/admin/payment-gateways" element={<AdminProtectedRoute><AdminPaymentGatewaysPage /></AdminProtectedRoute>} />
-                      <Route path="/admin/ai-models" element={<AdminProtectedRoute><AdminAIModelsPage /></AdminProtectedRoute>} />
-                      <Route path="/admin/ai-usage" element={<AdminProtectedRoute><AdminAIUsagePage /></AdminProtectedRoute>} />
-                      <Route path="/admin/api" element={<AdminProtectedRoute><AdminApiPage /></AdminProtectedRoute>} />
+                      <Route path="/admin/ai" element={<AdminProtectedRoute><AdminAIPage /></AdminProtectedRoute>} />
+                      <Route path="/admin/ai/usage" element={<AdminProtectedRoute><AdminAIPage /></AdminProtectedRoute>} />
+                      <Route path="/admin/ai/models" element={<AdminProtectedRoute><AdminAIPage /></AdminProtectedRoute>} />
+                      <Route path="/admin/ai/api" element={<AdminProtectedRoute><AdminAIPage /></AdminProtectedRoute>} />
+                      <Route path="/admin/ai-models" element={<Navigate to="/admin/ai/models" replace />} />
+                      <Route path="/admin/ai-usage" element={<Navigate to="/admin/ai/usage" replace />} />
+                      <Route path="/admin/api" element={<Navigate to="/admin/ai/api" replace />} />
                       <Route path="/admin/whatsapp-apis" element={<AdminProtectedRoute><AdminWhatsAppIntegrationsPage /></AdminProtectedRoute>} />
-                      <Route path="/admin/governance" element={<AdminProtectedRoute><AdminGovernancePage /></AdminProtectedRoute>} />
-                      <Route path="/admin/security" element={<AdminProtectedRoute><AdminSecurityPage /></AdminProtectedRoute>} />
-                      <Route path="/admin/monitoring" element={<AdminProtectedRoute><AdminMonitoringPage /></AdminProtectedRoute>} />
-                      <Route path="/admin/docs" element={<AdminProtectedRoute><AdminDocsPage /></AdminProtectedRoute>} />
-                      <Route path="/admin/history" element={<AdminProtectedRoute><AdminHistoryPage /></AdminProtectedRoute>} />
+                      <Route path="/admin/operations" element={<AdminProtectedRoute><AdminOperationsPage /></AdminProtectedRoute>} />
+                      <Route path="/admin/operations/governance" element={<AdminProtectedRoute><AdminOperationsPage /></AdminProtectedRoute>} />
+                      <Route path="/admin/operations/security" element={<AdminProtectedRoute><AdminOperationsPage /></AdminProtectedRoute>} />
+                      <Route path="/admin/operations/monitoring" element={<AdminProtectedRoute><AdminOperationsPage /></AdminProtectedRoute>} />
+                      <Route path="/admin/operations/docs" element={<AdminProtectedRoute><AdminOperationsPage /></AdminProtectedRoute>} />
+                      <Route path="/admin/operations/history" element={<AdminProtectedRoute><AdminOperationsPage /></AdminProtectedRoute>} />
+                      <Route path="/admin/governance" element={<Navigate to="/admin/operations/governance" replace />} />
+                      <Route path="/admin/security" element={<Navigate to="/admin/operations/security" replace />} />
+                      <Route path="/admin/monitoring" element={<Navigate to="/admin/operations/monitoring" replace />} />
+                      <Route path="/admin/docs" element={<Navigate to="/admin/operations/docs" replace />} />
+                      <Route path="/admin/history" element={<Navigate to="/admin/operations/history" replace />} />
                       {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                       <Route path="*" element={<NotFound />} />
                     </Routes>

@@ -8,14 +8,19 @@ import { GovernanceHistoryTab } from '@/components/admin/governance/GovernanceHi
 import { GovernanceAuditTab } from '@/components/admin/governance/GovernanceAuditTab';
 import { FileText, Target, BarChart3, Rocket, FileUp, Award, Clock } from 'lucide-react';
 
-export default function AdminGovernancePage() {
+interface AdminGovernanceContentProps {
+  showHeader?: boolean;
+}
+
+export function AdminGovernanceContent({ showHeader = true }: AdminGovernanceContentProps) {
   return (
-    <AdminLayout>
-      <div className="space-y-6">
+    <div className="space-y-6">
+        {showHeader && (
         <div>
           <h1 className="text-3xl font-bold text-foreground">Governança</h1>
           <p className="text-muted-foreground mt-1">Auditoria, maturidade e certificação da arquitetura</p>
         </div>
+        )}
 
         <Tabs defaultValue="prompts" className="space-y-4">
           <TabsList className="flex-wrap h-auto gap-1 bg-transparent border-b border-border rounded-none p-0 pb-0">
@@ -69,7 +74,14 @@ export default function AdminGovernancePage() {
             <GovernanceHistoryTab />
           </TabsContent>
         </Tabs>
-      </div>
+    </div>
+  );
+}
+
+export default function AdminGovernancePage() {
+  return (
+    <AdminLayout>
+      <AdminGovernanceContent />
     </AdminLayout>
   );
 }
