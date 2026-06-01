@@ -217,7 +217,9 @@ const PlanUpgradePanel = () => {
                   </div>
                   <div className="flex items-center gap-2 text-sm py-1">
                     <Check className="w-4 h-4 text-green-500 shrink-0" />
-                    <span className="text-muted-foreground">Até {plan.max_team_members} membros</span>
+                    <span className="text-muted-foreground">
+                      {plan.max_team_members > 0 ? `Até ${plan.max_team_members} membros` : 'Membros ilimitados'}
+                    </span>
                   </div>
                   <div className="flex items-center gap-2 text-sm py-1">
                     <Check className="w-4 h-4 text-green-500 shrink-0" />
@@ -227,11 +229,7 @@ const PlanUpgradePanel = () => {
                     <>
                       <div className="flex items-center gap-2 text-sm py-1">
                         <Check className="w-4 h-4 text-green-500 shrink-0" />
-                        <span className="text-muted-foreground">Wizzy AI disponivel apenas no plano Max</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-sm py-1">
-                        <Check className="w-4 h-4 text-green-500 shrink-0" />
-                        <span className="text-muted-foreground">Todo consumo de IA por nossa conta</span>
+                        <span className="text-muted-foreground">Consumo de IA incluso no plano</span>
                       </div>
                     </>
                   ) : (
