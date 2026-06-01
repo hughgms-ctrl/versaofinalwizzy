@@ -16,10 +16,11 @@ const moduleLabels: Record<string, string> = {
   orchestrator: "Orquestrador", ai: "Inteligência Artificial",
   widgets: "Wizzy Forms", settings: "Configurações", team: "Equipe",
   scheduled: "Programados", integrations: "Integrações", quiz: "Quiz interativo",
+  wizzy_flow: "Wizzy Flow",
 };
 
 const visibleModules = [
-  "documents", "widgets", "quiz"
+  "documents", "widgets", "quiz", "wizzy_flow"
 ];
 
 interface Plan {
