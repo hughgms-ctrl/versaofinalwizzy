@@ -40,6 +40,8 @@ import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { Progress } from '@/components/ui/progress';
+import { useOrganizationPlan } from '@/hooks/useOrganizationPlan';
+import { LimitUpgradeDialog } from '@/components/billing/LimitUpgradeDialog';
 
 export function WhatsAppInstancesSettings() {
   const { session } = useAuth();
@@ -47,6 +49,7 @@ export function WhatsAppInstancesSettings() {
   const queryClient = useQueryClient();
   const { data: instances = [], isLoading } = useWhatsAppInstances();
   const { data: workspaces = [] } = useWorkspaces();
+  const { usage } = useOrganizationPlan();
   const deleteInstance = useDeleteWhatsAppInstance();
 
   const [editingInstance, setEditingInstance] = useState<WhatsAppInstance | null>(null);
@@ -57,6 +60,8 @@ export function WhatsAppInstancesSettings() {
   const [syncProgress, setSyncProgress] = useState(0);
   const [isAddingNumber, setIsAddingNumber] = useState(false);
   const [isBackfillingAvatars, setIsBackfillingAvatars] = useState(false);
+  const [showLimitDialog, setShowLimitDialog] = useState(false);
+  const whatsappLimitReached = usage.whatsappNumberLimit > 0 && usage.whatsappNumberCount >= usage.whatsappNumberLimit;
 
   const handleBackfillAvatars = async () => {
     if (isBackfillingAvatars) return;
@@ -166,6 +171,10 @@ export function WhatsAppInstancesSettings() {
 
   const handleAddNumber = async () => {
     if (!session?.access_token) return;
+    if (whatsappLimitReached) {
+      setShowLimitDialog(true);
+      return;
+    }
     setIsAddingNumber(true);
     try {
       // Create a new instance via zapi-create-instance
@@ -521,6 +530,11 @@ export function WhatsAppInstancesSettings() {
           instance={editingInstance}
         />
       )}
+      <LimitUpgradeDialog
+        open={showLimitDialog}
+        onOpenChange={setShowLimitDialog}
+        description={`Seu plano permite ${usage.whatsappNumberLimit} número${usage.whatsappNumberLimit === 1 ? '' : 's'} de WhatsApp e sua organização já está usando ${usage.whatsappNumberCount}. Escolha um plano maior para adicionar novas instâncias.`}
+      />
     </div>
   );
 }

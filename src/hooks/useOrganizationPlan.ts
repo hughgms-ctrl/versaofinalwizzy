@@ -93,6 +93,10 @@ export function useOrganizationPlan() {
 
   const planRow = (orgPlan as any)?.planRow || null;
   const plan = planRow?.plan || null;
+  const paymentStatus = String(planRow?.payment_status || '').toLowerCase();
+  const trialEndsAt = planRow?.trial_ends_at || null;
+  const hasValidTrial = ['trial', 'trialing'].includes(paymentStatus)
+    && (!trialEndsAt || new Date(trialEndsAt).getTime() > Date.now());
   const allowedModules: string[] = plan?.allowed_modules || [];
   const storageUsed = Number((orgPlan as any)?.organization?.storage_used_bytes || 0);
   const storageLimit = Number(plan?.storage_limit_bytes || (orgPlan as any)?.organization?.storage_limit_bytes || 0);
@@ -127,6 +131,10 @@ export function useOrganizationPlan() {
     canAccessModule,
     planName: plan?.name || null,
     planSlug: plan?.slug || null,
+    paymentStatus,
+    trialEndsAt,
+    isTrial: hasValidTrial,
+    isManualAccess: paymentStatus === 'manual',
     aiMode,
     isWizzyAI,
     usage: {

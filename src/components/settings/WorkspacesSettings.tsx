@@ -29,6 +29,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { useTags, Tag as TagType } from '@/hooks/useTags';
 import { useTeamMembers } from '@/hooks/useTeamMembers';
 import { useToast } from '@/hooks/use-toast';
+import { useOrganizationPlan } from '@/hooks/useOrganizationPlan';
+import { LimitUpgradeDialog } from '@/components/billing/LimitUpgradeDialog';
 
 const WORKSPACE_COLORS = [
   '#6366f1', '#8b5cf6', '#ec4899', '#ef4444', '#f97316',
@@ -43,8 +45,19 @@ export function WorkspacesSettings() {
   });
   const activeCount = allWorkspaces.filter(w => w.is_active).length;
   const inactiveCount = allWorkspaces.length - activeCount;
+  const { usage } = useOrganizationPlan();
   const [editingWorkspace, setEditingWorkspace] = useState<Workspace | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [showLimitDialog, setShowLimitDialog] = useState(false);
+  const workspaceLimitReached = usage.workspaceLimit > 0 && usage.workspaceCount >= usage.workspaceLimit;
+
+  const handleCreateClick = () => {
+    if (workspaceLimitReached) {
+      setShowLimitDialog(true);
+      return;
+    }
+    setShowCreateDialog(true);
+  };
 
   if (isLoading) {
     return (
@@ -71,7 +84,7 @@ export function WorkspacesSettings() {
                 </p>
               )}
             </div>
-            <Button onClick={() => setShowCreateDialog(true)} className="gap-2">
+            <Button onClick={handleCreateClick} className="gap-2">
               <Plus className="h-4 w-4" />
               Novo Workspace
             </Button>
@@ -85,7 +98,7 @@ export function WorkspacesSettings() {
               <p className="text-muted-foreground mb-4">
                 Crie workspaces para separar leads e recursos por área de atuação.
               </p>
-              <Button onClick={() => setShowCreateDialog(true)} variant="outline" className="gap-2">
+              <Button onClick={handleCreateClick} variant="outline" className="gap-2">
                 <Plus className="h-4 w-4" />
                 Criar primeiro workspace
               </Button>
@@ -108,6 +121,12 @@ export function WorkspacesSettings() {
         open={showCreateDialog}
         onOpenChange={setShowCreateDialog}
         workspace={null}
+      />
+
+      <LimitUpgradeDialog
+        open={showLimitDialog}
+        onOpenChange={setShowLimitDialog}
+        description={`Seu plano permite ${usage.workspaceLimit} workspace${usage.workspaceLimit === 1 ? '' : 's'} e sua organização já está usando ${usage.workspaceCount}. Escolha um plano maior para criar novos workspaces.`}
       />
 
       <WorkspaceFormDialog
