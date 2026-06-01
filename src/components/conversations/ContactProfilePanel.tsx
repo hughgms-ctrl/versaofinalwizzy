@@ -208,16 +208,34 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
   const handleSaveName = async () => {
     if (!contactId || !editedName.trim()) return;
 
+    const nextName = editedName.trim();
     setIsSavingName(true);
     try {
-      const { error } = await supabase
+      const { data: updatedContact, error } = await supabase
         .from('contacts')
-        .update({ name: editedName.trim() })
-        .eq('id', contactId);
+        .update({ name: nextName })
+        .eq('id', contactId)
+        .select('id, name, phone, avatar_url, email, workspace_id, created_at, metadata')
+        .maybeSingle();
 
       if (error) throw error;
 
+      queryClient.setQueryData(['contact-profile-fallback', contactId], updatedContact || {
+        ...profileContact,
+        id: contactId,
+        name: nextName,
+      });
+      queryClient.setQueriesData<DbConversation[]>(
+        { queryKey: ['conversations'] },
+        (rows) => Array.isArray(rows)
+          ? rows.map((row) => row.contact_id === contactId
+            ? { ...row, contact: row.contact ? { ...row.contact, name: nextName } : row.contact }
+            : row)
+          : rows
+      );
+      queryClient.invalidateQueries({ queryKey: ['contact-profile-fallback', contactId] });
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['contacts'] });
       toast({
         title: 'Nome atualizado',
         description: 'O nome do contato foi atualizado.',
@@ -634,6 +652,14 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
                   placeholder="Nome do contato"
                   className="text-center"
                   autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      handleSaveName();
+                    } else if (e.key === 'Escape') {
+                      setEditedName(displayName || '');
+                      setIsEditingName(false);
+                    }
+                  }}
                 />
                 <Button size="icon" onClick={handleSaveName} disabled={isSavingName}>
                   {isSavingName ? (
