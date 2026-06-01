@@ -11,12 +11,12 @@ import { toast } from "sonner";
 
 const moduleLabels: Record<string, string> = {
   conversations: "Conversas", pipeline: "Pipeline", contacts: "Contatos",
-  flows: "Fluxos", documents: "Wizzy Sign", agents: "Agentes IA",
+  flows: "Fluxos", documents: "Wizzy Sign (Assinatura eletrônica)", agents: "Agentes IA",
   reports: "Relatórios", campaigns: "Campanhas", calendar: "Agenda",
   orchestrator: "Orquestrador", ai: "Inteligência Artificial",
-  widgets: "Wizzy Forms", settings: "Configurações", team: "Equipe",
-  scheduled: "Programados", integrations: "Integrações", quiz: "Quiz interativo",
-  wizzy_flow: "Wizzy Flow",
+  widgets: "Wizzy Forms (Formulário de captação)", settings: "Configurações", team: "Equipe",
+  scheduled: "Programados", integrations: "Integrações", quiz: "Wizzy Bot (Quizz interativo)",
+  wizzy_flow: "Wizzy Flow (Gestão de projetos)",
 };
 
 const visibleModules = [
