@@ -186,8 +186,8 @@ Deno.serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const { flowId, conversationId, startNodeId, resumeExecutionId, isFromOrchestrator, triggerMessage } = await req.json();
-    console.log(`[FLOW EXECUTE] Received request: flowId=${flowId}, conversationId=${conversationId}, startNodeId=${startNodeId}, resumeExecutionId=${resumeExecutionId}, isFromOrchestrator=${isFromOrchestrator}, triggerMessage=${triggerMessage}`);
+    const { flowId, conversationId, startNodeId, isFromOrchestrator, triggerMessage } = await req.json();
+    console.log(`[FLOW EXECUTE] Received request: flowId=${flowId}, conversationId=${conversationId}, startNodeId=${startNodeId}, isFromOrchestrator=${isFromOrchestrator}, triggerMessage=${triggerMessage}`);
 
     if (!flowId || !conversationId) {
       return new Response(
@@ -237,82 +237,33 @@ Deno.serve(async (req) => {
         const connectionSettings = await loadConnectionSettings(supabase);
         const provider = instance.provider === 'evolution' ? 'evolution' : 'uazapi';
 
-        const nodes = flow.nodes as FlowNode[];
-        const edges = flow.edges as FlowEdge[];
-        const defaultStartNodeId = nodes.find(n => n.type === 'start')?.id || nodes[0]?.id || null;
-        const initialNodeId = startNodeId || defaultStartNodeId;
+        // 4. Create flow execution record
+        const { data: execution, error: execError } = await supabase
+          .from('flow_executions')
+          .insert({
+            flow_id: flowId,
+            conversation_id: conversationId,
+            organization_id: flow.organization_id,
+            status: 'running',
+            current_node_id: startNodeId || 'start-1',
+            variables: {},
+          })
+          .select()
+          .single();
 
-        if (!initialNodeId) {
-          console.error(`[FLOW EXECUTE] Flow ${flowId} has no nodes to execute`);
+        if (execError) {
+          console.error('[FLOW EXECUTE] Error creating execution:', execError);
           return;
         }
 
-        let execution: any = null;
-        let executionVariables: Record<string, unknown> = {};
-
-        if (resumeExecutionId) {
-          const { data: existingExecution, error: resumeFetchError } = await supabase
-            .from('flow_executions')
-            .select('*')
-            .eq('id', resumeExecutionId)
-            .eq('conversation_id', conversationId)
-            .eq('flow_id', flowId)
-            .single();
-
-          if (resumeFetchError || !existingExecution) {
-            console.error('[FLOW EXECUTE] Error loading execution to resume:', resumeFetchError);
-            return;
-          }
-
-          executionVariables = (existingExecution.variables || {}) as Record<string, unknown>;
-
-          const resumeUpdate: Record<string, unknown> = {
-            status: 'running',
-            timeout_at: null,
-          };
-          if (startNodeId) resumeUpdate.current_node_id = startNodeId;
-
-          const { data: resumedExecution, error: resumeUpdateError } = await supabase
-            .from('flow_executions')
-            .update(resumeUpdate)
-            .eq('id', resumeExecutionId)
-            .select()
-            .single();
-
-          if (resumeUpdateError || !resumedExecution) {
-            console.error('[FLOW EXECUTE] Error updating execution to resume:', resumeUpdateError);
-            return;
-          }
-
-          execution = resumedExecution;
-          console.log(`[FLOW EXECUTE] Resuming existing execution ${execution.id} at node ${execution.current_node_id}`);
-        } else {
-          const { data: createdExecution, error: execError } = await supabase
-            .from('flow_executions')
-            .insert({
-              flow_id: flowId,
-              conversation_id: conversationId,
-              organization_id: flow.organization_id,
-              status: 'running',
-              current_node_id: initialNodeId,
-              variables: {},
-            })
-            .select()
-            .single();
-
-          if (execError || !createdExecution) {
-            console.error('[FLOW EXECUTE] Error creating execution:', execError);
-            return;
-          }
-
-          execution = createdExecution;
-        }
+        const nodes = flow.nodes as FlowNode[];
+        const edges = flow.edges as FlowEdge[];
 
         const context: ExecutionContext = {
           conversationId,
           contactPhone: conversation.contacts?.phone || '',
           contactId: conversation.contact_id,
-          variables: executionVariables,
+          variables: {},
           organizationId: flow.organization_id,
           zapiInstanceId: instance.zapi_instance_id!,
           zapiToken: instance.zapi_token!,

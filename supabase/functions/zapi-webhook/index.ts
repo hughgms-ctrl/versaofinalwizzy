@@ -2307,13 +2307,12 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
           const resumePromise = fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/flow-execute`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
-              body: JSON.stringify({
-                flowId: activeFlowExec.flow_id,
-                conversationId: conversation.id,
-                startNodeId: respondedTarget,
-                resumeExecutionId: activeFlowExec.id,
-                triggerMessage: triggerText || '[mídia]',
-              }),
+            body: JSON.stringify({
+              flowId: activeFlowExec.flow_id,
+              conversationId: conversation.id,
+              startNodeId: respondedTarget,
+              triggerMessage: triggerText || '[mídia]',
+            }),
           });
           runBackground(resumePromise);
         } else {
@@ -2363,13 +2362,12 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
           const resumePromise = fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/flow-execute`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
-              body: JSON.stringify({
-                flowId: activeFlowExec.flow_id,
-                conversationId: conversation.id,
-                startNodeId: nextNodeId,
-                resumeExecutionId: activeFlowExec.id,
-                triggerMessage: triggerText || '[mídia]',
-              }),
+            body: JSON.stringify({
+              flowId: activeFlowExec.flow_id,
+              conversationId: conversation.id,
+              startNodeId: nextNodeId,
+              triggerMessage: triggerText || '[mídia]',
+            }),
           });
           runBackground(resumePromise);
         } else {
@@ -2459,13 +2457,12 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
           const resumePromise = fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/flow-execute`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
-              body: JSON.stringify({
-                flowId: activeFlowExec.flow_id,
-                conversationId: conversation.id,
-                startNodeId: nextNodeId,
-                resumeExecutionId: activeFlowExec.id,
-                triggerMessage: triggerText || '[mídia]',
-              }),
+            body: JSON.stringify({
+              flowId: activeFlowExec.flow_id,
+              conversationId: conversation.id,
+              startNodeId: nextNodeId,
+              triggerMessage: triggerText || '[mídia]',
+            }),
           });
           runBackground(resumePromise);
         } else {
@@ -2512,13 +2509,12 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
           const resumePromise = fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/flow-execute`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
-              body: JSON.stringify({
-                flowId: activeFlowExec.flow_id,
-                conversationId: conversation.id,
-                startNodeId: activeFlowExec.current_node_id,
-                resumeExecutionId: activeFlowExec.id,
-                triggerMessage: triggerText || '[mídia]',
-              }),
+            body: JSON.stringify({
+              flowId: activeFlowExec.flow_id,
+              conversationId: conversation.id,
+              startNodeId: activeFlowExec.current_node_id,
+              triggerMessage: triggerText || '[mídia]',
+            }),
           });
           runBackground(resumePromise);
         }
