@@ -15,7 +15,7 @@ const moduleLabels: Record<string, string> = {
   reports: "Relatórios", campaigns: "Campanhas", calendar: "Agenda",
   orchestrator: "Orquestrador", ai: "Inteligência Artificial",
   widgets: "Wizzy Forms", settings: "Configurações", team: "Equipe",
-  scheduled: "Programados", integrations: "Integrações",
+  scheduled: "Programados", integrations: "Integrações", quiz: "Quiz interativo",
 };
 
 const visibleModules = [
@@ -77,7 +77,7 @@ const PlanUpgradePanel = () => {
 
   const formatStorage = (bytes: number) => {
     const gb = bytes / (1024 * 1024 * 1024);
-    return `${gb} GB`;
+    return `${gb} GB de armazenamento`;
   };
 
   const handleUpgrade = async (plan: Plan) => {
