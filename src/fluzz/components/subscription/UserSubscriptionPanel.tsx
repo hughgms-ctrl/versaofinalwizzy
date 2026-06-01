@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/fluzz/integrations/supabase/client";
 import { useAuth } from "@/fluzz/contexts/AuthContext";
+import { useWorkspace } from "@/fluzz/contexts/WorkspaceContext";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/fluzz/components/ui/card";
 import { Badge } from "@/fluzz/components/ui/badge";
 import { Button } from "@/fluzz/components/ui/button";
@@ -28,12 +29,13 @@ interface SubscriptionData {
 
 export const UserSubscriptionPanel = () => {
   const { user } = useAuth();
+  const { isAdmin } = useWorkspace();
 
   // Check if user can access subscriptions panel
   const { data: canAccess, isLoading: checkingAccess } = useQuery({
     queryKey: ["subscription-access", user?.id],
     queryFn: async () => {
-      if (!user?.id) return false;
+      if (!user?.id || !isAdmin) return false;
 
       const { data, error } = await supabase
         .from("user_account_management")
@@ -49,7 +51,7 @@ export const UserSubscriptionPanel = () => {
       console.log("Subscription access check:", { userId: user.id, data });
       return data?.can_access_subscriptions ?? false;
     },
-    enabled: !!user?.id,
+    enabled: !!user?.id && isAdmin,
     staleTime: 0,
     refetchOnWindowFocus: true,
   });
@@ -113,7 +115,7 @@ export const UserSubscriptionPanel = () => {
   });
 
   // Don't show if user can't access
-  if (checkingAccess || !canAccess) {
+  if (!isAdmin || checkingAccess || !canAccess) {
     return null;
   }
 

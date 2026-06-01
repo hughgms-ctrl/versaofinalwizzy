@@ -6,6 +6,8 @@ import { useOrganizationPlan } from '@/hooks/useOrganizationPlan';
 import { Lock } from 'lucide-react';
 import { useState } from 'react';
 import UpgradeModal from '@/components/billing/UpgradeModal';
+import { useAuth } from '@/hooks/useAuth';
+import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 
 const tools = [
   {
@@ -40,7 +42,10 @@ const tools = [
 
 export default function ToolsPage() {
   const navigate = useNavigate();
-  const { canAccessModule } = useOrganizationPlan();
+  const { profile } = useAuth();
+  const { selectedWorkspace } = useWorkspaceContext();
+  const activeOrganizationId = selectedWorkspace?.organization_id || profile?.organization_id || null;
+  const { canAccessModule } = useOrganizationPlan(activeOrganizationId);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [blockedModule, setBlockedModule] = useState<string | undefined>();
 

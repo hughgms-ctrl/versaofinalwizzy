@@ -30,6 +30,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useUserPermissions, useCurrentUserRole } from '@/hooks/useUserPermissions';
 import { useOrganizationPlan } from '@/hooks/useOrganizationPlan';
 import { usePlatformSetting } from '@/hooks/usePlatformSettings';
+import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import wizzyLogo from '@/assets/wizzy-logo.png';
@@ -65,13 +66,16 @@ export function Sidebar() {
   const location = useLocation();
   const navigate = useNavigate();
   const { collapsed, toggleCollapsed } = useSidebarContext();
-  const { data: userRole } = useCurrentUserRole();
+  const { selectedWorkspace } = useWorkspaceContext();
+  const { profile, signOut } = useAuth();
+  const activeOrganizationId = selectedWorkspace?.organization_id || profile?.organization_id || null;
+  const { data: userRole } = useCurrentUserRole(activeOrganizationId);
   const { data: permissions } = useUserPermissions();
-  const { signOut } = useAuth();
-  const { canAccessModule: canAccessPlanModule } = useOrganizationPlan();
+  const { canAccessModule: canAccessPlanModule } = useOrganizationPlan(activeOrganizationId);
   const { data: showClientPlansMenu = false } = usePlatformSetting<boolean>('show_client_plans_menu', false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [blockedModule, setBlockedModule] = useState<string | undefined>();
+  const canManageBilling = userRole === 'owner' || userRole === 'admin';
 
   // Check if user can access a module (permission-based)
   const canAccessModule = (module?: string) => {
@@ -176,7 +180,7 @@ export function Sidebar() {
             );
           })}
 
-          {showClientPlansMenu && (
+          {showClientPlansMenu && canManageBilling && (
             <>
               <Separator className="my-2 bg-sidebar-border" />
               <Link

@@ -153,18 +153,24 @@ export function useCanAccessModule(module: string) {
 }
 
 // Hook to get current user's role
-export function useCurrentUserRole() {
-  const { user } = useAuth();
+export function useCurrentUserRole(organizationId?: string | null) {
+  const { user, profile } = useAuth();
+  const scopedOrganizationId = organizationId ?? profile?.organization_id ?? null;
 
   return useQuery({
-    queryKey: ['current-user-role', user?.id],
+    queryKey: ['current-user-role', user?.id, scopedOrganizationId],
     queryFn: async () => {
       if (!user?.id) return null;
-      const { data } = await supabase
+      let query = supabase
         .from('user_roles')
         .select('role')
-        .eq('user_id', user.id)
-        .maybeSingle();
+        .eq('user_id', user.id);
+
+      if (scopedOrganizationId) {
+        query = query.eq('organization_id', scopedOrganizationId);
+      }
+
+      const { data } = await query.maybeSingle();
       return data?.role as 'owner' | 'admin' | 'supervisor' | 'agent' | null;
     },
     enabled: !!user?.id,

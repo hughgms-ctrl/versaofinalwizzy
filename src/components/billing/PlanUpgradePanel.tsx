@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useWorkspaceContext } from "@/contexts/WorkspaceContext";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
@@ -43,6 +44,8 @@ const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY |
 
 const PlanUpgradePanel = () => {
   const { profile } = useAuth();
+  const { selectedWorkspace } = useWorkspaceContext();
+  const activeOrganizationId = selectedWorkspace?.organization_id || profile?.organization_id || null;
   const [isYearly, setIsYearly] = useState(false);
   const [loadingPlanId, setLoadingPlanId] = useState<string | null>(null);
 
@@ -60,18 +63,18 @@ const PlanUpgradePanel = () => {
   });
 
   const { data: currentPlan } = useQuery({
-    queryKey: ['current-org-plan', profile?.organization_id],
+    queryKey: ['current-org-plan', activeOrganizationId],
     queryFn: async () => {
-      if (!profile?.organization_id) return null;
+      if (!activeOrganizationId) return null;
       const { data, error } = await supabase
         .from('organization_plans')
         .select('*, plan:platform_plans(*)')
-        .eq('organization_id', profile.organization_id)
+        .eq('organization_id', activeOrganizationId)
         .maybeSingle();
       if (error) throw error;
       return data;
     },
-    enabled: !!profile?.organization_id,
+    enabled: !!activeOrganizationId,
   });
 
   const currentPlanId = currentPlan?.plan_id;

@@ -9,6 +9,9 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Lock, ArrowRight, Sparkles } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
+import { useCurrentUserRole } from "@/hooks/useUserPermissions";
+import { useWorkspaceContext } from "@/contexts/WorkspaceContext";
 
 interface UpgradeModalProps {
   open: boolean;
@@ -18,6 +21,11 @@ interface UpgradeModalProps {
 
 const UpgradeModal = ({ open, onOpenChange, moduleName }: UpgradeModalProps) => {
   const navigate = useNavigate();
+  const { profile } = useAuth();
+  const { selectedWorkspace } = useWorkspaceContext();
+  const activeOrganizationId = selectedWorkspace?.organization_id || profile?.organization_id || null;
+  const { data: userRole } = useCurrentUserRole(activeOrganizationId);
+  const canManageBilling = userRole === "owner" || userRole === "admin";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -27,29 +35,34 @@ const UpgradeModal = ({ open, onOpenChange, moduleName }: UpgradeModalProps) => 
             <Lock className="w-8 h-8 text-primary" />
           </div>
           <DialogTitle className="text-center text-xl">
-            Recurso disponível no upgrade
+            Recurso disponivel no upgrade
           </DialogTitle>
           <DialogDescription className="text-center">
             {moduleName
-              ? `O módulo "${moduleName}" não está disponível no seu plano atual.`
-              : "Este recurso não está disponível no seu plano atual."}
-            {" "}Faça upgrade para desbloquear.
+              ? `O modulo "${moduleName}" nao esta disponivel no plano atual.`
+              : "Este recurso nao esta disponivel no plano atual."}
+            {" "}
+            {canManageBilling
+              ? "Faca upgrade para desbloquear."
+              : "Peca ao administrador do workspace para ajustar o plano."}
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-3 mt-4">
-          <Button
-            onClick={() => {
-              onOpenChange(false);
-              navigate("/plans");
-            }}
-            className="w-full"
-          >
-            <Sparkles className="w-4 h-4 mr-2" />
-            Ver planos e fazer upgrade
-            <ArrowRight className="w-4 h-4 ml-2" />
-          </Button>
+          {canManageBilling && (
+            <Button
+              onClick={() => {
+                onOpenChange(false);
+                navigate("/plans");
+              }}
+              className="w-full"
+            >
+              <Sparkles className="w-4 h-4 mr-2" />
+              Ver planos e fazer upgrade
+              <ArrowRight className="w-4 h-4 ml-2" />
+            </Button>
+          )}
           <Button variant="ghost" onClick={() => onOpenChange(false)} className="w-full">
-            Agora não
+            Agora nao
           </Button>
         </div>
       </DialogContent>

@@ -152,6 +152,8 @@ Regra atual:
 - Usuário sem plano ativo deve ser direcionado para `/subscription`.
 - Usuário pode acessar `/subscription`, `/plans` e `/profile` mesmo sem plano ativo.
 - Para acessar o restante da plataforma, precisa ter assinatura ativa ou teste válido.
+- Membros/funcionários de workspace usam o plano da organização dona do workspace, não a organização do próprio perfil do usuário.
+- Apenas `owner` e `admin` da organização do workspace podem acessar `/subscription`, `/plans`, menu de Assinatura, avisos de teste grátis e ações de upgrade.
 
 Condição usada pelo app:
 

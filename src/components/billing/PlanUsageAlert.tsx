@@ -2,6 +2,9 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowRight, CalendarClock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useOrganizationPlan } from '@/hooks/useOrganizationPlan';
+import { useAuth } from '@/hooks/useAuth';
+import { useCurrentUserRole } from '@/hooks/useUserPermissions';
+import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 
 function formatDate(date?: string | null) {
   if (!date) return 'data nao definida';
@@ -14,9 +17,14 @@ function formatDate(date?: string | null) {
 
 export function PlanUsageAlert() {
   const navigate = useNavigate();
-  const { isTrial, trialEndsAt, planName } = useOrganizationPlan();
+  const { profile } = useAuth();
+  const { selectedWorkspace } = useWorkspaceContext();
+  const activeOrganizationId = selectedWorkspace?.organization_id || profile?.organization_id || null;
+  const { data: userRole } = useCurrentUserRole(activeOrganizationId);
+  const { isTrial, trialEndsAt, planName } = useOrganizationPlan(activeOrganizationId);
+  const canManageBilling = userRole === 'owner' || userRole === 'admin';
 
-  if (!isTrial) return null;
+  if (!isTrial || !canManageBilling) return null;
 
   return (
     <div className="border-b border-sky-500/20 bg-sky-500/10 px-3 py-2 text-sm text-sky-950 dark:text-sky-100 md:px-6">

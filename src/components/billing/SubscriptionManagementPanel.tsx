@@ -5,6 +5,7 @@ import { AlertCircle, ArrowUpRight, CalendarClock, CheckCircle2, ChevronLeft, Ch
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useWorkspaceContext } from "@/contexts/WorkspaceContext";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -70,14 +71,16 @@ function getEventStatus(payload: any, fallback: string) {
 
 export function SubscriptionManagementPanel() {
   const { profile } = useAuth();
+  const { selectedWorkspace } = useWorkspaceContext();
+  const activeOrganizationId = selectedWorkspace?.organization_id || profile?.organization_id || null;
   const [isOpeningCheckout, setIsOpeningCheckout] = useState(false);
   const [invoicePage, setInvoicePage] = useState(1);
   const invoicePageSize = 10;
 
   const { data, isLoading } = useQuery({
-    queryKey: ["profile-subscription-management", profile?.organization_id, invoicePage],
+    queryKey: ["profile-subscription-management", activeOrganizationId, invoicePage],
     queryFn: async () => {
-      if (!profile?.organization_id) return null;
+      if (!activeOrganizationId) return null;
       const from = (invoicePage - 1) * invoicePageSize;
       const to = from + invoicePageSize - 1;
 
@@ -85,12 +88,12 @@ export function SubscriptionManagementPanel() {
         supabase
           .from("organization_plans")
           .select("*, plan:platform_plans(*)")
-          .eq("organization_id", profile.organization_id)
+          .eq("organization_id", activeOrganizationId)
           .maybeSingle(),
         supabase
           .from("billing_events" as any)
           .select("event_type, payload, processed_at", { count: "exact" })
-          .eq("organization_id", profile.organization_id)
+          .eq("organization_id", activeOrganizationId)
           .order("processed_at", { ascending: false })
           .range(from, to),
       ]);
@@ -103,7 +106,7 @@ export function SubscriptionManagementPanel() {
         eventsCount: eventsResult.count || 0,
       };
     },
-    enabled: !!profile?.organization_id,
+    enabled: !!activeOrganizationId,
   });
 
   const currentPlan = data?.currentPlan;
