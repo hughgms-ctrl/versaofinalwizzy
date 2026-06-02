@@ -37,7 +37,7 @@ import { toast } from '@/hooks/use-toast';
 import { FlowTriggerDropdown } from './FlowTriggerDropdown';
 import { AIContextBar } from './AIContextBar';
 import { supabase } from '@/integrations/supabase/client';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AIFeedbackDialog } from './AIFeedbackDialog';
 import { ChatFollowUpDialog } from './ChatFollowUpDialog';
 import { useFollowUpStatus } from '@/hooks/useFollowUpStatus';
@@ -104,6 +104,13 @@ function PresenceDot({ isOnline, isTyping, isRecording }: { isOnline: boolean; i
   );
 }
 
+function normalizeProfilePhone(value?: string | null) {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.length === 10 || digits.length === 11) return `55${digits}`;
+  return digits;
+}
+
 function MessageStatusTicks({ readAt, deliveredAt, playedAt }: { readAt?: string | null; deliveredAt?: string | null; playedAt?: string | null }) {
   if (playedAt || readAt) {
     return <CheckCheck className="h-3 w-3 stroke-[3] text-[#53bdeb]" />;
@@ -142,7 +149,41 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
   const { profile } = useAuth();
   const { signatureEnabled, toggleSignature } = useSignatureSettings();
   const { data: messages, isLoading: loadingMessages } = useMessages(conversation.id);
-  const { isTyping, isRecording, isOnline } = useContactPresence(conversation.contact?.id || null);
+  const contactId = conversation.contact?.id || conversation.contact_id || null;
+  const { data: notificationRecipient } = useQuery({
+    queryKey: ['conversation-notification-recipient', conversation.id],
+    queryFn: async () => {
+      const { data: messageRows, error: messageError } = await supabase
+        .from('messages')
+        .select('metadata')
+        .eq('conversation_id', conversation.id)
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (messageError) throw messageError;
+
+      const recipientUserId = (messageRows || [])
+        .map((row: any) => row.metadata?.recipient_user_id)
+        .find(Boolean);
+
+      if (!recipientUserId) return null;
+
+      const { data: recipientProfile, error: profileError } = await supabase
+        .from('profiles')
+        .select('user_id, full_name, phone, avatar_url')
+        .eq('user_id', recipientUserId)
+        .maybeSingle();
+
+      if (profileError) throw profileError;
+      return recipientProfile;
+    },
+    enabled: !!conversation.id && (!conversation.contact?.phone || !conversation.contact?.name),
+  });
+  const fallbackPhone = normalizeProfilePhone(notificationRecipient?.phone);
+  const displayPhone = conversation.contact?.phone || fallbackPhone;
+  const displayName = conversation.contact?.name || notificationRecipient?.full_name || null;
+  const displayAvatar = conversation.contact?.avatar_url || notificationRecipient?.avatar_url || null;
+  const { isTyping, isRecording, isOnline } = useContactPresence(contactId);
   const sendMessage = useSendMessage();
   const { sendTyping } = useWhatsAppPresence();
   const { uploadFile, uploadAudioBlob, isUploading } = useMediaUpload();
@@ -174,7 +215,6 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
       });
 
       // Auto-fetch contact profile picture from UAZAPI
-      const contactId = conversation.contact?.id;
       if (contactId && session?.access_token) {
         supabase.functions.invoke('zapi-contact-profile', {
           body: { contactId, instanceId: (conversation as any).whatsapp_instance_id },
@@ -186,21 +226,38 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
         }).catch(() => { /* silent */ });
       }
     }
-  }, [conversation.id, syncMessages, resetPagination, session?.access_token, queryClient]);
+  }, [conversation.id, syncMessages, resetPagination, session?.access_token, queryClient, contactId]);
+
+  useEffect(() => {
+    if (!contactId || !notificationRecipient) return;
+    const updates: Record<string, string> = {};
+    if (!conversation.contact?.name && notificationRecipient.full_name) updates.name = notificationRecipient.full_name;
+    if (!conversation.contact?.phone && fallbackPhone) updates.phone = fallbackPhone;
+    if (Object.keys(updates).length === 0) return;
+
+    supabase
+      .from('contacts')
+      .update(updates)
+      .eq('id', contactId)
+      .then(({ error }) => {
+        if (!error) {
+          queryClient.invalidateQueries({ queryKey: ['conversations'] });
+          queryClient.invalidateQueries({ queryKey: ['contact-profile-fallback', contactId] });
+        }
+      });
+  }, [contactId, conversation.contact?.name, conversation.contact?.phone, fallbackPhone, notificationRecipient, queryClient]);
 
   const getDisplayName = () => {
-    if (conversation.contact?.name) return conversation.contact.name;
-    if (conversation.contact?.phone) return conversation.contact.phone;
+    if (displayName) return displayName;
+    if (displayPhone) return displayPhone;
     return 'Desconhecido';
   };
 
   const getInitials = () => {
-    const name = conversation.contact?.name;
-    const phone = conversation.contact?.phone || '';
-    if (name) {
-      return name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
+    if (displayName) {
+      return displayName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
     }
-    return phone.slice(-2);
+    return displayPhone?.slice(-2) || '??';
   };
 
   // Scroll to bottom on initial load (instant) and new messages (smooth)
@@ -263,16 +320,16 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
     // Only send typing status if user is actually typing something
     // and we haven't sent it recently (throttle to avoid spam)
     const now = Date.now();
-    if (value.trim() && conversation.contact?.phone && now - lastTypingSentRef.current > 5000) {
+    if (value.trim() && displayPhone && now - lastTypingSentRef.current > 5000) {
       lastTypingSentRef.current = now;
-      sendTyping(conversation.contact.phone, 5000);
+      sendTyping(displayPhone, 5000);
     }
 
     // Clear any existing timeout
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current);
     }
-  }, [conversation.contact?.phone, sendTyping]);
+  }, [displayPhone, sendTyping]);
 
   // Handle paste events for images
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
@@ -324,7 +381,7 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
           mediaUrl: result.url,
           quotedMessageId: replyingTo?.id,
           quotedContent: replyingTo?.content || undefined,
-          quotedSender: replyingTo ? (replyingTo.direction === 'inbound' ? (conversation.contact?.name || 'Contato') : 'Você') : undefined,
+          quotedSender: replyingTo ? (replyingTo.direction === 'inbound' ? (displayName || 'Contato') : 'Você') : undefined,
         });
 
         // Clear attached media and message
@@ -354,8 +411,8 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
 
     // Replace message variables with actual values
     const variables: Record<string, string> = {
-      nome: conversation.contact?.name || conversation.contact?.phone || 'Cliente',
-      telefone: conversation.contact?.phone || '',
+      nome: displayName || displayPhone || 'Cliente',
+      telefone: displayPhone || '',
     };
     let messageContent = parseMessageVariables(newMessage.trim(), variables);
 
@@ -387,7 +444,7 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
         type: 'text',
         quotedMessageId: replyingTo?.id,
         quotedContent: replyingTo?.content || undefined,
-        quotedSender: replyingTo ? (replyingTo.direction === 'inbound' ? (conversation.contact?.name || 'Contato') : 'Você') : undefined,
+        quotedSender: replyingTo ? (replyingTo.direction === 'inbound' ? (displayName || 'Contato') : 'Você') : undefined,
       });
       setReplyingTo(null);
     } catch (error) {
@@ -550,10 +607,10 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
           <div className="flex items-center gap-2 md:gap-3 min-w-0 flex-1">
             <div className="relative flex-shrink-0">
               <ContactAvatar
-                src={conversation.contact?.avatar_url}
-                name={conversation.contact?.name || null}
-                phone={conversation.contact?.phone}
-                contactId={conversation.contact?.id}
+                src={displayAvatar}
+                name={displayName}
+                phone={displayPhone}
+                contactId={contactId}
                 instanceId={(conversation as any).whatsapp_instance_id}
                 size={48}
                 className="md:!w-12 md:!h-12"
@@ -592,7 +649,7 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
                 })()}
               </div>
               <p data-sensitive className="text-[10px] md:text-xs text-muted-foreground truncate flex items-center gap-2">
-                {conversation.contact?.phone || 'Sem número'}
+                {displayPhone || 'Sem número'}
                 <PresenceDot isOnline={isOnline} isTyping={isTyping} isRecording={isRecording} />
               </p>
             </div>
@@ -801,10 +858,10 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
                     <MessageBubbleList
                       messages={messages}
                       mediaMessageIds={mediaMessageIds}
-                      contactAvatar={conversation.contact?.avatar_url}
-                      contactName={conversation.contact?.name}
-                      contactPhone={conversation.contact?.phone}
-                      contactId={conversation.contact?.id}
+                      contactAvatar={displayAvatar}
+                      contactName={displayName}
+                      contactPhone={displayPhone}
+                      contactId={contactId}
                        senderAvatar={profile?.avatar_url}
                        senderName={profile?.full_name}
                        highlightedMessageId={highlightedMessageId}
@@ -884,7 +941,7 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
                 <Reply className="h-4 w-4 text-primary shrink-0" />
                 <div className="flex-1 min-w-0">
                   <p className="text-[10px] text-primary font-medium">
-                    {replyingTo.direction === 'inbound' ? (conversation.contact?.name || 'Contato') : 'Você'}
+                    {replyingTo.direction === 'inbound' ? (displayName || 'Contato') : 'Você'}
                   </p>
                   <p className="text-xs text-muted-foreground truncate">{replyingTo.content}</p>
                 </div>
@@ -1040,14 +1097,14 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
               <AudioRecordButton
                 onRecordComplete={handleAudioRecordComplete}
                 onStart={() => {
-                  if (conversation.contact?.phone) {
-                    sendRecording(conversation.contact.phone, 15000);
+                  if (displayPhone) {
+                    sendRecording(displayPhone, 15000);
                   }
                 }}
                 onStop={() => {
                   // Sending a short 'typing' effectively cancels the recording status
-                  if (conversation.contact?.phone) {
-                    sendPresence(conversation.contact.phone, 'typing', 100);
+                  if (displayPhone) {
+                    sendPresence(displayPhone, 'typing', 100);
                   }
                 }}
                 disabled={sendMessage.isPending || isUploading || isSendingMedia}

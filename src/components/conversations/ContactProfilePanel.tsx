@@ -54,6 +54,13 @@ const PRESET_COLORS = [
   '#3b82f6', '#6366f1', '#8b5cf6', '#ec4899', '#6b7280',
 ];
 
+function normalizeProfilePhone(value?: string | null) {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.length === 10 || digits.length === 11) return `55${digits}`;
+  return digits;
+}
+
 export function ContactProfilePanel({ conversation, onClose, embedded = false }: ContactProfilePanelProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -78,9 +85,42 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
   });
 
   const profileContact = fetchedContact || contact;
+
+  const { data: notificationRecipient } = useQuery({
+    queryKey: ['conversation-notification-recipient', conversation.id],
+    queryFn: async () => {
+      const { data: messageRows, error: messageError } = await supabase
+        .from('messages')
+        .select('metadata')
+        .eq('conversation_id', conversation.id)
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (messageError) throw messageError;
+
+      const recipientUserId = (messageRows || [])
+        .map((row: any) => row.metadata?.recipient_user_id)
+        .find(Boolean);
+
+      if (!recipientUserId) return null;
+
+      const { data: recipientProfile, error: profileError } = await supabase
+        .from('profiles')
+        .select('user_id, full_name, phone, avatar_url')
+        .eq('user_id', recipientUserId)
+        .maybeSingle();
+
+      if (profileError) throw profileError;
+      return recipientProfile;
+    },
+    enabled: !!conversation.id && (!profileContact?.phone || !profileContact?.name),
+  });
+
   const contactMetadata = (profileContact?.metadata as Record<string, unknown> | null) || {};
+  const notificationPhone = normalizeProfilePhone(notificationRecipient?.phone);
   const displayPhone = (
     profileContact?.phone ||
+    notificationPhone ||
     conversationMetadata.recipient_phone ||
     conversationMetadata.contact_phone ||
     conversationMetadata.normalizedPhone ||
@@ -89,6 +129,7 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
   );
   const displayName = (
     profileContact?.name ||
+    notificationRecipient?.full_name ||
     conversationMetadata.recipient_name ||
     conversationMetadata.contact_name ||
     null
