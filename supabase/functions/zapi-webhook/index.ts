@@ -2063,19 +2063,8 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
     console.log(`[WEBHOOK] Triggering auto-transcription for ${messageType} message ${savedMessage.id}`);
     mediaAnalysisPromise = (async () => {
       try {
-        // Get org integration config for AI
-        const { data: intConfig } = await supabase
-          .from('integration_configs')
-          .select('*')
-          .eq('organization_id', organizationId)
-          .maybeSingle();
-
-        if (!intConfig) {
-          console.log('[WEBHOOK] No AI integration config, skipping auto-transcription');
-          return null;
-        }
-
-        // Call transcribe-media with service role key (bypasses user auth)
+        // Call transcribe-media with service role key. The function resolves
+        // whether this org uses platform AI or its own API key.
         const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
         const resp = await fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/transcribe-media`, {
           method: 'POST',

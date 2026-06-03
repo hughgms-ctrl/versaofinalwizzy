@@ -18,9 +18,32 @@ function resolveAIConfig(integrationConfig: any, feature: string): AIConfigResul
   if (!integrationConfig) return null;
 
   const featureModel = integrationConfig[`${feature}_model`];
-  const model = (featureModel || integrationConfig.default_model || 'gpt-4o-mini').replace('openai/', '').replace('google/', '');
+  const defaultModel = feature === 'transcription' ? 'gpt-4o-mini-transcribe' : 'gpt-4o-mini';
+  const model = (featureModel || integrationConfig.default_model || defaultModel).replace('openai/', '').replace('google/', '');
   if (!integrationConfig.openai_api_key) return null;
   return { endpoint: OPENAI_ENDPOINT, apiKey: integrationConfig.openai_api_key, model, provider: 'openai' };
+}
+
+function resolveOpenAITranscriptionModel(model?: string | null) {
+  const cleanModel = String(model || '').replace('openai/', '').trim();
+  return ['gpt-4o-transcribe', 'gpt-4o-mini-transcribe', 'whisper-1'].includes(cleanModel)
+    ? cleanModel
+    : 'gpt-4o-mini-transcribe';
+}
+
+function normalizeText(value?: string | null) {
+  return String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .trim();
+}
+
+function usesPlatformAI(plan?: any) {
+  const aiMode = normalizeText(plan?.ai_mode);
+  const slug = normalizeText(plan?.slug);
+  const name = normalizeText(plan?.name);
+  return aiMode === 'platform_api' || slug === 'max' || slug === 'wizzy-ai' || slug === 'wizzy_ai' || name.includes('max') || name.includes('wizzy ai');
 }
 
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
@@ -114,7 +137,7 @@ async function transcribeAudioWithWhisper(mediaUrl: string, apiKey: string, mode
     const formData = new FormData();
     const blob = new Blob([audioBuffer], { type: mimeMap[ext] || 'audio/ogg' });
     formData.append('file', blob, `audio.${ext}`);
-    formData.append('model', model || 'whisper-1');
+    formData.append('model', resolveOpenAITranscriptionModel(model));
     formData.append('language', 'pt');
     formData.append('response_format', 'text');
 
@@ -209,13 +232,21 @@ async function transcribeAudioWithGemini(mediaUrl: string, apiKey: string, model
 }
 
 async function applyAdminAIStrategy(supabase: any, organizationId: string, integrationConfig: any, feature: string) {
-  const { data: planRow } = await supabase.from('organization_plans').select('plan:platform_plans(ai_mode)').eq('organization_id', organizationId).maybeSingle();
+  const { data: planRow } = await supabase
+    .from('organization_plans')
+    .select('status, plan:platform_plans(ai_mode, slug, name)')
+    .eq('organization_id', organizationId)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
   const { data: settingRow } = await supabase.from('platform_settings').select('value').eq('key', 'ai_model_strategy').maybeSingle();
+  const { data: aiConnectionRow } = await supabase.from('platform_settings').select('value').eq('key', 'ai_usage_connection_settings').maybeSingle();
   const strategy = settingRow?.value || {};
-  const model = strategy.features?.[feature] || strategy.default_model || 'gpt-4o-mini';
-  const platformKey = Deno.env.get('WIZZY_OPENAI_API_KEY') || Deno.env.get('OPENAI_API_KEY') || '';
-  const usePlatformKey = (planRow as any)?.plan?.ai_mode === 'platform_api';
-  return { ...(integrationConfig || {}), ai_provider: 'openai', default_model: model, [`${feature}_provider`]: 'openai', [`${feature}_model`]: model, openai_api_key: usePlatformKey ? platformKey : integrationConfig?.openai_api_key };
+  const fallbackModel = feature === 'transcription' ? 'gpt-4o-mini-transcribe' : 'gpt-4o-mini';
+  const model = strategy.features?.[feature] || (feature === 'transcription' ? fallbackModel : strategy.default_model) || fallbackModel;
+  const platformKey = Deno.env.get('WIZZY_OPENAI_API_KEY') || Deno.env.get('OPENAI_API_KEY') || aiConnectionRow?.value?.openai_api_key || '';
+  const usePlatformKey = usesPlatformAI((planRow as any)?.plan);
+  return { ...(integrationConfig || {}), ai_provider: 'openai', default_model: model, [`${feature}_provider`]: 'openai', [`${feature}_model`]: model, openai_api_key: usePlatformKey ? platformKey : (integrationConfig?.openai_api_key || platformKey) };
 }
 
 async function analyzeMedia(
@@ -365,17 +396,29 @@ Deno.serve(async (req) => {
     let resolvedOrgId = bodyOrgId || null;
     if (!resolvedOrgId) {
       const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-      if (authError || !user) {
-        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-          status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
+      if (!authError && user) {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('organization_id')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        resolvedOrgId = profile?.organization_id;
       }
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('organization_id')
-        .eq('user_id', user.id)
+    }
+
+    if (!resolvedOrgId) {
+      const { data: messageOrg } = await supabase
+        .from('messages')
+        .select('conversation:conversations(organization_id)')
+        .eq('id', messageId)
         .maybeSingle();
-      resolvedOrgId = profile?.organization_id;
+      resolvedOrgId = (messageOrg as any)?.conversation?.organization_id;
+    }
+
+    if (!resolvedOrgId) {
+      return new Response(JSON.stringify({ error: 'Organização não encontrada para transcrição.' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
     let integrationConfig = null;
