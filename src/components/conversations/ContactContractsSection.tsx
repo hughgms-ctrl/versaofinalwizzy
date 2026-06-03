@@ -135,6 +135,7 @@ function buildFilledData(fields: any[], contactName?: string | null, contactPhon
 
 function getDocSignedUrl(doc: GeneratedDocument, signatures: DocumentSignature[]) {
   return (doc as any).signed_pdf_url
+    || signatures.find((signature) => signature.generated_document?.signed_pdf_url)?.generated_document?.signed_pdf_url
     || signatures.find((signature) => signature.signed_pdf_url)?.signed_pdf_url
     || null;
 }
@@ -824,9 +825,9 @@ export function ContactContractsSection({
                       </span>
                     </div>
                   </div>
-                  {!group.isPack && group.docs[0]?.pdf_url && (
+                  {!group.isPack && signedUrls[0] && (
                     <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" asChild title="Abrir PDF">
-                      <a href={group.docs[0].pdf_url} target="_blank" rel="noopener noreferrer">
+                      <a href={signedUrls[0] as string} target="_blank" rel="noopener noreferrer">
                         <ExternalLink className="h-4 w-4" />
                       </a>
                     </Button>
@@ -836,16 +837,21 @@ export function ContactContractsSection({
                 {group.isPack && (
                   <div className="rounded-md border border-border/70 bg-background/50 p-2">
                     <div className="space-y-1">
-                      {group.docs.map((doc) => (
-                        <div key={doc.id} className="flex items-center justify-between gap-2 text-xs">
-                          <span className="min-w-0 truncate text-muted-foreground">{doc.name}</span>
-                          {doc.pdf_url && (
-                            <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]" asChild>
-                              <a href={doc.pdf_url} target="_blank" rel="noopener noreferrer">Ver</a>
-                            </Button>
-                          )}
-                        </div>
-                      ))}
+                      {group.docs.map((doc) => {
+                        const signedUrl = getDocSignedUrl(doc, signaturesByDoc.get(doc.id) || []);
+                        return (
+                          <div key={doc.id} className="flex items-center justify-between gap-2 text-xs">
+                            <span className="min-w-0 truncate text-muted-foreground">{doc.name}</span>
+                            {signedUrl ? (
+                              <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]" asChild>
+                                <a href={signedUrl} target="_blank" rel="noopener noreferrer">Ver assinado</a>
+                              </Button>
+                            ) : (
+                              <span className="shrink-0 text-[10px] text-muted-foreground">Aguardando</span>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 )}

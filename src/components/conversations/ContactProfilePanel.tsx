@@ -361,7 +361,7 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
   if (isFullscreen) {
     return (
       <div className="fixed inset-0 z-[60] bg-background/80 backdrop-blur-sm flex items-center justify-center" onClick={() => setIsFullscreen(false)}>
-        <div className="bg-card rounded-xl shadow-2xl border border-border w-full max-w-2xl mx-4 h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="bg-card rounded-xl shadow-2xl border border-border w-full max-w-4xl mx-4 h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
           {/* Header */}
           <div className="p-5 border-b border-border flex items-center gap-4">
             <Button variant="ghost" size="icon" className="shrink-0" onClick={() => setIsFullscreen(false)}>
@@ -391,7 +391,7 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
           </div>
 
           {/* Tab Navigation */}
-          <div className="border-b border-border px-5 flex gap-1">
+          <div className="border-b border-border px-4 flex gap-1 overflow-x-auto">
             {([
               { key: 'info' as const, label: 'Dados' },
               { key: 'timeline' as const, label: 'Timeline' },
@@ -405,7 +405,7 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
                 key={tab.key}
                 onClick={() => setFullscreenTab(tab.key)}
                 className={cn(
-                  "px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px",
+                  "shrink-0 px-3 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px",
                   fullscreenTab === tab.key
                     ? "border-primary text-primary"
                     : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"

@@ -1,5 +1,4 @@
-import { useState, useRef } from 'react';
-import { createPortal } from 'react-dom';
+import { useEffect, useState, useRef } from 'react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { 
@@ -21,8 +20,6 @@ import {
   FileDown,
   Download,
   X,
-  ZoomIn,
-  ZoomOut,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -97,6 +94,9 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
   const [deleteFilePath, setDeleteFilePath] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [previewFile, setPreviewFile] = useState<ContactFile | null>(null);
+  const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
+  const [pdfPreviewLoading, setPdfPreviewLoading] = useState(false);
+  const [pdfPreviewError, setPdfPreviewError] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -275,6 +275,44 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
     setPreviewFile(file);
   };
 
+  const closePreview = (event?: { preventDefault?: () => void; stopPropagation?: () => void }) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    setPreviewFile(null);
+  };
+
+  const getPreviewExtension = (file: ContactFile | null) => {
+    if (!file) return '';
+    let decodedUrl = '';
+    try {
+      decodedUrl = decodeURIComponent((file.file_url || '').split('?')[0].split('#')[0]);
+    } catch {
+      decodedUrl = (file.file_url || '').split('?')[0].split('#')[0];
+    }
+    const candidates = [
+      file.name || '',
+      decodedUrl,
+    ];
+    for (const candidate of candidates) {
+      const match = candidate.toLowerCase().match(/\.([a-z0-9]+)$/i);
+      if (match?.[1]) return match[1];
+    }
+    return '';
+  };
+
+  const isPdfFile = (file: ContactFile | null) => getPreviewExtension(file) === 'pdf';
+
+  const previewIndex = previewFile ? filteredFiles.findIndex((file) => file.id === previewFile.id) : -1;
+  const canNavigatePreview = filteredFiles.length > 1 && previewIndex >= 0;
+
+  const navigatePreview = (direction: -1 | 1, event?: { preventDefault?: () => void; stopPropagation?: () => void }) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    if (!canNavigatePreview) return;
+    const nextIndex = (previewIndex + direction + filteredFiles.length) % filteredFiles.length;
+    setPreviewFile(filteredFiles[nextIndex]);
+  };
+
   const handleDownloadFile = async (file: ContactFile) => {
     try {
       const response = await fetch(file.file_url);
@@ -298,10 +336,43 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
   };
 
   const totalFiles = files?.length || 0;
-  const previewFileName = previewFile?.name || '';
-  const previewUrl = previewFile?.file_url || '';
-  const isPdfPreview = Boolean(previewFile)
-    && (previewFileName.toLowerCase().endsWith('.pdf') || previewUrl.toLowerCase().includes('.pdf'));
+  const isPdfPreview = isPdfFile(previewFile);
+
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl: string | null = null;
+
+    setPdfPreviewUrl(null);
+    setPdfPreviewError(false);
+
+    if (!previewFile || !isPdfFile(previewFile)) {
+      setPdfPreviewLoading(false);
+      return;
+    }
+
+    setPdfPreviewLoading(true);
+    fetch(previewFile.file_url)
+      .then((response) => {
+        if (!response.ok) throw new Error('PDF fetch failed');
+        return response.blob();
+      })
+      .then((blob) => {
+        if (cancelled) return;
+        objectUrl = URL.createObjectURL(blob.type === 'application/pdf' ? blob : new Blob([blob], { type: 'application/pdf' }));
+        setPdfPreviewUrl(objectUrl);
+      })
+      .catch(() => {
+        if (!cancelled) setPdfPreviewError(true);
+      })
+      .finally(() => {
+        if (!cancelled) setPdfPreviewLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [previewFile?.id, previewFile?.file_url]);
 
   return (
     <div className="space-y-3">
@@ -464,30 +535,35 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
           ) : filteredFiles.length > 0 ? (
             <div className="space-y-1 mt-2">
               {filteredFiles.map((file) => (
-                <div 
-                  key={file.id} 
-                  className="flex items-center gap-2 p-2 rounded-lg bg-muted/30 border border-border/50 group cursor-pointer hover:bg-muted/60 transition-colors"
-                  onClick={() => handleFileClick(file)}
+                <div
+                  key={file.id}
+                  className="group flex items-center gap-2 rounded-lg border border-border/50 bg-muted/30 p-2 transition-colors hover:bg-muted/60"
                 >
-                  {file.file_type === 'image' ? (
-                    <img 
-                      src={file.file_url} 
-                      alt={file.name}
-                      className="h-8 w-8 rounded object-cover flex-shrink-0"
-                    />
-                  ) : (
-                    <div className="h-8 w-8 rounded bg-muted flex items-center justify-center flex-shrink-0">
-                      <FileIcon type={file.file_type} />
-                    </div>
-                  )}
-                  
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-medium truncate">{file.name}</p>
-                    <p className="text-[10px] text-muted-foreground">
-                      {formatFileSize(file.file_size)}
-                      {!selectedFolderId && file.folder && ` • ${file.folder.name}`}
-                    </p>
-                  </div>
+                  <button
+                    type="button"
+                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                    onClick={() => handleFileClick(file)}
+                  >
+                    {file.file_type === 'image' ? (
+                      <img
+                        src={file.file_url}
+                        alt={file.name}
+                        className="h-8 w-8 flex-shrink-0 rounded object-cover"
+                      />
+                    ) : (
+                      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded bg-muted">
+                        <FileIcon type={file.file_type} />
+                      </div>
+                    )}
+
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-xs font-medium">{file.name}</span>
+                      <span className="block text-[10px] text-muted-foreground">
+                        {formatFileSize(file.file_size)}
+                        {!selectedFolderId && file.folder && ` • ${file.folder.name}`}
+                      </span>
+                    </span>
+                  </button>
 
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -501,6 +577,10 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
                       </Button>
                     </DropdownMenuTrigger>
                      <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                      <DropdownMenuItem onClick={() => handleFileClick(file)}>
+                        <ExternalLink className="h-3.5 w-3.5 mr-2" />
+                        Visualizar
+                      </DropdownMenuItem>
                       <DropdownMenuItem asChild>
                         <a href={file.file_url} target="_blank" rel="noopener noreferrer">
                           <ExternalLink className="h-3.5 w-3.5 mr-2" />
@@ -626,13 +706,39 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
       </AlertDialog>
 
       {/* File Preview Overlay */}
-      {previewFile && createPortal(
+      {previewFile && (
         <div
           className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/80 p-4"
-          onClick={() => setPreviewFile(null)}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={closePreview}
         >
+          {canNavigatePreview && (
+            <>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="absolute left-3 top-1/2 z-10 h-10 w-10 -translate-y-1/2 rounded-full bg-background/80 shadow hover:bg-background"
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => navigatePreview(-1, event)}
+                title="Arquivo anterior"
+              >
+                <ArrowLeft className="h-5 w-5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="absolute right-3 top-1/2 z-10 h-10 w-10 -translate-y-1/2 rounded-full bg-background/80 shadow hover:bg-background"
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => navigatePreview(1, event)}
+                title="Próximo arquivo"
+              >
+                <ArrowRight className="h-5 w-5" />
+              </Button>
+            </>
+          )}
           <div
             className="flex h-[min(90vh,820px)] w-[min(96vw,1100px)] min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-background text-foreground shadow-2xl"
+            onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => event.stopPropagation()}
             role="dialog"
             aria-modal="true"
@@ -652,7 +758,10 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
                     variant="ghost"
                     size="icon"
                     className="h-8 w-8"
-                    onClick={() => handleDownloadFile(previewFile)}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      handleDownloadFile(previewFile);
+                    }}
                     title="Baixar"
                   >
                     <Download className="h-4 w-4" />
@@ -662,7 +771,10 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
                       variant="ghost"
                       size="icon"
                       className="h-8 w-8"
-                      onClick={() => handleSaveAsPdf(previewFile)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleSaveAsPdf(previewFile);
+                      }}
                       title="Salvar como PDF"
                     >
                       <FileDown className="h-4 w-4" />
@@ -682,7 +794,7 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
                     variant="ghost"
                     size="icon"
                     className="h-8 w-8 hover:bg-destructive/10 hover:text-destructive"
-                    onClick={() => setPreviewFile(null)}
+                    onClick={closePreview}
                     title="Fechar"
                   >
                     <X className="h-4 w-4" />
@@ -706,11 +818,27 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
                 ) : previewFile.file_type === 'audio' ? (
                   <audio src={previewFile.file_url} controls className="w-full max-w-md" />
                 ) : isPdfPreview ? (
-                  <iframe
-                    src={`${previewFile.file_url}#toolbar=1&navpanes=0`}
-                    title={previewFile.name}
-                    className="h-full min-h-[420px] w-full rounded border border-border bg-background"
-                  />
+                  pdfPreviewLoading ? (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Carregando PDF...
+                    </div>
+                  ) : pdfPreviewUrl && !pdfPreviewError ? (
+                    <iframe
+                      src={`${pdfPreviewUrl}#toolbar=1&navpanes=0&view=FitH`}
+                      title={previewFile.name}
+                      className="h-full min-h-[640px] w-full rounded border border-border bg-background"
+                    />
+                  ) : (
+                    <div className="text-center space-y-3">
+                      <FileText className="h-16 w-16 mx-auto text-muted-foreground" />
+                      <p className="text-sm text-muted-foreground">Não foi possível carregar a pré-visualização do PDF.</p>
+                      <Button variant="outline" size="sm" onClick={() => handleDownloadFile(previewFile)}>
+                        <Download className="h-3.5 w-3.5 mr-2" />
+                        Baixar PDF
+                      </Button>
+                    </div>
+                  )
                 ) : (
                   <div className="text-center space-y-3">
                     <FileText className="h-16 w-16 mx-auto text-muted-foreground" />
@@ -723,8 +851,7 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
                 )}
               </div>
           </div>
-        </div>,
-        document.body
+        </div>
       )}
     </div>
   );
