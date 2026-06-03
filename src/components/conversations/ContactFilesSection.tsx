@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { 
@@ -46,14 +47,6 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { 
   useContactFolders,
@@ -632,11 +625,19 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* File Preview Dialog */}
-      <Dialog open={!!previewFile} onOpenChange={(open) => !open && setPreviewFile(null)}>
-        <DialogContent className="flex h-[min(90vh,820px)] w-[min(96vw,1100px)] max-w-none flex-col gap-0 overflow-hidden p-0 [&>button.absolute]:hidden">
-          {previewFile && (
-            <div className="flex min-h-0 flex-1 flex-col">
+      {/* File Preview Overlay */}
+      {previewFile && createPortal(
+        <div
+          className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/80 p-4"
+          onClick={() => setPreviewFile(null)}
+        >
+          <div
+            className="flex h-[min(90vh,820px)] w-[min(96vw,1100px)] min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-background text-foreground shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label={previewFile.name}
+          >
               {/* Header */}
               <div className="flex shrink-0 items-center justify-between border-b border-border p-3">
                 <div className="flex-1 min-w-0">
@@ -721,10 +722,10 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
                   </div>
                 )}
               </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
