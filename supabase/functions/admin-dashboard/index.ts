@@ -524,8 +524,10 @@ Deno.serve(async (req) => {
       const startIso = `${dateFrom}T00:00:00.000Z`
       const endIso = `${dateTo}T23:59:59.999Z`
       const currentPeriod = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
+      const fromPeriod = dateFrom.slice(0, 7)
+      const toPeriod = dateTo.slice(0, 7)
 
-      const [logsRes, orgsRes, plansRes, integrationsRes, usageRes, settingsRes] = await Promise.all([
+      const [logsRes, orgsRes, plansRes, integrationsRes, usageRes, currentUsageRes, settingsRes] = await Promise.all([
         adminClient
           .from('agent_execution_logs')
           .select('id, organization_id, created_at, execution_time_ms')
@@ -543,6 +545,11 @@ Deno.serve(async (req) => {
         adminClient
           .from('organization_usage')
           .select('organization_id, period, ai_requests, ai_cost_usd')
+          .gte('period', fromPeriod)
+          .lte('period', toPeriod),
+        adminClient
+          .from('organization_usage')
+          .select('organization_id, period, ai_requests, ai_cost_usd')
           .eq('period', currentPeriod),
         adminClient
           .from('platform_settings')
@@ -556,6 +563,7 @@ Deno.serve(async (req) => {
       if (plansRes.error) throw plansRes.error
       if (integrationsRes.error) throw integrationsRes.error
       if (usageRes.error) throw usageRes.error
+      if (currentUsageRes.error) throw currentUsageRes.error
       if (settingsRes.error) throw settingsRes.error
 
       const savedSettings = settingsRes.data?.value || {}
@@ -574,18 +582,28 @@ Deno.serve(async (req) => {
 
       const planByOrg = new Map((plansRes.data || []).map((row: any) => [row.organization_id, row]))
       const integrationByOrg = new Map((integrationsRes.data || []).map((row: any) => [row.organization_id, row]))
-      const usageByOrg = new Map((usageRes.data || []).map((row: any) => [row.organization_id, row]))
+      const currentUsageByOrg = new Map((currentUsageRes.data || []).map((row: any) => [row.organization_id, row]))
+      const periodUsageByOrg = new Map<string, { ai_requests: number; ai_cost_usd: number }>()
+      for (const row of (usageRes.data || []) as any[]) {
+        const current = periodUsageByOrg.get(row.organization_id) || { ai_requests: 0, ai_cost_usd: 0 }
+        current.ai_requests += Number(row.ai_requests || 0)
+        current.ai_cost_usd += Number(row.ai_cost_usd || 0)
+        periodUsageByOrg.set(row.organization_id, current)
+      }
 
       const rows = (orgsRes.data || []).map((org: any) => {
         const planRow: any = planByOrg.get(org.id) || {}
         const plan = planRow.plan || {}
         const aiMode = plan.ai_mode === 'platform_api' ? 'platform_api' : 'own_api'
         const monthlyLimit = Number(plan.max_ai_requests_month || 0)
-        const monthlyUsage = usageByOrg.get(org.id) as any
+        const monthlyUsage = currentUsageByOrg.get(org.id) as any
+        const periodUsage = periodUsageByOrg.get(org.id)
         const monthlyUsed = Number(monthlyUsage?.ai_requests || 0)
         const remaining = monthlyLimit > 0 ? Math.max(monthlyLimit - monthlyUsed, 0) : null
         const usagePercent = monthlyLimit > 0 ? Math.round((monthlyUsed / monthlyLimit) * 100) : null
-        const periodRequests = Number(requestCountByOrg[org.id] || 0)
+        const loggedPeriodRequests = Number(requestCountByOrg[org.id] || 0)
+        const usagePeriodRequests = Number(periodUsage?.ai_requests || 0)
+        const periodRequests = loggedPeriodRequests > 0 ? loggedPeriodRequests : usagePeriodRequests
         const integration = integrationByOrg.get(org.id) as any
 
         return {
@@ -602,7 +620,7 @@ Deno.serve(async (req) => {
           monthly_limit: monthlyLimit || null,
           monthly_remaining: remaining,
           monthly_usage_percent: usagePercent,
-          ai_cost_usd: Number(monthlyUsage?.ai_cost_usd || 0),
+          ai_cost_usd: Number(periodUsage?.ai_cost_usd || 0),
         }
       }).filter((row: any) => {
         if (aiModeFilter === 'platform_api') return row.ai_mode === 'platform_api'
@@ -703,7 +721,7 @@ Deno.serve(async (req) => {
       summary.wizzy_ai_budget_usage_percent = wizzyAIBudget > 0 ? Math.round((summary.wizzy_ai_real_cost_usd / wizzyAIBudget) * 100) : null
 
       return new Response(JSON.stringify({
-        filters: { date_from: dateFrom, date_to: dateTo, ai_mode: aiModeFilter, current_period: currentPeriod },
+        filters: { date_from: dateFrom, date_to: dateTo, ai_mode: aiModeFilter, current_period: currentPeriod, from_period: fromPeriod, to_period: toPeriod },
         summary,
         settings: {
           openai_api_key_configured: !!openaiApiKey,
