@@ -88,48 +88,28 @@ function PdfPreviewPages({ pdfDocument, pageCount }: { pdfDocument: any; pageCou
   const canvasRefs = useRef<(HTMLCanvasElement | null)[]>([]);
   const [isRendering, setIsRendering] = useState(true);
   const [renderError, setRenderError] = useState(false);
-  const [containerWidth, setContainerWidth] = useState<number | null>(null);
-  const [renderedKey, setRenderedKey] = useState('');
-
-  useEffect(() => {
-    const element = scrollRef.current;
-    if (!element) return;
-
-    const updateWidth = () => {
-      const nextWidth = Math.floor(Math.max(0, element.clientWidth - 32));
-      if (nextWidth <= 0) return;
-      setContainerWidth((currentWidth) => (
-        currentWidth === null || Math.abs(currentWidth - nextWidth) > 2 ? nextWidth : currentWidth
-      ));
-    };
-
-    updateWidth();
-
-    const observer = new ResizeObserver(updateWidth);
-    observer.observe(element);
-
-    return () => {
-      observer.disconnect();
-    };
-  }, []);
+  const [hasRendered, setHasRendered] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     const renderTasks: Array<{ cancel: () => void }> = [];
 
     const renderPages = async () => {
-      if (!pdfDocument || pageCount <= 0 || !containerWidth) {
+      if (!pdfDocument || pageCount <= 0) {
         setIsRendering(false);
         return;
       }
 
-      const nextRenderedKey = `${pdfDocument.fingerprints?.[0] || 'pdf'}-${pageCount}-${containerWidth}`;
       setIsRendering(true);
       setRenderError(false);
-      setRenderedKey('');
+      setHasRendered(false);
 
       try {
-        const availableWidth = Math.max(320, containerWidth);
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        if (cancelled) return;
+
+        const measuredWidth = scrollRef.current ? scrollRef.current.clientWidth - 32 : 0;
+        const availableWidth = Math.max(320, Math.floor(measuredWidth || Math.min(window.innerWidth * 0.86, 980)));
         const pixelRatio = Math.max(1, window.devicePixelRatio || 1);
 
         for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
@@ -168,7 +148,7 @@ function PdfPreviewPages({ pdfDocument, pageCount }: { pdfDocument: any; pageCou
         }
       } finally {
         if (!cancelled) {
-          setRenderedKey(nextRenderedKey);
+          setHasRendered(true);
           setIsRendering(false);
         }
       }
@@ -180,7 +160,7 @@ function PdfPreviewPages({ pdfDocument, pageCount }: { pdfDocument: any; pageCou
       cancelled = true;
       renderTasks.forEach((task) => task.cancel());
     };
-  }, [pdfDocument, pageCount, containerWidth]);
+  }, [pdfDocument, pageCount]);
 
   if (renderError) {
     return (
@@ -195,7 +175,7 @@ function PdfPreviewPages({ pdfDocument, pageCount }: { pdfDocument: any; pageCou
       ref={scrollRef}
       className="relative min-h-0 w-full flex-1 overflow-auto bg-zinc-200 p-4"
     >
-      {(isRendering || !renderedKey) && (
+      {(isRendering || !hasRendered) && (
         <div className="absolute inset-0 z-10 flex items-start justify-center bg-zinc-200 pt-4">
           <div className="flex w-fit items-center gap-2 rounded-md border border-border bg-background/95 px-3 py-2 text-sm text-muted-foreground shadow-sm">
           <Loader2 className="h-4 w-4 animate-spin" />
@@ -203,7 +183,7 @@ function PdfPreviewPages({ pdfDocument, pageCount }: { pdfDocument: any; pageCou
           </div>
         </div>
       )}
-      <div className={`mx-auto flex w-fit flex-col gap-4 ${isRendering || !renderedKey ? 'invisible h-0 overflow-hidden' : ''}`}>
+      <div className={`mx-auto flex w-fit flex-col gap-4 ${isRendering || !hasRendered ? 'invisible h-0 overflow-hidden' : ''}`}>
         {Array.from({ length: pageCount }, (_, index) => (
           <canvas
             key={index}
