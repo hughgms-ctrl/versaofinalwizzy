@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { User, Star, Calendar, FileText, StickyNote, ChevronUp, Clock } from 'lucide-react';
+import { User, Star, Calendar, FileText, StickyNote, ChevronUp, Clock, FileSignature } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { DbConversation } from '@/hooks/useConversations';
 import { ContactNotesSection } from './ContactNotesSection';
 import { ContactFilesSection } from './ContactFilesSection';
+import { ContactContractsSection } from './ContactContractsSection';
 import { ContactLogsSection } from './ContactLogsSection';
 import { CreateScheduledMessageDialog } from '@/components/scheduled/CreateScheduledMessageDialog';
 import { useQuery } from '@tanstack/react-query';
@@ -13,7 +14,7 @@ import { ptBR } from 'date-fns/locale';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 
-type TabId = 'profile' | 'favorites' | 'scheduled' | 'files' | 'notes' | 'timeline';
+type TabId = 'profile' | 'favorites' | 'scheduled' | 'files' | 'contracts' | 'notes' | 'timeline';
 
 interface ContactProfileTabsProps {
   conversation: DbConversation;
@@ -26,6 +27,7 @@ const tabs: { id: TabId; icon: typeof User; label: string }[] = [
   { id: 'favorites', icon: Star, label: 'Favoritos' },
   { id: 'scheduled', icon: Calendar, label: 'Agendamentos' },
   { id: 'files', icon: FileText, label: 'Arquivos' },
+  { id: 'contracts', icon: FileSignature, label: 'Contratos' },
   { id: 'notes', icon: StickyNote, label: 'Notas' },
 ];
 
@@ -165,6 +167,16 @@ export function ContactProfileTabs({ conversation, contactId }: ContactProfileTa
 
             {activeTab === 'files' && (
               <ContactFilesSection contactId={contactId} />
+            )}
+
+            {activeTab === 'contracts' && (
+              <ContactContractsSection
+                contactId={contactId}
+                conversationId={conversation.id}
+                contactName={conversation.contact?.name}
+                contactPhone={conversation.contact?.phone}
+                contactEmail={conversation.contact?.email}
+              />
             )}
 
             {activeTab === 'notes' && (

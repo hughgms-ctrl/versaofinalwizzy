@@ -38,6 +38,7 @@ import { useToast } from '@/hooks/use-toast';
 import { ContactNotesSection } from './ContactNotesSection';
 import { ContactLogsSection } from './ContactLogsSection';
 import { ContactFilesSection } from './ContactFilesSection';
+import { ContactContractsSection } from './ContactContractsSection';
 import { CreateScheduledMessageDialog } from '@/components/scheduled/CreateScheduledMessageDialog';
 import { ConversationAttributesPanel } from './ConversationAttributesPanel';
 import { ContactProfileTabs } from './ContactProfileTabs';
@@ -322,7 +323,7 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
     ai: 'IA',
   };
 
-  const [fullscreenTab, setFullscreenTab] = useState<'info' | 'notes' | 'files' | 'timeline' | 'scheduled' | 'favorites'>('info');
+  const [fullscreenTab, setFullscreenTab] = useState<'info' | 'notes' | 'files' | 'contracts' | 'timeline' | 'scheduled' | 'favorites'>('info');
 
   // Fetch scheduled messages for this contact
   const { data: contactScheduledMessages } = useQuery({
@@ -396,6 +397,7 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
               { key: 'timeline' as const, label: 'Timeline' },
               { key: 'notes' as const, label: 'Notas' },
               { key: 'files' as const, label: 'Arquivos' },
+              { key: 'contracts' as const, label: 'Contratos' },
               { key: 'scheduled' as const, label: 'Agendamentos' },
               { key: 'favorites' as const, label: 'Favoritas' },
             ]).map((tab) => (
@@ -568,6 +570,16 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
 
             {fullscreenTab === 'files' && contactId && (
               <ContactFilesSection contactId={contactId} />
+            )}
+
+            {fullscreenTab === 'contracts' && contactId && (
+              <ContactContractsSection
+                contactId={contactId}
+                conversationId={conversation.id}
+                contactName={displayName}
+                contactPhone={displayPhone}
+                contactEmail={profileContact?.email}
+              />
             )}
 
             {fullscreenTab === 'scheduled' && (

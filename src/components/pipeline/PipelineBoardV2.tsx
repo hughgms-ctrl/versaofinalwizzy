@@ -33,6 +33,7 @@ import {
   Plus,
   Trash2,
   CheckSquare,
+  FileSignature,
   Pencil,
   ChevronDown,
   ChevronRight,
@@ -62,6 +63,7 @@ import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ContactFilesSection } from '@/components/conversations/ContactFilesSection';
+import { ContactContractsSection } from '@/components/conversations/ContactContractsSection';
 import { ContactNotesSection } from '@/components/conversations/ContactNotesSection';
 import { ContactLogsSection } from '@/components/conversations/ContactLogsSection';
 import { ContactAvatar } from '@/components/conversations/ContactAvatar';
@@ -76,7 +78,7 @@ interface PipelineBoardProps {
 }
 
 type TagDisplayMode = 'labels' | 'bars';
-type CardPanelTab = 'details' | 'files' | 'notes' | 'activity' | 'checklist';
+type CardPanelTab = 'details' | 'files' | 'contracts' | 'notes' | 'activity' | 'checklist';
 type ChecklistItem = { id: string; text: string; done: boolean };
 type ChecklistTemplate = { id: string; name: string; workspaceId: string | null; items: ChecklistItem[] };
 
@@ -1787,6 +1789,7 @@ function PipelineCardDetailDialog({
     { id: 'checklist' as const, label: 'Checklist', icon: CheckSquare },
     { id: 'notes' as const, label: 'Notas', icon: StickyNote },
     { id: 'files' as const, label: 'Anexos', icon: Paperclip },
+    { id: 'contracts' as const, label: 'Contratos', icon: FileSignature },
   ];
   const comments = (((conversation.metadata as any)?.pipeline_comments || []) as Array<{ id: string; text: string; created_at: string; author: string }>);
   const completedChecklistItems = checklistItems.filter(item => item.done).length;
@@ -2245,6 +2248,18 @@ function PipelineCardDetailDialog({
               {activeTab === 'files' && contactId && (
                 <div className="rounded-md bg-zinc-900/25 p-4">
                   <ContactFilesSection contactId={contactId} />
+                </div>
+              )}
+
+              {activeTab === 'contracts' && contactId && (
+                <div className="rounded-md bg-zinc-900/25 p-4">
+                  <ContactContractsSection
+                    contactId={contactId}
+                    conversationId={conversation.id}
+                    contactName={contact?.name}
+                    contactPhone={contact?.phone}
+                    contactEmail={contact?.email}
+                  />
                 </div>
               )}
 
