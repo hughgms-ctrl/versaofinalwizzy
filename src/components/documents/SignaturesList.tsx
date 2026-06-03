@@ -559,7 +559,7 @@ export function SignaturesList() {
   return (
     <div className="space-y-5">
       {/* Hero header with gradient — landing-style */}
-      <div className="relative overflow-hidden rounded-2xl border border-white/5 bg-gradient-to-br from-zinc-950 via-zinc-900 to-zinc-950 p-5">
+      <div className="relative overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-sm dark:border-white/5 dark:bg-gradient-to-br dark:from-zinc-950 dark:via-zinc-900 dark:to-zinc-950">
         <div className="pointer-events-none absolute -top-24 -right-24 h-64 w-64 rounded-full bg-pink-500/20 blur-3xl" />
         <div className="pointer-events-none absolute -bottom-24 -left-24 h-64 w-64 rounded-full bg-violet-500/20 blur-3xl" />
 
@@ -569,8 +569,8 @@ export function SignaturesList() {
               <ShieldCheck className="h-3.5 w-3.5" />
               ASSINATURA ELETRÔNICA AVANÇADA
             </div>
-            <h2 className="mt-1 text-xl font-bold text-white">Assinaturas</h2>
-            <p className="text-sm text-zinc-400">
+            <h2 className="mt-1 text-xl font-bold text-foreground dark:text-white">Assinaturas</h2>
+            <p className="text-sm text-muted-foreground dark:text-zinc-400">
               Acompanhe documentos enviados, assinados e auditoria completa.
             </p>
           </div>
@@ -580,7 +580,7 @@ export function SignaturesList() {
               variant="outline"
               size="sm"
               onClick={() => setShowArchived(v => !v)}
-              className="gap-2 border-white/10 bg-white/5 text-zinc-200 hover:bg-white/10"
+              className="gap-2 dark:border-white/10 dark:bg-white/5 dark:text-zinc-200 dark:hover:bg-white/10"
             >
               {showArchived ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
               {showArchived ? 'Ver ativas' : 'Ver arquivadas'}
@@ -667,7 +667,7 @@ export function SignaturesList() {
             const verificationCode = (docSignatures.find(s => (s.metadata as any)?.verification_code)?.metadata as any)?.verification_code;
 
             return (
-              <Card key={group.key} className="group relative overflow-hidden border-white/5 bg-gradient-to-br from-zinc-950/60 via-zinc-900/40 to-zinc-950/60">
+              <Card key={group.key} className="group relative overflow-hidden border-border bg-card shadow-sm dark:border-white/5 dark:bg-gradient-to-br dark:from-zinc-950/60 dark:via-zinc-900/40 dark:to-zinc-950/60">
                 <span className={cn('absolute inset-y-0 left-0 w-1', allSigned ? 'bg-emerald-400' : 'bg-amber-400')} />
 
                 <div className="flex flex-col gap-3 pl-3 p-4 md:flex-row md:items-center md:justify-between">
@@ -839,9 +839,9 @@ export function SignaturesList() {
 
 function StatChip({ label, value, accent }: { label: string; value: number; accent: string }) {
   return (
-    <div className={cn('rounded-xl border border-white/5 bg-gradient-to-br p-3 backdrop-blur', accent)}>
-      <div className="text-2xl font-bold text-white tabular-nums">{value}</div>
-      <div className="text-[11px] uppercase tracking-wide text-zinc-300/80">{label}</div>
+    <div className={cn('rounded-xl border border-border bg-gradient-to-br p-3 backdrop-blur dark:border-white/5', accent)}>
+      <div className="text-2xl font-bold text-foreground tabular-nums dark:text-white">{value}</div>
+      <div className="text-[11px] uppercase tracking-wide text-muted-foreground dark:text-zinc-300/80">{label}</div>
     </div>
   );
 }

@@ -1376,9 +1376,9 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
                   className="h-2.5 w-2.5 rounded-full"
                   style={{ backgroundColor: column.color }}
                 />
-                <h3 className="font-semibold text-zinc-100 text-sm">{column.name}</h3>
+                <h3 className="font-semibold text-foreground text-sm dark:text-zinc-100">{column.name}</h3>
                 <span
-                  className="flex items-center justify-center h-5 min-w-[20px] px-1 rounded-full bg-white/10 text-[10px] font-bold text-zinc-200"
+                  className="flex items-center justify-center h-5 min-w-[20px] px-1 rounded-full bg-muted text-[10px] font-bold text-muted-foreground dark:bg-white/10 dark:text-zinc-200"
                 >
                   {columnConversations.length}
                 </span>
@@ -1798,10 +1798,10 @@ function PipelineCardDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="h-[92vh] w-[min(98vw,1280px)] max-w-none p-0 gap-0 overflow-hidden bg-[#15161d] text-zinc-100 border-zinc-700 [&>button.absolute]:hidden">
+      <DialogContent className="h-[92vh] w-[min(98vw,1280px)] max-w-none p-0 gap-0 overflow-hidden border-border bg-card text-card-foreground dark:bg-[#15161d] dark:text-zinc-100 dark:border-zinc-700 [&>button.absolute]:hidden">
         <div className="flex h-full min-h-0">
           <div className="flex min-w-0 flex-1 flex-col">
-            <div className="flex items-center justify-between border-b border-zinc-700 px-5 py-4">
+            <div className="flex items-center justify-between border-b border-border px-5 py-4 dark:border-zinc-700">
               <div className="flex min-w-0 items-center gap-3">
                 <ContactAvatar
                   src={contact?.avatar_url}
@@ -1818,7 +1818,7 @@ function PipelineCardDetailDialog({
                       <Input
                         value={editedName}
                         onChange={(event) => setEditedName(event.target.value)}
-                        className="h-8 bg-zinc-900/35 border-transparent text-zinc-100 focus-visible:border-zinc-600"
+                        className="h-8 border-transparent bg-muted/60 text-foreground focus-visible:border-border dark:bg-zinc-900/35 dark:text-zinc-100 dark:focus-visible:border-zinc-600"
                         autoFocus
                       />
                       <Button size="icon" className="h-9 w-9" onClick={saveContact} disabled={isSaving}>
@@ -1827,13 +1827,13 @@ function PipelineCardDetailDialog({
                     </div>
                   ) : (
                     <button
-                      className="max-w-full truncate text-left text-2xl font-semibold text-zinc-100 hover:text-primary"
+                    className="max-w-full truncate text-left text-2xl font-semibold text-foreground hover:text-primary dark:text-zinc-100"
                       onClick={() => setIsEditingName(true)}
                     >
                       {contact?.name || formattedPhone}
                     </button>
                   )}
-                  <div className="mt-1 flex items-center gap-2 text-sm text-zinc-400">
+                  <div className="mt-1 flex items-center gap-2 text-sm text-muted-foreground dark:text-zinc-400">
                     <Phone className="h-3.5 w-3.5" />
                     <span data-sensitive>{formattedPhone}</span>
                     {contact?.email && (
@@ -1850,7 +1850,7 @@ function PipelineCardDetailDialog({
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="text-zinc-300 hover:bg-white/10 hover:text-zinc-100"
+                  className="text-muted-foreground hover:bg-accent hover:text-foreground dark:text-zinc-300 dark:hover:bg-white/10 dark:hover:text-zinc-100"
                   onClick={() => onOpenChat(conversation)}
                 >
                   <MessagesSquare className="mr-2 h-4 w-4" />
@@ -1859,7 +1859,7 @@ function PipelineCardDetailDialog({
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="text-zinc-300 hover:bg-white/10 hover:text-zinc-100"
+                  className="text-muted-foreground hover:bg-accent hover:text-foreground dark:text-zinc-300 dark:hover:bg-white/10 dark:hover:text-zinc-100"
                   onClick={() => onOpenChange(false)}
                 >
                   <X className="h-5 w-5" />
@@ -1867,7 +1867,7 @@ function PipelineCardDetailDialog({
               </div>
             </div>
 
-            <div className="flex border-b border-zinc-700 px-5">
+            <div className="flex border-b border-border px-5 dark:border-zinc-700">
               {tabs.map(tab => {
                 const Icon = tab.icon;
                 return (
@@ -1877,7 +1877,7 @@ function PipelineCardDetailDialog({
                       "flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-medium transition-colors",
                       activeTab === tab.id
                         ? "border-primary text-primary"
-                        : "border-transparent text-zinc-400 hover:text-zinc-100"
+                        : "border-transparent text-muted-foreground hover:text-foreground dark:text-zinc-400 dark:hover:text-zinc-100"
                     )}
                     onClick={() => setActiveTab(tab.id)}
                   >
@@ -1893,7 +1893,7 @@ function PipelineCardDetailDialog({
                 <div className="max-w-2xl space-y-5">
                   <section className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <h3 className="text-sm font-semibold text-zinc-200">Observacao</h3>
+                      <h3 className="text-sm font-semibold text-foreground dark:text-zinc-200">Observacao</h3>
                       <Button size="sm" onClick={saveContact} disabled={isSaving} className="h-8">
                         {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="mr-2 h-3.5 w-3.5" />}
                         Salvar
@@ -1903,38 +1903,38 @@ function PipelineCardDetailDialog({
                       value={editedObservation}
                       onChange={(event) => setEditedObservation(event.target.value)}
                       placeholder="Adicionar observacao..."
-                      className="min-h-[44px] resize-none rounded-md bg-zinc-900/35 border-transparent text-sm text-zinc-100 focus-visible:border-zinc-600"
+                      className="min-h-[44px] resize-none rounded-md border-transparent bg-muted/60 text-sm text-foreground focus-visible:border-border dark:bg-zinc-900/35 dark:text-zinc-100 dark:focus-visible:border-zinc-600"
                     />
                   </section>
 
                   <section className="space-y-2">
                     <div className="flex items-center justify-between">
-                      <h3 className="text-sm font-semibold text-zinc-200">Descricao</h3>
+                      <h3 className="text-sm font-semibold text-foreground dark:text-zinc-200">Descricao</h3>
                     </div>
                     <Textarea
                       value={editedDescription}
                       onChange={(event) => setEditedDescription(event.target.value)}
                       placeholder="Adicionar descricao do card..."
-                      className="min-h-[74px] resize-none rounded-md bg-zinc-900/35 border-transparent text-sm text-zinc-100 focus-visible:border-zinc-600"
+                      className="min-h-[74px] resize-none rounded-md border-transparent bg-muted/60 text-sm text-foreground focus-visible:border-border dark:bg-zinc-900/35 dark:text-zinc-100 dark:focus-visible:border-zinc-600"
                     />
                   </section>
 
-                  <Separator className="bg-zinc-700" />
+                  <Separator className="bg-border dark:bg-zinc-700" />
 
                   <section className="grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-md bg-zinc-900/40 p-3">
-                      <div className="flex items-center gap-2 text-xs uppercase text-zinc-500">
+                    <div className="rounded-md bg-muted/50 p-3 dark:bg-zinc-900/40">
+                      <div className="flex items-center gap-2 text-xs uppercase text-muted-foreground dark:text-zinc-500">
                         <Phone className="h-3.5 w-3.5" />
                         Telefone
                       </div>
-                      <p className="mt-2 text-sm text-zinc-100" data-sensitive>{formattedPhone}</p>
+                      <p className="mt-2 text-sm text-foreground dark:text-zinc-100" data-sensitive>{formattedPhone}</p>
                     </div>
-                    <div className="rounded-md bg-zinc-900/40 p-3">
-                      <div className="flex items-center gap-2 text-xs uppercase text-zinc-500">
+                    <div className="rounded-md bg-muted/50 p-3 dark:bg-zinc-900/40">
+                      <div className="flex items-center gap-2 text-xs uppercase text-muted-foreground dark:text-zinc-500">
                         <CalendarDays className="h-3.5 w-3.5" />
                         Criado em
                       </div>
-                      <p className="mt-2 text-sm text-zinc-100">
+                      <p className="mt-2 text-sm text-foreground dark:text-zinc-100">
                         {new Date(contact?.created_at || conversation.created_at).toLocaleDateString('pt-BR')}
                       </p>
                     </div>
@@ -2247,13 +2247,13 @@ function PipelineCardDetailDialog({
               )}
 
               {activeTab === 'files' && contactId && (
-                <div className="rounded-md bg-zinc-900/25 p-4">
+                <div className="rounded-md bg-muted/40 p-4 dark:bg-zinc-900/25">
                   <ContactFilesSection contactId={contactId} />
                 </div>
               )}
 
               {activeTab === 'contracts' && contactId && (
-                <div className="rounded-md bg-zinc-900/25 p-4">
+                <div className="rounded-md bg-muted/40 p-4 dark:bg-zinc-900/25">
                   <ContactContractsSection
                     contactId={contactId}
                     conversationId={conversation.id}
@@ -2265,7 +2265,7 @@ function PipelineCardDetailDialog({
               )}
 
               {activeTab === 'notes' && contactId && (
-                <div className="rounded-md bg-zinc-900/25 p-4">
+                <div className="rounded-md bg-muted/40 p-4 dark:bg-zinc-900/25">
                   <ContactNotesSection contactId={contactId} />
                 </div>
               )}
@@ -2273,17 +2273,17 @@ function PipelineCardDetailDialog({
             </div>
           </div>
 
-          <aside className="hidden w-[340px] shrink-0 border-l border-zinc-700 bg-[#1b1d22] lg:flex lg:min-h-0 lg:flex-col">
-            <div className="border-b border-zinc-700 p-4 pb-3">
-              <h3 className="text-sm font-semibold text-zinc-200">Atividade do atendimento</h3>
-              <div className="mt-3 grid grid-cols-2 gap-1 rounded-md bg-zinc-950/50 p-1">
+          <aside className="hidden w-[340px] shrink-0 border-l border-border bg-muted/35 lg:flex lg:min-h-0 lg:flex-col dark:border-zinc-700 dark:bg-[#1b1d22]">
+            <div className="border-b border-border p-4 pb-3 dark:border-zinc-700">
+              <h3 className="text-sm font-semibold text-foreground dark:text-zinc-200">Atividade do atendimento</h3>
+              <div className="mt-3 grid grid-cols-2 gap-1 rounded-md bg-muted p-1 dark:bg-zinc-950/50">
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
                   className={cn(
-                    'h-8 rounded-sm text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100',
-                    activeSideTab === 'comments' && 'bg-zinc-800 text-zinc-100 shadow-sm'
+                    'h-8 rounded-sm text-xs text-muted-foreground hover:bg-background hover:text-foreground dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100',
+                    activeSideTab === 'comments' && 'bg-background text-foreground shadow-sm dark:bg-zinc-800 dark:text-zinc-100'
                   )}
                   onClick={() => setActiveSideTab('comments')}
                 >
@@ -2294,8 +2294,8 @@ function PipelineCardDetailDialog({
                   variant="ghost"
                   size="sm"
                   className={cn(
-                    'h-8 rounded-sm text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100',
-                    activeSideTab === 'logs' && 'bg-zinc-800 text-zinc-100 shadow-sm'
+                    'h-8 rounded-sm text-xs text-muted-foreground hover:bg-background hover:text-foreground dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100',
+                    activeSideTab === 'logs' && 'bg-background text-foreground shadow-sm dark:bg-zinc-800 dark:text-zinc-100'
                   )}
                   onClick={() => setActiveSideTab('logs')}
                 >
@@ -2310,7 +2310,7 @@ function PipelineCardDetailDialog({
                     value={newComment}
                     onChange={(event) => setNewComment(event.target.value)}
                     placeholder="Escrever um comentario..."
-                    className="min-h-[72px] resize-none bg-zinc-900/60 border-zinc-700 text-zinc-100"
+                    className="min-h-[72px] resize-none border-border bg-background text-foreground dark:bg-zinc-900/60 dark:border-zinc-700 dark:text-zinc-100"
                   />
                   <Button size="sm" className="w-full" onClick={addComment} disabled={!newComment.trim()}>
                     Comentar
@@ -2318,16 +2318,16 @@ function PipelineCardDetailDialog({
                   {comments.length > 0 ? (
                     <div className="space-y-2">
                       {comments.map(comment => (
-                        <div key={comment.id} className="rounded-md bg-zinc-900/50 p-2">
-                          <p className="text-sm text-zinc-100 whitespace-pre-wrap">{comment.text}</p>
-                          <p className="mt-1 text-[10px] text-zinc-500">
+                        <div key={comment.id} className="rounded-md bg-background p-2 dark:bg-zinc-900/50">
+                          <p className="text-sm text-foreground whitespace-pre-wrap dark:text-zinc-100">{comment.text}</p>
+                          <p className="mt-1 text-[10px] text-muted-foreground dark:text-zinc-500">
                             {comment.author} • {new Date(comment.created_at).toLocaleString('pt-BR')}
                           </p>
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <p className="rounded-md border border-dashed border-zinc-700 p-3 text-xs text-zinc-500">
+                    <p className="rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground dark:border-zinc-700 dark:text-zinc-500">
                       Nenhum comentario ainda.
                     </p>
                   )}
