@@ -84,9 +84,29 @@ const FileIcon = ({ type }: { type: string }) => {
 };
 
 function PdfPreviewPages({ pdfDocument, pageCount }: { pdfDocument: any; pageCount: number }) {
+  const scrollRef = useRef<HTMLDivElement | null>(null);
   const canvasRefs = useRef<(HTMLCanvasElement | null)[]>([]);
   const [isRendering, setIsRendering] = useState(true);
   const [renderError, setRenderError] = useState(false);
+  const [containerWidth, setContainerWidth] = useState(0);
+
+  useEffect(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+
+    const updateWidth = () => {
+      setContainerWidth(Math.max(0, element.clientWidth - 32));
+    };
+
+    updateWidth();
+
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(element);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -101,7 +121,8 @@ function PdfPreviewPages({ pdfDocument, pageCount }: { pdfDocument: any; pageCou
       setRenderError(false);
 
       try {
-        const containerWidth = Math.min(window.innerWidth * 0.86, 980);
+        const availableWidth = Math.max(320, containerWidth || Math.min(window.innerWidth * 0.86, 980));
+        const pixelRatio = Math.max(1, window.devicePixelRatio || 1);
 
         for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
           const canvas = canvasRefs.current[pageNumber - 1];
@@ -111,17 +132,19 @@ function PdfPreviewPages({ pdfDocument, pageCount }: { pdfDocument: any; pageCou
           if (cancelled) return;
 
           const baseViewport = page.getViewport({ scale: 1 });
-          const scale = Math.max(0.8, Math.min(2, containerWidth / baseViewport.width));
+          const fitScale = Math.min(availableWidth / baseViewport.width, 1.5);
+          const scale = Math.max(0.25, fitScale);
           const viewport = page.getViewport({ scale });
           const context = canvas.getContext('2d');
           if (!context) continue;
 
-          canvas.width = Math.floor(viewport.width);
-          canvas.height = Math.floor(viewport.height);
+          canvas.width = Math.floor(viewport.width * pixelRatio);
+          canvas.height = Math.floor(viewport.height * pixelRatio);
           canvas.style.width = `${Math.floor(viewport.width)}px`;
           canvas.style.height = `${Math.floor(viewport.height)}px`;
 
-          context.clearRect(0, 0, canvas.width, canvas.height);
+          context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+          context.clearRect(0, 0, viewport.width, viewport.height);
           await page.render({ canvasContext: context, viewport }).promise;
           if (cancelled) return;
         }
@@ -137,7 +160,7 @@ function PdfPreviewPages({ pdfDocument, pageCount }: { pdfDocument: any; pageCou
     return () => {
       cancelled = true;
     };
-  }, [pdfDocument, pageCount]);
+  }, [pdfDocument, pageCount, containerWidth]);
 
   if (renderError) {
     return (
@@ -148,7 +171,10 @@ function PdfPreviewPages({ pdfDocument, pageCount }: { pdfDocument: any; pageCou
   }
 
   return (
-    <div className="relative min-h-0 w-full flex-1 overflow-auto bg-zinc-200 p-4">
+    <div
+      ref={scrollRef}
+      className="relative min-h-0 w-full flex-1 overflow-auto bg-zinc-200 p-4"
+    >
       {isRendering && (
         <div className="sticky top-0 z-10 mx-auto mb-3 flex w-fit items-center gap-2 rounded-md border border-border bg-background/95 px-3 py-2 text-sm text-muted-foreground shadow-sm">
           <Loader2 className="h-4 w-4 animate-spin" />
@@ -162,7 +188,7 @@ function PdfPreviewPages({ pdfDocument, pageCount }: { pdfDocument: any; pageCou
             ref={(canvas) => {
               canvasRefs.current[index] = canvas;
             }}
-            className="block max-w-full bg-white shadow-lg"
+            className="block bg-white shadow-lg"
           />
         ))}
       </div>
@@ -195,6 +221,14 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
   const [imageZoom, setImageZoom] = useState(1);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const imagePreviewScrollRef = useRef<HTMLDivElement | null>(null);
+  const imageDragRef = useRef({
+    isDragging: false,
+    startX: 0,
+    startY: 0,
+    scrollLeft: 0,
+    scrollTop: 0,
+  });
 
   const selectedFolder = folders?.find((folder) => folder.id === selectedFolderId) || null;
   const rootFiles = files?.filter((file) => !file.folder_id) || [];
@@ -529,6 +563,36 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
 
   const updateImageZoom = (delta: number) => {
     setImageZoom((zoom) => Math.min(3, Math.max(0.5, Number((zoom + delta).toFixed(2)))));
+  };
+
+  const startImageDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (imageZoom <= 1 || event.button !== 0 || !imagePreviewScrollRef.current) return;
+
+    imageDragRef.current = {
+      isDragging: true,
+      startX: event.clientX,
+      startY: event.clientY,
+      scrollLeft: imagePreviewScrollRef.current.scrollLeft,
+      scrollTop: imagePreviewScrollRef.current.scrollTop,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const moveImageDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!imageDragRef.current.isDragging || !imagePreviewScrollRef.current) return;
+
+    event.preventDefault();
+    const deltaX = event.clientX - imageDragRef.current.startX;
+    const deltaY = event.clientY - imageDragRef.current.startY;
+    imagePreviewScrollRef.current.scrollLeft = imageDragRef.current.scrollLeft - deltaX;
+    imagePreviewScrollRef.current.scrollTop = imageDragRef.current.scrollTop - deltaY;
+  };
+
+  const stopImageDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    imageDragRef.current.isDragging = false;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
   };
 
   return (
@@ -1000,18 +1064,35 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
                 </div>
               </div>
               {/* Content */}
-              <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-background/50 p-4">
+              <div
+                ref={imagePreviewScrollRef}
+                className={`flex min-h-0 flex-1 overflow-auto bg-background/50 p-4 ${
+                  previewFile.file_type === 'image' && imageZoom > 1
+                    ? 'cursor-grab active:cursor-grabbing items-start justify-start'
+                    : 'items-center justify-center'
+                }`}
+                onPointerDown={previewFile.file_type === 'image' ? startImageDrag : undefined}
+                onPointerMove={previewFile.file_type === 'image' ? moveImageDrag : undefined}
+                onPointerUp={previewFile.file_type === 'image' ? stopImageDrag : undefined}
+                onPointerCancel={previewFile.file_type === 'image' ? stopImageDrag : undefined}
+                onPointerLeave={previewFile.file_type === 'image' ? stopImageDrag : undefined}
+              >
                 {previewFile.file_type === 'image' ? (
-                  <img 
-                    src={previewFile.file_url} 
-                    alt={previewFile.name}
-                    className="rounded object-contain transition-[width,max-height,max-width] duration-150"
-                    style={{
-                      maxWidth: imageZoom === 1 ? '100%' : 'none',
-                      maxHeight: imageZoom === 1 ? '70vh' : 'none',
-                      width: imageZoom === 1 ? 'auto' : `${imageZoom * 100}%`,
-                    }}
-                  />
+                  <div
+                    className={imageZoom > 1 ? 'flex min-w-full items-start justify-start' : 'flex h-full w-full items-center justify-center'}
+                  >
+                    <img
+                      src={previewFile.file_url}
+                      alt={previewFile.name}
+                      draggable={false}
+                      className="select-none rounded object-contain transition-[width,max-height,max-width] duration-150"
+                      style={{
+                        maxWidth: imageZoom === 1 ? '100%' : 'none',
+                        maxHeight: imageZoom === 1 ? '70vh' : 'none',
+                        width: imageZoom === 1 ? 'auto' : `${imageZoom * 100}%`,
+                      }}
+                    />
+                  </div>
                 ) : previewFile.file_type === 'video' ? (
                   <video 
                     src={previewFile.file_url} 
