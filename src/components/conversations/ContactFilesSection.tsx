@@ -574,6 +574,27 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
     });
   };
 
+  const handleImageWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+    if (previewFile?.file_type !== 'image' || !imagePreviewScrollRef.current) return;
+
+    event.preventDefault();
+    const scroller = imagePreviewScrollRef.current;
+    const rect = scroller.getBoundingClientRect();
+    const anchorX = event.clientX - rect.left + scroller.scrollLeft;
+    const anchorY = event.clientY - rect.top + scroller.scrollTop;
+    const ratioX = scroller.scrollWidth > 0 ? anchorX / scroller.scrollWidth : 0.5;
+    const ratioY = scroller.scrollHeight > 0 ? anchorY / scroller.scrollHeight : 0.5;
+    const delta = event.deltaY < 0 ? 0.15 : -0.15;
+
+    setImageZoom((zoom) => Math.min(3, Math.max(0.5, Number((zoom + delta).toFixed(2)))));
+
+    requestAnimationFrame(() => {
+      if (!imagePreviewScrollRef.current) return;
+      imagePreviewScrollRef.current.scrollLeft = (imagePreviewScrollRef.current.scrollWidth * ratioX) - (event.clientX - rect.left);
+      imagePreviewScrollRef.current.scrollTop = (imagePreviewScrollRef.current.scrollHeight * ratioY) - (event.clientY - rect.top);
+    });
+  };
+
   const startImageDrag = (event: React.PointerEvent<HTMLDivElement>) => {
     if (imageZoom <= 1 || event.button !== 0 || !imagePreviewScrollRef.current) return;
 
@@ -1092,6 +1113,7 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
                 onPointerUp={previewFile.file_type === 'image' ? stopImageDrag : undefined}
                 onPointerCancel={previewFile.file_type === 'image' ? stopImageDrag : undefined}
                 onPointerLeave={previewFile.file_type === 'image' ? stopImageDrag : undefined}
+                onWheel={previewFile.file_type === 'image' ? handleImageWheel : undefined}
               >
                 {previewFile.file_type === 'image' ? (
                   <div
