@@ -23,6 +23,8 @@ import {
   FileDown,
   Download,
   X,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -81,6 +83,93 @@ const FileIcon = ({ type }: { type: string }) => {
   }
 };
 
+function PdfPreviewPages({ pdfDocument, pageCount }: { pdfDocument: any; pageCount: number }) {
+  const canvasRefs = useRef<(HTMLCanvasElement | null)[]>([]);
+  const [isRendering, setIsRendering] = useState(true);
+  const [renderError, setRenderError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const renderPages = async () => {
+      if (!pdfDocument || pageCount <= 0) {
+        setIsRendering(false);
+        return;
+      }
+
+      setIsRendering(true);
+      setRenderError(false);
+
+      try {
+        const containerWidth = Math.min(window.innerWidth * 0.86, 980);
+
+        for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
+          const canvas = canvasRefs.current[pageNumber - 1];
+          if (!canvas) continue;
+
+          const page = await pdfDocument.getPage(pageNumber);
+          if (cancelled) return;
+
+          const baseViewport = page.getViewport({ scale: 1 });
+          const scale = Math.max(0.8, Math.min(2, containerWidth / baseViewport.width));
+          const viewport = page.getViewport({ scale });
+          const context = canvas.getContext('2d');
+          if (!context) continue;
+
+          canvas.width = Math.floor(viewport.width);
+          canvas.height = Math.floor(viewport.height);
+          canvas.style.width = `${Math.floor(viewport.width)}px`;
+          canvas.style.height = `${Math.floor(viewport.height)}px`;
+
+          context.clearRect(0, 0, canvas.width, canvas.height);
+          await page.render({ canvasContext: context, viewport }).promise;
+          if (cancelled) return;
+        }
+      } catch (error) {
+        if (!cancelled) setRenderError(true);
+      } finally {
+        if (!cancelled) setIsRendering(false);
+      }
+    };
+
+    renderPages();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pdfDocument, pageCount]);
+
+  if (renderError) {
+    return (
+      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+        Não foi possível renderizar a pré-visualização do PDF.
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative min-h-0 w-full flex-1 overflow-auto bg-zinc-200 p-4">
+      {isRendering && (
+        <div className="sticky top-0 z-10 mx-auto mb-3 flex w-fit items-center gap-2 rounded-md border border-border bg-background/95 px-3 py-2 text-sm text-muted-foreground shadow-sm">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Renderizando PDF...
+        </div>
+      )}
+      <div className="mx-auto flex w-fit flex-col gap-4">
+        {Array.from({ length: pageCount }, (_, index) => (
+          <canvas
+            key={index}
+            ref={(canvas) => {
+              canvasRefs.current[index] = canvas;
+            }}
+            className="block max-w-full bg-white shadow-lg"
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
   const { toast } = useToast();
   const { data: folders, isLoading: loadingFolders } = useContactFolders(contactId);
@@ -102,12 +191,10 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
   const [pdfPreviewLoading, setPdfPreviewLoading] = useState(false);
   const [pdfPreviewError, setPdfPreviewError] = useState(false);
   const [pdfDocument, setPdfDocument] = useState<any>(null);
-  const [pdfPageNumber, setPdfPageNumber] = useState(1);
   const [pdfPageCount, setPdfPageCount] = useState(0);
-  const [pdfRendering, setPdfRendering] = useState(false);
+  const [imageZoom, setImageZoom] = useState(1);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const pdfCanvasRef = useRef<HTMLCanvasElement>(null);
 
   const selectedFolder = folders?.find((folder) => folder.id === selectedFolderId) || null;
   const rootFiles = files?.filter((file) => !file.folder_id) || [];
@@ -407,7 +494,6 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
     let cancelled = false;
 
     setPdfDocument(null);
-    setPdfPageNumber(1);
     setPdfPageCount(0);
     setPdfPreviewError(false);
 
@@ -423,7 +509,6 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
         if (cancelled) return;
         setPdfDocument(doc);
         setPdfPageCount(doc.numPages);
-        setPdfPageNumber(1);
       })
       .catch((error) => {
         console.error('Contact PDF preview failed:', error);
@@ -439,46 +524,12 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
   }, [previewFile?.id, previewFile?.file_url]);
 
   useEffect(() => {
-    let cancelled = false;
+    setImageZoom(1);
+  }, [previewFile?.id]);
 
-    if (!pdfDocument || !isPdfPreview) {
-      setPdfRendering(false);
-      return;
-    }
-
-    const canvas = pdfCanvasRef.current;
-    if (!canvas) return;
-
-    setPdfRendering(true);
-    pdfDocument.getPage(pdfPageNumber)
-      .then((page: any) => {
-        if (cancelled) return null;
-        const containerWidth = Math.min(window.innerWidth * 0.86, 980);
-        const baseViewport = page.getViewport({ scale: 1 });
-        const scale = Math.max(0.8, Math.min(2, containerWidth / baseViewport.width));
-        const viewport = page.getViewport({ scale });
-        const context = canvas.getContext('2d');
-        if (!context) return null;
-
-        canvas.width = Math.floor(viewport.width);
-        canvas.height = Math.floor(viewport.height);
-        canvas.style.width = `${Math.floor(viewport.width)}px`;
-        canvas.style.height = `${Math.floor(viewport.height)}px`;
-
-        context.clearRect(0, 0, canvas.width, canvas.height);
-        return page.render({ canvasContext: context, viewport }).promise;
-      })
-      .catch(() => {
-        if (!cancelled) setPdfPreviewError(true);
-      })
-      .finally(() => {
-        if (!cancelled) setPdfRendering(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [pdfDocument, pdfPageNumber, isPdfPreview]);
+  const updateImageZoom = (delta: number) => {
+    setImageZoom((zoom) => Math.min(3, Math.max(0.5, Number((zoom + delta).toFixed(2)))));
+  };
 
   return (
     <div className="space-y-3">
@@ -860,6 +911,47 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
                   </p>
                 </div>
                 <div className="flex items-center gap-1 ml-2">
+                  {previewFile.file_type === 'image' && (
+                    <div className="mr-2 flex items-center gap-1 rounded-md border border-border bg-muted/40 px-1 py-0.5">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          updateImageZoom(-0.25);
+                        }}
+                        disabled={imageZoom <= 0.5}
+                        title="Diminuir zoom"
+                      >
+                        <ZoomOut className="h-4 w-4" />
+                      </Button>
+                      <button
+                        type="button"
+                        className="min-w-12 rounded px-1 text-center text-xs text-muted-foreground hover:text-foreground"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          setImageZoom(1);
+                        }}
+                        title="Redefinir zoom"
+                      >
+                        {Math.round(imageZoom * 100)}%
+                      </button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          updateImageZoom(0.25);
+                        }}
+                        disabled={imageZoom >= 3}
+                        title="Aumentar zoom"
+                      >
+                        <ZoomIn className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
                   <Button
                     variant="ghost"
                     size="icon"
@@ -913,7 +1005,12 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
                   <img 
                     src={previewFile.file_url} 
                     alt={previewFile.name}
-                    className="max-w-full max-h-[70vh] object-contain rounded"
+                    className="rounded object-contain transition-[width,max-height,max-width] duration-150"
+                    style={{
+                      maxWidth: imageZoom === 1 ? '100%' : 'none',
+                      maxHeight: imageZoom === 1 ? '70vh' : 'none',
+                      width: imageZoom === 1 ? 'auto' : `${imageZoom * 100}%`,
+                    }}
                   />
                 ) : previewFile.file_type === 'video' ? (
                   <video 
@@ -930,43 +1027,7 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
                       Carregando PDF...
                     </div>
                   ) : pdfDocument && !pdfPreviewError ? (
-                    <div className="flex h-full min-h-0 w-full flex-col items-center gap-3">
-                      <div className="flex shrink-0 items-center gap-2 rounded-md border border-border bg-background/80 px-2 py-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 gap-1 px-2 text-xs"
-                          disabled={pdfPageNumber <= 1 || pdfRendering}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setPdfPageNumber((page) => Math.max(1, page - 1));
-                          }}
-                        >
-                          <ArrowLeft className="h-3.5 w-3.5" />
-                          Página
-                        </Button>
-                        <span className="min-w-16 text-center text-xs text-muted-foreground">
-                          {pdfPageNumber}/{pdfPageCount}
-                        </span>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 gap-1 px-2 text-xs"
-                          disabled={pdfPageNumber >= pdfPageCount || pdfRendering}
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setPdfPageNumber((page) => Math.min(pdfPageCount, page + 1));
-                          }}
-                        >
-                          Página
-                          <ArrowRight className="h-3.5 w-3.5" />
-                        </Button>
-                        {pdfRendering && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
-                      </div>
-                      <div className="min-h-0 w-full flex-1 overflow-auto rounded border border-border bg-zinc-200 p-4">
-                        <canvas ref={pdfCanvasRef} className="mx-auto block max-w-full bg-white shadow-lg" />
-                      </div>
-                    </div>
+                    <PdfPreviewPages pdfDocument={pdfDocument} pageCount={pdfPageCount} />
                   ) : (
                     <div className="text-center space-y-3">
                       <FileText className="h-16 w-16 mx-auto text-muted-foreground" />
