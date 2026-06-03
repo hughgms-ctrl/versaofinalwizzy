@@ -10,7 +10,7 @@ Regra de manutenção:
 
 ## Pagamentos, Planos e Assinatura
 
-Status desta seção: atualizada no commit `4177a27`, com observação de que o deploy das Edge Functions ficou bloqueado por limite da Supabase.
+Status desta seção: atualizada em 2026-06-03, com observação de que o deploy das Edge Functions de cobrança que estava bloqueado por limite da Supabase foi refeito com sucesso.
 
 ### Objetivo
 
@@ -334,7 +334,7 @@ Sem essas funções:
 - atraso/cancelamento pode não ser refletido no app;
 - eventos de cobrança podem não ser registrados.
 
-### Estado do deploy em 2026-05-31
+### Estado do deploy
 
 Commit local e remoto:
 
@@ -344,30 +344,36 @@ Build:
 
 - `npm run build` passou.
 
-Deploy Supabase:
+Deploy Supabase em 2026-05-31:
 
 - tentativa de deploy das funções falhou com status 402.
 - mensagem: `Max number of functions reached for project, please upgrade Plan or disable spend cap`.
 
-Funções que tiveram deploy bloqueado:
+Funções que tiveram deploy bloqueado em 2026-05-31:
 
 - `billing-checkout`
 - `asaas-webhook`
 - `stripe-webhook`
 - `safe-record-actions`
 
-Impacto:
+Redeploy em 2026-06-03:
+
+- `billing-checkout`: deploy concluído.
+- `asaas-webhook`: deploy concluído.
+- `stripe-webhook`: deploy concluído.
+- `safe-record-actions`: deploy concluído.
+
+Impacto anterior:
 
 - o código novo existe no GitHub;
 - o Lovable pode publicar o frontend;
 - as Edge Functions em produção continuam na versão anterior até novo deploy.
 
-Recomendação:
+Status atual:
 
-- colocar o projeto Supabase em plano compatível com produção;
-- resolver spend cap/limite de funções;
-- redeployar as funções pendentes;
-- depois validar checkout real, webhook real, pagamento atrasado e histórico em `/subscription`.
+- o bloqueio de deploy das funções acima foi resolvido;
+- ainda é necessário validar checkout real, webhook real, pagamento atrasado e histórico em `/subscription`;
+- também é necessário garantir que o gateway ativo e as chaves do Asaas/Stripe estejam configurados em `platform_settings` ou nos secrets da Supabase.
 
 ### Pixels e campanhas de tráfego
 
@@ -411,7 +417,6 @@ Regra importante:
 
 ### Pendências conhecidas
 
-- Resolver deploy das Edge Functions na Supabase.
 - Validar webhooks em ambiente real.
 - Definir política final para teste grátis sem cartão ou com checkout.
 - Implementar tracking/pixels para funil de aquisição.
