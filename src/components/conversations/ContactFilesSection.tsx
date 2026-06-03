@@ -584,7 +584,7 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
     const anchorY = event.clientY - rect.top + scroller.scrollTop;
     const ratioX = scroller.scrollWidth > 0 ? anchorX / scroller.scrollWidth : 0.5;
     const ratioY = scroller.scrollHeight > 0 ? anchorY / scroller.scrollHeight : 0.5;
-    const delta = event.deltaY < 0 ? 0.15 : -0.15;
+    const delta = event.deltaY < 0 ? 0.05 : -0.05;
 
     setImageZoom((zoom) => Math.min(3, Math.max(0.5, Number((zoom + delta).toFixed(2)))));
 
