@@ -138,14 +138,18 @@ function PdfPreviewPages({ pdfDocument, pageCount }: { pdfDocument: any; pageCou
           const context = canvas.getContext('2d');
           if (!context) continue;
 
-          canvas.width = Math.floor(viewport.width * pixelRatio);
-          canvas.height = Math.floor(viewport.height * pixelRatio);
-          canvas.style.width = `${Math.floor(viewport.width)}px`;
-          canvas.style.height = `${Math.floor(viewport.height)}px`;
+          canvas.width = Math.ceil(viewport.width * pixelRatio);
+          canvas.height = Math.ceil(viewport.height * pixelRatio);
+          canvas.style.width = `${Math.ceil(viewport.width)}px`;
+          canvas.style.height = `${Math.ceil(viewport.height)}px`;
 
-          context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
-          context.clearRect(0, 0, viewport.width, viewport.height);
-          await page.render({ canvasContext: context, viewport }).promise;
+          context.setTransform(1, 0, 0, 1, 0, 0);
+          context.clearRect(0, 0, canvas.width, canvas.height);
+          await page.render({
+            canvasContext: context,
+            viewport,
+            transform: pixelRatio !== 1 ? [pixelRatio, 0, 0, pixelRatio, 0, 0] : undefined,
+          }).promise;
           if (cancelled) return;
         }
       } catch (error) {
@@ -219,15 +223,15 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
   const [pdfDocument, setPdfDocument] = useState<any>(null);
   const [pdfPageCount, setPdfPageCount] = useState(0);
   const [imageZoom, setImageZoom] = useState(1);
+  const [imagePan, setImagePan] = useState({ x: 0, y: 0 });
   
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const imagePreviewScrollRef = useRef<HTMLDivElement | null>(null);
   const imageDragRef = useRef({
     isDragging: false,
     startX: 0,
     startY: 0,
-    scrollLeft: 0,
-    scrollTop: 0,
+    panX: 0,
+    panY: 0,
   });
 
   const selectedFolder = folders?.find((folder) => folder.id === selectedFolderId) || null;
@@ -559,33 +563,42 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
 
   useEffect(() => {
     setImageZoom(1);
+    setImagePan({ x: 0, y: 0 });
   }, [previewFile?.id]);
 
   const updateImageZoom = (delta: number) => {
-    setImageZoom((zoom) => Math.min(3, Math.max(0.5, Number((zoom + delta).toFixed(2)))));
+    setImageZoom((zoom) => {
+      const nextZoom = Math.min(3, Math.max(0.5, Number((zoom + delta).toFixed(2))));
+      if (nextZoom <= 1) {
+        setImagePan({ x: 0, y: 0 });
+      }
+      return nextZoom;
+    });
   };
 
   const startImageDrag = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (imageZoom <= 1 || event.button !== 0 || !imagePreviewScrollRef.current) return;
+    if (imageZoom <= 1 || event.button !== 0) return;
 
     imageDragRef.current = {
       isDragging: true,
       startX: event.clientX,
       startY: event.clientY,
-      scrollLeft: imagePreviewScrollRef.current.scrollLeft,
-      scrollTop: imagePreviewScrollRef.current.scrollTop,
+      panX: imagePan.x,
+      panY: imagePan.y,
     };
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
   const moveImageDrag = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (!imageDragRef.current.isDragging || !imagePreviewScrollRef.current) return;
+    if (!imageDragRef.current.isDragging) return;
 
     event.preventDefault();
     const deltaX = event.clientX - imageDragRef.current.startX;
     const deltaY = event.clientY - imageDragRef.current.startY;
-    imagePreviewScrollRef.current.scrollLeft = imageDragRef.current.scrollLeft - deltaX;
-    imagePreviewScrollRef.current.scrollTop = imageDragRef.current.scrollTop - deltaY;
+    setImagePan({
+      x: imageDragRef.current.panX + deltaX,
+      y: imageDragRef.current.panY + deltaY,
+    });
   };
 
   const stopImageDrag = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -996,6 +1009,7 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
                         onClick={(event) => {
                           event.stopPropagation();
                           setImageZoom(1);
+                          setImagePan({ x: 0, y: 0 });
                         }}
                         title="Redefinir zoom"
                       >
@@ -1065,11 +1079,12 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
               </div>
               {/* Content */}
               <div
-                ref={imagePreviewScrollRef}
-                className={`flex min-h-0 flex-1 overflow-auto bg-background/50 p-4 ${
+                className={`flex min-h-0 flex-1 bg-background/50 ${
                   previewFile.file_type === 'image' && imageZoom > 1
-                    ? 'cursor-grab active:cursor-grabbing items-start justify-start'
-                    : 'items-center justify-center'
+                    ? 'cursor-grab active:cursor-grabbing items-center justify-center overflow-hidden p-4'
+                    : isPdfPreview && pdfDocument && !pdfPreviewError && !pdfPreviewLoading
+                      ? 'items-stretch justify-start overflow-hidden p-0'
+                      : 'items-center justify-center overflow-auto p-4'
                 }`}
                 onPointerDown={previewFile.file_type === 'image' ? startImageDrag : undefined}
                 onPointerMove={previewFile.file_type === 'image' ? moveImageDrag : undefined}
@@ -1079,17 +1094,18 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
               >
                 {previewFile.file_type === 'image' ? (
                   <div
-                    className={imageZoom > 1 ? 'flex min-w-full items-start justify-start' : 'flex h-full w-full items-center justify-center'}
+                    className="flex h-full w-full items-center justify-center overflow-visible"
                   >
                     <img
                       src={previewFile.file_url}
                       alt={previewFile.name}
                       draggable={false}
-                      className="select-none rounded object-contain transition-[width,max-height,max-width] duration-150"
+                      className="select-none rounded object-contain transition-transform duration-150"
                       style={{
-                        maxWidth: imageZoom === 1 ? '100%' : 'none',
-                        maxHeight: imageZoom === 1 ? '70vh' : 'none',
-                        width: imageZoom === 1 ? 'auto' : `${imageZoom * 100}%`,
+                        maxWidth: '100%',
+                        maxHeight: '70vh',
+                        transform: `translate(${imagePan.x}px, ${imagePan.y}px) scale(${imageZoom})`,
+                        transformOrigin: 'center center',
                       }}
                     />
                   </div>
