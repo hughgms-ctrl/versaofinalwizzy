@@ -88,14 +88,19 @@ function PdfPreviewPages({ pdfDocument, pageCount }: { pdfDocument: any; pageCou
   const canvasRefs = useRef<(HTMLCanvasElement | null)[]>([]);
   const [isRendering, setIsRendering] = useState(true);
   const [renderError, setRenderError] = useState(false);
-  const [containerWidth, setContainerWidth] = useState(0);
+  const [containerWidth, setContainerWidth] = useState<number | null>(null);
+  const [renderedKey, setRenderedKey] = useState('');
 
   useEffect(() => {
     const element = scrollRef.current;
     if (!element) return;
 
     const updateWidth = () => {
-      setContainerWidth(Math.max(0, element.clientWidth - 32));
+      const nextWidth = Math.floor(Math.max(0, element.clientWidth - 32));
+      if (nextWidth <= 0) return;
+      setContainerWidth((currentWidth) => (
+        currentWidth === null || Math.abs(currentWidth - nextWidth) > 2 ? nextWidth : currentWidth
+      ));
     };
 
     updateWidth();
@@ -110,18 +115,21 @@ function PdfPreviewPages({ pdfDocument, pageCount }: { pdfDocument: any; pageCou
 
   useEffect(() => {
     let cancelled = false;
+    const renderTasks: Array<{ cancel: () => void }> = [];
 
     const renderPages = async () => {
-      if (!pdfDocument || pageCount <= 0) {
+      if (!pdfDocument || pageCount <= 0 || !containerWidth) {
         setIsRendering(false);
         return;
       }
 
+      const nextRenderedKey = `${pdfDocument.fingerprints?.[0] || 'pdf'}-${pageCount}-${containerWidth}`;
       setIsRendering(true);
       setRenderError(false);
+      setRenderedKey('');
 
       try {
-        const availableWidth = Math.max(320, containerWidth || Math.min(window.innerWidth * 0.86, 980));
+        const availableWidth = Math.max(320, containerWidth);
         const pixelRatio = Math.max(1, window.devicePixelRatio || 1);
 
         for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
@@ -145,17 +153,24 @@ function PdfPreviewPages({ pdfDocument, pageCount }: { pdfDocument: any; pageCou
 
           context.setTransform(1, 0, 0, 1, 0, 0);
           context.clearRect(0, 0, canvas.width, canvas.height);
-          await page.render({
+          const renderTask = page.render({
             canvasContext: context,
             viewport,
             transform: pixelRatio !== 1 ? [pixelRatio, 0, 0, pixelRatio, 0, 0] : undefined,
-          }).promise;
+          });
+          renderTasks.push(renderTask);
+          await renderTask.promise;
           if (cancelled) return;
         }
       } catch (error) {
-        if (!cancelled) setRenderError(true);
+        if (!cancelled && (error as any)?.name !== 'RenderingCancelledException') {
+          setRenderError(true);
+        }
       } finally {
-        if (!cancelled) setIsRendering(false);
+        if (!cancelled) {
+          setRenderedKey(nextRenderedKey);
+          setIsRendering(false);
+        }
       }
     };
 
@@ -163,6 +178,7 @@ function PdfPreviewPages({ pdfDocument, pageCount }: { pdfDocument: any; pageCou
 
     return () => {
       cancelled = true;
+      renderTasks.forEach((task) => task.cancel());
     };
   }, [pdfDocument, pageCount, containerWidth]);
 
@@ -179,13 +195,15 @@ function PdfPreviewPages({ pdfDocument, pageCount }: { pdfDocument: any; pageCou
       ref={scrollRef}
       className="relative min-h-0 w-full flex-1 overflow-auto bg-zinc-200 p-4"
     >
-      {isRendering && (
-        <div className="sticky top-0 z-10 mx-auto mb-3 flex w-fit items-center gap-2 rounded-md border border-border bg-background/95 px-3 py-2 text-sm text-muted-foreground shadow-sm">
+      {(isRendering || !renderedKey) && (
+        <div className="absolute inset-0 z-10 flex items-start justify-center bg-zinc-200 pt-4">
+          <div className="flex w-fit items-center gap-2 rounded-md border border-border bg-background/95 px-3 py-2 text-sm text-muted-foreground shadow-sm">
           <Loader2 className="h-4 w-4 animate-spin" />
           Renderizando PDF...
+          </div>
         </div>
       )}
-      <div className="mx-auto flex w-fit flex-col gap-4">
+      <div className={`mx-auto flex w-fit flex-col gap-4 ${isRendering || !renderedKey ? 'invisible h-0 overflow-hidden' : ''}`}>
         {Array.from({ length: pageCount }, (_, index) => (
           <canvas
             key={index}
