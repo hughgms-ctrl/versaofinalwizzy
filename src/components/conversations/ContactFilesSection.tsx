@@ -224,6 +224,7 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
   const [pdfPageCount, setPdfPageCount] = useState(0);
   const [imageZoom, setImageZoom] = useState(1);
   const [imagePan, setImagePan] = useState({ x: 0, y: 0 });
+  const [isImageDragging, setIsImageDragging] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageDragRef = useRef({
@@ -586,6 +587,8 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
       panX: imagePan.x,
       panY: imagePan.y,
     };
+    setIsImageDragging(true);
+    event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
@@ -603,6 +606,7 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
 
   const stopImageDrag = (event: React.PointerEvent<HTMLDivElement>) => {
     imageDragRef.current.isDragging = false;
+    setIsImageDragging(false);
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
@@ -1081,7 +1085,7 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
               <div
                 className={`flex min-h-0 flex-1 bg-background/50 ${
                   previewFile.file_type === 'image' && imageZoom > 1
-                    ? 'cursor-grab active:cursor-grabbing items-center justify-center overflow-hidden p-4'
+                    ? 'cursor-grab active:cursor-grabbing items-center justify-center overflow-hidden p-4 select-none touch-none'
                     : isPdfPreview && pdfDocument && !pdfPreviewError && !pdfPreviewLoading
                       ? 'items-stretch justify-start overflow-hidden p-0'
                       : 'items-center justify-center overflow-auto p-4'
@@ -1100,7 +1104,10 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
                       src={previewFile.file_url}
                       alt={previewFile.name}
                       draggable={false}
-                      className="select-none rounded object-contain transition-transform duration-150"
+                      onDragStart={(event) => event.preventDefault()}
+                      className={`pointer-events-none select-none rounded object-contain ${
+                        isImageDragging ? '' : 'transition-transform duration-150'
+                      }`}
                       style={{
                         maxWidth: '100%',
                         maxHeight: '70vh',
