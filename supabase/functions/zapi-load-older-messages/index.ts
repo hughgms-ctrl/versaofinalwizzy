@@ -103,6 +103,26 @@ Deno.serve(async (req) => {
       });
     }
 
+    const provider = instance.provider === 'evolution' ? 'evolution' : 'uazapi';
+    if (provider !== 'uazapi') {
+      return new Response(JSON.stringify({
+        success: true,
+        skipped: true,
+        provider,
+        syncedMessages: 0,
+        hasMore: false,
+        message: 'Carregamento de mensagens antigas ainda nao implementado para Evolution; evitando chamada UAZAPI indevida.',
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (!instance.zapi_token) {
+      return new Response(JSON.stringify({ error: 'WhatsApp not connected' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     const contactPhone = conversation.contact?.phone;
     if (!contactPhone) {
       return new Response(JSON.stringify({ error: 'Contact phone not found' }), {

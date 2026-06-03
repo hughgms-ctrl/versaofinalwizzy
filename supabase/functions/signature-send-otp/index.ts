@@ -60,8 +60,6 @@ async function resolveOtpInstance(supabase: any, organizationId: string) {
   if (strategy.backupProvider !== strategy.primaryProvider && providerEnabled(strategy.backupProvider, strategy)) {
     preferredProviders.push(strategy.backupProvider);
   }
-  if (!preferredProviders.includes("evolution")) preferredProviders.push("evolution");
-  if (!preferredProviders.includes("uazapi")) preferredProviders.push("uazapi");
 
   const { data: instances } = await supabase
     .from("whatsapp_instances")
@@ -74,7 +72,7 @@ async function resolveOtpInstance(supabase: any, organizationId: string) {
     const instance = (instances || []).find((item: any) => (item.provider || "uazapi") === provider);
     if (instance) return instance;
   }
-  return (instances || [])[0] || null;
+  return null;
 }
 
 async function sendEmailOtp(args: { email: string; code: string }): Promise<ChannelResult> {

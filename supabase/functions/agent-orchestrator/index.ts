@@ -93,8 +93,6 @@ async function resolveWhatsAppInstanceForSend(supabase: any, conversation: any) 
   if (strategy.backupProvider !== strategy.primaryProvider && isWhatsAppProviderEnabled(strategy.backupProvider, strategy)) {
     preferredProviders.push(strategy.backupProvider);
   }
-  if (!preferredProviders.includes('evolution')) preferredProviders.push('evolution');
-  if (!preferredProviders.includes('uazapi')) preferredProviders.push('uazapi');
 
   const { data: connected } = await supabase.from('whatsapp_instances').select('*')
     .eq('organization_id', conversation.organization_id).eq('status', 'connected')
@@ -105,21 +103,14 @@ async function resolveWhatsAppInstanceForSend(supabase: any, conversation: any) 
   const conversationInstance = conversation.whatsapp_instance_id
     ? connectedInstances.find((item: any) => item.id === conversation.whatsapp_instance_id)
     : null;
+  if (conversationInstance) return conversationInstance;
 
   for (const provider of preferredProviders) {
-    const instance =
-      conversationInstance && (conversationInstance.provider || 'uazapi') === provider
-        ? conversationInstance
-        : connectedInstances.find((item: any) => (item.provider || 'uazapi') === provider);
+    const instance = connectedInstances.find((item: any) => (item.provider || 'uazapi') === provider);
     if (instance) return instance;
   }
 
-  if (conversationInstance) return conversationInstance;
-
-  const { data: fallback } = await supabase.from('whatsapp_instances').select('*')
-    .eq('organization_id', conversation.organization_id)
-    .order('updated_at', { ascending: false }).limit(1).maybeSingle();
-  return fallback || null;
+  return null;
 }
 
 Deno.serve(async (req) => {
@@ -3303,7 +3294,7 @@ async function sendReplyViaZAPI(supabase: any, conversation: any, message: strin
 
   const instance = await resolveWhatsAppInstanceForSend(supabase, conversation);
 
-  if (!instance || !instance.zapi_token) {
+  if (!instance) {
     console.error('[ORCHESTRATOR] No WhatsApp instance found for organization:', conversation.organization_id);
     return;
   }

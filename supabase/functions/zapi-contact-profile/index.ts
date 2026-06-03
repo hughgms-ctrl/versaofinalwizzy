@@ -143,11 +143,33 @@ Deno.serve(async (req) => {
                 .select('*')
                 .eq('organization_id', profile.organization_id)
                 .eq('status', 'connected')
+                .eq('provider', 'uazapi')
                 .limit(1);
             instance = instances?.[0];
         }
 
-        if (!instance || !instance.zapi_token) {
+        if (!instance) {
+            return new Response(JSON.stringify({ error: 'No connected instance found' }), {
+                status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+        }
+
+        const provider = instance.provider === 'evolution' ? 'evolution' : 'uazapi';
+        if (provider !== 'uazapi') {
+            console.warn(`[CONTACT_PROFILE] Skipping UAZAPI profile fetch for ${provider} instance ${instance.id}`);
+            return new Response(JSON.stringify({
+                success: true,
+                skipped: true,
+                provider,
+                name: null,
+                avatarUrl: null,
+                message: 'Busca de perfil ainda não implementada para Evolution; evitando chamada UAZAPI indevida.',
+            }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+        }
+
+        if (!instance.zapi_token) {
             return new Response(JSON.stringify({ error: 'No connected instance found' }), {
                 status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
             });

@@ -39,8 +39,8 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { phone, presence, duration = 3000 } = await req.json() as {
-      phone: string; presence: PresenceType; duration?: number;
+    const { phone, presence, duration = 3000, instanceId } = await req.json() as {
+      phone: string; presence: PresenceType; duration?: number; instanceId?: string | null;
     };
 
     if (!phone || !presence) {
@@ -58,10 +58,34 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { data: instance } = await supabase
-      .from('whatsapp_instances').select('*')
-      .eq('organization_id', profile.organization_id)
-      .eq('status', 'connected').limit(1).maybeSingle();
+    const normalizedPhone = phone.replace(/\D/g, '');
+    let resolvedInstanceId = instanceId || null;
+    if (!resolvedInstanceId) {
+      const { data: conversation } = await supabase
+        .from('conversations')
+        .select('whatsapp_instance_id, contact:contacts!inner(phone)')
+        .eq('organization_id', profile.organization_id)
+        .eq('contacts.phone', phone)
+        .order('last_message_at', { ascending: false, nullsFirst: false })
+        .limit(1)
+        .maybeSingle();
+      resolvedInstanceId = conversation?.whatsapp_instance_id || null;
+    }
+
+    const { data: instance } = resolvedInstanceId
+      ? await supabase
+        .from('whatsapp_instances').select('*')
+        .eq('id', resolvedInstanceId)
+        .eq('organization_id', profile.organization_id)
+        .eq('status', 'connected')
+        .maybeSingle()
+      : await supabase
+        .from('whatsapp_instances').select('*')
+        .eq('organization_id', profile.organization_id)
+        .eq('status', 'connected')
+        .eq('provider', 'uazapi')
+        .limit(1)
+        .maybeSingle();
 
     if (!instance) {
       return new Response(JSON.stringify({ error: 'No connected WhatsApp instance' }), {
@@ -69,7 +93,24 @@ Deno.serve(async (req) => {
       });
     }
 
-    const normalizedPhone = phone.replace(/\D/g, '');
+    const provider = instance.provider === 'evolution' ? 'evolution' : 'uazapi';
+    if (provider !== 'uazapi') {
+      return new Response(JSON.stringify({
+        success: true,
+        skipped: true,
+        provider,
+        message: 'Presenca ainda nao implementada para Evolution; evitando chamada UAZAPI indevida.',
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (!instance.zapi_token) {
+      return new Response(JSON.stringify({ error: 'No connected WhatsApp instance' }), {
+        status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     const presenceType = presence === 'typing' ? 'composing' : (presence === 'recording' ? 'recording' : 'paused');
 
     const response = await fetch(uazapiUrl(uazapiBaseUrl, '/message/presence'), {

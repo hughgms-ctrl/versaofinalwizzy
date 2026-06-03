@@ -145,6 +145,22 @@ Deno.serve(async (req) => {
       });
     }
 
+    const provider = instance.provider === 'evolution' ? 'evolution' : 'uazapi';
+    if (provider !== 'uazapi') {
+      console.warn(`[SYNC_MESSAGES] Skipping UAZAPI history sync for ${provider} instance ${instance.id}`);
+      return new Response(JSON.stringify({
+        success: true,
+        skipped: true,
+        provider,
+        syncedMessages: 0,
+        skippedMessages: 0,
+        totalFromAPI: 0,
+        message: 'Histórico manual ainda não implementado para Evolution; evitando chamada UAZAPI indevida.',
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     const contactPhone = conversation.contact?.phone;
     if (!contactPhone) {
       return new Response(JSON.stringify({ error: 'Contact phone not found' }), {

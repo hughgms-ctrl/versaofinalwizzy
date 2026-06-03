@@ -322,14 +322,14 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
     const now = Date.now();
     if (value.trim() && displayPhone && now - lastTypingSentRef.current > 5000) {
       lastTypingSentRef.current = now;
-      sendTyping(displayPhone, 5000);
+      sendTyping(displayPhone, 5000, conversation.whatsapp_instance_id);
     }
 
     // Clear any existing timeout
     if (typingTimeoutRef.current) {
       clearTimeout(typingTimeoutRef.current);
     }
-  }, [displayPhone, sendTyping]);
+  }, [conversation.whatsapp_instance_id, displayPhone, sendTyping]);
 
   // Handle paste events for images
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
@@ -1098,13 +1098,13 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
                 onRecordComplete={handleAudioRecordComplete}
                 onStart={() => {
                   if (displayPhone) {
-                    sendRecording(displayPhone, 15000);
+                    sendRecording(displayPhone, 15000, conversation.whatsapp_instance_id);
                   }
                 }}
                 onStop={() => {
                   // Sending a short 'typing' effectively cancels the recording status
                   if (displayPhone) {
-                    sendPresence(displayPhone, 'typing', 100);
+                    sendPresence(displayPhone, 'typing', 100, conversation.whatsapp_instance_id);
                   }
                 }}
                 disabled={sendMessage.isPending || isUploading || isSendingMedia}

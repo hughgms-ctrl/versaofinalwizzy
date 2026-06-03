@@ -154,7 +154,17 @@ Deno.serve(async (req) => {
       instance = instances?.[0];
     }
 
-    if (!instance?.zapi_token) return respond(200, { success: false, error: 'No connected instance' });
+    if (!instance) return respond(200, { success: false, error: 'No connected instance' });
+    const provider = instance.provider === 'evolution' ? 'evolution' : 'uazapi';
+    if (provider !== 'uazapi') {
+      return respond(200, {
+        success: true,
+        skipped: true,
+        provider,
+        message: 'Etiquetas do WhatsApp ainda nao implementadas para Evolution; evitando chamada UAZAPI indevida.',
+      });
+    }
+    if (!instance.zapi_token) return respond(200, { success: false, error: 'No connected instance' });
 
     const settings = await loadConnectionSettings(supabase);
     if (!settings.uazapiBaseUrl) return respond(200, { success: false, error: 'UAZAPI_BASE_URL not configured' });

@@ -492,7 +492,26 @@ Deno.serve(async (req) => {
             instance = instances?.[0];
         }
 
-        if (!instance || !instance.zapi_token) {
+        if (!instance) {
+            return new Response(JSON.stringify({ error: 'No connected instance' }), {
+                status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+        }
+
+        const provider = instance.provider === 'evolution' || instance.evolution_instance_name || instance.evolution_instance_id ? 'evolution' : 'uazapi';
+        if (provider !== 'uazapi') {
+            console.warn(`[MESSAGE_ACTIONS] Skipping UAZAPI-only action ${action} for ${provider} instance ${instance.id}`);
+            return new Response(JSON.stringify({
+                success: true,
+                skipped: true,
+                provider,
+                message: 'Acao ainda nao implementada para Evolution; evitando chamada UAZAPI indevida.',
+            }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+        }
+
+        if (!instance.zapi_token) {
             return new Response(JSON.stringify({ error: 'No connected instance' }), {
                 status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
             });

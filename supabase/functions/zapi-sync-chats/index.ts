@@ -265,6 +265,7 @@ Deno.serve(async (req) => {
         .from('whatsapp_instances').select('*')
         .eq('organization_id', profile.organization_id)
         .eq('is_active', true).eq('status', 'connected')
+        .eq('provider', 'uazapi')
         .order('created_at', { ascending: true }).limit(1).maybeSingle();
       instance = data;
     }
@@ -272,6 +273,22 @@ Deno.serve(async (req) => {
     if (!instance) {
       return new Response(JSON.stringify({ error: 'No active connected WhatsApp instance' }), {
         status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const provider = instance.provider === 'evolution' ? 'evolution' : 'uazapi';
+    if (provider !== 'uazapi') {
+      console.warn(`[SYNC_CHATS] Skipping UAZAPI chat sync for ${provider} instance ${instance.id}`);
+      return new Response(JSON.stringify({
+        success: true,
+        skipped: true,
+        provider,
+        syncedConversations: 0,
+        totalChats: 0,
+        processedChats: 0,
+        message: 'Sincronização manual de chats ainda não implementada para Evolution; evitando chamada UAZAPI indevida.',
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 

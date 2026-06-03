@@ -86,15 +86,13 @@ function selectInstanceByStrategy(instances: any[] | null | undefined, strategy:
   if (strategy.backupProvider !== strategy.primaryProvider && providerEnabled(strategy.backupProvider, strategy)) {
     preferredProviders.push(strategy.backupProvider);
   }
-  if (!preferredProviders.includes("evolution")) preferredProviders.push("evolution");
-  if (!preferredProviders.includes("uazapi")) preferredProviders.push("uazapi");
 
   for (const provider of preferredProviders) {
     const instance = candidates.find((item: any) => (item.provider || "uazapi") === provider);
     if (instance) return instance;
   }
 
-  return candidates[0] || null;
+  return null;
 }
 
 async function ensureRecipientConversation(

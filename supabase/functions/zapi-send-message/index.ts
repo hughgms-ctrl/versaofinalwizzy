@@ -210,8 +210,6 @@ async function resolveSendInstance(
   ) {
     preferredProviders.push(strategy.backupProvider);
   }
-  if (!preferredProviders.includes('evolution')) preferredProviders.push('evolution');
-  if (!preferredProviders.includes('uazapi')) preferredProviders.push('uazapi');
 
   const { data: connectedInstances } = await supabase
     .from('whatsapp_instances')
@@ -224,24 +222,22 @@ async function resolveSendInstance(
   const conversationInstance = conversationInstanceId
     ? instances.find((item: any) => item.id === conversationInstanceId)
     : null;
+  if (conversationInstance) {
+    console.log(
+      `[SEND_ROUTING] Using conversation instance ${conversationInstance.id} ` +
+      `(${conversationInstance.provider || 'uazapi'}).`
+    );
+    return conversationInstance;
+  }
 
   for (const provider of preferredProviders) {
-    const providerInstance =
-      conversationInstance && (conversationInstance.provider || 'uazapi') === provider
-        ? conversationInstance
-        : instances.find((item: any) => (item.provider || 'uazapi') === provider);
+    const providerInstance = instances.find((item: any) => (item.provider || 'uazapi') === provider);
     if (providerInstance) {
-      if (conversationInstance && (conversationInstance.provider || 'uazapi') !== provider) {
-        console.log(
-          `[SEND_ROUTING] Conversation instance is ${conversationInstance.provider || 'uazapi'}, ` +
-          `but platform strategy selected ${provider}.`
-        );
-      }
       return providerInstance;
     }
   }
 
-  return conversationInstance || null;
+  return null;
 }
 
 Deno.serve(async (req) => {
