@@ -24,7 +24,6 @@ import {
   Save,
   Phone,
   CalendarDays,
-  Activity,
   AlignLeft,
   Palette,
   Tags as TagsIcon,
@@ -79,6 +78,7 @@ interface PipelineBoardProps {
 
 type TagDisplayMode = 'labels' | 'bars';
 type CardPanelTab = 'details' | 'files' | 'contracts' | 'notes' | 'activity' | 'checklist';
+type CardSideTab = 'comments' | 'logs';
 type ChecklistItem = { id: string; text: string; done: boolean };
 type ChecklistTemplate = { id: string; name: string; workspaceId: string | null; items: ChecklistItem[] };
 
@@ -1433,6 +1433,7 @@ function PipelineCardDetailDialog({
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<CardPanelTab>(initialTab);
+  const [activeSideTab, setActiveSideTab] = useState<CardSideTab>('comments');
   const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState('');
   const [editedObservation, setEditedObservation] = useState('');
@@ -1455,7 +1456,8 @@ function PipelineCardDetailDialog({
   const [dragOverTemplateItemId, setDragOverTemplateItemId] = useState<string | null>(null);
 
   useEffect(() => {
-    setActiveTab(initialTab);
+    setActiveTab(initialTab === 'activity' ? 'details' : initialTab);
+    setActiveSideTab(initialTab === 'activity' ? 'logs' : 'comments');
     setIsEditingName(false);
     setEditedName(conversation?.contact?.name || '');
     setEditedObservation((conversation?.contact?.metadata as { note?: string } | null)?.note || '');
@@ -1785,7 +1787,6 @@ function PipelineCardDetailDialog({
 
   const tabs = [
     { id: 'details' as const, label: 'Dados', icon: AlignLeft },
-    { id: 'activity' as const, label: 'Timeline', icon: Activity },
     { id: 'checklist' as const, label: 'Checklist', icon: CheckSquare },
     { id: 'notes' as const, label: 'Notas', icon: StickyNote },
     { id: 'files' as const, label: 'Anexos', icon: Paperclip },
@@ -1797,7 +1798,7 @@ function PipelineCardDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-6xl h-[88vh] p-0 gap-0 overflow-hidden bg-[#15161d] text-zinc-100 border-zinc-700 [&>button.absolute]:hidden">
+      <DialogContent className="h-[92vh] w-[min(98vw,1280px)] max-w-none p-0 gap-0 overflow-hidden bg-[#15161d] text-zinc-100 border-zinc-700 [&>button.absolute]:hidden">
         <div className="flex h-full min-h-0">
           <div className="flex min-w-0 flex-1 flex-col">
             <div className="flex items-center justify-between border-b border-zinc-700 px-5 py-4">
@@ -2269,45 +2270,71 @@ function PipelineCardDetailDialog({
                 </div>
               )}
 
-              {activeTab === 'activity' && (
-                <div className="rounded-md bg-zinc-900/25 p-4">
-                  <ContactLogsSection conversationId={conversation.id} />
-                </div>
-              )}
             </div>
           </div>
 
-          <aside className="hidden w-[330px] shrink-0 border-l border-zinc-700 bg-[#1b1d22] p-4 lg:block">
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-zinc-200">Comentarios e atividade</h3>
-              <Button variant="ghost" size="sm" className="h-8 text-zinc-400 hover:text-zinc-100" onClick={() => setActiveTab('activity')}>
-                Ver tudo
-              </Button>
+          <aside className="hidden w-[340px] shrink-0 border-l border-zinc-700 bg-[#1b1d22] lg:flex lg:min-h-0 lg:flex-col">
+            <div className="border-b border-zinc-700 p-4 pb-3">
+              <h3 className="text-sm font-semibold text-zinc-200">Atividade do atendimento</h3>
+              <div className="mt-3 grid grid-cols-2 gap-1 rounded-md bg-zinc-950/50 p-1">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className={cn(
+                    'h-8 rounded-sm text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100',
+                    activeSideTab === 'comments' && 'bg-zinc-800 text-zinc-100 shadow-sm'
+                  )}
+                  onClick={() => setActiveSideTab('comments')}
+                >
+                  Comentarios
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className={cn(
+                    'h-8 rounded-sm text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100',
+                    activeSideTab === 'logs' && 'bg-zinc-800 text-zinc-100 shadow-sm'
+                  )}
+                  onClick={() => setActiveSideTab('logs')}
+                >
+                  Logs
+                </Button>
+              </div>
             </div>
-            <div className="space-y-3">
-              <Textarea
-                value={newComment}
-                onChange={(event) => setNewComment(event.target.value)}
-                placeholder="Escrever um comentario..."
-                className="min-h-[72px] resize-none bg-zinc-900/60 border-zinc-700 text-zinc-100"
-              />
-              <Button size="sm" className="w-full" onClick={addComment} disabled={!newComment.trim()}>
-                Comentar
-              </Button>
-              {comments.length > 0 && (
-                <div className="space-y-2">
-                  {comments.map(comment => (
-                    <div key={comment.id} className="rounded-md bg-zinc-900/50 p-2">
-                      <p className="text-sm text-zinc-100 whitespace-pre-wrap">{comment.text}</p>
-                      <p className="mt-1 text-[10px] text-zinc-500">
-                        {comment.author} • {new Date(comment.created_at).toLocaleString('pt-BR')}
-                      </p>
+            <div className="min-h-0 flex-1 overflow-y-auto p-4">
+              {activeSideTab === 'comments' ? (
+                <div className="space-y-3">
+                  <Textarea
+                    value={newComment}
+                    onChange={(event) => setNewComment(event.target.value)}
+                    placeholder="Escrever um comentario..."
+                    className="min-h-[72px] resize-none bg-zinc-900/60 border-zinc-700 text-zinc-100"
+                  />
+                  <Button size="sm" className="w-full" onClick={addComment} disabled={!newComment.trim()}>
+                    Comentar
+                  </Button>
+                  {comments.length > 0 ? (
+                    <div className="space-y-2">
+                      {comments.map(comment => (
+                        <div key={comment.id} className="rounded-md bg-zinc-900/50 p-2">
+                          <p className="text-sm text-zinc-100 whitespace-pre-wrap">{comment.text}</p>
+                          <p className="mt-1 text-[10px] text-zinc-500">
+                            {comment.author} • {new Date(comment.created_at).toLocaleString('pt-BR')}
+                          </p>
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  ) : (
+                    <p className="rounded-md border border-dashed border-zinc-700 p-3 text-xs text-zinc-500">
+                      Nenhum comentario ainda.
+                    </p>
+                  )}
                 </div>
+              ) : (
+                <ContactLogsSection conversationId={conversation.id} />
               )}
-              <Separator className="bg-zinc-700" />
-              <ContactLogsSection conversationId={conversation.id} />
             </div>
           </aside>
         </div>
