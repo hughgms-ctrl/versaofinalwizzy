@@ -1,6 +1,9 @@
 import { useEffect, useState, useRef } from 'react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import * as pdfjsLib from 'pdfjs-dist';
+import PdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?worker';
+import { supabase } from '@/integrations/supabase/client';
 import { 
   Plus, 
   Loader2, 
@@ -59,6 +62,8 @@ import {
   ContactFile,
 } from '@/hooks/useContactFiles';
 
+pdfjsLib.GlobalWorkerOptions.workerPort = new PdfWorker();
+
 interface ContactFilesSectionProps {
   contactId: string;
 }
@@ -94,11 +99,15 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
   const [deleteFilePath, setDeleteFilePath] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [previewFile, setPreviewFile] = useState<ContactFile | null>(null);
-  const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
   const [pdfPreviewLoading, setPdfPreviewLoading] = useState(false);
   const [pdfPreviewError, setPdfPreviewError] = useState(false);
+  const [pdfDocument, setPdfDocument] = useState<any>(null);
+  const [pdfPageNumber, setPdfPageNumber] = useState(1);
+  const [pdfPageCount, setPdfPageCount] = useState(0);
+  const [pdfRendering, setPdfRendering] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const pdfCanvasRef = useRef<HTMLCanvasElement>(null);
 
   const selectedFolder = folders?.find((folder) => folder.id === selectedFolderId) || null;
   const rootFiles = files?.filter((file) => !file.folder_id) || [];
@@ -302,6 +311,62 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
 
   const isPdfFile = (file: ContactFile | null) => getPreviewExtension(file) === 'pdf';
 
+  const getContactFileStoragePath = (file: ContactFile) => {
+    if (file.storage_path) return file.storage_path;
+
+    try {
+      const url = new URL(file.file_url);
+      const marker = '/storage/v1/object/public/contact-files/';
+      const markerIndex = url.pathname.indexOf(marker);
+
+      if (markerIndex >= 0) {
+        return decodeURIComponent(url.pathname.slice(markerIndex + marker.length));
+      }
+    } catch {
+      return null;
+    }
+
+    return null;
+  };
+
+  const ensurePdfBytes = (buffer: ArrayBuffer) => {
+    const bytes = new Uint8Array(buffer);
+    const header = new TextDecoder('latin1').decode(bytes.slice(0, 64));
+
+    if (!header.includes('%PDF-')) {
+      throw new Error(`Downloaded file is not a PDF. Header: ${header.slice(0, 24)}`);
+    }
+
+    return bytes;
+  };
+
+  const loadContactFilePdfBytes = async (file: ContactFile) => {
+    const storagePath = getContactFileStoragePath(file);
+
+    if (storagePath) {
+      const { data, error } = await supabase.storage
+        .from('contact-files')
+        .download(storagePath);
+
+      if (!error && data) {
+        return ensurePdfBytes(await data.arrayBuffer());
+      }
+
+      console.error('Contact PDF storage download failed:', error);
+    }
+
+    const response = await fetch(file.file_url, {
+      mode: 'cors',
+      cache: 'no-store',
+    });
+
+    if (!response.ok) {
+      throw new Error(`PDF fetch failed: ${response.status}`);
+    }
+
+    return ensurePdfBytes(await response.arrayBuffer());
+  };
+
   const previewIndex = previewFile ? filteredFiles.findIndex((file) => file.id === previewFile.id) : -1;
   const canNavigatePreview = filteredFiles.length > 1 && previewIndex >= 0;
 
@@ -340,9 +405,10 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
 
   useEffect(() => {
     let cancelled = false;
-    let objectUrl: string | null = null;
 
-    setPdfPreviewUrl(null);
+    setPdfDocument(null);
+    setPdfPageNumber(1);
+    setPdfPageCount(0);
     setPdfPreviewError(false);
 
     if (!previewFile || !isPdfFile(previewFile)) {
@@ -351,17 +417,16 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
     }
 
     setPdfPreviewLoading(true);
-    fetch(previewFile.file_url)
-      .then((response) => {
-        if (!response.ok) throw new Error('PDF fetch failed');
-        return response.blob();
-      })
-      .then((blob) => {
+    loadContactFilePdfBytes(previewFile)
+      .then((bytes) => pdfjsLib.getDocument({ data: bytes }).promise)
+      .then((doc) => {
         if (cancelled) return;
-        objectUrl = URL.createObjectURL(blob.type === 'application/pdf' ? blob : new Blob([blob], { type: 'application/pdf' }));
-        setPdfPreviewUrl(objectUrl);
+        setPdfDocument(doc);
+        setPdfPageCount(doc.numPages);
+        setPdfPageNumber(1);
       })
-      .catch(() => {
+      .catch((error) => {
+        console.error('Contact PDF preview failed:', error);
         if (!cancelled) setPdfPreviewError(true);
       })
       .finally(() => {
@@ -370,9 +435,50 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
 
     return () => {
       cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [previewFile?.id, previewFile?.file_url]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!pdfDocument || !isPdfPreview) {
+      setPdfRendering(false);
+      return;
+    }
+
+    const canvas = pdfCanvasRef.current;
+    if (!canvas) return;
+
+    setPdfRendering(true);
+    pdfDocument.getPage(pdfPageNumber)
+      .then((page: any) => {
+        if (cancelled) return null;
+        const containerWidth = Math.min(window.innerWidth * 0.86, 980);
+        const baseViewport = page.getViewport({ scale: 1 });
+        const scale = Math.max(0.8, Math.min(2, containerWidth / baseViewport.width));
+        const viewport = page.getViewport({ scale });
+        const context = canvas.getContext('2d');
+        if (!context) return null;
+
+        canvas.width = Math.floor(viewport.width);
+        canvas.height = Math.floor(viewport.height);
+        canvas.style.width = `${Math.floor(viewport.width)}px`;
+        canvas.style.height = `${Math.floor(viewport.height)}px`;
+
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        return page.render({ canvasContext: context, viewport }).promise;
+      })
+      .catch(() => {
+        if (!cancelled) setPdfPreviewError(true);
+      })
+      .finally(() => {
+        if (!cancelled) setPdfRendering(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pdfDocument, pdfPageNumber, isPdfPreview]);
 
   return (
     <div className="space-y-3">
@@ -823,12 +929,44 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
                       <Loader2 className="h-4 w-4 animate-spin" />
                       Carregando PDF...
                     </div>
-                  ) : pdfPreviewUrl && !pdfPreviewError ? (
-                    <iframe
-                      src={`${pdfPreviewUrl}#toolbar=1&navpanes=0&view=FitH`}
-                      title={previewFile.name}
-                      className="h-full min-h-[640px] w-full rounded border border-border bg-background"
-                    />
+                  ) : pdfDocument && !pdfPreviewError ? (
+                    <div className="flex h-full min-h-0 w-full flex-col items-center gap-3">
+                      <div className="flex shrink-0 items-center gap-2 rounded-md border border-border bg-background/80 px-2 py-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 gap-1 px-2 text-xs"
+                          disabled={pdfPageNumber <= 1 || pdfRendering}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setPdfPageNumber((page) => Math.max(1, page - 1));
+                          }}
+                        >
+                          <ArrowLeft className="h-3.5 w-3.5" />
+                          Página
+                        </Button>
+                        <span className="min-w-16 text-center text-xs text-muted-foreground">
+                          {pdfPageNumber}/{pdfPageCount}
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 gap-1 px-2 text-xs"
+                          disabled={pdfPageNumber >= pdfPageCount || pdfRendering}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setPdfPageNumber((page) => Math.min(pdfPageCount, page + 1));
+                          }}
+                        >
+                          Página
+                          <ArrowRight className="h-3.5 w-3.5" />
+                        </Button>
+                        {pdfRendering && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+                      </div>
+                      <div className="min-h-0 w-full flex-1 overflow-auto rounded border border-border bg-zinc-200 p-4">
+                        <canvas ref={pdfCanvasRef} className="mx-auto block max-w-full bg-white shadow-lg" />
+                      </div>
+                    </div>
                   ) : (
                     <div className="text-center space-y-3">
                       <FileText className="h-16 w-16 mx-auto text-muted-foreground" />
