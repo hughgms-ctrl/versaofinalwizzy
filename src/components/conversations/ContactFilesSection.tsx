@@ -580,18 +580,20 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
     event.preventDefault();
     const scroller = imagePreviewScrollRef.current;
     const rect = scroller.getBoundingClientRect();
-    const anchorX = event.clientX - rect.left + scroller.scrollLeft;
-    const anchorY = event.clientY - rect.top + scroller.scrollTop;
-    const ratioX = scroller.scrollWidth > 0 ? anchorX / scroller.scrollWidth : 0.5;
-    const ratioY = scroller.scrollHeight > 0 ? anchorY / scroller.scrollHeight : 0.5;
-    const delta = event.deltaY < 0 ? 0.05 : -0.05;
+    const pointerX = event.clientX - rect.left;
+    const pointerY = event.clientY - rect.top;
+    const anchorX = pointerX + scroller.scrollLeft;
+    const anchorY = pointerY + scroller.scrollTop;
+    const delta = event.deltaY < 0 ? 0.02 : -0.02;
 
-    setImageZoom((zoom) => Math.min(3, Math.max(0.5, Number((zoom + delta).toFixed(2)))));
+    const nextZoom = Math.min(3, Math.max(0.5, Number((imageZoom + delta).toFixed(2))));
+    const zoomRatio = nextZoom / imageZoom;
+    setImageZoom(nextZoom);
 
     requestAnimationFrame(() => {
       if (!imagePreviewScrollRef.current) return;
-      imagePreviewScrollRef.current.scrollLeft = (imagePreviewScrollRef.current.scrollWidth * ratioX) - (event.clientX - rect.left);
-      imagePreviewScrollRef.current.scrollTop = (imagePreviewScrollRef.current.scrollHeight * ratioY) - (event.clientY - rect.top);
+      imagePreviewScrollRef.current.scrollLeft = (anchorX * zoomRatio) - pointerX;
+      imagePreviewScrollRef.current.scrollTop = (anchorY * zoomRatio) - pointerY;
     });
   };
 
