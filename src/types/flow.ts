@@ -30,6 +30,8 @@ export interface ContentItem {
   content?: string;
   mediaUrl?: string;
   caption?: string;
+  saveTranscription?: boolean;
+  transcription?: string;
   delaySeconds?: number;
 }
 

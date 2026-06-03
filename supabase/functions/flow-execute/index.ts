@@ -25,6 +25,8 @@ interface ContentItem {
   content?: string;
   mediaUrl?: string;
   caption?: string;
+  saveTranscription?: boolean;
+  transcription?: string;
   delaySeconds?: number;
 }
 
@@ -1186,7 +1188,15 @@ async function executeContentBlock(data: Record<string, unknown>, context: Execu
             // Send RECORDING presence before audio to simulate recording
             await sendPresence('recording', context);
             await new Promise(resolve => setTimeout(resolve, 2000));
-            await sendMediaItem('audio', item.mediaUrl, undefined, context, supabase, node?.id);
+            await sendMediaItem(
+              'audio',
+              item.mediaUrl,
+              undefined,
+              context,
+              supabase,
+              node?.id,
+              item.saveTranscription ? item.transcription : undefined
+            );
           }
           break;
 
@@ -1331,10 +1341,12 @@ async function sendMediaItem(
   caption: string | undefined,
   context: ExecutionContext,
   supabase: SupabaseClientType,
-  nodeId?: string
+  nodeId?: string,
+  savedTranscription?: string
 ): Promise<void> {
   const normalizedPhone = context.contactPhone.replace(/\D/g, '');
   const processedCaption = caption ? replaceVariables(caption, context.variables) : undefined;
+  const processedTranscription = savedTranscription ? replaceVariables(savedTranscription, context.variables).trim() : '';
 
   console.log(`[FLOW EXECUTE] sendMediaItem: provider=${context.provider}, type=${mediaType}, file=${mediaUrl?.substring(0, 80)}`);
 
@@ -1409,7 +1421,7 @@ async function sendMediaItem(
 
   // Save media message to database so it appears in the UI immediately
   try {
-    await supabase.from('messages').insert({
+    const { data: savedMessage, error: messageError } = await supabase.from('messages').insert({
       conversation_id: context.conversationId,
       content: processedCaption || null,
       type: mediaType,
@@ -1423,9 +1435,26 @@ async function sendMediaItem(
         type: mediaType, 
         is_from_orchestrator: !!context.isFromOrchestrator,
         node_id: nodeId,
-        flow_id: context.flowId
+        flow_id: context.flowId,
+        has_fixed_transcription: mediaType === 'audio' && !!processedTranscription
       },
-    });
+    }).select('id').single();
+
+    if (messageError) throw messageError;
+
+    if (mediaType === 'audio' && processedTranscription && savedMessage?.id) {
+      const { error: transcriptionError } = await supabase.from('media_transcriptions').upsert({
+        message_id: savedMessage.id,
+        media_url: mediaUrl,
+        media_type: mediaType,
+        transcription: processedTranscription,
+      });
+      if (transcriptionError) {
+        console.error('[FLOW EXECUTE] Failed to save audio transcription:', transcriptionError);
+      } else {
+        console.log('[FLOW EXECUTE] Saved fixed audio transcription from flow node');
+      }
+    }
     console.log(`[FLOW EXECUTE] ${mediaType} message saved to DB`);
   } catch (dbError) {
     console.error(`[FLOW EXECUTE] Failed to save ${mediaType} to DB:`, dbError);

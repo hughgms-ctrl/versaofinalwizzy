@@ -9,6 +9,7 @@ interface MediaTranscriptionProps {
   isLoading: boolean;
   type: 'audio' | 'image' | 'video';
   isInbound?: boolean;
+  allowTranscribe?: boolean;
   messageId?: string;
   mediaUrl?: string;
   onTranscriptionUpdate?: (transcription: string) => void;
@@ -23,6 +24,7 @@ export function MediaTranscription({
   isLoading, 
   type,
   isInbound = true,
+  allowTranscribe = true,
   messageId,
   mediaUrl,
   onTranscriptionUpdate,
@@ -62,6 +64,8 @@ export function MediaTranscription({
 
   // No transcription: show a small retry button
   if (!transcription && messageId && mediaUrl) {
+    if (!allowTranscribe) return null;
+
     return (
       <Tooltip>
         <TooltipTrigger asChild>
@@ -96,7 +100,7 @@ export function MediaTranscription({
       <span className="flex-1">
         {isQuoted ? `"${transcription}"` : `${prefix}${transcription}`}
       </span>
-      {messageId && mediaUrl && (
+      {allowTranscribe && messageId && mediaUrl && (
         <Tooltip>
           <TooltipTrigger asChild>
             <button

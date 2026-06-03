@@ -851,7 +851,12 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
                 {(() => {
                   // Get message IDs that need transcriptions
                   const mediaMessageIds = messages
-                    .filter(m => (m.type === 'audio' || m.type === 'image' || m.type === 'video') && m.media_url)
+                    .filter(m => {
+                      if (!m.media_url) return false;
+                      if (m.type === 'image' || m.type === 'video') return true;
+                      if (m.type !== 'audio') return false;
+                      return m.direction === 'inbound' || !!(m.metadata as any)?.has_fixed_transcription;
+                    })
                     .map(m => m.id);
 
                   return (
@@ -1438,6 +1443,7 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
             isLoading={!!isTranscriptionLoading}
             type="audio"
             isInbound={isInbound}
+            allowTranscribe={isInbound}
             messageId={message.id}
             mediaUrl={media_url}
             onTranscriptionUpdate={(t) => onTranscriptionUpdate?.(message.id, t)}

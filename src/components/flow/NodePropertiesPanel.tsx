@@ -336,6 +336,32 @@ function MediaUploadField({
           className="text-sm"
         />
       )}
+
+      {item.type === 'audio' && (
+        <div className="rounded-lg border border-border bg-muted/20 p-3 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="space-y-0.5">
+              <Label className="text-xs font-medium">Salvar transcricao fixa</Label>
+              <p className="text-[11px] text-muted-foreground">
+                Usa este texto sempre que o audio aparecer no chat.
+              </p>
+            </div>
+            <Switch
+              checked={!!item.saveTranscription}
+              onCheckedChange={(checked) => onUpdate({ ...item, saveTranscription: checked })}
+            />
+          </div>
+
+          {item.saveTranscription && (
+            <Textarea
+              value={item.transcription || ''}
+              onChange={(e) => onUpdate({ ...item, transcription: e.target.value })}
+              placeholder="Digite a transcricao deste audio..."
+              className="min-h-[88px] text-sm"
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 }
