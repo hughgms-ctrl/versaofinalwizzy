@@ -278,39 +278,8 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
-  const openFileViaBlob = async (file: ContactFile) => {
-    try {
-      const response = await fetch(file.file_url);
-      if (!response.ok) throw new Error('fetch failed');
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const win = window.open(url, '_blank');
-      if (!win) {
-        // popup bloqueado: força download como fallback
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = file.name;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-      }
-      // libera o blob depois de um tempo para a aba conseguir carregar
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
-    } catch {
-      toast({
-        title: 'Não foi possível abrir o arquivo',
-        description: 'Tente desativar bloqueadores de anúncios (ad-blocker) e recarregar a página.',
-        variant: 'destructive',
-      });
-    }
-  };
-
   const handleFileClick = (file: ContactFile) => {
-    if (file.file_type === 'image') {
-      setPreviewFile(file);
-    } else {
-      openFileViaBlob(file);
-    }
+    setPreviewFile(file);
   };
 
   const handleDownloadFile = async (file: ContactFile) => {
@@ -336,6 +305,10 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
   };
 
   const totalFiles = files?.length || 0;
+  const previewFileName = previewFile?.name || '';
+  const previewUrl = previewFile?.file_url || '';
+  const isPdfPreview = Boolean(previewFile)
+    && (previewFileName.toLowerCase().endsWith('.pdf') || previewUrl.toLowerCase().includes('.pdf'));
 
   return (
     <div className="space-y-3">
@@ -661,11 +634,11 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
 
       {/* File Preview Dialog */}
       <Dialog open={!!previewFile} onOpenChange={(open) => !open && setPreviewFile(null)}>
-        <DialogContent className="max-w-3xl max-h-[90vh] p-0 gap-0 overflow-hidden [&>button.absolute]:hidden">
+        <DialogContent className="flex h-[min(90vh,820px)] w-[min(96vw,1100px)] max-w-none flex-col gap-0 overflow-hidden p-0 [&>button.absolute]:hidden">
           {previewFile && (
-            <div className="flex flex-col h-full">
+            <div className="flex min-h-0 flex-1 flex-col">
               {/* Header */}
-              <div className="flex items-center justify-between p-3 border-b border-border">
+              <div className="flex shrink-0 items-center justify-between border-b border-border p-3">
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium truncate">{previewFile.name}</p>
                   <p className="text-xs text-muted-foreground">
@@ -709,13 +682,14 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
                     size="icon"
                     className="h-8 w-8 hover:bg-destructive/10 hover:text-destructive"
                     onClick={() => setPreviewFile(null)}
+                    title="Fechar"
                   >
                     <X className="h-4 w-4" />
                   </Button>
                 </div>
               </div>
               {/* Content */}
-              <div className="flex-1 overflow-auto flex items-center justify-center p-4 bg-background/50 min-h-[300px]">
+              <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto bg-background/50 p-4">
                 {previewFile.file_type === 'image' ? (
                   <img 
                     src={previewFile.file_url} 
@@ -730,15 +704,19 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
                   />
                 ) : previewFile.file_type === 'audio' ? (
                   <audio src={previewFile.file_url} controls className="w-full max-w-md" />
+                ) : isPdfPreview ? (
+                  <iframe
+                    src={`${previewFile.file_url}#toolbar=1&navpanes=0`}
+                    title={previewFile.name}
+                    className="h-full min-h-[420px] w-full rounded border border-border bg-background"
+                  />
                 ) : (
                   <div className="text-center space-y-3">
                     <FileText className="h-16 w-16 mx-auto text-muted-foreground" />
-                    <p className="text-sm text-muted-foreground">Pré-visualização não disponível</p>
-                    <Button variant="outline" size="sm" asChild>
-                      <a href={previewFile.file_url} target="_blank" rel="noopener noreferrer">
-                        <ExternalLink className="h-3.5 w-3.5 mr-2" />
-                        Abrir arquivo
-                      </a>
+                    <p className="text-sm text-muted-foreground">Pré-visualização não disponível para este tipo de arquivo.</p>
+                    <Button variant="outline" size="sm" onClick={() => handleDownloadFile(previewFile)}>
+                      <Download className="h-3.5 w-3.5 mr-2" />
+                      Baixar arquivo
                     </Button>
                   </div>
                 )}
