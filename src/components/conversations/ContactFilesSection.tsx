@@ -241,16 +241,15 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
   const [pdfDocument, setPdfDocument] = useState<any>(null);
   const [pdfPageCount, setPdfPageCount] = useState(0);
   const [imageZoom, setImageZoom] = useState(1);
-  const [imagePan, setImagePan] = useState({ x: 0, y: 0 });
-  const [isImageDragging, setIsImageDragging] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const imagePreviewScrollRef = useRef<HTMLDivElement | null>(null);
   const imageDragRef = useRef({
     isDragging: false,
     startX: 0,
     startY: 0,
-    panX: 0,
-    panY: 0,
+    scrollLeft: 0,
+    scrollTop: 0,
   });
 
   const selectedFolder = folders?.find((folder) => folder.id === selectedFolderId) || null;
@@ -582,49 +581,45 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
 
   useEffect(() => {
     setImageZoom(1);
-    setImagePan({ x: 0, y: 0 });
+    if (imagePreviewScrollRef.current) {
+      imagePreviewScrollRef.current.scrollLeft = 0;
+      imagePreviewScrollRef.current.scrollTop = 0;
+    }
   }, [previewFile?.id]);
 
   const updateImageZoom = (delta: number) => {
     setImageZoom((zoom) => {
       const nextZoom = Math.min(3, Math.max(0.5, Number((zoom + delta).toFixed(2))));
-      if (nextZoom <= 1) {
-        setImagePan({ x: 0, y: 0 });
-      }
       return nextZoom;
     });
   };
 
   const startImageDrag = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (imageZoom <= 1 || event.button !== 0) return;
+    if (imageZoom <= 1 || event.button !== 0 || !imagePreviewScrollRef.current) return;
 
     imageDragRef.current = {
       isDragging: true,
       startX: event.clientX,
       startY: event.clientY,
-      panX: imagePan.x,
-      panY: imagePan.y,
+      scrollLeft: imagePreviewScrollRef.current.scrollLeft,
+      scrollTop: imagePreviewScrollRef.current.scrollTop,
     };
-    setIsImageDragging(true);
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
   const moveImageDrag = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (!imageDragRef.current.isDragging) return;
+    if (!imageDragRef.current.isDragging || !imagePreviewScrollRef.current) return;
 
     event.preventDefault();
     const deltaX = event.clientX - imageDragRef.current.startX;
     const deltaY = event.clientY - imageDragRef.current.startY;
-    setImagePan({
-      x: imageDragRef.current.panX + deltaX,
-      y: imageDragRef.current.panY + deltaY,
-    });
+    imagePreviewScrollRef.current.scrollLeft = imageDragRef.current.scrollLeft - deltaX;
+    imagePreviewScrollRef.current.scrollTop = imageDragRef.current.scrollTop - deltaY;
   };
 
   const stopImageDrag = (event: React.PointerEvent<HTMLDivElement>) => {
     imageDragRef.current.isDragging = false;
-    setIsImageDragging(false);
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
@@ -1031,7 +1026,10 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
                         onClick={(event) => {
                           event.stopPropagation();
                           setImageZoom(1);
-                          setImagePan({ x: 0, y: 0 });
+                          if (imagePreviewScrollRef.current) {
+                            imagePreviewScrollRef.current.scrollLeft = 0;
+                            imagePreviewScrollRef.current.scrollTop = 0;
+                          }
                         }}
                         title="Redefinir zoom"
                       >
@@ -1101,9 +1099,10 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
               </div>
               {/* Content */}
               <div
+                ref={imagePreviewScrollRef}
                 className={`flex min-h-0 flex-1 bg-background/50 ${
                   previewFile.file_type === 'image' && imageZoom > 1
-                    ? 'cursor-grab active:cursor-grabbing items-center justify-center overflow-hidden p-4 select-none touch-none'
+                    ? 'cursor-grab active:cursor-grabbing items-start justify-start overflow-auto select-none touch-none'
                     : isPdfPreview && pdfDocument && !pdfPreviewError && !pdfPreviewLoading
                       ? 'items-stretch justify-start overflow-hidden p-0'
                       : 'items-center justify-center overflow-auto p-4'
@@ -1116,21 +1115,18 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
               >
                 {previewFile.file_type === 'image' ? (
                   <div
-                    className="flex h-full w-full items-center justify-center overflow-visible"
+                    className={imageZoom > 1 ? 'min-w-full p-4' : 'flex h-full w-full items-center justify-center'}
                   >
                     <img
                       src={previewFile.file_url}
                       alt={previewFile.name}
                       draggable={false}
                       onDragStart={(event) => event.preventDefault()}
-                      className={`pointer-events-none select-none rounded object-contain ${
-                        isImageDragging ? '' : 'transition-transform duration-150'
-                      }`}
+                      className="pointer-events-none block select-none rounded object-contain"
                       style={{
-                        maxWidth: '100%',
-                        maxHeight: '70vh',
-                        transform: `translate(${imagePan.x}px, ${imagePan.y}px) scale(${imageZoom})`,
-                        transformOrigin: 'center center',
+                        maxWidth: imageZoom === 1 ? '100%' : 'none',
+                        maxHeight: imageZoom === 1 ? '70vh' : 'none',
+                        width: imageZoom === 1 ? 'auto' : `${imageZoom * 100}%`,
                       }}
                     />
                   </div>
