@@ -2,8 +2,6 @@ import { DbConversation, useProfiles } from '@/hooks/useConversations';
 import { useContactTags, useTags } from '@/hooks/useTags';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
 import { useFollowUpStatus } from '@/hooks/useFollowUpStatus';
-import { formatDistanceToNow } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
 import { Bot, MessageCircle, Check, CheckCheck, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { highlightTerm } from '@/lib/highlightTerm';
@@ -51,6 +49,25 @@ export function ConversationList({ conversations, selectedId, onSelect, onSpyVie
     if (isTyping) return 'digitando';
     if (isRecording) return 'gravando audio';
     return isOnline ? 'online' : 'offline';
+  };
+
+  const formatCompactTimeAgo = (date: string) => {
+    const diffMs = Math.max(Date.now() - new Date(date).getTime(), 0);
+    const diffMinutes = Math.floor(diffMs / (1000 * 60));
+
+    if (diffMinutes < 1) return 'agora';
+    if (diffMinutes < 60) return `${diffMinutes}min`;
+
+    const diffHours = Math.floor(diffMinutes / 60);
+    if (diffHours < 24) return `${diffHours}h`;
+
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays < 30) return `${diffDays}d`;
+
+    const diffMonths = Math.floor(diffDays / 30);
+    if (diffMonths < 12) return `${diffMonths}m`;
+
+    return `${Math.floor(diffDays / 365)}a`;
   };
 
   const renderMessageStatus = (lastMessage: NonNullable<DbConversation['last_message']>[number]) => {
@@ -190,7 +207,7 @@ export function ConversationList({ conversations, selectedId, onSelect, onSpyVie
                                 "text-[10px] whitespace-nowrap",
                                 hasUnread ? "text-primary font-medium" : "text-muted-foreground"
                               )}>
-                                {formatDistanceToNow(new Date(conversation.last_message_at), { addSuffix: false, locale: ptBR })}
+                                {formatCompactTimeAgo(conversation.last_message_at)}
                               </span>
                             )}
                             {hasUnread && (

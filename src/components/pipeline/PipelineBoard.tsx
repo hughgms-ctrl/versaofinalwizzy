@@ -1,7 +1,5 @@
 import { useState, useMemo } from 'react';
 import { useConversations, DbConversation } from '@/hooks/useConversations';
-import { formatDistanceToNow } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
 import { Bot, User, GripVertical, MoreHorizontal, Plus, Loader2, Inbox, MessageCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -99,6 +97,25 @@ export function PipelineBoard({ onConversationClick }: PipelineBoardProps) {
       return name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
     }
     return phone.slice(-2);
+  };
+
+  const formatCompactTimeAgo = (date: string) => {
+    const diffMs = Math.max(Date.now() - new Date(date).getTime(), 0);
+    const diffMinutes = Math.floor(diffMs / (1000 * 60));
+
+    if (diffMinutes < 1) return 'agora';
+    if (diffMinutes < 60) return `${diffMinutes}min`;
+
+    const diffHours = Math.floor(diffMinutes / 60);
+    if (diffHours < 24) return `${diffHours}h`;
+
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays < 30) return `${diffDays}d`;
+
+    const diffMonths = Math.floor(diffDays / 30);
+    if (diffMonths < 12) return `${diffMonths}m`;
+
+    return `${Math.floor(diffDays / 365)}a`;
   };
 
   if (isLoading) {
@@ -214,7 +231,7 @@ export function PipelineBoard({ onConversationClick }: PipelineBoardProps) {
                                   </p>
                                   {conversation.last_message_at && (
                                     <p className="text-[10px] text-muted-foreground">
-                                      {formatDistanceToNow(new Date(conversation.last_message_at), { addSuffix: true, locale: ptBR })}
+                                      {formatCompactTimeAgo(conversation.last_message_at)}
                                     </p>
                                   )}
                                 </>

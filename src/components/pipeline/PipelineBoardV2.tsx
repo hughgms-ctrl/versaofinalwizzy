@@ -3,8 +3,7 @@ import { useConversations, DbConversation } from '@/hooks/useConversations';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import { formatDistanceToNow, isWithinInterval, parseISO } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { isWithinInterval, parseISO } from 'date-fns';
 import {
   GripVertical,
   Loader2,
