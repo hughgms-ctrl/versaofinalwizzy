@@ -41,53 +41,11 @@ export function useOrganizationPlan(organizationIdOverride?: string | null) {
     queryKey: ['org-plan-modules', organizationId, getCurrentUsagePeriod()],
     queryFn: async () => {
       if (!organizationId) return null;
-      const usagePeriod = getCurrentUsagePeriod();
-      const [{ data, error }, orgRes, teamRes, workspaceRes, whatsappRes, usageRes, integrationRes] = await Promise.all([
-        supabase
-        .from('organization_plans')
-        .select('*, plan:platform_plans(*)')
-        .eq('organization_id', organizationId)
-          .maybeSingle(),
-        supabase
-          .from('organizations')
-          .select('storage_used_bytes, storage_limit_bytes')
-          .eq('id', organizationId)
-          .maybeSingle(),
-        supabase
-          .from('profiles')
-          .select('id', { count: 'exact', head: true })
-          .eq('organization_id', organizationId),
-        supabase
-          .from('workspaces' as any)
-          .select('id', { count: 'exact', head: true })
-          .eq('organization_id', organizationId)
-          .eq('is_active', true),
-        supabase
-          .from('whatsapp_instances')
-          .select('id', { count: 'exact', head: true })
-          .eq('organization_id', organizationId),
-        supabase
-          .from('organization_usage' as any)
-          .select('ai_requests, ai_cost_usd')
-          .eq('organization_id', organizationId)
-          .eq('period', usagePeriod)
-          .maybeSingle(),
-        supabase
-          .from('integration_configs' as any)
-          .select('openai_api_key, ai_provider')
-          .eq('organization_id', organizationId)
-          .maybeSingle(),
-      ]);
+      const { data, error } = await supabase.functions.invoke('organization-usage', {
+        body: { organization_id: organizationId },
+      });
       if (error) throw error;
-      return {
-        planRow: data,
-        organization: orgRes.data,
-        teamCount: teamRes.count || 0,
-        workspaceCount: workspaceRes.count || 0,
-        whatsappNumberCount: whatsappRes.count || 0,
-        usage: usageRes.data,
-        integrationConfig: integrationRes.data,
-      };
+      return data;
     },
     enabled: !!organizationId,
   });

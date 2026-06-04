@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { calculateOrganizationUsage } from '../_shared/usage.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -56,18 +57,6 @@ function normalizeLabel(value?: string | null) {
 function toNumber(value: unknown) {
   const parsed = Number(value || 0)
   return Number.isFinite(parsed) ? parsed : 0
-}
-
-function addUsage(target: Record<string, number>, organizationId: string | null | undefined, bytes: unknown) {
-  if (!organizationId) return
-  const value = toNumber(bytes)
-  if (value <= 0) return
-  target[organizationId] = (target[organizationId] || 0) + value
-}
-
-function getStorageObjectSize(object: any) {
-  const metadata = object?.metadata || {}
-  return toNumber(metadata.size || metadata.contentLength || metadata.content_length)
 }
 
 function normalizeRelation<T = any>(value: T | T[] | null | undefined): T | null {
@@ -233,80 +222,11 @@ Deno.serve(async (req) => {
         .from('conversations')
         .select('id, organization_id')
 
-      const { data: mediaMessages } = await adminClient
-        .from('messages')
-        .select('id, conversation_id, media_url')
-        .not('media_url', 'is', null)
-
-      const { data: contactFiles } = await adminClient
-        .from('contact_files')
-        .select('organization_id, file_size, storage_path')
-
       const { data: orgPlans } = await adminClient
         .from('organization_plans')
         .select('organization_id, plan_id, status, payment_status, trial_ends_at, current_period_end, platform_plans(id, name, slug, price_monthly, storage_limit_bytes, max_team_members, features)')
 
-      const storageByOrg: Record<string, number> = {}
-      const contactFilePathKeys = new Set<string>()
-      ;(contactFiles || []).forEach((file: any) => {
-        addUsage(storageByOrg, file.organization_id, file.file_size)
-        if (file.storage_path) contactFilePathKeys.add(`contact-files/${file.storage_path}`)
-      })
-
-      try {
-        const orgIdSet = new Set((orgs || []).map((org: any) => org.id))
-        const conversationOrgById = new Map((convCounts || []).map((conv: any) => [conv.id, conv.organization_id]))
-        const storagePathOrgByKey = new Map<string, string>()
-
-        ;(mediaMessages || []).forEach((message: any) => {
-          const orgId = conversationOrgById.get(message.conversation_id)
-          if (!orgId || !message.media_url) return
-          const marker = '/object/public/'
-          const markerIndex = String(message.media_url).indexOf(marker)
-          if (markerIndex < 0) return
-          const key = decodeURIComponent(String(message.media_url).slice(markerIndex + marker.length).split('?')[0])
-          if (key) storagePathOrgByKey.set(key, orgId as string)
-        })
-
-        const { data: storageObjects } = await adminClient
-          .schema('storage')
-          .from('objects')
-          .select('bucket_id, name, metadata')
-          .in('bucket_id', ['contact-files', 'chat-media', 'flow-media', 'document-templates', 'task-files'])
-
-        ;(storageObjects || []).forEach((object: any) => {
-          const bucketId = object.bucket_id
-          const objectName = object.name || ''
-          const objectKey = `${bucketId}/${objectName}`
-          const size = getStorageObjectSize(object)
-          if (size <= 0) return
-
-          const firstPathPart = objectName.split('/')[0]
-          const orgIdFromPublicUrl = storagePathOrgByKey.get(objectKey)
-          if (orgIdFromPublicUrl) {
-            addUsage(storageByOrg, orgIdFromPublicUrl, size)
-            return
-          }
-
-          if (orgIdSet.has(firstPathPart)) {
-            addUsage(storageByOrg, firstPathPart, size)
-            return
-          }
-
-          if (bucketId === 'chat-media') {
-            const orgId = conversationOrgById.get(firstPathPart)
-            addUsage(storageByOrg, orgId as string | undefined, size)
-            return
-          }
-
-          if (bucketId === 'contact-files' && !contactFilePathKeys.has(objectKey)) {
-            const linkedFile = (contactFiles || []).find((file: any) => file.storage_path === objectName)
-            addUsage(storageByOrg, linkedFile?.organization_id, size)
-          }
-        })
-      } catch (storageError) {
-        console.warn('admin clients storage usage fallback failed', storageError)
-      }
+      const canonicalUsage = await calculateOrganizationUsage(adminClient, { persistStorageUsed: true })
 
       const enrichedOrgs = (orgs || []).map((org: any) => {
         const orgProfiles = (profiles || []).filter((p: any) => p.organization_id === org.id)
@@ -316,22 +236,24 @@ Deno.serve(async (req) => {
         const orgPlan = (orgPlans || []).find((p: any) => p.organization_id === org.id)
         const plan = normalizeRelation(orgPlan?.platform_plans)
         const planFeatures = plan?.features || {}
-        const storageUsedBytes = Math.max(toNumber(org.storage_used_bytes), toNumber(storageByOrg[org.id]))
+        const usage = canonicalUsage.organizations[org.id] || {}
+        const storageUsedBytes = toNumber(usage.storage_used_bytes)
         const storageLimitBytes = toNumber(plan?.storage_limit_bytes) || toNumber(org.storage_limit_bytes)
 
         return {
           ...org,
           storage_used_bytes: storageUsedBytes,
+          storage_by_bucket: usage.storage_by_bucket || {},
           storage_limit_bytes: storageLimitBytes,
-          user_count: orgProfiles.length,
+          user_count: toNumber(usage.user_count) || orgProfiles.length,
           max_team_members: plan?.max_team_members ?? null,
-          instance_count: orgInstances.length,
-          active_instances: orgInstances.filter((i: any) => i.is_active).length,
-          workspace_count: orgWorkspaces.length,
-          active_workspaces: orgWorkspaces.filter((w: any) => w.is_active !== false).length,
+          instance_count: toNumber(usage.instance_count) || orgInstances.length,
+          active_instances: toNumber(usage.active_instances) || orgInstances.filter((i: any) => i.is_active).length,
+          workspace_count: toNumber(usage.workspace_count) || orgWorkspaces.length,
+          active_workspaces: toNumber(usage.active_workspaces) || orgWorkspaces.filter((w: any) => w.is_active !== false).length,
           max_workspaces: planFeatures?.limits?.max_workspaces ?? null,
           max_whatsapp_numbers: planFeatures?.limits?.max_whatsapp_numbers ?? null,
-          conversation_count: orgConvs.length,
+          conversation_count: toNumber(usage.conversation_count) || orgConvs.length,
           instances: orgInstances,
           plan: orgPlan ? {
             id: plan?.id,
