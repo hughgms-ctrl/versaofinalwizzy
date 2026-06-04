@@ -146,6 +146,9 @@ verify_jwt = false
 [functions.organization-usage]
 verify_jwt = false
 
+[functions.entry-flow]
+verify_jwt = false
+
 [functions.admin-governance]
 verify_jwt = false
 

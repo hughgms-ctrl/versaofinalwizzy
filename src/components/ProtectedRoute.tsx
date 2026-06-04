@@ -6,6 +6,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Loader2 } from 'lucide-react';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { useCurrentUserRole } from '@/hooks/useUserPermissions';
+import { getStoredEntryAssignment } from '@/lib/entryFlow';
 
 interface ProtectedRouteProps {
   children: ReactNode;
@@ -63,13 +64,22 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   const isAllowedOnboardingPath = allowedWithoutPlan.some((path) => (
     location.pathname === path || location.pathname.startsWith(`${path}/`)
   ));
+  const entryAssignment = getStoredEntryAssignment();
+  const limitedAccessFlows = ['trial_auto', 'freemium', 'access_limited_payment'];
+  const limitedAccessPaths = ['/dashboard', '/profile', '/subscription', '/plans'];
+  const isLimitedAccessPath = limitedAccessPaths.some((path) => (
+    location.pathname === path || location.pathname.startsWith(`${path}/`)
+  ));
+  const hasEntryLimitedAccess = !!entryAssignment
+    && limitedAccessFlows.includes(entryAssignment.flow_type)
+    && isLimitedAccessPath;
 
   if (isBillingPath && !canManageBilling) {
     return <Navigate to="/dashboard" replace />;
   }
 
   // Only billing admins from organizations without any plan record should be sent to subscriptions.
-  if (!onboardingPlan && canManageBilling && !isAllowedOnboardingPath) {
+  if (!onboardingPlan && canManageBilling && !isAllowedOnboardingPath && !hasEntryLimitedAccess) {
     return <Navigate to="/subscription" replace state={{ from: location }} />;
   }
 

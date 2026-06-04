@@ -397,6 +397,88 @@ export function useAdminSettings() {
   });
 }
 
+export type EntryFlowType =
+  | 'payment_first'
+  | 'signup_first_payment_after'
+  | 'signup_onboarding_payment_access'
+  | 'trial_auto'
+  | 'trial_with_card'
+  | 'manual_approval'
+  | 'freemium'
+  | 'demo_first'
+  | 'onboarding_before_signup'
+  | 'access_limited_payment';
+
+export interface EntryFlowVariantInput {
+  id?: string;
+  name: string;
+  flow_type: EntryFlowType;
+  traffic_percent: number;
+  is_control?: boolean;
+  config?: Record<string, any>;
+}
+
+export interface EntryFlowExperimentInput {
+  id?: string;
+  name: string;
+  description?: string;
+  status: 'draft' | 'active' | 'paused' | 'ended';
+  primary_metric: string;
+  starts_at?: string | null;
+  ends_at?: string | null;
+  audience?: Record<string, any>;
+  variants: EntryFlowVariantInput[];
+}
+
+export function useEntryFlows() {
+  return useQuery({
+    queryKey: ['admin', 'entry-flows'],
+    queryFn: () => adminFetch('entry_flows'),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useUpdateEntryFlowSettings() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (settings: {
+      ab_testing_enabled: boolean;
+      default_flow_type: EntryFlowType;
+      default_redirect: string;
+      persist_assignment_days: number;
+    }) => adminFetch('update_entry_flow_settings', settings),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'entry-flows'] });
+      toast.success('Fluxo padrao salvo');
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+}
+
+export function useSaveEntryFlowExperiment() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (experiment: EntryFlowExperimentInput) => adminFetch('save_entry_flow_experiment', experiment),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'entry-flows'] });
+      toast.success('Experimento salvo');
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+}
+
+export function useDeleteEntryFlowExperiment() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => adminFetch('delete_entry_flow_experiment', { id }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'entry-flows'] });
+      toast.success('Experimento excluido');
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+}
+
 export function useToggleSignups() {
   const queryClient = useQueryClient();
   return useMutation({

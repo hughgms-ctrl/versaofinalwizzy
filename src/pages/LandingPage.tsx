@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { assignEntryFlow, trackEntryEvent } from "@/lib/entryFlow";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -322,7 +323,20 @@ const SectionHeading = ({
 const LandingPage = () => {
   const navigate = useNavigate();
 
-  const goToAuth = () => navigate("/auth");
+  const goToAuth = async () => {
+    try {
+      const assignment = await assignEntryFlow(window.location.pathname);
+      await trackEntryEvent("landing_cta_clicked", { target: assignment.redirect_path });
+      if (assignment.redirect_path.startsWith("http")) {
+        window.location.href = assignment.redirect_path;
+        return;
+      }
+      navigate(assignment.redirect_path);
+    } catch (error) {
+      console.error("entry flow assignment failed", error);
+      navigate("/auth");
+    }
+  };
   const scrollToPricing = () => document.getElementById("planos")?.scrollIntoView({ behavior: "smooth" });
 
   return (

@@ -35,6 +35,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { DashboardPeriodProvider, useDashboardPeriod } from '@/contexts/DashboardPeriodContext';
 import { DashboardPeriodSelector } from '@/components/dashboard/DashboardPeriodSelector';
+import { trackEntryEvent } from '@/lib/entryFlow';
 
 function SectionHeading({ children, sub }: { children: ReactNode; sub?: string }) {
   return (
@@ -233,6 +234,10 @@ const IndexInner = () => {
   const { canAccess, isLoading: accessLoading } = useCanAccessModule('dashboard');
   const { range } = useDashboardPeriod();
   const { data: metrics, isLoading } = useDashboardMetrics(range);
+
+  useEffect(() => {
+    trackEntryEvent('dashboard_accessed').catch(() => undefined);
+  }, []);
 
   if (!accessLoading && !canAccess) {
     return <Navigate to="/pipeline" replace />;

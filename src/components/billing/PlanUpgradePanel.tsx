@@ -9,6 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Check, X, Crown, Sparkles, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
+import { trackEntryEvent } from "@/lib/entryFlow";
 
 const moduleLabels: Record<string, string> = {
   conversations: "Conversas", pipeline: "Pipeline", contacts: "Contatos",
@@ -107,6 +108,13 @@ const PlanUpgradePanel = () => {
 
       if (!response.ok) throw new Error(data?.error || 'Nao foi possivel iniciar o checkout.');
       if (!data?.url) throw new Error('Checkout não retornou uma URL de pagamento.');
+
+      await trackEntryEvent('checkout_started', {
+        plan_id: plan.id,
+        plan_name: plan.name,
+        billing_cycle: isYearly ? 'yearly' : 'monthly',
+        provider: data?.provider || null,
+      }).catch(() => undefined);
 
       window.location.href = data.url;
     } catch (error: any) {

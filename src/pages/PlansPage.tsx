@@ -1,8 +1,16 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import PlanUpgradePanel from "@/components/billing/PlanUpgradePanel";
+import { trackEntryEvent } from "@/lib/entryFlow";
 
 const PlansPage = () => {
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('checkout') === 'success') {
+      trackEntryEvent('payment_completed', { source: 'checkout_return' }).catch(() => undefined);
+    }
+  }, []);
+
   return (
     <MainLayout>
       <div className="max-w-6xl mx-auto p-6">

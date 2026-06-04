@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { ArrowLeft, Loader2, Building, User, Mail, Lock, Globe } from 'lucide-react';
 import wizzyLogo from '@/assets/wizzy-logo.png';
+import { routeAfterSignup, trackEntryEvent } from '@/lib/entryFlow';
 
 type AuthMode = 'auth' | 'forgot' | 'reset';
 
@@ -111,6 +112,7 @@ export default function AuthPage() {
 
   const handleGoogleLogin = async () => {
     setIsLoading(true);
+    await trackEntryEvent('signup_started', { provider: 'google' }).catch(() => undefined);
 
     const { error } = await signInWithGoogle();
 
@@ -203,6 +205,7 @@ export default function AuthPage() {
     }
 
     setIsLoading(true);
+    await trackEntryEvent('signup_started', { provider: 'email' }).catch(() => undefined);
 
     const { error } = await signUp(
       registerData.email,
@@ -219,11 +222,12 @@ export default function AuthPage() {
         variant: 'destructive',
       });
     } else {
+      await trackEntryEvent('signup_completed', { provider: 'email' }).catch(() => undefined);
       toast({
         title: 'Conta criada!',
         description: 'Sua conta foi criada com sucesso. Voce ja pode usar o sistema.',
       });
-      navigate('/dashboard');
+      navigate(routeAfterSignup());
     }
 
     setIsLoading(false);

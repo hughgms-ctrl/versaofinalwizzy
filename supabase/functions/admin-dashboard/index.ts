@@ -1581,6 +1581,203 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ settings: settingsMap }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
+    if (action === 'entry_flows') {
+      const { data: settingsRow } = await adminClient
+        .from('platform_settings')
+        .select('value')
+        .eq('key', 'entry_flow_settings')
+        .maybeSingle()
+
+      const { data: experiments, error: experimentsError } = await adminClient
+        .from('entry_flow_experiments')
+        .select('*, variants:entry_flow_variants(*)')
+        .order('created_at', { ascending: false })
+
+      if (experimentsError) throw experimentsError
+
+      const experimentIds = (experiments || []).map((experiment: any) => experiment.id)
+      const metricsByVariant: Record<string, Record<string, number>> = {}
+      const metricsByExperiment: Record<string, Record<string, number>> = {}
+
+      if (experimentIds.length > 0) {
+        const { data: events } = await adminClient
+          .from('entry_flow_events')
+          .select('experiment_id, variant_id, event_name')
+          .in('experiment_id', experimentIds)
+
+        ;(events || []).forEach((event: any) => {
+          if (event.experiment_id) {
+            metricsByExperiment[event.experiment_id] = metricsByExperiment[event.experiment_id] || {}
+            metricsByExperiment[event.experiment_id][event.event_name] = (metricsByExperiment[event.experiment_id][event.event_name] || 0) + 1
+          }
+          if (event.variant_id) {
+            metricsByVariant[event.variant_id] = metricsByVariant[event.variant_id] || {}
+            metricsByVariant[event.variant_id][event.event_name] = (metricsByVariant[event.variant_id][event.event_name] || 0) + 1
+          }
+        })
+      }
+
+      const enriched = (experiments || []).map((experiment: any) => ({
+        ...experiment,
+        metrics: metricsByExperiment[experiment.id] || {},
+        variants: (experiment.variants || []).map((variant: any) => ({
+          ...variant,
+          metrics: metricsByVariant[variant.id] || {},
+        })),
+      }))
+
+      return new Response(JSON.stringify({
+        settings: settingsRow?.value || {
+          ab_testing_enabled: false,
+          default_flow_type: 'signup_first_payment_after',
+          default_redirect: '/auth',
+          persist_assignment_days: 30,
+        },
+        experiments: enriched,
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    if (action === 'update_entry_flow_settings') {
+      const body = await req.json()
+      const settings = {
+        ab_testing_enabled: body.ab_testing_enabled === true,
+        default_flow_type: String(body.default_flow_type || 'signup_first_payment_after'),
+        default_redirect: String(body.default_redirect || '/auth'),
+        persist_assignment_days: Number(body.persist_assignment_days || 30),
+      }
+
+      const { error } = await adminClient
+        .from('platform_settings')
+        .upsert({
+          key: 'entry_flow_settings',
+          value: settings,
+          updated_at: new Date().toISOString(),
+          updated_by: user.id,
+        }, { onConflict: 'key' })
+
+      if (error) throw error
+
+      await adminClient.from('admin_audit_logs').insert({
+        action: 'update_entry_flow_settings',
+        entity_type: 'platform',
+        performed_by: user.id,
+        details: settings,
+      })
+
+      return new Response(JSON.stringify({ settings }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    if (action === 'save_entry_flow_experiment') {
+      const body = await req.json()
+      const variants = Array.isArray(body.variants) ? body.variants : []
+      if (!body.name) throw new Error('Nome do experimento obrigatorio')
+      if (variants.length === 0) throw new Error('Crie pelo menos uma variacao')
+
+      const experimentPayload = {
+        name: String(body.name),
+        description: String(body.description || ''),
+        status: ['draft', 'active', 'paused', 'ended'].includes(body.status) ? body.status : 'draft',
+        primary_metric: String(body.primary_metric || 'payment_completed'),
+        audience: body.audience || {},
+        starts_at: body.starts_at || null,
+        ends_at: body.ends_at || null,
+        updated_at: new Date().toISOString(),
+      }
+
+      const { data: experiment, error } = body.id
+        ? await adminClient
+          .from('entry_flow_experiments')
+          .update(experimentPayload)
+          .eq('id', body.id)
+          .select()
+          .single()
+        : await adminClient
+          .from('entry_flow_experiments')
+          .insert(experimentPayload)
+          .select()
+          .single()
+
+      if (error) throw error
+
+      if (experimentPayload.status === 'active') {
+        await adminClient
+          .from('entry_flow_experiments')
+          .update({ status: 'paused', updated_at: new Date().toISOString() })
+          .neq('id', experiment.id)
+          .eq('status', 'active')
+      }
+
+      if (body.id) {
+        const keepIds = variants.map((variant: any) => variant.id).filter(Boolean)
+        if (keepIds.length > 0) {
+          await adminClient
+            .from('entry_flow_variants')
+            .delete()
+            .eq('experiment_id', experiment.id)
+            .not('id', 'in', `(${keepIds.join(',')})`)
+        } else {
+          await adminClient
+            .from('entry_flow_variants')
+            .delete()
+            .eq('experiment_id', experiment.id)
+        }
+      }
+
+      for (const variant of variants) {
+        const variantPayload = {
+          experiment_id: experiment.id,
+          name: String(variant.name || 'Variacao'),
+          flow_type: String(variant.flow_type || 'signup_first_payment_after'),
+          traffic_percent: Math.max(0, Math.min(100, Number(variant.traffic_percent || 0))),
+          is_control: variant.is_control === true,
+          config: variant.config || {},
+          updated_at: new Date().toISOString(),
+        }
+
+        if (variant.id) {
+          await adminClient
+            .from('entry_flow_variants')
+            .update(variantPayload)
+            .eq('id', variant.id)
+        } else {
+          await adminClient
+            .from('entry_flow_variants')
+            .insert(variantPayload)
+        }
+      }
+
+      await adminClient.from('admin_audit_logs').insert({
+        action: body.id ? 'update_entry_flow_experiment' : 'create_entry_flow_experiment',
+        entity_type: 'entry_flow_experiment',
+        entity_id: experiment.id,
+        performed_by: user.id,
+        details: { ...experimentPayload, variants },
+      })
+
+      return new Response(JSON.stringify({ experiment }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    if (action === 'delete_entry_flow_experiment') {
+      const body = await req.json()
+      if (!body.id) throw new Error('Missing experiment id')
+
+      const { error } = await adminClient
+        .from('entry_flow_experiments')
+        .delete()
+        .eq('id', body.id)
+
+      if (error) throw error
+
+      await adminClient.from('admin_audit_logs').insert({
+        action: 'delete_entry_flow_experiment',
+        entity_type: 'entry_flow_experiment',
+        entity_id: body.id,
+        performed_by: user.id,
+      })
+
+      return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
     if (action === 'toggle_signups') {
       const body = await req.json()
       const { allow } = body

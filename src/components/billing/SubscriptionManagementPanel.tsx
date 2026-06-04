@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { useWorkspaceContext } from "@/contexts/WorkspaceContext";
+import { trackEntryEvent } from "@/lib/entryFlow";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -152,6 +153,13 @@ export function SubscriptionManagementPanel() {
 
       if (!response.ok) throw new Error(checkout?.error || "Não foi possível iniciar o pagamento.");
       if (!checkout?.url) throw new Error("O checkout não retornou uma URL de pagamento.");
+
+      await trackEntryEvent("checkout_started", {
+        plan_id: currentPlan.plan_id,
+        billing_cycle: currentPlan.billing_cycle || "monthly",
+        provider: checkout?.provider || null,
+        source: "subscription_page",
+      }).catch(() => undefined);
 
       window.location.href = checkout.url;
     } catch (error: any) {
