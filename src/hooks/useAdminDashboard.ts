@@ -2,16 +2,22 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://zaobtetbjpuzibjymhzw.supabase.co';
+const SUPABASE_PUBLISHABLE_KEY =
+  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+  import.meta.env.VITE_SUPABASE_ANON_KEY ||
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inphb2J0ZXRianB1emlianltaHp3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIxMzc5MzksImV4cCI6MjA4NzcxMzkzOX0.HBUI1OK1eYq9FE2SzIvuAkxuCG0frApCQZqcjjDx43k';
+
 async function adminFetch(action: string, body?: any) {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error('Not authenticated');
 
-  const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-dashboard?action=${action}`;
+  const url = `${SUPABASE_URL}/functions/v1/admin-dashboard?action=${action}`;
   const options: RequestInit = {
     headers: {
       'Authorization': `Bearer ${session.access_token}`,
       'Content-Type': 'application/json',
-      'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+      'apikey': SUPABASE_PUBLISHABLE_KEY,
     },
   };
 
@@ -26,6 +32,41 @@ async function adminFetch(action: string, body?: any) {
     throw new Error(err.error || 'Request failed');
   }
   return res.json();
+}
+
+async function fetchPublicBillingPlans() {
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/billing-plans?t=${Date.now()}`, {
+    cache: 'no-store',
+    headers: {
+      'Authorization': `Bearer ${SUPABASE_PUBLISHABLE_KEY}`,
+      'Content-Type': 'application/json',
+      'apikey': SUPABASE_PUBLISHABLE_KEY,
+    },
+  });
+
+  const payload = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new Error(payload?.error || 'Nao foi possivel carregar os planos publicos.');
+  }
+
+  return Array.isArray(payload?.plans) ? payload.plans : [];
+}
+
+async function adminPlansFetch() {
+  const data = await adminFetch('plans');
+  if (Array.isArray(data?.plans) && data.plans.length > 0) return data;
+
+  const publicPlans = await fetchPublicBillingPlans();
+  if (publicPlans.length === 0) return data;
+
+  return {
+    ...data,
+    plans: publicPlans.map((plan: any) => ({
+      ...plan,
+      subscriber_count: plan.subscriber_count || 0,
+    })),
+    used_public_fallback: true,
+  };
 }
 
 export function useAdminOverview() {
@@ -47,8 +88,9 @@ export function useAdminClients() {
 export function useAdminPlans() {
   return useQuery({
     queryKey: ['admin', 'plans'],
-    queryFn: () => adminFetch('plans'),
-    staleTime: 60 * 1000,
+    queryFn: adminPlansFetch,
+    refetchOnMount: 'always',
+    staleTime: 0,
   });
 }
 

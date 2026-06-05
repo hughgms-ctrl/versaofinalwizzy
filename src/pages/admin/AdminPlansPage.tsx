@@ -9,7 +9,7 @@ import { Switch } from '@/components/ui/switch';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Separator } from '@/components/ui/separator';
 import { useAdminPlans, useToggleClientPlansMenu, useUpdatePlan } from '@/hooks/useAdminDashboard';
-import { CreditCard, Plus, Edit, Users, Check, X } from 'lucide-react';
+import { AlertTriangle, CreditCard, Plus, Edit, Users, Check, X, RefreshCw } from 'lucide-react';
 import { useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -158,7 +158,7 @@ const serializePlan = (plan: PlanForm) => {
 };
 
 export default function AdminPlansPage() {
-  const { data, isLoading } = useAdminPlans();
+  const { data, isLoading, isFetching, error, refetch } = useAdminPlans();
   const updatePlan = useUpdatePlan();
   const toggleClientPlansMenu = useToggleClientPlansMenu();
   const [editPlan, setEditPlan] = useState<PlanForm | null>(null);
@@ -230,6 +230,38 @@ export default function AdminPlansPage() {
           <div className="grid gap-4 md:grid-cols-3">
             {[1, 2, 3].map(i => <Skeleton key={i} className="h-64" />)}
           </div>
+        ) : error ? (
+          <Card className="border-destructive/40 bg-destructive/5">
+            <CardContent className="flex flex-col items-center justify-center gap-3 p-8 text-center">
+              <AlertTriangle className="h-6 w-6 text-destructive" />
+              <div>
+                <p className="font-semibold text-foreground">Nao foi possivel carregar os planos.</p>
+                <p className="text-sm text-muted-foreground">
+                  Tente recarregar. Se persistir, o problema esta na funcao de planos do painel admin.
+                </p>
+              </div>
+              <Button variant="outline" onClick={() => refetch()} disabled={isFetching}>
+                <RefreshCw className={`mr-2 h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+                Recarregar planos
+              </Button>
+            </CardContent>
+          </Card>
+        ) : plans.length === 0 ? (
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center gap-3 p-8 text-center">
+              <CreditCard className="h-6 w-6 text-muted-foreground" />
+              <div>
+                <p className="font-semibold text-foreground">Nenhum plano encontrado.</p>
+                <p className="text-sm text-muted-foreground">
+                  A lista veio vazia do painel admin e tambem do carregamento publico de planos.
+                </p>
+              </div>
+              <Button variant="outline" onClick={() => refetch()} disabled={isFetching}>
+                <RefreshCw className={`mr-2 h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
+                Recarregar planos
+              </Button>
+            </CardContent>
+          </Card>
         ) : (
           <div className="grid gap-4 md:grid-cols-3">
             {plans.map((plan: any) => {
