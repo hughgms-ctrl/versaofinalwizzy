@@ -1,6 +1,7 @@
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { MousePointerClick, FileText, HelpCircle, GitBranch } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { MousePointerClick, FileText, HelpCircle, GitBranch, LayoutTemplate, Scale, SearchCheck } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useOrganizationPlan } from '@/hooks/useOrganizationPlan';
 import { Lock } from 'lucide-react';
@@ -38,6 +39,24 @@ const tools = [
     href: '/tools/wizzy-flow',
     planModule: 'wizzy_flow',
   },
+  {
+    name: 'Wizzy Pages',
+    description: 'Crie páginas profissionais com auxílio da IA.',
+    icon: LayoutTemplate,
+    comingSoon: true,
+  },
+  {
+    name: 'Wizzy Docs',
+    description: 'Criação e análise jurídica de contratos com IA.',
+    icon: Scale,
+    comingSoon: true,
+  },
+  {
+    name: 'Wizzy CNIS',
+    description: 'Análise de CNIS para fins de Auxílio Reclusão e outros.',
+    icon: SearchCheck,
+    comingSoon: true,
+  },
 ];
 
 export default function ToolsPage() {
@@ -50,6 +69,7 @@ export default function ToolsPage() {
   const [blockedModule, setBlockedModule] = useState<string | undefined>();
 
   const handleClick = (tool: typeof tools[0]) => {
+    if (tool.comingSoon) return;
     if (tool.planModule && !canAccessModule(tool.planModule)) {
       setBlockedModule(tool.name);
       setUpgradeOpen(true);
@@ -69,10 +89,11 @@ export default function ToolsPage() {
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {tools.map((tool) => {
             const isLocked = tool.planModule ? !canAccessModule(tool.planModule) : false;
+            const isComingSoon = Boolean(tool.comingSoon);
             return (
               <Card
                 key={tool.name}
-                className={`cursor-pointer transition-all hover:shadow-md ${isLocked ? 'opacity-50' : 'hover:border-primary/50'}`}
+                className={`transition-all hover:shadow-md ${isComingSoon ? 'cursor-default opacity-75' : 'cursor-pointer'} ${isLocked ? 'opacity-50' : !isComingSoon ? 'hover:border-primary/50' : ''}`}
                 onClick={() => handleClick(tool)}
               >
                 <CardHeader className="flex flex-row items-center gap-4 pb-2">
@@ -83,6 +104,7 @@ export default function ToolsPage() {
                     <CardTitle className="text-lg flex items-center gap-2">
                       {tool.name}
                       {isLocked && <Lock className="h-4 w-4 text-muted-foreground" />}
+                      {isComingSoon && <Badge variant="secondary">Em breve</Badge>}
                     </CardTitle>
                   </div>
                 </CardHeader>
