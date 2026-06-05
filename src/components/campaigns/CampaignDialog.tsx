@@ -23,6 +23,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Hand, MessageSquareText, UserPlus, Webhook, Copy, Check, ChevronRight, ChevronDown, Folder, Tag } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
+    useCampaigns,
     useCreateCampaign,
     useUpdateCampaign,
     Campaign,
@@ -31,6 +32,7 @@ import { useFlows } from "@/hooks/useFlows";
 import { useFlowFolders } from "@/hooks/useFlowFolders";
 import { useWorkspaces } from "@/hooks/useWorkspaces";
 import { useTags } from "@/hooks/useTags";
+import { enforceEntryCreationLimit } from "@/lib/entryFlow";
 
 interface CampaignDialogProps {
     open: boolean;
@@ -56,6 +58,7 @@ export function CampaignDialog({
     const createCampaign = useCreateCampaign();
     const updateCampaign = useUpdateCampaign();
     const { data: flows } = useFlows();
+    const { data: campaigns = [] } = useCampaigns();
     const { data: flowFolders = [] } = useFlowFolders();
     const { data: workspaces = [] } = useWorkspaces();
     const { data: tags = [] } = useTags();
@@ -89,6 +92,7 @@ export function CampaignDialog({
 
     const handleSubmit = () => {
         if (!name.trim() || !flowId) return;
+        if (!campaignToEdit && !enforceEntryCreationLimit('max_campaigns', campaigns.length, 'campanhas')) return;
 
         // Validate keyword if it's keyword type
         if (triggerType === 'keyword' && !triggerKeyword.trim()) return;

@@ -201,10 +201,22 @@ Deno.serve(async (req) => {
     }
 
     if (action === 'clients') {
-      const { data: orgs } = await adminClient
+      let { data: orgs, error: orgsError } = await adminClient
         .from('organizations')
         .select('id, name, slug, storage_used_bytes, storage_limit_bytes, created_at')
         .order('created_at', { ascending: false })
+
+      if (orgsError) {
+        console.warn('[admin-dashboard] clients full organization select failed:', orgsError.message)
+        const fallback = await adminClient
+          .from('organizations')
+          .select('id, name, slug, created_at')
+          .order('created_at', { ascending: false })
+        orgs = fallback.data || []
+        orgsError = fallback.error
+      }
+
+      if (orgsError) throw orgsError
 
       const { data: profiles } = await adminClient
         .from('profiles')
@@ -226,7 +238,13 @@ Deno.serve(async (req) => {
         .from('organization_plans')
         .select('organization_id, plan_id, status, payment_status, trial_ends_at, current_period_end, platform_plans(id, name, slug, price_monthly, storage_limit_bytes, max_team_members, features)')
 
-      const canonicalUsage = await calculateOrganizationUsage(adminClient, { persistStorageUsed: true })
+      let canonicalUsage = { organizations: {} as Record<string, any> }
+      try {
+        canonicalUsage = await calculateOrganizationUsage(adminClient, { persistStorageUsed: true })
+      } catch (usageError) {
+        const message = usageError instanceof Error ? usageError.message : String(usageError)
+        console.warn('[admin-dashboard] clients usage calculation failed:', message)
+      }
 
       const enrichedOrgs = (orgs || []).map((org: any) => {
         const orgProfiles = (profiles || []).filter((p: any) => p.organization_id === org.id)
@@ -237,7 +255,7 @@ Deno.serve(async (req) => {
         const plan = normalizeRelation(orgPlan?.platform_plans)
         const planFeatures = plan?.features || {}
         const usage = canonicalUsage.organizations[org.id] || {}
-        const storageUsedBytes = toNumber(usage.storage_used_bytes)
+        const storageUsedBytes = toNumber(usage.storage_used_bytes) || toNumber(org.storage_used_bytes)
         const storageLimitBytes = toNumber(plan?.storage_limit_bytes) || toNumber(org.storage_limit_bytes)
 
         return {
@@ -1629,7 +1647,7 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({
         settings: settingsRow?.value || {
           ab_testing_enabled: false,
-          default_flow_type: 'signup_first_payment_after',
+          default_flow_type: 'payment_first',
           default_redirect: '/auth',
           persist_assignment_days: 30,
         },
@@ -1641,7 +1659,7 @@ Deno.serve(async (req) => {
       const body = await req.json()
       const settings = {
         ab_testing_enabled: body.ab_testing_enabled === true,
-        default_flow_type: String(body.default_flow_type || 'signup_first_payment_after'),
+        default_flow_type: String(body.default_flow_type || 'payment_first'),
         default_redirect: String(body.default_redirect || '/auth'),
         persist_assignment_days: Number(body.persist_assignment_days || 30),
         flow_configs: body.flow_configs && typeof body.flow_configs === 'object' ? body.flow_configs : {},
@@ -1728,7 +1746,7 @@ Deno.serve(async (req) => {
         const variantPayload = {
           experiment_id: experiment.id,
           name: String(variant.name || 'Variacao'),
-          flow_type: String(variant.flow_type || 'signup_first_payment_after'),
+          flow_type: String(variant.flow_type || 'payment_first'),
           traffic_percent: Math.max(0, Math.min(100, Number(variant.traffic_percent || 0))),
           is_control: variant.is_control === true,
           config: variant.config || {},

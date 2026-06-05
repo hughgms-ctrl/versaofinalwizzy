@@ -42,6 +42,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Progress } from '@/components/ui/progress';
 import { useOrganizationPlan } from '@/hooks/useOrganizationPlan';
 import { LimitUpgradeDialog } from '@/components/billing/LimitUpgradeDialog';
+import { enforceEntryCreationLimit, enforceEntryFeatureAccess } from '@/lib/entryFlow';
 
 export function WhatsAppInstancesSettings() {
   const { session } = useAuth();
@@ -171,6 +172,8 @@ export function WhatsAppInstancesSettings() {
 
   const handleAddNumber = async () => {
     if (!session?.access_token) return;
+    if (!enforceEntryFeatureAccess('allow_connect_whatsapp_number', 'conectar numero de WhatsApp')) return;
+    if (!enforceEntryCreationLimit('max_whatsapp_numbers', instances.length, 'numeros de WhatsApp')) return;
     if (whatsappLimitReached) {
       setShowLimitDialog(true);
       return;
@@ -228,6 +231,7 @@ export function WhatsAppInstancesSettings() {
 
   const handleConnect = async (instanceId: string) => {
     if (!session?.access_token) return;
+    if (!enforceEntryFeatureAccess('allow_connect_whatsapp_number', 'conectar numero de WhatsApp')) return;
     setIsActionLoading(instanceId);
     try {
       const response = await supabase.functions.invoke('zapi-get-qrcode', {

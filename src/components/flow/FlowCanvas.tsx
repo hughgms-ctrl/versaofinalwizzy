@@ -42,11 +42,11 @@ import {
 import { ConditionNode, UserInputNode, RandomizerNode, SmartDelayNode } from './nodes/LogicNodes';
 import { AIHandoffNode, AIMasterNode, AIReturnNode } from './nodes/AINodes';
 import { FlowNodeType } from '@/types/flow';
-import { useFlow, useSaveFlow, useCreateFlow } from '@/hooks/useFlows';
+import { useFlow, useSaveFlow, useCreateFlow, useFlows } from '@/hooks/useFlows';
 import { useAIAgents } from '@/hooks/useAIAgents';
+import { enforceEntryCreationLimit } from '@/lib/entryFlow';
 import { useTags } from '@/hooks/useTags';
 import { usePipelines } from '@/hooks/usePipelines';
-import { useFlows } from '@/hooks/useFlows';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { Loader2 } from 'lucide-react';
@@ -266,6 +266,7 @@ function FlowCanvasInner() {
   const handleSave = useCallback(async () => {
     // If no flowId, create a new flow first
     if (!flowId) {
+      if (!enforceEntryCreationLimit('max_flows', allFlows.length, 'fluxos')) return;
       createFlow.mutate(
         { name: flowName, description: '' },
         {
@@ -309,7 +310,7 @@ function FlowCanvasInner() {
         setHasUnsavedChanges(false);
       }
     });
-  }, [flowId, flowName, nodes, edges, isActive, flowWorkspaceId, masterPrompt, isMasterActive, saveFlow, createFlow, setSearchParams]);
+  }, [flowId, flowName, nodes, edges, isActive, flowWorkspaceId, masterPrompt, isMasterActive, saveFlow, createFlow, allFlows.length, setSearchParams]);
 
   const handleNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
     if (node.type !== 'start') {

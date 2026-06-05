@@ -71,6 +71,7 @@ import { cn } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { enforceEntryCreationLimit } from '@/lib/entryFlow';
 
 export default function WidgetsPage() {
   const navigate = useNavigate();
@@ -133,6 +134,7 @@ export default function WidgetsPage() {
 
   const handleCreateWidget = async () => {
     if (!newWidgetName.trim()) return;
+    if (!enforceEntryCreationLimit('max_forms', widgets.length, 'forms')) return;
     
     const wsId = isAdmin ? (widgetWorkspaceId === 'all' ? null : widgetWorkspaceId) : selectedWorkspaceId;
     

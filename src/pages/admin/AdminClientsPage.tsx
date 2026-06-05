@@ -456,7 +456,7 @@ function PendingApprovalsSection() {
 }
 
 export default function AdminClientsPage() {
-  const { data, isLoading } = useAdminClients();
+  const { data, isLoading, error, refetch, isFetching } = useAdminClients();
   const { data: plansData } = useAdminPlans();
   const { data: settingsData } = useAdminSettings();
   const assignPlan = useAssignPlan();
@@ -564,7 +564,20 @@ export default function AdminClientsPage() {
           </div>
         </div>
 
-        {isLoading ? (
+        {error ? (
+          <Card className="border-destructive/30 bg-destructive/5">
+            <CardContent className="py-8 text-center">
+              <AlertTriangle className="mx-auto h-8 w-8 text-destructive" />
+              <h2 className="mt-3 text-lg font-semibold">Nao foi possivel carregar os clientes</h2>
+              <p className="mx-auto mt-2 max-w-xl text-sm text-muted-foreground">
+                {(error as Error)?.message || 'A consulta de organizacoes falhou. Os clientes nao foram apagados, apenas nao carregaram nesta tela.'}
+              </p>
+              <Button className="mt-4" onClick={() => refetch()} disabled={isFetching}>
+                {isFetching ? 'Recarregando...' : 'Tentar novamente'}
+              </Button>
+            </CardContent>
+          </Card>
+        ) : isLoading ? (
           <div className="space-y-3">
             {[1, 2, 3].map(i => <Skeleton key={i} className="h-16 w-full" />)}
           </div>

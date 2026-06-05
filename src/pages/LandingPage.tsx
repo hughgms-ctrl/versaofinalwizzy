@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { assignEntryFlow, trackEntryEvent } from "@/lib/entryFlow";
+import { assignEntryFlow, setSelectedEntryPlan, trackEntryEvent } from "@/lib/entryFlow";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -219,12 +219,14 @@ const security = [
 const plans = [
   {
     name: "Basic",
+    slug: "basic",
     audience: "Para advogado solo profissionalizar a captação",
     description: "WhatsApp centralizado, pipeline visual básico e templates de contrato. Sem agente de IA.",
     cta: "Selecionar plano",
   },
   {
     name: "Pro",
+    slug: "pro",
     audience: "Para escritórios que querem escalar",
     description: "Tudo do Basic + agente de IA jurídica, automações, assinatura digital e agendamento.",
     cta: "Selecionar plano",
@@ -232,12 +234,14 @@ const plans = [
   },
   {
     name: "Scale",
+    slug: "scale",
     audience: "Para bancas com múltiplas áreas",
     description: "Tudo do Pro + campanhas, dashboards completos, múltiplos pipelines e relatórios por advogado.",
     cta: "Selecionar plano",
   },
   {
     name: "Max",
+    slug: "max",
     audience: "Para escritórios que querem a IA pronta para usar",
     description: "Tudo do Scale + Wizzy AI inclusa via API da plataforma, limites máximos e suporte prioritário.",
     cta: "Quero o Max",
@@ -323,10 +327,11 @@ const SectionHeading = ({
 const LandingPage = () => {
   const navigate = useNavigate();
 
-  const goToAuth = async () => {
+  const goToAuth = async (selectedPlanSlug?: string) => {
+    setSelectedEntryPlan(selectedPlanSlug);
     try {
       const assignment = await assignEntryFlow(window.location.pathname);
-      await trackEntryEvent("landing_cta_clicked", { target: assignment.redirect_path });
+      await trackEntryEvent("landing_cta_clicked", { target: assignment.redirect_path, selected_plan: selectedPlanSlug || null });
       if (assignment.redirect_path.startsWith("http")) {
         window.location.href = assignment.redirect_path;
         return;
@@ -387,10 +392,10 @@ const LandingPage = () => {
           </nav>
 
           <div className="flex items-center gap-3">
-            <Button variant="ghost" className="hidden h-11 px-5 text-base text-slate-300 hover:bg-white/5 hover:text-white sm:inline-flex" onClick={goToAuth}>
+            <Button variant="ghost" className="hidden h-11 px-5 text-base text-slate-300 hover:bg-white/5 hover:text-white sm:inline-flex" onClick={() => goToAuth()}>
               Entrar
             </Button>
-            <Button className="h-11 border border-white/15 bg-white/10 px-5 text-base text-white hover:bg-white/15" onClick={goToAuth}>
+            <Button className="h-11 border border-white/15 bg-white/10 px-5 text-base text-white hover:bg-white/15" onClick={() => goToAuth()}>
               Começar grátis
               <ArrowRight className="ml-2 h-4 w-4" />
             </Button>
@@ -421,7 +426,7 @@ const LandingPage = () => {
                 Atenda 24/7 com IA jurídica, organize cada caso em um pipeline visual, envie contratos com assinatura digital de validade jurídica e acompanhe a captação em tempo real, tudo em um login só.
               </p>
               <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-                <Button size="lg" className="h-12 border-0 bg-gradient-to-r from-pink-500 to-orange-500 px-7 text-base text-white shadow-xl shadow-pink-500/25 hover:from-pink-600 hover:to-orange-600" onClick={goToAuth}>
+                <Button size="lg" className="h-12 border-0 bg-gradient-to-r from-pink-500 to-orange-500 px-7 text-base text-white shadow-xl shadow-pink-500/25 hover:from-pink-600 hover:to-orange-600" onClick={() => goToAuth()}>
                   Começar agora, é grátis
                   <ArrowRight className="ml-2 h-5 w-5" />
                 </Button>
@@ -1356,7 +1361,7 @@ const SecuritySection = () => (
   </section>
 );
 
-const PricingCards = ({ goToAuth }: { goToAuth: () => void }) => {
+const PricingCards = ({ goToAuth }: { goToAuth: (selectedPlanSlug?: string) => void }) => {
   const prices = ["R$ 97", "R$ 197", "R$ 397", "R$ 797"];
   const planFeatures = [
     ["WhatsApp centralizado", "Pipeline básico", "Templates de contrato", "Até 2 usuários"],
@@ -1410,7 +1415,7 @@ const PricingCards = ({ goToAuth }: { goToAuth: () => void }) => {
                 ? "border-0 bg-gradient-to-r from-pink-500 to-orange-500 text-white shadow-lg shadow-pink-500/25 hover:from-pink-600 hover:to-orange-600"
                 : "bg-slate-900 text-white hover:bg-slate-800"
             }`}
-            onClick={goToAuth}
+            onClick={() => goToAuth(plan.slug)}
           >
             {plan.cta}
             <ArrowRight className="ml-2 h-4 w-4" />
@@ -1439,7 +1444,7 @@ const FinalCTA = ({ goToAuth }: { goToAuth: () => void }) => (
         A diferença entre o escritório que fecha 5 casos por mês e o que fecha 25 não é talento jurídico. É estrutura de captação.
       </p>
       <div className="mt-10 flex flex-col items-center gap-4">
-        <Button size="lg" className="h-14 border-0 bg-white px-10 text-lg font-semibold text-slate-900 shadow-2xl shadow-black/20 transition hover:scale-105 hover:bg-white/90" onClick={goToAuth}>
+        <Button size="lg" className="h-14 border-0 bg-white px-10 text-lg font-semibold text-slate-900 shadow-2xl shadow-black/20 transition hover:scale-105 hover:bg-white/90" onClick={() => goToAuth()}>
           Começar agora, é grátis
           <ArrowRight className="ml-2 h-5 w-5" />
         </Button>

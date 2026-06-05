@@ -31,6 +31,7 @@ import { useTeamMembers } from '@/hooks/useTeamMembers';
 import { useToast } from '@/hooks/use-toast';
 import { useOrganizationPlan } from '@/hooks/useOrganizationPlan';
 import { LimitUpgradeDialog } from '@/components/billing/LimitUpgradeDialog';
+import { enforceEntryCreationLimit, enforceEntryFeatureAccess } from '@/lib/entryFlow';
 
 const WORKSPACE_COLORS = [
   '#6366f1', '#8b5cf6', '#ec4899', '#ef4444', '#f97316',
@@ -52,6 +53,8 @@ export function WorkspacesSettings() {
   const workspaceLimitReached = usage.workspaceLimit > 0 && usage.workspaceCount >= usage.workspaceLimit;
 
   const handleCreateClick = () => {
+    if (!enforceEntryFeatureAccess('allow_create_workspace', 'criar workspace')) return;
+    if (!enforceEntryCreationLimit('max_workspaces', activeCount, 'workspaces')) return;
     if (workspaceLimitReached) {
       setShowLimitDialog(true);
       return;

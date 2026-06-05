@@ -17,6 +17,7 @@ const PlansPage = () => {
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-foreground">Planos e Assinatura</h1>
           <p className="text-muted-foreground">Escolha ou altere o plano do workspace.</p>
+          <p className="mt-2 text-xs text-muted-foreground">Carregamento dos planos ativo.</p>
         </div>
         <PlanUpgradePanel />
       </div>

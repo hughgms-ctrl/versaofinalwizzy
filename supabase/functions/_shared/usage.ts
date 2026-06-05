@@ -84,29 +84,52 @@ function mapUrlsFromJson(urlMap: Map<string, string>, value: unknown, orgId: str
 }
 
 async function fetchStorageObjects(client: any) {
-  const { data: buckets, error: bucketsError } = await client
-    .schema('storage')
-    .from('buckets')
-    .select('id')
+  const { data: buckets, error: bucketsError } = await client.storage.listBuckets()
 
   if (bucketsError) throw bucketsError
 
   const objects: UsageRow[] = []
   for (const bucket of buckets || []) {
-    let from = 0
-    while (true) {
-      const { data, error } = await client
-        .schema('storage')
-        .from('objects')
-        .select('bucket_id, name, metadata, updated_at, created_at')
-        .eq('bucket_id', bucket.id)
-        .range(from, from + PAGE_SIZE - 1)
+    const bucketId = bucket.id || bucket.name
+    if (!bucketId) continue
+    objects.push(...await listBucketObjects(client, bucketId, ''))
+  }
 
-      if (error) throw error
-      objects.push(...(data || []))
-      if (!data || data.length < PAGE_SIZE) break
-      from += PAGE_SIZE
+  return objects
+}
+
+async function listBucketObjects(client: any, bucketId: string, prefix: string): Promise<UsageRow[]> {
+  const objects: UsageRow[] = []
+  let offset = 0
+
+  while (true) {
+    const { data, error } = await client.storage.from(bucketId).list(prefix, {
+      limit: PAGE_SIZE,
+      offset,
+      sortBy: { column: 'name', order: 'asc' },
+    })
+
+    if (error) throw error
+
+    for (const item of data || []) {
+      const name = prefix ? `${prefix}/${item.name}` : item.name
+      const isFolder = !item.id && !item.metadata
+
+      if (isFolder) {
+        objects.push(...await listBucketObjects(client, bucketId, name))
+      } else {
+        objects.push({
+          bucket_id: bucketId,
+          name,
+          metadata: item.metadata || {},
+          updated_at: item.updated_at,
+          created_at: item.created_at,
+        })
+      }
     }
+
+    if (!data || data.length < PAGE_SIZE) break
+    offset += PAGE_SIZE
   }
 
   return objects

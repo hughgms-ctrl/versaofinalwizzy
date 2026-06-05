@@ -12,8 +12,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { useCreateFlow } from '@/hooks/useFlows';
+import { useCreateFlow, useFlows } from '@/hooks/useFlows';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
+import { enforceEntryCreationLimit } from '@/lib/entryFlow';
 import { Loader2 } from 'lucide-react';
 import {
   Select,
@@ -31,6 +32,7 @@ interface CreateFlowDialogProps {
 export function CreateFlowDialog({ open, onOpenChange }: CreateFlowDialogProps) {
   const navigate = useNavigate();
   const createFlow = useCreateFlow();
+  const { data: existingFlows = [] } = useFlows();
   const { selectedWorkspaceId, availableWorkspaces, isAdmin } = useWorkspaceContext();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -51,6 +53,7 @@ export function CreateFlowDialog({ open, onOpenChange }: CreateFlowDialogProps) 
     e.preventDefault();
     
     if (!name.trim()) return;
+    if (!enforceEntryCreationLimit('max_flows', existingFlows.length, 'fluxos')) return;
 
     try {
       const flow = await createFlow.mutateAsync({

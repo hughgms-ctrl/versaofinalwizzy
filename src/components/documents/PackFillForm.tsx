@@ -17,6 +17,8 @@ import { SignerLinksList } from './SignerLinksList';
 import { SignerInput, useCreateSigners } from '@/hooks/useDocumentSigners';
 import { getPublicAppOrigin } from '@/lib/publicOrigin';
 import { cn } from '@/lib/utils';
+import { useGeneratedDocuments } from '@/hooks/useGeneratedDocuments';
+import { enforceEntryCreationLimit } from '@/lib/entryFlow';
 
 interface PackFillFormProps {
   pack: DocumentPack;
@@ -40,6 +42,7 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature 
   const { data: allTemplates } = useDocumentTemplates();
   const { profile } = useAuth();
   const createSigners = useCreateSigners();
+  const { data: generatedDocuments = [] } = useGeneratedDocuments();
 
   const [outputMode, setOutputMode] = useState<'print' | 'sign'>('print');
   const [fillMode, setFillMode] = useState<FillMode>('internal');
@@ -113,6 +116,8 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature 
 
   const handleGenerateInternal = async (advanceToSignature = false) => {
     if (!profile?.organization_id) return;
+    const documentsToCreate = Math.max(templates.length, 1);
+    if (!enforceEntryCreationLimit('max_documents', generatedDocuments.length + documentsToCreate - 1, 'documentos Wizzy Sign')) return;
     setIsGenerating(true);
     try {
       let firstDocId: string | null = null;
@@ -194,6 +199,8 @@ export function PackFillForm({ pack, onBack, onSuccess, onGeneratedForSignature 
 
   const handleGeneratePublicLink = async () => {
     if (!profile?.organization_id) return;
+    const documentsToCreate = Math.max(templates.length, 1);
+    if (!enforceEntryCreationLimit('max_documents', generatedDocuments.length + documentsToCreate - 1, 'documentos Wizzy Sign')) return;
     if (outputMode === 'sign' && signers.length === 0) {
       toast.error('Adicione ao menos 1 signatário');
       return;

@@ -10,12 +10,14 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { getPublicAppOrigin } from '@/lib/publicOrigin';
+import { enforceEntryCreationLimit } from '@/lib/entryFlow';
 
 export default function QuizListPage() {
   const navigate = useNavigate();
   const { data: quizzes, isLoading, createQuiz, deleteQuiz } = useQuizzes();
 
   const handleCreate = async () => {
+    if (!enforceEntryCreationLimit('max_quizzes', quizzes?.length || 0, 'quizzes')) return;
     const result = await createQuiz.mutateAsync({ name: 'Novo Wizzy Quiz' });
     navigate(`/tools/quiz/builder?id=${result.id}`);
   };

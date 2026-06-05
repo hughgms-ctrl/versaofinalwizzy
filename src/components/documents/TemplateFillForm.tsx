@@ -17,6 +17,8 @@ import { SignersManager } from './SignersManager';
 import { SignerLinksList } from './SignerLinksList';
 import { SignerInput, useCreateSigners } from '@/hooks/useDocumentSigners';
 import { getPublicAppOrigin } from '@/lib/publicOrigin';
+import { useGeneratedDocuments } from '@/hooks/useGeneratedDocuments';
+import { enforceEntryCreationLimit } from '@/lib/entryFlow';
 
 interface TemplateFillFormProps {
   template: DocumentTemplate;
@@ -29,6 +31,7 @@ export function TemplateFillForm({ template, onBack, onGeneratedForSignature }: 
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const createSigners = useCreateSigners();
+  const { data: generatedDocuments = [] } = useGeneratedDocuments();
 
   const [fillMode, setFillMode] = useState<FillMode>('internal');
   const [formData, setFormData] = useState<Record<string, string>>({});
@@ -50,6 +53,7 @@ export function TemplateFillForm({ template, onBack, onGeneratedForSignature }: 
   // ---- Internal flow: fill now → generate PDF → optionally sign
   const handleGenerateInternal = async (advanceToSignature = false) => {
     if (!profile) return;
+    if (!enforceEntryCreationLimit('max_documents', generatedDocuments.length, 'documentos Wizzy Sign')) return;
     const missing = fields.filter((f) => f.required && !formData[f.name]?.trim());
     if (missing.length > 0) {
       toast({ title: 'Campos obrigatórios', description: `Preencha: ${missing.map((f) => f.label).join(', ')}`, variant: 'destructive' });
@@ -123,6 +127,7 @@ export function TemplateFillForm({ template, onBack, onGeneratedForSignature }: 
   // ---- Public flow: create empty doc with token → return public link
   const handleGeneratePublicLink = async () => {
     if (!profile) return;
+    if (!enforceEntryCreationLimit('max_documents', generatedDocuments.length, 'documentos Wizzy Sign')) return;
     if (signers.length === 0) {
       toast({ title: 'Adicione ao menos 1 signatário', variant: 'destructive' });
       return;

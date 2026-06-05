@@ -75,6 +75,8 @@ Deno.serve(async (req) => {
     const body = await req.json()
     const planId = String(body.plan_id || '')
     const billingCycle = body.billing_cycle === 'yearly' ? 'yearly' : 'monthly'
+    const entryFlowConfig = body.entry_flow_config || {}
+    const requiresCardTrial = entryFlowConfig.require_card === true
     if (!planId) throw new Error('Plano não informado')
 
     const { data: profile, error: profileError } = await adminClient
@@ -107,9 +109,13 @@ Deno.serve(async (req) => {
       ? toMoney(plan.price_yearly || Number(plan.price_monthly || 0) * 10)
       : toMoney(plan.price_monthly)
     if (!price || price <= 0) throw new Error('Plano sem preço configurado')
-    const trialEnabled = plan.features?.trial_enabled === true
-    const trialDays = trialEnabled ? Math.max(0, Number(plan.trial_days || plan.features?.trial_days || 0)) : 0
+    const trialEnabled = requiresCardTrial || plan.features?.trial_enabled === true
+    const trialDays = trialEnabled ? Math.max(0, Number(entryFlowConfig.trial_days || plan.trial_days || plan.features?.trial_days || 0)) : 0
     const firstChargeDate = addDays(new Date(), trialDays)
+    const amountDueNow = trialDays > 0 ? 0 : price
+    const chargeDescription = trialDays > 0
+      ? `Teste gratis por ${trialDays} dia${trialDays === 1 ? '' : 's'}. Nada e cobrado hoje. Primeira cobranca em ${toAsaasDate(firstChargeDate)} no valor de R$ ${price.toFixed(2)}. O cliente pode cancelar antes dessa data.`
+      : `Assinatura Wizzy ${plan.name}. Cobranca inicial de R$ ${price.toFixed(2)}.`
 
     const successUrl = savedConnection.checkout_success_url || `${req.headers.get('origin') || supabaseUrl}/plans?checkout=success`
     const cancelUrl = savedConnection.checkout_cancel_url || `${req.headers.get('origin') || supabaseUrl}/plans?checkout=cancel`
@@ -137,7 +143,7 @@ Deno.serve(async (req) => {
         items: [
           {
             name: `${plan.name} - ${billingCycle === 'yearly' ? 'Anual' : 'Mensal'}`,
-            description: `Assinatura Wizzy ${plan.name}`,
+            description: chargeDescription,
             quantity: 1,
             value: price,
           },
@@ -162,6 +168,12 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({
         provider: 'asaas',
         url: checkout?.link || checkout?.url,
+        summary: {
+          amount_due_now: amountDueNow,
+          first_charge_date: toAsaasDate(firstChargeDate),
+          trial_days: trialDays,
+          can_cancel_before_first_charge: trialDays > 0,
+        },
         checkout,
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
@@ -200,6 +212,12 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({
         provider: 'stripe',
         url: checkout?.url,
+        summary: {
+          amount_due_now: amountDueNow,
+          first_charge_date: toAsaasDate(firstChargeDate),
+          trial_days: trialDays,
+          can_cancel_before_first_charge: trialDays > 0,
+        },
         checkout,
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }

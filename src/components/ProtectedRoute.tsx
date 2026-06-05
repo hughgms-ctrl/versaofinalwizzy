@@ -1,4 +1,4 @@
-import { ReactNode } from 'react';
+import { ReactNode, useEffect } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
@@ -6,7 +6,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Loader2 } from 'lucide-react';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { useCurrentUserRole } from '@/hooks/useUserPermissions';
-import { getStoredEntryAssignment } from '@/lib/entryFlow';
+import { clearStoredEntryAssignment, getStoredEntryAssignment, hasEntryLimitedAccessAssignment, isEntryTrialExpired } from '@/lib/entryFlow';
 
 interface ProtectedRouteProps {
   children: ReactNode;
@@ -34,7 +34,7 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
 
       const { data, error } = await supabase
         .from('organization_plans')
-        .select('id')
+        .select('id, status, payment_status, trial_ends_at')
         .eq('organization_id', activeOrganizationId)
         .maybeSingle();
 
@@ -43,6 +43,22 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
     },
     enabled: !!user && !!activeOrganizationId,
   });
+  const entryAssignment = getStoredEntryAssignment();
+  const hasEntryLimitedAccess = hasEntryLimitedAccessAssignment();
+  const paymentStatus = String((onboardingPlan as any)?.payment_status || (onboardingPlan as any)?.status || '').toLowerCase();
+  const trialEndsAt = (onboardingPlan as any)?.trial_ends_at || null;
+  const trialExpired = ['trial', 'trialing'].includes(paymentStatus)
+    && trialEndsAt
+    && new Date(trialEndsAt).getTime() <= Date.now()
+    && entryAssignment?.config?.block_after_trial !== false;
+  const localTrialExpired = !onboardingPlan && isEntryTrialExpired();
+
+  useEffect(() => {
+    const isTrialPlan = ['trial', 'trialing'].includes(paymentStatus);
+    if (onboardingPlan && entryAssignment && !isTrialPlan) {
+      clearStoredEntryAssignment();
+    }
+  }, [onboardingPlan, entryAssignment?.flow_type]);
 
   if (
     loading
@@ -64,23 +80,17 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   const isAllowedOnboardingPath = allowedWithoutPlan.some((path) => (
     location.pathname === path || location.pathname.startsWith(`${path}/`)
   ));
-  const entryAssignment = getStoredEntryAssignment();
-  const limitedAccessFlows = ['trial_auto', 'freemium', 'access_limited_payment'];
-  const limitedAccessPaths = ['/dashboard', '/profile', '/subscription', '/plans'];
-  const isLimitedAccessPath = limitedAccessPaths.some((path) => (
-    location.pathname === path || location.pathname.startsWith(`${path}/`)
-  ));
-  const hasEntryLimitedAccess = !!entryAssignment
-    && limitedAccessFlows.includes(entryAssignment.flow_type)
-    && isLimitedAccessPath;
-
   if (isBillingPath && !canManageBilling) {
     return <Navigate to="/dashboard" replace />;
   }
 
   // Only billing admins from organizations without any plan record should be sent to subscriptions.
   if (!onboardingPlan && canManageBilling && !isAllowedOnboardingPath && !hasEntryLimitedAccess) {
-    return <Navigate to="/subscription" replace state={{ from: location }} />;
+    return <Navigate to="/plans" replace state={{ from: location }} />;
+  }
+
+  if ((trialExpired || localTrialExpired) && !isAllowedOnboardingPath) {
+    return <Navigate to="/plans" replace state={{ from: location, reason: 'trial_expired' }} />;
   }
 
   return <>{children}</>;

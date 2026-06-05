@@ -8,6 +8,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useIntegrationConfig, useUpsertIntegrationConfig, type IntegrationConfig } from '@/hooks/useIntegrationConfigs';
 import { useOpenAIUsageStatus, useUpdateOpenAIUsageSettings } from '@/hooks/useOpenAIUsageStatus';
 import { useOrganizationPlan } from '@/hooks/useOrganizationPlan';
+import { enforceEntryFeatureAccess } from '@/lib/entryFlow';
 import { Brain, CheckCircle, Eye, EyeOff, Loader2, Save, Sparkles, XCircle } from 'lucide-react';
 
 const DEFAULT_CONFIG: Partial<IntegrationConfig> = {
@@ -68,6 +69,8 @@ export function AITab() {
   );
 
   const handleSave = () => {
+    if (!enforceEntryFeatureAccess('allow_connect_ai_api_key', 'conectar token de IA')) return;
+
     if (!openaiKey.trim()) {
       toast({
         title: 'Chave OpenAI obrigatoria',

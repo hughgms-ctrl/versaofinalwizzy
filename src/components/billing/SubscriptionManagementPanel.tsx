@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import { AlertCircle, ArrowUpRight, CalendarClock, CheckCircle2, ChevronLeft, ChevronRight, CreditCard, Loader2, ReceiptText } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { AlertCircle, ArrowUpRight, CalendarClock, CheckCircle2, ChevronLeft, ChevronRight, CreditCard, Loader2, ReceiptText, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -74,7 +74,9 @@ export function SubscriptionManagementPanel() {
   const { profile } = useAuth();
   const { selectedWorkspace } = useWorkspaceContext();
   const activeOrganizationId = selectedWorkspace?.organization_id || profile?.organization_id || null;
+  const queryClient = useQueryClient();
   const [isOpeningCheckout, setIsOpeningCheckout] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
   const [invoicePage, setInvoicePage] = useState(1);
   const invoicePageSize = 10;
 
@@ -169,6 +171,43 @@ export function SubscriptionManagementPanel() {
     }
   };
 
+  const cancelSubscription = async () => {
+    const confirmed = window.confirm(
+      isTrial
+        ? "Cancelar o teste agora? Isso cancela a assinatura antes da primeira cobranca."
+        : "Cancelar a assinatura atual?",
+    );
+    if (!confirmed) return;
+
+    try {
+      setIsCancelling(true);
+      const { data: session } = await supabase.auth.getSession();
+      const accessToken = session.session?.access_token;
+      if (!accessToken) throw new Error("Sessão expirada. Entre novamente para continuar.");
+
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/billing-cancel`, {
+        method: "POST",
+        headers: {
+          apikey: SUPABASE_PUBLISHABLE_KEY,
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({}),
+      });
+      const result = await response.json().catch(() => null);
+
+      if (!response.ok) throw new Error(result?.error || "Não foi possível cancelar a assinatura.");
+
+      toast.success(isTrial ? "Teste cancelado. A cobrança futura foi cancelada." : "Assinatura cancelada.");
+      queryClient.invalidateQueries({ queryKey: ["profile-subscription-management"] });
+      queryClient.invalidateQueries({ queryKey: ["current-org-plan"] });
+    } catch (error: any) {
+      toast.error(error?.message || "Não foi possível cancelar a assinatura.");
+    } finally {
+      setIsCancelling(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="space-y-4">
@@ -220,7 +259,8 @@ export function SubscriptionManagementPanel() {
           <CheckCircle2 className="h-4 w-4" />
           <AlertTitle>Teste gratis ativo</AlertTitle>
           <AlertDescription>
-            Seu workspace esta liberado ate {formatDate(currentPlan?.trial_ends_at)}.
+            Seu workspace esta liberado ate {formatDate(currentPlan?.trial_ends_at)}. Se o teste foi iniciado com cartao,
+            voce pode cancelar antes dessa data para evitar a primeira cobranca.
           </AlertDescription>
         </Alert>
       )}
@@ -261,6 +301,12 @@ export function SubscriptionManagementPanel() {
             <ArrowUpRight className="ml-2 h-4 w-4" />
           </Link>
         </Button>
+        {["trial", "trialing", "active", "paid"].includes(String(paymentStatus || "").toLowerCase()) && (
+          <Button variant="outline" onClick={cancelSubscription} disabled={isCancelling}>
+            {isCancelling ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <XCircle className="mr-2 h-4 w-4" />}
+            {isTrial ? "Cancelar teste" : "Cancelar assinatura"}
+          </Button>
+        )}
       </div>
 
       <div className="rounded-lg border">

@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { AgentFolder } from '@/hooks/useAgentFolders';
+import { enforceEntryCreationLimit } from '@/lib/entryFlow';
 
 export function AgentsTab() {
   const { data: agents = [], isLoading } = useAIAgents();
@@ -44,6 +45,7 @@ export function AgentsTab() {
 
   const handleCreate = () => {
     if (!newName.trim()) return;
+    if (!enforceEntryCreationLimit('max_ai_agents', agents.length, 'agentes de IA')) return;
     createAgent.mutate({
       name: newName,
       function_role: newRole,

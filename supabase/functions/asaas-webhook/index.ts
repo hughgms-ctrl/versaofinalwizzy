@@ -21,6 +21,26 @@ function shouldActivatePlan(payload: any) {
   return ['PAYMENT_RECEIVED', 'PAYMENT_CONFIRMED'].includes(event) || ['RECEIVED', 'CONFIRMED'].includes(status)
 }
 
+function getAsaasSubscriptionId(payload: any) {
+  return payload?.subscription?.id || payload?.payment?.subscription || null
+}
+
+function getNextDueDate(payload: any) {
+  const raw = payload?.subscription?.nextDueDate || payload?.payment?.dueDate || null
+  if (!raw) return null
+  const date = new Date(`${raw}T12:00:00`)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
+function shouldStartTrial(payload: any) {
+  const event = String(payload?.event || '').toUpperCase()
+  const nextDueDate = getNextDueDate(payload)
+  if (!getAsaasSubscriptionId(payload) || !nextDueDate) return false
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  return event.includes('SUBSCRIPTION') && nextDueDate > today
+}
+
 function shouldMarkPastDue(payload: any) {
   const event = String(payload?.event || '').toUpperCase()
   const status = String(payload?.payment?.status || payload?.subscription?.status || '').toUpperCase()
@@ -77,6 +97,24 @@ Deno.serve(async (req) => {
           asaas_subscription_id: payload?.payment?.subscription || payload?.subscription?.id || null,
           current_period_start: now.toISOString(),
           current_period_end: addPeriod(now, billingCycle).toISOString(),
+          updated_at: now.toISOString(),
+        }, { onConflict: 'organization_id' })
+      }
+
+      if (planId && shouldStartTrial(payload)) {
+        const now = new Date()
+        const trialEndsAt = getNextDueDate(payload)
+        await supabase.from('organization_plans').upsert({
+          organization_id: organizationId,
+          plan_id: planId,
+          status: 'trial',
+          payment_status: 'trial',
+          billing_cycle: billingCycle,
+          asaas_customer_id: payload?.payment?.customer || payload?.subscription?.customer || null,
+          asaas_subscription_id: getAsaasSubscriptionId(payload),
+          trial_ends_at: trialEndsAt?.toISOString() || null,
+          current_period_start: now.toISOString(),
+          current_period_end: trialEndsAt?.toISOString() || null,
           updated_at: now.toISOString(),
         }, { onConflict: 'organization_id' })
       }

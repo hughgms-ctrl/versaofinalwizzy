@@ -141,7 +141,7 @@ Deno.serve(async (req) => {
 
     const visitorId = normalizeVisitorId(body.visitor_id)
     const { settings, experiment, variants } = await getActiveExperiment(supabase)
-    const fallbackFlowType = settings.default_flow_type || 'signup_first_payment_after'
+    const fallbackFlowType = settings.default_flow_type || 'payment_first'
     const fallbackConfig = {
       ...(settings.flow_configs?.[fallbackFlowType] || {}),
       redirect_path: settings.default_redirect || settings.flow_configs?.[fallbackFlowType]?.redirect_path || FLOW_REDIRECTS[fallbackFlowType] || '/auth',

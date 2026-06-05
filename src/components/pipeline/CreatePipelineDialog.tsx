@@ -11,8 +11,9 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
-import { useCreatePipeline } from '@/hooks/usePipelines';
+import { useCreatePipeline, usePipelines } from '@/hooks/usePipelines';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
+import { enforceEntryCreationLimit } from '@/lib/entryFlow';
 
 interface CreatePipelineDialogProps {
   open: boolean;
@@ -35,6 +36,7 @@ export function CreatePipelineDialog({ open, onOpenChange }: CreatePipelineDialo
   ]);
 
   const createPipeline = useCreatePipeline();
+  const { data: existingPipelines = [] } = usePipelines();
   const { selectedWorkspaceId, availableWorkspaces, isAdmin } = useWorkspaceContext();
 
   useEffect(() => {
@@ -75,6 +77,7 @@ export function CreatePipelineDialog({ open, onOpenChange }: CreatePipelineDialo
     if (!name.trim()) return;
     if (columns.length === 0) return;
     if (columns.some(c => !c.name.trim())) return;
+    if (!enforceEntryCreationLimit('max_pipelines', existingPipelines.length, 'pipelines')) return;
 
     await createPipeline.mutateAsync({ 
       name, 

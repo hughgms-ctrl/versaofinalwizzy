@@ -13,6 +13,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, isToday, isSameMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from '@/hooks/use-toast';
+import { enforceEntryCreationLimit, enforceEntryFeatureAccess } from '@/lib/entryFlow';
 
 const DAYS_OF_WEEK = [
   { value: 1, label: 'Segunda' },
@@ -39,6 +40,8 @@ export function CalendarTab() {
   );
 
   const handleSignInWithGoogle = () => {
+    if (!enforceEntryFeatureAccess('allow_connect_google_calendar', 'conectar Google Agenda')) return;
+    if (!enforceEntryCreationLimit('max_google_calendars', allConfigs.length, 'agendas Google')) return;
     const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID || 'zaobtetbjpuzibjymhzw';
     const state = btoa(JSON.stringify({
       organization_id: profile?.organization_id,
