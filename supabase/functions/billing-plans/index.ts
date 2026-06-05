@@ -11,27 +11,13 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const authHeader = req.headers.get('Authorization')
-    if (!authHeader) {
-      return new Response(JSON.stringify({ error: 'Missing auth' }), { status: 401, headers: corsHeaders })
-    }
-
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!
-
-    const userClient = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: authHeader } },
-    })
-    const { data: { user }, error: authError } = await userClient.auth.getUser()
-    if (authError || !user) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: corsHeaders })
-    }
 
     const adminClient = createClient(supabaseUrl, serviceRoleKey)
     const { data: plans, error } = await adminClient
       .from('platform_plans')
-      .select('*')
+      .select('id, name, slug, price_monthly, price_yearly, allowed_modules, max_team_members, max_conversations, max_ai_requests_month, storage_limit_bytes, ai_mode, is_active, features')
       .eq('is_active', true)
       .order('price_monthly', { ascending: true })
 

@@ -41,7 +41,80 @@ interface Plan {
 }
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://zaobtetbjpuzibjymhzw.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY;
+const SUPABASE_PUBLISHABLE_KEY =
+  import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+  import.meta.env.VITE_SUPABASE_ANON_KEY ||
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inphb2J0ZXRianB1emlianltaHp3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIxMzc5MzksImV4cCI6MjA4NzcxMzkzOX0.HBUI1OK1eYq9FE2SzIvuAkxuCG0frApCQZqcjjDx43k";
+
+const emergencyPublicPlans: Plan[] = [
+  {
+    id: "ac4f4da9-88a8-43bc-a198-dd8dc73e963f",
+    name: "Pro",
+    slug: "pro",
+    price_monthly: 1,
+    price_yearly: 10,
+    allowed_modules: ["documents", "widgets", "quiz"],
+    max_team_members: 10,
+    storage_limit_bytes: 10737418240,
+    ai_mode: "own_api",
+    is_active: true,
+    features: { limits: { max_workspaces: 3, max_whatsapp_numbers: 2 }, trial_days: 7, trial_enabled: false },
+  },
+  {
+    id: "8c96e4e5-7044-424b-b285-6499584be7ac",
+    name: "Basic",
+    slug: "basic",
+    price_monthly: 97,
+    price_yearly: 970,
+    allowed_modules: ["conversations", "contacts", "reports", "calendar", "ai", "settings", "scheduled", "pipeline", "flows", "agents", "campaigns", "orchestrator", "integrations"],
+    max_team_members: 1,
+    storage_limit_bytes: 1073741824,
+    ai_mode: "own_api",
+    is_active: true,
+    features: { limits: { max_workspaces: 1, max_whatsapp_numbers: 1 }, trial_days: 0 },
+  },
+  {
+    id: "7199f6b6-de36-4083-af9a-9fd2675ce8a0",
+    name: "Scale",
+    slug: "enterprise",
+    price_monthly: 497,
+    price_yearly: 4970,
+    allowed_modules: ["conversations", "pipeline", "contacts", "flows", "documents", "widgets", "settings", "team", "agents", "reports", "campaigns", "calendar", "scheduled", "integrations", "orchestrator", "quiz", "wizzy_flow"],
+    max_team_members: 50,
+    storage_limit_bytes: 53687091200,
+    ai_mode: "own_api",
+    is_active: true,
+    features: { limits: { max_workspaces: 10, max_whatsapp_numbers: 5 }, trial_days: 7, trial_enabled: false },
+  },
+  {
+    id: "0e90591b-7cac-43f0-88f0-e0ea57a3011c",
+    name: "Max",
+    slug: "max",
+    price_monthly: 997,
+    price_yearly: 9970,
+    allowed_modules: ["documents", "quiz", "widgets", "wizzy_flow"],
+    max_team_members: 0,
+    storage_limit_bytes: 107374182400,
+    ai_mode: "platform_api",
+    is_active: true,
+    features: { limits: { max_workspaces: 20, max_whatsapp_numbers: 10 }, trial_days: 7, trial_enabled: false },
+  },
+];
+
+async function fetchPublicPlans(cacheBust = false): Promise<Plan[]> {
+  const suffix = cacheBust ? `?t=${Date.now()}` : "";
+  const response = await fetch(`${SUPABASE_URL}/functions/v1/billing-plans${suffix}`, {
+    cache: "no-store",
+    headers: {
+      apikey: SUPABASE_PUBLISHABLE_KEY,
+      Authorization: `Bearer ${SUPABASE_PUBLISHABLE_KEY}`,
+      'Content-Type': 'application/json',
+    },
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(payload?.error || 'Nao foi possivel carregar os planos.');
+  return (payload?.plans || []) as Plan[];
+}
 
 const PlanUpgradePanel = () => {
   const { profile } = useAuth();
@@ -52,33 +125,20 @@ const PlanUpgradePanel = () => {
   const autoCheckoutStarted = useRef(false);
 
   const { data: plans = [], isLoading: plansLoading, isFetching: plansFetching, error: plansError } = useQuery({
-    queryKey: ['platform-plans'],
+    queryKey: ['billing-plans-public-v2'],
     queryFn: async () => {
-      const direct = await supabase
-        .from('platform_plans')
-        .select('*')
-        .eq('is_active', true)
-        .order('price_monthly', { ascending: true });
-
-      if (!direct.error) return (direct.data || []) as Plan[];
-
       try {
-        const { data: session } = await supabase.auth.getSession();
-        const accessToken = session.session?.access_token;
-        if (!accessToken) throw direct.error;
+        const functionPlans = await fetchPublicPlans();
+        if (functionPlans.length > 0) return functionPlans;
 
-        const response = await fetch(`${SUPABASE_URL}/functions/v1/billing-plans`, {
-          headers: {
-            apikey: SUPABASE_PUBLISHABLE_KEY,
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
-        });
-        const payload = await response.json().catch(() => null);
-        if (!response.ok) throw new Error(payload?.error || 'Nao foi possivel carregar os planos.');
-        return (payload?.plans || []) as Plan[];
+        const freshPlans = await fetchPublicPlans(true);
+        if (freshPlans.length > 0) return freshPlans;
+
+        console.warn('billing-plans returned an empty list; using emergency public plans.');
+        return emergencyPublicPlans;
       } catch (functionError) {
-        throw functionError || direct.error;
+        console.warn('billing-plans function failed; using emergency public plans.', functionError);
+        return emergencyPublicPlans;
       }
     },
     refetchOnMount: 'always',
