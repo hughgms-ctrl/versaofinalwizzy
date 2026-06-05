@@ -12,7 +12,9 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Plus, Trash2, FlaskConical, Route, BarChart3, MousePointerClick } from 'lucide-react';
+import { Plus, Trash2, FlaskConical, Route, BarChart3, MousePointerClick, Play, RefreshCw } from 'lucide-react';
+import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
 import {
   EntryFlowExperimentInput,
   EntryFlowType,
@@ -248,7 +250,7 @@ function suggestedExperiment(status: 'draft' | 'active' = 'draft'): EntryFlowExp
 }
 
 export default function AdminGrowthPage() {
-  const { data, isLoading } = useEntryFlows();
+  const { data, isLoading, refetch } = useEntryFlows();
   const updateSettings = useUpdateEntryFlowSettings();
   const saveExperiment = useSaveEntryFlowExperiment();
   const deleteExperiment = useDeleteEntryFlowExperiment();
@@ -356,6 +358,12 @@ export default function AdminGrowthPage() {
             )}
           </CardContent>
         </Card>
+
+        <EntryFlowTestPanel
+          settings={settingsDraft}
+          activeExperiment={activeExperiment}
+          onAfterTest={() => refetch()}
+        />
 
         <Card>
           <CardHeader>
@@ -729,6 +737,223 @@ function FlowConfigFields({ flow, config, onChange }: { flow: FlowOption; config
         </div>
       ))}
     </div>
+  );
+}
+
+function newTestVisitorId() {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return `test-${crypto.randomUUID()}`;
+  return `test-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function EntryFlowTestPanel({
+  settings,
+  activeExperiment,
+  onAfterTest,
+}: {
+  settings: {
+    ab_testing_enabled: boolean;
+    default_flow_type: EntryFlowType;
+    default_redirect: string;
+    persist_assignment_days: number;
+    flow_configs: Record<string, any>;
+  };
+  activeExperiment: any;
+  onAfterTest: () => void;
+}) {
+  const [visitorId, setVisitorId] = useState(newTestVisitorId());
+  const [path, setPath] = useState('/landing?test=admin');
+  const [eventName, setEventName] = useState('landing_cta_clicked');
+  const [assignment, setAssignment] = useState<any>(null);
+  const [previousVariantId, setPreviousVariantId] = useState<string | null>(null);
+  const [isRunning, setIsRunning] = useState(false);
+  const [log, setLog] = useState<Array<{ time: string; label: string; detail: string }>>([]);
+
+  const appendLog = (label: string, detail: string) => {
+    setLog((current) => [
+      { time: new Date().toLocaleTimeString('pt-BR'), label, detail },
+      ...current,
+    ].slice(0, 8));
+  };
+
+  const runAssignment = async () => {
+    setIsRunning(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('entry-flow', {
+        body: {
+          action: 'assign',
+          visitor_id: visitorId,
+          path,
+        },
+      });
+      if (error) throw error;
+
+      const variant = data?.variant || {};
+      setAssignment(data);
+      const sameVariant = previousVariantId && variant.id && previousVariantId === variant.id;
+      setPreviousVariantId(variant.id || null);
+      appendLog(
+        'Sorteio executado',
+        `${variant.name || 'Padrao'} -> ${getFlowLabel(variant.flow_type || settings.default_flow_type)}${sameVariant ? ' (persistiu para o mesmo visitante)' : ''}`,
+      );
+      toast.success('Fluxo sorteado');
+      onAfterTest();
+    } catch (err: any) {
+      appendLog('Erro no sorteio', err?.message || 'Falha desconhecida');
+      toast.error(err?.message || 'Falha ao sortear fluxo');
+    } finally {
+      setIsRunning(false);
+    }
+  };
+
+  const sendEvent = async (name = eventName) => {
+    setIsRunning(true);
+    try {
+      const variant = assignment?.variant || {};
+      const { error } = await supabase.functions.invoke('entry-flow', {
+        body: {
+          action: 'event',
+          visitor_id: visitorId,
+          experiment_id: assignment?.experiment?.id || assignment?.assignment?.experiment_id || null,
+          variant_id: variant.id || assignment?.assignment?.variant_id || null,
+          event_name: name,
+          metadata: {
+            source: 'admin_test_panel',
+            path,
+            flow_type: variant.flow_type || settings.default_flow_type,
+            variant_name: variant.name || 'Padrao',
+          },
+        },
+      });
+      if (error) throw error;
+      appendLog('Evento registrado', name);
+      toast.success(`Evento ${name} registrado`);
+      onAfterTest();
+    } catch (err: any) {
+      appendLog('Erro no evento', err?.message || 'Falha desconhecida');
+      toast.error(err?.message || 'Falha ao registrar evento');
+    } finally {
+      setIsRunning(false);
+    }
+  };
+
+  const sendFunnel = async () => {
+    const events = ['landing_cta_clicked', 'signup_completed', 'dashboard_accessed', 'checkout_started', 'payment_completed'];
+    for (const event of events) {
+      await sendEvent(event);
+    }
+  };
+
+  const variant = assignment?.variant || null;
+  const experiment = assignment?.experiment || null;
+  const isFallback = !experiment;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Play className="h-5 w-5 text-primary" />
+          Painel de testes
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        <div className="grid gap-4 lg:grid-cols-[1fr_1fr_auto]">
+          <div className="space-y-2">
+            <Label>Visitante de teste</Label>
+            <Input value={visitorId} onChange={(event) => setVisitorId(event.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label>Caminho simulado</Label>
+            <Input value={path} onChange={(event) => setPath(event.target.value)} />
+          </div>
+          <div className="flex items-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                const next = newTestVisitorId();
+                setVisitorId(next);
+                setAssignment(null);
+                setPreviousVariantId(null);
+                appendLog('Novo visitante', next);
+              }}
+            >
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Novo
+            </Button>
+            <Button onClick={runAssignment} disabled={isRunning || !visitorId}>
+              Sortear fluxo
+            </Button>
+          </div>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-3">
+          <div className="rounded-lg border p-4">
+            <p className="text-xs font-medium uppercase text-muted-foreground">Motor atual</p>
+            <p className="mt-2 text-sm font-semibold">{settings.ab_testing_enabled ? 'A/B ligado' : 'Fluxo padrao'}</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {activeExperiment ? activeExperiment.name : 'Sem experimento ativo'}
+            </p>
+          </div>
+          <div className="rounded-lg border p-4">
+            <p className="text-xs font-medium uppercase text-muted-foreground">Resultado</p>
+            <p className="mt-2 text-sm font-semibold">{variant ? getFlowLabel(variant.flow_type) : 'Ainda nao testado'}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{variant?.name || (isFallback ? 'Usara o fluxo padrao' : 'Aguardando sorteio')}</p>
+          </div>
+          <div className="rounded-lg border p-4">
+            <p className="text-xs font-medium uppercase text-muted-foreground">Redirecionamento</p>
+            <p className="mt-2 break-all text-sm font-semibold">{variant?.redirect_path || settings.default_redirect}</p>
+            <p className="mt-1 text-xs text-muted-foreground">{experiment ? 'Vindo da variante sorteada' : 'Fallback/padrao'}</p>
+          </div>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
+          <div className="space-y-3 rounded-lg border p-4">
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="min-w-[220px] flex-1 space-y-2">
+                <Label>Evento para registrar</Label>
+                <Select value={eventName} onValueChange={setEventName}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {METRIC_OPTIONS.map((metric) => <SelectItem key={metric} value={metric}>{metric}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button variant="outline" onClick={() => sendEvent()} disabled={isRunning || !visitorId}>
+                Registrar evento
+              </Button>
+              <Button variant="outline" onClick={sendFunnel} disabled={isRunning || !visitorId}>
+                Simular funil completo
+              </Button>
+            </div>
+            <div className="rounded-md bg-muted/40 p-3">
+              <p className="text-xs font-medium text-muted-foreground">Configuracao recebida</p>
+              <pre className="mt-2 max-h-52 overflow-auto whitespace-pre-wrap text-xs">
+                {JSON.stringify(variant?.config || settings.flow_configs?.[settings.default_flow_type] || {}, null, 2)}
+              </pre>
+            </div>
+          </div>
+
+          <div className="rounded-lg border p-4">
+            <p className="text-sm font-medium">Historico do teste</p>
+            <div className="mt-3 space-y-2">
+              {log.map((item, index) => (
+                <div key={`${item.time}-${index}`} className="rounded-md bg-muted/40 px-3 py-2 text-xs">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-medium">{item.label}</span>
+                    <span className="text-muted-foreground">{item.time}</span>
+                  </div>
+                  <p className="mt-1 text-muted-foreground">{item.detail}</p>
+                </div>
+              ))}
+              {log.length === 0 && (
+                <p className="rounded-md bg-muted/40 px-3 py-6 text-center text-xs text-muted-foreground">
+                  Execute um sorteio para ver o diagnostico.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
