@@ -265,7 +265,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
 
     const { error } = await supabase
       .from('pipelines')
-      .update(patch)
+      .update(patch as any)
       .eq('id', pipeline.id);
 
     if (error) {
