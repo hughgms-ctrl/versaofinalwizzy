@@ -1133,7 +1133,6 @@ export type Database = {
           order: number
           organization_id: string
           status: string
-          template_task_id: string | null
           title: string
           updated_at: string
         }
@@ -1151,7 +1150,6 @@ export type Database = {
           order?: number
           organization_id: string
           status?: string
-          template_task_id?: string | null
           title: string
           updated_at?: string
         }
@@ -1169,7 +1167,6 @@ export type Database = {
           order?: number
           organization_id?: string
           status?: string
-          template_task_id?: string | null
           title?: string
           updated_at?: string
         }
@@ -1207,13 +1204,6 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "case_tasks_template_task_id_fkey"
-            columns: ["template_task_id"]
-            isOneToOne: false
-            referencedRelation: "case_template_tasks"
             referencedColumns: ["id"]
           },
         ]
@@ -2368,6 +2358,7 @@ export type Database = {
           auto_send_whatsapp: boolean | null
           created_at: string
           created_by: string | null
+          default_signers: Json | null
           description: string | null
           field_config: Json | null
           filler_auth_methods: Json
@@ -2386,6 +2377,7 @@ export type Database = {
           auto_send_whatsapp?: boolean | null
           created_at?: string
           created_by?: string | null
+          default_signers?: Json | null
           description?: string | null
           field_config?: Json | null
           filler_auth_methods?: Json
@@ -2404,6 +2396,7 @@ export type Database = {
           auto_send_whatsapp?: boolean | null
           created_at?: string
           created_by?: string | null
+          default_signers?: Json | null
           description?: string | null
           field_config?: Json | null
           filler_auth_methods?: Json
@@ -2664,6 +2657,7 @@ export type Database = {
           content_html: string | null
           created_at: string
           created_by: string | null
+          default_signers: Json | null
           default_signing_method: string | null
           description: string | null
           fields: Json
@@ -2686,6 +2680,7 @@ export type Database = {
           content_html?: string | null
           created_at?: string
           created_by?: string | null
+          default_signers?: Json | null
           default_signing_method?: string | null
           description?: string | null
           fields?: Json
@@ -2708,6 +2703,7 @@ export type Database = {
           content_html?: string | null
           created_at?: string
           created_by?: string | null
+          default_signers?: Json | null
           default_signing_method?: string | null
           description?: string | null
           fields?: Json
@@ -2840,6 +2836,199 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: true
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      entry_flow_assignments: {
+        Row: {
+          created_at: string
+          experiment_id: string
+          id: string
+          organization_id: string | null
+          user_id: string | null
+          variant_id: string
+          visitor_id: string
+        }
+        Insert: {
+          created_at?: string
+          experiment_id: string
+          id?: string
+          organization_id?: string | null
+          user_id?: string | null
+          variant_id: string
+          visitor_id: string
+        }
+        Update: {
+          created_at?: string
+          experiment_id?: string
+          id?: string
+          organization_id?: string | null
+          user_id?: string | null
+          variant_id?: string
+          visitor_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "entry_flow_assignments_experiment_id_fkey"
+            columns: ["experiment_id"]
+            isOneToOne: false
+            referencedRelation: "entry_flow_experiments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "entry_flow_assignments_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "entry_flow_assignments_variant_id_fkey"
+            columns: ["variant_id"]
+            isOneToOne: false
+            referencedRelation: "entry_flow_variants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      entry_flow_events: {
+        Row: {
+          created_at: string
+          event_name: string
+          experiment_id: string | null
+          id: string
+          metadata: Json
+          organization_id: string | null
+          user_id: string | null
+          variant_id: string | null
+          visitor_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          event_name: string
+          experiment_id?: string | null
+          id?: string
+          metadata?: Json
+          organization_id?: string | null
+          user_id?: string | null
+          variant_id?: string | null
+          visitor_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          event_name?: string
+          experiment_id?: string | null
+          id?: string
+          metadata?: Json
+          organization_id?: string | null
+          user_id?: string | null
+          variant_id?: string | null
+          visitor_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "entry_flow_events_experiment_id_fkey"
+            columns: ["experiment_id"]
+            isOneToOne: false
+            referencedRelation: "entry_flow_experiments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "entry_flow_events_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "entry_flow_events_variant_id_fkey"
+            columns: ["variant_id"]
+            isOneToOne: false
+            referencedRelation: "entry_flow_variants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      entry_flow_experiments: {
+        Row: {
+          audience: Json
+          created_at: string
+          description: string | null
+          ends_at: string | null
+          id: string
+          name: string
+          primary_metric: string
+          starts_at: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          audience?: Json
+          created_at?: string
+          description?: string | null
+          ends_at?: string | null
+          id?: string
+          name: string
+          primary_metric?: string
+          starts_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          audience?: Json
+          created_at?: string
+          description?: string | null
+          ends_at?: string | null
+          id?: string
+          name?: string
+          primary_metric?: string
+          starts_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      entry_flow_variants: {
+        Row: {
+          config: Json
+          created_at: string
+          experiment_id: string
+          flow_type: string
+          id: string
+          is_control: boolean
+          name: string
+          traffic_percent: number
+          updated_at: string
+        }
+        Insert: {
+          config?: Json
+          created_at?: string
+          experiment_id: string
+          flow_type: string
+          id?: string
+          is_control?: boolean
+          name: string
+          traffic_percent?: number
+          updated_at?: string
+        }
+        Update: {
+          config?: Json
+          created_at?: string
+          experiment_id?: string
+          flow_type?: string
+          id?: string
+          is_control?: boolean
+          name?: string
+          traffic_percent?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "entry_flow_variants_experiment_id_fkey"
+            columns: ["experiment_id"]
+            isOneToOne: false
+            referencedRelation: "entry_flow_experiments"
             referencedColumns: ["id"]
           },
         ]
@@ -3849,6 +4038,24 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      migration_checkpoints: {
+        Row: {
+          criado_em: string | null
+          tabela: string | null
+          total: number | null
+        }
+        Insert: {
+          criado_em?: string | null
+          tabela?: string | null
+          total?: number | null
+        }
+        Update: {
+          criado_em?: string | null
+          tabela?: string | null
+          total?: number | null
+        }
+        Relationships: []
       }
       organization_knowledge: {
         Row: {
@@ -5293,11 +5500,16 @@ export type Database = {
           default_department_id: string | null
           default_status_id: string | null
           disconnected_at: string | null
+          evolution_api_key: string | null
+          evolution_instance_id: string | null
+          evolution_instance_name: string | null
           id: string
           is_active: boolean
           label: string | null
           organization_id: string
           phone_number: string | null
+          provider: string
+          provider_settings: Json
           status: Database["public"]["Enums"]["whatsapp_instance_status"]
           updated_at: string
           zapi_instance_id: string | null
@@ -5312,11 +5524,16 @@ export type Database = {
           default_department_id?: string | null
           default_status_id?: string | null
           disconnected_at?: string | null
+          evolution_api_key?: string | null
+          evolution_instance_id?: string | null
+          evolution_instance_name?: string | null
           id?: string
           is_active?: boolean
           label?: string | null
           organization_id: string
           phone_number?: string | null
+          provider?: string
+          provider_settings?: Json
           status?: Database["public"]["Enums"]["whatsapp_instance_status"]
           updated_at?: string
           zapi_instance_id?: string | null
@@ -5331,11 +5548,16 @@ export type Database = {
           default_department_id?: string | null
           default_status_id?: string | null
           disconnected_at?: string | null
+          evolution_api_key?: string | null
+          evolution_instance_id?: string | null
+          evolution_instance_name?: string | null
           id?: string
           is_active?: boolean
           label?: string | null
           organization_id?: string
           phone_number?: string | null
+          provider?: string
+          provider_settings?: Json
           status?: Database["public"]["Enums"]["whatsapp_instance_status"]
           updated_at?: string
           zapi_instance_id?: string | null

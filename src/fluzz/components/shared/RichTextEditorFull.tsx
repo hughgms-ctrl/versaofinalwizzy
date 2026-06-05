@@ -136,7 +136,6 @@ export function RichTextEditorFull({ content, onChange, placeholder = "Escreva o
           keepMarks: true,
           keepAttributes: false,
         },
-        link: false,
       }),
       FontSize,
       Color,

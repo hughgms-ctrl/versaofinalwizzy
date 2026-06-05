@@ -75,7 +75,7 @@ export function TemplateEditor({ template, onBack }: TemplateEditorProps) {
   );
   const [autoSendWhatsApp, setAutoSendWhatsApp] = useState(template?.auto_send_whatsapp || false);
   const [defaultSigners, setDefaultSigners] = useState<SignerInput[]>(
-    (template?.default_signers as SignerInput[]) || []
+    ((template as any)?.default_signers as SignerInput[]) || []
   );
   const [newFieldName, setNewFieldName] = useState('');
   const logoInputRef = useRef<HTMLInputElement>(null);

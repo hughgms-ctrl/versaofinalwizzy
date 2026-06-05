@@ -3,7 +3,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { AudioRecordButton, selectAudioRecordingMimeType } from '../AudioRecordButton';
 
 class MockMediaRecorder {
-  static isTypeSupported = vi.fn(() => true);
+  static isTypeSupported = vi.fn((_mimeType: string) => true);
   mimeType: string;
   ondataavailable: ((event: { data: Blob }) => void) | null = null;
   onstop: (() => void) | null = null;

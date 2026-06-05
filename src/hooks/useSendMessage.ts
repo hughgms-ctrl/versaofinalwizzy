@@ -69,6 +69,7 @@ export function useSendMessage() {
 
       if (previousMessages) {
         const optimisticMessage: DbMessage = {
+          zapi_message_id: null,
           id: `temp-${Date.now()}`,
           conversation_id: newMessage.conversationId,
           content: newMessage.content,

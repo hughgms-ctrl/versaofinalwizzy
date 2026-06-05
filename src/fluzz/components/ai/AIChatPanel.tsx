@@ -52,7 +52,7 @@ function parseContent(text: string, onNavigate: (path: string) => void): React.R
         parts.push(
           <button
             key={`task-${lineIndex}-${match.index}`}
-            onClick={() => onnavigate(`/tools/wizzy-flow/tasks/${match[3]}`)}
+            onClick={() => onNavigate(`/tools/wizzy-flow/tasks/${match[3]}`)}
             className="inline-flex items-center gap-1 text-primary hover:text-primary/80 hover:underline transition-colors"
           >
             <ExternalLink className="h-3 w-3" />
@@ -64,7 +64,7 @@ function parseContent(text: string, onNavigate: (path: string) => void): React.R
         parts.push(
           <button
             key={`project-${lineIndex}-${match.index}`}
-            onClick={() => onnavigate(`/tools/wizzy-flow/projects/${match[4]}`)}
+            onClick={() => onNavigate(`/tools/wizzy-flow/projects/${match[4]}`)}
             className="inline-flex items-center gap-1 text-primary hover:text-primary/80 hover:underline transition-colors"
           >
             <ExternalLink className="h-3 w-3" />
@@ -76,7 +76,7 @@ function parseContent(text: string, onNavigate: (path: string) => void): React.R
         parts.push(
           <button
             key={`position-${lineIndex}-${match.index}`}
-            onClick={() => onnavigate(`/tools/wizzy-flow/positions/${match[5]}`)}
+            onClick={() => onNavigate(`/tools/wizzy-flow/positions/${match[5]}`)}
             className="inline-flex items-center gap-1 text-primary hover:text-primary/80 hover:underline transition-colors"
           >
             <ExternalLink className="h-3 w-3" />
