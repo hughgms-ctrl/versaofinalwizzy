@@ -96,7 +96,8 @@ VALUES (
     "ab_testing_enabled": false,
     "default_flow_type": "signup_first_payment_after",
     "default_redirect": "/auth",
-    "persist_assignment_days": 30
+    "persist_assignment_days": 30,
+    "flow_configs": {}
   }'::jsonb
 )
 ON CONFLICT (key) DO NOTHING;

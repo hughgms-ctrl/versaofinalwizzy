@@ -1644,6 +1644,7 @@ Deno.serve(async (req) => {
         default_flow_type: String(body.default_flow_type || 'signup_first_payment_after'),
         default_redirect: String(body.default_redirect || '/auth'),
         persist_assignment_days: Number(body.persist_assignment_days || 30),
+        flow_configs: body.flow_configs && typeof body.flow_configs === 'object' ? body.flow_configs : {},
       }
 
       const { error } = await adminClient

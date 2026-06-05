@@ -142,6 +142,10 @@ Deno.serve(async (req) => {
     const visitorId = normalizeVisitorId(body.visitor_id)
     const { settings, experiment, variants } = await getActiveExperiment(supabase)
     const fallbackFlowType = settings.default_flow_type || 'signup_first_payment_after'
+    const fallbackConfig = {
+      ...(settings.flow_configs?.[fallbackFlowType] || {}),
+      redirect_path: settings.default_redirect || settings.flow_configs?.[fallbackFlowType]?.redirect_path || FLOW_REDIRECTS[fallbackFlowType] || '/auth',
+    }
 
     if (!visitorId || !experiment || variants.length === 0) {
       return json({
@@ -151,8 +155,8 @@ Deno.serve(async (req) => {
           id: null,
           name: 'Padrao',
           flow_type: fallbackFlowType,
-          config: settings,
-          redirect_path: settings.default_redirect || FLOW_REDIRECTS[fallbackFlowType] || '/auth',
+          config: fallbackConfig,
+          redirect_path: fallbackConfig.redirect_path,
         },
       })
     }

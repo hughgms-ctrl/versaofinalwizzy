@@ -446,6 +446,7 @@ export function useUpdateEntryFlowSettings() {
       default_flow_type: EntryFlowType;
       default_redirect: string;
       persist_assignment_days: number;
+      flow_configs?: Record<string, any>;
     }) => adminFetch('update_entry_flow_settings', settings),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'entry-flows'] });
