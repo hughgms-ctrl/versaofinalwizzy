@@ -2,11 +2,24 @@ import React, { useEffect } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import PlanUpgradePanel from "@/components/billing/PlanUpgradePanel";
 import { trackEntryEvent } from "@/lib/entryFlow";
+import { trackMetaEvent } from "@/lib/metaPixel";
 
 const PlansPage = () => {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('checkout') === 'success') {
+      const purchaseKey = `meta_purchase_${params.get('plan_id') || 'unknown'}_${params.get('value') || '0'}_${params.get('billing_cycle') || 'monthly'}`;
+      if (sessionStorage.getItem(purchaseKey) !== '1') {
+        trackMetaEvent('Purchase', {
+          content_ids: params.get('plan_id') || undefined,
+          content_name: params.get('plan_slug') || undefined,
+          content_type: 'subscription_plan',
+          currency: params.get('currency') || 'BRL',
+          value: Number(params.get('value') || 0),
+          billing_cycle: params.get('billing_cycle') || undefined,
+        });
+        sessionStorage.setItem(purchaseKey, '1');
+      }
       trackEntryEvent('payment_completed', { source: 'checkout_return' }).catch(() => undefined);
     }
   }, []);

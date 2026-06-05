@@ -20,6 +20,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { assignEntryFlow, EntryFlowAssignment, getStoredEntryAssignment, setSelectedEntryPlan, trackEntryEvent } from "@/lib/entryFlow";
+import { trackMetaCustomEvent, trackMetaEvent } from "@/lib/metaPixel";
 import wizzyLogo from "@/assets/wizzy-logo.png";
 
 type Product = {
@@ -366,6 +367,14 @@ export default function LandingPage() {
 
   const goToAuth = async (selectedPlanSlug?: string) => {
     setSelectedEntryPlan(selectedPlanSlug);
+    trackMetaEvent("Lead", {
+      content_name: selectedPlanSlug ? `Plano ${selectedPlanSlug}` : "CTA landing",
+      content_category: selectedPlanSlug ? "pricing_plan" : "landing_cta",
+    });
+    trackMetaCustomEvent("LandingCtaClicked", {
+      selected_plan: selectedPlanSlug || null,
+      path: window.location.pathname,
+    });
     try {
       const assignment = entryAssignment || await assignEntryFlow(window.location.pathname);
       setEntryAssignment(assignment);
@@ -385,6 +394,13 @@ export default function LandingPage() {
   const flowType = entryAssignment?.flow_type || "payment_first";
   const isTrialFlow = flowType === "trial_auto";
   const requiresCardTrial = isTrialFlow && entryAssignment?.config?.require_card === true;
+  const trackLandingButtonClick = (label: string, target: string) => {
+    trackMetaCustomEvent("LandingButtonClicked", {
+      label,
+      target,
+      path: window.location.pathname,
+    });
+  };
 
   return (
     <div className="dark min-h-screen overflow-x-hidden bg-[#0b0b12] text-slate-100 antialiased">
@@ -413,12 +429,12 @@ export default function LandingPage() {
 
           <nav className="hidden items-center gap-9 text-sm font-medium text-slate-400 md:flex">
             <a href="#produtos" className="transition hover:text-white">Produtos</a>
-            <a href="#agentes" className="transition hover:text-white">Agentes</a>
-            <a href="#planos" className="transition hover:text-white">Planos</a>
+            <a href="#agentes" onClick={() => trackLandingButtonClick("Agentes", "agentes")} className="transition hover:text-white">Agentes</a>
+            <a href="#planos" onClick={() => trackLandingButtonClick("Planos", "planos")} className="transition hover:text-white">Planos</a>
             <a href="#faq" className="transition hover:text-white">FAQ</a>
           </nav>
 
-          <a href="#planos" className="rounded-xl bg-gradient-to-r from-pink-500 to-orange-500 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-pink-500/25 transition hover:from-pink-600 hover:to-orange-600">
+          <a href="#planos" onClick={() => trackLandingButtonClick("Comecar agora", "planos")} className="rounded-xl bg-gradient-to-r from-pink-500 to-orange-500 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-pink-500/25 transition hover:from-pink-600 hover:to-orange-600">
             Começar agora
           </a>
         </div>
@@ -443,10 +459,10 @@ export default function LandingPage() {
                 Chega de aprender Claude Code, GPT, Make ou qualquer framework. O Wizzy entrega <strong className="font-semibold text-white">agentes de IA jurídicos prontos</strong> - você ativa, eles trabalham.
               </p>
               <div className="mt-9 flex flex-col gap-4 sm:flex-row">
-                <a href="#planos" className="inline-flex h-13 items-center justify-center rounded-xl bg-gradient-to-r from-pink-500 to-orange-500 px-8 py-4 text-base font-bold text-white shadow-xl shadow-pink-500/25 transition hover:-translate-y-0.5 hover:from-pink-600 hover:to-orange-600">
+                <a href="#planos" onClick={() => trackLandingButtonClick("Ativar meu primeiro agente", "planos")} className="inline-flex h-13 items-center justify-center rounded-xl bg-gradient-to-r from-pink-500 to-orange-500 px-8 py-4 text-base font-bold text-white shadow-xl shadow-pink-500/25 transition hover:-translate-y-0.5 hover:from-pink-600 hover:to-orange-600">
                   Ativar meu primeiro agente
                 </a>
-                <a href="#agentes" className="inline-flex h-13 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/5 px-8 py-4 text-base font-semibold text-slate-200 transition hover:bg-white/10 hover:text-white">
+                <a href="#agentes" onClick={() => trackLandingButtonClick("Ver como funciona", "agentes")} className="inline-flex h-13 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/5 px-8 py-4 text-base font-semibold text-slate-200 transition hover:bg-white/10 hover:text-white">
                   Ver como funciona
                   <ArrowRight className="h-4 w-4" />
                 </a>
@@ -816,7 +832,7 @@ export default function LandingPage() {
                 Ativar meu escritório agora
                 <ArrowRight className="ml-2 h-5 w-5" />
               </Button>
-              <a href="#planos" className="inline-flex h-14 items-center justify-center gap-2 rounded-xl border border-white/30 bg-white/10 px-10 text-lg font-semibold text-white transition hover:bg-white/20">
+              <a href="#planos" onClick={() => trackLandingButtonClick("Falar com consultor", "planos")} className="inline-flex h-14 items-center justify-center gap-2 rounded-xl border border-white/30 bg-white/10 px-10 text-lg font-semibold text-white transition hover:bg-white/20">
                 Falar com consultor
                 <ArrowRight className="h-5 w-5" />
               </a>

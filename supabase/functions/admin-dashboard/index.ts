@@ -1599,6 +1599,44 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ settings: settingsMap }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
+    if (action === 'update_tracking_settings') {
+      const body = await req.json()
+      const metaPixel = body?.meta_pixel || {}
+      const settings = {
+        meta_pixel: {
+          enabled: metaPixel.enabled === true,
+          pixel_id: String(metaPixel.pixel_id || '').replace(/\D/g, ''),
+          advanced_matching_enabled: metaPixel.advanced_matching_enabled === true,
+          test_event_code: String(metaPixel.test_event_code || '').trim(),
+        },
+      }
+
+      const { error } = await adminClient
+        .from('platform_settings')
+        .upsert({
+          key: 'tracking_settings',
+          value: settings,
+          updated_at: new Date().toISOString(),
+          updated_by: user.id,
+        }, { onConflict: 'key' })
+
+      if (error) throw error
+
+      await adminClient.from('admin_audit_logs').insert({
+        action: 'update_tracking_settings',
+        entity_type: 'platform',
+        performed_by: user.id,
+        details: {
+          meta_pixel: {
+            ...settings.meta_pixel,
+            pixel_id: settings.meta_pixel.pixel_id ? `***${settings.meta_pixel.pixel_id.slice(-4)}` : '',
+          },
+        },
+      })
+
+      return new Response(JSON.stringify({ settings }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
     if (action === 'entry_flows') {
       const { data: settingsRow } = await adminClient
         .from('platform_settings')

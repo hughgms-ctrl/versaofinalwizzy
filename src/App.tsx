@@ -12,6 +12,7 @@ import { PrivacyProvider } from "@/contexts/PrivacyContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { NotificationProvider } from "@/components/NotificationProvider";
 import { AdminProtectedRoute } from "@/components/admin/AdminProtectedRoute";
+import { MetaPixelTracker } from "@/components/MetaPixelTracker";
 
 const Index = lazy(() => import("./pages/Index"));
 const AuthPage = lazy(() => import("./pages/AuthPage"));
@@ -87,6 +88,7 @@ const App = () => (
                 <Toaster />
                 <Sonner />
                 <BrowserRouter>
+                  <MetaPixelTracker />
                   <Suspense fallback={<RouteLoader />}>
                     <Routes>
                       <Route path="/landing" element={<LandingPage />} />

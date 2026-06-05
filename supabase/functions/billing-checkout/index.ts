@@ -31,6 +31,23 @@ function addDays(date: Date, days: number) {
   return next
 }
 
+function appendQueryParams(url: string, params: Record<string, string | number | boolean | null | undefined>) {
+  try {
+    const parsed = new URL(url)
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') parsed.searchParams.set(key, String(value))
+    })
+    return parsed.toString()
+  } catch (_) {
+    const query = new URLSearchParams()
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') query.set(key, String(value))
+    })
+    const separator = url.includes('?') ? '&' : '?'
+    return `${url}${separator}${query.toString()}`
+  }
+}
+
 function getAsaasRecurrentBillingTypes(_billingType: string | null | undefined) {
   // ASAAS hosted checkout only accepts credit card for RECURRENT charge types.
   return ['CREDIT_CARD']
@@ -117,8 +134,28 @@ Deno.serve(async (req) => {
       ? `Teste gratis por ${trialDays} dia${trialDays === 1 ? '' : 's'}. Nada e cobrado hoje. Primeira cobranca em ${toAsaasDate(firstChargeDate)} no valor de R$ ${price.toFixed(2)}. O cliente pode cancelar antes dessa data.`
       : `Assinatura Wizzy ${plan.name}. Cobranca inicial de R$ ${price.toFixed(2)}.`
 
-    const successUrl = savedConnection.checkout_success_url || `${req.headers.get('origin') || supabaseUrl}/plans?checkout=success`
-    const cancelUrl = savedConnection.checkout_cancel_url || `${req.headers.get('origin') || supabaseUrl}/plans?checkout=cancel`
+    const successUrl = appendQueryParams(
+      savedConnection.checkout_success_url || `${req.headers.get('origin') || supabaseUrl}/plans?checkout=success`,
+      {
+        checkout: 'success',
+        plan_id: plan.id,
+        plan_slug: plan.slug,
+        billing_cycle: billingCycle,
+        value: price,
+        currency: 'BRL',
+        provider: activeProvider,
+      },
+    )
+    const cancelUrl = appendQueryParams(
+      savedConnection.checkout_cancel_url || `${req.headers.get('origin') || supabaseUrl}/plans?checkout=cancel`,
+      {
+        checkout: 'cancel',
+        plan_id: plan.id,
+        plan_slug: plan.slug,
+        billing_cycle: billingCycle,
+        provider: activeProvider,
+      },
+    )
     const reference = `${profile.organization_id}|${plan.id}|${billingCycle}`
 
     if (activeProvider === 'asaas') {

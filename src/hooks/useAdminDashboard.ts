@@ -439,6 +439,25 @@ export function useAdminSettings() {
   });
 }
 
+export function useUpdateTrackingSettings() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (settings: {
+      meta_pixel: {
+        enabled: boolean;
+        pixel_id: string;
+        advanced_matching_enabled?: boolean;
+        test_event_code?: string;
+      };
+    }) => adminFetch('update_tracking_settings', settings),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'settings'] });
+      toast.success('Pixel salvo');
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+}
+
 export type EntryFlowType =
   | 'payment_first'
   | 'signup_first_payment_after'

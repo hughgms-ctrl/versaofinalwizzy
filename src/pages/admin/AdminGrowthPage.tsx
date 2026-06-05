@@ -20,9 +20,11 @@ import {
   EntryFlowExperimentInput,
   EntryFlowType,
   EntryFlowVariantInput,
+  useAdminSettings,
   useDeleteEntryFlowExperiment,
   useEntryFlows,
   useSaveEntryFlowExperiment,
+  useUpdateTrackingSettings,
   useUpdateEntryFlowSettings,
 } from '@/hooks/useAdminDashboard';
 
@@ -213,6 +215,8 @@ function suggestedExperiment(status: 'draft' | 'active' = 'draft'): EntryFlowExp
 export default function AdminGrowthPage() {
   const { data, isLoading, refetch } = useEntryFlows();
   const updateSettings = useUpdateEntryFlowSettings();
+  const { data: adminSettings, isLoading: adminSettingsLoading } = useAdminSettings();
+  const updateTrackingSettings = useUpdateTrackingSettings();
   const saveExperiment = useSaveEntryFlowExperiment();
   const deleteExperiment = useDeleteEntryFlowExperiment();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -302,6 +306,13 @@ export default function AdminGrowthPage() {
           <SummaryCard icon={<FlaskConical className="h-4 w-4" />} title="Experimento ativo" loading={isLoading} value={activeExperiment?.name || 'Nenhum'} hint={`A/B testing ${settingsDraft.ab_testing_enabled ? 'ligado' : 'desligado'}.`} />
           <SummaryCard icon={<MousePointerClick className="h-4 w-4" />} title="Visitantes sorteados" loading={isLoading} value={String(totalAssigned)} hint="Evento variant_assigned no experimento ativo." />
         </div>
+
+        <TrackingSettingsCard
+          initial={adminSettings?.settings?.tracking_settings?.meta_pixel || {}}
+          isLoading={adminSettingsLoading}
+          isSaving={updateTrackingSettings.isPending}
+          onSave={(metaPixel) => updateTrackingSettings.mutate({ meta_pixel: metaPixel })}
+        />
 
         <Card>
           <CardHeader>
@@ -1219,6 +1230,120 @@ function EntryFlowTestPanel({
           </div>
         </div>
     </div>
+  );
+}
+
+function TrackingSettingsCard({
+  initial,
+  isLoading,
+  isSaving,
+  onSave,
+}: {
+  initial: Record<string, any>;
+  isLoading: boolean;
+  isSaving: boolean;
+  onSave: (metaPixel: {
+    enabled: boolean;
+    pixel_id: string;
+    advanced_matching_enabled: boolean;
+    test_event_code: string;
+  }) => void;
+}) {
+  const [enabled, setEnabled] = useState(false);
+  const [pixelId, setPixelId] = useState('');
+  const [advancedMatchingEnabled, setAdvancedMatchingEnabled] = useState(false);
+  const [testEventCode, setTestEventCode] = useState('');
+
+  useEffect(() => {
+    setEnabled(initial?.enabled === true);
+    setPixelId(String(initial?.pixel_id || ''));
+    setAdvancedMatchingEnabled(initial?.advanced_matching_enabled === true);
+    setTestEventCode(String(initial?.test_event_code || ''));
+  }, [initial?.enabled, initial?.pixel_id, initial?.advanced_matching_enabled, initial?.test_event_code]);
+
+  const cleanPixelId = pixelId.replace(/\D/g, '');
+  const canSave = !enabled || cleanPixelId.length >= 8;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <BarChart3 className="h-5 w-5 text-primary" />
+          Pixel da Meta
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        {isLoading ? (
+          <Skeleton className="h-32 w-full" />
+        ) : (
+          <>
+            <div className="flex flex-col gap-3 rounded-lg border p-4 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="font-medium text-foreground">Ativar Meta Pixel no site inteiro</p>
+                <p className="text-sm text-muted-foreground">
+                  Dispara PageView em todas as paginas, Lead nos CTAs, InitiateCheckout ao abrir checkout e Purchase no retorno de compra.
+                </p>
+              </div>
+              <Switch checked={enabled} onCheckedChange={setEnabled} />
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label>ID do Pixel</Label>
+                <Input
+                  value={pixelId}
+                  inputMode="numeric"
+                  placeholder="Ex: 123456789012345"
+                  onChange={(event) => setPixelId(event.target.value.replace(/\D/g, ''))}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Copie o ID numerico do Pixel no Gerenciador de Eventos da Meta.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <Label>Codigo de evento de teste</Label>
+                <Input
+                  value={testEventCode}
+                  placeholder="Opcional"
+                  onChange={(event) => setTestEventCode(event.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Use durante testes no Events Manager. Pode ficar vazio em producao.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-3 rounded-lg border p-4 md:flex-row md:items-center md:justify-between">
+              <div>
+                <p className="font-medium text-foreground">Advanced Matching</p>
+                <p className="text-sm text-muted-foreground">
+                  Deixe preparado para enviar dados anonimizados quando implementarmos captura segura de e-mail/telefone.
+                </p>
+              </div>
+              <Switch checked={advancedMatchingEnabled} onCheckedChange={setAdvancedMatchingEnabled} />
+            </div>
+
+            {!canSave && (
+              <p className="text-sm text-destructive">Informe um ID de Pixel valido ou desative o Pixel.</p>
+            )}
+
+            <div className="flex justify-end">
+              <Button
+                onClick={() => onSave({
+                  enabled,
+                  pixel_id: cleanPixelId,
+                  advanced_matching_enabled: advancedMatchingEnabled,
+                  test_event_code: testEventCode.trim(),
+                })}
+                disabled={isSaving || !canSave}
+              >
+                {isSaving ? 'Salvando...' : 'Salvar Pixel'}
+              </Button>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
