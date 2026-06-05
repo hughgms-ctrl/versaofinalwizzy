@@ -569,7 +569,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
 
     const { error } = await supabase
       .from('conversations')
-      .update({ metadata })
+      .update({ metadata: metadata as any })
       .eq('id', conversation.id);
     if (error) throw error;
     queryClient.invalidateQueries({ queryKey: ['conversations'] });
@@ -1522,7 +1522,7 @@ function PipelineCardDetailDialog({
     const metadata = { ...currentMetadata, ...patch };
     const { error } = await supabase
       .from('conversations')
-      .update({ metadata })
+      .update({ metadata: metadata as any })
       .eq('id', conversation.id);
 
     if (error) throw error;

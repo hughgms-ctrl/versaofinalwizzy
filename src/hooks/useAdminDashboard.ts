@@ -192,7 +192,7 @@ export function useUpdateAdminAIUsageSettings() {
       queryClient.invalidateQueries({ queryKey: ['admin', 'ai-usage'] });
       toast.success('Configurações de consumo IA salvas');
     },
-    onError: (err: Error, _show, context) => {
+    onError: (err: Error, _show, context: any) => {
       if (context?.previousPlans) {
         queryClient.setQueryData(['admin', 'plans'], context.previousPlans);
       }
