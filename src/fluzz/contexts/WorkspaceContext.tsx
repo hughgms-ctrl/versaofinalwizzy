@@ -108,7 +108,7 @@ export const WorkspaceProvider = ({ children }: { children: ReactNode }) => {
         name: wizzyWorkspace.selectedWorkspace.name,
         created_at: wizzyWorkspace.selectedWorkspace.created_at,
         updated_at: wizzyWorkspace.selectedWorkspace.updated_at,
-        created_by: wizzyWorkspace.selectedWorkspace.created_by,
+        created_by: null,
       } as Workspace)
     : null;
 
@@ -117,7 +117,7 @@ export const WorkspaceProvider = ({ children }: { children: ReactNode }) => {
     name: item.name,
     created_at: item.created_at,
     updated_at: item.updated_at,
-    created_by: item.created_by,
+    created_by: null,
   })) as Workspace[];
 
   const workspaceMember =
@@ -138,9 +138,9 @@ export const WorkspaceProvider = ({ children }: { children: ReactNode }) => {
     workspaces,
     loading: wizzyWorkspace.loading,
     isAdmin: role === 'admin',
-    isGestor: role === 'gestor',
+    isGestor: (role as Role) === 'gestor',
     isMembro: role === 'membro',
-    canManageMembers: role === 'admin' || role === 'gestor',
+    canManageMembers: role === 'admin' || (role as Role) === 'gestor',
     canCreateTasks: true,
     permissions: allPermissions,
     isAdminViewMode: false,
