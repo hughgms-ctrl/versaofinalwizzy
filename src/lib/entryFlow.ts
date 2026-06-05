@@ -180,7 +180,17 @@ export async function trackEntryEvent(eventName: string, metadata: Record<string
 export function routeAfterSignup() {
   const assignment = getStoredEntryAssignment();
   const intent = new URLSearchParams(window.location.search).get('intent') || '';
-  const flowType = assignment?.flow_type || intent;
+  const intentFlowMap: Record<string, string> = {
+    plans: 'payment_first',
+    payment: 'payment_first',
+    checkout: 'payment_first',
+    trial: 'trial_auto',
+    limited: 'trial_auto',
+    freemium: 'trial_auto',
+    onboarding: 'signup_onboarding_payment_access',
+    approval: 'manual_approval',
+  };
+  const flowType = assignment?.flow_type || intentFlowMap[intent] || intent;
   const selectedPlan = getSelectedEntryPlan();
   const checkoutPath = selectedPlan
     ? `/plans?selected_plan=${encodeURIComponent(selectedPlan)}&auto_checkout=1`

@@ -376,7 +376,7 @@ export default function LandingPage() {
       path: window.location.pathname,
     });
     try {
-      const assignment = entryAssignment || await assignEntryFlow(window.location.pathname);
+      const assignment = await assignEntryFlow(window.location.pathname);
       setEntryAssignment(assignment);
       await trackEntryEvent("landing_cta_clicked", { target: assignment.redirect_path, selected_plan: selectedPlanSlug || null });
       if (assignment.redirect_path.startsWith("http")) {
