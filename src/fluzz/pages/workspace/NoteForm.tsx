@@ -85,6 +85,13 @@ export default function NoteForm() {
 
   const saveMutation = useMutation({
     mutationFn: async () => {
+      if (!workspace?.id) {
+        throw new Error("Workspace nao encontrado");
+      }
+      if (!user?.id) {
+        throw new Error("Usuario nao autenticado");
+      }
+
       if (isEditing) {
         const { error } = await supabase
           .from("notes")
@@ -102,8 +109,8 @@ export default function NoteForm() {
             title,
             content,
             folder_id: folderId,
-            workspace_id: workspace!.id,
-            created_by: user?.id,
+            workspace_id: workspace.id,
+            created_by: user.id,
           });
         if (error) throw error;
       }
@@ -114,8 +121,9 @@ export default function NoteForm() {
       toast.success(isEditing ? "Nota atualizada!" : "Nota criada!");
       navigate("/tools/wizzy-flow/workspace/notes");
     },
-    onError: () => {
-      toast.error("Erro ao salvar nota");
+    onError: (error: any) => {
+      console.error("Erro ao salvar nota:", error);
+      toast.error(error?.message ? `Erro ao salvar nota: ${error.message}` : "Erro ao salvar nota");
     },
   });
 

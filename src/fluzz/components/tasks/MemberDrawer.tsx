@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/fluzz/integrations/supabase/client";
+import { useAuth } from "@/fluzz/contexts/AuthContext";
 import { useWorkspace } from "@/fluzz/contexts/WorkspaceContext";
 import {
   Sheet,
@@ -24,6 +25,7 @@ interface MemberDrawerProps {
 
 export const MemberDrawer = ({ value, onValueChange, children, positionId }: MemberDrawerProps) => {
   const { workspace } = useWorkspace();
+  const { user } = useAuth();
 
   // Validate if positionId is a valid UUID
   const isValidUUID = (id?: string) => {
@@ -40,6 +42,21 @@ export const MemberDrawer = ({ value, onValueChange, children, positionId }: Mem
     queryKey: ["workspace-members-drawer", workspace?.id, validPositionId, isMultipleSectors],
     queryFn: async () => {
       if (!workspace?.id) return [];
+
+      const fallbackCurrentUser = async () => {
+        if (!user?.id) return [];
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("id, full_name, avatar_url")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        return [{
+          user_id: user.id,
+          role: "admin",
+          profile: profile || { id: user.id, full_name: user.email || "Voce", avatar_url: null },
+        }];
+      };
       
       // Fetch workspace members with profiles
       const { data: members, error: membersError } = await supabase
@@ -47,8 +64,11 @@ export const MemberDrawer = ({ value, onValueChange, children, positionId }: Mem
         .select("user_id, role")
         .eq("workspace_id", workspace.id);
       
-      if (membersError) throw membersError;
-      if (!members || members.length === 0) return [];
+      if (membersError) {
+        console.warn("Erro ao buscar membros do workspace:", membersError);
+        return fallbackCurrentUser();
+      }
+      if (!members || members.length === 0) return fallbackCurrentUser();
 
       let userIds = members.map(m => m.user_id);
 
@@ -65,8 +85,7 @@ export const MemberDrawer = ({ value, onValueChange, children, positionId }: Mem
           const positionUserIds = userPositions.map(up => up.user_id);
           userIds = userIds.filter(uid => positionUserIds.includes(uid));
         } else {
-          // No users assigned to this position
-          return [];
+          return fallbackCurrentUser();
         }
       }
       // If isMultipleSectors is true, we keep all userIds (no filtering)
@@ -77,7 +96,10 @@ export const MemberDrawer = ({ value, onValueChange, children, positionId }: Mem
         .select("id, full_name, avatar_url")
         .in("id", userIds);
       
-      if (profilesError) throw profilesError;
+      if (profilesError) {
+        console.warn("Erro ao buscar perfis dos membros:", profilesError);
+        return fallbackCurrentUser();
+      }
 
       // Combine data
       return members

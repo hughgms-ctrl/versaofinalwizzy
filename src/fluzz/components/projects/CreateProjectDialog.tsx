@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/fluzz/integrations/supabase/client";
 import { useAuth } from "@/fluzz/contexts/AuthContext";
 import { useWorkspace } from "@/fluzz/contexts/WorkspaceContext";
@@ -41,6 +42,7 @@ export const CreateProjectDialog = ({ open, onOpenChange, defaultDate }: CreateP
   const { user } = useAuth();
   const { workspace } = useWorkspace();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [startDate, setStartDate] = useState<string>("");
@@ -77,14 +79,18 @@ export const CreateProjectDialog = ({ open, onOpenChange, defaultDate }: CreateP
     mutationFn: async (isStandaloneFolder: boolean = false) => {
       if (!workspace) {
         toast.error("Workspace não encontrado");
-        return;
+        throw new Error("Workspace nao encontrado");
+      }
+
+      if (!user?.id) {
+        throw new Error("Usuario nao autenticado");
       }
 
       const { data, error } = await supabase
         .from("projects")
         .insert([
           {
-            user_id: user!.id,
+            user_id: user.id,
             workspace_id: workspace.id,
             name,
             description,
@@ -113,12 +119,12 @@ export const CreateProjectDialog = ({ open, onOpenChange, defaultDate }: CreateP
       handleClose();
       // Navegar para o novo projeto para edição
       if (data) {
-        window.location.href = `/projects/${data.id}`;
+        navigate(`/tools/wizzy-flow/projects/${data.id}`);
       }
     },
-    onError: (error) => {
+    onError: (error: any) => {
       console.error("Erro na mutation:", error);
-      toast.error("Erro ao criar projeto");
+      toast.error(error?.message ? `Erro ao criar projeto: ${error.message}` : "Erro ao criar projeto");
     },
   });
 
@@ -271,12 +277,12 @@ export const CreateProjectDialog = ({ open, onOpenChange, defaultDate }: CreateP
       handleClose();
       // Navegar para o novo projeto
       if (newProject) {
-        window.location.href = `/projects/${newProject.id}`;
+        navigate(`/tools/wizzy-flow/projects/${newProject.id}`);
       }
     },
-    onError: (error) => {
+    onError: (error: any) => {
       console.error("Erro ao criar projeto a partir do modelo:", error);
-      toast.error("Erro ao criar projeto a partir do modelo");
+      toast.error(error?.message ? `Erro ao criar projeto a partir do modelo: ${error.message}` : "Erro ao criar projeto a partir do modelo");
     },
   });
 
