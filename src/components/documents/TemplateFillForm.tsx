@@ -37,14 +37,14 @@ export function TemplateFillForm({ template, onBack, onGeneratedForSignature }: 
   const [formData, setFormData] = useState<Record<string, string>>({});
   const [documentName, setDocumentName] = useState(template.name);
   const [signers, setSigners] = useState<SignerInput[]>(
-    (template.default_signers as SignerInput[]) || []
+    ((template as any).default_signers as SignerInput[]) || []
   );
   const [generating, setGenerating] = useState(false);
   const [publicLink, setPublicLink] = useState<string | null>(null);
   const [generatedDocId, setGeneratedDocId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const fields = (template.fields || []) as Array<{ name: string; label: string; type: string; required: boolean }>;
+  const fields = (template.fields || []) as Array<{ name: string; label: string; type: string; required: boolean; hint?: string }>;
 
   const handleFieldChange = (fieldName: string, value: string) => {
     setFormData((prev) => ({ ...prev, [fieldName]: value }));
