@@ -54,7 +54,7 @@ const trustStats = [
   ["5 min", "Para ativar o primeiro agente"],
 ];
 
-const dashboardAgents = [
+const dashboardAgents: Array<[string, string, string, typeof Scale]> = [
   ["Agente de Triagem Trabalhista", "Qualificando leads no WhatsApp agora", "ATIVO", Scale],
   ["Agente de Agendamento", "3 consultas fechadas nas últimas 2h", "ATIVO", Calendar],
   ["Agente de Documentos", "Coletando docs do processo 001/2026", "ATIVO", FileSignature],
