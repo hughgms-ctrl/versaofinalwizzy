@@ -9,10 +9,10 @@ export const useAuth = () => {
     user: auth.user,
     session: auth.session,
     loading: auth.loading,
-    signUp: async () => undefined,
-    signIn: async () => undefined,
+    signUp: async (..._args: any[]) => undefined,
+    signIn: async (..._args: any[]) => undefined,
     signOut: auth.signOut,
-    resetPassword: async () => undefined,
-    updatePassword: async () => undefined,
+    resetPassword: async (..._args: any[]) => undefined,
+    updatePassword: async (..._args: any[]) => undefined,
   };
 };
