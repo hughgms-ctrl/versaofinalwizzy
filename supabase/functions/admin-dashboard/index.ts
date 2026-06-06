@@ -236,7 +236,22 @@ Deno.serve(async (req) => {
 
       const { data: orgPlans } = await adminClient
         .from('organization_plans')
-        .select('organization_id, plan_id, status, payment_status, trial_ends_at, current_period_end, platform_plans(id, name, slug, price_monthly, storage_limit_bytes, max_team_members, features)')
+        .select('organization_id, plan_id, status, payment_status, trial_ends_at, current_period_start, current_period_end, billing_cycle, asaas_customer_id, asaas_subscription_id, stripe_subscription_id, platform_plans(id, name, slug, price_monthly, storage_limit_bytes, max_team_members, features)')
+
+      const { data: entryEvents } = await adminClient
+        .from('entry_flow_events')
+        .select('organization_id, event_name, metadata, created_at')
+        .in('event_name', ['signup_completed', 'checkout_started', 'payment_completed'])
+        .order('created_at', { ascending: false })
+        .limit(2000)
+
+      const entryEventsByOrg = new Map<string, any[]>()
+      for (const event of entryEvents || []) {
+        if (!event.organization_id) continue
+        const events = entryEventsByOrg.get(event.organization_id) || []
+        events.push(event)
+        entryEventsByOrg.set(event.organization_id, events)
+      }
 
       let canonicalUsage = { organizations: {} as Record<string, any> }
       try {
@@ -252,6 +267,12 @@ Deno.serve(async (req) => {
         const orgWorkspaces = (workspaces || []).filter((w: any) => w.organization_id === org.id)
         const orgConvs = (convCounts || []).filter((c: any) => c.organization_id === org.id)
         const orgPlan = (orgPlans || []).find((p: any) => p.organization_id === org.id)
+        const orgEntryEvents = entryEventsByOrg.get(org.id) || []
+        const latestSignupEvent = orgEntryEvents.find((event: any) => event.event_name === 'signup_completed')
+        const latestCheckoutEvent = orgEntryEvents.find((event: any) => event.event_name === 'checkout_started')
+        const latestPaymentEvent = orgEntryEvents.find((event: any) => event.event_name === 'payment_completed')
+        const latestEntryMetadata = latestSignupEvent?.metadata || latestCheckoutEvent?.metadata || {}
+        const latestFlowConfig = latestEntryMetadata?.flow_config || {}
         const plan = normalizeRelation(orgPlan?.platform_plans)
         const planFeatures = plan?.features || {}
         const usage = canonicalUsage.organizations[org.id] || {}
@@ -285,7 +306,26 @@ Deno.serve(async (req) => {
             status: orgPlan.status,
             payment_status: orgPlan.payment_status,
             trial_ends_at: orgPlan.trial_ends_at,
+            current_period_start: orgPlan.current_period_start,
             current_period_end: orgPlan.current_period_end,
+            billing_cycle: orgPlan.billing_cycle,
+            asaas_customer_id: orgPlan.asaas_customer_id,
+            asaas_subscription_id: orgPlan.asaas_subscription_id,
+            stripe_subscription_id: orgPlan.stripe_subscription_id,
+          } : null,
+          entry_flow: latestSignupEvent || latestCheckoutEvent || latestPaymentEvent ? {
+            flow_type: latestEntryMetadata?.flow_type || null,
+            variant_name: latestEntryMetadata?.variant_name || null,
+            trial_days: latestFlowConfig?.trial_days ?? null,
+            require_card: latestFlowConfig?.require_card ?? latestFlowConfig?.auto_charge_after_trial ?? null,
+            auto_charge_after_trial: latestFlowConfig?.auto_charge_after_trial ?? null,
+            block_after_trial: latestFlowConfig?.block_after_trial ?? null,
+            signup_completed_at: latestSignupEvent?.created_at || null,
+            checkout_started_at: latestCheckoutEvent?.created_at || null,
+            payment_completed_at: latestPaymentEvent?.created_at || null,
+            checkout_provider: latestCheckoutEvent?.metadata?.provider || null,
+            checkout_plan_slug: latestCheckoutEvent?.metadata?.plan_slug || null,
+            checkout_billing_cycle: latestCheckoutEvent?.metadata?.billing_cycle || null,
           } : null,
         }
       })

@@ -18,7 +18,7 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   const location = useLocation();
   const activeOrganizationId = selectedWorkspace?.organization_id || profile?.organization_id || null;
 
-  const allowedWithoutPlan = ['/subscription', '/plans', '/profile'];
+  const allowedWithoutPlan = ['/subscription', '/plans', '/checkout-notice', '/profile'];
   const billingPaths = ['/subscription', '/plans'];
   const isBillingPath = billingPaths.some((path) => (
     location.pathname === path || location.pathname.startsWith(`${path}/`)

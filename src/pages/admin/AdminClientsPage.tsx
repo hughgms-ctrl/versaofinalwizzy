@@ -22,7 +22,7 @@ import {
 import {
   Building2, Search, Users, Phone, HardDrive, ChevronDown, ChevronUp,
   Ban, Trash2, ShieldCheck, ShieldOff, UserPlus, Globe, Monitor,
-  MapPin, AlertTriangle, Eye, CheckCircle, XCircle
+  MapPin, AlertTriangle, Eye, CheckCircle, XCircle, CreditCard, CalendarClock
 } from 'lucide-react';
 
 function UserFingerprintsDialog({ user, onClose }: { user: any; onClose: () => void }) {
@@ -455,6 +455,86 @@ function PendingApprovalsSection() {
   );
 }
 
+function getTrialDetails(org: any) {
+  const plan = org.plan || null;
+  const entryFlow = org.entry_flow || null;
+  const paymentStatus = String(plan?.payment_status || '').toLowerCase();
+  const isTrialPlan = ['trial', 'trialing'].includes(paymentStatus);
+  const isTrialEntry = entryFlow?.flow_type === 'trial_auto';
+  if (!isTrialPlan && !isTrialEntry) return null;
+
+  const hasGatewaySubscription = Boolean(plan?.asaas_subscription_id || plan?.stripe_subscription_id);
+  const requireCard = entryFlow?.require_card === true || hasGatewaySubscription;
+  const trialEndsAt = plan?.trial_ends_at || plan?.current_period_end || null;
+  const trialDays = Number(entryFlow?.trial_days || 0);
+  const daysRemaining = trialEndsAt
+    ? Math.ceil((new Date(trialEndsAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+    : null;
+
+  return {
+    hasGatewaySubscription,
+    requireCard,
+    checkoutStartedAt: entryFlow?.checkout_started_at || null,
+    paymentCompletedAt: entryFlow?.payment_completed_at || null,
+    signupCompletedAt: entryFlow?.signup_completed_at || null,
+    trialEndsAt,
+    trialDays,
+    daysRemaining,
+    provider: plan?.asaas_subscription_id ? 'Asaas' : plan?.stripe_subscription_id ? 'Stripe' : entryFlow?.checkout_provider || null,
+  };
+}
+
+function TrialInfoBadges({ org }: { org: any }) {
+  const details = getTrialDetails(org);
+  if (!details) return null;
+
+  const isExpired = typeof details.daysRemaining === 'number' && details.daysRemaining <= 0;
+
+  return (
+    <div className="mt-1 flex max-w-[260px] flex-wrap gap-1">
+      <Badge variant="outline" className="border-primary/40 text-primary">
+        Teste gratis
+      </Badge>
+      {details.hasGatewaySubscription ? (
+        <Badge variant="outline" className="border-emerald-500/40 text-emerald-600">
+          <CreditCard className="mr-1 h-3 w-3" />
+          Cartao ativado{details.provider ? ` (${details.provider})` : ''}
+        </Badge>
+      ) : details.requireCard ? (
+        <Badge variant="outline" className="border-amber-500/50 text-amber-600">
+          <CreditCard className="mr-1 h-3 w-3" />
+          Cartao pendente
+        </Badge>
+      ) : (
+        <Badge variant="outline" className="border-slate-300 text-slate-600">
+          Sem cartao
+        </Badge>
+      )}
+      {details.trialDays > 0 && (
+        <Badge variant="outline" className="text-muted-foreground">
+          {details.trialDays} dias configurados
+        </Badge>
+      )}
+      {details.trialEndsAt && (
+        <Badge variant="outline" className={isExpired ? 'border-destructive/40 text-destructive' : 'text-muted-foreground'}>
+          <CalendarClock className="mr-1 h-3 w-3" />
+          Ate {new Date(details.trialEndsAt).toLocaleDateString('pt-BR')}
+          {typeof details.daysRemaining === 'number'
+            ? details.daysRemaining > 0
+              ? ` (${details.daysRemaining}d)`
+              : ' (vencido)'
+            : ''}
+        </Badge>
+      )}
+      {details.requireCard && !details.hasGatewaySubscription && details.checkoutStartedAt && (
+        <Badge variant="outline" className="border-amber-500/50 text-amber-600">
+          Checkout iniciado
+        </Badge>
+      )}
+    </div>
+  );
+}
+
 export default function AdminClientsPage() {
   const { data, isLoading, error, refetch, isFetching } = useAdminClients();
   const { data: plansData } = useAdminPlans();
@@ -615,11 +695,7 @@ export default function AdminClientsPage() {
                           {org.plan ? (
                             <div className="flex flex-col items-start gap-1">
                               <Badge variant="secondary">{org.plan.name}</Badge>
-                              {['trial', 'trialing'].includes(String(org.plan.payment_status || '').toLowerCase()) && (
-                                <Badge variant="outline" className="border-primary/40 text-primary">
-                                  Teste gratis ate {org.plan.trial_ends_at ? new Date(org.plan.trial_ends_at).toLocaleDateString('pt-BR') : 'sem data'}
-                                </Badge>
-                              )}
+                              <TrialInfoBadges org={org} />
                               {String(org.plan.payment_status || '').toLowerCase() === 'manual' && (
                                 <Badge variant="outline" className="border-emerald-500/40 text-emerald-600">
                                   Uso liberado
@@ -627,7 +703,10 @@ export default function AdminClientsPage() {
                               )}
                             </div>
                           ) : (
-                            <Badge variant="outline" className="text-muted-foreground">Sem plano</Badge>
+                            <div className="flex flex-col items-start gap-1">
+                              <Badge variant="outline" className="text-muted-foreground">Sem plano</Badge>
+                              <TrialInfoBadges org={org} />
+                            </div>
                           )}
                         </TableCell>
                         <TableCell className="text-center">

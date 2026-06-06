@@ -169,6 +169,7 @@ export async function trackEntryEvent(eventName: string, metadata: Record<string
         ...metadata,
         flow_type: assignment?.flow_type || null,
         variant_name: assignment?.variant_name || null,
+        flow_config: assignment?.config || null,
       },
     },
     headers: session.session?.access_token
@@ -195,8 +196,11 @@ export function routeAfterSignup() {
   const checkoutPath = selectedPlan
     ? `/plans?selected_plan=${encodeURIComponent(selectedPlan)}&auto_checkout=1`
     : '/plans';
+  const checkoutNoticePath = selectedPlan
+    ? `/checkout-notice?selected_plan=${encodeURIComponent(selectedPlan)}`
+    : '/plans';
 
-  if (assignment?.flow_type === 'trial_auto' && assignment?.config?.require_card === true) return checkoutPath;
+  if (assignment?.flow_type === 'trial_auto' && assignment?.config?.require_card === true) return checkoutNoticePath;
   if (['payment_first', 'trial_with_card'].includes(flowType)) return checkoutPath;
   if (['trial_auto', 'freemium', 'access_limited_payment'].includes(flowType)) return '/dashboard';
   if (['signup_onboarding_payment_access', 'onboarding_before_signup'].includes(flowType)) return '/subscription';
