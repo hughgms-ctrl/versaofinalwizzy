@@ -164,7 +164,6 @@ const PlanUpgradePanel = () => {
   const currentPlanId = currentPlan?.plan_id;
   const entryAssignment = getStoredEntryAssignment();
   const entryConfig = entryAssignment?.flow_type === 'trial_auto' ? entryAssignment.config || {} : {};
-  const requiresCardTrial = entryConfig.require_card === true;
 
   const formatStorage = (bytes: number) => {
     const gb = bytes / (1024 * 1024 * 1024);
@@ -323,10 +322,6 @@ const PlanUpgradePanel = () => {
           const isPro = plan.slug === 'pro';
           const isWizzyAI = plan.ai_mode === 'platform_api' || plan.slug === 'wizzy-ai' || plan.slug === 'max';
           const modules = (plan.allowed_modules || []) as string[];
-          const configuredTrialDays = Number(entryConfig.trial_days || plan.trial_days || plan.features?.trial_days || 0);
-          const trialDays = requiresCardTrial ? configuredTrialDays : Number(plan.trial_days || plan.features?.trial_days || 0);
-          const trialEnabled = (requiresCardTrial || plan.features?.trial_enabled === true) && trialDays > 0;
-          const price = isYearly ? (plan.price_yearly || plan.price_monthly * 10) : plan.price_monthly;
 
           return (
             <Card
@@ -418,21 +413,6 @@ const PlanUpgradePanel = () => {
                   {isCurrent ? "Plano atual" : loadingPlanId === plan.id ? "Abrindo checkout..." : "Selecionar plano"}
                   {!isCurrent && <ArrowRight className="w-4 h-4 ml-1" />}
                 </Button>
-                {trialEnabled && !isCurrent && (
-                  <div className="mt-3 rounded-md border bg-muted/30 p-3 text-center text-xs text-muted-foreground">
-                    {requiresCardTrial ? (
-                      <>
-                        <p className="font-medium text-foreground">Paga agora: R$ 0,00</p>
-                        <p className="mt-1">
-                          Depois de {trialDays} dia{trialDays === 1 ? '' : 's'}: R$ {price.toLocaleString('pt-BR')}{isYearly ? '/ano' : '/mes'}.
-                        </p>
-                        <p className="mt-1">Pode cancelar antes da primeira cobranca.</p>
-                      </>
-                    ) : (
-                      <p>Teste gratis por {trialDays} dias</p>
-                    )}
-                  </div>
-                )}
               </CardContent>
             </Card>
           );

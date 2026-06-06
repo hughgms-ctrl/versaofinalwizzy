@@ -324,12 +324,6 @@ const buildMutedFeatures = (plan: PlatformPlan) => {
   return orderedExtraModules.filter((module) => !modules.includes(module)).map((module) => extraModuleLabels[module]);
 };
 
-const getTrialDays = (plan: PlatformPlan, assignment: EntryFlowAssignment | null) => {
-  const configDays = Number(assignment?.config?.trial_days || 0);
-  const planDays = Number(plan.trial_days || plan.features?.trial_days || 0);
-  return configDays || planDays;
-};
-
 export default function LandingPage() {
   const navigate = useNavigate();
   const [annual, setAnnual] = useState(false);
@@ -393,7 +387,6 @@ export default function LandingPage() {
   const displayedPlans = adminPlans;
   const flowType = entryAssignment?.flow_type || "payment_first";
   const isTrialFlow = flowType === "trial_auto";
-  const requiresCardTrial = isTrialFlow && entryAssignment?.config?.require_card === true;
   const trackLandingButtonClick = (label: string, target: string) => {
     trackMetaCustomEvent("LandingButtonClicked", {
       label,
@@ -714,8 +707,6 @@ export default function LandingPage() {
                 const yearlyPrice = Number(plan.price_yearly || monthlyPrice * 10);
                 const price = annual ? Math.round(yearlyPrice / 12) : monthlyPrice;
                 const isPopular = plan.slug === "pro";
-                const trialDays = getTrialDays(plan, entryAssignment);
-                const trialEnabled = isTrialFlow && trialDays > 0;
                 const planFeatures = buildPlanFeatures(plan);
                 const mutedFeatures = buildMutedFeatures(plan);
                 const cta = isTrialFlow ? "Começar teste grátis" : `Escolher ${plan.name}`;
@@ -753,28 +744,6 @@ export default function LandingPage() {
                           </li>
                         ))}
                       </ul>
-
-                      {isTrialFlow && (
-                        <div className="mt-6 rounded-2xl border border-pink-100 bg-pink-50 p-4 text-xs leading-5 text-slate-700">
-                          {requiresCardTrial ? (
-                            <>
-                              <p className="font-bold text-slate-950">Paga agora: R$ 0,00</p>
-                              <p className="mt-1">
-                                Depois de {trialDays || "alguns"} dia{trialDays === 1 ? "" : "s"}, o Asaas cobra R$ {formatCurrency(annual ? yearlyPrice : monthlyPrice)}
-                                {annual ? "/ano" : "/mês"} deste plano.
-                              </p>
-                              <p className="mt-1">O cliente pode cancelar antes da primeira cobrança.</p>
-                            </>
-                          ) : (
-                            <>
-                              <p className="font-bold text-slate-950">Teste grátis sem cartão</p>
-                              <p className="mt-1">
-                                Entra no produto com os limites configurados no painel. Ao fim de {trialDays || "alguns"} dia{trialDays === 1 ? "" : "s"}, para continuar, escolhe e paga um plano.
-                              </p>
-                            </>
-                          )}
-                        </div>
-                      )}
 
                       <Button className={`mt-5 h-12 w-full ${isPopular ? "border-0 bg-gradient-to-r from-pink-500 to-orange-500 text-white hover:from-pink-600 hover:to-orange-600" : "bg-slate-900 text-white hover:bg-slate-800"}`} onClick={() => goToAuth(plan.slug)}>
                         {cta}

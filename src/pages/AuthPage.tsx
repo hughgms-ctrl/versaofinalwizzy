@@ -40,7 +40,7 @@ export default function AuthPage() {
 
   useEffect(() => {
     if (!authLoading && user && authMode !== 'reset') {
-      navigate('/dashboard');
+      navigate(routeAfterSignup());
     }
   }, [user, authLoading, authMode, navigate]);
 

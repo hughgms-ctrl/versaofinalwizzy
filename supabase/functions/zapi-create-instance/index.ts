@@ -19,7 +19,7 @@ function defaultProviderSettings() {
     alwaysOnline: false,
     readMessages: false,
     readStatus: false,
-    syncFullHistory: false,
+    syncFullHistory: true,
   };
 }
 
@@ -242,13 +242,22 @@ Deno.serve(async (req) => {
 
     const maxWhatsappNumbers = Number((orgPlan as any)?.plan?.features?.limits?.max_whatsapp_numbers || 0);
     if (maxWhatsappNumbers > 0) {
-      const { count: currentWhatsappNumbers, error: countError } = await supabase
+      const { data: currentInstances, error: countError } = await supabase
         .from('whatsapp_instances')
-        .select('id', { count: 'exact', head: true })
+        .select('id, status, phone_number, zapi_instance_id, zapi_token, evolution_instance_name, evolution_instance_id, evolution_api_key')
         .eq('organization_id', profile.organization_id);
 
       if (countError) throw countError;
-      if ((currentWhatsappNumbers || 0) >= maxWhatsappNumbers) {
+      const currentWhatsappNumbers = (currentInstances || []).filter((instance: any) => (
+        instance.status === 'connected' ||
+        instance.phone_number ||
+        instance.zapi_instance_id ||
+        instance.zapi_token ||
+        instance.evolution_instance_name ||
+        instance.evolution_instance_id ||
+        instance.evolution_api_key
+      )).length;
+      if (currentWhatsappNumbers >= maxWhatsappNumbers) {
         return new Response(JSON.stringify({
           error: `Limite de números WhatsApp atingido neste plano (${currentWhatsappNumbers}/${maxWhatsappNumbers}). Faça upgrade para conectar mais números.`,
         }), {
@@ -259,9 +268,8 @@ Deno.serve(async (req) => {
     }
 
     const body = req.method === 'POST' ? await req.json().catch(() => ({})) : {};
-    const requestedProvider = body.provider as Provider | undefined;
     const config = await loadWhatsAppPlatformConfig(supabase, supabaseUrl);
-    const provider = requestedProvider || config.provider;
+    const provider = config.provider;
     const settings = defaultProviderSettings();
     const instanceName = `wizzy-${provider}-${profile.organization_id.slice(0, 8)}-${crypto.randomUUID().slice(0, 8)}`;
     const label = body.label || `Número ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;

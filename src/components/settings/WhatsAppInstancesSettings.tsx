@@ -44,6 +44,18 @@ import { useOrganizationPlan } from '@/hooks/useOrganizationPlan';
 import { LimitUpgradeDialog } from '@/components/billing/LimitUpgradeDialog';
 import { enforceEntryCreationLimit, enforceEntryFeatureAccess } from '@/lib/entryFlow';
 
+function hasConfiguredConnection(instance: WhatsAppInstance) {
+  return Boolean(
+    instance.status === 'connected' ||
+    instance.phone_number ||
+    instance.zapi_instance_id ||
+    instance.zapi_token ||
+    instance.evolution_instance_name ||
+    instance.evolution_instance_id ||
+    instance.evolution_api_key
+  );
+}
+
 export function WhatsAppInstancesSettings() {
   const { session } = useAuth();
   const { toast } = useToast();
@@ -62,7 +74,8 @@ export function WhatsAppInstancesSettings() {
   const [isAddingNumber, setIsAddingNumber] = useState(false);
   const [isBackfillingAvatars, setIsBackfillingAvatars] = useState(false);
   const [showLimitDialog, setShowLimitDialog] = useState(false);
-  const whatsappLimitReached = usage.whatsappNumberLimit > 0 && usage.whatsappNumberCount >= usage.whatsappNumberLimit;
+  const configuredInstances = instances.filter(hasConfiguredConnection);
+  const whatsappLimitReached = usage.whatsappNumberLimit > 0 && configuredInstances.length >= usage.whatsappNumberLimit;
 
   const handleBackfillAvatars = async () => {
     if (isBackfillingAvatars) return;
@@ -157,14 +170,14 @@ export function WhatsAppInstancesSettings() {
           queryClient.invalidateQueries({ queryKey: ['whatsapp-instances'] });
           const provider = inst?.provider || 'uazapi';
           if (provider === 'uazapi') {
-            toast({ title: '✅ WhatsApp conectado!', description: 'Sincronizando conversas...' });
+            toast({ title: 'WhatsApp conectado!', description: 'Sincronizando conversas...' });
             handleSync(connectingInstanceId);
           } else {
-            toast({ title: '✅ WhatsApp conectado!', description: 'Evolution API ativo. Novas conversas chegarão pelo webhook.' });
+            toast({ title: 'WhatsApp conectado!', description: 'Novas conversas chegarão automaticamente.' });
           }
         }
       } catch (err) {
-        console.error('[UAZAPI Polling Error]', err);
+        console.error('[WhatsApp Polling Error]', err);
       }
     }, 4000);
     return () => clearInterval(interval);
@@ -173,7 +186,7 @@ export function WhatsAppInstancesSettings() {
   const handleAddNumber = async () => {
     if (!session?.access_token) return;
     if (!enforceEntryFeatureAccess('allow_connect_whatsapp_number', 'conectar numero de WhatsApp')) return;
-    if (!enforceEntryCreationLimit('max_whatsapp_numbers', instances.length, 'numeros de WhatsApp')) return;
+    if (!enforceEntryCreationLimit('max_whatsapp_numbers', configuredInstances.length, 'numeros de WhatsApp')) return;
     if (whatsappLimitReached) {
       setShowLimitDialog(true);
       return;
@@ -222,7 +235,7 @@ export function WhatsAppInstancesSettings() {
       }
     } catch (error: any) {
       const msg = error.message || 'Falha ao criar instância';
-      console.error('[UAZAPI ERROR]', msg);
+      console.error('[WhatsApp instance error]', msg);
       toast({ title: 'Erro', description: msg.substring(0, 200), variant: 'destructive' });
     } finally {
       setIsAddingNumber(false);
@@ -316,7 +329,7 @@ export function WhatsAppInstancesSettings() {
       } else {
         toast({
           title: 'Sincronização concluída!',
-          description: `${synced} conversas sincronizadas (${total} total na UAZAPI).`
+          description: `${synced} conversas sincronizadas (${total} total encontrados).`
         });
       }
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
@@ -435,7 +448,7 @@ export function WhatsAppInstancesSettings() {
 
           {/* Instance list - hide instance being connected while QR is showing */}
           {(() => {
-            const visibleInstances = instances.filter(i =>
+            const visibleInstances = configuredInstances.filter(i =>
               !(connectingInstanceId && i.id === connectingInstanceId)
             );
             if (visibleInstances.length === 0 && !connectingInstanceId) return (
@@ -451,7 +464,7 @@ export function WhatsAppInstancesSettings() {
                 {visibleInstances.map((instance) => {
                   const workspace = getWorkspaceForInstance(instance.id);
                   const isConnected = instance.status === 'connected';
-                  const hasCredentials = !!instance.zapi_instance_id;
+                  const hasCredentials = hasConfiguredConnection(instance);
 
                   return (
                     <div key={instance.id} className="flex items-center justify-between p-4 border rounded-lg bg-card hover:bg-muted/30 transition-colors">
@@ -477,9 +490,6 @@ export function WhatsAppInstancesSettings() {
                             ) : (
                               <Badge variant="outline" className="text-[10px]">Pendente</Badge>
                             )}
-                            <Badge variant="outline" className="text-[10px] uppercase">
-                              {instance.provider === 'evolution' ? 'Evolution' : 'UAZAPI'}
-                            </Badge>
                           </div>
                           <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
                             {instance.phone_number && <span>{instance.phone_number}</span>}
