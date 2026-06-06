@@ -216,9 +216,12 @@ export default function AuthPage() {
     );
 
     if (error) {
+      const message = /cadastro bloqueado|database error saving new user|user already registered/i.test(error.message)
+        ? 'Este e-mail nao pode criar uma nova conta. Fale com o suporte se acredita que isso foi um engano.'
+        : error.message;
       toast({
         title: 'Erro ao criar conta',
-        description: error.message,
+        description: message,
         variant: 'destructive',
       });
     } else {

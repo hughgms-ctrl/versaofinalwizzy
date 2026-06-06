@@ -20,6 +20,10 @@ function onlyDigits(value?: string | null) {
   return (value || '').replace(/\D/g, '')
 }
 
+function normalizeEmail(value?: string | null) {
+  return (value || '').trim().toLowerCase()
+}
+
 function phoneVariants(raw?: string | null): string[] {
   const clean = onlyDigits(raw)
   if (!clean) return []
@@ -1570,24 +1574,80 @@ Deno.serve(async (req) => {
 
       const { data: profiles } = await adminClient
         .from('profiles')
-        .select('user_id')
+        .select('user_id, phone')
         .eq('organization_id', organization_id)
 
       const userIds = (profiles || []).map(p => p.user_id)
+      const authUsers: any[] = []
+      for (const userId of userIds) {
+        const { data } = await adminClient.auth.admin.getUserById(userId)
+        if (data?.user) authUsers.push(data.user)
+      }
+
+      const { data: orgPlan } = await adminClient
+        .from('organization_plans')
+        .select('status, payment_status')
+        .eq('organization_id', organization_id)
+        .maybeSingle()
+
+      const blockedStatuses = new Set(['suspended', 'suspenso', 'blocked', 'bloqueado'])
+      const wasSuspended = blockedStatuses.has(String(orgPlan?.status || '').toLowerCase()) ||
+        blockedStatuses.has(String(orgPlan?.payment_status || '').toLowerCase())
+      const hadBlockedUser = authUsers.some((authUser: any) => Boolean((authUser as any).banned_until))
+      const shouldBlockFutureSignup = wasSuspended || hadBlockedUser
 
       const { data: fingerprints } = await adminClient
         .from('user_fingerprints')
         .select('ip_address, user_agent')
         .eq('organization_id', organization_id)
 
-      if (fingerprints && fingerprints.length > 0) {
-        const uniqueIps = [...new Set(fingerprints.map(f => f.ip_address))]
+      if (shouldBlockFutureSignup && fingerprints && fingerprints.length > 0) {
+        const uniqueIps = [...new Set(fingerprints.map(f => f.ip_address).filter(Boolean))]
         await adminClient.from('blocked_fingerprints').insert(
           uniqueIps.map(ip => ({
             ip_address: ip,
             reason: `Organização excluída pelo administrador (Org: ${organization_id})`,
           }))
         )
+      }
+
+      if (shouldBlockFutureSignup) {
+        const blockedIdentifiers: any[] = []
+        for (const authUser of authUsers) {
+          const profile = (profiles || []).find((p: any) => p.user_id === authUser.id)
+          const email = normalizeEmail(authUser.email)
+          const phone = canonicalPhone(profile?.phone || authUser.phone || authUser.user_metadata?.phone)
+          const reason = wasSuspended
+            ? `Organizacao suspensa e excluida pelo administrador (Org: ${organization_id})`
+            : `Usuario bloqueado e organizacao excluida pelo administrador (Org: ${organization_id})`
+
+          if (email) {
+            blockedIdentifiers.push({
+              email,
+              reason,
+              source_organization_id: organization_id,
+              source_user_id: authUser.id,
+              blocked_by: user.id,
+            })
+          }
+          if (phone) {
+            blockedIdentifiers.push({
+              phone,
+              reason,
+              source_organization_id: organization_id,
+              source_user_id: authUser.id,
+              blocked_by: user.id,
+            })
+          }
+        }
+
+        for (const identifier of blockedIdentifiers) {
+          const lookup = identifier.email
+            ? adminClient.from('blocked_auth_identifiers').select('id').eq('email', identifier.email).maybeSingle()
+            : adminClient.from('blocked_auth_identifiers').select('id').eq('phone', identifier.phone).maybeSingle()
+          const { data: existing } = await lookup
+          if (!existing) await adminClient.from('blocked_auth_identifiers').insert(identifier)
+        }
       }
 
       for (const userId of userIds) {
@@ -1601,7 +1661,20 @@ Deno.serve(async (req) => {
 
       if (deleteError) throw deleteError
 
-      return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      await adminClient.from('admin_audit_logs').insert({
+        action: 'delete_organization',
+        entity_type: 'organization',
+        entity_id: organization_id,
+        performed_by: user.id,
+        details: {
+          user_count: userIds.length,
+          blocked_future_signup: shouldBlockFutureSignup,
+          had_blocked_user: hadBlockedUser,
+          was_suspended: wasSuspended,
+        },
+      })
+
+      return new Response(JSON.stringify({ success: true, blocked_future_signup: shouldBlockFutureSignup }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
     if (action === 'delete_org_user') {
