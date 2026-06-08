@@ -37,12 +37,16 @@ Deno.serve(async (req) => {
       .eq('user_id', caller.id)
       .maybeSingle();
 
-    const { data: callerRole } = await admin
+    const { data: callerRole, error: callerRoleError } = await admin
       .from('user_roles')
       .select('role')
       .eq('user_id', caller.id)
       .eq('organization_id', callerProfile?.organization_id || '')
       .maybeSingle();
+
+    if (callerRoleError) {
+      return json({ error: callerRoleError.message }, 500);
+    }
 
     if (!callerProfile || !callerRole || !['owner', 'admin'].includes(callerRole.role)) {
       return json({ error: 'Only owners and admins can update team members' }, 403);
@@ -88,15 +92,27 @@ Deno.serve(async (req) => {
         return json({ error: 'Admins cannot demote themselves' }, 400);
       }
 
-      const { error } = await admin
+      const { data: updatedRole, error: updateRoleError } = await admin
         .from('user_roles')
-        .upsert({
-          user_id: userId,
-          organization_id: callerProfile.organization_id,
-          role,
-        }, { onConflict: 'user_id,organization_id' });
+        .update({ role })
+        .eq('user_id', userId)
+        .eq('organization_id', callerProfile.organization_id)
+        .select('id')
+        .maybeSingle();
 
-      if (error) throw error;
+      if (updateRoleError) throw updateRoleError;
+
+      if (!updatedRole) {
+        const { error: insertRoleError } = await admin
+          .from('user_roles')
+          .insert({
+            user_id: userId,
+            organization_id: callerProfile.organization_id,
+            role,
+          });
+
+        if (insertRoleError) throw insertRoleError;
+      }
     }
 
     const profileUpdates: Record<string, string | null> = {};

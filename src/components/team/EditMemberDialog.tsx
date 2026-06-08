@@ -47,7 +47,7 @@ export function EditMemberDialog({ open, onOpenChange, member }: EditMemberDialo
           role: member.role === 'owner' ? undefined : role,
         },
       });
-      if (error) throw error;
+      if (error) throw await getFunctionError(error);
       if ((data as any)?.error) throw new Error((data as any).error);
 
       toast({
@@ -132,4 +132,16 @@ export function EditMemberDialog({ open, onOpenChange, member }: EditMemberDialo
       </DialogContent>
     </Dialog>
   );
+}
+
+async function getFunctionError(error: any) {
+  if (error?.context && typeof error.context.json === 'function') {
+    try {
+      const body = await error.context.json();
+      if (body?.error) return new Error(body.error);
+    } catch {
+      // Fall back to the Supabase error message below.
+    }
+  }
+  return error;
 }

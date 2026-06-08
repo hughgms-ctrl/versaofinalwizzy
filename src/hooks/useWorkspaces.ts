@@ -209,7 +209,7 @@ export function useSetUserWorkspaces() {
         body: { userId, workspaceIds },
       });
 
-      if (error) throw error;
+      if (error) throw await getFunctionError(error);
       if ((data as any)?.error) throw new Error((data as any).error);
     },
     onSuccess: (_, variables) => {
@@ -222,4 +222,16 @@ export function useSetUserWorkspaces() {
       });
     },
   });
+}
+
+async function getFunctionError(error: any) {
+  if (error?.context && typeof error.context.json === 'function') {
+    try {
+      const body = await error.context.json();
+      if (body?.error) return new Error(body.error);
+    } catch {
+      // Fall back to the Supabase error message below.
+    }
+  }
+  return error;
 }
