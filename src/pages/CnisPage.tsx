@@ -65,7 +65,7 @@ type RunnerSession = {
 };
 
 const STORAGE_KEY = "wizzy:cnis:sessions:v1";
-const RUNNER_BASE_URL = "http://localhost:8787";
+const RUNNER_BASE_URL = import.meta.env.VITE_CNIS_RUNNER_URL || "http://localhost:8787";
 const activeStatuses: SessionStatus[] = ["queued", "starting", "running", "waiting_user"];
 const finalStatuses: SessionStatus[] = ["completed", "failed", "cancelled"];
 const emptyForm = {
@@ -86,6 +86,12 @@ const statusLabels: Record<SessionStatus, string> = {
   cancelled: "Cancelada",
 };
 
+function isLocalRunnerEnvironment() {
+  if (typeof window === "undefined") return false;
+  if (import.meta.env.VITE_ENABLE_CNIS_RUNNER === "true") return true;
+  return ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
+}
+
 const statusClasses: Record<SessionStatus, string> = {
   queued: "bg-slate-100 text-slate-700 border-slate-200",
   starting: "bg-cyan-100 text-cyan-700 border-cyan-200",
@@ -100,6 +106,7 @@ export default function CnisPage() {
   const { toast } = useToast();
   const navigate = useNavigate();
   const { selectedWorkspaceId, selectedWorkspace, availableWorkspaces, setWorkspace, loading: loadingWorkspaces } = useWorkspaceContext();
+  const localRunnerEnabled = useMemo(() => isLocalRunnerEnvironment(), []);
   const [sessions, setSessions] = useState<CnisSession[]>(() => loadSessions());
   const [selectedId, setSelectedId] = useState<string | null>(() => loadSessions()[0]?.id || null);
   const [form, setForm] = useState(emptyForm);
@@ -122,6 +129,8 @@ export default function CnisPage() {
   };
 
   useEffect(() => {
+    if (!localRunnerEnabled) return;
+
     let stopped = false;
 
     const syncRunner = async () => {
@@ -169,7 +178,7 @@ export default function CnisPage() {
       stopped = true;
       window.clearInterval(timer);
     };
-  }, [selectedWorkspaceId, selectedId]);
+  }, [localRunnerEnabled, selectedWorkspaceId, selectedId]);
 
   const createManualSimulation = () => {
     const vinculos = parseCnisText(form.cnisText);
@@ -210,6 +219,15 @@ export default function CnisPage() {
   };
 
   const createRunnerSession = async () => {
+    if (!localRunnerEnabled) {
+      toast({
+        title: "Runner disponivel apenas no ambiente local",
+        description: "No app publicado, use a importacao manual do CNIS para gerar a analise.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const now = new Date().toISOString();
     const runningCount = sessions.filter((session) => session.status === "running").length;
     const queued = runningCount >= 3;
@@ -259,7 +277,7 @@ export default function CnisPage() {
         progressLabel: "Runner local nao conectado. Inicie tools/cnis-runner com npm start e abra esta sessao novamente.",
         errorMessage: error instanceof Error ? error.message : String(error),
       };
-      toast({ title: "Runner local nao encontrado", description: "A sessao foi criada, mas o runner precisa estar rodando em localhost:8787.", variant: "destructive" });
+      toast({ title: "Runner local nao encontrado", description: "A sessao foi criada, mas o runner precisa estar rodando neste computador.", variant: "destructive" });
     }
 
     const next = [session, ...sessions].slice(0, 100);
@@ -268,6 +286,15 @@ export default function CnisPage() {
   };
 
   const createDemoSession = async () => {
+    if (!localRunnerEnabled) {
+      toast({
+        title: "Demo local indisponivel no publicado",
+        description: "O runner CNIS depende do computador local e nao roda na versao publicada.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const now = new Date().toISOString();
     let session: CnisSession = {
       id: crypto.randomUUID(),
@@ -326,7 +353,7 @@ export default function CnisPage() {
 
   const cancelSession = async (id: string) => {
     const target = sessions.find((session) => session.id === id);
-    if (target?.runnerSessionId) {
+    if (localRunnerEnabled && target?.runnerSessionId) {
       await fetch(`${RUNNER_BASE_URL}/sessions/${target.runnerSessionId}/cancel`, { method: "POST" }).catch(() => {});
     }
     const next = sessions.map((session) => session.id === id ? { ...session, status: "cancelled" as const, progressLabel: "Consulta cancelada pelo usuario.", updatedAt: new Date().toISOString() } : session);
@@ -334,6 +361,15 @@ export default function CnisPage() {
   };
 
   const openRunnerForSession = async (id: string) => {
+    if (!localRunnerEnabled) {
+      toast({
+        title: "Runner disponivel apenas no ambiente local",
+        description: "No app publicado nao ha conexao com runner local.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const target = sessions.find((session) => session.id === id);
     if (!target) return;
 
@@ -449,13 +485,17 @@ export default function CnisPage() {
             />
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            <Badge variant="outline" className="hidden border-emerald-200 bg-emerald-50 text-emerald-700 lg:inline-flex">
-              localhost:8787
-            </Badge>
-            <Button variant="outline" size="sm" onClick={createRunnerSession} className="gap-2">
-              <Bot className="h-4 w-4" />
-              Nova consulta
-            </Button>
+            {localRunnerEnabled && (
+              <>
+                <Badge variant="outline" className="hidden border-emerald-200 bg-emerald-50 text-emerald-700 lg:inline-flex">
+                  Runner local
+                </Badge>
+                <Button variant="outline" size="sm" onClick={createRunnerSession} className="gap-2">
+                  <Bot className="h-4 w-4" />
+                  Nova consulta
+                </Button>
+              </>
+            )}
           </div>
         </header>
 
@@ -513,18 +553,24 @@ export default function CnisPage() {
                         <Upload className="h-4 w-4" />
                         Simular com dados importados
                       </Button>
-                      <Button variant="outline" onClick={createRunnerSession} className="gap-2">
-                        <Bot className="h-4 w-4" />
-                        Nova consulta com runner
-                      </Button>
-                      <Button variant="secondary" onClick={createDemoSession} className="gap-2">
-                        <CheckCircle2 className="h-4 w-4" />
-                        Demo completa
-                      </Button>
+                      {localRunnerEnabled && (
+                        <>
+                          <Button variant="outline" onClick={createRunnerSession} className="gap-2">
+                            <Bot className="h-4 w-4" />
+                            Nova consulta com runner
+                          </Button>
+                          <Button variant="secondary" onClick={createDemoSession} className="gap-2">
+                            <CheckCircle2 className="h-4 w-4" />
+                            Demo completa
+                          </Button>
+                        </>
+                      )}
                     </div>
 
                     <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-                      Com o runner local ligado em localhost:8787, a Wizzy abre o navegador controlado, injeta o painel CNIS e importa o resultado automaticamente para este historico.
+                      {localRunnerEnabled
+                        ? "Com o runner local ligado, a Wizzy abre o navegador controlado, injeta o painel CNIS e importa o resultado automaticamente para este historico."
+                        : "No app publicado, cole os vinculos do CNIS no campo acima e use a simulacao com dados importados para gerar a analise."}
                     </div>
                   </div>
                 </ScrollArea>
@@ -568,6 +614,7 @@ export default function CnisPage() {
               {selected ? (
                 <SessionDetail
                   session={selected}
+                  localRunnerEnabled={localRunnerEnabled}
                   onDownload={() => downloadReport(selected)}
                   onCancel={() => cancelSession(selected.id)}
                   onOpenRunner={() => openRunnerForSession(selected.id)}
@@ -640,11 +687,13 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 
 function SessionDetail({
   session,
+  localRunnerEnabled,
   onDownload,
   onCancel,
   onOpenRunner,
 }: {
   session: CnisSession;
+  localRunnerEnabled: boolean;
   onDownload: () => void;
   onCancel: () => void | Promise<void>;
   onOpenRunner: () => void | Promise<void>;
@@ -662,7 +711,7 @@ function SessionDetail({
           <p className="text-sm text-muted-foreground">{session.progressLabel}</p>
         </div>
         <div className="flex gap-2">
-          {session.source === "runner" && (
+          {localRunnerEnabled && session.source === "runner" && (
             <Button variant="outline" size="sm" onClick={onOpenRunner} className="gap-2">
               <Bot className="h-4 w-4" />
               Abrir runner
@@ -725,7 +774,7 @@ function SessionDetail({
               </Card>
             </>
           ) : (
-            <RunnerViewport session={session} onOpenRunner={onOpenRunner} />
+            <RunnerViewport session={session} localRunnerEnabled={localRunnerEnabled} onOpenRunner={onOpenRunner} />
           )}
         </div>
       </ScrollArea>
@@ -733,10 +782,18 @@ function SessionDetail({
   );
 }
 
-function RunnerViewport({ session, onOpenRunner }: { session: CnisSession; onOpenRunner: () => void | Promise<void> }) {
+function RunnerViewport({
+  session,
+  localRunnerEnabled,
+  onOpenRunner,
+}: {
+  session: CnisSession;
+  localRunnerEnabled: boolean;
+  onOpenRunner: () => void | Promise<void>;
+}) {
   const [tick, setTick] = useState(0);
   const [imageFailed, setImageFailed] = useState(false);
-  const hasRunner = Boolean(session.runnerSessionId);
+  const hasRunner = localRunnerEnabled && Boolean(session.runnerSessionId);
 
   useEffect(() => {
     if (!hasRunner) return;
@@ -785,11 +842,13 @@ function RunnerViewport({ session, onOpenRunner }: { session: CnisSession; onOpe
             <p className="mt-1 text-sm text-muted-foreground">
               {hasRunner
                 ? "Clique na imagem e digite para controlar a janela do runner. A janela externa continua sendo o navegador real."
-                : "Clique em Abrir runner para criar a janela controlada e mostrar a pagina aqui dentro."}
+                : localRunnerEnabled
+                  ? "Clique em Abrir runner para criar a janela controlada e mostrar a pagina aqui dentro."
+                  : "A automacao por navegador controlado roda apenas em ambiente local."}
             </p>
           </div>
         </div>
-        {!hasRunner && (
+        {localRunnerEnabled && !hasRunner && (
           <Button variant="outline" size="sm" onClick={onOpenRunner} className="gap-2">
             <Bot className="h-4 w-4" />
             Conectar runner
@@ -814,9 +873,15 @@ function RunnerViewport({ session, onOpenRunner }: { session: CnisSession; onOpe
         ) : (
           <div className="max-w-md text-center text-sm text-muted-foreground">
             <FileText className="mx-auto mb-4 h-12 w-12 opacity-40" />
-            <p className="font-medium text-foreground">{imageFailed ? "Ainda nao consegui receber a tela do runner." : "Nenhuma janela conectada ainda."}</p>
+            <p className="font-medium text-foreground">
+              {localRunnerEnabled
+                ? imageFailed ? "Ainda nao consegui receber a tela do runner." : "Nenhuma janela conectada ainda."
+                : "Automacao local indisponivel no app publicado."}
+            </p>
             <p className="mt-2">
-              {imageFailed ? "Use Abrir runner para trazer a janela para frente ou crie uma nova consulta." : "A visualizacao aparece aqui quando o runner abrir o Chromium controlado."}
+              {localRunnerEnabled
+                ? imageFailed ? "Use Abrir runner para trazer a janela para frente ou crie uma nova consulta." : "A visualizacao aparece aqui quando o runner abrir o Chromium controlado."
+                : "Use a importacao manual do CNIS para gerar a analise nesta versao."}
             </p>
           </div>
         )}
