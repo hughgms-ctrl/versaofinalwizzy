@@ -501,7 +501,7 @@ function TrialInfoBadges({ org }: { org: any }) {
           Cartao ativado{details.provider ? ` (${details.provider})` : ''}
         </Badge>
       ) : details.requireCard ? (
-        <Badge variant="outline" className="border-amber-500/50 text-amber-600">
+        <Badge variant="outline" className="text-muted-foreground">
           <CreditCard className="mr-1 h-3 w-3" />
           Cartao pendente
         </Badge>
@@ -527,11 +527,72 @@ function TrialInfoBadges({ org }: { org: any }) {
         </Badge>
       )}
       {details.requireCard && !details.hasGatewaySubscription && details.checkoutStartedAt && (
-        <Badge variant="outline" className="border-amber-500/50 text-amber-600">
+        <Badge variant="outline" className="text-muted-foreground">
           Checkout iniciado
         </Badge>
       )}
     </div>
+  );
+}
+
+function PlanSummaryBadges({ org }: { org: any }) {
+  const details = getTrialDetails(org);
+  const paymentStatus = String(org.plan?.payment_status || '').toLowerCase();
+  const hasManualAccess = paymentStatus === 'manual';
+  const isExpired = details && typeof details.daysRemaining === 'number' && details.daysRemaining <= 0;
+
+  if (!details && !hasManualAccess) return null;
+
+  return (
+    <div className="mt-1 flex max-w-[220px] flex-wrap gap-1">
+      {hasManualAccess && (
+        <Badge variant="outline" className="border-emerald-500/40 text-emerald-600">
+          Uso liberado
+        </Badge>
+      )}
+      {details && (
+        <Badge variant="outline" className="border-primary/40 text-primary">
+          Teste gratis
+        </Badge>
+      )}
+      {details?.trialEndsAt && (
+        <Badge variant="outline" className={isExpired ? 'border-destructive/40 text-destructive' : 'text-muted-foreground'}>
+          <CalendarClock className="mr-1 h-3 w-3" />
+          Ate {new Date(details.trialEndsAt).toLocaleDateString('pt-BR')}
+          {typeof details.daysRemaining === 'number'
+            ? details.daysRemaining > 0
+              ? ` (${details.daysRemaining}d)`
+              : ' (vencido)'
+            : ''}
+        </Badge>
+      )}
+    </div>
+  );
+}
+
+function PlanAccessDetailsRow({ org }: { org: any }) {
+  const details = getTrialDetails(org);
+  const paymentStatus = String(org.plan?.payment_status || '').toLowerCase();
+  const hasManualAccess = paymentStatus === 'manual';
+
+  if (!details && !hasManualAccess) return null;
+
+  return (
+    <TableRow>
+      <TableCell colSpan={9} className="bg-muted/20 px-6 py-3">
+        <div className="flex flex-wrap items-center gap-3 text-sm">
+          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Acesso e cobranca
+          </span>
+          {hasManualAccess && (
+            <Badge variant="outline" className="border-emerald-500/40 text-emerald-600">
+              Uso liberado
+            </Badge>
+          )}
+          <TrialInfoBadges org={org} />
+        </div>
+      </TableCell>
+    </TableRow>
   );
 }
 
@@ -695,17 +756,12 @@ export default function AdminClientsPage() {
                           {org.plan ? (
                             <div className="flex flex-col items-start gap-1">
                               <Badge variant="secondary">{org.plan.name}</Badge>
-                              <TrialInfoBadges org={org} />
-                              {String(org.plan.payment_status || '').toLowerCase() === 'manual' && (
-                                <Badge variant="outline" className="border-emerald-500/40 text-emerald-600">
-                                  Uso liberado
-                                </Badge>
-                              )}
+                              <PlanSummaryBadges org={org} />
                             </div>
                           ) : (
                             <div className="flex flex-col items-start gap-1">
                               <Badge variant="outline" className="text-muted-foreground">Sem plano</Badge>
-                              <TrialInfoBadges org={org} />
+                              <PlanSummaryBadges org={org} />
                             </div>
                           )}
                         </TableCell>
@@ -781,7 +837,10 @@ export default function AdminClientsPage() {
                         </TableCell>
                       </TableRow>
                       {expandedOrg === org.id && (
-                        <OrgUsersRow orgId={org.id} />
+                        <>
+                          <PlanAccessDetailsRow org={org} />
+                          <OrgUsersRow orgId={org.id} />
+                        </>
                       )}
                     </React.Fragment>
                   ))}

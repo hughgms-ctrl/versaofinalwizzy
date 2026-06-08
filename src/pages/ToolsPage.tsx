@@ -61,7 +61,7 @@ const tools = [
     name: 'Wizzy CNIS',
     description: 'Análise de CNIS para fins de Auxílio Reclusão e outros.',
     icon: SearchCheck,
-    comingSoon: true,
+    href: '/tools/cnis',
   },
 ];
 

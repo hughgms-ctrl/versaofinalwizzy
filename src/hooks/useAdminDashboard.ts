@@ -9,27 +9,52 @@ const SUPABASE_PUBLISHABLE_KEY =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inphb2J0ZXRianB1emlianltaHp3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIxMzc5MzksImV4cCI6MjA4NzcxMzkzOX0.HBUI1OK1eYq9FE2SzIvuAkxuCG0frApCQZqcjjDx43k';
 
 async function adminFetch(action: string, body?: any) {
-  const { data: { session } } = await supabase.auth.getSession();
+  const { data: userData, error: userError } = await supabase.auth.getUser();
+  if (userError || !userData.user) throw new Error('Not authenticated');
+
+  const { data: sessionData } = await supabase.auth.getSession();
+  let session = sessionData.session;
   if (!session) throw new Error('Not authenticated');
 
+  const expiresAtMs = session.expires_at ? session.expires_at * 1000 : 0;
+  if (expiresAtMs && expiresAtMs - Date.now() < 60_000) {
+    const refreshed = await supabase.auth.refreshSession();
+    session = refreshed.data.session;
+    if (!session) throw new Error(refreshed.error?.message || 'Not authenticated');
+  }
+
   const url = `${SUPABASE_URL}/functions/v1/admin-dashboard?action=${action}`;
-  const options: RequestInit = {
+  const makeOptions = (accessToken: string): RequestInit => ({
     headers: {
-      'Authorization': `Bearer ${session.access_token}`,
+      'Authorization': `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
       'apikey': SUPABASE_PUBLISHABLE_KEY,
     },
-  };
+  });
 
+  let options = makeOptions(session.access_token);
   if (body) {
     options.method = 'POST';
     options.body = JSON.stringify(body);
   }
 
-  const res = await fetch(url, options);
+  let res = await fetch(url, options);
+  if (res.status === 401) {
+    const refreshed = await supabase.auth.refreshSession();
+    if (refreshed.data.session?.access_token) {
+      session = refreshed.data.session;
+      options = makeOptions(session.access_token);
+      if (body) {
+        options.method = 'POST';
+        options.body = JSON.stringify(body);
+      }
+      res = await fetch(url, options);
+    }
+  }
+
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: 'Request failed' }));
-    throw new Error(err.error || 'Request failed');
+    throw new Error(err.error || `Request failed (${res.status})`);
   }
   return res.json();
 }
@@ -53,14 +78,23 @@ async function fetchPublicBillingPlans() {
 }
 
 async function adminPlansFetch() {
-  const data = await adminFetch('plans');
+  let data: any = null;
+  try {
+    data = await adminFetch('plans');
+  } catch (error) {
+    console.warn('Admin plans fetch failed; falling back to public billing plans.', error);
+  }
+
   if (Array.isArray(data?.plans) && data.plans.length > 0) return data;
 
   const publicPlans = await fetchPublicBillingPlans();
-  if (publicPlans.length === 0) return data;
+  if (publicPlans.length === 0) {
+    if (data) return data;
+    throw new Error('Nao foi possivel carregar os planos.');
+  }
 
   return {
-    ...data,
+    ...(data || {}),
     plans: publicPlans.map((plan: any) => ({
       ...plan,
       subscriber_count: plan.subscriber_count || 0,

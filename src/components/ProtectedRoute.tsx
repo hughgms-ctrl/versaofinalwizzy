@@ -27,7 +27,7 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   const { data: userRole, isLoading: roleLoading } = useCurrentUserRole(activeOrganizationId);
   const canManageBilling = userRole === 'owner' || userRole === 'admin';
 
-  const { data: onboardingPlan, isLoading: planLoading } = useQuery({
+  const { data: onboardingPlan, isLoading: planLoading, error: planError } = useQuery({
     queryKey: ['onboarding-org-plan', activeOrganizationId],
     queryFn: async () => {
       if (!activeOrganizationId) return null;
@@ -39,7 +39,14 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
         .maybeSingle();
 
       if (error) throw error;
-      return data;
+      if (data) return data;
+
+      const { data: usageData, error: usageError } = await supabase.functions.invoke('organization-usage', {
+        body: { organization_id: activeOrganizationId },
+      });
+
+      if (usageError) throw usageError;
+      return (usageData as any)?.planRow || null;
     },
     enabled: !!user && !!activeOrganizationId,
   });
@@ -55,10 +62,11 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
 
   useEffect(() => {
     const isTrialPlan = ['trial', 'trialing'].includes(paymentStatus);
-    if (onboardingPlan && entryAssignment && !isTrialPlan) {
+    const hasGrantedAccess = ['paid', 'manual', 'active'].includes(paymentStatus);
+    if (onboardingPlan && entryAssignment && (!isTrialPlan || hasGrantedAccess)) {
       clearStoredEntryAssignment();
     }
-  }, [onboardingPlan, entryAssignment?.flow_type]);
+  }, [onboardingPlan, entryAssignment?.flow_type, paymentStatus]);
 
   if (
     loading
@@ -85,11 +93,11 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   }
 
   // Only billing admins from organizations without any plan record should be sent to subscriptions.
-  if (!onboardingPlan && canManageBilling && !isAllowedOnboardingPath && !hasEntryLimitedAccess) {
+  if (activeOrganizationId && !onboardingPlan && !planError && canManageBilling && !isAllowedOnboardingPath && !hasEntryLimitedAccess) {
     return <Navigate to="/plans" replace state={{ from: location }} />;
   }
 
-  if ((trialExpired || localTrialExpired) && !isAllowedOnboardingPath) {
+  if ((trialExpired || (activeOrganizationId && !onboardingPlan && !planError && localTrialExpired)) && !isAllowedOnboardingPath) {
     return <Navigate to="/plans" replace state={{ from: location, reason: 'trial_expired' }} />;
   }
 

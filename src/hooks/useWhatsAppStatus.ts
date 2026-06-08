@@ -13,7 +13,7 @@ export interface WhatsAppStatus {
 }
 
 export function useWhatsAppStatus() {
-  const { session } = useAuth();
+  const { session, profile } = useAuth();
   const queryClient = useQueryClient();
   const [status, setStatus] = useState<WhatsAppStatus>({
     status: 'pending',
@@ -71,8 +71,12 @@ export function useWhatsAppStatus() {
 
       if (response.error) throw response.error;
 
-      const newConnected = response.data.connected;
-      const needsSync = response.data.needsSync;
+      const connectedInstance = Array.isArray(response.data?.instances)
+        ? response.data.instances.find((instance: any) => instance?.connected === true)
+        : null;
+      const newConnected = response.data.connected === true || !!connectedInstance;
+      const needsSync = response.data.needsSync || connectedInstance?.needsSync;
+      const phoneNumber = connectedInstance?.phoneNumber || response.data.phoneNumber;
 
       // If connection status changed, invalidate queries
       if (wasConnected !== null && wasConnected !== newConnected) {
@@ -88,15 +92,37 @@ export function useWhatsAppStatus() {
       setStatus({
         status: newConnected ? 'connected' : response.data.status,
         connected: newConnected,
-        phoneNumber: response.data.phoneNumber,
+        phoneNumber,
         isLoading: false,
         needsSync,
       });
     } catch (error) {
       console.error('Error checking WhatsApp status:', error);
+
+      if (profile?.organization_id) {
+        const { data } = await supabase
+          .from('whatsapp_instances')
+          .select('status, phone_number, is_active')
+          .eq('organization_id', profile.organization_id)
+          .or('status.eq.connected,is_active.eq.true')
+          .limit(1)
+          .maybeSingle();
+
+        if (data) {
+          setWasConnected(true);
+          setStatus({
+            status: 'connected',
+            connected: true,
+            phoneNumber: data.phone_number,
+            isLoading: false,
+          });
+          return;
+        }
+      }
+
       setStatus(prev => ({ ...prev, isLoading: false }));
     }
-  }, [session?.access_token, wasConnected, queryClient, syncChats]);
+  }, [session?.access_token, profile?.organization_id, wasConnected, queryClient, syncChats]);
 
   useEffect(() => {
     checkStatus();
