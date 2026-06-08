@@ -324,6 +324,8 @@ const buildMutedFeatures = (plan: PlatformPlan) => {
   return orderedExtraModules.filter((module) => !modules.includes(module)).map((module) => extraModuleLabels[module]);
 };
 
+const freeTrialCtaFlows = ["trial_auto", "freemium", "access_limited_payment"];
+
 export default function LandingPage() {
   const navigate = useNavigate();
   const [annual, setAnnual] = useState(false);
@@ -386,7 +388,10 @@ export default function LandingPage() {
 
   const displayedPlans = adminPlans;
   const flowType = entryAssignment?.flow_type || "payment_first";
-  const isTrialFlow = flowType === "trial_auto";
+  const isTrialFlow = freeTrialCtaFlows.includes(flowType);
+  const primaryCta = isTrialFlow ? "Testar grátis" : "Começar agora";
+  const heroCta = isTrialFlow ? "Testar grátis" : "Ativar meu primeiro agente";
+  const finalCta = isTrialFlow ? "Testar grátis" : "Ativar meu escritório agora";
   const trackLandingButtonClick = (label: string, target: string) => {
     trackMetaCustomEvent("LandingButtonClicked", {
       label,
@@ -427,9 +432,21 @@ export default function LandingPage() {
             <a href="#faq" className="transition hover:text-white">FAQ</a>
           </nav>
 
-          <a href="#planos" onClick={() => trackLandingButtonClick("Comecar agora", "planos")} className="rounded-xl bg-gradient-to-r from-pink-500 to-orange-500 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-pink-500/25 transition hover:from-pink-600 hover:to-orange-600">
-            Começar agora
-          </a>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                trackLandingButtonClick("Acessar conta", "auth");
+                navigate("/auth");
+              }}
+              className="inline-flex rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-sm font-bold text-slate-200 transition hover:bg-white/10 hover:text-white sm:px-5"
+            >
+              Entrar
+            </button>
+            <a href="#planos" onClick={() => trackLandingButtonClick(primaryCta, "planos")} className="rounded-xl bg-gradient-to-r from-pink-500 to-orange-500 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-pink-500/25 transition hover:from-pink-600 hover:to-orange-600">
+              {primaryCta}
+            </a>
+          </div>
         </div>
       </header>
 
@@ -452,8 +469,8 @@ export default function LandingPage() {
                 Chega de aprender Claude Code, GPT, Make ou qualquer framework. O Wizzy entrega <strong className="font-semibold text-white">agentes de IA jurídicos prontos</strong> - você ativa, eles trabalham.
               </p>
               <div className="mt-9 flex flex-col gap-4 sm:flex-row">
-                <a href="#planos" onClick={() => trackLandingButtonClick("Ativar meu primeiro agente", "planos")} className="inline-flex h-13 items-center justify-center rounded-xl bg-gradient-to-r from-pink-500 to-orange-500 px-8 py-4 text-base font-bold text-white shadow-xl shadow-pink-500/25 transition hover:-translate-y-0.5 hover:from-pink-600 hover:to-orange-600">
-                  Ativar meu primeiro agente
+                <a href="#planos" onClick={() => trackLandingButtonClick(heroCta, "planos")} className="inline-flex h-13 items-center justify-center rounded-xl bg-gradient-to-r from-pink-500 to-orange-500 px-8 py-4 text-base font-bold text-white shadow-xl shadow-pink-500/25 transition hover:-translate-y-0.5 hover:from-pink-600 hover:to-orange-600">
+                  {heroCta}
                 </a>
                 <a href="#agentes" onClick={() => trackLandingButtonClick("Ver como funciona", "agentes")} className="inline-flex h-13 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/5 px-8 py-4 text-base font-semibold text-slate-200 transition hover:bg-white/10 hover:text-white">
                   Ver como funciona
@@ -709,7 +726,7 @@ export default function LandingPage() {
                 const isPopular = plan.slug === "pro";
                 const planFeatures = buildPlanFeatures(plan);
                 const mutedFeatures = buildMutedFeatures(plan);
-                const cta = isTrialFlow ? "Começar teste grátis" : `Escolher ${plan.name}`;
+                const cta = isTrialFlow ? "Testar grátis" : `Escolher ${plan.name}`;
 
                 return (
                   <Reveal key={plan.id || plan.slug}>
@@ -798,7 +815,7 @@ export default function LandingPage() {
             </p>
             <div className="mt-10 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
               <Button size="lg" className="h-14 border-0 bg-white px-10 text-lg font-semibold text-slate-900 shadow-2xl shadow-black/20 hover:bg-white/90" onClick={() => goToAuth()}>
-                Ativar meu escritório agora
+                {finalCta}
                 <ArrowRight className="ml-2 h-5 w-5" />
               </Button>
               <a href="#planos" onClick={() => trackLandingButtonClick("Falar com consultor", "planos")} className="inline-flex h-14 items-center justify-center gap-2 rounded-xl border border-white/30 bg-white/10 px-10 text-lg font-semibold text-white transition hover:bg-white/20">
