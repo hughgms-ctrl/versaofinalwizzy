@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { useQueryClient } from '@tanstack/react-query';
@@ -20,11 +21,15 @@ export function EditMemberDialog({ open, onOpenChange, member }: EditMemberDialo
   const [isLoading, setIsLoading] = useState(false);
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
+  const [role, setRole] = useState<'admin' | 'supervisor' | 'agent'>('agent');
 
   useEffect(() => {
     if (member) {
       setFullName(member.name);
       setPhone(member.phone || '');
+      if (member.role !== 'owner') {
+        setRole(member.role);
+      }
     }
   }, [member]);
 
@@ -34,15 +39,16 @@ export function EditMemberDialog({ open, onOpenChange, member }: EditMemberDialo
 
     setIsLoading(true);
     try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({ 
-          full_name: fullName.trim(), 
-          phone: phone.trim() || null 
-        })
-        .eq('id', member.id);
-
+      const { data, error } = await supabase.functions.invoke('update-team-member', {
+        body: {
+          userId: member.user_id,
+          fullName: fullName.trim(),
+          phone: phone.trim(),
+          role: member.role === 'owner' ? undefined : role,
+        },
+      });
       if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any).error);
 
       toast({
         title: 'Perfil atualizado',
@@ -50,6 +56,8 @@ export function EditMemberDialog({ open, onOpenChange, member }: EditMemberDialo
       });
 
       queryClient.invalidateQueries({ queryKey: ['team-members'] });
+      queryClient.invalidateQueries({ queryKey: ['current-user-role'] });
+      queryClient.invalidateQueries({ queryKey: ['user-role'] });
       onOpenChange(false);
     } catch (error: any) {
       console.error('Error updating member:', error);
@@ -94,6 +102,22 @@ export function EditMemberDialog({ open, onOpenChange, member }: EditMemberDialo
               Número com código do país. Usado para receber notificações.
             </p>
           </div>
+
+          {member?.role !== 'owner' && (
+            <div className="space-y-2">
+              <Label htmlFor="edit-role">Cargo</Label>
+              <Select value={role} onValueChange={(value: 'admin' | 'supervisor' | 'agent') => setRole(value)}>
+                <SelectTrigger id="edit-role">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="admin">Administrador</SelectItem>
+                  <SelectItem value="supervisor">Gerente</SelectItem>
+                  <SelectItem value="agent">Atendente</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>

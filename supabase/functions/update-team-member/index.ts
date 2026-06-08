@@ -1,0 +1,164 @@
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
+const editableRoles = new Set(['admin', 'supervisor', 'agent']);
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  try {
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const admin = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      return json({ error: 'Missing authorization header' }, 401);
+    }
+
+    const token = authHeader.replace(/^Bearer\s+/i, '');
+    const { data: userData, error: userError } = await admin.auth.getUser(token);
+    const caller = userData?.user;
+    if (userError || !caller) {
+      return json({ error: 'Unauthorized' }, 401);
+    }
+
+    const { data: callerProfile } = await admin
+      .from('profiles')
+      .select('organization_id')
+      .eq('user_id', caller.id)
+      .maybeSingle();
+
+    const { data: callerRole } = await admin
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', caller.id)
+      .eq('organization_id', callerProfile?.organization_id || '')
+      .maybeSingle();
+
+    if (!callerProfile || !callerRole || !['owner', 'admin'].includes(callerRole.role)) {
+      return json({ error: 'Only owners and admins can update team members' }, 403);
+    }
+
+    const body = await req.json();
+    const userId = String(body.userId || '');
+    const fullName = typeof body.fullName === 'string' ? body.fullName.trim() : undefined;
+    const phone = typeof body.phone === 'string' ? body.phone.trim() : undefined;
+    const role = typeof body.role === 'string' ? body.role : undefined;
+    const workspaceIds = Array.isArray(body.workspaceIds) ? body.workspaceIds.map(String) : undefined;
+
+    if (!userId) {
+      return json({ error: 'Missing userId' }, 400);
+    }
+
+    const { data: targetProfile } = await admin
+      .from('profiles')
+      .select('id, organization_id')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (!targetProfile || targetProfile.organization_id !== callerProfile.organization_id) {
+      return json({ error: 'User not found in your organization' }, 404);
+    }
+
+    const { data: targetRole } = await admin
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', userId)
+      .eq('organization_id', callerProfile.organization_id)
+      .maybeSingle();
+
+    if (targetRole?.role === 'owner' && userId !== caller.id) {
+      return json({ error: 'Organization owner cannot be edited here' }, 403);
+    }
+
+    if (role !== undefined) {
+      if (!editableRoles.has(role)) {
+        return json({ error: 'Invalid role' }, 400);
+      }
+      if (userId === caller.id && callerRole.role === 'admin' && role !== 'admin') {
+        return json({ error: 'Admins cannot demote themselves' }, 400);
+      }
+
+      const { error } = await admin
+        .from('user_roles')
+        .upsert({
+          user_id: userId,
+          organization_id: callerProfile.organization_id,
+          role,
+        }, { onConflict: 'user_id,organization_id' });
+
+      if (error) throw error;
+    }
+
+    const profileUpdates: Record<string, string | null> = {};
+    if (fullName !== undefined) profileUpdates.full_name = fullName;
+    if (phone !== undefined) profileUpdates.phone = phone || null;
+
+    if (Object.keys(profileUpdates).length > 0) {
+      const { error } = await admin
+        .from('profiles')
+        .update(profileUpdates)
+        .eq('user_id', userId)
+        .eq('organization_id', callerProfile.organization_id);
+
+      if (error) throw error;
+    }
+
+    if (workspaceIds !== undefined) {
+      if (workspaceIds.length > 0) {
+        const { data: validWorkspaces, error: workspaceError } = await admin
+          .from('workspaces')
+          .select('id')
+          .eq('organization_id', callerProfile.organization_id)
+          .in('id', workspaceIds);
+
+        if (workspaceError) throw workspaceError;
+
+        const validIds = new Set((validWorkspaces || []).map((workspace: any) => workspace.id));
+        const invalidIds = workspaceIds.filter((id: string) => !validIds.has(id));
+        if (invalidIds.length > 0) {
+          return json({ error: 'One or more workspaces do not belong to your organization' }, 400);
+        }
+      }
+
+      const { error: deleteError } = await admin
+        .from('workspace_members')
+        .delete()
+        .eq('user_id', userId);
+
+      if (deleteError) throw deleteError;
+
+      if (workspaceIds.length > 0) {
+        const { error: insertError } = await admin
+          .from('workspace_members')
+          .insert(workspaceIds.map((workspaceId: string) => ({
+            workspace_id: workspaceId,
+            user_id: userId,
+          })));
+
+        if (insertError) throw insertError;
+      }
+    }
+
+    return json({ success: true });
+  } catch (error) {
+    console.error('Error in update-team-member:', error);
+    return json({ error: error instanceof Error ? error.message : 'Unknown error' }, 500);
+  }
+});
+
+function json(body: Record<string, unknown>, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
+}

@@ -205,40 +205,12 @@ export function useSetUserWorkspaces() {
       userId: string;
       workspaceIds: string[];
     }) => {
-      const { data: currentRows, error: currentError } = await supabase
-        .from('workspace_members')
-        .select('workspace_id')
-        .eq('user_id', userId);
+      const { data, error } = await supabase.functions.invoke('update-team-member', {
+        body: { userId, workspaceIds },
+      });
 
-      if (currentError) throw currentError;
-
-      const currentIds = new Set((currentRows || []).map((row: any) => row.workspace_id));
-      const nextIds = new Set(workspaceIds);
-      const idsToRemove = [...currentIds].filter(id => !nextIds.has(id));
-      const idsToAdd = [...nextIds].filter(id => !currentIds.has(id));
-
-      if (idsToRemove.length > 0) {
-        const { error } = await supabase
-          .from('workspace_members')
-          .delete()
-          .eq('user_id', userId)
-          .in('workspace_id', idsToRemove);
-
-        if (error) throw error;
-      }
-
-      if (idsToAdd.length > 0) {
-        const { error } = await supabase
-          .from('workspace_members')
-          .insert(
-            idsToAdd.map(workspaceId => ({
-              workspace_id: workspaceId,
-              user_id: userId,
-            })) as any
-          );
-
-        if (error) throw error;
-      }
+      if (error) throw error;
+      if ((data as any)?.error) throw new Error((data as any).error);
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['workspace-members'] });

@@ -51,7 +51,7 @@ import { cn } from '@/lib/utils';
 const roleLabels = {
   owner: { label: 'Proprietário', color: 'bg-amber-500/10 text-amber-500' },
   admin: { label: 'Administrador', color: 'bg-purple-500/10 text-purple-500' },
-  supervisor: { label: 'Supervisor', color: 'bg-blue-500/10 text-blue-500' },
+  supervisor: { label: 'Gerente', color: 'bg-blue-500/10 text-blue-500' },
   agent: { label: 'Atendente', color: 'bg-green-500/10 text-green-500' },
 };
 

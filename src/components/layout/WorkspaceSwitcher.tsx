@@ -15,8 +15,7 @@ interface WorkspaceSwitcherProps {
 
 export function WorkspaceSwitcher({ collapsed }: WorkspaceSwitcherProps) {
   const { selectedWorkspace, availableWorkspaces, setWorkspace, isAdmin } = useWorkspaceContext();
-
-  if (availableWorkspaces.length === 0 && !isAdmin) return null;
+  const hasAvailableWorkspaces = availableWorkspaces.length > 0;
 
   return (
     <div className={cn("px-3 py-2", collapsed && "px-2")}>
@@ -35,7 +34,7 @@ export function WorkspaceSwitcher({ collapsed }: WorkspaceSwitcherProps) {
             {!collapsed && (
               <>
                 <span className="truncate flex-1 text-left text-sidebar-foreground font-medium">
-                  {selectedWorkspace?.name || 'Todos os Workspaces'}
+                  {selectedWorkspace?.name || (isAdmin ? 'Todos os Workspaces' : 'Sem workspace liberado')}
                 </span>
                 <ChevronDown className="h-3.5 w-3.5 text-sidebar-foreground/60 flex-shrink-0" />
               </>
@@ -49,7 +48,7 @@ export function WorkspaceSwitcher({ collapsed }: WorkspaceSwitcherProps) {
                 <Globe className="h-4 w-4 text-muted-foreground" />
                 <span>Todos os Workspaces</span>
               </DropdownMenuItem>
-              {availableWorkspaces.length > 0 && <DropdownMenuSeparator />}
+              {hasAvailableWorkspaces && <DropdownMenuSeparator />}
             </>
           )}
           {availableWorkspaces.map((workspace) => (
@@ -65,10 +64,10 @@ export function WorkspaceSwitcher({ collapsed }: WorkspaceSwitcherProps) {
               <span className="truncate">{workspace.name}</span>
             </DropdownMenuItem>
           ))}
-          {availableWorkspaces.length === 0 && (
+          {!hasAvailableWorkspaces && (
             <DropdownMenuItem disabled className="gap-2 text-muted-foreground">
               <Building2 className="h-4 w-4" />
-              <span>Nenhum workspace</span>
+              <span>{isAdmin ? 'Nenhum workspace' : 'Nenhum workspace liberado'}</span>
             </DropdownMenuItem>
           )}
         </DropdownMenuContent>
