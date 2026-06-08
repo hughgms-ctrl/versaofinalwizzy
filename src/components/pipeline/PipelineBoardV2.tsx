@@ -50,6 +50,7 @@ import {
 import { usePipelineRealtime } from '@/hooks/usePipelineRealtime';
 import { ConversationFiltersState } from '@/components/shared/ConversationFilters';
 import { useUserPermissions, useCurrentUserRole } from '@/hooks/useUserPermissions';
+import { useAuth } from '@/hooks/useAuth';
 import { useTags } from '@/hooks/useTags';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useFollowUpStatus } from '@/hooks/useFollowUpStatus';
@@ -223,6 +224,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
   const moveConversation = useMoveConversation();
   const { data: userPermissions } = useUserPermissions();
   const { data: userRole } = useCurrentUserRole();
+  const { user } = useAuth();
   const { data: tags = [] } = useTags();
   const { data: followUpMap } = useFollowUpStatus();
   const { data: messageSearchResult } = useMessageSearch(searchQuery);
@@ -436,6 +438,22 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
       // === SHARED-ONLY PIPELINE: only show shared conversations ===
       if (sharedConversationIds && !sharedConversationIds.has(conv.id)) return false;
 
+      // === PERMISSION-BASED FILTER (same rule as Conversations) ===
+      const isRestricted = userRole && userRole !== 'owner' && userRole !== 'admin';
+      const filterType = userPermissions?.conversations_filter_type || 'all';
+      if (isRestricted && filterType !== 'all') {
+        const isAssigned = conv.assigned_to === user?.id;
+        const allowedTags = userPermissions?.conversations_allowed_tags || [];
+        const contactTagIds = allContactTags
+          ?.filter(ct => ct.contact_id === conv.contact?.id)
+          .map(ct => ct.tag_id) || [];
+        const hasAllowedTag = allowedTags.length > 0 && allowedTags.some(tagId => contactTagIds.includes(tagId));
+
+        if (filterType === 'assigned' && !isAssigned) return false;
+        if (filterType === 'tags' && !hasAllowedTag) return false;
+        if (filterType === 'assigned_and_tags' && !isAssigned && !hasAllowedTag) return false;
+      }
+
       // === WORKSPACE FILTER (must come first) ===
       // Never use tags as workspace boundaries. Tags can be shared or misapplied.
       if (selectedWorkspaceId && selectedWorkspace) {
@@ -490,7 +508,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
 
       return true;
     });
-  }, [conversations, filters, searchQuery, allContactTags, selectedWorkspaceId, selectedWorkspace, messageSearchResult, sharedConversationIds]);
+  }, [conversations, filters, searchQuery, allContactTags, selectedWorkspaceId, selectedWorkspace, messageSearchResult, sharedConversationIds, userRole, userPermissions, user?.id]);
 
   const filteredContactIds = useMemo(() => (
     Array.from(new Set(filteredConversations.map(conv => conv.contact?.id).filter(Boolean) as string[]))

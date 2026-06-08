@@ -40,7 +40,7 @@ import { TeamMember } from '@/hooks/useTeamMembers';
 import { useUserPermissions, useUpdateUserPermissions, UserPermissions } from '@/hooks/useUserPermissions';
 import { useTags, Tag } from '@/hooks/useTags';
 import { usePipelines, Pipeline } from '@/hooks/usePipelines';
-import { useWorkspaces, useUserWorkspaces, useManageWorkspaceMembers, Workspace } from '@/hooks/useWorkspaces';
+import { useSetUserWorkspaces, useWorkspaces } from '@/hooks/useWorkspaces';
 import { useConversationSharesByMember, useUnshareConversation } from '@/hooks/useConversationShares';
 import { useConversations } from '@/hooks/useConversations';
 import { Share2, Trash2 } from 'lucide-react';
@@ -96,13 +96,10 @@ export function EditPermissionsDialog({ open, onOpenChange, member }: EditPermis
   const { data: pipelines = [] } = usePipelines();
   const { data: workspaces = [] } = useWorkspaces();
   const updatePermissions = useUpdateUserPermissions();
-  const manageWorkspaceMembers = useManageWorkspaceMembers();
+  const setUserWorkspaces = useSetUserWorkspaces();
   const { data: memberShares = [] } = useConversationSharesByMember(member?.user_id);
   const { data: allConversations = [] } = useConversations();
   const unshareConversation = useUnshareConversation();
-
-  // Fetch workspaces this user belongs to
-  const { data: allWorkspaceMembers = [] } = useUserWorkspaces();
 
   const [permissions, setPermissions] = useState<Partial<UserPermissions>>(defaultPermissions);
   const [selectedWorkspaceIds, setSelectedWorkspaceIds] = useState<string[]>([]);
@@ -157,28 +154,10 @@ export function EditPermissionsDialog({ open, onOpenChange, member }: EditPermis
       ...permissions,
     });
 
-    // Save workspace memberships for each workspace
-    // We need to add/remove this member from workspaces
-    for (const workspace of workspaces) {
-      const isSelected = selectedWorkspaceIds.includes(workspace.id);
-      const { data: currentMembers } = await (await import('@/integrations/supabase/client')).supabase
-        .from('workspace_members')
-        .select('user_id')
-        .eq('workspace_id', workspace.id);
-      
-      const memberUserIds = (currentMembers || []).map((m: any) => m.user_id);
-      const isMember = memberUserIds.includes(member.user_id);
-
-      if (isSelected && !isMember) {
-        // Add member
-        const newIds = [...memberUserIds, member.user_id];
-        await manageWorkspaceMembers.mutateAsync({ workspaceId: workspace.id, userIds: newIds });
-      } else if (!isSelected && isMember) {
-        // Remove member
-        const newIds = memberUserIds.filter((id: string) => id !== member.user_id);
-        await manageWorkspaceMembers.mutateAsync({ workspaceId: workspace.id, userIds: newIds });
-      }
-    }
+    await setUserWorkspaces.mutateAsync({
+      userId: member.user_id,
+      workspaceIds: selectedWorkspaceIds,
+    });
 
     onOpenChange(false);
   };
@@ -570,8 +549,8 @@ export function EditPermissionsDialog({ open, onOpenChange, member }: EditPermis
             <Button variant="outline" onClick={() => onOpenChange(false)}>
               Cancelar
             </Button>
-            <Button onClick={handleSave} disabled={updatePermissions.isPending}>
-              {updatePermissions.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            <Button onClick={handleSave} disabled={updatePermissions.isPending || setUserWorkspaces.isPending}>
+              {(updatePermissions.isPending || setUserWorkspaces.isPending) && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Salvar Permissões
             </Button>
           </div>
