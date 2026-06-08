@@ -1,5 +1,5 @@
 import { Handle, Position, NodeProps, Node } from '@xyflow/react';
-import { Tag, Kanban, UserPlus, Clock, Webhook, IterationCw, FileText, GitBranch, Building2 } from 'lucide-react';
+import { Tag, Kanban, UserPlus, Clock, Webhook, IterationCw, FileText, GitBranch, Building2, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface ActionNodeData extends Record<string, unknown> {
@@ -17,6 +17,10 @@ interface ActionNodeData extends Record<string, unknown> {
   templateName?: string;
   signingMethod?: string;
   conditionLabel?: string;
+  groupId?: string;
+  groupJid?: string;
+  groupName?: string;
+  items?: unknown[];
 }
 
 type ActionNode = Node<ActionNodeData>;
@@ -292,6 +296,20 @@ export function WorkspaceActionNode({ data, selected }: NodeProps<ActionNode>) {
       <p className="text-xs text-muted-foreground">
         Workspace: <span className="font-medium text-foreground">{String(data.workspaceName || 'Selecionar...')}</span>
       </p>
+    </BaseActionNode>
+  );
+}
+
+export function WhatsAppGroupActionNode({ data, selected }: NodeProps<ActionNode>) {
+  const itemCount = Array.isArray(data.items) ? (data.items as unknown[]).length : 0;
+  return (
+    <BaseActionNode selected={!!selected} icon={Users} color="bg-emerald-500" title="Grupo WhatsApp">
+      <p className="text-xs text-muted-foreground">
+        Grupo: <span className="font-medium text-foreground">{String(data.groupName || 'Selecionar...')}</span>
+      </p>
+      {itemCount > 0 && (
+        <p className="text-[10px] text-muted-foreground mt-1">{itemCount} item(ns)</p>
+      )}
     </BaseActionNode>
   );
 }

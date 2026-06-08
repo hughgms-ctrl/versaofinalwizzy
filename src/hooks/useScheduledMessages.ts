@@ -43,10 +43,11 @@ export interface CreateScheduledMessageInput {
   media_url?: string | null;
   media_type?: string | null;
   flow_id?: string | null;
-  target_type: 'single' | 'tag' | 'manual' | 'phone';
+  target_type: 'single' | 'tag' | 'manual' | 'phone' | 'group' | 'groups';
   contact_id?: string | null;
   tag_id?: string | null;
   contact_ids?: string[]; // For manual selection
+  group_jids?: string[]; // For group / mass-group targets
   manual_phone?: string | null;
   manual_name?: string | null;
   name?: string | null;

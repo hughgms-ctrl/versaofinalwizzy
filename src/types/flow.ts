@@ -14,6 +14,7 @@ export type FlowNodeType =
   | 'action-document'
   | 'action-delay'
   | 'action-workspace'
+  | 'action-whatsapp-group'
   | 'condition'
   | 'user-input'
   | 'ai-handoff'
@@ -175,6 +176,13 @@ export interface ListMessageConfig {
 }
 
 // Action Node Configs
+export interface WhatsAppGroupActionConfig {
+  groupId: string;
+  groupJid: string;
+  groupName?: string;
+  items: ContentItem[];
+}
+
 export interface TagActionConfig {
   action: 'add' | 'remove';
   tagId: string;

@@ -10,6 +10,10 @@ export interface WhatsAppSendRequest {
   mediaUrl?: string | null;
   caption?: string | null;
   conversationInstanceId?: string | null;
+  // When true, `phone` is treated as a WhatsApp group JID (e.g. 120363...@g.us)
+  // and is NOT normalized to digits. Evolution/UAZAPI accept the group JID in the
+  // `number` field for sendText/sendMedia/sendWhatsAppAudio.
+  isGroup?: boolean;
 }
 
 export interface WhatsAppSendResult {
@@ -154,6 +158,19 @@ export async function resolveWhatsAppInstance(
   return null;
 }
 
+// Resolve Evolution API base URL + apikey + instance name for a given instance row,
+// using the same precedence as sendWhatsAppMessage. Used by group management endpoints.
+export async function getEvolutionConfig(
+  supabase: any,
+  instance: any,
+): Promise<{ baseUrl: string; apiKey: string; instanceName: string }> {
+  const settings = await loadConnectionSettings(supabase);
+  const apiKey = instance.evolution_api_key || settings.evolutionApiKey || instance.zapi_token || '';
+  const instanceName =
+    instance.evolution_instance_name || instance.zapi_instance_id || instance.evolution_instance_id || '';
+  return { baseUrl: settings.evolutionBaseUrl, apiKey, instanceName };
+}
+
 export async function sendWhatsAppMessage(supabase: any, request: WhatsAppSendRequest): Promise<WhatsAppSendResult> {
   const settings = await loadConnectionSettings(supabase);
   const instance = await resolveWhatsAppInstance(
@@ -166,8 +183,11 @@ export async function sendWhatsAppMessage(supabase: any, request: WhatsAppSendRe
 
   const provider: WhatsAppProvider = instance.provider === 'evolution' ? 'evolution' : 'uazapi';
   const type = request.type || (request.mediaUrl ? 'document' : 'text');
-  const normalizedPhone = normalizePhone(request.phone);
-  if (!normalizedPhone) throw new Error('Telefone invalido');
+  // For group sends, keep the JID intact (e.g. 120363...@g.us). For 1:1, strip to digits.
+  const normalizedPhone = request.isGroup
+    ? String(request.phone || '').trim()
+    : normalizePhone(request.phone);
+  if (!normalizedPhone) throw new Error(request.isGroup ? 'JID do grupo invalido' : 'Telefone invalido');
 
   let endpoint = '';
   let headers: Record<string, string> = { 'Content-Type': 'application/json' };

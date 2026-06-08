@@ -15,9 +15,10 @@ interface ScheduledMessage {
   media_url: string | null;
   media_type: string | null;
   flow_id: string | null;
-  target_type: 'single' | 'tag' | 'manual';
+  target_type: 'single' | 'tag' | 'manual' | 'group' | 'groups';
   contact_id: string | null;
   tag_id: string | null;
+  group_jids: string[] | null;
   recurrence_type: string;
   recurrence_end_at: string | null;
   scheduled_at: string;
@@ -71,6 +72,30 @@ Deno.serve(async (req) => {
           .from('scheduled_messages')
           .update({ status: 'processing' })
           .eq('id', scheduled.id);
+
+        // Group targets: send straight to the group JID(s), no contact/conversation resolution.
+        if (scheduled.target_type === 'group' || scheduled.target_type === 'groups') {
+          const groupResult = await sendMessageToGroups(supabase, scheduled);
+          if (groupResult.successCount === 0 && groupResult.failCount > 0) {
+            await supabase
+              .from('scheduled_messages')
+              .update({
+                status: 'failed',
+                error_message: groupResult.lastError || 'Falha em todos os envios para grupos',
+                last_executed_at: new Date().toISOString(),
+                execution_count: (scheduled.execution_count || 0) + 1,
+              })
+              .eq('id', scheduled.id);
+            failed++;
+            continue;
+          }
+          await supabase
+            .from('scheduled_messages')
+            .update(calculateNextExecution(scheduled))
+            .eq('id', scheduled.id);
+          processed++;
+          continue;
+        }
 
         // Get target contacts
         const contacts = await getTargetContacts(supabase, scheduled);
@@ -388,6 +413,58 @@ async function executeFlowForContacts(
           .eq('scheduled_message_id', scheduled.id)
           .eq('contact_id', contact.id);
       }
+    }
+  }
+
+  return { successCount, failCount, lastError };
+}
+
+async function sendMessageToGroups(
+  supabase: any,
+  scheduled: ScheduledMessage,
+): Promise<{ successCount: number; failCount: number; lastError?: string }> {
+  const groupJids = Array.isArray(scheduled.group_jids) ? scheduled.group_jids : [];
+  const delayMs = ((scheduled as any).delay_between_contacts || 0) * 1000;
+
+  let successCount = 0;
+  let failCount = 0;
+  let lastError: string | undefined;
+
+  let sendType: 'text' | 'image' | 'video' | 'audio' | 'document' = 'text';
+  if (scheduled.media_url) {
+    if (scheduled.media_type?.startsWith('image')) sendType = 'image';
+    else if (scheduled.media_type?.startsWith('audio')) sendType = 'audio';
+    else if (scheduled.media_type?.startsWith('video')) sendType = 'video';
+    else sendType = 'document';
+  }
+
+  for (let i = 0; i < groupJids.length; i++) {
+    const groupJid = groupJids[i];
+    try {
+      if (i > 0 && delayMs > 0) {
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      }
+
+      const sendResult = await sendWhatsAppMessage(supabase, {
+        organizationId: scheduled.organization_id,
+        phone: groupJid,
+        isGroup: true,
+        text: scheduled.message_content,
+        type: sendType,
+        mediaUrl: scheduled.media_url,
+        caption: scheduled.message_content,
+      });
+
+      console.log(`[scheduled ${scheduled.id}] group ${sendResult.provider} -> ${groupJid}: ${sendResult.status}`);
+
+      if (!sendResult.ok) {
+        throw new Error(`${sendResult.provider} ${sendResult.status}: ${sendResult.responseText.slice(0, 300)}`);
+      }
+      successCount++;
+    } catch (err: any) {
+      console.error(`Error sending to group ${groupJid}:`, err?.message || err);
+      lastError = err?.message || String(err);
+      failCount++;
     }
   }
 

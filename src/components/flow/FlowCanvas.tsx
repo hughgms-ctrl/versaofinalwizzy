@@ -38,6 +38,7 @@ import {
   FlowActionNode,
   DocumentActionNode,
   WorkspaceActionNode,
+  WhatsAppGroupActionNode,
 } from './nodes/ActionNodes';
 import { ConditionNode, UserInputNode, RandomizerNode, SmartDelayNode } from './nodes/LogicNodes';
 import { AIHandoffNode, AIMasterNode, AIReturnNode } from './nodes/AINodes';
@@ -66,6 +67,7 @@ const nodeTypes = {
   'action-department': DepartmentActionNode,
   'action-document': DocumentActionNode,
   'action-workspace': WorkspaceActionNode,
+  'action-whatsapp-group': WhatsAppGroupActionNode,
   'condition': ConditionNode,
   'user-input': UserInputNode,
   'randomizer': RandomizerNode,
@@ -516,6 +518,7 @@ function FlowCanvasInner() {
                   case 'ai-return': return '#d946ef';
                   case 'randomizer': return '#a855f7';
                   case 'smart-delay': return '#f97316';
+                  case 'action-whatsapp-group': return '#10b981';
                   default: return '#6b7280';
                 }
               }}

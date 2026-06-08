@@ -26,6 +26,7 @@ import {
 import { useConversations } from '@/hooks/useConversations';
 import { useTags } from '@/hooks/useTags';
 import { useFlows } from '@/hooks/useFlows';
+import { useWhatsAppGroups } from '@/hooks/useWhatsAppGroups';
 import { useCreateScheduledMessage } from '@/hooks/useScheduledMessages';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { 
@@ -72,12 +73,14 @@ export function CreateScheduledMessageDialog({
   const { data: conversations = [] } = useConversations();
   const { data: tags = [] } = useTags();
   const { data: flows = [] } = useFlows();
+  const { data: whatsappGroups = [] } = useWhatsAppGroups();
   const createMutation = useCreateScheduledMessage();
   const { selectedWorkspaceId } = useWorkspaceContext();
 
   // Form state
   const [contentType, setContentType] = useState<'message' | 'flow'>('message');
-  const [targetType, setTargetType] = useState<'single' | 'tag' | 'manual' | 'phone'>('single');
+  const [targetType, setTargetType] = useState<'single' | 'tag' | 'manual' | 'phone' | 'group'>('single');
+  const [selectedGroupJids, setSelectedGroupJids] = useState<string[]>([]);
   const [messageContent, setMessageContent] = useState('');
   const [mediaUrl, setMediaUrl] = useState('');
   const [mediaType, setMediaType] = useState('');
@@ -218,19 +221,25 @@ export function CreateScheduledMessageDialog({
     
     const scheduledAt = new Date(`${scheduledDate}T${scheduledTime}`).toISOString();
     
+    // Groups only support direct messages (flows operate on a contact/conversation).
+    const isGroupTarget = targetType === 'group';
+    const effectiveContentType = isGroupTarget ? 'message' : contentType;
+    const resolvedGroupTarget = selectedGroupJids.length > 1 ? 'groups' : 'group';
+
     await createMutation.mutateAsync({
       scheduled_at: scheduledAt,
       recurrence_type: recurrenceType,
       recurrence_end_at: recurrenceEndDate ? new Date(`${recurrenceEndDate}T23:59:59`).toISOString() : null,
-      content_type: contentType,
-      message_content: contentType === 'message' ? messageContent : null,
-      media_url: contentType === 'message' ? mediaUrl || null : null,
-      media_type: contentType === 'message' ? mediaType || null : null,
-      flow_id: contentType === 'flow' ? flowId : null,
-      target_type: targetType,
+      content_type: effectiveContentType,
+      message_content: effectiveContentType === 'message' ? messageContent : null,
+      media_url: effectiveContentType === 'message' ? mediaUrl || null : null,
+      media_type: effectiveContentType === 'message' ? mediaType || null : null,
+      flow_id: effectiveContentType === 'flow' ? flowId : null,
+      target_type: isGroupTarget ? resolvedGroupTarget : targetType,
       contact_id: targetType === 'single' ? contactId : null,
       tag_id: targetType === 'tag' ? tagId : null,
       contact_ids: targetType === 'manual' ? selectedContactIds : undefined,
+      group_jids: isGroupTarget ? selectedGroupJids : undefined,
       manual_phone: targetType === 'phone' ? manualPhone : null,
       manual_name: targetType === 'phone' ? manualName : null,
       name: name || null,
@@ -254,6 +263,7 @@ export function CreateScheduledMessageDialog({
     setManualName('');
     setTagId('');
     setSelectedContactIds([]);
+    setSelectedGroupJids([]);
     setScheduledDate('');
     setScheduledTime('');
     setRecurrenceType('once');
@@ -294,7 +304,14 @@ export function CreateScheduledMessageDialog({
     if (targetType === 'tag' && !tagId) return false;
     if (targetType === 'manual' && selectedContactIds.length === 0) return false;
     if (targetType === 'phone' && manualPhone.replace(/\D/g, '').length < 10) return false;
+    if (targetType === 'group' && selectedGroupJids.length === 0) return false;
+    // Groups only support direct messages
+    if (targetType === 'group' && !messageContent.trim() && !mediaUrl) return false;
     return true;
+  };
+
+  const toggleGroup = (jid: string) => {
+    setSelectedGroupJids(prev => (prev.includes(jid) ? prev.filter(j => j !== jid) : [...prev, jid]));
   };
 
   return (
@@ -424,10 +441,14 @@ export function CreateScheduledMessageDialog({
             {/* Target Type */}
             <div className="space-y-3">
               <Label>Para quem enviar?</Label>
-              <RadioGroup 
-                value={targetType} 
-                onValueChange={(v) => setTargetType(v as 'single' | 'tag' | 'manual' | 'phone')}
-                className="grid gap-3 md:grid-cols-4"
+              <RadioGroup
+                value={targetType}
+                onValueChange={(v) => {
+                  const next = v as 'single' | 'tag' | 'manual' | 'phone' | 'group';
+                  setTargetType(next);
+                  if (next === 'group') setContentType('message');
+                }}
+                className="grid gap-3 md:grid-cols-3"
               >
                 <div className={cn(
                   "flex-1 flex items-center gap-3 p-4 rounded-lg border cursor-pointer transition-colors",
@@ -467,6 +488,16 @@ export function CreateScheduledMessageDialog({
                   <Label htmlFor="phone" className="flex items-center gap-2 cursor-pointer flex-1">
                     <Phone className="h-4 w-4" />
                     Novo número
+                  </Label>
+                </div>
+                <div className={cn(
+                  "flex-1 flex items-center gap-3 p-4 rounded-lg border cursor-pointer transition-colors",
+                  targetType === 'group' ? "border-primary bg-primary/5" : "border-border hover:bg-accent"
+                )}>
+                  <RadioGroupItem value="group" id="group" />
+                  <Label htmlFor="group" className="flex items-center gap-2 cursor-pointer flex-1">
+                    <Users className="h-4 w-4" />
+                    Grupo(s)
                   </Label>
                 </div>
               </RadioGroup>
@@ -617,6 +648,42 @@ export function CreateScheduledMessageDialog({
               </div>
             )}
 
+            {/* Group Selection */}
+            {targetType === 'group' && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label>Selecione os grupos</Label>
+                  {selectedGroupJids.length > 0 && (
+                    <Badge variant="secondary">{selectedGroupJids.length} selecionado(s)</Badge>
+                  )}
+                </div>
+                <div className="border rounded-lg max-h-48 overflow-auto">
+                  {whatsappGroups.length === 0 ? (
+                    <p className="p-4 text-sm text-muted-foreground text-center">
+                      Nenhum grupo. Sincronize na aba Grupos.
+                    </p>
+                  ) : (
+                    whatsappGroups.map(group => (
+                      <div
+                        key={group.id}
+                        className="flex items-center gap-3 p-3 hover:bg-accent cursor-pointer border-b last:border-0"
+                        onClick={() => toggleGroup(group.group_jid)}
+                      >
+                        <Checkbox
+                          checked={selectedGroupJids.includes(group.group_jid)}
+                          onCheckedChange={() => toggleGroup(group.group_jid)}
+                        />
+                        <p className="text-sm font-medium truncate">{group.name || group.group_jid}</p>
+                      </div>
+                    ))
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Marque vários grupos para envio em massa. Fluxos não se aplicam a grupos.
+                </p>
+              </div>
+            )}
+
             {/* Schedule */}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
@@ -645,7 +712,7 @@ export function CreateScheduledMessageDialog({
             </div>
 
             {/* Delay between contacts */}
-            {(targetType === 'tag' || targetType === 'manual') && (
+            {(targetType === 'tag' || targetType === 'manual' || targetType === 'group') && (
               <div className="space-y-2">
                 <Label className="flex items-center gap-2">
                   <Timer className="h-4 w-4" />

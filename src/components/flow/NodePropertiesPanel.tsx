@@ -4,7 +4,7 @@ import {
   X, Layers, MousePointerClick, List, Tag, Kanban, UserPlus, Webhook,
   GitBranch, FormInput, Bot, IterationCw, Plus, Trash2, GripVertical,
   Type, Image, Video, Music, FileText, Clock, Upload, Loader2, Save, Sparkles,
-  Link, ChevronRight, ChevronDown, Folder, Shuffle, User, MessageSquare, Building2
+  Link, ChevronRight, ChevronDown, Folder, Shuffle, User, MessageSquare, Building2, Users
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,6 +27,7 @@ import { usePipelines, usePipelineColumns } from '@/hooks/usePipelines';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
+import { useWhatsAppGroups } from '@/hooks/useWhatsAppGroups';
 import { TrainingRulesList } from '@/components/agents/TrainingRulesList';
 import { QualificationRulesPanel } from '@/components/agents/QualificationRulesPanel';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
@@ -64,6 +65,7 @@ const nodeIcons: Record<string, React.ComponentType<{ className?: string }>> = {
   'action-document': FileText,
   'action-delay': Clock,
   'action-workspace': Building2,
+  'action-whatsapp-group': Users,
   'randomizer': Shuffle,
   'smart-delay': Clock,
 };
@@ -86,6 +88,7 @@ const nodeLabels: Record<FlowNodeType, string> = {
   'condition': 'Condição',
   'user-input': 'Pergunta (Variável)',
   'action-workspace': 'Atribuir Workspace',
+  'action-whatsapp-group': 'Enviar Grupo WhatsApp',
   'randomizer': 'Randomizador',
   'smart-delay': 'Atraso Inteligente',
 };
@@ -520,6 +523,7 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
     : allFlows;
   const { data: teamMembers = [] } = useTeamMembers();
   const { data: workspaces = [] } = useWorkspaces();
+  const { data: whatsappGroups = [] } = useWhatsAppGroups();
 
   const prevNodeIdRef = useRef<string | null>(null);
   useEffect(() => {
@@ -1085,6 +1089,118 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
     );
   };
 
+  const renderWhatsAppGroupEditor = () => {
+    const items = (localData.items as ContentItem[]) || [];
+
+    const addItem = (type: ContentItemType) => {
+      const newItem: ContentItem = {
+        id: generateId(),
+        type,
+        content: type === 'text' ? '' : undefined,
+        mediaUrl: ['image', 'video', 'audio', 'document'].includes(type) ? '' : undefined,
+        delaySeconds: type === 'delay' ? 3 : undefined,
+      };
+      handleChange('items', [...items, newItem]);
+    };
+    const updateItem = (index: number, item: ContentItem) => {
+      const newItems = [...items];
+      newItems[index] = item;
+      handleChange('items', newItems);
+    };
+    const removeItem = (index: number) => {
+      handleChange('items', items.filter((_, i) => i !== index));
+    };
+    const moveItem = (from: number, to: number) => {
+      if (to < 0 || to >= items.length) return;
+      const newItems = [...items];
+      const [moved] = newItems.splice(from, 1);
+      newItems.splice(to, 0, moved);
+      handleChange('items', newItems);
+    };
+
+    return (
+      <div className="space-y-4">
+        <div className="p-3 bg-emerald-50 dark:bg-emerald-950/30 rounded-lg flex items-center gap-3">
+          <Users className="h-5 w-5 text-emerald-500" />
+          <div>
+            <p className="text-xs font-semibold">Enviar Grupo WhatsApp</p>
+            <p className="text-[10px] text-muted-foreground">Envia o conteúdo para um grupo de WhatsApp.</p>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label>Grupo</Label>
+          <Select
+            value={(localData.groupId as string) || ''}
+            onValueChange={(val) => {
+              const group = whatsappGroups.find(g => g.id === val);
+              const newData = {
+                ...localData,
+                groupId: val,
+                groupJid: group?.group_jid || '',
+                groupName: group?.name || 'Grupo',
+              };
+              setLocalData(newData);
+              onUpdate(node.id, newData);
+            }}
+          >
+            <SelectTrigger><SelectValue placeholder="Selecione um grupo..." /></SelectTrigger>
+            <SelectContent>
+              {whatsappGroups.length === 0 && (
+                <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                  Nenhum grupo. Sincronize na aba Grupos.
+                </div>
+              )}
+              {whatsappGroups.map((group) => (
+                <SelectItem key={group.id} value={group.id}>
+                  {group.name || group.group_jid}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-3">
+          {items.map((item, index) => (
+            <ContentItemEditor
+              key={item.id}
+              item={item}
+              index={index}
+              onUpdate={(updated) => updateItem(index, updated)}
+              onRemove={() => removeItem(index)}
+              onMoveUp={() => moveItem(index, index - 1)}
+              onMoveDown={() => moveItem(index, index + 1)}
+              isFirst={index === 0}
+              isLast={index === items.length - 1}
+            />
+          ))}
+        </div>
+
+        <div className="border-2 border-dashed border-border rounded-lg p-3">
+          <p className="text-xs text-muted-foreground mb-2 text-center">Adicionar conteúdo</p>
+          <div className="flex flex-wrap gap-1.5 justify-center">
+            {contentItemTypes.map((t) => (
+              <Button
+                key={t.type}
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs gap-1.5"
+                onClick={() => addItem(t.type)}
+              >
+                <t.icon className="h-3.5 w-3.5" />
+                {t.label}
+              </Button>
+            ))}
+          </div>
+        </div>
+
+        <p className="text-xs text-muted-foreground">
+          Use {`{{variavel}}`} para inserir variáveis dinâmicas nos textos.
+        </p>
+      </div>
+    );
+  };
+
   const renderContentBlockEditor = () => {
     const items = (localData.items as ContentItem[]) || [];
 
@@ -1194,6 +1310,9 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
     switch (nodeType) {
       case 'content-block':
         return renderContentBlockEditor();
+
+      case 'action-whatsapp-group':
+        return renderWhatsAppGroupEditor();
 
       case 'message-buttons':
         return (

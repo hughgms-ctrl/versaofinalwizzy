@@ -22,7 +22,8 @@ import {
   Layers,
   PanelLeftClose,
   PanelLeft,
-  FileText
+  FileText,
+  Users
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { flowComponentCategories } from '@/data/flowComponents';
@@ -48,6 +49,7 @@ const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   IterationCw,
   Layers,
   FileText,
+  Users,
 };
 
 interface FlowSidebarProps {

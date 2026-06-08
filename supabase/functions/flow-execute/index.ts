@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { sendWhatsAppMessage } from '../_shared/whatsappProvider.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -587,6 +588,9 @@ async function executeNode(
     case 'action-workspace':
       return await executeWorkspaceAssignment(data, context, supabase);
 
+    case 'action-whatsapp-group':
+      return await executeWhatsAppGroupMessage(data, context, supabase);
+
     default:
       console.log(`Unknown node type: ${type}`);
       return { success: true };
@@ -1133,6 +1137,79 @@ async function notifyHumanEscalation({
 }
 
 // Execute Content Block - processes multiple items sequentially
+// Sends one or more content items to a WhatsApp group JID (e.g. 120363...@g.us).
+// Uses the shared provider sender with isGroup:true so the JID is preserved.
+async function executeWhatsAppGroupMessage(
+  data: Record<string, unknown>,
+  context: ExecutionContext,
+  supabase: SupabaseClientType,
+): Promise<NodeResult> {
+  const groupJid = String(data.groupJid || '');
+  if (!groupJid) {
+    console.log('[FLOW EXECUTE] action-whatsapp-group: no groupJid configured');
+    return { success: true, metadata: { skipped: 'no_group_jid' } };
+  }
+
+  const items = (data.items as ContentItem[]) || [];
+  if (items.length === 0) return { success: true };
+
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    try {
+      if (item.type === 'delay') {
+        const delaySeconds = item.delaySeconds || 3;
+        await new Promise(resolve => setTimeout(resolve, Math.min(delaySeconds * 1000, 30000)));
+        continue;
+      }
+
+      let text: string | null = null;
+      let mediaUrl: string | null = null;
+      let caption: string | null = null;
+      let type: 'text' | 'image' | 'video' | 'audio' | 'document' = 'text';
+
+      if (item.type === 'text') {
+        if (!item.content) continue;
+        text = replaceVariables(item.content, context.variables);
+        type = 'text';
+      } else if (['image', 'video', 'audio', 'document'].includes(item.type)) {
+        if (!item.mediaUrl) continue;
+        type = item.type as typeof type;
+        mediaUrl = item.mediaUrl;
+        caption = item.caption ? replaceVariables(item.caption, context.variables) : null;
+      } else {
+        continue;
+      }
+
+      const result = await sendWhatsAppMessage(supabase, {
+        organizationId: context.organizationId,
+        phone: groupJid,
+        isGroup: true,
+        text,
+        type,
+        mediaUrl,
+        caption,
+      });
+
+      if (!result.ok) {
+        return {
+          success: false,
+          error: `Falha ao enviar para grupo (${result.provider} ${result.status}): ${result.responseText.slice(0, 200)}`,
+        };
+      }
+
+      // Small delay between items to avoid rate limiting
+      if (i < items.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 800));
+      }
+    } catch (error) {
+      console.error('[FLOW EXECUTE] Error sending group content item:', error);
+      return { success: false, error: `Failed to send group item: ${error}` };
+    }
+  }
+
+  return { success: true };
+}
+
 async function executeContentBlock(data: Record<string, unknown>, context: ExecutionContext, supabase: SupabaseClientType, node?: FlowNode): Promise<NodeResult> {
   const items = (data.items as ContentItem[]) || [];
 

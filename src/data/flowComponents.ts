@@ -97,6 +97,13 @@ export const flowComponentCategories: FlowComponentCategory[] = [
         icon: 'Building2',
         color: 'bg-sky-500',
       },
+      {
+        type: 'action-whatsapp-group',
+        label: 'Enviar Grupo WhatsApp',
+        description: 'Envia mensagem para um grupo de WhatsApp',
+        icon: 'Users',
+        color: 'bg-emerald-500',
+      },
     ],
   },
   {

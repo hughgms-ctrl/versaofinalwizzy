@@ -18,6 +18,7 @@ const Index = lazy(() => import("./pages/Index"));
 const AuthPage = lazy(() => import("./pages/AuthPage"));
 const ConversationsPage = lazy(() => import("./pages/ConversationsPage"));
 const ContactsPage = lazy(() => import("./pages/ContactsPage"));
+const GroupsPage = lazy(() => import("./pages/GroupsPage"));
 const PipelinePage = lazy(() => import("./pages/PipelinePage"));
 const AgentsPage = lazy(() => import("./pages/AgentsPage"));
 const AgentEditorPage = lazy(() => import("./pages/AgentEditorPage"));
@@ -101,6 +102,7 @@ const App = () => (
                       <Route path="/dashboard" element={<ProtectedRoute><Index /></ProtectedRoute>} />
                       <Route path="/conversations" element={<ProtectedRoute><ConversationsPage /></ProtectedRoute>} />
                       <Route path="/contacts" element={<ProtectedRoute><ContactsPage /></ProtectedRoute>} />
+                      <Route path="/groups" element={<ProtectedRoute><GroupsPage /></ProtectedRoute>} />
                       <Route path="/pipeline" element={<ProtectedRoute><PipelinePage /></ProtectedRoute>} />
                       <Route path="/agents" element={<ProtectedRoute><AgentsPage /></ProtectedRoute>} />
                       <Route path="/agents/:agentId" element={<ProtectedRoute><AgentEditorPage /></ProtectedRoute>} />
