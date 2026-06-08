@@ -820,6 +820,202 @@ export type Database = {
           },
         ]
       }
+      carousel_models: {
+        Row: {
+          audience: string
+          brand_color: string | null
+          created_at: string
+          id: string
+          name: string
+          niche: string
+          objective: string
+          organization_id: string
+          people_in_images: string
+          tone: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          audience?: string
+          brand_color?: string | null
+          created_at?: string
+          id?: string
+          name: string
+          niche: string
+          objective?: string
+          organization_id: string
+          people_in_images?: string
+          tone?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          audience?: string
+          brand_color?: string | null
+          created_at?: string
+          id?: string
+          name?: string
+          niche?: string
+          objective?: string
+          organization_id?: string
+          people_in_images?: string
+          tone?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      carousel_slides: {
+        Row: {
+          accent_color: string | null
+          bg_color: string | null
+          body: string | null
+          body_size: number | null
+          carousel_id: string
+          created_at: string
+          font_family: string | null
+          has_image: boolean
+          id: string
+          image_prompt: string | null
+          image_theme: string | null
+          image_url: string | null
+          order: number
+          overlay_intensity: number | null
+          overlay_position: string | null
+          text_align: string | null
+          text_color: string | null
+          text_position: string | null
+          title: string | null
+          title_bold: boolean | null
+          title_size: number | null
+          updated_at: string
+        }
+        Insert: {
+          accent_color?: string | null
+          bg_color?: string | null
+          body?: string | null
+          body_size?: number | null
+          carousel_id: string
+          created_at?: string
+          font_family?: string | null
+          has_image?: boolean
+          id?: string
+          image_prompt?: string | null
+          image_theme?: string | null
+          image_url?: string | null
+          order: number
+          overlay_intensity?: number | null
+          overlay_position?: string | null
+          text_align?: string | null
+          text_color?: string | null
+          text_position?: string | null
+          title?: string | null
+          title_bold?: boolean | null
+          title_size?: number | null
+          updated_at?: string
+        }
+        Update: {
+          accent_color?: string | null
+          bg_color?: string | null
+          body?: string | null
+          body_size?: number | null
+          carousel_id?: string
+          created_at?: string
+          font_family?: string | null
+          has_image?: boolean
+          id?: string
+          image_prompt?: string | null
+          image_theme?: string | null
+          image_url?: string | null
+          order?: number
+          overlay_intensity?: number | null
+          overlay_position?: string | null
+          text_align?: string | null
+          text_color?: string | null
+          text_position?: string | null
+          title?: string | null
+          title_bold?: boolean | null
+          title_size?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "carousel_slides_carousel_id_fkey"
+            columns: ["carousel_id"]
+            isOneToOne: false
+            referencedRelation: "carousels"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      carousels: {
+        Row: {
+          audience: string | null
+          brand_color: string | null
+          created_at: string
+          id: string
+          image_style: string
+          instagram_media_id: string | null
+          model_id: string | null
+          niche: string | null
+          objective: string | null
+          organization_id: string
+          people_in_images: string | null
+          prompt: string
+          slide_count: number
+          status: string
+          tone: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          audience?: string | null
+          brand_color?: string | null
+          created_at?: string
+          id?: string
+          image_style?: string
+          instagram_media_id?: string | null
+          model_id?: string | null
+          niche?: string | null
+          objective?: string | null
+          organization_id: string
+          people_in_images?: string | null
+          prompt: string
+          slide_count: number
+          status?: string
+          tone?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          audience?: string | null
+          brand_color?: string | null
+          created_at?: string
+          id?: string
+          image_style?: string
+          instagram_media_id?: string | null
+          model_id?: string | null
+          niche?: string | null
+          objective?: string | null
+          organization_id?: string
+          people_in_images?: string | null
+          prompt?: string
+          slide_count?: number
+          status?: string
+          tone?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "carousels_model_id_fkey"
+            columns: ["model_id"]
+            isOneToOne: false
+            referencedRelation: "carousel_models"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       case_activity_log: {
         Row: {
           action: string
@@ -4921,6 +5117,7 @@ export type Database = {
           error_message: string | null
           execution_count: number | null
           flow_id: string | null
+          group_jids: Json
           id: string
           last_executed_at: string | null
           media_type: string | null
@@ -4947,6 +5144,7 @@ export type Database = {
           error_message?: string | null
           execution_count?: number | null
           flow_id?: string | null
+          group_jids?: Json
           id?: string
           last_executed_at?: string | null
           media_type?: string | null
@@ -4973,6 +5171,7 @@ export type Database = {
           error_message?: string | null
           execution_count?: number | null
           flow_id?: string | null
+          group_jids?: Json
           id?: string
           last_executed_at?: string | null
           media_type?: string | null
@@ -5486,6 +5685,82 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      whatsapp_groups: {
+        Row: {
+          created_at: string
+          description: string | null
+          group_jid: string
+          id: string
+          is_admin: boolean
+          last_synced_at: string | null
+          name: string | null
+          organization_id: string
+          participant_count: number
+          participants: Json
+          picture_url: string | null
+          raw: Json | null
+          updated_at: string
+          whatsapp_instance_id: string | null
+          workspace_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          group_jid: string
+          id?: string
+          is_admin?: boolean
+          last_synced_at?: string | null
+          name?: string | null
+          organization_id: string
+          participant_count?: number
+          participants?: Json
+          picture_url?: string | null
+          raw?: Json | null
+          updated_at?: string
+          whatsapp_instance_id?: string | null
+          workspace_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          group_jid?: string
+          id?: string
+          is_admin?: boolean
+          last_synced_at?: string | null
+          name?: string | null
+          organization_id?: string
+          participant_count?: number
+          participants?: Json
+          picture_url?: string | null
+          raw?: Json | null
+          updated_at?: string
+          whatsapp_instance_id?: string | null
+          workspace_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_groups_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_groups_whatsapp_instance_id_fkey"
+            columns: ["whatsapp_instance_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_instances"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_groups_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
             referencedColumns: ["id"]
           },
         ]
