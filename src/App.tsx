@@ -33,6 +33,9 @@ const WidgetsPage = lazy(() => import("./pages/WidgetsPage"));
 const WidgetEditorPage = lazy(() => import("./pages/WidgetEditorPage"));
 const DocumentsPage = lazy(() => import("./pages/DocumentsPage"));
 const ToolsPage = lazy(() => import("./pages/ToolsPage"));
+const CarouselPage = lazy(() => import("./pages/CarouselPage"));
+const CarouselModelsPage = lazy(() => import("./pages/CarouselModelsPage"));
+const CarouselWorkspacePage = lazy(() => import("./pages/CarouselWorkspacePage"));
 const WizzyFlowPage = lazy(() => import("./pages/WizzyFlowPage"));
 const QuizListPage = lazy(() => import("./pages/QuizListPage"));
 const QuizBuilderPage = lazy(() => import("./pages/QuizBuilderPage"));
@@ -110,6 +113,10 @@ const App = () => (
                       <Route path="/scheduled" element={<ProtectedRoute><ScheduledMessagesPage /></ProtectedRoute>} />
                       <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
                       <Route path="/tools" element={<ProtectedRoute><ToolsPage /></ProtectedRoute>} />
+                      <Route path="/tools/carousel" element={<ProtectedRoute><CarouselPage /></ProtectedRoute>} />
+                      <Route path="/tools/carousel/models" element={<ProtectedRoute><CarouselModelsPage /></ProtectedRoute>} />
+                      <Route path="/tools/carousel/new" element={<ProtectedRoute><CarouselWorkspacePage /></ProtectedRoute>} />
+                      <Route path="/tools/carousel/:id" element={<ProtectedRoute><CarouselWorkspacePage /></ProtectedRoute>} />
                       <Route path="/tools/buttons" element={<ProtectedRoute><WidgetsPage /></ProtectedRoute>} />
                       <Route path="/tools/buttons/:widgetId" element={<ProtectedRoute><WidgetEditorPage /></ProtectedRoute>} />
                       <Route path="/tools/documents" element={<ProtectedRoute><DocumentsPage /></ProtectedRoute>} />

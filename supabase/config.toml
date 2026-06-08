@@ -193,3 +193,15 @@ verify_jwt = false
 
 [functions.auto-close-conversations]
 verify_jwt = false
+
+[functions.carousel-generate]
+verify_jwt = false
+
+[functions.carousel-regenerate-text]
+verify_jwt = false
+
+[functions.carousel-regenerate-image]
+verify_jwt = false
+
+[functions.carousel-trending]
+verify_jwt = false

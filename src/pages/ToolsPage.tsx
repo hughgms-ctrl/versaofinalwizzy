@@ -1,7 +1,7 @@
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { MousePointerClick, FileText, HelpCircle, GitBranch, LayoutTemplate, Scale, SearchCheck } from 'lucide-react';
+import { MousePointerClick, FileText, HelpCircle, GitBranch, LayoutTemplate, Scale, SearchCheck, Images } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useOrganizationPlan } from '@/hooks/useOrganizationPlan';
 import { Lock } from 'lucide-react';
@@ -38,6 +38,12 @@ const tools = [
     icon: GitBranch,
     href: '/tools/wizzy-flow',
     planModule: 'wizzy_flow',
+  },
+  {
+    name: 'Wizzy Carrossel',
+    description: 'Gere carrosséis para o Instagram com IA — textos e imagens criados automaticamente, prontos pra baixar.',
+    icon: Images,
+    href: '/tools/carousel',
   },
   {
     name: 'Wizzy Pages',
