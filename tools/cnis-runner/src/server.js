@@ -436,6 +436,7 @@ function escapeHTML(value) {
 async function injectCnisPanel(session) {
   if (!session.page) return;
   session.runnerClickBindingName ||= `__cnisRunnerTrustedClick_${session.id.replace(/[^a-zA-Z0-9_]/g, "_")}`;
+  session.runnerKeyboardBindingName ||= `__cnisRunnerTrustedKeyboard_${session.id.replace(/[^a-zA-Z0-9_]/g, "_")}`;
   await session.page.exposeFunction(session.runnerClickBindingName, async (payload = {}) => {
     if (!session.page || session.page.isClosed()) return false;
     const viewport = session.page.viewportSize() || { width: 1440, height: 920 };
@@ -447,12 +448,29 @@ async function injectCnisPanel(session) {
     touch(session);
     return true;
   }).catch(() => {});
-  await session.page.evaluate((bindingName) => {
+  await session.page.exposeFunction(session.runnerKeyboardBindingName, async (payload = {}) => {
+    if (!session.page || session.page.isClosed()) return false;
+    if (payload.key) {
+      await session.page.keyboard.press(String(payload.key));
+    } else if (payload.text) {
+      await session.page.keyboard.insertText(String(payload.text));
+    }
+    touch(session);
+    return true;
+  }).catch(() => {});
+  await session.page.evaluate(({ clickBindingName, keyboardBindingName }) => {
     window.__CNIS_RUNNER_TRUSTED_CLICK = (payload) => {
-      if (typeof window[bindingName] !== "function") return Promise.resolve(false);
-      return window[bindingName](payload);
+      if (typeof window[clickBindingName] !== "function") return Promise.resolve(false);
+      return window[clickBindingName](payload);
     };
-  }, session.runnerClickBindingName).catch(() => {});
+    window.__CNIS_RUNNER_TRUSTED_KEYBOARD = (payload) => {
+      if (typeof window[keyboardBindingName] !== "function") return Promise.resolve(false);
+      return window[keyboardBindingName](payload);
+    };
+  }, {
+    clickBindingName: session.runnerClickBindingName,
+    keyboardBindingName: session.runnerKeyboardBindingName,
+  }).catch(() => {});
   const [content, style] = await Promise.all([
     readFile(contentPath, "utf8"),
     readFile(stylePath, "utf8"),

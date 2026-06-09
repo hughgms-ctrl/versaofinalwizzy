@@ -1494,6 +1494,10 @@
 
     const target = searchInput || element.querySelector?.("input, textarea") || element;
 
+    if (await typeIntoServiceSelectorWithRunner(target, value)) {
+      return;
+    }
+
     if (/input|textarea/i.test(target.tagName)) {
       await typeLikeUser(target, value);
       return;
@@ -1501,6 +1505,21 @@
 
     target.focus?.();
     await typeLikeUser(document.activeElement, value);
+  }
+
+  async function typeIntoServiceSelectorWithRunner(target, value) {
+    const clickTarget = target || document.activeElement;
+    if (!clickTarget || !isVisible(clickTarget)) return false;
+    if (!await clickElementWithRunner(clickTarget)) return false;
+
+    await sleep(250);
+    await runnerKeyboard({ key: "Control+A" });
+    await sleep(80);
+    await runnerKeyboard({ key: "Backspace" });
+    await sleep(120);
+    const typed = await runnerKeyboard({ text: value });
+    await sleep(700);
+    return typed;
   }
 
   async function typeLikeUser(target, value) {
@@ -1604,6 +1623,7 @@
     const input = getActiveServiceInput(serviceInput);
     if (input) {
       input.focus();
+      if (await confirmServiceWithRunnerKeyboard(input)) return;
       await confirmServiceOptionByExactText(input);
     }
   }
@@ -1632,6 +1652,18 @@
     });
 
     await sleep(600);
+  }
+
+  async function confirmServiceWithRunnerKeyboard(serviceInput) {
+    const target = getActiveServiceInput(serviceInput) || serviceInput || document.activeElement;
+    if (!target || !await clickElementWithRunner(target)) return false;
+
+    await sleep(250);
+    await runnerKeyboard({ key: "ArrowDown" });
+    await sleep(200);
+    await runnerKeyboard({ key: "Enter" });
+    await sleep(900);
+    return isServiceSelectionConfirmed();
   }
 
   function getActiveServiceInput(serviceInput) {
@@ -2285,6 +2317,30 @@
 
     try {
       const response = await fetch(`http://127.0.0.1:8787/sessions/${encodeURIComponent(sessionId)}/click`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      return response.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  async function runnerKeyboard(payload) {
+    const sessionId = getRunnerSessionId();
+    if (!sessionId) return false;
+
+    if (typeof window.__CNIS_RUNNER_TRUSTED_KEYBOARD === "function") {
+      try {
+        if (await window.__CNIS_RUNNER_TRUSTED_KEYBOARD(payload)) return true;
+      } catch {
+        // Fall back to the local runner HTTP bridge below.
+      }
+    }
+
+    try {
+      const response = await fetch(`http://127.0.0.1:8787/sessions/${encodeURIComponent(sessionId)}/keyboard`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload)
