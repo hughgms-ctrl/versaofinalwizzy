@@ -49,7 +49,8 @@ Deno.serve(async (req) => {
                     body: JSON.stringify({
                         flowId: item.campaigns.flow_id,
                         conversationId: item.conversation_id,
-                        isFromOrchestrator: true
+                        isFromOrchestrator: true,
+                        ...(item.variables ? { variables: item.variables } : {}),
                     }),
                 });
 

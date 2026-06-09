@@ -128,6 +128,9 @@ verify_jwt = false
 [functions.trigger-campaign-on-tag]
 verify_jwt = false
 
+[functions.campaign-webhook]
+verify_jwt = false
+
 [functions.capture-signature]
 verify_jwt = false
 

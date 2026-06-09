@@ -185,7 +185,7 @@ Deno.serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const { flowId, conversationId, startNodeId, isFromOrchestrator, triggerMessage } = await req.json();
+    const { flowId, conversationId, startNodeId, isFromOrchestrator, triggerMessage, variables: initialVariables } = await req.json();
     console.log(`[FLOW EXECUTE] Received request: flowId=${flowId}, conversationId=${conversationId}, startNodeId=${startNodeId}, isFromOrchestrator=${isFromOrchestrator}, triggerMessage=${triggerMessage}`);
 
     if (!flowId || !conversationId) {
@@ -245,7 +245,7 @@ Deno.serve(async (req) => {
             organization_id: flow.organization_id,
             status: 'running',
             current_node_id: startNodeId || 'start-1',
-            variables: {},
+            variables: initialVariables && typeof initialVariables === 'object' ? initialVariables : {},
           })
           .select()
           .single();
@@ -262,7 +262,7 @@ Deno.serve(async (req) => {
           conversationId,
           contactPhone: conversation.contacts?.phone || '',
           contactId: conversation.contact_id,
-          variables: {},
+          variables: initialVariables && typeof initialVariables === 'object' ? { ...initialVariables } : {},
           organizationId: flow.organization_id,
           zapiInstanceId: instance.zapi_instance_id!,
           zapiToken: instance.zapi_token!,

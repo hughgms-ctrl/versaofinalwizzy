@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
-import { Hand, MessageSquareText, UserPlus, Webhook, Copy, Check, ChevronRight, ChevronDown, Folder, Tag } from "lucide-react";
+import { Hand, MessageSquareText, UserPlus, Webhook, Copy, Check, ChevronRight, ChevronDown, Folder, Tag, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
     useCampaigns,
@@ -54,6 +54,8 @@ export function CampaignDialog({
     const [startTime, setStartTime] = useState("00:00");
     const [endTime, setEndTime] = useState("23:59");
     const [workspaceId, setWorkspaceId] = useState<string>("");
+    const [webhookToken, setWebhookToken] = useState<string>("");
+    const [copied, setCopied] = useState(false);
 
     const createCampaign = useCreateCampaign();
     const updateCampaign = useUpdateCampaign();
@@ -80,6 +82,7 @@ export function CampaignDialog({
             setStartTime(campaignToEdit.start_time ?? "00:00");
             setEndTime(campaignToEdit.end_time ?? "23:59");
             setWorkspaceId((campaignToEdit as any).workspace_id || "");
+            setWebhookToken(campaignToEdit.webhook_token || "");
         } else if (open) {
             setName("");
             setTriggerKeyword("");
@@ -87,8 +90,27 @@ export function CampaignDialog({
             setFlowId("");
             setTriggerType("keyword");
             setWorkspaceId("");
+            setWebhookToken("");
         }
     }, [campaignToEdit, open, flows]);
+
+    const webhookUrl = webhookToken
+        ? `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/campaign-webhook/${webhookToken}`
+        : "";
+
+    const handleCopyUrl = () => {
+        if (!webhookUrl) return;
+        navigator.clipboard.writeText(webhookUrl);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+    };
+
+    const handleRotateUrl = () => {
+        if (!campaignToEdit?.id) return;
+        const newToken = crypto.randomUUID();
+        setWebhookToken(newToken);
+        updateCampaign.mutate({ id: campaignToEdit.id, webhook_token: newToken } as any);
+    };
 
     const handleSubmit = () => {
         if (!name.trim() || !flowId) return;
@@ -282,20 +304,59 @@ export function CampaignDialog({
                                             <div className="mt-4 ml-14 p-4 rounded-lg border bg-primary/5 space-y-3">
                                                 <p className="text-sm text-foreground font-medium">Como utilizar este webhook?</p>
                                                 <p className="text-xs text-muted-foreground">
-                                                    Ao salvar esta campanha com o gatilho <strong>Webhook</strong>, você poderá disparar o fluxo selecionado abaixo fazendo uma requisição HTTP POST para a nossa API.
+                                                    Faça uma requisição HTTP <strong>POST</strong> para a URL abaixo enviando o número e os dados do contato. Cada contato cria/atualiza o cadastro, abre uma conversa e dispara o fluxo selecionado.
                                                 </p>
-                                                {campaignToEdit?.id ? (
-                                                    <div className="bg-background border rounded p-3 relative mt-2 group">
-                                                        <code className="text-[10px] sm:text-xs text-muted-foreground break-all whitespace-pre-wrap font-mono">
-                                                            {`curl -X POST https://zaobtetbjpuzibjymhzw.supabase.co/functions/v1/flow-execute \\
+                                                {webhookUrl ? (
+                                                    <>
+                                                        <div className="grid gap-1.5">
+                                                            <Label className="text-xs">URL do Webhook (POST)</Label>
+                                                            <div className="flex items-center gap-2">
+                                                                <code className="flex-1 bg-background border rounded px-2 py-1.5 text-[10px] sm:text-xs text-muted-foreground break-all font-mono">
+                                                                    {webhookUrl}
+                                                                </code>
+                                                                <Button
+                                                                    type="button"
+                                                                    variant="outline"
+                                                                    size="icon"
+                                                                    className="h-8 w-8 shrink-0"
+                                                                    onClick={handleCopyUrl}
+                                                                    title="Copiar URL"
+                                                                >
+                                                                    {copied ? <Check className="h-4 w-4 text-green-600" /> : <Copy className="h-4 w-4" />}
+                                                                </Button>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="bg-background border rounded p-3 mt-1">
+                                                            <code className="text-[10px] sm:text-xs text-muted-foreground break-all whitespace-pre-wrap font-mono">
+                                                                {`curl -X POST "${webhookUrl}" \\
   -H "Content-Type: application/json" \\
-  -H "Authorization: Bearer SEU_TOKEN_AQUI" \\
-  -d '{"flowId": "${flowId || campaignToEdit.flow_id}", "conversationId": "ID_DA_CONVERSA"}'`}
-                                                        </code>
-                                                    </div>
+  -d '{"phone": "5511999999999", "name": "João", "cpf": "123"}'`}
+                                                            </code>
+                                                        </div>
+
+                                                        <p className="text-[11px] text-muted-foreground">
+                                                            Para disparar para vários contatos de uma vez, envie uma lista: <code className="font-mono">[{`{"phone": "..."}`}, {`{"phone": "..."}`}]</code> (até 100 por chamada).
+                                                        </p>
+                                                        <p className="text-[11px] text-muted-foreground">
+                                                            Os campos enviados ficam disponíveis no fluxo como <code className="font-mono">{`{{phone}}`}</code>, <code className="font-mono">{`{{name}}`}</code>, <code className="font-mono">{`{{cpf}}`}</code> etc.
+                                                        </p>
+
+                                                        <Button
+                                                            type="button"
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            className="h-7 px-2 text-xs text-muted-foreground"
+                                                            onClick={handleRotateUrl}
+                                                            disabled={updateCampaign.isPending}
+                                                        >
+                                                            <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+                                                            Gerar nova URL
+                                                        </Button>
+                                                    </>
                                                 ) : (
                                                     <p className="text-xs text-muted-foreground italic mt-2">
-                                                        Salve a campanha primeiro para ver o exemplo de código de integração.
+                                                        Salve a campanha primeiro para ver a URL do webhook.
                                                     </p>
                                                 )}
                                             </div>

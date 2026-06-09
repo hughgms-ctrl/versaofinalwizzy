@@ -764,6 +764,7 @@ export type Database = {
           trigger_count: number
           trigger_keyword: string
           updated_at: string
+          webhook_token: string | null
           workspace_id: string | null
         }
         Insert: {
@@ -779,6 +780,7 @@ export type Database = {
           trigger_count?: number
           trigger_keyword: string
           updated_at?: string
+          webhook_token?: string | null
           workspace_id?: string | null
         }
         Update: {
@@ -794,6 +796,7 @@ export type Database = {
           trigger_count?: number
           trigger_keyword?: string
           updated_at?: string
+          webhook_token?: string | null
           workspace_id?: string | null
         }
         Relationships: [

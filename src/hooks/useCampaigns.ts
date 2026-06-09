@@ -17,6 +17,7 @@ export interface Campaign {
     end_time?: string;
     pending_count?: number;
     workspace_id?: string | null;
+    webhook_token?: string;
     created_at: string;
     updated_at: string;
     flow?: {
