@@ -1791,6 +1791,8 @@
 
   async function clickNext(useDebuggerClick = false) {
     document.activeElement?.blur?.();
+    await revealWizardFooter();
+
     const idButton = findVisibleNextButtonById();
     if (idButton && isVisible(idButton) && !isDisabled(idButton)) {
       for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -1806,6 +1808,7 @@
       return;
     }
 
+    await revealWizardFooter();
     const nextButton = await waitForElement(() => findNextButton(), 8000, true);
     if (nextButton) {
       nextButton.removeAttribute?.("disabled");
@@ -1819,6 +1822,7 @@
       return;
     }
 
+    await revealWizardFooter();
     await clickByText("Avancar", { timeout: 10000, optional: true });
     await clickByText("Avançar", { timeout: 10000, optional: true });
     await sleep(900);
@@ -1827,6 +1831,33 @@
   function findVisibleNextButtonById() {
     return Array.from(document.querySelectorAll("#btn-next"))
       .find(button => isVisible(button) && !isDisabled(button)) || null;
+  }
+
+  async function revealWizardFooter() {
+    const active = document.activeElement;
+    active?.blur?.();
+
+    const scrollTargets = [
+      document.scrollingElement,
+      document.documentElement,
+      document.body,
+      ...Array.from(document.querySelectorAll("main, section, .content, .container, .page-content, .mat-sidenav-content, .ng-star-inserted"))
+    ].filter(Boolean);
+
+    for (const target of scrollTargets) {
+      try {
+        target.scrollTop = target.scrollHeight;
+      } catch {}
+    }
+
+    window.scrollTo(0, Math.max(document.body.scrollHeight, document.documentElement.scrollHeight));
+    await sleep(350);
+
+    const button = findVisibleNextButtonById() || findNextButton();
+    if (button) {
+      button.scrollIntoView?.({ block: "center", inline: "center" });
+      await sleep(250);
+    }
   }
 
   async function advanceWizardStep(fallbackStepText, isStillOnCurrentStep, useDebuggerClick = false) {
@@ -1940,6 +1971,10 @@
   }
 
   function findNextButton() {
+    const idButton = Array.from(document.querySelectorAll("#btn-next"))
+      .find(element => !element.closest(`#${SIDEBAR_ID}`) && isVisible(element) && !isDisabled(element));
+    if (idButton) return idButton;
+
     const direct = findClickableByText("Avancar") || findClickableByText("Avançar") || findClickableByText("Prosseguir");
     if (direct && !direct.closest(`#${SIDEBAR_ID}`) && isVisible(direct) && !isDisabled(direct)) return direct;
 
