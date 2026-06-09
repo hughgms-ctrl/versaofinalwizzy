@@ -101,7 +101,11 @@
   }
 
   function getRunnerSessionId() {
-    return window.__CNIS_RUNNER_SESSION_ID || window.sessionStorage.getItem("cnisRunnerSessionId") || "";
+    try {
+      return window.__CNIS_RUNNER_SESSION_ID || window.sessionStorage.getItem("cnisRunnerSessionId") || "";
+    } catch {
+      return window.__CNIS_RUNNER_SESSION_ID || "";
+    }
   }
 
   function isAutomationStateForThisPage(state) {
@@ -1328,7 +1332,7 @@
     createSidebar();
     window.__CNIS_RUNNER_SESSION_ID = data.sessionId || getRunnerSessionId();
     if (window.__CNIS_RUNNER_SESSION_ID) {
-      window.sessionStorage.setItem("cnisRunnerSessionId", window.__CNIS_RUNNER_SESSION_ID);
+      try { window.sessionStorage.setItem("cnisRunnerSessionId", window.__CNIS_RUNNER_SESSION_ID); } catch {}
     }
 
     const set = (id, value) => {

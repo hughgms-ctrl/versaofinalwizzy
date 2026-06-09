@@ -14,7 +14,8 @@ const chromiumProfilePath = path.join(runnerRoot, ".cnis-chromium-profile");
 
 const PORT = Number(process.env.WIZZY_CNIS_RUNNER_PORT || 8787);
 const INSS_HOME_URL = "https://atendimento.inss.gov.br/";
-const MAX_RUNNING = Number(process.env.WIZZY_CNIS_MAX_RUNNING || 1);
+const MAX_RUNNING = Number(process.env.WIZZY_CNIS_MAX_RUNNING || 5);
+const HEADLESS = process.env.WIZZY_CNIS_HEADLESS !== "false";
 
 let browser = null;
 let browserContext = null;
@@ -26,6 +27,14 @@ const chromeShim = `
   window.__WIZZY_CNIS_CHROME_SHIM = true;
   const listeners = [];
   const storagePrefix = "cnisRunner:";
+  const memoryStorage = new Map();
+  const readStorage = (key) => {
+    try { return window.sessionStorage.getItem(key); } catch { return memoryStorage.get(key) ?? null; }
+  };
+  const writeStorage = (key, value) => {
+    memoryStorage.set(key, value);
+    try { window.sessionStorage.setItem(key, value); } catch {}
+  };
   const normalizeKeys = (keys) => {
     if (Array.isArray(keys)) return { keys, defaults: {} };
     if (typeof keys === "string") return { keys: [keys], defaults: {} };
@@ -36,7 +45,7 @@ const chromeShim = `
     const normalized = normalizeKeys(keys);
     const result = { ...normalized.defaults };
     normalized.keys.forEach((key) => {
-      const raw = window.localStorage.getItem(storagePrefix + key);
+      const raw = readStorage(storagePrefix + key);
       if (raw !== null) {
         try { result[key] = JSON.parse(raw); } catch { result[key] = raw; }
       }
@@ -45,7 +54,7 @@ const chromeShim = `
   };
   const storageSet = (values) => {
     Object.entries(values || {}).forEach(([key, value]) => {
-      window.localStorage.setItem(storagePrefix + key, JSON.stringify(value));
+      writeStorage(storagePrefix + key, JSON.stringify(value));
     });
   };
   window.chrome = window.chrome || {};
@@ -131,10 +140,14 @@ const chromeShim = `
 async function ensureBrowser() {
   if (browserContext?.browser()?.isConnected()) return browserContext;
   browserContext = await chromium.launchPersistentContext(chromiumProfilePath, {
-    headless: false,
+    headless: HEADLESS,
     viewport: { width: 1440, height: 920 },
     locale: "pt-BR",
-    args: ["--disable-blink-features=AutomationControlled"],
+    args: [
+      "--disable-blink-features=AutomationControlled",
+      "--window-position=-32000,-32000",
+      "--window-size=1440,920",
+    ],
   });
   browser = browserContext.browser();
   return browserContext;
@@ -222,7 +235,7 @@ async function startSession(id) {
   await page.addInitScript(chromeShim);
   await page.addInitScript((sessionId) => {
     window.__CNIS_RUNNER_SESSION_ID = sessionId;
-    window.sessionStorage.setItem("cnisRunnerSessionId", sessionId);
+    try { window.sessionStorage.setItem("cnisRunnerSessionId", sessionId); } catch {}
   }, session.id);
   if (session.demo) {
     await page.setContent(buildDemoPageHtml(session), { waitUntil: "domcontentloaded", timeout: 30000 });
@@ -245,13 +258,15 @@ async function startSession(id) {
   }
   await page.evaluate((sessionId) => {
     delete window.__CNIS_RUNNER_LAST_RESULT;
-    window.localStorage.removeItem("cnisRunner:cnisHistoryV2");
-    window.localStorage.removeItem("cnisChecker:cnisHistoryV2");
-    window.localStorage.setItem("cnisRunner:cnisAutomationState", JSON.stringify({
-      running: false,
-      sessionId,
-      updatedAt: new Date().toISOString(),
-    }));
+    try {
+      window.sessionStorage.removeItem("cnisRunner:cnisHistoryV2");
+      window.sessionStorage.removeItem("cnisChecker:cnisHistoryV2");
+      window.sessionStorage.setItem("cnisRunner:cnisAutomationState", JSON.stringify({
+        running: false,
+        sessionId,
+        updatedAt: new Date().toISOString(),
+      }));
+    } catch {}
   }, session.id).catch(() => {});
   await injectCnisPanel(session);
   startResultWatcher(session);
@@ -339,7 +354,7 @@ function scheduleDemoResult(session) {
       await session.page.evaluate((demoEntry) => {
         window.__CNIS_RUNNER_LAST_RESULT = demoEntry;
         const key = "cnisRunner:cnisHistoryV2";
-        window.localStorage.setItem(key, JSON.stringify([demoEntry]));
+        try { window.sessionStorage.setItem(key, JSON.stringify([demoEntry])); } catch {}
         document.querySelector(".badge").textContent = "Consulta concluida";
         document.querySelector(".badge").style.borderColor = "#10b981";
         document.querySelector(".badge").style.background = "#ecfdf5";
@@ -505,7 +520,7 @@ async function injectCnisPanel(session) {
 
     const openPanel = () => {
       window.__CNIS_RUNNER_SESSION_ID = data.sessionId;
-      window.sessionStorage.setItem("cnisRunnerSessionId", data.sessionId);
+      try { window.sessionStorage.setItem("cnisRunnerSessionId", data.sessionId); } catch {}
       if (typeof window.__CNIS_RUNNER_OPEN_PANEL === "function") {
         window.__CNIS_RUNNER_OPEN_PANEL({ ...data, autoAnalyze: true });
       } else {
@@ -588,7 +603,12 @@ function startResultWatcher(session) {
             return null;
           }
         };
+        const readSessionStorage = (key) => {
+          try { return window.sessionStorage.getItem(key); } catch { return null; }
+        };
         return window.__CNIS_RUNNER_LAST_RESULT
+          || parse(readSessionStorage("cnisRunner:cnisHistoryV2"))
+          || parse(readSessionStorage("cnisChecker:cnisHistoryV2"))
           || parse(window.localStorage.getItem("cnisRunner:cnisHistoryV2"))
           || parse(window.localStorage.getItem("cnisChecker:cnisHistoryV2"));
       });
@@ -801,7 +821,7 @@ const server = createServer(async (req, res) => {
     }
 
     if (req.method === "GET" && url.pathname === "/health") {
-      send(res, 200, { ok: true, runner: "wizzy-cnis-runner", maxRunning: MAX_RUNNING, sessions: sessions.size });
+      send(res, 200, { ok: true, runner: "wizzy-cnis-runner", maxRunning: MAX_RUNNING, headless: HEADLESS, sessions: sessions.size });
       return;
     }
 

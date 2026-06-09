@@ -36,7 +36,8 @@ Quando o painel CNIS antigo salva o historico, o runner captura a entrada e pass
 - O runner abre um Chromium controlado por Playwright.
 - O Chromium usa perfil persistente em `.cnis-chromium-profile`, para reaproveitar login/cookies do INSS entre consultas.
 - Cada consulta cria uma aba/pagina controlada dentro desse perfil persistente.
-- O runner limita consultas simultaneas por `WIZZY_CNIS_MAX_RUNNING` (padrao: 3).
+- O runner limita consultas simultaneas por `WIZZY_CNIS_MAX_RUNNING` (padrao: 5).
+- Por padrao, o Chromium roda invisivel (`WIZZY_CNIS_HEADLESS=true`) e a interacao acontece pelo espelhamento dentro da Wizzy. Para depurar com janela visivel, rode com `WIZZY_CNIS_HEADLESS=false`.
 - Consultas acima do limite ficam em fila.
 - O painel CNIS e injetado com um shim de `chrome.*`, reaproveitando `content.js` e `style.css` da pasta `Wizzy Cnis Leitura/cnis-checker`.
 - A Wizzy pode espelhar a tela por screenshot e enviar clique/teclado para a aba controlada.
