@@ -142,7 +142,7 @@ Deno.serve(async (req) => {
         const orgId = campaign.organization_id;
         const window = computeWindow(campaign.start_time, campaign.end_time);
 
-        const results: Array<{ phone: string; conversation_id: string | null; status: string }> = [];
+        const results: Array<{ phone: string; conversation_id: string | null; status: string; error?: string }> = [];
         let processed = 0;
         let queued = 0;
         let skipped = 0;
@@ -156,6 +156,7 @@ Deno.serve(async (req) => {
                 continue;
             }
 
+            try {
             // Upsert do contato por (organization_id, phone)
             let contactId: string | null = null;
             const { data: existingContact } = await supabase
@@ -186,8 +187,9 @@ Deno.serve(async (req) => {
                     .select('id')
                     .single();
                 if (contactError || !newContact) {
+                    console.error('[campaign-webhook] contact insert error:', contactError);
                     skipped++;
-                    results.push({ phone, conversation_id: null, status: 'error_contact' });
+                    results.push({ phone, conversation_id: null, status: 'error_contact', error: contactError?.message });
                     continue;
                 }
                 contactId = newContact.id;
@@ -214,13 +216,15 @@ Deno.serve(async (req) => {
                         organization_id: orgId,
                         contact_id: contactId,
                         status: 'open',
+                        workspace_id: campaign.workspace_id || null,
                         metadata: { source: 'campaign_webhook', campaign_id: campaign.id },
                     })
                     .select('id')
                     .single();
                 if (convError || !newConv) {
+                    console.error('[campaign-webhook] conversation insert error:', convError);
                     skipped++;
-                    results.push({ phone, conversation_id: null, status: 'error_conversation' });
+                    results.push({ phone, conversation_id: null, status: 'error_conversation', error: convError?.message || 'insert retornou vazio (possivel trigger BEFORE INSERT retornando NULL, ou SERVICE_ROLE_KEY ausente)' });
                     continue;
                 }
                 conversationId = newConv.id;
@@ -256,6 +260,11 @@ Deno.serve(async (req) => {
                 queued++;
                 results.push({ phone, conversation_id: conversationId, status: 'queued' });
             }
+            } catch (itemErr) {
+                console.error('[campaign-webhook] item error:', itemErr);
+                skipped++;
+                results.push({ phone, conversation_id: null, status: 'error_exception', error: String((itemErr as Error)?.message || itemErr) });
+            }
         }
 
         // Log da chamada
@@ -268,7 +277,7 @@ Deno.serve(async (req) => {
             contacts_processed: processed + queued,
         });
 
-        return new Response(JSON.stringify({ success: true, processed, queued, skipped, results }), {
+        return new Response(JSON.stringify({ success: true, version: 'diag-v3', processed, queued, skipped, results }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
     } catch (error) {
