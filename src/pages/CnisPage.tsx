@@ -65,7 +65,7 @@ type RunnerSession = {
 };
 
 const STORAGE_KEY = "wizzy:cnis:sessions:v1";
-const RUNNER_BASE_URL = import.meta.env.VITE_CNIS_RUNNER_URL || "http://localhost:8787";
+const RUNNER_BASE_URL = import.meta.env.VITE_CNIS_RUNNER_URL || "http://127.0.0.1:8787";
 const activeStatuses: SessionStatus[] = ["queued", "starting", "running", "waiting_user"];
 const finalStatuses: SessionStatus[] = ["completed", "failed", "cancelled"];
 const emptyForm = {
