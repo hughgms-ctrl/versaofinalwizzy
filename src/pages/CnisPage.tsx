@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -806,6 +806,7 @@ function RunnerViewport({
 }) {
   const [streamNonce, setStreamNonce] = useState(0);
   const [imageFailed, setImageFailed] = useState(false);
+  const [interactionStatus, setInteractionStatus] = useState("");
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
   const hasRunner = localRunnerEnabled && Boolean(session.runnerSessionId);
@@ -825,7 +826,7 @@ function RunnerViewport({
     return () => window.clearInterval(timer);
   }, [hasRunner, imageFailed]);
 
-  const sendClick = async (event: PointerEvent<HTMLDivElement>) => {
+  const sendClick = async (event: MouseEvent<HTMLDivElement>) => {
     if (!session.runnerSessionId) return;
     const image = imageRef.current;
     if (!image) return;
@@ -838,16 +839,25 @@ function RunnerViewport({
 
     event.preventDefault();
     viewportRef.current?.focus();
-    await fetch(`${RUNNER_BASE_URL}/sessions/${session.runnerSessionId}/click`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        x: relativeX * naturalWidth / rect.width,
-        y: relativeY * naturalHeight / rect.height,
-        sourceWidth: naturalWidth,
-        sourceHeight: naturalHeight,
-      }),
-    }).catch(() => {});
+    try {
+      setInteractionStatus("Enviando clique ao runner...");
+      const response = await fetch(`${RUNNER_BASE_URL}/sessions/${session.runnerSessionId}/click`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          x: relativeX * naturalWidth / rect.width,
+          y: relativeY * naturalHeight / rect.height,
+          sourceWidth: naturalWidth,
+          sourceHeight: naturalHeight,
+        }),
+      }).catch((error) => {
+        throw new Error(error?.message || "Falha ao conectar ao runner local.");
+      });
+      if (!response.ok) throw new Error("Runner nao aceitou o clique.");
+      setInteractionStatus("Clique enviado. Agora digite no campo selecionado.");
+    } catch (error) {
+      setInteractionStatus(error instanceof Error ? error.message : "Falha ao enviar clique ao runner.");
+    }
   };
 
   const sendKeyboard = async (event: KeyboardEvent<HTMLDivElement>) => {
@@ -856,11 +866,19 @@ function RunnerViewport({
     const payload = specialKeys.has(event.key) ? { key: event.key } : event.key.length === 1 && !event.ctrlKey && !event.metaKey ? { text: event.key } : null;
     if (!payload) return;
     event.preventDefault();
-    await fetch(`${RUNNER_BASE_URL}/sessions/${session.runnerSessionId}/keyboard`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload),
-    }).catch(() => {});
+    try {
+      const response = await fetch(`${RUNNER_BASE_URL}/sessions/${session.runnerSessionId}/keyboard`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      }).catch((error) => {
+        throw new Error(error?.message || "Falha ao enviar teclado ao runner local.");
+      });
+      if (!response.ok) throw new Error("Runner nao aceitou o teclado.");
+      setInteractionStatus("Tecla enviada ao runner.");
+    } catch (error) {
+      setInteractionStatus(error instanceof Error ? error.message : "Falha ao enviar teclado ao runner.");
+    }
   };
 
   const sendPaste = async (event: ClipboardEvent<HTMLDivElement>) => {
@@ -868,11 +886,19 @@ function RunnerViewport({
     const text = event.clipboardData.getData("text");
     if (!text) return;
     event.preventDefault();
-    await fetch(`${RUNNER_BASE_URL}/sessions/${session.runnerSessionId}/keyboard`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text }),
-    }).catch(() => {});
+    try {
+      const response = await fetch(`${RUNNER_BASE_URL}/sessions/${session.runnerSessionId}/keyboard`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text }),
+      }).catch((error) => {
+        throw new Error(error?.message || "Falha ao colar texto no runner local.");
+      });
+      if (!response.ok) throw new Error("Runner nao aceitou o texto colado.");
+      setInteractionStatus("Texto colado no runner.");
+    } catch (error) {
+      setInteractionStatus(error instanceof Error ? error.message : "Falha ao colar texto no runner.");
+    }
   };
 
   const forcePanel = async () => {
@@ -905,17 +931,20 @@ function RunnerViewport({
           </Button>
         )}
         {hasRunner && (
-          <Button variant="outline" size="sm" onClick={forcePanel} className="gap-2">
-            <Bot className="h-4 w-4" />
-            Forcar painel
-          </Button>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {interactionStatus && <span className="text-xs text-muted-foreground">{interactionStatus}</span>}
+            <Button variant="outline" size="sm" onClick={forcePanel} className="gap-2">
+              <Bot className="h-4 w-4" />
+              Forcar painel
+            </Button>
+          </div>
         )}
       </div>
 
       <div
         ref={viewportRef}
         tabIndex={0}
-        onPointerDown={sendClick}
+        onClick={sendClick}
         onKeyDown={sendKeyboard}
         onPaste={sendPaste}
         className="flex min-h-0 flex-1 cursor-crosshair items-center justify-center bg-black/30 p-3 outline-none focus:ring-2 focus:ring-primary"
