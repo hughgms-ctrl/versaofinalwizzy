@@ -1055,8 +1055,8 @@
   }
 
   async function advanceAfterServiceSelection(serviceInput) {
-    for (let attempt = 1; attempt <= 3; attempt += 1) {
-      setAutomationStatus(attempt === 1 ? "Avancando com o servico selecionado..." : "Reconfirmando o servico no portal...", "neutral");
+    for (let attempt = 1; attempt <= 5; attempt += 1) {
+      setAutomationStatus(attempt === 1 ? "Avancando com o servico selecionado..." : "Servico selecionado. Tentando clicar em Avancar novamente...", "neutral");
       await waitForLoadingToFinish(2500);
       await sleep(350);
       await clickNext(true);
@@ -1065,12 +1065,21 @@
 
       if (!isServiceSelectionPage()) return true;
 
-      if (!hasServiceRequiredError() && attempt >= 2) {
+      const selector = findServiceSelector() || serviceInput;
+      const fieldText = normalizeForCompare(selector?.innerText || selector?.textContent || selector?.value || "");
+      const serviceStillSelected = isExactUrbanRetirementSelection(fieldText);
+      const requiredError = hasServiceRequiredError();
+
+      if (serviceStillSelected && !requiredError) {
+        await sleep(650);
+        continue;
+      }
+
+      if (!requiredError && attempt >= 3) {
         throw new Error("O portal continuou na selecao de servico mesmo apos selecionar Aposentadoria por Idade Urbana.");
       }
 
       setAutomationStatus("O portal nao aceitou o servico. Selecionando novamente...", "neutral");
-      const selector = findServiceSelector() || serviceInput;
       await clearServiceSelector(selector);
       await selectService(selector);
     }
@@ -1796,14 +1805,13 @@
     const idButton = findVisibleNextButtonById();
     if (idButton && isVisible(idButton) && !isDisabled(idButton)) {
       for (let attempt = 0; attempt < 3; attempt += 1) {
-        if (useDebuggerClick && await clickElementWithRunner(idButton)) {
-          await sleep(1100);
-          if (!document.body.contains(idButton) || !isVisible(idButton)) break;
-          continue;
+        if (useDebuggerClick) {
+          await clickNextWithRunnerFallback(idButton);
+        } else {
+          await clickWizardNextButton(idButton);
         }
-        await clickWizardNextButton(idButton);
         await sleep(1100);
-        if (!document.body.contains(idButton) || !isVisible(idButton)) break;
+        if (!isServiceSelectionPage() || !document.body.contains(idButton) || !isVisible(idButton)) break;
       }
       return;
     }
@@ -1813,11 +1821,11 @@
     if (nextButton) {
       nextButton.removeAttribute?.("disabled");
       nextButton.classList?.remove?.("disabled");
-      if (useDebuggerClick && await clickElementWithRunner(nextButton)) {
-        await sleep(900);
-        return;
+      if (useDebuggerClick) {
+        await clickNextWithRunnerFallback(nextButton);
+      } else {
+        await clickWizardNextButton(nextButton);
       }
-      clickHard(nextButton);
       await sleep(900);
       return;
     }
@@ -1826,6 +1834,31 @@
     await clickByText("Avancar", { timeout: 10000, optional: true });
     await clickByText("Avançar", { timeout: 10000, optional: true });
     await sleep(900);
+  }
+
+  async function clickNextWithRunnerFallback(button) {
+    await withSidebarClickThrough(async () => {
+      await clickElementWithRunner(button);
+      await sleep(250);
+      await clickWizardNextButton(button);
+    });
+  }
+
+  async function withSidebarClickThrough(task) {
+    const sidebar = document.getElementById(SIDEBAR_ID);
+    const previousPointerEvents = sidebar?.style.pointerEvents || "";
+
+    if (sidebar) {
+      sidebar.style.setProperty("pointer-events", "none", "important");
+    }
+
+    try {
+      return await task();
+    } finally {
+      if (sidebar) {
+        sidebar.style.pointerEvents = previousPointerEvents;
+      }
+    }
   }
 
   function findVisibleNextButtonById() {
