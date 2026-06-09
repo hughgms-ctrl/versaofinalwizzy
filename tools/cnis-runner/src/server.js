@@ -722,18 +722,22 @@ async function clickSession(id, payload) {
   const sourceHeight = Number(payload.sourceHeight || viewport.height);
   const x = Math.max(0, Math.min(viewport.width, Number(payload.x || 0) * viewport.width / sourceWidth));
   const y = Math.max(0, Math.min(viewport.height, Number(payload.y || 0) * viewport.height / sourceHeight));
+  await session.page.bringToFront().catch(() => {});
   await session.page.mouse.click(x, y);
+  touch(session);
   return session;
 }
 
 async function keyboardSession(id, payload) {
   const session = sessions.get(id);
   if (!session?.page || session.page.isClosed()) return null;
+  await session.page.bringToFront().catch(() => {});
   if (payload.key) {
     await session.page.keyboard.press(String(payload.key));
   } else if (payload.text) {
     await session.page.keyboard.insertText(String(payload.text));
   }
+  touch(session);
   return session;
 }
 

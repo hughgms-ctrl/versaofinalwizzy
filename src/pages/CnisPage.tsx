@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type PointerEvent, type ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -806,6 +806,8 @@ function RunnerViewport({
 }) {
   const [streamNonce, setStreamNonce] = useState(0);
   const [imageFailed, setImageFailed] = useState(false);
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const imageRef = useRef<HTMLImageElement | null>(null);
   const hasRunner = localRunnerEnabled && Boolean(session.runnerSessionId);
 
   useEffect(() => {
@@ -823,17 +825,27 @@ function RunnerViewport({
     return () => window.clearInterval(timer);
   }, [hasRunner, imageFailed]);
 
-  const sendClick = async (event: MouseEvent<HTMLImageElement>) => {
+  const sendClick = async (event: PointerEvent<HTMLDivElement>) => {
     if (!session.runnerSessionId) return;
-    const rect = event.currentTarget.getBoundingClientRect();
+    const image = imageRef.current;
+    if (!image) return;
+    const rect = image.getBoundingClientRect();
+    const naturalWidth = image.naturalWidth || rect.width;
+    const naturalHeight = image.naturalHeight || rect.height;
+    const relativeX = event.clientX - rect.left;
+    const relativeY = event.clientY - rect.top;
+    if (relativeX < 0 || relativeY < 0 || relativeX > rect.width || relativeY > rect.height) return;
+
+    event.preventDefault();
+    viewportRef.current?.focus();
     await fetch(`${RUNNER_BASE_URL}/sessions/${session.runnerSessionId}/click`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        x: event.clientX - rect.left,
-        y: event.clientY - rect.top,
-        sourceWidth: rect.width,
-        sourceHeight: rect.height,
+        x: relativeX * naturalWidth / rect.width,
+        y: relativeY * naturalHeight / rect.height,
+        sourceWidth: naturalWidth,
+        sourceHeight: naturalHeight,
       }),
     }).catch(() => {});
   };
@@ -848,6 +860,18 @@ function RunnerViewport({
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(payload),
+    }).catch(() => {});
+  };
+
+  const sendPaste = async (event: ClipboardEvent<HTMLDivElement>) => {
+    if (!session.runnerSessionId) return;
+    const text = event.clipboardData.getData("text");
+    if (!text) return;
+    event.preventDefault();
+    await fetch(`${RUNNER_BASE_URL}/sessions/${session.runnerSessionId}/keyboard`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text }),
     }).catch(() => {});
   };
 
@@ -889,18 +913,21 @@ function RunnerViewport({
       </div>
 
       <div
+        ref={viewportRef}
         tabIndex={0}
+        onPointerDown={sendClick}
         onKeyDown={sendKeyboard}
-        className="flex min-h-0 flex-1 items-center justify-center bg-black/30 p-3 outline-none focus:ring-2 focus:ring-primary"
+        onPaste={sendPaste}
+        className="flex min-h-0 flex-1 cursor-crosshair items-center justify-center bg-black/30 p-3 outline-none focus:ring-2 focus:ring-primary"
       >
         {hasRunner && !imageFailed ? (
           <img
+            ref={imageRef}
             src={`${RUNNER_BASE_URL}/sessions/${session.runnerSessionId}/screenshot-stream?stream=${streamNonce}`}
             alt="Navegador controlado pelo runner CNIS"
-            onClick={sendClick}
             onLoad={() => setImageFailed(false)}
             onError={() => setImageFailed(true)}
-            className="max-h-full w-full max-w-full cursor-crosshair rounded-sm object-contain shadow-sm"
+            className="pointer-events-none max-h-full w-full max-w-full select-none rounded-sm object-contain shadow-sm"
             draggable={false}
           />
         ) : (
