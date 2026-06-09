@@ -40,5 +40,29 @@ describe("cnis analyzer", () => {
     expect(analysis.mantemQualidade).toBe(false);
     expect(analysis.direito).toBe(false);
   });
+
+  it("parses CNIS-like copied rows with headers, tabs and short dates", () => {
+    const vinculos = parseCnisText(`
+      Seq. NIT Origem do Vinculo Tipo Data Inicio Data Fim Ult. Remun. Indicadores
+      1 123.45678.90-1 EMPRESA DELTA LTDA Empregado 01/01/20 31/12/21 12/2021
+      2 123.45678.90-1 CONTRIBUINTE INDIVIDUAL\tContribuinte Individual\t01/02/2022\tEm aberto
+      Acoes
+    `);
+
+    expect(vinculos).toHaveLength(2);
+    expect(vinculos[0]).toMatchObject({
+      nome: "123.45678.90-1 EMPRESA DELTA LTDA",
+      tipo: "Empregado",
+      inicio: "01/01/2020",
+      fim: "31/12/2021",
+    });
+    expect(vinculos[1]).toMatchObject({
+      nome: "123.45678.90-1 Contribuinte Individual",
+      tipo: "Contribuinte Individual",
+      inicio: "01/02/2022",
+      fim: "Em aberto",
+      emAberto: true,
+    });
+  });
 });
 

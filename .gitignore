@@ -15,6 +15,12 @@ dist-ssr
 .env.*
 !.env.example
 
+# CNIS runner local runtime
+tools/cnis-runner/.cnis-chromium-profile/
+tools/cnis-runner/runner*.log
+Wizzy Cnis Leitura/cnis-checker/.git/
+Wizzy Cnis Leitura/cnis-checker/.git.local-backup/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

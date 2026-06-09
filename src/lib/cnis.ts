@@ -82,14 +82,22 @@ const REQUIRED_CARENCIA = 24;
 const CARENCIA_START_DATE = new Date(2019, 5, 18);
 const TIPOS_VINCULO = [
   "Empregado",
+  "Empregado domestico",
+  "Empregado doméstico",
   "Contribuinte Individual/Autonomo",
-  "Contribuinte Individual/Autonomo",
+  "Contribuinte Individual/Autônomo",
+  "Contribuinte Individual",
+  "Autonomo",
+  "Autônomo",
   "Facultativo",
   "Domestico",
-  "Domestico",
+  "Doméstico",
   "Trabalhador Avulso",
   "Segurado Especial",
+  "Beneficio",
+  "Benefício",
 ];
+const BR_DATE_PATTERN = /\b\d{1,2}\/\d{1,2}\/(?:\d{2}|\d{4})\b/g;
 
 const MINIMUM_WAGES: Record<number, number> = {
   2011: 545,
@@ -126,10 +134,16 @@ export function parseCnisText(input: string): CnisVinculo[] {
       continue;
     }
 
+    const parsedLooseLine = parseLooseLine(line);
+    if (parsedLooseLine) {
+      vinculos.push(parsedLooseLine);
+      continue;
+    }
+
     if (!looksLikeCompanyName(line)) continue;
     const windowLines = lines.slice(i + 1, i + 8);
     const tipo = windowLines.find(isTipoVinculo) || "";
-    const dates = windowLines.join(" ").match(/\b\d{2}\/\d{2}\/\d{4}\b/g) || [];
+    const dates = extractDates(windowLines.join(" "));
     if (dates.length < 1) continue;
 
     const parsed = buildVinculo(line, tipo, dates[0], dates[1]);
@@ -344,12 +358,29 @@ export function buildCnisReportHtml(args: {
 }
 
 function parseDelimitedLine(line: string): CnisVinculo | null {
-  const parts = line.split(/[;|]/).map(cleanText).filter(Boolean);
+  const parts = line.split(/[;|\t]/).map(cleanText).filter(Boolean);
   if (parts.length < 3) return null;
-  const dates = parts.join(" ").match(/\b\d{2}\/\d{2}\/\d{4}\b/g) || [];
+  const dates = extractDates(parts.join(" "));
   if (!dates.length) return null;
   const tipo = parts.find(isTipoVinculo) || "Vinculo";
   const nome = parts.find((part) => !isTipoVinculo(part) && !hasDate(part)) || parts[0];
+  return buildVinculo(nome, tipo, dates[0], dates[1]);
+}
+
+function parseLooseLine(line: string): CnisVinculo | null {
+  BR_DATE_PATTERN.lastIndex = 0;
+  const rawDates = line.match(BR_DATE_PATTERN) || [];
+  const dates = rawDates.map(normalizeBRDate).filter(Boolean) as string[];
+  if (!dates.length || !rawDates.length) return null;
+
+  const beforeFirstDate = cleanText(line.slice(0, line.indexOf(rawDates[0])));
+  const lastRawDate = rawDates[rawDates.length - 1];
+  const afterLastDate = cleanText(line.slice(line.lastIndexOf(lastRawDate) + lastRawDate.length));
+  const chunks = beforeFirstDate.split(/\s{2,}|[;|\t]/).map(cleanText).filter(Boolean);
+  const tipo = findTipoVinculoLabel(`${beforeFirstDate} ${afterLastDate}`);
+  const nome = chunks.find((chunk) => !isTipoVinculo(chunk) && looksLikeCompanyName(chunk))
+    || cleanCompanyName(beforeFirstDate.replace(new RegExp(escapeRegExp(tipo), "i"), ""));
+
   return buildVinculo(nome, tipo, dates[0], dates[1]);
 }
 
@@ -545,11 +576,17 @@ function formatCurrencyBRL(value: number): string {
 }
 
 function cleanText(value: string): string {
-  return String(value || "").replace(/\s+/g, " ").trim();
+  return String(value || "").replace(/\u00a0/g, " ").replace(/[ \t]+/g, " ").trim();
 }
 
 function cleanCompanyName(value: string): string {
-  return cleanText(value).replace(/^\d+\s*[-.)]\s*/, "");
+  return cleanText(value)
+    .replace(/^\d{1,3}\s*[-.)]\s+(?!\d)/, "")
+    .replace(/^\d+\s+(?=\d{2,3}[.\s])/, "")
+    .replace(/\b(Acoes|Ações|Indicadores?|Seq\.?|Origem do Vinculo|Origem do Vínculo|Data Inicio|Data Fim|Ult\.?\s*Remun\.?)\b/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .slice(0, 140)
+    .trim();
 }
 
 function isGarbageLine(line: string): boolean {
@@ -558,26 +595,61 @@ function isGarbageLine(line: string): boolean {
     || normalized.includes("cnis checker")
     || normalized.includes("historico")
     || normalized.includes("analisar cnis")
+    || normalized.includes("origem do vinculo")
+    || normalized.includes("data inicio")
+    || normalized.includes("data fim")
+    || normalized.includes("ult. remun")
+    || normalized.includes("indicadores")
+    || normalized === "acoes"
+    || normalized === "acao"
+    || /^(seq|nit|nb|cpf|nome|origem do vinculo|origem do vínculo|data inicio|data fim|ult\.?\s*remun\.?|indicadores?)$/i.test(line)
+    || /periodo:\s*a preencher|per[ií]odo:\s*a preencher|lote\d|^salvar$|compet[eê]ncia inicial/i.test(line)
     || normalized.length < 3;
 }
 
 function looksLikeCompanyName(line: string): boolean {
-  if (hasDate(line) || isTipoVinculo(line)) return false;
+  if (hasDate(line) || isTipoVinculo(line) || isGarbageLine(line)) return false;
   const normalized = normalizeForCompare(line);
   return normalized.length >= 4 && /[a-z]/i.test(normalized);
 }
 
 function isTipoVinculo(line: string): boolean {
   const normalized = normalizeForCompare(line).replace(/\.+$/g, "");
-  return TIPOS_VINCULO.some((tipo) => normalized.includes(normalizeForCompare(tipo)));
+  return TIPOS_VINCULO.some((tipo) => {
+    const normalizedTipo = normalizeForCompare(tipo);
+    return normalized === normalizedTipo
+      || normalized.includes(normalizedTipo)
+      || (normalized.length >= 8 && normalizedTipo.startsWith(normalized));
+  });
+}
+
+function findTipoVinculoLabel(value: string): string {
+  const normalized = normalizeForCompare(value);
+  return TIPOS_VINCULO.find((tipo) => normalized.includes(normalizeForCompare(tipo))) || "";
 }
 
 function hasDate(value: string): boolean {
-  return /\b\d{2}\/\d{2}\/\d{4}\b/.test(value);
+  return /\b\d{1,2}\/\d{1,2}\/(?:\d{2}|\d{4})\b/.test(value);
+}
+
+function extractDates(value: string): string[] {
+  BR_DATE_PATTERN.lastIndex = 0;
+  return (value.match(BR_DATE_PATTERN) || []).map(normalizeBRDate).filter(Boolean) as string[];
+}
+
+function normalizeBRDate(value: string): string | null {
+  const match = String(value || "").match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
+  if (!match) return null;
+  const year = match[3].length === 2 ? Number(`20${match[3]}`) : Number(match[3]);
+  return `${match[1].padStart(2, "0")}/${match[2].padStart(2, "0")}/${year}`;
 }
 
 function normalizeForCompare(value: string): string {
   return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+}
+
+function escapeRegExp(value: string): string {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function escapeHTML(value: string | number): string {
