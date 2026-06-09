@@ -447,6 +447,52 @@ export default function CnisPage() {
     }
   };
 
+  const openCertificateLogin = async () => {
+    if (!localRunnerEnabled) {
+      toast({
+        title: "Runner CNIS desativado",
+        description: "Ative o runner local para abrir o login com certificado.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const response = await fetch(`${RUNNER_BASE_URL}/auth/certificate-login`, { method: "POST" });
+      const payload = await response.json();
+      if (!response.ok || !payload?.ok) throw new Error(payload?.error || "Nao consegui abrir o Chromium para login.");
+      const next = sessions.map((session) => session.source === "runner" && activeStatuses.includes(session.status) ? {
+        ...session,
+        status: "waiting_user" as const,
+        progressLabel: "Faca o login com certificado digital no Chromium visivel. Depois clique em Concluir login.",
+        updatedAt: new Date().toISOString(),
+      } : session);
+      persistSessions(next);
+      toast({ title: "Chromium visivel aberto", description: "Selecione o certificado digital e conclua o login no GERID." });
+    } catch (error) {
+      toast({ title: "Nao consegui abrir o login", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
+    }
+  };
+
+  const finishCertificateLogin = async () => {
+    if (!localRunnerEnabled) return;
+
+    try {
+      const response = await fetch(`${RUNNER_BASE_URL}/auth/finish`, { method: "POST" });
+      const payload = await response.json();
+      if (!response.ok || !payload?.ok) throw new Error(payload?.error || "Nao consegui finalizar o modo login.");
+      const next = sessions.map((session) => session.source === "runner" && session.status === "waiting_user" ? {
+        ...session,
+        progressLabel: "Login certificado salvo. Abra o runner para continuar a automacao invisivel.",
+        updatedAt: new Date().toISOString(),
+      } : session);
+      persistSessions(next);
+      toast({ title: "Login finalizado", description: "O Chromium visivel foi fechado. As proximas consultas usam a sessao salva." });
+    } catch (error) {
+      toast({ title: "Nao consegui finalizar o login", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
+    }
+  };
+
   const openReport = (session: CnisSession) => {
     if (!session.reportHtml) return;
     const blob = new Blob([session.reportHtml], { type: "text/html;charset=utf-8" });
@@ -624,6 +670,8 @@ export default function CnisPage() {
                   onDownload={() => openReport(selected)}
                   onCancel={() => cancelSession(selected.id)}
                   onOpenRunner={() => openRunnerForSession(selected.id)}
+                  onCertificateLogin={openCertificateLogin}
+                  onFinishCertificateLogin={finishCertificateLogin}
                 />
               ) : (
                 <div className="flex h-full items-center justify-center p-8 text-center text-muted-foreground">
@@ -697,12 +745,16 @@ function SessionDetail({
   onDownload,
   onCancel,
   onOpenRunner,
+  onCertificateLogin,
+  onFinishCertificateLogin,
 }: {
   session: CnisSession;
   localRunnerEnabled: boolean;
   onDownload: () => void;
   onCancel: () => void | Promise<void>;
   onOpenRunner: () => void | Promise<void>;
+  onCertificateLogin: () => void | Promise<void>;
+  onFinishCertificateLogin: () => void | Promise<void>;
 }) {
   const summary = session.analysis ? buildCnisSummary(session.analysis) : null;
 
@@ -719,10 +771,20 @@ function SessionDetail({
         </div>
         <div className="flex gap-2">
           {localRunnerEnabled && session.source === "runner" && (
-            <Button variant="outline" size="sm" onClick={onOpenRunner} className="gap-2">
-              <Bot className="h-4 w-4" />
-              Abrir runner
-            </Button>
+            <>
+              <Button variant="outline" size="sm" onClick={onCertificateLogin} className="gap-2">
+                <Bot className="h-4 w-4" />
+                Login certificado
+              </Button>
+              <Button variant="outline" size="sm" onClick={onFinishCertificateLogin} className="gap-2">
+                <CheckCircle2 className="h-4 w-4" />
+                Concluir login
+              </Button>
+              <Button variant="outline" size="sm" onClick={onOpenRunner} className="gap-2">
+                <Bot className="h-4 w-4" />
+                Abrir runner
+              </Button>
+            </>
           )}
           {session.reportHtml && (
             <Button variant="outline" size="sm" onClick={onDownload} className="gap-2">

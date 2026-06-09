@@ -19,6 +19,8 @@ const HEADLESS = process.env.WIZZY_CNIS_HEADLESS !== "false";
 
 let browser = null;
 let browserContext = null;
+let browserHeadless = null;
+let certificateLoginPage = null;
 const sessions = new Map();
 
 const chromeShim = `
@@ -137,19 +139,33 @@ const chromeShim = `
 })();
 `;
 
-async function ensureBrowser() {
-  if (browserContext?.browser()?.isConnected()) return browserContext;
+async function ensureBrowser(options = {}) {
+  const desiredHeadless = options.headless ?? HEADLESS;
+  if (browserContext?.browser()?.isConnected() && browserHeadless === desiredHeadless) return browserContext;
+
+  if (browserContext) {
+    await browserContext.close().catch(() => {});
+    browserContext = null;
+    browser = null;
+    certificateLoginPage = null;
+  }
+
   browserContext = await chromium.launchPersistentContext(chromiumProfilePath, {
-    headless: HEADLESS,
+    headless: desiredHeadless,
     viewport: { width: 1440, height: 920 },
     locale: "pt-BR",
-    args: [
+    args: desiredHeadless ? [
       "--disable-blink-features=AutomationControlled",
       "--window-position=-32000,-32000",
+      "--window-size=1440,920",
+    ] : [
+      "--disable-blink-features=AutomationControlled",
+      "--window-position=80,40",
       "--window-size=1440,920",
     ],
   });
   browser = browserContext.browser();
+  browserHeadless = desiredHeadless;
   return browserContext;
 }
 
@@ -659,6 +675,50 @@ async function showSession(id) {
   return session;
 }
 
+async function openCertificateLogin() {
+  for (const session of sessions.values()) {
+    if (["starting", "running", "waiting_user"].includes(session.status)) {
+      session.page = null;
+      session.status = "waiting_user";
+      session.progressLabel = "Aguardando login com certificado digital no Chromium visivel.";
+      touch(session);
+    }
+  }
+
+  const context = await ensureBrowser({ headless: false });
+  certificateLoginPage = certificateLoginPage && !certificateLoginPage.isClosed()
+    ? certificateLoginPage
+    : await context.newPage();
+  await certificateLoginPage.goto(INSS_HOME_URL, { waitUntil: "domcontentloaded", timeout: 60000 }).catch(() => {});
+  await certificateLoginPage.bringToFront().catch(() => {});
+  return {
+    headless: browserHeadless,
+    url: certificateLoginPage.url(),
+  };
+}
+
+async function finishCertificateLogin() {
+  await certificateLoginPage?.close().catch(() => {});
+  certificateLoginPage = null;
+  if (browserContext) {
+    await browserContext.close().catch(() => {});
+    browserContext = null;
+    browser = null;
+    browserHeadless = null;
+  }
+
+  for (const session of sessions.values()) {
+    if (session.status === "waiting_user" && !session.page) {
+      session.progressLabel = "Login concluido. Abra o runner para continuar a consulta invisivel.";
+      touch(session);
+    }
+  }
+
+  return {
+    headless: HEADLESS,
+  };
+}
+
 async function screenshotSession(id) {
   const session = sessions.get(id);
   if (!session?.page || session.page.isClosed()) return null;
@@ -825,7 +885,19 @@ const server = createServer(async (req, res) => {
     }
 
     if (req.method === "GET" && url.pathname === "/health") {
-      send(res, 200, { ok: true, runner: "wizzy-cnis-runner", maxRunning: MAX_RUNNING, headless: HEADLESS, sessions: sessions.size });
+      send(res, 200, { ok: true, runner: "wizzy-cnis-runner", maxRunning: MAX_RUNNING, headless: browserHeadless ?? HEADLESS, defaultHeadless: HEADLESS, sessions: sessions.size });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/auth/certificate-login") {
+      const auth = await openCertificateLogin();
+      send(res, 200, { ok: true, auth });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/auth/finish") {
+      const auth = await finishCertificateLogin();
+      send(res, 200, { ok: true, auth });
       return;
     }
 
