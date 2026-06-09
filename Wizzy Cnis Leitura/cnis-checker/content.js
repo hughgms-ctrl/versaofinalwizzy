@@ -1090,12 +1090,7 @@
     clickElement(serviceInput || input);
     await sleep(250);
 
-    if (input && /input|textarea/i.test(input.tagName)) {
-      input.focus();
-      setNativeValue(input, "");
-      input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "deleteContentBackward", data: null }));
-      input.dispatchEvent(new Event("change", { bubbles: true }));
-    }
+    resetTextInput(input);
 
     const clearButton = Array.from(document.querySelectorAll("button, .ng-clear-wrapper, .p-dropdown-clear-icon, [aria-label]"))
       .find(element => {
@@ -1510,16 +1505,51 @@
   async function typeIntoServiceSelectorWithRunner(target, value) {
     const clickTarget = target || document.activeElement;
     if (!clickTarget || !isVisible(clickTarget)) return false;
+    resetTextInput(clickTarget);
+
     if (!await clickElementWithRunner(clickTarget)) return false;
 
     await sleep(250);
+    resetTextInput(getActiveServiceInput(clickTarget) || clickTarget);
     await runnerKeyboard({ key: "Control+A" });
     await sleep(80);
     await runnerKeyboard({ key: "Backspace" });
     await sleep(120);
     const typed = await runnerKeyboard({ text: value });
     await sleep(700);
+    await fixDuplicatedServiceText(getActiveServiceInput(clickTarget) || clickTarget, value);
     return typed;
+  }
+
+  async function fixDuplicatedServiceText(target, value) {
+    const input = getActiveServiceInput(target) || target;
+    if (!input || !/input|textarea/i.test(input.tagName)) return;
+
+    const normalizedValue = normalizeForCompare(value);
+    const current = normalizeForCompare(input.value);
+    const first = current.indexOf(normalizedValue);
+    const last = current.lastIndexOf(normalizedValue);
+    if (first < 0 || first === last) return;
+
+    resetTextInput(input);
+    await sleep(120);
+    if (await runnerKeyboard({ text: value })) {
+      await sleep(500);
+      return;
+    }
+
+    await typeLikeUser(input, value);
+  }
+
+  function resetTextInput(input) {
+    if (!input || !/input|textarea/i.test(input.tagName)) return false;
+
+    input.focus();
+    setNativeValue(input, "");
+    input.dispatchEvent(new InputEvent("beforeinput", { bubbles: true, cancelable: true, inputType: "deleteContentBackward", data: null }));
+    input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "deleteContentBackward", data: null }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    return true;
   }
 
   async function typeLikeUser(target, value) {
