@@ -282,10 +282,12 @@
     }, 15000);
 
     await selectService(serviceInput);
+    await advanceAfterServiceSelection(serviceInput);
 
-    await sleep(400);
-    await clickByText("Avancar", { timeout: 8000, optional: true });
-    await clickByText("Avançar", { timeout: 8000, optional: true });
+    if (isServiceSelectionPage()) {
+      await clickByText("Avancar", { timeout: 8000, optional: true });
+      await clickByText("Avançar", { timeout: 8000, optional: true });
+    }
 
     await waitForText("Dados do Requerente", 15000);
     setAutomationStatus("Preenchendo CPF do requerente...", "neutral");
@@ -832,7 +834,7 @@
         }, 15000);
 
         await selectService(serviceInput);
-        await clickNext();
+        await advanceAfterServiceSelection(serviceInput);
         scheduleAutomationResume();
         return false;
       }
@@ -1050,6 +1052,62 @@
     setAutomationStatus("Servico selecionado. Avancando...", "ok");
     document.activeElement?.blur?.();
     await sleep(500);
+  }
+
+  async function advanceAfterServiceSelection(serviceInput) {
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      setAutomationStatus(attempt === 1 ? "Avancando com o servico selecionado..." : "Reconfirmando o servico no portal...", "neutral");
+      await waitForLoadingToFinish(2500);
+      await sleep(350);
+      await clickNext(true);
+      await waitForLoadingToFinish(3500);
+      await sleep(1200);
+
+      if (!isServiceSelectionPage()) return true;
+
+      if (!hasServiceRequiredError() && attempt >= 2) {
+        throw new Error("O portal continuou na selecao de servico mesmo apos selecionar Aposentadoria por Idade Urbana.");
+      }
+
+      setAutomationStatus("O portal nao aceitou o servico. Selecionando novamente...", "neutral");
+      const selector = findServiceSelector() || serviceInput;
+      await clearServiceSelector(selector);
+      await selectService(selector);
+    }
+
+    throw new Error("O portal nao confirmou o servico selecionado. Tente novamente quando a tela estiver estabilizada.");
+  }
+
+  function hasServiceRequiredError() {
+    const text = normalizeForCompare(document.body.innerText || "");
+    return text.includes("necessario selecionar um servico") ||
+      text.includes("necessario selecionar um servi") ||
+      text.includes("favor preencher os campos obrigatorios");
+  }
+
+  async function clearServiceSelector(serviceInput) {
+    const input = getActiveServiceInput(serviceInput) || serviceInput?.querySelector?.("input, textarea");
+    clickElement(serviceInput || input);
+    await sleep(250);
+
+    if (input && /input|textarea/i.test(input.tagName)) {
+      input.focus();
+      setNativeValue(input, "");
+      input.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "deleteContentBackward", data: null }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+
+    const clearButton = Array.from(document.querySelectorAll("button, .ng-clear-wrapper, .p-dropdown-clear-icon, [aria-label]"))
+      .find(element => {
+        if (element.closest(`#${SIDEBAR_ID}`) || !isVisible(element)) return false;
+        const label = normalizeForCompare(element.innerText || element.textContent || element.getAttribute("aria-label") || element.className || "");
+        return label.includes("limpar") || label.includes("clear");
+      });
+
+    if (clearButton) {
+      clickHard(clearButton);
+      await sleep(300);
+    }
   }
 
   async function setAutomationRunning(running) {
@@ -1436,6 +1494,10 @@
 
     const target = searchInput || element.querySelector?.("input, textarea") || element;
 
+    if (await typeIntoServiceSelectorWithRunner(target, value)) {
+      return;
+    }
+
     if (/input|textarea/i.test(target.tagName)) {
       await typeLikeUser(target, value);
       return;
@@ -1443,6 +1505,21 @@
 
     target.focus?.();
     await typeLikeUser(document.activeElement, value);
+  }
+
+  async function typeIntoServiceSelectorWithRunner(target, value) {
+    const clickTarget = target || document.activeElement;
+    if (!clickTarget || !isVisible(clickTarget)) return false;
+    if (!await clickElementWithRunner(clickTarget)) return false;
+
+    await sleep(250);
+    await runnerKeyboard({ key: "Control+A" });
+    await sleep(80);
+    await runnerKeyboard({ key: "Backspace" });
+    await sleep(120);
+    const typed = await runnerKeyboard({ text: value });
+    await sleep(700);
+    return typed;
   }
 
   async function typeLikeUser(target, value) {
@@ -1533,6 +1610,11 @@
     ].filter(Boolean);
 
     for (const target of targets) {
+      if (await clickElementWithRunner(target)) {
+        await sleep(650);
+        if (isServiceSelectionConfirmed()) return;
+      }
+
       clickDropdownOption(target);
       await sleep(350);
       if (isServiceSelectionConfirmed()) return;
@@ -1541,6 +1623,7 @@
     const input = getActiveServiceInput(serviceInput);
     if (input) {
       input.focus();
+      if (await confirmServiceWithRunnerKeyboard(input)) return;
       await confirmServiceOptionByExactText(input);
     }
   }
@@ -1554,6 +1637,7 @@
     }
 
     clickDropdownOption(option);
+    await clickElementWithRunner(option);
     await sleep(650);
   }
 
@@ -1568,6 +1652,18 @@
     });
 
     await sleep(600);
+  }
+
+  async function confirmServiceWithRunnerKeyboard(serviceInput) {
+    const target = getActiveServiceInput(serviceInput) || serviceInput || document.activeElement;
+    if (!target || !await clickElementWithRunner(target)) return false;
+
+    await sleep(250);
+    await runnerKeyboard({ key: "ArrowDown" });
+    await sleep(200);
+    await runnerKeyboard({ key: "Enter" });
+    await sleep(900);
+    return isServiceSelectionConfirmed();
   }
 
   function getActiveServiceInput(serviceInput) {
@@ -1668,6 +1764,11 @@
     const idButton = findVisibleNextButtonById();
     if (idButton && isVisible(idButton) && !isDisabled(idButton)) {
       for (let attempt = 0; attempt < 3; attempt += 1) {
+        if (useDebuggerClick && await clickElementWithRunner(idButton)) {
+          await sleep(1100);
+          if (!document.body.contains(idButton) || !isVisible(idButton)) break;
+          continue;
+        }
         await clickWizardNextButton(idButton);
         await sleep(1100);
         if (!document.body.contains(idButton) || !isVisible(idButton)) break;
@@ -1679,6 +1780,10 @@
     if (nextButton) {
       nextButton.removeAttribute?.("disabled");
       nextButton.classList?.remove?.("disabled");
+      if (useDebuggerClick && await clickElementWithRunner(nextButton)) {
+        await sleep(900);
+        return;
+      }
       clickHard(nextButton);
       await sleep(900);
       return;
@@ -2183,6 +2288,67 @@
     });
 
     eventTarget.click?.();
+  }
+
+  async function clickElementWithRunner(element) {
+    const sessionId = getRunnerSessionId();
+    if (!sessionId || !element || !isVisible(element)) return false;
+
+    element.scrollIntoView?.({ block: "center", inline: "center" });
+    await sleep(120);
+
+    const rect = element.getBoundingClientRect();
+    const x = rect.left + rect.width / 2;
+    const y = rect.top + rect.height / 2;
+    const payload = {
+      x,
+      y,
+      sourceWidth: window.innerWidth,
+      sourceHeight: window.innerHeight
+    };
+
+    if (typeof window.__CNIS_RUNNER_TRUSTED_CLICK === "function") {
+      try {
+        if (await window.__CNIS_RUNNER_TRUSTED_CLICK(payload)) return true;
+      } catch {
+        // Fall back to the local runner HTTP bridge below.
+      }
+    }
+
+    try {
+      const response = await fetch(`http://127.0.0.1:8787/sessions/${encodeURIComponent(sessionId)}/click`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      return response.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  async function runnerKeyboard(payload) {
+    const sessionId = getRunnerSessionId();
+    if (!sessionId) return false;
+
+    if (typeof window.__CNIS_RUNNER_TRUSTED_KEYBOARD === "function") {
+      try {
+        if (await window.__CNIS_RUNNER_TRUSTED_KEYBOARD(payload)) return true;
+      } catch {
+        // Fall back to the local runner HTTP bridge below.
+      }
+    }
+
+    try {
+      const response = await fetch(`http://127.0.0.1:8787/sessions/${encodeURIComponent(sessionId)}/keyboard`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      return response.ok;
+    } catch {
+      return false;
+    }
   }
 
   function waitForText(text, timeout) {
