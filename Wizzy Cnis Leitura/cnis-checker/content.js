@@ -1815,7 +1815,7 @@
   }
 
   async function clickNext(useDebuggerClick = false) {
-    if (isRelationsPage()) {
+    if (isRealRelationsPage()) {
       setAutomationStatus("Etapa 6 localizada. Nao vou avancar alem das contribuicoes.", "ok");
       return;
     }
