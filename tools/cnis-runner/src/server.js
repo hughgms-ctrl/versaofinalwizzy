@@ -435,6 +435,24 @@ function escapeHTML(value) {
 
 async function injectCnisPanel(session) {
   if (!session.page) return;
+  session.runnerClickBindingName ||= `__cnisRunnerTrustedClick_${session.id.replace(/[^a-zA-Z0-9_]/g, "_")}`;
+  await session.page.exposeFunction(session.runnerClickBindingName, async (payload = {}) => {
+    if (!session.page || session.page.isClosed()) return false;
+    const viewport = session.page.viewportSize() || { width: 1440, height: 920 };
+    const sourceWidth = Number(payload.sourceWidth || viewport.width);
+    const sourceHeight = Number(payload.sourceHeight || viewport.height);
+    const x = Math.max(0, Math.min(viewport.width, Number(payload.x || 0) * viewport.width / sourceWidth));
+    const y = Math.max(0, Math.min(viewport.height, Number(payload.y || 0) * viewport.height / sourceHeight));
+    await session.page.mouse.click(x, y);
+    touch(session);
+    return true;
+  }).catch(() => {});
+  await session.page.evaluate((bindingName) => {
+    window.__CNIS_RUNNER_TRUSTED_CLICK = (payload) => {
+      if (typeof window[bindingName] !== "function") return Promise.resolve(false);
+      return window[bindingName](payload);
+    };
+  }, session.runnerClickBindingName).catch(() => {});
   const [content, style] = await Promise.all([
     readFile(contentPath, "utf8"),
     readFile(stylePath, "utf8"),
