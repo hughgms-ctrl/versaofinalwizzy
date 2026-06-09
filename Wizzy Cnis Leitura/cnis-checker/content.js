@@ -4,6 +4,7 @@
 
   const SIDEBAR_ID = "cnisSidebar";
   const PAGE_MARGIN_ATTR = "data-cnis-original-margin-right";
+  const SIDEBAR_WIDTH = 430;
   const HISTORY_KEY = "cnisHistoryV2";
   const FORM_STATE_KEY = "cnisFormState";
   const AUTOMATION_STATE_KEY = "cnisAutomationState";
@@ -72,6 +73,8 @@
       #cnisSidebar .history-title{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:22px}
       #cnisSidebar .history-title h3{margin:0;color:#f4f7fb;font-size:16px}
       #cnisSidebar #openReportsBtn{height:32px;padding:0 10px;color:#aab4c0;background:#111317;border:1px solid #303640;border-radius:6px;cursor:pointer}
+      body[data-cnis-sidebar-open="true"]{margin-right:${SIDEBAR_WIDTH}px!important;width:calc(100vw - ${SIDEBAR_WIDTH}px)!important;max-width:calc(100vw - ${SIDEBAR_WIDTH}px)!important;overflow-x:hidden!important}
+      body[data-cnis-sidebar-open="true"] > *:not(#${SIDEBAR_ID}){max-width:calc(100vw - ${SIDEBAR_WIDTH}px)!important}
     `;
     document.documentElement.appendChild(style);
   }
@@ -84,8 +87,8 @@
     set("bottom", "0");
     set("left", "auto");
     set("inset", "0 0 0 auto");
-    set("width", "430px");
-    set("max-width", "430px");
+    set("width", `${SIDEBAR_WIDTH}px`);
+    set("max-width", `${SIDEBAR_WIDTH}px`);
     set("height", "100vh");
     set("z-index", "2147483647");
     set("box-sizing", "border-box");
@@ -124,12 +127,12 @@
   }
 
   function createSidebar() {
-    if (document.getElementById(SIDEBAR_ID)) return;
-
-    if (document.body.hasAttribute(PAGE_MARGIN_ATTR)) {
-      document.body.style.marginRight = document.body.getAttribute(PAGE_MARGIN_ATTR) || "";
-      document.body.removeAttribute(PAGE_MARGIN_ATTR);
+    if (document.getElementById(SIDEBAR_ID)) {
+      applyPageInset();
+      return;
     }
+
+    applyPageInset();
 
     ensureCriticalSidebarStyles();
     const sidebar = document.createElement("aside");
@@ -201,6 +204,18 @@
     startAutomationPoller();
     loadHistory();
     updateHistoryHeading();
+  }
+
+  function applyPageInset() {
+    if (!document.body.hasAttribute(PAGE_MARGIN_ATTR)) {
+      document.body.setAttribute(PAGE_MARGIN_ATTR, document.body.style.marginRight || "");
+    }
+
+    document.body.dataset.cnisSidebarOpen = "true";
+    document.body.style.setProperty("margin-right", `${SIDEBAR_WIDTH}px`, "important");
+    document.body.style.setProperty("width", `calc(100vw - ${SIDEBAR_WIDTH}px)`, "important");
+    document.body.style.setProperty("max-width", `calc(100vw - ${SIDEBAR_WIDTH}px)`, "important");
+    document.body.style.setProperty("overflow-x", "hidden", "important");
   }
 
   async function handleAnalyze() {
@@ -856,6 +871,7 @@
 
       if (isRealRelationsPage()) {
         setAutomationStatus("Tela de Relacoes Previdenciarias localizada. Gerando relatorio.", "ok");
+        await setAutomationRunning(false);
         return true;
       }
 
@@ -1799,6 +1815,11 @@
   }
 
   async function clickNext(useDebuggerClick = false) {
+    if (isRelationsPage()) {
+      setAutomationStatus("Etapa 6 localizada. Nao vou avancar alem das contribuicoes.", "ok");
+      return;
+    }
+
     document.activeElement?.blur?.();
     await revealWizardFooter();
 
@@ -4090,6 +4111,10 @@
       automationPoller = null;
     }
     document.body.style.marginRight = document.body.getAttribute(PAGE_MARGIN_ATTR) || "";
+    document.body.style.width = "";
+    document.body.style.maxWidth = "";
+    document.body.style.overflowX = "";
+    delete document.body.dataset.cnisSidebarOpen;
     document.body.removeAttribute(PAGE_MARGIN_ATTR);
     sidebar.remove();
   }
