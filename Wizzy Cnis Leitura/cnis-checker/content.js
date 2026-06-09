@@ -1031,18 +1031,18 @@
     await confirmServiceOption(serviceOption, serviceInput);
 
     const selected = await waitForElement(() => {
-      return isServiceSelectionConfirmed() ? document.body : null;
+      return (isServiceSelectionConfirmed() || !isServiceSelectionPage()) ? document.body : null;
     }, 3500, true);
 
-    if (!selected) {
+    if (!selected && isServiceSelectionPage()) {
       await confirmServiceOptionByExactText(serviceInput);
     }
 
     const selectedAfterFallback = await waitForElement(() => {
-      return isServiceSelectionConfirmed() ? document.body : null;
+      return (isServiceSelectionConfirmed() || !isServiceSelectionPage()) ? document.body : null;
     }, 2500, true);
 
-    if (!selectedAfterFallback) {
+    if (!selectedAfterFallback && isServiceSelectionPage()) {
       const fieldText = normalizeForCompare(findServiceSelector()?.innerText || findServiceSelector()?.textContent || findServiceSelector()?.value || "");
       if (!isExactUrbanRetirementSelection(fieldText)) {
         throw new Error("Digitei o servico, mas o portal nao confirmou a selecao. Vou parar antes de avancar.");
