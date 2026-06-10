@@ -1824,7 +1824,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
     organizationId,
     whatsappInstance.id,
     whatsappInstance.phone_number,
-    fallbackWorkspaceId || contact.workspace_id,
+    fallbackWorkspaceId || (fallbackWorkspaceIds.length === 0 ? contact.workspace_id : null),
     fallbackWorkspaceIds.length > 0 ? fallbackWorkspaceIds : (contact.workspace_id ? [contact.workspace_id] : []),
   );
 
@@ -2901,9 +2901,24 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
 
     if (existing) {
       const updates: any = {};
-      if (workspaceId && !existing.workspace_id) updates.workspace_id = workspaceId;
-      const nextWorkspaceIds = Array.from(new Set([...(existing.workspace_ids || []), ...workspaceIds].filter(Boolean)));
-      if (nextWorkspaceIds.length > 0) updates.workspace_ids = nextWorkspaceIds;
+      const configuredWorkspaceIds = Array.from(new Set(workspaceIds.filter(Boolean)));
+
+      if (configuredWorkspaceIds.length > 0) {
+        const primaryWorkspaceId = workspaceId || configuredWorkspaceIds[0];
+        const existingWorkspaceIds = Array.isArray(existing.workspace_ids) ? existing.workspace_ids : [];
+        const sortedExisting = [...existingWorkspaceIds].sort();
+        const sortedConfigured = [...configuredWorkspaceIds].sort();
+
+        if (existing.workspace_id !== primaryWorkspaceId) updates.workspace_id = primaryWorkspaceId;
+        if (JSON.stringify(sortedExisting) !== JSON.stringify(sortedConfigured)) {
+          updates.workspace_ids = configuredWorkspaceIds;
+        }
+      } else {
+        if (workspaceId && !existing.workspace_id) updates.workspace_id = workspaceId;
+        const nextWorkspaceIds = Array.from(new Set([...(existing.workspace_ids || []), ...workspaceIds].filter(Boolean)));
+        if (nextWorkspaceIds.length > 0) updates.workspace_ids = nextWorkspaceIds;
+      }
+
       if (!existing.source_phone && sourcePhone) updates.source_phone = sourcePhone;
       if (Object.keys(updates).length > 0) {
         await supabase.from('conversations').update(updates).eq('id', existing.id);

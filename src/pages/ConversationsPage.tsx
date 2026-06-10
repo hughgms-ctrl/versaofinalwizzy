@@ -112,8 +112,7 @@ const ConversationsPage = () => {
       if (selectedWorkspaceId && selectedWorkspace) {
         const hasDirectWorkspace = (conv as any).workspace_id === selectedWorkspaceId;
         const hasWorkspaceInList = Array.isArray((conv as any).workspace_ids) && (conv as any).workspace_ids.includes(selectedWorkspaceId);
-        const hasContactWorkspace = (conv.contact as any)?.workspace_id === selectedWorkspaceId;
-        if (!hasDirectWorkspace && !hasWorkspaceInList && !hasContactWorkspace) return false;
+        if (!hasDirectWorkspace && !hasWorkspaceInList) return false;
       }
 
       // Service mode filter (only when not showing archived)
@@ -213,8 +212,7 @@ const ConversationsPage = () => {
       if (selectedWorkspaceId && selectedWorkspace) {
         const hasDirectWorkspace = (conv as any).workspace_id === selectedWorkspaceId;
         const hasWorkspaceInList = Array.isArray((conv as any).workspace_ids) && (conv as any).workspace_ids.includes(selectedWorkspaceId);
-        const hasContactWorkspace = (conv.contact as any)?.workspace_id === selectedWorkspaceId;
-        if (!hasDirectWorkspace && !hasWorkspaceInList && !hasContactWorkspace) return false;
+        if (!hasDirectWorkspace && !hasWorkspaceInList) return false;
       }
       return true;
     });
