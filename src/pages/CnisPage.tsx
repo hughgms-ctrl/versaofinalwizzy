@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ClipboardEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,8 +11,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useWorkspaceContext } from "@/contexts/WorkspaceContext";
-import { analyzeCNIS, buildCnisReportHtml, buildCnisSummary, CnisAnalysis, CnisBenefitType, CnisVinculo, parseCnisText } from "@/lib/cnis";
-import { AlertCircle, ArrowLeft, Bot, CheckCircle2, Download, FileText, History, Loader2, Plus, RotateCcw, Square, Trash2, Upload } from "lucide-react";
+import { analyzeCNIS, buildCnisReportHtml, buildCnisSummary, CnisAnalysis, CnisBenefitType, CnisVinculo } from "@/lib/cnis";
+import { AlertCircle, ArrowLeft, Bot, CheckCircle2, Download, FileText, History, Loader2, Plus, RotateCcw, Square, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 type SessionStatus = "queued" | "starting" | "running" | "waiting_user" | "completed" | "failed" | "cancelled";
@@ -73,11 +73,10 @@ const RUNNER_PROTOCOL_URL = import.meta.env.VITE_CNIS_RUNNER_PROTOCOL_URL || "wi
 const activeStatuses: SessionStatus[] = ["queued", "starting", "running", "waiting_user"];
 const finalStatuses: SessionStatus[] = ["completed", "failed", "cancelled"];
 const emptyForm = {
-  nome: "",
   cpf: "",
   prisonDate: "",
   todayDate: new Date().toISOString().slice(0, 10),
-  cnisText: "",
+  batchText: "",
   benefitType: "auxilio_reclusao" as CnisBenefitType,
 };
 
@@ -197,64 +196,6 @@ export default function CnisPage() {
     };
   }, [localRunnerEnabled, selectedWorkspaceId, selectedId]);
 
-  const createManualSimulation = () => {
-    const vinculos = parseCnisText(form.cnisText);
-    if (!form.prisonDate) {
-      toast({ title: `Informe ${eventDateLabels[form.benefitType].toLowerCase()}`, variant: "destructive" });
-      return;
-    }
-    if (!vinculos.length) {
-      toast({ title: "Nenhum vinculo identificado", description: "Cole linhas do CNIS com nome, tipo e datas no campo de importacao.", variant: "destructive" });
-      return;
-    }
-
-    const analysis = analyzeCNIS(vinculos, form.prisonDate, { todayDate: form.todayDate, benefitType: form.benefitType });
-    const reportHtml = buildCnisReportHtml({ nome: form.nome, cpf: form.cpf, prisonDate: form.prisonDate, todayDate: form.todayDate, analysis });
-    const now = new Date().toISOString();
-    const session: CnisSession = {
-      id: crypto.randomUUID(),
-      workspaceId: selectedWorkspaceId,
-      status: "completed",
-      nome: form.nome || "Sem nome",
-      cpf: form.cpf,
-      prisonDate: form.prisonDate,
-      todayDate: form.todayDate,
-      benefitType: form.benefitType,
-      source: "manual",
-      progressLabel: "Simulacao concluida por importacao manual.",
-      vinculos,
-      analysis,
-      reportHtml,
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    const next = [session, ...sessions].slice(0, 100);
-    persistSessions(next);
-    setSelectedId(session.id);
-    setForm(emptyForm);
-    toast({ title: "Simulacao CNIS concluida", description: analysis.direito ? "Direito indicado pelos criterios analisados." : "Direito nao indicado pelos criterios analisados." });
-  };
-
-  const importSpreadsheet = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) return;
-    if (!/\.(csv|tsv|txt)$/i.test(file.name)) {
-      toast({ title: "Formato nao suportado", description: "Use CSV, TSV ou TXT com colunas: vinculo; tipo; inicio; fim.", variant: "destructive" });
-      return;
-    }
-
-    const text = await file.text();
-    const normalized = normalizeSpreadsheetText(text);
-    if (!normalized.trim()) {
-      toast({ title: "Planilha vazia", variant: "destructive" });
-      return;
-    }
-    setForm((prev) => ({ ...prev, cnisText: prev.cnisText ? `${prev.cnisText.trim()}\n${normalized}` : normalized }));
-    toast({ title: "Planilha importada", description: "As linhas foram adicionadas ao campo de importacao do CNIS." });
-  };
-
   const createRunnerSession = async () => {
     if (!localRunnerEnabled) {
       toast({
@@ -265,63 +206,93 @@ export default function CnisPage() {
       return;
     }
 
-    const now = new Date().toISOString();
-    const runningCount = sessions.filter((session) => session.status === "running").length;
-    const queued = runningCount >= 3;
-    let session: CnisSession = {
-      id: crypto.randomUUID(),
-      workspaceId: selectedWorkspaceId,
-      status: queued ? "queued" : "waiting_user",
-      nome: form.nome || "Nova consulta",
-      cpf: form.cpf,
-      prisonDate: form.prisonDate,
-      todayDate: form.todayDate,
-      benefitType: form.benefitType,
-      source: "runner",
-      progressLabel: queued
-        ? "Consulta criada e aguardando vaga no runner local."
-        : "Runner local ainda nao esta conectado. Esta sessao ficara pronta para automacao.",
-      vinculos: [],
-      analysis: null,
-      reportHtml: "",
-      createdAt: now,
-      updatedAt: now,
-    };
-
+    let inputs: Array<{ cpf: string; prisonDate: string }>;
     try {
-      const response = await fetch(`${RUNNER_BASE_URL}/sessions`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          nome: session.nome,
-          cpf: session.cpf,
-          prisonDate: session.prisonDate,
-          todayDate: session.todayDate,
-          benefitType: session.benefitType,
-        }),
-      });
-      const payload = await response.json();
-      if (!response.ok || !payload?.ok) throw new Error(payload?.error || "Runner local nao respondeu.");
-      session = {
-        ...session,
-        runnerSessionId: payload.session.id,
-        status: payload.session.status || "starting",
-        progressLabel: payload.session.progressLabel || "Consulta enviada para o runner local.",
-      };
-      toast({ title: "Runner acionado", description: "O navegador controlado sera aberto pelo runner local." });
+      inputs = parseRunnerInputs(form.cpf, form.prisonDate, form.batchText);
     } catch (error) {
-      session = {
-        ...session,
-        status: "waiting_user",
-        progressLabel: "Runner local nao conectado. Inicie tools/cnis-runner com npm start e abra esta sessao novamente.",
-        errorMessage: error instanceof Error ? error.message : String(error),
-      };
-      toast({ title: "Runner local nao encontrado", description: "A sessao foi criada, mas o runner precisa estar rodando neste computador.", variant: "destructive" });
+      toast({ title: "Dados incompletos", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
+      return;
     }
 
-    const next = [session, ...sessions].slice(0, 100);
+    const activeCount = sessions.filter((session) => activeStatuses.includes(session.status)).length;
+    if (inputs.length > 5 || activeCount + inputs.length > 5) {
+      toast({
+        title: "Limite de 5 consultas",
+        description: "O runner local processa no maximo 5 consultas ao mesmo tempo. Finalize ou apague consultas em andamento antes de adicionar mais.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      await ensureRunnerAvailable("open-runner");
+    } catch (error) {
+      toast({
+        title: "Runner local nao respondeu",
+        description: error instanceof Error ? error.message : String(error),
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const created: CnisSession[] = [];
+
+    try {
+      for (const input of inputs) {
+        let session: CnisSession = {
+          id: crypto.randomUUID(),
+          workspaceId: selectedWorkspaceId,
+          status: "starting",
+          nome: `${benefitLabels[form.benefitType]} - ${input.cpf}`,
+          cpf: input.cpf,
+          prisonDate: input.prisonDate,
+          todayDate: form.todayDate,
+          benefitType: form.benefitType,
+          source: "runner",
+          progressLabel: "Enviando consulta para o runner local.",
+          vinculos: [],
+          analysis: null,
+          reportHtml: "",
+          createdAt: now,
+          updatedAt: now,
+        };
+
+        const response = await fetch(`${RUNNER_BASE_URL}/sessions`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            nome: session.nome,
+            cpf: session.cpf,
+            prisonDate: session.prisonDate,
+            todayDate: session.todayDate,
+            benefitType: session.benefitType,
+          }),
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload?.ok) throw new Error(payload?.error || "Runner local nao respondeu.");
+        session = {
+          ...session,
+          runnerSessionId: payload.session.id,
+          status: payload.session.status || "starting",
+          progressLabel: payload.session.progressLabel || "Consulta enviada para o runner local.",
+        };
+        created.push(session);
+      }
+    } catch (error) {
+      toast({
+        title: "Nao consegui criar a consulta",
+        description: error instanceof Error ? error.message : String(error),
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const next = [...created, ...sessions].slice(0, 100);
     persistSessions(next);
-    setSelectedId(session.id);
+    setSelectedId(created[0]?.id || selectedId);
+    setForm((prev) => ({ ...prev, cpf: "", prisonDate: "", batchText: "" }));
+    toast({ title: "Runner acionado", description: `${created.length} consulta${created.length > 1 ? "s" : ""} enviada${created.length > 1 ? "s" : ""}.` });
   };
 
   const createDemoSession = async () => {
@@ -340,7 +311,7 @@ export default function CnisPage() {
       workspaceId: selectedWorkspaceId,
       demo: true,
       status: "starting",
-      nome: form.nome || "Maria Demo Previdenciaria",
+      nome: "Consulta demo",
       cpf: form.cpf || "123.456.789-09",
       prisonDate: form.prisonDate || "2026-05-15",
       todayDate: form.todayDate,
@@ -651,9 +622,6 @@ export default function CnisPage() {
                           </SelectContent>
                         </Select>
                       </Field>
-                      <Field label="Nome">
-                        <Input value={form.nome} onChange={(event) => setForm((prev) => ({ ...prev, nome: event.target.value }))} placeholder="Nome do segurado" />
-                      </Field>
                       <Field label="CPF">
                         <Input value={form.cpf} onChange={(event) => setForm((prev) => ({ ...prev, cpf: event.target.value }))} placeholder="000.000.000-00" />
                       </Field>
@@ -665,32 +633,26 @@ export default function CnisPage() {
                           <Input type="date" value={form.todayDate} onChange={(event) => setForm((prev) => ({ ...prev, todayDate: event.target.value }))} />
                         </Field>
                       </div>
-                      <Field label="Importacao manual do CNIS">
+                      <Field label="Consultas em massa">
                         <Textarea
-                          value={form.cnisText}
-                          onChange={(event) => setForm((prev) => ({ ...prev, cnisText: event.target.value }))}
-                          rows={10}
-                          placeholder={"Cole uma linha por vinculo: vinculo; tipo; inicio; fim\nEx: EMPRESA X; Empregado; 01/01/2020; 31/12/2023"}
+                          value={form.batchText}
+                          onChange={(event) => setForm((prev) => ({ ...prev, batchText: event.target.value }))}
+                          rows={6}
+                          placeholder={`Opcional: uma consulta por linha, ate 5.\nFormato: CPF; ${eventDateLabels[form.benefitType].toLowerCase()}\nEx: 12399882794; 12/12/2024`}
                           className="font-mono text-xs"
                         />
                       </Field>
                       <div className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
-                        <p className="font-medium text-foreground">Planilha CSV/TSV</p>
-                        <p className="mt-1">Ordem das colunas: vinculo; tipo; inicio; fim. Tambem aceito vinculo; inicio; fim. Datas em dd/mm/aaaa.</p>
-                        <Input type="file" accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values" onChange={importSpreadsheet} className="mt-3" />
+                        O limite operacional do runner local e de 5 consultas simultaneas. Para lote, informe apenas CPF e a data do evento.
                       </div>
                     </div>
 
                     <div className="grid gap-2">
-                      <Button onClick={createManualSimulation} className="gap-2">
-                        <Upload className="h-4 w-4" />
-                        Simular com dados importados
-                      </Button>
                       {localRunnerEnabled && (
                         <>
-                          <Button variant="outline" onClick={createRunnerSession} className="gap-2">
+                          <Button onClick={createRunnerSession} className="gap-2">
                             <Bot className="h-4 w-4" />
-                            Nova consulta com runner
+                            Iniciar consulta(s)
                           </Button>
                         </>
                       )}
@@ -1146,7 +1108,7 @@ async function ensureRunnerAvailable(action: "certificate-login" | "open-runner"
   const connected = await waitForRunner(20000);
   if (connected) return;
 
-  throw new Error("O Wizzy CNIS Runner nao respondeu neste computador. Instale ou atualize o aplicativo auxiliar; se o Windows, navegador, antivirus ou firewall perguntar, permita a abertura/acesso local do runner.");
+  throw new Error("Instale ou atualize o Wizzy CNIS Runner neste computador. Se o navegador ou sistema perguntar, permita abrir o runner local.");
 }
 
 async function isRunnerOnline() {
@@ -1307,23 +1269,42 @@ function reviveVinculos(vinculos: CnisVinculo[]): CnisVinculo[] {
   }));
 }
 
-function normalizeSpreadsheetText(text: string): string {
-  return String(text || "")
+function parseRunnerInputs(cpf: string, eventDate: string, batchText: string): Array<{ cpf: string; prisonDate: string }> {
+  const lines = batchText
     .split(/\r?\n/)
     .map((line) => line.trim())
-    .filter(Boolean)
-    .filter((line, index) => {
-      const normalized = line.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-      return !(index === 0 && normalized.includes("inicio") && normalized.includes("fim"));
-    })
-    .map((line) => {
-      const separator = line.includes("\t") ? "\t" : line.includes(";") ? ";" : ",";
-      const cells = line.split(separator).map((cell) => cell.trim()).filter(Boolean);
-      if (cells.length >= 4) return `${cells[0]}; ${cells[1]}; ${cells[2]}; ${cells[3]}`;
-      if (cells.length === 3) return `${cells[0]}; Vinculo; ${cells[1]}; ${cells[2]}`;
-      return line;
-    })
-    .join("\n");
+    .filter(Boolean);
+
+  if (!lines.length) {
+    const normalizedCpf = normalizeCpf(cpf);
+    if (!normalizedCpf || !eventDate) throw new Error("Informe CPF e data do evento, ou preencha o lote.");
+    return [{ cpf: normalizedCpf, prisonDate: eventDate }];
+  }
+
+  return lines.map((line, index) => {
+    const separator = line.includes("\t") ? "\t" : line.includes(";") ? ";" : ",";
+    const [rawCpf, rawDate] = line.split(separator).map((part) => part.trim());
+    const normalizedCpf = normalizeCpf(rawCpf);
+    const normalizedDate = normalizeInputDate(rawDate);
+    if (!normalizedCpf || !normalizedDate) {
+      throw new Error(`Linha ${index + 1}: use CPF; data em dd/mm/aaaa ou aaaa-mm-dd.`);
+    }
+    return { cpf: normalizedCpf, prisonDate: normalizedDate };
+  });
+}
+
+function normalizeCpf(value: string): string {
+  const digits = String(value || "").replace(/\D/g, "");
+  return digits.length === 11 ? digits : "";
+}
+
+function normalizeInputDate(value: string): string {
+  const text = String(value || "").trim();
+  const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (iso) return text;
+  const br = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!br) return "";
+  return `${br[3]}-${br[2].padStart(2, "0")}-${br[1].padStart(2, "0")}`;
 }
 
 function loadSessions(): CnisSession[] {
