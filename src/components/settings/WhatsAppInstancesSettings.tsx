@@ -38,6 +38,7 @@ import { useWhatsAppInstances, useDeleteWhatsAppInstance, useUpdateInstanceLabel
 import { useWorkspaces } from '@/hooks/useWorkspaces';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
+import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { useQueryClient } from '@tanstack/react-query';
 import { Progress } from '@/components/ui/progress';
 import { useOrganizationPlan } from '@/hooks/useOrganizationPlan';
@@ -59,6 +60,7 @@ function hasConfiguredConnection(instance: WhatsAppInstance) {
 
 export function WhatsAppInstancesSettings() {
   const { session } = useAuth();
+  const { selectedOrganizationId } = useWorkspaceContext();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { data: instances = [], isLoading } = useWhatsAppInstances();
@@ -194,11 +196,10 @@ export function WhatsAppInstancesSettings() {
     }
     setIsAddingNumber(true);
     try {
-      // Create a new instance via zapi-create-instance
-      // NOTE: Do NOT pass Authorization header manually.
-      // The supabase client manages token refresh internally.
+      // Create a new instance in the selected workspace.
       const response = await supabase.functions.invoke('zapi-create-instance', {
-        headers: { Authorization: `Bearer ${session?.access_token}` }
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+        body: { organizationId: selectedOrganizationId },
       });
 
       if (response.error) {

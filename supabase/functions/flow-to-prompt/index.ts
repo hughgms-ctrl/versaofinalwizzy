@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { AccessError, assertActiveOrganizationAccess, getRequestUser } from '../_shared/access.ts';
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -34,13 +35,17 @@ serve(async (req) => {
 
   try {
     const { nodes, edges, organizationId } = await req.json();
-
-    let integrationConfig = null;
-    if (organizationId) {
-      const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
-      const { data } = await supabase.from('integration_configs').select('*').eq('organization_id', organizationId).maybeSingle();
-      integrationConfig = await applyAdminAIStrategy(supabase, organizationId, data, 'prompt_generation');
+    if (!organizationId) {
+      return new Response(JSON.stringify({ error: "Organizacao obrigatoria." }), {
+        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
+
+    const user = await getRequestUser(req);
+    const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+    await assertActiveOrganizationAccess(supabase, user.id, organizationId, { module: 'flows' });
+    const { data } = await supabase.from('integration_configs').select('*').eq('organization_id', organizationId).maybeSingle();
+    const integrationConfig = await applyAdminAIStrategy(supabase, organizationId, data, 'prompt_generation');
     const aiConfig = resolveAIConfig(integrationConfig, 'flow_generation');
     if (!aiConfig) {
       return new Response(JSON.stringify({ error: "Nenhum provedor de IA configurado. Acesse Configurações > Integrações e adicione sua chave de API." }), {
@@ -111,6 +116,11 @@ Retorne APENAS o prompt de personalidade, sem explicações adicionais.`;
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
+    if (e instanceof AccessError) {
+      return new Response(JSON.stringify({ error: e.message }), {
+        status: e.status, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
     console.error("flow-to-prompt error:", e);
     return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }), {
       status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },

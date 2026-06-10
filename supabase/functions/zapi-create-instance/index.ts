@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { AccessError, assertActiveOrganizationAccess } from '../_shared/access.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -234,18 +235,26 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { data: orgPlan } = await supabase
+    const body = req.method === 'POST' ? await req.json().catch(() => ({})) : {};
+    const requestedOrganizationId = body.organizationId || body.organization_id || profile.organization_id;
+    const organizationId = requestedOrganizationId ? String(requestedOrganizationId).trim() : '';
+    const { planRow: orgPlan } = await assertActiveOrganizationAccess(supabase, user.id, organizationId, {
+      module: 'integrations',
+      requireManager: true,
+    });
+
+    const { data: orgPlanForLimits } = await supabase
       .from('organization_plans')
       .select('plan:platform_plans(features)')
-      .eq('organization_id', profile.organization_id)
+      .eq('organization_id', organizationId)
       .maybeSingle();
 
-    const maxWhatsappNumbers = Number((orgPlan as any)?.plan?.features?.limits?.max_whatsapp_numbers || 0);
+    const maxWhatsappNumbers = Number((orgPlanForLimits as any)?.plan?.features?.limits?.max_whatsapp_numbers || (orgPlan as any)?.plan?.features?.limits?.max_whatsapp_numbers || 0);
     if (maxWhatsappNumbers > 0) {
       const { data: currentInstances, error: countError } = await supabase
         .from('whatsapp_instances')
         .select('id, status, phone_number, zapi_instance_id, zapi_token, evolution_instance_name, evolution_instance_id, evolution_api_key')
-        .eq('organization_id', profile.organization_id);
+        .eq('organization_id', organizationId);
 
       if (countError) throw countError;
       const currentWhatsappNumbers = (currentInstances || []).filter((instance: any) => (
@@ -267,11 +276,10 @@ Deno.serve(async (req) => {
       }
     }
 
-    const body = req.method === 'POST' ? await req.json().catch(() => ({})) : {};
     const config = await loadWhatsAppPlatformConfig(supabase, supabaseUrl);
     const provider = config.provider;
     const settings = defaultProviderSettings();
-    const instanceName = `wizzy-${provider}-${profile.organization_id.slice(0, 8)}-${crypto.randomUUID().slice(0, 8)}`;
+    const instanceName = `wizzy-${provider}-${organizationId.slice(0, 8)}-${crypto.randomUUID().slice(0, 8)}`;
     const label = body.label || `Número ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
 
     const created = provider === 'evolution'
@@ -279,7 +287,7 @@ Deno.serve(async (req) => {
       : await createUazapiInstance(config, instanceName);
 
     const insertPayload: Record<string, any> = {
-      organization_id: profile.organization_id,
+      organization_id: organizationId,
       provider,
       zapi_instance_id: created.externalId || instanceName,
       zapi_token: created.token,
@@ -320,6 +328,12 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error: any) {
+    if (error instanceof AccessError) {
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: error.status,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
     console.error('Error:', error);
     return new Response(JSON.stringify({ error: error?.message || 'Internal server error', details: String(error) }), {
       status: 500,

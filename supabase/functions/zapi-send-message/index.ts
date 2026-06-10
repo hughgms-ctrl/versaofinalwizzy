@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { AccessError, assertActiveOrganizationAccess } from '../_shared/access.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -278,25 +279,11 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('organization_id')
-      .eq('user_id', user.id)
-      .single();
-
-    if (!profile) {
-      return new Response(JSON.stringify({ error: 'Profile not found' }), {
-        status: 404,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
     // Get conversation with contact info
     const { data: conversation, error: convError } = await supabase
       .from('conversations')
       .select(`*, contact:contacts(id, phone, name)`)
       .eq('id', conversationId)
-      .eq('organization_id', profile.organization_id)
       .single();
 
     if (convError || !conversation) {
@@ -305,10 +292,11 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+    await assertActiveOrganizationAccess(supabase, user.id, conversation.organization_id, { module: 'conversations' });
 
     const instance = await resolveSendInstance(
       supabase,
-      profile.organization_id,
+      conversation.organization_id,
       conversation.whatsapp_instance_id,
     );
 
@@ -775,6 +763,12 @@ Deno.serve(async (req) => {
     });
 
   } catch (error) {
+    if (error instanceof AccessError) {
+      return new Response(JSON.stringify({ error: error.message }), {
+        status: error.status,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
     console.error('Error:', error);
     return new Response(JSON.stringify({ error: 'Internal server error' }), {
       status: 500,
