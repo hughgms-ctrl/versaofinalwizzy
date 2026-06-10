@@ -869,6 +869,12 @@
         return false;
       }
 
+      if (isRealRelationsPage()) {
+        setAutomationStatus("Tela de Relacoes Previdenciarias localizada. Gerando relatorio.", "ok");
+        await setAutomationRunning(false);
+        return true;
+      }
+
       if (isRetirementSimulationPage()) {
         setAutomationStatus("Passei da etapa 6. Voltando para Relacoes Previdenciarias...", "neutral");
         const relationsStep = findWizardStepButton("Relacoes Previdenciarias") || findWizardStepButton("Relações Previdenciárias");
@@ -878,12 +884,6 @@
         clickHard(relationsStep);
         scheduleAutomationResume();
         return false;
-      }
-
-      if (isRealRelationsPage()) {
-        setAutomationStatus("Tela de Relacoes Previdenciarias localizada. Gerando relatorio.", "ok");
-        await setAutomationRunning(false);
-        return true;
       }
 
       throw new Error("Nao reconheci a etapa atual do portal.");
@@ -1006,6 +1006,8 @@
   }
 
   function isRetirementSimulationPage() {
+    if (isRealRelationsPage()) return false;
+
     return hasPageText("Simulacao de Aposentadoria") ||
       hasPageText("SimulaÃ§Ã£o de Aposentadoria") ||
       hasPageText("Valor simulado") ||
