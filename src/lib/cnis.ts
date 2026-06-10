@@ -23,6 +23,9 @@ export type CnisGraceGap = {
 };
 
 export type CnisAnalysis = {
+  benefitType?: CnisBenefitType;
+  eventDateLabel?: string;
+  maternityContributionInstruction?: string;
   vinculos: CnisVinculo[];
   perdas: CnisGraceGap[];
   graceGaps: CnisGraceGap[];
@@ -51,6 +54,8 @@ export type CnisAnalysis = {
   retroactiveValue: CnisRetroactiveValue | null;
 };
 
+export type CnisBenefitType = "auxilio_reclusao" | "pensao_morte" | "salario_maternidade";
+
 export type CnisRetroactiveValue = {
   total: number;
   months: number;
@@ -63,9 +68,11 @@ export type CnisRetroactiveValue = {
 export type CnisAnalysisOptions = {
   todayDate?: string;
   desempregoLosses?: Record<string, boolean>;
+  benefitType?: CnisBenefitType;
 };
 
 export type CnisSummary = {
+  benefitType?: CnisBenefitType;
   direito: boolean;
   carenciaOk: boolean;
   mantemQualidade: boolean;
@@ -76,6 +83,7 @@ export type CnisSummary = {
   lastContributionDate: string;
   totalCompetencias: number;
   retroactiveTotal: number;
+  maternityContributionInstruction?: string;
 };
 
 const REQUIRED_CARENCIA = 24;
@@ -161,6 +169,7 @@ export function analyzeCNIS(
   prisonDateValue: string,
   options: CnisAnalysisOptions = {},
 ): CnisAnalysis {
+  const benefitType = options.benefitType || "auxilio_reclusao";
   const prisonDate = parseISODate(prisonDateValue);
   const todayDate = parseISODate(options.todayDate) || new Date();
   const retroactiveValue = calculateRetroactiveValue(prisonDate, todayDate);
@@ -223,7 +232,7 @@ export function analyzeCNIS(
   let contribuicoesCarenciaLancadas = countContribuicoes(afterLastLossCarencia);
   let competenciasCarencia = uniqueCompetencias(afterLastLossCarencia).length;
   let concomitantesCarencia = contribuicoesCarenciaLancadas - competenciasCarencia;
-  const carenciaNecessaria = getRequiredCarencia(prisonDate);
+  const carenciaNecessaria = benefitType === "auxilio_reclusao" ? getRequiredCarencia(prisonDate) : 0;
   const carenciaExigida = carenciaNecessaria > 0;
   const lastContributionDate = contributionOrderedUntilPrison.reduce<Date | null>((latest, vinculo) => {
     return !latest || vinculo.fimDate > latest ? vinculo.fimDate : latest;
@@ -261,8 +270,14 @@ export function analyzeCNIS(
   }
 
   const carenciaOk = !carenciaExigida || competenciasCarencia >= carenciaNecessaria;
+  const maternityContributionInstruction = benefitType === "salario_maternidade" && !mantemQualidade
+    ? getMaternityContributionInstruction(prisonDate, todayDate)
+    : undefined;
 
   return {
+    benefitType,
+    eventDateLabel: getBenefitEventDateLabel(benefitType),
+    maternityContributionInstruction,
     vinculos: rawOrdered,
     perdas: graceGaps.filter((gap) => gap.perda),
     graceGaps,
@@ -285,7 +300,7 @@ export function analyzeCNIS(
     lastContributionDate,
     contribuicoesAteUltimaContribuicao,
     finalAutomaticGraceMonths,
-    direito: carenciaOk && mantemQualidade,
+    direito: benefitType === "salario_maternidade" ? mantemQualidade : carenciaOk && mantemQualidade,
     prisonDate,
     todayDate,
     retroactiveValue,
@@ -294,6 +309,7 @@ export function analyzeCNIS(
 
 export function buildCnisSummary(analysis: CnisAnalysis): CnisSummary {
   return {
+    benefitType: analysis.benefitType,
     direito: analysis.direito,
     carenciaOk: analysis.carenciaOk,
     mantemQualidade: analysis.mantemQualidade,
@@ -304,6 +320,7 @@ export function buildCnisSummary(analysis: CnisAnalysis): CnisSummary {
     lastContributionDate: analysis.lastContributionDate ? formatMonthYear(analysis.lastContributionDate) : "Nao localizada",
     totalCompetencias: analysis.totalCompetencias,
     retroactiveTotal: analysis.retroactiveValue?.total || 0,
+    maternityContributionInstruction: analysis.maternityContributionInstruction,
   };
 }
 
@@ -317,6 +334,9 @@ export function buildCnisReportHtml(args: {
   const { nome, cpf, prisonDate, todayDate, analysis } = args;
   const dateLabel = analysis.prisonDate ? formatDate(analysis.prisonDate) : "Nao informada";
   const summary = buildCnisSummary(analysis);
+  const benefitLabel = getBenefitLabel(analysis.benefitType || "auxilio_reclusao");
+  const eventLabel = analysis.eventDateLabel || getBenefitEventDateLabel(analysis.benefitType || "auxilio_reclusao");
+  const conclusion = getConclusionText(analysis);
   const rows = analysis.vinculos
     .map((vinculo) => `<tr><td>${escapeHTML(vinculo.nome)}</td><td>${escapeHTML(vinculo.tipo)}</td><td>${escapeHTML(vinculo.inicio)} a ${escapeHTML(vinculo.fim)}</td><td>${getRecognizedCompetenciasCount(vinculo, analysis.prisonDate)}</td></tr>`)
     .join("");
@@ -337,12 +357,12 @@ export function buildCnisReportHtml(args: {
 <body>
   <section class="hero">
     <h1>${analysis.direito ? "Direito indicado" : "Direito nao indicado"}</h1>
-    <p>Analise de auxilio-reclusao em ${escapeHTML(dateLabel)}.</p>
+    <p>Analise de ${escapeHTML(benefitLabel)} em ${escapeHTML(dateLabel)}.</p>
   </section>
   <div class="grid">
     <div class="box"><b>Nome</b><br>${escapeHTML(nome || "Nao informado")}</div>
     <div class="box"><b>CPF</b><br>${escapeHTML(cpf || "Nao informado")}</div>
-    <div class="box"><b>Data da prisao</b><br>${escapeHTML(formatISODate(prisonDate) || "Nao informada")}</div>
+    <div class="box"><b>${escapeHTML(eventLabel)}</b><br>${escapeHTML(formatISODate(prisonDate) || "Nao informada")}</div>
     <div class="box"><b>Data base</b><br>${escapeHTML(formatISODate(todayDate) || "Atual")}</div>
     <div class="box"><b>Carencia</b><br>${escapeHTML(summary.carenciaExigida ? `${summary.competenciasCarencia}/${summary.carenciaNecessaria}` : "Dispensada")}</div>
     <div class="box"><b>Qualidade</b><br>${escapeHTML(summary.mantemQualidade ? "Mantida" : "Perdida")}</div>
@@ -352,7 +372,7 @@ export function buildCnisReportHtml(args: {
   <h2>Historico de vinculos</h2>
   <table><thead><tr><th>Vinculo</th><th>Tipo</th><th>Periodo</th><th>Competencias</th></tr></thead><tbody>${rows}</tbody></table>
   <h2>Conclusao</h2>
-  <p class="${analysis.direito ? "ok" : "fail"}">${analysis.direito ? "Ha indicacao de direito pelos criterios analisados." : "Nao ha indicacao de direito pelos criterios analisados."}</p>
+  <p class="${analysis.direito ? "ok" : "fail"}">${escapeHTML(conclusion)}</p>
 </body>
 </html>`;
 }
@@ -363,7 +383,7 @@ function parseDelimitedLine(line: string): CnisVinculo | null {
   const dates = extractDates(parts.join(" "));
   if (!dates.length) return null;
   const tipo = parts.find(isTipoVinculo) || "Vinculo";
-  const nome = parts.find((part) => !isTipoVinculo(part) && !hasDate(part)) || parts[0];
+  const nome = parts.find((part) => !isTipoVinculo(part) && !hasDate(part) && !looksLikeCpfOnly(part)) || "Contribuicao informada";
   return buildVinculo(nome, tipo, dates[0], dates[1]);
 }
 
@@ -480,6 +500,46 @@ function isNonContributiveBenefitVinculo(vinculo: CnisVinculo): boolean {
 
 function getRequiredCarencia(date: Date | null): number {
   return date && date < CARENCIA_START_DATE ? 0 : REQUIRED_CARENCIA;
+}
+
+function getMaternityContributionInstruction(eventDate: Date | null, todayDate: Date): string | undefined {
+  if (!eventDate) return undefined;
+  if (eventDate > todayDate) {
+    return "Precisa fazer uma contribuicao antes do parto para recuperar a qualidade de segurada.";
+  }
+  const deadline = new Date(eventDate.getFullYear(), eventDate.getMonth() + 1, 15);
+  return `Precisa fazer uma contribuicao ate ${formatDate(deadline)}, 15o dia do mes subsequente ao nascimento.`;
+}
+
+function getBenefitLabel(value: CnisBenefitType): string {
+  if (value === "pensao_morte") return "pensao por morte";
+  if (value === "salario_maternidade") return "salario-maternidade";
+  return "auxilio-reclusao";
+}
+
+function getBenefitEventDateLabel(value: CnisBenefitType): string {
+  if (value === "pensao_morte") return "Data do obito";
+  if (value === "salario_maternidade") return "Data do nascimento ou prevista";
+  return "Data da prisao";
+}
+
+function getConclusionText(analysis: CnisAnalysis): string {
+  if (analysis.benefitType === "pensao_morte") {
+    return analysis.mantemQualidade
+      ? "Ha indicacao de direito: havia qualidade de segurado na data do obito. Para pensao por morte nao ha carencia."
+      : "Nao ha indicacao de direito: nao foi identificada qualidade de segurado na data do obito. Para pensao por morte nao ha carencia.";
+  }
+
+  if (analysis.benefitType === "salario_maternidade") {
+    if (analysis.mantemQualidade) {
+      return "Ha indicacao de direito: havia qualidade de segurada na data do nascimento ou data prevista.";
+    }
+    return analysis.maternityContributionInstruction || "Nao ha indicacao de direito sem recuperar a qualidade de segurada.";
+  }
+
+  return analysis.direito
+    ? "Ha indicacao de direito pelos criterios analisados."
+    : "Nao ha indicacao de direito pelos criterios analisados.";
 }
 
 function listCompetencias(start: Date, end: Date): string[] {
@@ -630,6 +690,10 @@ function findTipoVinculoLabel(value: string): string {
 
 function hasDate(value: string): boolean {
   return /\b\d{1,2}\/\d{1,2}\/(?:\d{2}|\d{4})\b/.test(value);
+}
+
+function looksLikeCpfOnly(value: string): boolean {
+  return /^\D*\d{11}\D*$/.test(value);
 }
 
 function extractDates(value: string): string[] {

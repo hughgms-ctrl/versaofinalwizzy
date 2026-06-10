@@ -186,6 +186,7 @@ function sessionToJSON(session) {
     cpf: session.cpf,
     prisonDate: session.prisonDate,
     todayDate: session.todayDate,
+    benefitType: session.benefitType,
     progressLabel: session.progressLabel,
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
@@ -208,6 +209,7 @@ async function createSession(payload) {
     cpf: payload.cpf || "",
     prisonDate: payload.prisonDate || "",
     todayDate: payload.todayDate || new Date().toISOString().slice(0, 10),
+    benefitType: payload.benefitType || "auxilio_reclusao",
     demo: Boolean(payload.demo),
     progressLabel: "Sessao criada no runner.",
     createdAt: now,
@@ -678,7 +680,10 @@ function startResultWatcher(session) {
       const sessionCreatedAt = new Date(session.createdAt).getTime();
       if (Number.isFinite(entryCreatedAt) && entryCreatedAt < sessionCreatedAt - 1000) return;
 
-      session.result = normalizeRunnerResult(entry);
+      session.result = {
+        ...normalizeRunnerResult(entry),
+        benefitType: session.benefitType,
+      };
       session.status = "completed";
       session.progressLabel = "Consulta concluida e resultado capturado pelo runner.";
       touch(session);

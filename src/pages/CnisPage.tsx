@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ClipboardEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,8 +11,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useWorkspaceContext } from "@/contexts/WorkspaceContext";
-import { analyzeCNIS, buildCnisReportHtml, buildCnisSummary, CnisAnalysis, CnisVinculo, parseCnisText } from "@/lib/cnis";
-import { AlertCircle, ArrowLeft, Bot, CheckCircle2, Download, FileText, History, Loader2, Plus, RotateCcw, Square, Upload } from "lucide-react";
+import { analyzeCNIS, buildCnisReportHtml, buildCnisSummary, CnisAnalysis, CnisBenefitType, CnisVinculo, parseCnisText } from "@/lib/cnis";
+import { AlertCircle, ArrowLeft, Bot, CheckCircle2, Download, FileText, History, Loader2, Plus, RotateCcw, Square, Trash2, Upload } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 type SessionStatus = "queued" | "starting" | "running" | "waiting_user" | "completed" | "failed" | "cancelled";
@@ -27,6 +27,7 @@ type CnisSession = {
   cpf: string;
   prisonDate: string;
   todayDate: string;
+  benefitType: CnisBenefitType;
   source: "manual" | "runner";
   progressLabel: string;
   vinculos: CnisVinculo[];
@@ -43,6 +44,7 @@ type RunnerResult = {
   cpf?: string;
   prisonDate?: string;
   todayDate?: string;
+  benefitType?: CnisBenefitType;
   vinculos?: CnisVinculo[];
   reportHtml?: string;
   createdAt?: string;
@@ -57,6 +59,7 @@ type RunnerSession = {
   cpf?: string;
   prisonDate?: string;
   todayDate?: string;
+  benefitType?: CnisBenefitType;
   progressLabel?: string;
   errorMessage?: string;
   createdAt?: string;
@@ -75,6 +78,19 @@ const emptyForm = {
   prisonDate: "",
   todayDate: new Date().toISOString().slice(0, 10),
   cnisText: "",
+  benefitType: "auxilio_reclusao" as CnisBenefitType,
+};
+
+const benefitLabels: Record<CnisBenefitType, string> = {
+  auxilio_reclusao: "Auxilio-reclusao",
+  pensao_morte: "Pensao por morte",
+  salario_maternidade: "Salario-maternidade",
+};
+
+const eventDateLabels: Record<CnisBenefitType, string> = {
+  auxilio_reclusao: "Data da prisao",
+  pensao_morte: "Data do obito",
+  salario_maternidade: "Nascimento ou previsao",
 };
 
 const statusLabels: Record<SessionStatus, string> = {
@@ -184,7 +200,7 @@ export default function CnisPage() {
   const createManualSimulation = () => {
     const vinculos = parseCnisText(form.cnisText);
     if (!form.prisonDate) {
-      toast({ title: "Informe a data da prisao", variant: "destructive" });
+      toast({ title: `Informe ${eventDateLabels[form.benefitType].toLowerCase()}`, variant: "destructive" });
       return;
     }
     if (!vinculos.length) {
@@ -192,7 +208,7 @@ export default function CnisPage() {
       return;
     }
 
-    const analysis = analyzeCNIS(vinculos, form.prisonDate, { todayDate: form.todayDate });
+    const analysis = analyzeCNIS(vinculos, form.prisonDate, { todayDate: form.todayDate, benefitType: form.benefitType });
     const reportHtml = buildCnisReportHtml({ nome: form.nome, cpf: form.cpf, prisonDate: form.prisonDate, todayDate: form.todayDate, analysis });
     const now = new Date().toISOString();
     const session: CnisSession = {
@@ -203,6 +219,7 @@ export default function CnisPage() {
       cpf: form.cpf,
       prisonDate: form.prisonDate,
       todayDate: form.todayDate,
+      benefitType: form.benefitType,
       source: "manual",
       progressLabel: "Simulacao concluida por importacao manual.",
       vinculos,
@@ -217,6 +234,25 @@ export default function CnisPage() {
     setSelectedId(session.id);
     setForm(emptyForm);
     toast({ title: "Simulacao CNIS concluida", description: analysis.direito ? "Direito indicado pelos criterios analisados." : "Direito nao indicado pelos criterios analisados." });
+  };
+
+  const importSpreadsheet = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (!/\.(csv|tsv|txt)$/i.test(file.name)) {
+      toast({ title: "Formato nao suportado", description: "Use CSV, TSV ou TXT com colunas: vinculo; tipo; inicio; fim.", variant: "destructive" });
+      return;
+    }
+
+    const text = await file.text();
+    const normalized = normalizeSpreadsheetText(text);
+    if (!normalized.trim()) {
+      toast({ title: "Planilha vazia", variant: "destructive" });
+      return;
+    }
+    setForm((prev) => ({ ...prev, cnisText: prev.cnisText ? `${prev.cnisText.trim()}\n${normalized}` : normalized }));
+    toast({ title: "Planilha importada", description: "As linhas foram adicionadas ao campo de importacao do CNIS." });
   };
 
   const createRunnerSession = async () => {
@@ -240,6 +276,7 @@ export default function CnisPage() {
       cpf: form.cpf,
       prisonDate: form.prisonDate,
       todayDate: form.todayDate,
+      benefitType: form.benefitType,
       source: "runner",
       progressLabel: queued
         ? "Consulta criada e aguardando vaga no runner local."
@@ -260,6 +297,7 @@ export default function CnisPage() {
           cpf: session.cpf,
           prisonDate: session.prisonDate,
           todayDate: session.todayDate,
+          benefitType: session.benefitType,
         }),
       });
       const payload = await response.json();
@@ -306,6 +344,7 @@ export default function CnisPage() {
       cpf: form.cpf || "123.456.789-09",
       prisonDate: form.prisonDate || "2026-05-15",
       todayDate: form.todayDate,
+      benefitType: form.benefitType,
       source: "runner",
       progressLabel: "Abrindo demo completa do runner CNIS.",
       vinculos: [],
@@ -514,9 +553,22 @@ export default function CnisPage() {
   };
 
   const clearHistory = () => {
+    if (!window.confirm("Apagar todas as consultas deste historico? Esta acao nao pode ser desfeita.")) return;
     const next = selectedWorkspaceId ? sessions.filter((session) => session.workspaceId && session.workspaceId !== selectedWorkspaceId) : [];
     persistSessions(next);
     setSelectedId(null);
+  };
+
+  const deleteSession = async (id: string) => {
+    const target = sessions.find((session) => session.id === id);
+    if (!target) return;
+    if (!window.confirm(`Apagar a consulta de ${target.nome || "CNIS"}? Esta acao nao pode ser desfeita.`)) return;
+    if (localRunnerEnabled && target.runnerSessionId && activeStatuses.includes(target.status)) {
+      await fetch(`${RUNNER_BASE_URL}/sessions/${target.runnerSessionId}/cancel`, { method: "POST" }).catch(() => {});
+    }
+    const next = sessions.filter((session) => session.id !== id);
+    persistSessions(next);
+    if (selectedId === id) setSelectedId(next[0]?.id || null);
   };
 
   return (
@@ -546,6 +598,14 @@ export default function CnisPage() {
                 <Badge variant="outline" className="hidden border-emerald-200 bg-emerald-50 text-emerald-700 lg:inline-flex">
                   Runner local
                 </Badge>
+                <Button variant="outline" size="sm" onClick={openCertificateLogin} className="gap-2">
+                  <Bot className="h-4 w-4" />
+                  Login certificado
+                </Button>
+                <Button variant="outline" size="sm" onClick={finishCertificateLogin} className="gap-2">
+                  <CheckCircle2 className="h-4 w-4" />
+                  Concluir login
+                </Button>
                 <Button variant="outline" size="sm" onClick={createRunnerSession} className="gap-2">
                   <Bot className="h-4 w-4" />
                   Nova consulta
@@ -579,6 +639,18 @@ export default function CnisPage() {
                 <ScrollArea className="h-full">
                   <div className="space-y-4 p-4">
                     <div className="grid gap-3">
+                      <Field label="Beneficio analisado">
+                        <Select value={form.benefitType} onValueChange={(value) => setForm((prev) => ({ ...prev, benefitType: value as CnisBenefitType }))}>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="auxilio_reclusao">Auxilio-reclusao</SelectItem>
+                            <SelectItem value="pensao_morte">Pensao por morte</SelectItem>
+                            <SelectItem value="salario_maternidade">Salario-maternidade</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </Field>
                       <Field label="Nome">
                         <Input value={form.nome} onChange={(event) => setForm((prev) => ({ ...prev, nome: event.target.value }))} placeholder="Nome do segurado" />
                       </Field>
@@ -586,7 +658,7 @@ export default function CnisPage() {
                         <Input value={form.cpf} onChange={(event) => setForm((prev) => ({ ...prev, cpf: event.target.value }))} placeholder="000.000.000-00" />
                       </Field>
                       <div className="grid grid-cols-2 gap-3">
-                        <Field label="Data da prisao">
+                        <Field label={eventDateLabels[form.benefitType]}>
                           <Input type="date" value={form.prisonDate} onChange={(event) => setForm((prev) => ({ ...prev, prisonDate: event.target.value }))} />
                         </Field>
                         <Field label="Data base">
@@ -598,10 +670,15 @@ export default function CnisPage() {
                           value={form.cnisText}
                           onChange={(event) => setForm((prev) => ({ ...prev, cnisText: event.target.value }))}
                           rows={10}
-                          placeholder={"Cole aqui linhas com vinculo, tipo e datas.\nEx: EMPRESA X; Empregado; 01/01/2020; 31/12/2023"}
+                          placeholder={"Cole uma linha por vinculo: vinculo; tipo; inicio; fim\nEx: EMPRESA X; Empregado; 01/01/2020; 31/12/2023"}
                           className="font-mono text-xs"
                         />
                       </Field>
+                      <div className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+                        <p className="font-medium text-foreground">Planilha CSV/TSV</p>
+                        <p className="mt-1">Ordem das colunas: vinculo; tipo; inicio; fim. Tambem aceito vinculo; inicio; fim. Datas em dd/mm/aaaa.</p>
+                        <Input type="file" accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values" onChange={importSpreadsheet} className="mt-3" />
+                      </div>
                     </div>
 
                     <div className="grid gap-2">
@@ -615,18 +692,8 @@ export default function CnisPage() {
                             <Bot className="h-4 w-4" />
                             Nova consulta com runner
                           </Button>
-                          <Button variant="secondary" onClick={createDemoSession} className="gap-2">
-                            <CheckCircle2 className="h-4 w-4" />
-                            Demo completa
-                          </Button>
                         </>
                       )}
-                    </div>
-
-                    <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-                      {localRunnerEnabled
-                        ? "Com o runner local ligado neste computador, a Wizzy publicada abre o navegador controlado, injeta o painel CNIS e espelha a tela aqui."
-                        : "Runner CNIS desativado neste ambiente. Use a importacao manual para gerar a analise."}
                     </div>
                   </div>
                 </ScrollArea>
@@ -643,21 +710,25 @@ export default function CnisPage() {
                 <ScrollArea className="h-[calc(100%-49px)]">
                   <div className="space-y-2 p-3">
                     {visibleSessions.length ? visibleSessions.map((session) => (
-                      <button
+                      <div
                         key={session.id}
-                        type="button"
-                        onClick={() => setSelectedId(session.id)}
-                        className={`w-full rounded-md border p-3 text-left transition-colors hover:bg-muted/60 ${selectedId === session.id ? "border-primary bg-primary/5" : "border-border bg-background"}`}
+                        className={`flex w-full items-start gap-2 rounded-md border p-3 transition-colors hover:bg-muted/60 ${selectedId === session.id ? "border-primary bg-primary/5" : "border-border bg-background"}`}
                       >
-                        <div className="mb-2 flex items-center justify-between gap-2">
-                          <span className="truncate text-sm font-semibold">{session.nome}</span>
-                          <div className="flex shrink-0 flex-col items-end gap-1">
-                            <StatusBadge status={session.status} />
-                            {session.analysis && <EligibilityBadge direito={session.analysis.direito} compact />}
+                        <button type="button" onClick={() => setSelectedId(session.id)} className="min-w-0 flex-1 text-left">
+                          <div className="mb-2 flex items-center justify-between gap-2">
+                            <span className="truncate text-sm font-semibold">{session.nome}</span>
+                            <div className="flex shrink-0 flex-col items-end gap-1">
+                              <StatusBadge status={session.status} />
+                              {session.analysis && <EligibilityBadge direito={session.analysis.direito} compact />}
+                            </div>
                           </div>
-                        </div>
-                        <p className="truncate text-xs text-muted-foreground">{session.cpf || "Sem CPF"} - {formatDateTime(session.createdAt)}</p>
-                      </button>
+                          <p className="truncate text-xs text-muted-foreground">{benefitLabels[session.benefitType || "auxilio_reclusao"]} - {session.cpf || "Sem CPF"} - {formatDateTime(session.createdAt)}</p>
+                        </button>
+                        <Button variant="ghost" size="icon" onClick={() => deleteSession(session.id)} className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive">
+                          <Trash2 className="h-4 w-4" />
+                          <span className="sr-only">Apagar consulta</span>
+                        </Button>
+                      </div>
                     )) : (
                       <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
                         Nenhuma consulta criada ainda.
@@ -677,8 +748,6 @@ export default function CnisPage() {
                   onDownload={() => openReport(selected)}
                   onCancel={() => cancelSession(selected.id)}
                   onOpenRunner={() => openRunnerForSession(selected.id)}
-                  onCertificateLogin={openCertificateLogin}
-                  onFinishCertificateLogin={finishCertificateLogin}
                 />
               ) : (
                 <div className="flex h-full items-center justify-center p-8 text-center text-muted-foreground">
@@ -752,16 +821,12 @@ function SessionDetail({
   onDownload,
   onCancel,
   onOpenRunner,
-  onCertificateLogin,
-  onFinishCertificateLogin,
 }: {
   session: CnisSession;
   localRunnerEnabled: boolean;
   onDownload: () => void;
   onCancel: () => void | Promise<void>;
   onOpenRunner: () => void | Promise<void>;
-  onCertificateLogin: () => void | Promise<void>;
-  onFinishCertificateLogin: () => void | Promise<void>;
 }) {
   const summary = session.analysis ? buildCnisSummary(session.analysis) : null;
 
@@ -778,20 +843,10 @@ function SessionDetail({
         </div>
         <div className="flex gap-2">
           {localRunnerEnabled && session.source === "runner" && (
-            <>
-              <Button variant="outline" size="sm" onClick={onCertificateLogin} className="gap-2">
-                <Bot className="h-4 w-4" />
-                Login certificado
-              </Button>
-              <Button variant="outline" size="sm" onClick={onFinishCertificateLogin} className="gap-2">
-                <CheckCircle2 className="h-4 w-4" />
-                Concluir login
-              </Button>
-              <Button variant="outline" size="sm" onClick={onOpenRunner} className="gap-2">
-                <Bot className="h-4 w-4" />
-                Abrir runner
-              </Button>
-            </>
+            <Button variant="outline" size="sm" onClick={onOpenRunner} className="gap-2">
+              <Bot className="h-4 w-4" />
+              Abrir runner
+            </Button>
           )}
           {session.reportHtml && (
             <Button variant="outline" size="sm" onClick={onDownload} className="gap-2">
@@ -822,6 +877,11 @@ function SessionDetail({
                 <ResultBox label="Qualidade" value={summary.mantemQualidade ? "Mantida" : "Perdida"} good={summary.mantemQualidade} />
                 <ResultBox label="Retroativos" value={summary.retroactiveTotal.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} />
               </div>
+              {summary.maternityContributionInstruction && (
+                <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm font-medium text-amber-900">
+                  {summary.maternityContributionInstruction}
+                </div>
+              )}
 
               <Card className="rounded-md">
                 <CardHeader>
@@ -1166,7 +1226,8 @@ function mergeRunnerSessions(current: CnisSession[], runnerSessions: RunnerSessi
       const prisonDate = runner.result.prisonDate || runner.prisonDate || session.prisonDate;
       const todayDate = runner.result.todayDate || runner.todayDate || session.todayDate;
       const vinculos = reviveVinculos(runner.result.vinculos);
-      const analysis = prisonDate ? analyzeCNIS(vinculos, prisonDate, { todayDate }) : null;
+      const benefitType = runner.result?.benefitType || runner.benefitType || session.benefitType || "auxilio_reclusao";
+      const analysis = prisonDate ? analyzeCNIS(vinculos, prisonDate, { todayDate, benefitType }) : null;
       const reportHtml = runner.result.reportHtml || (analysis ? buildCnisReportHtml({ nome, cpf, prisonDate, todayDate, analysis }) : session.reportHtml);
 
       changed = true;
@@ -1177,6 +1238,7 @@ function mergeRunnerSessions(current: CnisSession[], runnerSessions: RunnerSessi
         cpf,
         prisonDate,
         todayDate,
+        benefitType,
         vinculos,
         analysis,
         reportHtml,
@@ -1202,8 +1264,9 @@ function mergeRunnerSessions(current: CnisSession[], runnerSessions: RunnerSessi
       const cpf = result?.cpf || runner.cpf || "";
       const prisonDate = result?.prisonDate || runner.prisonDate || "";
       const todayDate = result?.todayDate || runner.todayDate || new Date().toISOString().slice(0, 10);
+      const benefitType = result?.benefitType || runner.benefitType || "auxilio_reclusao";
       const vinculos = result?.vinculos?.length ? reviveVinculos(result.vinculos) : [];
-      const analysis = vinculos.length && prisonDate ? analyzeCNIS(vinculos, prisonDate, { todayDate }) : null;
+      const analysis = vinculos.length && prisonDate ? analyzeCNIS(vinculos, prisonDate, { todayDate, benefitType }) : null;
       const reportHtml = result?.reportHtml || (analysis ? buildCnisReportHtml({ nome, cpf, prisonDate, todayDate, analysis }) : "");
 
       return {
@@ -1216,6 +1279,7 @@ function mergeRunnerSessions(current: CnisSession[], runnerSessions: RunnerSessi
         cpf,
         prisonDate,
         todayDate,
+        benefitType,
         source: "runner" as const,
         progressLabel: runner.progressLabel || "Consulta aberta no runner local.",
         vinculos,
@@ -1243,6 +1307,25 @@ function reviveVinculos(vinculos: CnisVinculo[]): CnisVinculo[] {
   }));
 }
 
+function normalizeSpreadsheetText(text: string): string {
+  return String(text || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line, index) => {
+      const normalized = line.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+      return !(index === 0 && normalized.includes("inicio") && normalized.includes("fim"));
+    })
+    .map((line) => {
+      const separator = line.includes("\t") ? "\t" : line.includes(";") ? ";" : ",";
+      const cells = line.split(separator).map((cell) => cell.trim()).filter(Boolean);
+      if (cells.length >= 4) return `${cells[0]}; ${cells[1]}; ${cells[2]}; ${cells[3]}`;
+      if (cells.length === 3) return `${cells[0]}; Vinculo; ${cells[1]}; ${cells[2]}`;
+      return line;
+    })
+    .join("\n");
+}
+
 function loadSessions(): CnisSession[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -1256,11 +1339,13 @@ function loadSessions(): CnisSession[] {
 
 function reviveSession(session: CnisSession): CnisSession {
   const vinculos = reviveVinculos(session.vinculos || []);
+  const benefitType = session.benefitType || "auxilio_reclusao";
   const analysis = vinculos.length && session.prisonDate
-    ? analyzeCNIS(vinculos, session.prisonDate, { todayDate: session.todayDate })
+    ? analyzeCNIS(vinculos, session.prisonDate, { todayDate: session.todayDate, benefitType })
     : null;
   return {
     ...session,
+    benefitType,
     vinculos,
     analysis,
     reportHtml: session.reportHtml || (analysis ? buildCnisReportHtml({
