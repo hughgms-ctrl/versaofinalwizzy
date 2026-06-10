@@ -143,9 +143,9 @@ Deno.serve(async (req) => {
                 .select('*')
                 .eq('organization_id', profile.organization_id)
                 .eq('status', 'connected')
-                .eq('provider', 'uazapi')
-                .limit(1);
-            instance = instances?.[0];
+                .order('created_at', { ascending: false });
+            // Prefer uazapi (only provider that supports profile fetch), fallback to any connected instance
+            instance = instances?.find((i: any) => (i.provider || 'uazapi') === 'uazapi') || instances?.[0];
         }
 
         if (!instance) {

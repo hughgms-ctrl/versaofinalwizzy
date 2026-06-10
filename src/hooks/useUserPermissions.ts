@@ -203,9 +203,9 @@ export function useCurrentUserRole(organizationId?: string | null) {
           .eq('user_id', user.id);
         if (scopedOrganizationId) roleQuery.eq('organization_id', scopedOrganizationId);
         const { data: legacyRole } = await roleQuery.maybeSingle();
-        return (legacyRole?.role || 'admin') as 'owner' | 'admin' | 'supervisor' | 'agent' | null;
+        return (legacyRole?.role || 'admin') as 'owner' | 'admin' | 'supervisor' | 'agent' | 'platform_admin' | null;
       }
-      return data?.role as 'owner' | 'admin' | 'supervisor' | 'agent' | null;
+      return data?.role as 'owner' | 'admin' | 'supervisor' | 'agent' | 'platform_admin' | null;
     },
     enabled: !!user?.id,
   });
