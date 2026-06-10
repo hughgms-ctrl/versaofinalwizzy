@@ -16,6 +16,16 @@ Para uso em computador de atendimento, registre o launcher uma vez executando `i
 Depois disso, a Wizzy publicada pode chamar `wizzy-cnis-runner://...`: ao clicar em `Login certificado` ou `Abrir runner`, o navegador aciona o runner local em segundo plano e a tela tenta reconectar automaticamente em `http://127.0.0.1:8787`.
 
 Em producao comercial, cada computador que acessa CNIS precisa ter o aplicativo auxiliar/launcher instalado uma vez. A Wizzy web nao consegue instalar ou iniciar um processo local sozinha sem esse componente, por regra de seguranca dos navegadores.
+O cliente final nao deve instalar Node, npm ou Playwright manualmente. Gere um pacote portatil no ambiente de desenvolvimento do mesmo sistema operacional:
+
+```bash
+npm run build:portable:win
+npm run build:portable:mac
+```
+
+O pacote Windows copia `node.exe`, `node_modules`, Chromium do Playwright, scripts do launcher e a extensao CNIS necessaria. No computador do cliente Windows, basta executar `install-protocol.cmd` uma vez dentro do pacote distribuido.
+
+O pacote macOS copia `runtime/node`, `node_modules`, Chromium do Playwright, scripts do launcher e a extensao CNIS necessaria. No computador do cliente Mac, basta executar `install-protocol-macos.command` uma vez dentro do pacote distribuido. Ele instala o runner em `~/Library/Application Support/Wizzy CNIS Runner`, cria `~/Applications/Wizzy CNIS Runner.app` e registra `wizzy-cnis-runner://`.
 
 ## Rodar
 

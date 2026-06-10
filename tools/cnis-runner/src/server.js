@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,7 +8,13 @@ import { chromium } from "playwright";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const runnerRoot = path.resolve(__dirname, "..");
 const repoRoot = path.resolve(runnerRoot, "..", "..");
-const extensionRoot = path.resolve(repoRoot, "Wizzy Cnis Leitura", "cnis-checker");
+const localExtensionRoot = path.resolve(runnerRoot, "Wizzy Cnis Leitura", "cnis-checker");
+const repoExtensionRoot = path.resolve(repoRoot, "Wizzy Cnis Leitura", "cnis-checker");
+const extensionRoot = process.env.WIZZY_CNIS_EXTENSION_ROOT
+  ? path.resolve(process.env.WIZZY_CNIS_EXTENSION_ROOT)
+  : existsSync(localExtensionRoot)
+    ? localExtensionRoot
+    : repoExtensionRoot;
 const contentPath = path.join(extensionRoot, "content.js");
 const stylePath = path.join(extensionRoot, "style.css");
 const chromiumProfilePath = path.join(runnerRoot, ".cnis-chromium-profile");

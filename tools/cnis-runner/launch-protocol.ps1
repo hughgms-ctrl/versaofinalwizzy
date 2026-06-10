@@ -31,7 +31,17 @@ function Wait-Runner {
 function Start-Runner {
   $outLog = Join-Path $runnerRoot "cnis-runner.out.log"
   $errLog = Join-Path $runnerRoot "cnis-runner.err.log"
-  $command = "cd /d `"$runnerRoot`" && npm start >> `"$outLog`" 2>> `"$errLog`""
+  $bundledNode = Join-Path $runnerRoot "runtime\node.exe"
+  $localNode = Join-Path $runnerRoot "node.exe"
+  $node = if (Test-Path $bundledNode) {
+    $bundledNode
+  } elseif (Test-Path $localNode) {
+    $localNode
+  } else {
+    "node"
+  }
+  $server = Join-Path $runnerRoot "src\server.js"
+  $command = "cd /d `"$runnerRoot`" && set PLAYWRIGHT_BROWSERS_PATH=0&& `"$node`" `"$server`" >> `"$outLog`" 2>> `"$errLog`""
   Start-Process -FilePath "cmd.exe" -ArgumentList "/c", $command -WindowStyle Hidden | Out-Null
 }
 

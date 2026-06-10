@@ -5,7 +5,10 @@
   "type": "module",
   "scripts": {
     "start": "node src/server.js",
-    "check": "node --check src/server.js"
+    "check": "node --check src/server.js",
+    "build:portable": "powershell -NoProfile -ExecutionPolicy Bypass -File build-portable.ps1",
+    "build:portable:win": "powershell -NoProfile -ExecutionPolicy Bypass -File build-portable.ps1",
+    "build:portable:mac": "sh build-portable-macos.sh"
   },
   "dependencies": {
     "playwright": "^1.57.0"
