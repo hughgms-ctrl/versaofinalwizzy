@@ -70,9 +70,9 @@ type RunnerSession = {
 const STORAGE_KEY = "wizzy:cnis:sessions:v1";
 const RUNNER_BASE_URL = import.meta.env.VITE_CNIS_RUNNER_URL || "http://127.0.0.1:8787";
 const RUNNER_PROTOCOL_URL = import.meta.env.VITE_CNIS_RUNNER_PROTOCOL_URL || "wizzy-cnis-runner://";
-const RUNNER_INSTALLER_WINDOWS_URL = import.meta.env.VITE_CNIS_RUNNER_WINDOWS_INSTALLER_URL || "https://github.com/hughgms-ctrl/versaofinalwizzy/releases/latest";
-const RUNNER_INSTALLER_MACOS_URL = import.meta.env.VITE_CNIS_RUNNER_MACOS_INSTALLER_URL || "https://github.com/hughgms-ctrl/versaofinalwizzy/releases/latest";
-const RUNNER_INSTALLER_GENERIC_URL = import.meta.env.VITE_CNIS_RUNNER_INSTALLER_URL || "https://github.com/hughgms-ctrl/versaofinalwizzy/releases/latest";
+const RUNNER_INSTALLER_WINDOWS_URL = import.meta.env.VITE_CNIS_RUNNER_WINDOWS_INSTALLER_URL || "";
+const RUNNER_INSTALLER_MACOS_URL = import.meta.env.VITE_CNIS_RUNNER_MACOS_INSTALLER_URL || "";
+const RUNNER_INSTALLER_GENERIC_URL = import.meta.env.VITE_CNIS_RUNNER_INSTALLER_URL || "";
 const activeStatuses: SessionStatus[] = ["queued", "starting", "running", "waiting_user"];
 const finalStatuses: SessionStatus[] = ["completed", "failed", "cancelled"];
 const emptyForm = {
@@ -1089,7 +1089,9 @@ async function ensureRunnerAvailable(action: "certificate-login" | "open-runner"
   if (connected) return;
 
   const installer = openRunnerInstaller();
-  throw new Error(`O Wizzy CNIS Runner ainda nao esta ativo neste computador. ${installer.opened ? `Abrimos o instalador para ${installer.platformLabel}.` : "Nao consegui abrir o instalador automaticamente."} Conclua a instalacao uma vez e clique em Login certificado novamente. Se o navegador ou sistema perguntar, permita abrir o runner local.`);
+  throw new Error(installer.opened
+    ? `O Wizzy CNIS Runner ainda nao esta ativo neste computador. Abrimos o instalador para ${installer.platformLabel}. Conclua a instalacao uma vez e clique em Login certificado novamente.`
+    : "O Wizzy CNIS Runner ainda nao esta ativo neste computador. Nenhum instalador oficial esta configurado para abertura automatica neste ambiente.");
 }
 
 async function isRunnerOnline() {
