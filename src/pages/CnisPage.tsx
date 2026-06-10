@@ -4,6 +4,16 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -83,6 +93,10 @@ const emptyForm = {
   benefitType: "auxilio_reclusao" as CnisBenefitType,
 };
 
+type ConfirmAction =
+  | { type: "clear" }
+  | { type: "delete"; sessionId: string };
+
 const benefitLabels: Record<CnisBenefitType, string> = {
   auxilio_reclusao: "Auxilio-reclusao",
 };
@@ -122,6 +136,7 @@ export default function CnisPage() {
   const [selectedId, setSelectedId] = useState<string | null>(() => loadSessions()[0]?.id || null);
   const [form, setForm] = useState(emptyForm);
   const [runnerInstallMessage, setRunnerInstallMessage] = useState<string | null>(null);
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
   const visibleSessions = useMemo(
     () => selectedWorkspaceId ? sessions.filter((session) => !session.workspaceId || session.workspaceId === selectedWorkspaceId) : sessions,
     [selectedWorkspaceId, sessions],
@@ -526,7 +541,6 @@ export default function CnisPage() {
   };
 
   const clearHistory = () => {
-    if (!window.confirm("Apagar todas as consultas deste historico? Esta acao nao pode ser desfeita.")) return;
     const next = selectedWorkspaceId ? sessions.filter((session) => session.workspaceId && session.workspaceId !== selectedWorkspaceId) : [];
     persistSessions(next);
     setSelectedId(null);
@@ -550,13 +564,27 @@ export default function CnisPage() {
   const deleteSession = async (id: string) => {
     const target = sessions.find((session) => session.id === id);
     if (!target) return;
-    if (!window.confirm(`Apagar a consulta de ${target.nome || "CNIS"}? Esta acao nao pode ser desfeita.`)) return;
     if (localRunnerEnabled && target.runnerSessionId && activeStatuses.includes(target.status)) {
       await fetch(`${RUNNER_BASE_URL}/sessions/${target.runnerSessionId}/cancel`, { method: "POST" }).catch(() => {});
     }
     const next = sessions.filter((session) => session.id !== id);
     persistSessions(next);
     if (selectedId === id) setSelectedId(next[0]?.id || null);
+  };
+
+  const confirmTarget = confirmAction?.type === "delete"
+    ? sessions.find((session) => session.id === confirmAction.sessionId)
+    : null;
+
+  const handleConfirmAction = async () => {
+    const action = confirmAction;
+    setConfirmAction(null);
+    if (!action) return;
+    if (action.type === "clear") {
+      clearHistory();
+      return;
+    }
+    await deleteSession(action.sessionId);
   };
 
   return (
@@ -694,7 +722,7 @@ export default function CnisPage() {
               <TabsContent value="history" className="m-0 min-h-0 flex-1 overflow-hidden">
                 <div className="flex items-center justify-between border-b p-3">
                   <span className="text-sm font-medium">Consultas</span>
-                  <Button variant="ghost" size="sm" onClick={clearHistory} disabled={!visibleSessions.length} className="gap-2">
+                  <Button variant="ghost" size="sm" onClick={() => setConfirmAction({ type: "clear" })} disabled={!visibleSessions.length} className="gap-2">
                     <RotateCcw className="h-4 w-4" />
                     Limpar
                   </Button>
@@ -716,7 +744,7 @@ export default function CnisPage() {
                           </div>
                           <p className="truncate text-xs text-muted-foreground">{benefitLabels[session.benefitType || "auxilio_reclusao"]} - {session.cpf || "Sem CPF"} - {formatDateTime(session.createdAt)}</p>
                         </button>
-                        <Button variant="ghost" size="icon" onClick={() => deleteSession(session.id)} className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive">
+                        <Button variant="ghost" size="icon" onClick={() => setConfirmAction({ type: "delete", sessionId: session.id })} className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive">
                           <Trash2 className="h-4 w-4" />
                           <span className="sr-only">Apagar consulta</span>
                         </Button>
@@ -753,6 +781,26 @@ export default function CnisPage() {
             </main>
           </div>
         </div>
+        <AlertDialog open={Boolean(confirmAction)} onOpenChange={(open) => !open && setConfirmAction(null)}>
+          <AlertDialogContent className="rounded-md border-border bg-card">
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {confirmAction?.type === "clear" ? "Limpar historico" : "Apagar consulta"}
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {confirmAction?.type === "clear"
+                  ? "Todas as consultas deste historico serao removidas da Wizzy CNIS. Esta acao nao pode ser desfeita."
+                  : `A consulta ${confirmTarget?.cpf ? `do CPF ${confirmTarget.cpf}` : "selecionada"} sera removida do historico. Esta acao nao pode ser desfeita.`}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction onClick={handleConfirmAction} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                {confirmAction?.type === "clear" ? "Limpar historico" : "Apagar consulta"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
     </div>
   );
 }
