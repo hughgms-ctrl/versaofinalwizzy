@@ -66,6 +66,7 @@ type RunnerSession = {
 
 const STORAGE_KEY = "wizzy:cnis:sessions:v1";
 const RUNNER_BASE_URL = import.meta.env.VITE_CNIS_RUNNER_URL || "http://127.0.0.1:8787";
+const RUNNER_PROTOCOL_URL = import.meta.env.VITE_CNIS_RUNNER_PROTOCOL_URL || "wizzy-cnis-runner://";
 const activeStatuses: SessionStatus[] = ["queued", "starting", "running", "waiting_user"];
 const finalStatuses: SessionStatus[] = ["completed", "failed", "cancelled"];
 const emptyForm = {
@@ -374,6 +375,7 @@ export default function CnisPage() {
     if (!target) return;
 
     try {
+      await ensureRunnerAvailable("open-runner");
       if (target.runnerSessionId) {
         const response = await fetch(`${RUNNER_BASE_URL}/sessions/${target.runnerSessionId}/show`, { method: "POST" });
         const payload = await response.json();
@@ -458,6 +460,7 @@ export default function CnisPage() {
     }
 
     try {
+      await ensureRunnerAvailable("certificate-login");
       const response = await fetch(`${RUNNER_BASE_URL}/auth/certificate-login`, { method: "POST" });
       const payload = await response.json();
       if (!response.ok || !payload?.ok) throw new Error(payload?.error || "Nao consegui abrir o Chromium para login.");
@@ -470,7 +473,11 @@ export default function CnisPage() {
       persistSessions(next);
       toast({ title: "Chromium visivel aberto", description: "Selecione o certificado digital e conclua o login no GERID." });
     } catch (error) {
-      toast({ title: "Nao consegui abrir o login", description: error instanceof Error ? error.message : String(error), variant: "destructive" });
+      toast({
+        title: "Nao consegui abrir o login",
+        description: error instanceof Error ? error.message : String(error),
+        variant: "destructive",
+      });
     }
   };
 
@@ -1070,6 +1077,47 @@ function EligibilityBadge({ direito, compact = false }: { direito: boolean; comp
       {direito ? "Direito verificado" : "Direito nao verificado"}
     </Badge>
   );
+}
+
+async function ensureRunnerAvailable(action: "certificate-login" | "open-runner") {
+  if (await isRunnerOnline()) return;
+
+  launchRunnerProtocol(action);
+  const connected = await waitForRunner(20000);
+  if (connected) return;
+
+  throw new Error("O runner local nao abriu. Instale ou atualize o Wizzy CNIS Runner neste computador e tente novamente.");
+}
+
+async function isRunnerOnline() {
+  try {
+    const response = await fetch(`${RUNNER_BASE_URL}/health`, { cache: "no-store" });
+    const payload = await response.json();
+    return Boolean(response.ok && payload?.ok);
+  } catch {
+    return false;
+  }
+}
+
+async function waitForRunner(timeoutMs: number) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    if (await isRunnerOnline()) return true;
+    await sleep(750);
+  }
+  return false;
+}
+
+function launchRunnerProtocol(action: "certificate-login" | "open-runner") {
+  if (typeof window === "undefined") return;
+  const base = RUNNER_PROTOCOL_URL.endsWith("://")
+    ? RUNNER_PROTOCOL_URL
+    : `${RUNNER_PROTOCOL_URL.replace(/\/+$/, "")}/`;
+  window.location.href = `${base}${action}?return=${encodeURIComponent(window.location.href)}`;
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 function mergeRunnerSessions(current: CnisSession[], runnerSessions: RunnerSession[], workspaceId?: string | null): CnisSession[] {
