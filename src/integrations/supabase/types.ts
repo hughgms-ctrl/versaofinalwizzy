@@ -694,6 +694,7 @@ export type Database = {
           processed_at: string | null
           scheduled_for: string
           status: string
+          variables: Json | null
         }
         Insert: {
           campaign_id?: string | null
@@ -706,6 +707,7 @@ export type Database = {
           processed_at?: string | null
           scheduled_for: string
           status?: string
+          variables?: Json | null
         }
         Update: {
           campaign_id?: string | null
@@ -718,6 +720,7 @@ export type Database = {
           processed_at?: string | null
           scheduled_for?: string
           status?: string
+          variables?: Json | null
         }
         Relationships: [
           {
@@ -743,6 +746,54 @@ export type Database = {
           },
           {
             foreignKeyName: "campaign_queue_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      campaign_webhook_logs: {
+        Row: {
+          campaign_id: string | null
+          contacts_processed: number | null
+          created_at: string | null
+          error: string | null
+          id: string
+          organization_id: string | null
+          payload: Json | null
+          status: string
+        }
+        Insert: {
+          campaign_id?: string | null
+          contacts_processed?: number | null
+          created_at?: string | null
+          error?: string | null
+          id?: string
+          organization_id?: string | null
+          payload?: Json | null
+          status?: string
+        }
+        Update: {
+          campaign_id?: string | null
+          contacts_processed?: number | null
+          created_at?: string | null
+          error?: string | null
+          id?: string
+          organization_id?: string | null
+          payload?: Json | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_webhook_logs_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "campaigns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_webhook_logs_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
