@@ -31,6 +31,31 @@ Deno.serve(async (req) => {
       );
     }
 
+    const { data: orgPlan, error: orgPlanError } = await supabase
+      .from('organization_plans')
+      .select('plan:platform_plans(max_team_members)')
+      .eq('organization_id', organizationId)
+      .maybeSingle();
+
+    if (orgPlanError) throw orgPlanError;
+
+    const maxTeamMembers = Number((orgPlan as any)?.plan?.max_team_members || 0);
+    if (maxTeamMembers > 0) {
+      const { count: currentTeamMembers, error: teamCountError } = await supabase
+        .from('profiles')
+        .select('id', { count: 'exact', head: true })
+        .eq('organization_id', organizationId);
+
+      if (teamCountError) throw teamCountError;
+      const current = currentTeamMembers || 0;
+      if (current >= maxTeamMembers) {
+        return new Response(
+          JSON.stringify({ error: `Limite de usuÃ¡rios atingido neste plano (${current}/${maxTeamMembers}). FaÃ§a upgrade para adicionar mais membros.` }),
+          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
     // Create user with admin API (skips email confirmation)
     console.log(`Creating user: ${email} for org: ${organizationId}`);
     const { data: newUser, error: createError } = await supabase.auth.admin.createUser({
@@ -106,6 +131,10 @@ Deno.serve(async (req) => {
 
       if (profileUpdateError) {
         console.error('Error updating profile:', profileUpdateError);
+        return new Response(
+          JSON.stringify({ error: profileUpdateError.message || 'Falha ao vincular usuario a organizacao.' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
 
       // Delete the auto-created role

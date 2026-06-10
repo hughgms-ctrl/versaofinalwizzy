@@ -32,6 +32,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useOrganizationPlan } from '@/hooks/useOrganizationPlan';
 import { LimitUpgradeDialog } from '@/components/billing/LimitUpgradeDialog';
 import { enforceEntryCreationLimit, enforceEntryFeatureAccess } from '@/lib/entryFlow';
+import { isPlanLimitError } from '@/lib/planLimitErrors';
 
 const WORKSPACE_COLORS = [
   '#6366f1', '#8b5cf6', '#ec4899', '#ef4444', '#f97316',
@@ -124,6 +125,7 @@ export function WorkspacesSettings() {
         open={showCreateDialog}
         onOpenChange={setShowCreateDialog}
         workspace={null}
+        onLimitReached={() => setShowLimitDialog(true)}
       />
 
       <LimitUpgradeDialog
@@ -136,6 +138,7 @@ export function WorkspacesSettings() {
         open={!!editingWorkspace}
         onOpenChange={(open) => !open && setEditingWorkspace(null)}
         workspace={editingWorkspace}
+        onLimitReached={() => setShowLimitDialog(true)}
       />
     </div>
   );
@@ -218,10 +221,12 @@ function WorkspaceFormDialog({
   open,
   onOpenChange,
   workspace,
+  onLimitReached,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   workspace: Workspace | null;
+  onLimitReached?: () => void;
 }) {
   const isEditing = !!workspace;
   const { data: tags = [] } = useTags();
@@ -314,6 +319,10 @@ function WorkspaceFormDialog({
       }
       onOpenChange(false);
     } catch (error: any) {
+      if (isPlanLimitError(error, 'workspace')) {
+        onLimitReached?.();
+        return;
+      }
       toast({ title: 'Erro', description: error.message, variant: 'destructive' });
     }
   };

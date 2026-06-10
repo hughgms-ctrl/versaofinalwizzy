@@ -164,7 +164,7 @@ export async function calculateOrganizationUsage(
   const [profiles, workspaces, instances, conversations] = await Promise.all([
     safeSelect(client, 'profiles', 'id, user_id, organization_id, avatar_url'),
     safeSelect(client, 'workspaces', 'id, organization_id, is_active'),
-    safeSelect(client, 'whatsapp_instances', 'id, organization_id, is_active, status'),
+    safeSelect(client, 'whatsapp_instances', 'id, organization_id, is_active, status, phone_number, zapi_instance_id, zapi_token, evolution_instance_name, evolution_instance_id, evolution_api_key'),
     safeSelect(client, 'conversations', 'id, organization_id'),
   ])
 
@@ -190,7 +190,14 @@ export async function calculateOrganizationUsage(
   for (const instance of instances || []) {
     if (!orgIdSet.has(instance.organization_id)) continue
     usageByOrg[instance.organization_id].instance_count += 1
-    if (instance.is_active || instance.status === 'connected') usageByOrg[instance.organization_id].active_instances += 1
+    const hasConfiguredConnection = instance.status === 'connected' ||
+      instance.phone_number ||
+      instance.zapi_instance_id ||
+      instance.zapi_token ||
+      instance.evolution_instance_name ||
+      instance.evolution_instance_id ||
+      instance.evolution_api_key
+    if (hasConfiguredConnection) usageByOrg[instance.organization_id].active_instances += 1
   }
 
   for (const conversation of conversations || []) {

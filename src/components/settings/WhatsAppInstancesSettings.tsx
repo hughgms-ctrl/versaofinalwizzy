@@ -43,6 +43,7 @@ import { Progress } from '@/components/ui/progress';
 import { useOrganizationPlan } from '@/hooks/useOrganizationPlan';
 import { LimitUpgradeDialog } from '@/components/billing/LimitUpgradeDialog';
 import { enforceEntryCreationLimit, enforceEntryFeatureAccess } from '@/lib/entryFlow';
+import { isPlanLimitError } from '@/lib/planLimitErrors';
 
 function hasConfiguredConnection(instance: WhatsAppInstance) {
   return Boolean(
@@ -236,6 +237,10 @@ export function WhatsAppInstancesSettings() {
     } catch (error: any) {
       const msg = error.message || 'Falha ao criar instância';
       console.error('[WhatsApp instance error]', msg);
+      if (isPlanLimitError(error, 'whatsapp')) {
+        setShowLimitDialog(true);
+        return;
+      }
       toast({ title: 'Erro', description: msg.substring(0, 200), variant: 'destructive' });
     } finally {
       setIsAddingNumber(false);

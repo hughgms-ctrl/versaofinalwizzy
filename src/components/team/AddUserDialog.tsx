@@ -9,6 +9,9 @@ import { useAuth } from '@/hooks/useAuth';
 import { toast } from '@/hooks/use-toast';
 import { useQueryClient } from '@tanstack/react-query';
 import { Loader2, Eye, EyeOff } from 'lucide-react';
+import { LimitUpgradeDialog } from '@/components/billing/LimitUpgradeDialog';
+import { useOrganizationPlan } from '@/hooks/useOrganizationPlan';
+import { isPlanLimitError } from '@/lib/planLimitErrors';
 
 interface AddUserDialogProps {
   open: boolean;
@@ -18,8 +21,10 @@ interface AddUserDialogProps {
 export function AddUserDialog({ open, onOpenChange }: AddUserDialogProps) {
   const { profile } = useAuth();
   const queryClient = useQueryClient();
+  const { usage } = useOrganizationPlan();
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [showLimitDialog, setShowLimitDialog] = useState(false);
   
   const [formData, setFormData] = useState({
     fullName: '',
@@ -44,6 +49,11 @@ export function AddUserDialog({ open, onOpenChange }: AddUserDialogProps) {
 
     setIsLoading(true);
     try {
+      if (usage.teamLimit > 0 && usage.teamCount >= usage.teamLimit) {
+        setShowLimitDialog(true);
+        return;
+      }
+
       const { data, error } = await supabase.functions.invoke('create-user', {
         body: {
           email: formData.email,
@@ -55,7 +65,7 @@ export function AddUserDialog({ open, onOpenChange }: AddUserDialogProps) {
         },
       });
 
-      if (error) throw error;
+      if (error) throw await getFunctionError(error);
       if (data?.error) throw new Error(data.error);
 
       toast({
@@ -68,6 +78,10 @@ export function AddUserDialog({ open, onOpenChange }: AddUserDialogProps) {
       setFormData({ fullName: '', email: '', phone: '', role: 'agent', password: '' });
     } catch (error: any) {
       console.error('Error creating user:', error);
+      if (isPlanLimitError(error, 'team')) {
+        setShowLimitDialog(true);
+        return;
+      }
       toast({
         title: 'Erro ao adicionar membro',
         description: error.message,
@@ -79,8 +93,9 @@ export function AddUserDialog({ open, onOpenChange }: AddUserDialogProps) {
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>Adicionar Novo Membro</DialogTitle>
         </DialogHeader>
@@ -190,7 +205,25 @@ export function AddUserDialog({ open, onOpenChange }: AddUserDialogProps) {
             </Button>
           </DialogFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+        </DialogContent>
+      </Dialog>
+      <LimitUpgradeDialog
+        open={showLimitDialog}
+        onOpenChange={setShowLimitDialog}
+        description={`Seu plano permite ${usage.teamLimit} usuário${usage.teamLimit === 1 ? '' : 's'} e sua organização já está usando ${usage.teamCount}. Escolha um plano maior para adicionar novos membros.`}
+      />
+    </>
   );
+}
+
+async function getFunctionError(error: any) {
+  if (error?.context && typeof error.context.json === 'function') {
+    try {
+      const body = await error.context.json();
+      if (body?.error) return new Error(body.error);
+    } catch {
+      // Fall back to the Supabase error message below.
+    }
+  }
+  return error;
 }
