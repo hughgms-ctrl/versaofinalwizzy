@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './useAuth';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
+import { isMissingRelationError } from '@/lib/supabaseErrors';
 
 export interface TeamMember {
   id: string;
@@ -29,7 +30,38 @@ export function useTeamMembers() {
         .select('id, user_id, role, created_at')
         .eq('organization_id', organizationId);
 
-      if (membersError) throw membersError;
+      if (membersError && !isMissingRelationError(membersError)) throw membersError;
+      if (membersError && isMissingRelationError(membersError)) {
+        const { data: profiles, error: profilesError } = await supabase
+          .from('profiles')
+          .select('id, user_id, full_name, avatar_url, phone, created_at')
+          .eq('organization_id', organizationId);
+        if (profilesError) throw profilesError;
+
+        const userIds = (profiles || []).map((profile) => profile.user_id).filter(Boolean);
+        const { data: roles } = userIds.length
+          ? await (supabase as any)
+            .from('user_roles')
+            .select('user_id, role, organization_id')
+            .in('user_id', userIds)
+          : { data: [] };
+
+        return (profiles || []).map((profile) => {
+          const roleRow = (roles || []).find((row: any) =>
+            row.user_id === profile.user_id && (!row.organization_id || row.organization_id === organizationId)
+          );
+          return {
+            id: profile.id,
+            user_id: profile.user_id,
+            name: profile.full_name || 'Membro',
+            email: '',
+            phone: profile.phone || null,
+            role: (roleRow?.role || 'admin') as TeamMember['role'],
+            avatar_url: profile.avatar_url || null,
+            created_at: profile.created_at,
+          };
+        });
+      }
       if (!members?.length) return [];
 
       const userIds = members.map((member: any) => member.user_id);

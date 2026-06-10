@@ -60,7 +60,7 @@ export function planAllowsModule(planRow: any, moduleName?: string | null) {
   return allowedModules.includes(moduleName);
 }
 
-function isMissingRelationError(error: any) {
+export function isMissingRelationError(error: any) {
   const message = String(error?.message || error?.details || '').toLowerCase();
   return error?.code === 'PGRST205'
     || error?.code === '42P01'
@@ -68,7 +68,7 @@ function isMissingRelationError(error: any) {
     || message.includes('does not exist');
 }
 
-async function getLegacyOrganizationRole(adminClient: any, userId: string, organizationId: string) {
+export async function getLegacyOrganizationRole(adminClient: any, userId: string, organizationId: string) {
   const { data: profile, error: profileError } = await adminClient
     .from('profiles')
     .select('organization_id')
@@ -93,7 +93,7 @@ export async function assertActiveOrganizationAccess(
   adminClient: any,
   userId: string,
   organizationId: string,
-  options: { module?: string; requireManager?: boolean } = {},
+  options: { module?: string; requireManager?: boolean; skipPlanCheck?: boolean } = {},
 ) {
   if (!organizationId) throw new AccessError('Organization is required', 400);
 
@@ -122,6 +122,10 @@ export async function assertActiveOrganizationAccess(
   const role = String(effectiveMembership?.role || (platformRole ? 'platform_admin' : ''));
   if (options.requireManager && !['owner', 'admin', 'platform_admin'].includes(role)) {
     throw new AccessError('Only organization owners and admins can perform this action', 403);
+  }
+
+  if (options.skipPlanCheck) {
+    return { membership: effectiveMembership, planRow: null };
   }
 
   const { data: planRow, error: planError } = await adminClient

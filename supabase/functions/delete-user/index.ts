@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { assertActiveOrganizationAccess, getLegacyOrganizationRole, isMissingRelationError } from '../_shared/access.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -61,27 +62,14 @@ Deno.serve(async (req) => {
 
     const organizationId = requestedOrganizationId || callerProfile?.organization_id;
 
-    const { data: callerRole } = await supabase
-      .from('organization_members')
-      .select('role')
-      .eq('user_id', caller.id)
-      .eq('organization_id', organizationId)
-      .single();
-
-    if (!callerProfile || !callerRole) {
+    if (!callerProfile || !organizationId) {
       return new Response(
         JSON.stringify({ error: 'Caller profile not found' }),
         { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Only owners and admins can delete users
-    if (!['owner', 'admin', 'platform_admin'].includes(callerRole.role)) {
-      return new Response(
-        JSON.stringify({ error: 'Only owners and admins can delete team members' }),
-        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
+    await assertActiveOrganizationAccess(supabase, caller.id, organizationId, { module: 'team', requireManager: true });
 
     // Prevent deleting yourself
     if (userId === caller.id) {
@@ -91,21 +79,27 @@ Deno.serve(async (req) => {
       );
     }
 
-    const { data: targetMembership } = await supabase
+    const { data: targetMembership, error: targetMembershipError } = await supabase
       .from('organization_members')
       .select('role')
       .eq('user_id', userId)
       .eq('organization_id', organizationId)
-      .single();
+      .maybeSingle();
 
-    if (!targetMembership) {
+    if (targetMembershipError && !isMissingRelationError(targetMembershipError)) throw targetMembershipError;
+    const effectiveTargetMembership = targetMembership
+      || (targetMembershipError && isMissingRelationError(targetMembershipError)
+        ? await getLegacyOrganizationRole(supabase, userId, organizationId)
+        : null);
+
+    if (!effectiveTargetMembership) {
       return new Response(
         JSON.stringify({ error: 'User not found in your organization' }),
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    if (targetMembership.role === 'owner') {
+    if (effectiveTargetMembership.role === 'owner') {
       return new Response(
         JSON.stringify({ error: 'Cannot delete the organization owner' }),
         { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -140,11 +134,12 @@ Deno.serve(async (req) => {
       .eq('user_id', userId)
       .eq('organization_id', organizationId);
 
-    await supabase
+    const { error: memberDeleteError } = await supabase
       .from('organization_members')
       .delete()
       .eq('user_id', userId)
       .eq('organization_id', organizationId);
+    if (memberDeleteError && !isMissingRelationError(memberDeleteError)) throw memberDeleteError;
 
     return new Response(
       JSON.stringify({ success: true }),

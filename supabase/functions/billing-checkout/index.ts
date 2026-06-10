@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { AccessError, assertActiveOrganizationAccess } from '../_shared/access.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -106,16 +107,10 @@ Deno.serve(async (req) => {
     if (!profile?.organization_id) throw new Error('Organização não encontrada')
 
     const organizationId = requestedOrganizationId || profile.organization_id
-    const { data: membership, error: membershipError } = await adminClient
-      .from('organization_members')
-      .select('role')
-      .eq('user_id', user.id)
-      .eq('organization_id', organizationId)
-      .maybeSingle()
-    if (membershipError) throw membershipError
-    if (!membership || !['owner', 'admin', 'platform_admin'].includes(String(membership.role))) {
-      throw new Error('Apenas proprietarios e administradores podem gerenciar assinatura.')
-    }
+    await assertActiveOrganizationAccess(adminClient, user.id, organizationId, {
+      requireManager: true,
+      skipPlanCheck: true,
+    })
 
     const [{ data: plan, error: planError }, { data: settingsRows }] = await Promise.all([
       adminClient
@@ -274,6 +269,12 @@ Deno.serve(async (req) => {
 
     throw new Error('Gateway ativo inválido')
   } catch (err: any) {
+    if (err instanceof AccessError) {
+      return new Response(JSON.stringify({ error: err.message }), {
+        status: err.status,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
     console.error('billing-checkout error', err?.message || err)
     return new Response(JSON.stringify({ error: err.message }), {
       status: 500,

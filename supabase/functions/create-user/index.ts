@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { AccessError, assertActiveOrganizationAccess, isMissingRelationError } from '../_shared/access.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -21,6 +22,25 @@ Deno.serve(async (req) => {
       },
     });
 
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      return new Response(
+        JSON.stringify({ error: 'Missing authorization header' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const { data: { user: caller }, error: callerError } = await supabase.auth.getUser(
+      authHeader.replace(/^Bearer\s+/i, '')
+    );
+
+    if (callerError || !caller) {
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     const { email, fullName, phone, role, password, organizationId } = await req.json();
 
     if (!email || !fullName || !role || !password || !organizationId) {
@@ -30,6 +50,8 @@ Deno.serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+
+    await assertActiveOrganizationAccess(supabase, caller.id, organizationId, { module: 'team', requireManager: true });
 
     const { data: orgPlan, error: orgPlanError } = await supabase
       .from('organization_plans')
@@ -41,13 +63,21 @@ Deno.serve(async (req) => {
 
     const maxTeamMembers = Number((orgPlan as any)?.plan?.max_team_members || 0);
     if (maxTeamMembers > 0) {
-      const { count: currentTeamMembers, error: teamCountError } = await supabase
+      const { count: organizationMemberCount, error: organizationMemberCountError } = await supabase
         .from('organization_members')
         .select('id', { count: 'exact', head: true })
         .eq('organization_id', organizationId);
 
-      if (teamCountError) throw teamCountError;
-      const current = currentTeamMembers || 0;
+      if (organizationMemberCountError && !isMissingRelationError(organizationMemberCountError)) throw organizationMemberCountError;
+      let current = organizationMemberCount || 0;
+      if (organizationMemberCountError && isMissingRelationError(organizationMemberCountError)) {
+        const { count: profileCount, error: profileCountError } = await supabase
+          .from('profiles')
+          .select('id', { count: 'exact', head: true })
+          .eq('organization_id', organizationId);
+        if (profileCountError) throw profileCountError;
+        current = profileCount || 0;
+      }
       if (current >= maxTeamMembers) {
         return new Response(
           JSON.stringify({ error: `Limite de usuÃ¡rios atingido neste plano (${current}/${maxTeamMembers}). FaÃ§a upgrade para adicionar mais membros.` }),
@@ -146,8 +176,12 @@ Deno.serve(async (req) => {
       }, { onConflict: 'organization_id,user_id' });
 
     if (memberError) {
+      if (isMissingRelationError(memberError)) {
+        console.warn('organization_members table not available; using legacy profile/user_roles membership only');
+      } else {
       console.error('Error setting organization membership:', memberError);
       throw memberError;
+      }
     }
 
     const { error: roleError } = await supabase
@@ -211,6 +245,12 @@ Deno.serve(async (req) => {
     );
 
   } catch (error: any) {
+    if (error instanceof AccessError) {
+      return new Response(
+        JSON.stringify({ error: error.message }),
+        { status: error.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
     const errorMessage = error.message || 'Unknown error';
     console.error('Critical error in create-user function:', error);
     return new Response(

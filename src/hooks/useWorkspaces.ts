@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './useAuth';
 import { useOrganizationPlan } from './useOrganizationPlan';
+import { isMissingRelationError } from '@/lib/supabaseErrors';
 
 export interface Workspace {
   id: string;
@@ -52,7 +53,33 @@ export function useOrganizationMemberships() {
         .eq('user_id', session.user.id)
         .order('created_at');
 
-      if (error) throw error;
+      if (error && !isMissingRelationError(error)) throw error;
+      if (error && isMissingRelationError(error)) {
+        const { data: profiles, error: profileError } = await supabase
+          .from('profiles')
+          .select('id, organization_id, user_id, created_at, organization:organizations(id, name, slug, logo_url)')
+          .eq('user_id', session.user.id);
+        if (profileError) throw profileError;
+
+        const { data: roles } = await (supabase as any)
+          .from('user_roles')
+          .select('role, organization_id')
+          .eq('user_id', session.user.id);
+
+        return (profiles || []).map((profile: any) => {
+          const roleRow = (roles || []).find((row: any) =>
+            !row.organization_id || row.organization_id === profile.organization_id
+          );
+          return {
+            id: profile.id,
+            organization_id: profile.organization_id,
+            user_id: profile.user_id,
+            role: (roleRow?.role || 'admin') as OrganizationRole,
+            created_at: profile.created_at,
+            organization: profile.organization,
+          };
+        });
+      }
       return (data || []) as OrganizationMembership[];
     },
     enabled: !!session?.user?.id,

@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './useAuth';
 import { toast } from './use-toast';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
+import { isMissingRelationError } from '@/lib/supabaseErrors';
 
 export interface UserPermissions {
   id: string;
@@ -131,7 +132,17 @@ export function useCanAccessModule(module: string) {
         query = query.eq('organization_id', selectedOrganizationId);
       }
 
-      const { data } = await query.maybeSingle();
+      const { data, error } = await query.maybeSingle();
+      if (error && !isMissingRelationError(error)) throw error;
+      if (error && isMissingRelationError(error)) {
+        const roleQuery = (supabase as any)
+          .from('user_roles')
+          .select('role')
+          .eq('user_id', user.id);
+        if (selectedOrganizationId) roleQuery.eq('organization_id', selectedOrganizationId);
+        const { data: legacyRole } = await roleQuery.maybeSingle();
+        return legacyRole?.role || null;
+      }
       return data?.role || null;
     },
     enabled: !!user?.id,
@@ -183,7 +194,17 @@ export function useCurrentUserRole(organizationId?: string | null) {
         query = query.eq('organization_id', scopedOrganizationId);
       }
 
-      const { data } = await query.maybeSingle();
+      const { data, error } = await query.maybeSingle();
+      if (error && !isMissingRelationError(error)) throw error;
+      if (error && isMissingRelationError(error)) {
+        const roleQuery = (supabase as any)
+          .from('user_roles')
+          .select('role')
+          .eq('user_id', user.id);
+        if (scopedOrganizationId) roleQuery.eq('organization_id', scopedOrganizationId);
+        const { data: legacyRole } = await roleQuery.maybeSingle();
+        return (legacyRole?.role || 'admin') as 'owner' | 'admin' | 'supervisor' | 'agent' | null;
+      }
       return data?.role as 'owner' | 'admin' | 'supervisor' | 'agent' | null;
     },
     enabled: !!user?.id,

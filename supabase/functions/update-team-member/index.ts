@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { assertActiveOrganizationAccess, getLegacyOrganizationRole, isMissingRelationError } from '../_shared/access.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -41,18 +42,16 @@ Deno.serve(async (req) => {
     const requestedOrganizationId = typeof body.organizationId === 'string' ? body.organizationId : undefined;
     const organizationId = requestedOrganizationId || callerProfile?.organization_id || '';
 
-    const { data: callerRole, error: callerRoleError } = await admin
-      .from('organization_members')
-      .select('role')
-      .eq('user_id', caller.id)
-      .eq('organization_id', organizationId)
-      .maybeSingle();
-
-    if (callerRoleError) {
-      return json({ error: callerRoleError.message }, 500);
+    if (!callerProfile || !organizationId) {
+      return json({ error: 'Only owners and admins can update team members' }, 403);
     }
 
-    if (!callerProfile || !callerRole || !['owner', 'admin', 'platform_admin'].includes(callerRole.role)) {
+    const { membership: callerRole } = await assertActiveOrganizationAccess(admin, caller.id, organizationId, {
+      module: 'team',
+      requireManager: true,
+    });
+
+    if (!callerRole) {
       return json({ error: 'Only owners and admins can update team members' }, 403);
     }
 
@@ -66,18 +65,24 @@ Deno.serve(async (req) => {
       return json({ error: 'Missing userId' }, 400);
     }
 
-    const { data: targetMembership } = await admin
+    const { data: targetMembership, error: targetMembershipError } = await admin
       .from('organization_members')
       .select('id, role')
       .eq('user_id', userId)
       .eq('organization_id', organizationId)
       .maybeSingle();
 
-    if (!targetMembership) {
+    if (targetMembershipError && !isMissingRelationError(targetMembershipError)) throw targetMembershipError;
+    const effectiveTargetMembership = targetMembership
+      || (targetMembershipError && isMissingRelationError(targetMembershipError)
+        ? await getLegacyOrganizationRole(admin, userId, organizationId)
+        : null);
+
+    if (!effectiveTargetMembership) {
       return json({ error: 'User not found in your organization' }, 404);
     }
 
-    if (targetMembership.role === 'owner' && userId !== caller.id) {
+    if (effectiveTargetMembership.role === 'owner' && userId !== caller.id) {
       return json({ error: 'Organization owner cannot be edited here' }, 403);
     }
 
