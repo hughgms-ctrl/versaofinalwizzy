@@ -309,7 +309,7 @@ const buildPlanFeatures = (plan: PlatformPlan) => {
     formatLimit(limits.max_workspaces, "workspace", "workspaces"),
     formatLimit(limits.max_whatsapp_numbers, "número WhatsApp", "números WhatsApp"),
     formatStorage(plan.storage_limit_bytes),
-    plan.ai_mode === "platform_api" ? "Consumo de IA incluso no plano" : "IA pronta para usar com sua chave conectada",
+    plan.ai_mode === "platform_api" ? "Consumo de IA incluso no plano" : "Controle total do seu consumo de IA conectando sua chave",
   ];
 
   orderedExtraModules.forEach((module) => {

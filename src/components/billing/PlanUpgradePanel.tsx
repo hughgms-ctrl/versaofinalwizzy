@@ -387,7 +387,7 @@ const PlanUpgradePanel = () => {
                   ) : (
                     <div className="flex items-center gap-2 text-sm py-1">
                       <Check className="w-4 h-4 text-green-500 shrink-0" />
-                      <span className="text-muted-foreground">Total controle do consumo de IA</span>
+                      <span className="text-muted-foreground">Controle total do seu consumo de IA conectando sua chave</span>
                     </div>
                   )}
                   {visibleModules.map((mod) => {
