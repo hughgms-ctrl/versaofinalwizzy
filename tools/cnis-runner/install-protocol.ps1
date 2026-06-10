@@ -3,19 +3,20 @@ $ErrorActionPreference = "Stop"
 $runnerRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $launcher = Join-Path $runnerRoot "launch-protocol.ps1"
 $powershell = Join-Path $PSHOME "powershell.exe"
-$protocolRoot = "HKCU:\Software\Classes\wizzy-cnis-runner"
-$commandPath = Join-Path $protocolRoot "shell\open\command"
-$iconPath = Join-Path $protocolRoot "DefaultIcon"
 $command = "`"$powershell`" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$launcher`" `"%1`""
 
-New-Item -Path $protocolRoot -Force | Out-Null
-New-Item -Path $commandPath -Force | Out-Null
-New-Item -Path $iconPath -Force | Out-Null
+$root = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey("Software\Classes\wizzy-cnis-runner")
+$icon = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey("Software\Classes\wizzy-cnis-runner\DefaultIcon")
+$open = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey("Software\Classes\wizzy-cnis-runner\shell\open\command")
 
-(Get-Item $protocolRoot).SetValue("", "URL:Wizzy CNIS Runner")
-New-ItemProperty -Path $protocolRoot -Name "URL Protocol" -Value "" -PropertyType String -Force | Out-Null
-(Get-Item $iconPath).SetValue("", "$powershell,0")
-(Get-Item $commandPath).SetValue("", $command)
+$root.SetValue("", "URL:Wizzy CNIS Runner", [Microsoft.Win32.RegistryValueKind]::String)
+$root.SetValue("URL Protocol", "", [Microsoft.Win32.RegistryValueKind]::String)
+$icon.SetValue("", "$powershell,0", [Microsoft.Win32.RegistryValueKind]::String)
+$open.SetValue("", $command, [Microsoft.Win32.RegistryValueKind]::String)
+
+$open.Close()
+$icon.Close()
+$root.Close()
 
 Write-Host "Wizzy CNIS Runner instalado neste Windows."
 Write-Host "Agora o botao Login certificado da Wizzy pode abrir o runner pelo navegador."
