@@ -22,10 +22,10 @@ interface UpgradeModalProps {
 const UpgradeModal = ({ open, onOpenChange, moduleName }: UpgradeModalProps) => {
   const navigate = useNavigate();
   const { profile } = useAuth();
-  const { selectedWorkspace } = useWorkspaceContext();
-  const activeOrganizationId = selectedWorkspace?.organization_id || profile?.organization_id || null;
+  const { selectedOrganizationId, selectedWorkspace } = useWorkspaceContext();
+  const activeOrganizationId = selectedOrganizationId || selectedWorkspace?.organization_id || profile?.organization_id || null;
   const { data: userRole } = useCurrentUserRole(activeOrganizationId);
-  const canManageBilling = userRole === "owner" || userRole === "admin";
+  const canManageBilling = userRole === "owner" || userRole === "admin" || userRole === "platform_admin";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

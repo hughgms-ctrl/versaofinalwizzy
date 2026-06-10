@@ -68,21 +68,21 @@ export function Sidebar() {
   const location = useLocation();
   const navigate = useNavigate();
   const { collapsed, toggleCollapsed } = useSidebarContext();
-  const { selectedWorkspace } = useWorkspaceContext();
+  const { selectedOrganizationId, selectedWorkspace } = useWorkspaceContext();
   const { profile, signOut } = useAuth();
-  const activeOrganizationId = selectedWorkspace?.organization_id || profile?.organization_id || null;
+  const activeOrganizationId = selectedOrganizationId || selectedWorkspace?.organization_id || profile?.organization_id || null;
   const { data: userRole } = useCurrentUserRole(activeOrganizationId);
   const { data: permissions } = useUserPermissions();
   const { canAccessModule: canAccessPlanModule } = useOrganizationPlan(activeOrganizationId);
   const { data: showClientPlansMenu = false } = usePlatformSetting<boolean>('show_client_plans_menu', false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [blockedModule, setBlockedModule] = useState<string | undefined>();
-  const canManageBilling = userRole === 'owner' || userRole === 'admin';
+  const canManageBilling = userRole === 'owner' || userRole === 'admin' || userRole === 'platform_admin';
 
   // Check if user can access a module (permission-based)
   const canAccessModule = (module?: string) => {
     if (!module) return true;
-    if (userRole === 'owner' || userRole === 'admin') return true;
+    if (userRole === 'owner' || userRole === 'admin' || userRole === 'platform_admin') return true;
     if (!permissions) return false;
 
     const moduleMap: Record<string, keyof typeof permissions> = {

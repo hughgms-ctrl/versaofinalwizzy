@@ -47,20 +47,25 @@ Deno.serve(async (req) => {
 
     const body = req.method === 'POST' ? await req.json().catch(() => ({})) : {}
     const requestedOrgId = String(body?.organization_id || '').trim()
-    let organizationId = profile.organization_id
+    const organizationId = requestedOrgId || profile.organization_id
 
-    if (requestedOrgId && requestedOrgId !== profile.organization_id) {
-      const { data: roleData } = await adminClient
+    const [{ data: membership }, { data: platformRole }] = await Promise.all([
+      adminClient
+        .from('organization_members')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('organization_id', organizationId)
+        .maybeSingle(),
+      adminClient
         .from('user_roles')
         .select('id')
         .eq('user_id', user.id)
         .eq('role', 'platform_admin')
-        .maybeSingle()
+        .maybeSingle(),
+    ])
 
-      if (!roleData) {
-        return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: corsHeaders })
-      }
-      organizationId = requestedOrgId
+    if (!membership && !platformRole) {
+      return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: corsHeaders })
     }
 
     const usageResult = await calculateOrganizationUsage(adminClient, {

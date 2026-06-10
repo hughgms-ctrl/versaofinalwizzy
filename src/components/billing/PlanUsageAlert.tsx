@@ -18,11 +18,11 @@ function formatDate(date?: string | null) {
 export function PlanUsageAlert() {
   const navigate = useNavigate();
   const { profile } = useAuth();
-  const { selectedWorkspace } = useWorkspaceContext();
-  const activeOrganizationId = selectedWorkspace?.organization_id || profile?.organization_id || null;
+  const { selectedOrganizationId, selectedWorkspace } = useWorkspaceContext();
+  const activeOrganizationId = selectedOrganizationId || selectedWorkspace?.organization_id || profile?.organization_id || null;
   const { data: userRole } = useCurrentUserRole(activeOrganizationId);
   const { isTrial, trialEndsAt, planName, usage } = useOrganizationPlan(activeOrganizationId);
-  const canManageBilling = userRole === 'owner' || userRole === 'admin';
+  const canManageBilling = userRole === 'owner' || userRole === 'admin' || userRole === 'platform_admin';
 
   if (!canManageBilling) return null;
 

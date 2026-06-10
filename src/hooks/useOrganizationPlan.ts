@@ -52,10 +52,12 @@ export function useOrganizationPlan(organizationIdOverride?: string | null) {
 
   const planRow = (orgPlan as any)?.planRow || null;
   const plan = planRow?.plan || null;
-  const paymentStatus = String(planRow?.payment_status || '').toLowerCase();
+  const paymentStatus = String(planRow?.payment_status || planRow?.status || '').toLowerCase();
   const trialEndsAt = planRow?.trial_ends_at || null;
   const hasValidTrial = ['trial', 'trialing'].includes(paymentStatus)
     && (!trialEndsAt || new Date(trialEndsAt).getTime() > Date.now());
+  const hasActiveAccess = Boolean(planRow)
+    && (['paid', 'manual', 'active'].includes(paymentStatus) || hasValidTrial);
   const allowedModules: string[] = plan?.allowed_modules || [];
   const storageUsed = Number((orgPlan as any)?.organization?.storage_used_bytes || 0);
   const storageLimit = Number(plan?.storage_limit_bytes || (orgPlan as any)?.organization?.storage_limit_bytes || 0);
@@ -77,9 +79,9 @@ export function useOrganizationPlan(organizationIdOverride?: string | null) {
   const whatsappNumberUsagePercent = whatsappNumberLimit > 0 ? Math.round((whatsappNumberCount / whatsappNumberLimit) * 100) : 0;
 
   const canAccessModule = (module: string): boolean => {
+    if (!hasActiveAccess) return false;
     if (WIZZY_CRM_MODULES.includes(module)) return true;
-    // If no plan assigned, allow everything (trial/free). Plans with no extras selected block extra tools.
-    if (!planRow) return true;
+    // Core access comes from the active subscription. Extra tools are plan-scoped.
     return allowedModules.includes(module);
   };
 
@@ -93,6 +95,7 @@ export function useOrganizationPlan(organizationIdOverride?: string | null) {
     paymentStatus,
     trialEndsAt,
     isTrial: hasValidTrial,
+    hasActiveAccess,
     isManualAccess: paymentStatus === 'manual',
     aiMode,
     isWizzyAI,
