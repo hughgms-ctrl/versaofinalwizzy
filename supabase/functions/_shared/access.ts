@@ -60,6 +60,35 @@ export function planAllowsModule(planRow: any, moduleName?: string | null) {
   return allowedModules.includes(moduleName);
 }
 
+function isMissingRelationError(error: any) {
+  const message = String(error?.message || error?.details || '').toLowerCase();
+  return error?.code === 'PGRST205'
+    || error?.code === '42P01'
+    || message.includes('could not find the table')
+    || message.includes('does not exist');
+}
+
+async function getLegacyOrganizationRole(adminClient: any, userId: string, organizationId: string) {
+  const { data: profile, error: profileError } = await adminClient
+    .from('profiles')
+    .select('organization_id')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (profileError) throw profileError;
+  if (profile?.organization_id !== organizationId) return null;
+
+  const { data: roles } = await adminClient
+    .from('user_roles')
+    .select('role, organization_id')
+    .eq('user_id', userId);
+
+  const roleRow = (roles || []).find((row: any) =>
+    !row.organization_id || row.organization_id === organizationId
+  );
+  return { role: String(roleRow?.role || 'admin'), legacy: true };
+}
+
 export async function assertActiveOrganizationAccess(
   adminClient: any,
   userId: string,
@@ -83,9 +112,14 @@ export async function assertActiveOrganizationAccess(
       .maybeSingle(),
   ]);
 
-  if (membershipError) throw membershipError;
-  if (!membership && !platformRole) throw new AccessError('Forbidden', 403);
-  const role = String(membership?.role || (platformRole ? 'platform_admin' : ''));
+  if (membershipError && !isMissingRelationError(membershipError)) throw membershipError;
+  const fallbackMembership = membershipError && isMissingRelationError(membershipError)
+    ? await getLegacyOrganizationRole(adminClient, userId, organizationId)
+    : null;
+  const effectiveMembership = membership || fallbackMembership;
+
+  if (!effectiveMembership && !platformRole) throw new AccessError('Forbidden', 403);
+  const role = String(effectiveMembership?.role || (platformRole ? 'platform_admin' : ''));
   if (options.requireManager && !['owner', 'admin', 'platform_admin'].includes(role)) {
     throw new AccessError('Only organization owners and admins can perform this action', 403);
   }
@@ -104,5 +138,5 @@ export async function assertActiveOrganizationAccess(
     throw new AccessError('Module is not available in the current plan', 402);
   }
 
-  return { membership, planRow };
+  return { membership: effectiveMembership, planRow };
 }

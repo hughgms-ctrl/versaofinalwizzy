@@ -11,6 +11,14 @@ function getCurrentUsagePeriod() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
 }
 
+function isMissingRelationError(error: any) {
+  const message = String(error?.message || error?.details || '').toLowerCase()
+  return error?.code === 'PGRST205'
+    || error?.code === '42P01'
+    || message.includes('could not find the table')
+    || message.includes('does not exist')
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
@@ -49,7 +57,7 @@ Deno.serve(async (req) => {
     const requestedOrgId = String(body?.organization_id || '').trim()
     const organizationId = requestedOrgId || profile.organization_id
 
-    const [{ data: membership }, { data: platformRole }] = await Promise.all([
+    const [{ data: membership, error: membershipError }, { data: platformRole }] = await Promise.all([
       adminClient
         .from('organization_members')
         .select('id')
@@ -64,7 +72,12 @@ Deno.serve(async (req) => {
         .maybeSingle(),
     ])
 
-    if (!membership && !platformRole) {
+    if (membershipError && !isMissingRelationError(membershipError)) throw membershipError
+    const legacyMembership = membershipError && isMissingRelationError(membershipError)
+      ? profile.organization_id === organizationId
+      : false
+
+    if (!membership && !legacyMembership && !platformRole) {
       return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: corsHeaders })
     }
 

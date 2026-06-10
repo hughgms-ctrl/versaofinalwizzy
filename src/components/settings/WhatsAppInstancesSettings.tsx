@@ -46,15 +46,22 @@ import { LimitUpgradeDialog } from '@/components/billing/LimitUpgradeDialog';
 import { enforceEntryCreationLimit, enforceEntryFeatureAccess } from '@/lib/entryFlow';
 import { isPlanLimitError } from '@/lib/planLimitErrors';
 
-function hasConfiguredConnection(instance: WhatsAppInstance) {
+function hasProviderCredentials(instance: WhatsAppInstance) {
   return Boolean(
-    instance.status === 'connected' ||
-    instance.phone_number ||
     instance.zapi_instance_id ||
     instance.zapi_token ||
     instance.evolution_instance_name ||
     instance.evolution_instance_id ||
     instance.evolution_api_key
+  );
+}
+
+function isWhatsAppNumberInUse(instance: WhatsAppInstance) {
+  return Boolean(
+    instance.status === 'connected' ||
+    instance.is_active ||
+    instance.connected_at ||
+    instance.phone_number
   );
 }
 
@@ -77,8 +84,8 @@ export function WhatsAppInstancesSettings() {
   const [isAddingNumber, setIsAddingNumber] = useState(false);
   const [isBackfillingAvatars, setIsBackfillingAvatars] = useState(false);
   const [showLimitDialog, setShowLimitDialog] = useState(false);
-  const configuredInstances = instances.filter(hasConfiguredConnection);
-  const whatsappLimitReached = usage.whatsappNumberLimit > 0 && configuredInstances.length >= usage.whatsappNumberLimit;
+  const whatsappNumbersInUse = instances.filter(isWhatsAppNumberInUse);
+  const whatsappLimitReached = usage.whatsappNumberLimit > 0 && whatsappNumbersInUse.length >= usage.whatsappNumberLimit;
 
   const handleBackfillAvatars = async () => {
     if (isBackfillingAvatars) return;
@@ -189,7 +196,7 @@ export function WhatsAppInstancesSettings() {
   const handleAddNumber = async () => {
     if (!session?.access_token) return;
     if (!enforceEntryFeatureAccess('allow_connect_whatsapp_number', 'conectar numero de WhatsApp')) return;
-    if (!enforceEntryCreationLimit('max_whatsapp_numbers', configuredInstances.length, 'numeros de WhatsApp')) return;
+    if (!enforceEntryCreationLimit('max_whatsapp_numbers', whatsappNumbersInUse.length, 'numeros de WhatsApp')) return;
     if (whatsappLimitReached) {
       setShowLimitDialog(true);
       return;
@@ -454,7 +461,7 @@ export function WhatsAppInstancesSettings() {
 
           {/* Instance list - hide instance being connected while QR is showing */}
           {(() => {
-            const visibleInstances = configuredInstances.filter(i =>
+            const visibleInstances = instances.filter(i =>
               !(connectingInstanceId && i.id === connectingInstanceId)
             );
             if (visibleInstances.length === 0 && !connectingInstanceId) return (
@@ -470,7 +477,7 @@ export function WhatsAppInstancesSettings() {
                 {visibleInstances.map((instance) => {
                   const workspace = getWorkspaceForInstance(instance.id);
                   const isConnected = instance.status === 'connected';
-                  const hasCredentials = hasConfiguredConnection(instance);
+                  const hasCredentials = hasProviderCredentials(instance);
 
                   return (
                     <div key={instance.id} className="flex items-center justify-between p-4 border rounded-lg bg-card hover:bg-muted/30 transition-colors">

@@ -253,18 +253,15 @@ Deno.serve(async (req) => {
     if (maxWhatsappNumbers > 0) {
       const { data: currentInstances, error: countError } = await supabase
         .from('whatsapp_instances')
-        .select('id, status, phone_number, zapi_instance_id, zapi_token, evolution_instance_name, evolution_instance_id, evolution_api_key')
+        .select('id, status, phone_number, is_active, connected_at')
         .eq('organization_id', organizationId);
 
       if (countError) throw countError;
       const currentWhatsappNumbers = (currentInstances || []).filter((instance: any) => (
         instance.status === 'connected' ||
-        instance.phone_number ||
-        instance.zapi_instance_id ||
-        instance.zapi_token ||
-        instance.evolution_instance_name ||
-        instance.evolution_instance_id ||
-        instance.evolution_api_key
+        instance.is_active ||
+        instance.connected_at ||
+        instance.phone_number
       )).length;
       if (currentWhatsappNumbers >= maxWhatsappNumbers) {
         return new Response(JSON.stringify({
