@@ -1776,7 +1776,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
 
   const organizationId = whatsappInstance.organization_id;
   const fallbackWorkspaceIds = await resolveWorkspacesForInstance(supabase, organizationId, whatsappInstance.id);
-  const fallbackWorkspaceId = fallbackWorkspaceIds[0] || null;
+  const fallbackWorkspaceId = fallbackWorkspaceIds.length === 1 ? fallbackWorkspaceIds[0] : null;
 
   // Find or create contact
   // If the message is fromMe, pushName is our own pushName, not the client's.
@@ -1825,7 +1825,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
     whatsappInstance.id,
     whatsappInstance.phone_number,
     fallbackWorkspaceId || (fallbackWorkspaceIds.length === 0 ? contact.workspace_id : null),
-    fallbackWorkspaceIds.length > 0 ? fallbackWorkspaceIds : (contact.workspace_id ? [contact.workspace_id] : []),
+    fallbackWorkspaceId ? [fallbackWorkspaceId] : [],
   );
 
   if (!fromMe) {
@@ -2903,20 +2903,15 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
       const updates: any = {};
       const configuredWorkspaceIds = Array.from(new Set(workspaceIds.filter(Boolean)));
 
-      if (configuredWorkspaceIds.length > 0) {
-        const primaryWorkspaceId = workspaceId || configuredWorkspaceIds[0];
+      // Do not move an existing conversation just because the same WhatsApp
+      // number was later linked to other workspaces. Only fill an empty
+      // workspace when routing is unambiguous.
+      if (workspaceId && !existing.workspace_id) updates.workspace_id = workspaceId;
+      if (configuredWorkspaceIds.length === 1) {
         const existingWorkspaceIds = Array.isArray(existing.workspace_ids) ? existing.workspace_ids : [];
-        const sortedExisting = [...existingWorkspaceIds].sort();
-        const sortedConfigured = [...configuredWorkspaceIds].sort();
-
-        if (existing.workspace_id !== primaryWorkspaceId) updates.workspace_id = primaryWorkspaceId;
-        if (JSON.stringify(sortedExisting) !== JSON.stringify(sortedConfigured)) {
+        if (existingWorkspaceIds.length === 0) {
           updates.workspace_ids = configuredWorkspaceIds;
         }
-      } else {
-        if (workspaceId && !existing.workspace_id) updates.workspace_id = workspaceId;
-        const nextWorkspaceIds = Array.from(new Set([...(existing.workspace_ids || []), ...workspaceIds].filter(Boolean)));
-        if (nextWorkspaceIds.length > 0) updates.workspace_ids = nextWorkspaceIds;
       }
 
       if (!existing.source_phone && sourcePhone) updates.source_phone = sourcePhone;

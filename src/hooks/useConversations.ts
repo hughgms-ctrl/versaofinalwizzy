@@ -105,7 +105,7 @@ export function useConversations(options?: { includeArchived?: boolean; onlyArch
       }
 
       if (selectedWorkspaceId) {
-        query = query.or(`workspace_id.eq.${selectedWorkspaceId},workspace_ids.cs.{${selectedWorkspaceId}}`);
+        query = query.eq('workspace_id', selectedWorkspaceId);
       }
 
       const { data, error } = await query;
@@ -305,7 +305,7 @@ export function useCreateConversation() {
         : existingConvQuery.is('whatsapp_instance_id', null);
 
       existingConvQuery = data.workspaceId
-        ? existingConvQuery.or(`workspace_id.eq.${data.workspaceId},workspace_ids.cs.{${data.workspaceId}}`)
+        ? existingConvQuery.eq('workspace_id', data.workspaceId)
         : existingConvQuery.is('workspace_id', null);
 
       const { data: existingConv } = await existingConvQuery.maybeSingle();

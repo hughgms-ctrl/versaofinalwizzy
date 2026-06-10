@@ -618,15 +618,6 @@ function EditInstanceDialog({ open, onOpenChange, instance }: { open: boolean; o
         if (error) throw error;
       }
 
-      const { error: conversationError } = await supabase
-        .from('conversations')
-        .update({
-          workspace_id: workspaceIds[0] || null,
-          workspace_ids: workspaceIds,
-        } as any)
-        .eq('whatsapp_instance_id', instance.id);
-      if (conversationError) throw conversationError;
-
       queryClient.invalidateQueries({ queryKey: ['whatsapp-instances'] });
       queryClient.invalidateQueries({ queryKey: ['workspaces'] });
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
@@ -686,7 +677,7 @@ function EditInstanceDialog({ open, onOpenChange, instance }: { open: boolean; o
               )}
             </div>
             <p className="mt-2 text-xs text-muted-foreground">
-              Conversas recebidas por este numero ficam visiveis nos workspaces selecionados.
+              O numero fica disponivel para os workspaces selecionados. Conversas existentes nao sao movidas automaticamente.
             </p>
           </div>
           <div className="flex justify-end gap-2 pt-2">
