@@ -49,6 +49,7 @@ export function useDocumentSignatures(includeArchived = false) {
       let q = (supabase as any)
         .from('document_signatures')
         .select('*, generated_document:generated_documents(id, name, pdf_url, signed_pdf_url, status, submitted_by, pack_id, submission_group), archived_at')
+        .eq('organization_id', orgId)
         .order('created_at', { ascending: false });
       if (!includeArchived) q = q.is('archived_at', null);
       const { data, error } = await q;

@@ -206,6 +206,7 @@ export const CreateProjectDialog = ({ open, onOpenChange, defaultDate }: CreateP
           process_id: task.process_id,
           completed_verified: false,
           project_id: newProject.id,
+          workspace_id: workspace.id,
           due_date: null, // NÃO copiar datas
           start_date: null, // NÃO copiar datas
         }));

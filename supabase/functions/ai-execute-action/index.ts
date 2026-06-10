@@ -61,6 +61,42 @@ async function findUserByName(supabase: any, workspaceId: string, searchName: st
   return (profiles || []).find((profile: any) => normalizeString(profile.full_name || "").includes(target)) || null;
 }
 
+async function resolveWorkspaceRole(supabase: any, userId: string, workspaceId: string) {
+  const { data: workspace, error: workspaceError } = await supabase
+    .from("workspaces")
+    .select("id, organization_id")
+    .eq("id", workspaceId)
+    .maybeSingle();
+
+  if (workspaceError) throw workspaceError;
+  if (!workspace?.id) return { hasAccess: false, role: "membro" };
+
+  const { data: member } = await supabase
+    .from("workspace_members")
+    .select("role")
+    .eq("user_id", userId)
+    .eq("workspace_id", workspaceId)
+    .maybeSingle();
+
+  if (member?.role) return { hasAccess: true, role: member.role };
+
+  const { data: orgRole } = await supabase.rpc("user_org_role", {
+    _user_id: userId,
+    _org_id: workspace.organization_id,
+  });
+
+  if (["owner", "admin", "platform_admin"].includes(orgRole)) {
+    return { hasAccess: true, role: "admin" };
+  }
+
+  const { data: hasAccess } = await supabase.rpc("user_has_workspace_access", {
+    _user_id: userId,
+    _workspace_id: workspaceId,
+  });
+
+  return { hasAccess: !!hasAccess, role: hasAccess ? "membro" : "none" };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -90,14 +126,14 @@ serve(async (req) => {
     const params = body.params || body.arguments || {};
     const workspaceId = body.workspace_id;
 
-    const { data: member } = await supabase
-      .from("workspace_members")
-      .select("role")
-      .eq("user_id", user.id)
-      .eq("workspace_id", workspaceId)
-      .maybeSingle();
+    const { hasAccess, role: userRole } = await resolveWorkspaceRole(supabase, user.id, workspaceId);
+    if (!hasAccess) {
+      return new Response(JSON.stringify({ success: false, error: "Sem acesso a este workspace" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
-    const userRole = member?.role || "membro";
     const canManageProjects = userRole === "admin" || userRole === "gestor";
     let result: any;
 

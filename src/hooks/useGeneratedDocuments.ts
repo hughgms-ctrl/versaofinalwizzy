@@ -31,6 +31,7 @@ export function useGeneratedDocuments() {
       const { data, error } = await (supabase as any)
         .from('generated_documents')
         .select('*, document_packs(name)')
+        .eq('organization_id', orgId)
         .order('created_at', { ascending: false });
       if (error) throw error;
       return data as GeneratedDocument[];

@@ -86,6 +86,7 @@ export function useProjectActions() {
           process_id: task.process_id,
           completed_verified: false,
           project_id: newProject.id,
+          workspace_id: project.workspace_id,
           due_date: null, // NÃO copiar datas
           start_date: null, // NÃO copiar datas
           task_order: task.task_order || index,

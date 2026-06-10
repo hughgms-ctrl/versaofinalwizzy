@@ -252,6 +252,7 @@ export const CreateTaskDialog = ({ open, onOpenChange, projectId }: CreateTaskDi
         .insert([
           {
             project_id: projectId,
+            workspace_id: workspace?.id || null,
             title,
             description: description || null,
             priority,
