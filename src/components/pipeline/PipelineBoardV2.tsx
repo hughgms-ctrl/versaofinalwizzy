@@ -458,8 +458,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
       // Never use tags as workspace boundaries. Tags can be shared or misapplied.
       if (selectedWorkspaceId && selectedWorkspace) {
         const hasDirectWorkspace = (conv as any).workspace_id === selectedWorkspaceId;
-        const hasWorkspaceInList = Array.isArray((conv as any).workspace_ids) && (conv as any).workspace_ids.includes(selectedWorkspaceId);
-        if (!hasDirectWorkspace && !hasWorkspaceInList) return false;
+        if (!hasDirectWorkspace) return false;
       }
 
       // Search filter (name, phone, or message content)

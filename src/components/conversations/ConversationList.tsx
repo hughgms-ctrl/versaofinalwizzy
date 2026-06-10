@@ -122,8 +122,7 @@ export function ConversationList({ conversations, selectedId, onSelect, onSpyVie
           const isTyping = isActive && presence?.presence_type === 'typing';
           const isRecording = isActive && presence?.presence_type === 'recording';
 
-          const conversationWorkspaceIds = Array.isArray((conversation as any).workspace_ids) ? (conversation as any).workspace_ids : [];
-          const contactWorkspaceId = (conversation as any).workspace_id || conversationWorkspaceIds[0] || (conversation.contact as any)?.workspace_id;
+          const contactWorkspaceId = (conversation as any).workspace_id || (conversation.contact as any)?.workspace_id;
           const workspace = contactWorkspaceId ? workspaces.find(w => w.id === contactWorkspaceId) : null;
 
           return (

@@ -1825,7 +1825,6 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
     whatsappInstance.id,
     whatsappInstance.phone_number,
     fallbackWorkspaceId || (fallbackWorkspaceIds.length === 0 ? contact.workspace_id : null),
-    fallbackWorkspaceId ? [fallbackWorkspaceId] : [],
   );
 
   if (!fromMe) {
@@ -2881,7 +2880,7 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
     }
   }
 
-  async function findOrCreateConversation(supabase: any, contactId: string, organizationId: string, whatsappInstanceId: string, sourcePhone?: string, workspaceId?: string | null, workspaceIds: string[] = []) {
+  async function findOrCreateConversation(supabase: any, contactId: string, organizationId: string, whatsappInstanceId: string, sourcePhone?: string, workspaceId?: string | null) {
     // A same customer can talk to different company numbers. Conversation identity
     // must include the receiving WhatsApp instance to avoid cross-company routing.
     let existingQuery = supabase
@@ -2897,10 +2896,9 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
 
     if (existing) {
       const updates: any = {};
-      // Do not move an existing conversation just because the same WhatsApp
-      // number was later linked to other workspaces. Only fill an empty
-      // workspace when routing is unambiguous.
-      if (workspaceId && !existing.workspace_id) updates.workspace_id = workspaceId;
+      // If the receiving WhatsApp instance has an unambiguous workspace, keep
+      // the conversation there even if it was created in the wrong workspace.
+      if (workspaceId && existing.workspace_id !== workspaceId) updates.workspace_id = workspaceId;
 
       if (!existing.source_phone && sourcePhone) updates.source_phone = sourcePhone;
       if (Object.keys(updates).length > 0) {
