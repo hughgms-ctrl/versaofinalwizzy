@@ -13,6 +13,7 @@ const stylePath = path.join(extensionRoot, "style.css");
 const chromiumProfilePath = path.join(runnerRoot, ".cnis-chromium-profile");
 
 const PORT = Number(process.env.WIZZY_CNIS_RUNNER_PORT || 8787);
+const HOST = process.env.WIZZY_CNIS_RUNNER_HOST || "127.0.0.1";
 const INSS_HOME_URL = "https://atendimento.inss.gov.br/";
 const MAX_RUNNING = Number(process.env.WIZZY_CNIS_MAX_RUNNING || 5);
 const HEADLESS = process.env.WIZZY_CNIS_HEADLESS !== "false";
@@ -1007,8 +1008,8 @@ const server = createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => {
-  console.log(`Wizzy CNIS Runner listening on http://localhost:${PORT}`);
+server.listen(PORT, HOST, () => {
+  console.log(`Wizzy CNIS Runner listening on http://${HOST}:${PORT}`);
 });
 
 process.on("SIGINT", async () => {

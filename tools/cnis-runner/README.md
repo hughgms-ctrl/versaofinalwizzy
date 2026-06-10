@@ -15,6 +15,8 @@ npx playwright install chromium
 Para uso em computador de atendimento, registre o launcher uma vez executando `install-protocol.cmd`.
 Depois disso, a Wizzy publicada pode chamar `wizzy-cnis-runner://...`: ao clicar em `Login certificado` ou `Abrir runner`, o navegador aciona o runner local em segundo plano e a tela tenta reconectar automaticamente em `http://127.0.0.1:8787`.
 
+Em producao comercial, cada computador que acessa CNIS precisa ter o aplicativo auxiliar/launcher instalado uma vez. A Wizzy web nao consegue instalar ou iniciar um processo local sozinha sem esse componente, por regra de seguranca dos navegadores.
+
 ## Rodar
 
 ```bash
@@ -39,6 +41,7 @@ Quando o painel CNIS antigo salva o historico, o runner captura a entrada e pass
 - O runner abre um Chromium controlado por Playwright.
 - O Chromium usa perfil persistente em `.cnis-chromium-profile`, para reaproveitar login/cookies do INSS entre consultas.
 - Cada consulta cria uma aba/pagina controlada dentro desse perfil persistente.
+- O servidor HTTP local escuta apenas em `127.0.0.1`, reduzindo exposicao de rede e prompts de firewall.
 - O runner limita consultas simultaneas por `WIZZY_CNIS_MAX_RUNNING` (padrao: 5).
 - Por padrao, o Chromium roda invisivel (`WIZZY_CNIS_HEADLESS=true`) e a interacao acontece pelo espelhamento dentro da Wizzy. Para depurar com janela visivel, rode com `WIZZY_CNIS_HEADLESS=false`.
 - Para login com certificado digital, use o botao `Login certificado` na Wizzy. Se o runner ja estiver online, ele abre temporariamente um Chromium visivel com o mesmo perfil local. Se estiver fechado e o protocolo tiver sido instalado, o navegador aciona o runner automaticamente. Depois de selecionar o certificado e concluir o GERID, clique em `Concluir login` para fechar a janela visivel e voltar as consultas invisiveis com a sessao salva.
@@ -63,6 +66,8 @@ O runner ja:
 ## Observacoes importantes
 
 Esta implementacao ainda e experimental. Em 2026-06-07, uma consulta real foi executada e capturada com sucesso, mas a experiencia ainda nao esta confiavel o bastante para considerar pronta.
+
+Se Windows, navegador, antivirus ou firewall perguntar sobre o runner, permita a abertura/acesso local. Se a permissao for negada, a Wizzy exibira falha ao conectar em `127.0.0.1:8787`.
 
 Pontos pendentes:
 

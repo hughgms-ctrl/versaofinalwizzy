@@ -1086,7 +1086,7 @@ async function ensureRunnerAvailable(action: "certificate-login" | "open-runner"
   const connected = await waitForRunner(20000);
   if (connected) return;
 
-  throw new Error("O runner local nao abriu. Instale ou atualize o Wizzy CNIS Runner neste computador e tente novamente.");
+  throw new Error("O Wizzy CNIS Runner nao respondeu neste computador. Instale ou atualize o aplicativo auxiliar; se o Windows, navegador, antivirus ou firewall perguntar, permita a abertura/acesso local do runner.");
 }
 
 async function isRunnerOnline() {
