@@ -10,8 +10,6 @@ import { FileText, ListTodo, FolderKanban, UserPlus, Plus } from "lucide-react";
 import { Badge } from "@/fluzz/components/ui/badge";
 import { useState, useMemo } from "react";
 import { CreateStandaloneTaskDialog } from "@/fluzz/components/tasks/CreateStandaloneTaskDialog";
-import { toast } from "sonner";
-import { isTaskOverdue } from "@/fluzz/lib/utils";
 import { useViewMode } from "@/fluzz/hooks/useViewMode";
 
 export default function Home() {
@@ -33,19 +31,27 @@ export default function Home() {
     data: projects,
     isLoading: projectsLoading
   } = useQuery({
-    queryKey: ["projects", workspace?.id],
+    queryKey: ["home-projects", workspace?.id],
     queryFn: async () => {
       if (!workspace) return [];
       const {
         data,
         error
-      } = await supabase.from("projects").select("*").eq("workspace_id", workspace.id).order("created_at", {
-        ascending: false
-      });
+      } = await supabase
+        .from("projects")
+        .select("id, name, description, status, archived, is_standalone_folder, pending_notifications, created_at, updated_at")
+        .eq("workspace_id", workspace.id)
+        .eq("archived", false)
+        .eq("is_standalone_folder", false)
+        .or("pending_notifications.is.null,pending_notifications.eq.false")
+        .order("updated_at", { ascending: false, nullsFirst: false })
+        .limit(5);
       if (error) throw error;
       return data;
     },
-    enabled: !!workspace
+    enabled: !!workspace,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
   });
 
   // Filter only active (non-archived) projects that are NOT standalone folders and NOT drafts (pending_notifications = true means draft)
@@ -56,104 +62,66 @@ export default function Home() {
     [projects]
   );
 
-  // Fetch ALL tasks for admin/gestor, or only user's tasks for members
   const {
-    data: allTasks,
+    data: stats,
     isLoading: tasksLoading
   } = useQuery({
-    queryKey: ["home-tasks", workspace?.id, user?.id, isAdmin, isGestor],
+    queryKey: ["home-stats", workspace?.id, user?.id, isAdmin, isGestor],
     queryFn: async () => {
-      if (!workspace) return [];
-      
-      // Get workspace members for admin/gestor
-      const { data: members } = await supabase
-        .from("workspace_members")
-        .select("user_id")
-        .eq("workspace_id", workspace.id);
-      
-      if (!members || members.length === 0) return [];
-      const memberIds = members.map(m => m.user_id);
-
-      // Get active projects (non-archived, not drafts)
-      const { data: projectsData } = await supabase
-        .from("projects")
-        .select("id")
-        .eq("workspace_id", workspace.id)
-        .eq("archived", false)
-        .neq("pending_notifications", true); // Exclude drafts
-      
-      const projectIds = projectsData?.map(p => p.id) || [];
-
-      let allTasksResult: any[] = [];
-
-      if (isAdmin || isGestor) {
-        // 1. Project tasks from active projects
-        if (projectIds.length > 0) {
-          const { data: projectTasks } = await supabase
-            .from("tasks")
-            .select("*")
-            .in("project_id", projectIds);
-          allTasksResult = [...(projectTasks || [])];
-        }
-        
-        // 2. Standalone tasks from this workspace
-        const { data: standaloneTasks } = await supabase
-          .from("tasks")
-          .select("*")
-          .is("project_id", null)
-          .is("routine_id", null)
-          .eq("workspace_id", workspace.id);
-        allTasksResult = [...allTasksResult, ...(standaloneTasks || [])];
-        
-        // 3. Routine tasks from this workspace
-        const { data: routineTasks } = await supabase
-          .from("tasks")
-          .select("*")
-          .not("routine_id", "is", null)
-          .eq("workspace_id", workspace.id);
-        allTasksResult = [...allTasksResult, ...(routineTasks || [])];
-
-      } else {
-        // Member: get only tasks assigned to them
-        // 1. Project tasks
-        if (projectIds.length > 0) {
-          const { data: projectTasks } = await supabase
-            .from("tasks")
-            .select("*")
-            .in("project_id", projectIds)
-            .eq("assigned_to", user?.id);
-          allTasksResult = [...(projectTasks || [])];
-        }
-        
-        // 2. Standalone tasks from this workspace assigned to current user
-        const { data: standaloneTasks } = await supabase
-          .from("tasks")
-          .select("*")
-          .is("project_id", null)
-          .is("routine_id", null)
-          .eq("workspace_id", workspace.id)
-          .eq("assigned_to", user?.id);
-        allTasksResult = [...allTasksResult, ...(standaloneTasks || [])];
-        
-        // 3. Routine tasks from this workspace assigned to current user
-        const { data: routineTasks } = await supabase
-          .from("tasks")
-          .select("*")
-          .not("routine_id", "is", null)
-          .eq("workspace_id", workspace.id)
-          .eq("assigned_to", user?.id);
-        allTasksResult = [...allTasksResult, ...(routineTasks || [])];
+      if (!workspace || !user?.id) {
+        return { activeProjects: 0, completedTasks: 0, pendingTasks: 0, overdueTasks: 0 };
       }
 
-      return allTasksResult;
+      const today = new Date().toISOString().slice(0, 10);
+      const taskCount = (status: "completed" | "pending" | "overdue") => {
+        let query = supabase
+          .from("tasks")
+          .select("id", { count: "exact", head: true })
+          .eq("workspace_id", workspace.id);
+
+        if (!isAdmin && !isGestor) {
+          query = query.eq("assigned_to", user.id);
+        }
+
+        if (status === "completed") return query.eq("status", "completed");
+        if (status === "overdue") return query.neq("status", "completed").lt("due_date", today);
+        return query.neq("status", "completed");
+      };
+
+      const [activeProjectsResult, completedResult, pendingResult, overdueResult] = await Promise.all([
+        supabase
+          .from("projects")
+          .select("id", { count: "exact", head: true })
+          .eq("workspace_id", workspace.id)
+          .eq("archived", false)
+          .eq("is_standalone_folder", false)
+          .or("pending_notifications.is.null,pending_notifications.eq.false"),
+        taskCount("completed"),
+        taskCount("pending"),
+        taskCount("overdue"),
+      ]);
+
+      const firstError =
+        activeProjectsResult.error || completedResult.error || pendingResult.error || overdueResult.error;
+      if (firstError) throw firstError;
+
+      return {
+        activeProjects: activeProjectsResult.count || 0,
+        completedTasks: completedResult.count || 0,
+        pendingTasks: pendingResult.count || 0,
+        overdueTasks: overdueResult.count || 0,
+      };
     },
-    enabled: !!workspace && !!user
+    enabled: !!workspace && !!user,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
   });
 
-  const activeProjects = activeProjectsList.length;
-  const completedTasks = (allTasks || []).filter(t => t.status === "completed").length;
-  const pendingTasks = (allTasks || []).filter(t => t.status !== "completed").length;
-  const overdueTasks = (allTasks || []).filter(t => isTaskOverdue(t.due_date, t.status)).length;
+  const activeProjects = stats?.activeProjects ?? activeProjectsList.length;
+  const completedTasks = stats?.completedTasks ?? 0;
+  const pendingTasks = stats?.pendingTasks ?? 0;
+  const overdueTasks = stats?.overdueTasks ?? 0;
+  const isInitialLoading = (projectsLoading || tasksLoading) && !stats && activeProjectsList.length === 0;
 
   // Handle card clicks based on role
   const handleCardClick = (type: "projects" | "completed" | "pending" | "overdue") => {
@@ -210,17 +178,6 @@ export default function Home() {
     return items.filter(item => item.show);
   }, [isAdmin, isGestor, permissions]);
 
-  if (projectsLoading || tasksLoading) {
-    return <AppLayout>
-        <div className="flex items-center justify-center min-h-[400px]">
-          <div className="text-center">
-            <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent mx-auto mb-4" />
-            <p className="text-muted-foreground">Carregando...</p>
-          </div>
-        </div>
-      </AppLayout>;
-  }
-
   return <AppLayout>
       <div className="space-y-6">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4">
@@ -255,7 +212,7 @@ export default function Home() {
               <FolderKanban className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl sm:text-3xl font-bold text-foreground">{activeProjects}</div>
+              <div className="text-2xl sm:text-3xl font-bold text-foreground">{isInitialLoading ? "..." : activeProjects}</div>
               <p className="text-xs text-muted-foreground mt-1">
                 Clique para ver todos
               </p>
@@ -273,7 +230,7 @@ export default function Home() {
               <ListTodo className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl sm:text-3xl font-bold text-foreground">{completedTasks}</div>
+              <div className="text-2xl sm:text-3xl font-bold text-foreground">{isInitialLoading ? "..." : completedTasks}</div>
               <p className="text-xs text-muted-foreground mt-1">
                 Total de tarefas finalizadas
               </p>
@@ -291,7 +248,7 @@ export default function Home() {
               <FileText className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl sm:text-3xl font-bold text-foreground">{pendingTasks}</div>
+              <div className="text-2xl sm:text-3xl font-bold text-foreground">{isInitialLoading ? "..." : pendingTasks}</div>
               <p className="text-xs text-muted-foreground mt-1">
                 Clique para ver {isAdmin || isGestor ? "todas" : "suas tarefas"}
               </p>
@@ -310,7 +267,7 @@ export default function Home() {
             </CardHeader>
             <CardContent>
               <div className={`text-2xl sm:text-3xl font-bold ${overdueTasks > 0 ? "text-destructive" : "text-foreground"}`}>
-                {overdueTasks}
+                {isInitialLoading ? "..." : overdueTasks}
               </div>
               <p className="text-xs text-muted-foreground mt-1">
                 {overdueTasks > 0 ? "Requer atenção imediata" : "Tudo em dia!"}
