@@ -54,24 +54,20 @@
   let autoAnalyzeSessionId = "";
   let currentBenefitType = "auxilio_reclusao";
 
-  function getBenefitEventDateLabel(benefitType = currentBenefitType) {
-    if (benefitType === "pensao_morte") return "Data do obito";
-    if (benefitType === "salario_maternidade") return "Nascimento ou previsao";
+  function getBenefitEventDateLabel() {
     return "Data da prisao";
   }
 
-  function setBenefitType(benefitType) {
-    currentBenefitType = ["auxilio_reclusao", "pensao_morte", "salario_maternidade"].includes(benefitType)
-      ? benefitType
-      : "auxilio_reclusao";
+  function setBenefitType() {
+    currentBenefitType = "auxilio_reclusao";
     const hidden = document.getElementById("benefitType");
     if (hidden) hidden.value = currentBenefitType;
     const label = document.getElementById("eventDateLabel");
-    if (label) label.textContent = getBenefitEventDateLabel(currentBenefitType);
+    if (label) label.textContent = getBenefitEventDateLabel();
   }
 
   function getCurrentBenefitType() {
-    return document.getElementById("benefitType")?.value || currentBenefitType || "auxilio_reclusao";
+    return "auxilio_reclusao";
   }
 
   function ensureCriticalSidebarStyles() {
@@ -2716,7 +2712,7 @@
   }
 
   function analyzeCNISWithOptions(vinculos, prisonDateValue, options = {}) {
-    const benefitType = options.benefitType || "auxilio_reclusao";
+    const benefitType = "auxilio_reclusao";
     const prisonDate = parseISODate(prisonDateValue);
     const todayDate = parseISODate(options.todayDate) || getTodayDate();
     const retroactiveValue = calculateRetroactiveValue(prisonDate, todayDate);
@@ -2785,7 +2781,7 @@
     let contribuicoesCarenciaLancadas = countContribuicoes(afterLastLossCarencia);
     let competenciasCarencia = uniqueCompetencias(afterLastLossCarencia).length;
     let concomitantesCarencia = contribuicoesCarenciaLancadas - competenciasCarencia;
-    const carenciaNecessaria = benefitType === "auxilio_reclusao" ? getRequiredCarencia(prisonDate) : 0;
+    const carenciaNecessaria = getRequiredCarencia(prisonDate);
     const carenciaExigida = carenciaNecessaria > 0;
     const lastContributionDate = contributionOrderedUntilPrison.reduce((latest, vinculo) => {
       return !latest || vinculo.fimDate > latest ? vinculo.fimDate : latest;
@@ -2822,11 +2818,11 @@
       incapacityBenefitCompetenciasCarencia = 0;
     }
     const carenciaOk = !carenciaExigida || competenciasCarencia >= carenciaNecessaria;
-    const direito = benefitType === "auxilio_reclusao" ? carenciaOk && mantemQualidade : mantemQualidade;
+    const direito = carenciaOk && mantemQualidade;
 
     return {
       benefitType,
-      eventDateLabel: getBenefitEventDateLabel(benefitType),
+      eventDateLabel: getBenefitEventDateLabel(),
       vinculos: rawOrdered,
       perdas: graceGaps.filter(gap => gap.perda),
       graceGaps,
@@ -2858,12 +2854,8 @@
 
   function renderReport(nome, cpf, prisonDate, analysis) {
     const dateLabel = analysis.prisonDate ? formatDate(analysis.prisonDate) : "Nao informada";
-    const eventLabel = analysis.eventDateLabel || getBenefitEventDateLabel(analysis.benefitType);
-    const benefitLabel = analysis.benefitType === "pensao_morte"
-      ? "Pensao por morte"
-      : analysis.benefitType === "salario_maternidade"
-        ? "Salario-maternidade"
-        : "Auxilio-reclusao";
+    const eventLabel = analysis.eventDateLabel || getBenefitEventDateLabel();
+    const benefitLabel = "Auxilio-reclusao";
     const requirementRows = getRequirementRows(analysis).map(item => `<li><b>${escapeHTML(item.label)}:</b> ${escapeHTML(item.text)}</li>`).join("");
     const benefitNotes = getBenefitReportNotes(analysis).map(note => `<p class="benefit-note">${escapeHTML(note)}</p>`).join("");
     const qualidadeAte = analysis.qualidadeAte ? formatDate(analysis.qualidadeAte) : "Nao calculada";
@@ -2925,7 +2917,7 @@
         </div>
 
         <div class="report-block">
-          <h4>4. ${analysis.benefitType === "auxilio_reclusao" ? "Carencia apos a ultima perda" : "Carencia dispensada"}</h4>
+          <h4>4. Carencia apos a ultima perda</h4>
           ${renderCarenciaStatus(analysis)}
           ${renderIncapacityBenefitCarenciaNote(analysis)}
           ${renderCarenciaLawNote(analysis)}
@@ -2991,7 +2983,7 @@
     const report = document.getElementById("report");
     if (!report) return;
 
-    const benefitType = analysis?.benefitType || getCurrentBenefitType();
+    const benefitType = "auxilio_reclusao";
     const currentAnalysis = analysis || analyzeCNISWithOptions(vinculos, prisonDate, { desempregoLosses, todayDate, benefitType });
     currentReportContext = {
       historyId: historyId || currentReportContext?.historyId || makeHistoryId(),
@@ -3153,36 +3145,12 @@
   }
 
   function getReportLead(analysis, benefitLabel, eventLabel, dateLabel) {
-    if (analysis.benefitType === "pensao_morte") {
-      return `Analise de ${benefitLabel}: verifica-se qualidade de segurado na ${eventLabel.toLowerCase()} (${dateLabel}); nao ha requisito de carencia.`;
-    }
-
-    if (analysis.benefitType === "salario_maternidade") {
-      return `Analise de ${benefitLabel}: verifica-se qualidade de segurada na ${eventLabel.toLowerCase()} (${dateLabel}) e eventual necessidade de contribuicao para recuperar a qualidade.`;
-    }
-
     return `Analise de ${benefitLabel}: verifica-se carencia aplicavel, qualidade de segurado e vinculos reconhecidos ate a ${eventLabel.toLowerCase()} (${dateLabel}).`;
   }
 
   function getRequirementRows(analysis) {
     const qualidadeAte = analysis.qualidadeAte ? formatDate(analysis.qualidadeAte) : "nao calculada";
     const lastContribution = analysis.lastContributionDate ? formatMonthYear(analysis.lastContributionDate) : "nao localizada";
-
-    if (analysis.benefitType === "pensao_morte") {
-      return [
-        { label: "Carencia", text: "dispensada para pensao por morte." },
-        { label: "Qualidade de segurado", text: analysis.mantemQualidade ? `mantida no obito; periodo de graca ate ${qualidadeAte}.` : `nao confirmada no obito; ultima contribuicao ${lastContribution}.` },
-        { label: "Ponto decisivo", text: "o relatorio considera apenas a condicao de segurado na data do obito." },
-      ];
-    }
-
-    if (analysis.benefitType === "salario_maternidade") {
-      return [
-        { label: "Carencia", text: "nao aplicada nesta leitura; foco na qualidade de segurada." },
-        { label: "Qualidade de segurada", text: analysis.mantemQualidade ? `mantida na data informada; periodo de graca ate ${qualidadeAte}.` : `nao confirmada na data informada; ultima contribuicao ${lastContribution}.` },
-        { label: "Providencia", text: analysis.mantemQualidade ? "nao foi indicada contribuicao complementar." : getMaternityContributionInstruction(analysis.prisonDate, analysis.todayDate) },
-      ];
-    }
 
     return [
       { label: "Carencia", text: analysis.carenciaExigida ? `${analysis.competenciasCarencia} de ${analysis.carenciaNecessaria} contribuicoes reconhecidas apos a ultima perda.` : "dispensada pela data da prisao." },
@@ -3192,20 +3160,12 @@
   }
 
   function getBenefitReportNotes(analysis) {
-    if (analysis.benefitType === "pensao_morte") {
-      return ["Para pensao por morte, o relatorio nao reprova por carencia: o requisito analisado e a qualidade de segurado na data do obito."];
-    }
-
-    if (analysis.benefitType === "salario_maternidade") {
-      return [analysis.mantemQualidade ? "Para salario-maternidade, esta leitura confirma qualidade de segurada na data informada." : getMaternityContributionInstruction(analysis.prisonDate, analysis.todayDate)];
-    }
-
     return ["Para auxilio-reclusao, a carencia de 24 contribuicoes mensais e exigida para prisoes a partir de 18/06/2019; antes disso, o relatorio dispensa carencia."];
   }
 
   function renderPostPrisonCompetenceNote(analysis) {
     if (!analysis.competenciasDesconsideradasAposPrisao) return "";
-    const eventLabel = analysis.eventDateLabel || getBenefitEventDateLabel(analysis.benefitType);
+    const eventLabel = analysis.eventDateLabel || getBenefitEventDateLabel();
 
     return `
       <p class="benefit-note">
@@ -3250,7 +3210,7 @@
 
   function renderCarenciaStatus(analysis) {
     if (!analysis.carenciaExigida) {
-      const eventLabel = analysis.eventDateLabel || getBenefitEventDateLabel(analysis.benefitType);
+      const eventLabel = analysis.eventDateLabel || getBenefitEventDateLabel();
       return `
         <p class="ok">
           Carencia nao exigida para ${escapeHTML(eventLabel.toLowerCase())}. Foram identificadas ${analysis.competenciasCarencia} competencia(s) apos a ultima perda, mas esse requisito nao se aplica ao caso.
@@ -3266,8 +3226,6 @@
   }
 
   function renderCarenciaLawNote(analysis) {
-    if (analysis.benefitType !== "auxilio_reclusao") return "";
-
     let caseText = "Data da prisao nao informada; por cautela, foi considerada a carencia de 24 contribuicoes mensais.";
 
     if (analysis.prisonDate && !analysis.carenciaExigida) {
@@ -3284,7 +3242,7 @@
   }
 
   function renderConclusionText(analysis) {
-    const eventLabel = (analysis.eventDateLabel || getBenefitEventDateLabel(analysis.benefitType)).toLowerCase();
+    const eventLabel = (analysis.eventDateLabel || getBenefitEventDateLabel()).toLowerCase();
     if (!analysis.carenciaExigida && analysis.mantemQualidade) {
       return `Carencia nao exigida para ${eventLabel} e qualidade de segurado mantida.`;
     }
@@ -3309,11 +3267,7 @@
   }
 
   function renderFinalConclusion(analysis, dateLabel) {
-    const benefitLabel = analysis.benefitType === "pensao_morte"
-      ? "pensao por morte"
-      : analysis.benefitType === "salario_maternidade"
-        ? "salario-maternidade"
-        : "auxilio-reclusao";
+    const benefitLabel = "auxilio-reclusao";
     if (analysis.direito) {
       if (!analysis.carenciaExigida) {
         return `Neste caso, ha indicacao de direito ao ${escapeHTML(benefitLabel)} em ${escapeHTML(dateLabel)}, pois a carencia nao e exigida e a qualidade de segurado estava mantida.`;
@@ -3553,12 +3507,8 @@
 
   function buildReportBodyHTML(nome, cpf, prisonDate, todayDate, analysis) {
     const dateLabel = analysis.prisonDate ? formatDate(analysis.prisonDate) : "Nao informada";
-    const eventLabel = analysis.eventDateLabel || getBenefitEventDateLabel(analysis.benefitType);
-    const benefitLabel = analysis.benefitType === "pensao_morte"
-      ? "pensao por morte"
-      : analysis.benefitType === "salario_maternidade"
-        ? "salario-maternidade"
-        : "auxilio-reclusao";
+    const eventLabel = analysis.eventDateLabel || getBenefitEventDateLabel();
+    const benefitLabel = "auxilio-reclusao";
     const requirementRows = getRequirementRows(analysis).map(item => `<li><b>${escapeHTML(item.label)}:</b> ${escapeHTML(item.text)}</li>`).join("");
     const benefitNotes = getBenefitReportNotes(analysis).map(note => `<p class="benefit-note">${escapeHTML(note)}</p>`).join("");
     const qualidadeAte = analysis.qualidadeAte ? formatDate(analysis.qualidadeAte) : "Nao calculada";
@@ -3606,7 +3556,7 @@
       <h2>3. Perda da qualidade de segurado</h2>
       ${renderDocumentPerdas(analysis)}
 
-      <h2>4. ${analysis.benefitType === "auxilio_reclusao" ? "Carencia apos a ultima perda" : "Carencia dispensada"}</h2>
+      <h2>4. Carencia apos a ultima perda</h2>
       ${renderCarenciaStatus(analysis)}
       ${renderIncapacityBenefitCarenciaNote(analysis)}
       ${renderCarenciaLawNote(analysis)}
@@ -4253,16 +4203,6 @@
 
   function formatMonthYear(date) {
     return `${String(date.getMonth() + 1).padStart(2, "0")}/${date.getFullYear()}`;
-  }
-
-  function getMaternityContributionInstruction(eventDate, todayDate) {
-    if (!eventDate) return "Avaliar contribuicao para recuperar a qualidade de segurada.";
-    const baseToday = todayDate || getTodayDate();
-    if (eventDate > baseToday) {
-      return "Precisa fazer uma contribuicao antes do parto para recuperar a qualidade de segurada.";
-    }
-    const deadline = new Date(eventDate.getFullYear(), eventDate.getMonth() + 1, 15);
-    return `Precisa fazer uma contribuicao ate ${formatDate(deadline)}, 15o dia do mes subsequente ao nascimento.`;
   }
 
   function escapeHTML(value) {

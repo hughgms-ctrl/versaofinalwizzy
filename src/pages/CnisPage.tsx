@@ -85,14 +85,6 @@ const emptyForm = {
 
 const benefitLabels: Record<CnisBenefitType, string> = {
   auxilio_reclusao: "Auxilio-reclusao",
-  pensao_morte: "Pensao por morte",
-  salario_maternidade: "Salario-maternidade",
-};
-
-const eventDateLabels: Record<CnisBenefitType, string> = {
-  auxilio_reclusao: "Data da prisao",
-  pensao_morte: "Data do obito",
-  salario_maternidade: "Nascimento ou previsao",
 };
 
 const statusLabels: Record<SessionStatus, string> = {
@@ -251,7 +243,7 @@ export default function CnisPage() {
           cpf: input.cpf,
           prisonDate: input.prisonDate,
           todayDate: form.todayDate,
-          benefitType: form.benefitType,
+          benefitType: "auxilio_reclusao",
           source: "runner",
           progressLabel: "Enviando consulta para o runner local.",
           vinculos: [],
@@ -269,7 +261,7 @@ export default function CnisPage() {
             cpf: session.cpf,
             prisonDate: session.prisonDate,
             todayDate: session.todayDate,
-            benefitType: session.benefitType,
+            benefitType: "auxilio_reclusao",
           }),
         });
         const payload = await response.json();
@@ -318,7 +310,7 @@ export default function CnisPage() {
       cpf: form.cpf || "123.456.789-09",
       prisonDate: form.prisonDate || "2026-05-15",
       todayDate: form.todayDate,
-      benefitType: form.benefitType,
+      benefitType: "auxilio_reclusao",
       source: "runner",
       progressLabel: "Abrindo demo completa do runner CNIS.",
       vinculos: [],
@@ -614,22 +606,13 @@ export default function CnisPage() {
                   <div className="space-y-4 p-4">
                     <div className="grid gap-3">
                       <Field label="Beneficio analisado">
-                        <Select value={form.benefitType} onValueChange={(value) => setForm((prev) => ({ ...prev, benefitType: value as CnisBenefitType }))}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="auxilio_reclusao">Auxilio-reclusao</SelectItem>
-                            <SelectItem value="pensao_morte">Pensao por morte</SelectItem>
-                            <SelectItem value="salario_maternidade">Salario-maternidade</SelectItem>
-                          </SelectContent>
-                        </Select>
+                        <Input value="Auxilio-reclusao" readOnly />
                       </Field>
                       <Field label="CPF">
                         <Input value={form.cpf} onChange={(event) => setForm((prev) => ({ ...prev, cpf: event.target.value }))} placeholder="000.000.000-00" />
                       </Field>
                       <div className="grid grid-cols-2 gap-3">
-                        <Field label={eventDateLabels[form.benefitType]}>
+                        <Field label="Data da prisao">
                           <Input type="date" value={form.prisonDate} onChange={(event) => setForm((prev) => ({ ...prev, prisonDate: event.target.value }))} />
                         </Field>
                         <Field label="Data base">
@@ -641,12 +624,12 @@ export default function CnisPage() {
                           value={form.batchText}
                           onChange={(event) => setForm((prev) => ({ ...prev, batchText: event.target.value }))}
                           rows={6}
-                          placeholder={`Opcional: uma consulta por linha, ate 5.\nFormato: CPF; ${eventDateLabels[form.benefitType].toLowerCase()}\nEx: 12399882794; 12/12/2024`}
+                          placeholder={"Opcional: uma consulta por linha, ate 5.\nFormato: CPF; data da prisao\nEx: 12399882794; 12/12/2024"}
                           className="font-mono text-xs"
                         />
                       </Field>
                       <div className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
-                        O limite operacional do runner local e de 5 consultas simultaneas. Para lote, informe apenas CPF e a data do evento.
+                        O limite operacional do runner local e de 5 consultas simultaneas. Para lote, informe apenas CPF e a data da prisao.
                       </div>
                     </div>
 
@@ -842,12 +825,6 @@ function SessionDetail({
                 <ResultBox label="Qualidade" value={summary.mantemQualidade ? "Mantida" : "Perdida"} good={summary.mantemQualidade} />
                 <ResultBox label="Retroativos" value={summary.retroactiveTotal.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} />
               </div>
-              {summary.maternityContributionInstruction && (
-                <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm font-medium text-amber-900">
-                  {summary.maternityContributionInstruction}
-                </div>
-              )}
-
               <Card className="rounded-md">
                 <CardHeader>
                   <CardTitle className="text-base">Vinculos identificados</CardTitle>
@@ -1233,7 +1210,7 @@ function mergeRunnerSessions(current: CnisSession[], runnerSessions: RunnerSessi
       const prisonDate = runner.result.prisonDate || runner.prisonDate || session.prisonDate;
       const todayDate = runner.result.todayDate || runner.todayDate || session.todayDate;
       const vinculos = reviveVinculos(runner.result.vinculos);
-      const benefitType = runner.result?.benefitType || runner.benefitType || session.benefitType || "auxilio_reclusao";
+      const benefitType: CnisBenefitType = "auxilio_reclusao";
       const analysis = prisonDate ? analyzeCNIS(vinculos, prisonDate, { todayDate, benefitType }) : null;
       const reportHtml = runner.result.reportHtml || (analysis ? buildCnisReportHtml({ nome, cpf, prisonDate, todayDate, analysis }) : session.reportHtml);
 
@@ -1271,7 +1248,7 @@ function mergeRunnerSessions(current: CnisSession[], runnerSessions: RunnerSessi
       const cpf = result?.cpf || runner.cpf || "";
       const prisonDate = result?.prisonDate || runner.prisonDate || "";
       const todayDate = result?.todayDate || runner.todayDate || new Date().toISOString().slice(0, 10);
-      const benefitType = result?.benefitType || runner.benefitType || "auxilio_reclusao";
+      const benefitType: CnisBenefitType = "auxilio_reclusao";
       const vinculos = result?.vinculos?.length ? reviveVinculos(result.vinculos) : [];
       const analysis = vinculos.length && prisonDate ? analyzeCNIS(vinculos, prisonDate, { todayDate, benefitType }) : null;
       const reportHtml = result?.reportHtml || (analysis ? buildCnisReportHtml({ nome, cpf, prisonDate, todayDate, analysis }) : "");
@@ -1322,7 +1299,7 @@ function parseRunnerInputs(cpf: string, eventDate: string, batchText: string): A
 
   if (!lines.length) {
     const normalizedCpf = normalizeCpf(cpf);
-    if (!normalizedCpf || !eventDate) throw new Error("Informe CPF e data do evento, ou preencha o lote.");
+    if (!normalizedCpf || !eventDate) throw new Error("Informe CPF e data da prisao, ou preencha o lote.");
     return [{ cpf: normalizedCpf, prisonDate: eventDate }];
   }
 
@@ -1365,7 +1342,7 @@ function loadSessions(): CnisSession[] {
 
 function reviveSession(session: CnisSession): CnisSession {
   const vinculos = reviveVinculos(session.vinculos || []);
-  const benefitType = session.benefitType || "auxilio_reclusao";
+  const benefitType: CnisBenefitType = "auxilio_reclusao";
   const analysis = vinculos.length && session.prisonDate
     ? analyzeCNIS(vinculos, session.prisonDate, { todayDate: session.todayDate, benefitType })
     : null;
@@ -1390,6 +1367,5 @@ function formatDateTime(value: string) {
 
 function getSessionTitle(session: CnisSession) {
   if (session.nome) return session.nome;
-  const benefitType = session.benefitType || "auxilio_reclusao";
-  return `${benefitLabels[benefitType]} - ${session.cpf || "Sem CPF"}`;
+  return `${benefitLabels.auxilio_reclusao} - ${session.cpf || "Sem CPF"}`;
 }
