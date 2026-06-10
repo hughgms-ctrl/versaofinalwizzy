@@ -2859,6 +2859,8 @@
       : analysis.benefitType === "salario_maternidade"
         ? "Salario-maternidade"
         : "Auxilio-reclusao";
+    const requirementRows = getRequirementRows(analysis).map(item => `<li><b>${escapeHTML(item.label)}:</b> ${escapeHTML(item.text)}</li>`).join("");
+    const benefitNotes = getBenefitReportNotes(analysis).map(note => `<p class="benefit-note">${escapeHTML(note)}</p>`).join("");
     const qualidadeAte = analysis.qualidadeAte ? formatDate(analysis.qualidadeAte) : "Nao calculada";
     const lastContribution = analysis.lastContributionDate ? formatMonthYear(analysis.lastContributionDate) : "Nao localizada";
 
@@ -2879,7 +2881,7 @@
         <div class="report-hero ${analysis.direito ? "approved" : "denied"}">
           <span class="status-pill ${analysis.direito ? "ok" : "fail"}">${analysis.direito ? "Direito indicado" : "Direito nao indicado"}</span>
           <h3>${escapeHTML(benefitLabel)} em ${escapeHTML(dateLabel)}</h3>
-          <p>${renderConclusionText(analysis)}</p>
+          <p>${escapeHTML(getReportLead(analysis, benefitLabel, eventLabel, dateLabel))}</p>
         </div>
 
         <div class="summary-grid">
@@ -2890,7 +2892,13 @@
         </div>
 
         <div class="report-block">
-          <h4>1. Historico de vinculos e contribuicoes</h4>
+          <h4>1. Requisitos analisados</h4>
+          <ul>${requirementRows}</ul>
+          ${benefitNotes}
+        </div>
+
+        <div class="report-block">
+          <h4>2. Historico de vinculos e contribuicoes</h4>
           <div class="vinculo-table">
             <div class="vinculo-row head">
               <span>Vinculo</span>
@@ -2907,19 +2915,19 @@
         </div>
 
         <div class="report-block">
-          <h4>2. Perda da qualidade de segurado</h4>
+          <h4>3. Perda da qualidade de segurado</h4>
           ${renderPerdas(analysis)}
         </div>
 
         <div class="report-block">
-          <h4>3. Carencia apos a ultima perda</h4>
+          <h4>4. ${analysis.benefitType === "auxilio_reclusao" ? "Carencia apos a ultima perda" : "Carencia dispensada"}</h4>
           ${renderCarenciaStatus(analysis)}
           ${renderIncapacityBenefitCarenciaNote(analysis)}
           ${renderCarenciaLawNote(analysis)}
         </div>
 
         <div class="report-block">
-          <h4>4. Condicao de segurado no evento</h4>
+          <h4>5. Condicao de segurado no evento</h4>
           <p class="${analysis.mantemQualidade ? "ok" : "fail"}">
             Ultima contribuicao em ${escapeHTML(lastContribution)}. Periodo de graca ate ${escapeHTML(qualidadeAte)}${analysis.finalAutomaticGraceMonths ? " com prorrogacao automatica de 12 meses por mais de 120 contribuicoes." : "."}
           </p>
@@ -2928,7 +2936,7 @@
         ${renderRetroactiveValue(analysis)}
 
         <div class="report-block conclusion ${analysis.direito ? "approved" : "denied"}">
-          <h4>5. Conclusao</h4>
+          <h4>6. Conclusao</h4>
           <p>${renderFinalConclusion(analysis, dateLabel)}</p>
         </div>
       </section>
@@ -3092,7 +3100,7 @@
         <span>
           <b>${escapeHTML(vinculo.nome)}</b>
           <small>${escapeHTML(vinculo.tipo)}</small>
-          ${isOpenVinculo(vinculo) ? "<small>Vinculo em aberto; considerado ate a data da prisao para esta analise, sujeito a comprovacao documental.</small>" : ""}
+          ${isOpenVinculo(vinculo) ? "<small>Vinculo em aberto; considerado ate a data do evento para esta analise, sujeito a comprovacao documental.</small>" : ""}
           ${isNonContributiveBenefitVinculo(vinculo) ? "<small>Beneficio; nao conta para carencia, tempo de contribuicao ou periodo de graca.</small>" : ""}
           ${isIncapacityBenefitVinculo(vinculo) ? "<small>Beneficio por incapacidade; nao conta para carencia. Para tempo, depende de estar intercalado com contribuicao/atividade.</small>" : ""}
         </span>
@@ -3139,12 +3147,64 @@
     `;
   }
 
+  function getReportLead(analysis, benefitLabel, eventLabel, dateLabel) {
+    if (analysis.benefitType === "pensao_morte") {
+      return `Analise de ${benefitLabel}: verifica-se qualidade de segurado na ${eventLabel.toLowerCase()} (${dateLabel}); nao ha requisito de carencia.`;
+    }
+
+    if (analysis.benefitType === "salario_maternidade") {
+      return `Analise de ${benefitLabel}: verifica-se qualidade de segurada na ${eventLabel.toLowerCase()} (${dateLabel}) e eventual necessidade de contribuicao para recuperar a qualidade.`;
+    }
+
+    return `Analise de ${benefitLabel}: verifica-se carencia aplicavel, qualidade de segurado e vinculos reconhecidos ate a ${eventLabel.toLowerCase()} (${dateLabel}).`;
+  }
+
+  function getRequirementRows(analysis) {
+    const qualidadeAte = analysis.qualidadeAte ? formatDate(analysis.qualidadeAte) : "nao calculada";
+    const lastContribution = analysis.lastContributionDate ? formatMonthYear(analysis.lastContributionDate) : "nao localizada";
+
+    if (analysis.benefitType === "pensao_morte") {
+      return [
+        { label: "Carencia", text: "dispensada para pensao por morte." },
+        { label: "Qualidade de segurado", text: analysis.mantemQualidade ? `mantida no obito; periodo de graca ate ${qualidadeAte}.` : `nao confirmada no obito; ultima contribuicao ${lastContribution}.` },
+        { label: "Ponto decisivo", text: "o relatorio considera apenas a condicao de segurado na data do obito." },
+      ];
+    }
+
+    if (analysis.benefitType === "salario_maternidade") {
+      return [
+        { label: "Carencia", text: "nao aplicada nesta leitura; foco na qualidade de segurada." },
+        { label: "Qualidade de segurada", text: analysis.mantemQualidade ? `mantida na data informada; periodo de graca ate ${qualidadeAte}.` : `nao confirmada na data informada; ultima contribuicao ${lastContribution}.` },
+        { label: "Providencia", text: analysis.mantemQualidade ? "nao foi indicada contribuicao complementar." : getMaternityContributionInstruction(analysis.prisonDate, analysis.todayDate) },
+      ];
+    }
+
+    return [
+      { label: "Carencia", text: analysis.carenciaExigida ? `${analysis.competenciasCarencia} de ${analysis.carenciaNecessaria} contribuicoes reconhecidas apos a ultima perda.` : "dispensada pela data da prisao." },
+      { label: "Qualidade de segurado", text: analysis.mantemQualidade ? `mantida na prisao; periodo de graca ate ${qualidadeAte}.` : `nao confirmada na prisao; ultima contribuicao ${lastContribution}.` },
+      { label: "Ponto decisivo", text: "o relatorio cruza carencia aplicavel e qualidade de segurado na data da prisao." },
+    ];
+  }
+
+  function getBenefitReportNotes(analysis) {
+    if (analysis.benefitType === "pensao_morte") {
+      return ["Para pensao por morte, o relatorio nao reprova por carencia: o requisito analisado e a qualidade de segurado na data do obito."];
+    }
+
+    if (analysis.benefitType === "salario_maternidade") {
+      return [analysis.mantemQualidade ? "Para salario-maternidade, esta leitura confirma qualidade de segurada na data informada." : getMaternityContributionInstruction(analysis.prisonDate, analysis.todayDate)];
+    }
+
+    return ["Para auxilio-reclusao, a carencia de 24 contribuicoes mensais e exigida para prisoes a partir de 18/06/2019; antes disso, o relatorio dispensa carencia."];
+  }
+
   function renderPostPrisonCompetenceNote(analysis) {
     if (!analysis.competenciasDesconsideradasAposPrisao) return "";
+    const eventLabel = analysis.eventDateLabel || getBenefitEventDateLabel(analysis.benefitType);
 
     return `
       <p class="benefit-note">
-        Observacao: ${analysis.competenciasDesconsideradasAposPrisao} competencia(s) posterior(es) a data da prisao aparecem no historico, mas foram desconsideradas para a carencia do auxilio-reclusao.
+        Observacao: ${analysis.competenciasDesconsideradasAposPrisao} competencia(s) posterior(es) a ${escapeHTML(eventLabel.toLowerCase())} aparecem no historico, mas foram desconsideradas para analisar a situacao no evento.
       </p>
     `;
   }
@@ -3489,6 +3549,13 @@
   function buildReportBodyHTML(nome, cpf, prisonDate, todayDate, analysis) {
     const dateLabel = analysis.prisonDate ? formatDate(analysis.prisonDate) : "Nao informada";
     const eventLabel = analysis.eventDateLabel || getBenefitEventDateLabel(analysis.benefitType);
+    const benefitLabel = analysis.benefitType === "pensao_morte"
+      ? "pensao por morte"
+      : analysis.benefitType === "salario_maternidade"
+        ? "salario-maternidade"
+        : "auxilio-reclusao";
+    const requirementRows = getRequirementRows(analysis).map(item => `<li><b>${escapeHTML(item.label)}:</b> ${escapeHTML(item.text)}</li>`).join("");
+    const benefitNotes = getBenefitReportNotes(analysis).map(note => `<p class="benefit-note">${escapeHTML(note)}</p>`).join("");
     const qualidadeAte = analysis.qualidadeAte ? formatDate(analysis.qualidadeAte) : "Nao calculada";
     const lastContribution = analysis.lastContributionDate ? formatMonthYear(analysis.lastContributionDate) : "Nao localizada";
     const conclusionTone = analysis.direito ? "ok" : "fail";
@@ -3497,7 +3564,7 @@
       <section class="hero">
         <span class="badge ${analysis.direito ? "badge-ok" : "badge-fail"}">${analysis.direito ? "Direito indicado" : "Direito nao indicado"}</span>
         <h1>Relatorio de Previdencia Social</h1>
-        <p>Analise de carencia, qualidade de segurado e perdas entre vinculos para ${escapeHTML(eventLabel.toLowerCase())} em ${escapeHTML(dateLabel)}.</p>
+        <p>${escapeHTML(getReportLead(analysis, benefitLabel, eventLabel, dateLabel))}</p>
       </section>
 
       <section class="person">
@@ -3507,6 +3574,10 @@
         <div class="box"><span>Data de hoje</span><strong>${escapeHTML(formatISODate(todayDate) || formatDate(analysis.todayDate))}</strong></div>
       </section>
 
+      <h2>1. Requisitos analisados</h2>
+      <ul>${requirementRows}</ul>
+      ${benefitNotes}
+
       <section class="metrics">
         <div class="box"><span>Carencia</span><strong class="${analysis.carenciaOk ? "ok" : "fail"}">${escapeHTML(getCarenciaMetricValue(analysis))}</strong></div>
         <div class="box"><span>Qualidade</span><strong class="${analysis.mantemQualidade ? "ok" : "fail"}">${analysis.mantemQualidade ? "Mantida" : "Perdida"}</strong></div>
@@ -3514,11 +3585,11 @@
         <div class="box"><span>Periodo de graca</span><strong>${escapeHTML(qualidadeAte)}</strong></div>
       </section>
 
-      <h2>1. Historico de vinculos e contribuicoes</h2>
+      <h2>2. Historico de vinculos e contribuicoes</h2>
       <table>
         <thead><tr><th>Vinculo</th><th>Tipo</th><th>Periodo</th><th>Competencias</th></tr></thead>
         <tbody>
-        ${analysis.vinculos.map(v => `<tr><td>${escapeHTML(v.nome)}${isOpenVinculo(v) ? "<br><small>Vinculo em aberto; considerado ate a data da prisao para esta analise, sujeito a comprovacao documental.</small>" : ""}${isNonContributiveBenefitVinculo(v) ? "<br><small>Beneficio; nao conta como contribuicao.</small>" : ""}</td><td>${escapeHTML(v.tipo)}</td><td>${escapeHTML(v.inicio)} a ${escapeHTML(v.fim)}</td><td>${renderCompetenciasCount(v, analysis.prisonDate)}</td></tr>`).join("")}
+        ${analysis.vinculos.map(v => `<tr><td>${escapeHTML(v.nome)}${isOpenVinculo(v) ? "<br><small>Vinculo em aberto; considerado ate a data do evento para esta analise, sujeito a comprovacao documental.</small>" : ""}${isNonContributiveBenefitVinculo(v) ? "<br><small>Beneficio; nao conta como contribuicao.</small>" : ""}</td><td>${escapeHTML(v.tipo)}</td><td>${escapeHTML(v.inicio)} a ${escapeHTML(v.fim)}</td><td>${renderCompetenciasCount(v, analysis.prisonDate)}</td></tr>`).join("")}
         </tbody>
       </table>
       <p><b>Total geral reconhecido:</b> ${analysis.totalCompetencias} competencias.</p>
@@ -3527,19 +3598,19 @@
       ${renderIncapacityBenefitNote(analysis)}
       ${renderNonContributiveBenefitNote(analysis)}
 
-      <h2>2. Perda da qualidade de segurado</h2>
+      <h2>3. Perda da qualidade de segurado</h2>
       ${renderDocumentPerdas(analysis)}
 
-      <h2>3. Carencia apos a ultima perda</h2>
+      <h2>4. ${analysis.benefitType === "auxilio_reclusao" ? "Carencia apos a ultima perda" : "Carencia dispensada"}</h2>
       ${renderCarenciaStatus(analysis)}
       ${renderIncapacityBenefitCarenciaNote(analysis)}
       ${renderCarenciaLawNote(analysis)}
 
-      <h2>4. Condicao de segurado na prisao</h2>
+      <h2>5. Condicao de segurado no evento</h2>
       <p class="${analysis.mantemQualidade ? "ok" : "fail"}">Ultima contribuicao em ${escapeHTML(lastContribution)}. Periodo de graca ate ${escapeHTML(qualidadeAte)}${analysis.finalAutomaticGraceMonths ? " com prorrogacao automatica de 12 meses por mais de 120 contribuicoes." : "."}</p>
       ${renderRetroactiveValue(analysis)}
 
-      <h2>5. Conclusao</h2>
+      <h2>6. Conclusao</h2>
       <div class="conclusion ${conclusionTone}">${renderFinalConclusion(analysis, dateLabel)}</div>
     `;
   }
@@ -3931,7 +4002,7 @@
       return `${total}<small>fora da carencia</small>`;
     }
 
-    return `${total}<small>${recognized} ate a prisao</small>`;
+    return `${total}<small>${recognized} ate o evento</small>`;
   }
 
   function isIncapacityBenefitVinculo(vinculo) {
@@ -4177,6 +4248,16 @@
 
   function formatMonthYear(date) {
     return `${String(date.getMonth() + 1).padStart(2, "0")}/${date.getFullYear()}`;
+  }
+
+  function getMaternityContributionInstruction(eventDate, todayDate) {
+    if (!eventDate) return "Avaliar contribuicao para recuperar a qualidade de segurada.";
+    const baseToday = todayDate || getTodayDate();
+    if (eventDate > baseToday) {
+      return "Precisa fazer uma contribuicao antes do parto para recuperar a qualidade de segurada.";
+    }
+    const deadline = new Date(eventDate.getFullYear(), eventDate.getMonth() + 1, 15);
+    return `Precisa fazer uma contribuicao ate ${formatDate(deadline)}, 15o dia do mes subsequente ao nascimento.`;
   }
 
   function escapeHTML(value) {
