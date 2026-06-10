@@ -1443,9 +1443,11 @@
 
   function restoreFormState() {
     safeStorageGet({ [FORM_STATE_KEY]: {} }).then(result => {
-      const state = result[FORM_STATE_KEY] || {};
+      const savedState = result[FORM_STATE_KEY] || {};
+      const runnerState = window.__CNIS_RUNNER_FORM_DATA || {};
+      const state = { ...savedState, ...runnerState };
       if (state.mode) document.getElementById("automationMode").value = state.mode;
-      if (state.nome) document.getElementById("nomePessoa").value = state.nome;
+      if (state.nome !== undefined) document.getElementById("nomePessoa").value = state.nome || "";
       if (state.cpf) document.getElementById("cpfPessoa").value = state.cpf;
       if (state.prisonDate) document.getElementById("prisonDate").value = state.prisonDate;
       document.getElementById("todayDate").value = state.todayDate || formatISODateFromDate(new Date());
@@ -1454,6 +1456,7 @@
   }
 
   function applyRunnerFormData(data = {}) {
+    window.__CNIS_RUNNER_FORM_DATA = { ...data };
     createSidebar();
     window.__CNIS_RUNNER_SESSION_ID = data.sessionId || getRunnerSessionId();
     if (window.__CNIS_RUNNER_SESSION_ID) {
@@ -1462,8 +1465,8 @@
 
     const set = (id, value) => {
       const input = document.getElementById(id);
-      if (!input || !value) return;
-      input.value = value;
+      if (!input || value === undefined || value === null) return;
+      input.value = String(value);
       input.dispatchEvent(new Event("input", { bubbles: true }));
       input.dispatchEvent(new Event("change", { bubbles: true }));
     };
@@ -1475,6 +1478,8 @@
     setBenefitType(data.benefitType);
     saveFormState();
     window.setTimeout(() => setBenefitType(data.benefitType), 80);
+    window.setTimeout(() => setBenefitType(data.benefitType), 500);
+    window.setTimeout(() => setBenefitType(data.benefitType), 1400);
     keepSidebarOpen = true;
     maybeAutoAnalyze(data);
   }

@@ -205,7 +205,7 @@ async function createSession(payload) {
   const session = {
     id: crypto.randomUUID(),
     status: runningCount() >= MAX_RUNNING ? "queued" : "starting",
-    nome: payload.nome || "Nova consulta CNIS",
+    nome: payload.nome ?? "",
     cpf: payload.cpf || "",
     prisonDate: payload.prisonDate || "",
     todayDate: payload.todayDate || new Date().toISOString().slice(0, 10),

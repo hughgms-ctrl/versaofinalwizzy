@@ -247,7 +247,7 @@ export default function CnisPage() {
           id: crypto.randomUUID(),
           workspaceId: selectedWorkspaceId,
           status: "starting",
-          nome: `${benefitLabels[form.benefitType]} - ${input.cpf}`,
+          nome: "",
           cpf: input.cpf,
           prisonDate: input.prisonDate,
           todayDate: form.todayDate,
@@ -265,7 +265,7 @@ export default function CnisPage() {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
-            nome: session.nome,
+            nome: "",
             cpf: session.cpf,
             prisonDate: session.prisonDate,
             todayDate: session.todayDate,
@@ -681,7 +681,7 @@ export default function CnisPage() {
                       >
                         <button type="button" onClick={() => setSelectedId(session.id)} className="min-w-0 flex-1 text-left">
                           <div className="mb-2 flex items-center justify-between gap-2">
-                            <span className="truncate text-sm font-semibold">{session.nome}</span>
+                            <span className="truncate text-sm font-semibold">{getSessionTitle(session)}</span>
                             <div className="flex shrink-0 flex-col items-end gap-1">
                               <StatusBadge status={session.status} />
                               {session.analysis && <EligibilityBadge direito={session.analysis.direito} compact />}
@@ -800,7 +800,7 @@ function SessionDetail({
       <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-card px-4 py-3">
         <div>
           <div className="flex items-center gap-2">
-            <h2 className="text-lg font-semibold">{session.nome}</h2>
+            <h2 className="text-lg font-semibold">{getSessionTitle(session)}</h2>
             <StatusBadge status={session.status} />
             {summary && <EligibilityBadge direito={summary.direito} />}
           </div>
@@ -1228,7 +1228,7 @@ function mergeRunnerSessions(current: CnisSession[], runnerSessions: RunnerSessi
     };
 
     if (runner.result?.vinculos?.length) {
-      const nome = runner.result.nome || runner.nome || session.nome;
+      const nome = runner.result.nome || runner.nome || "";
       const cpf = runner.result.cpf || runner.cpf || session.cpf;
       const prisonDate = runner.result.prisonDate || runner.prisonDate || session.prisonDate;
       const todayDate = runner.result.todayDate || runner.todayDate || session.todayDate;
@@ -1267,7 +1267,7 @@ function mergeRunnerSessions(current: CnisSession[], runnerSessions: RunnerSessi
     .filter((runner) => !knownRunnerIds.has(runner.id) && (activeStatuses.includes(runner.status) || Boolean(runner.result?.vinculos?.length)))
     .map((runner) => {
       const result = runner.result || null;
-      const nome = result?.nome || runner.nome || "Consulta CNIS";
+      const nome = result?.nome || runner.nome || "";
       const cpf = result?.cpf || runner.cpf || "";
       const prisonDate = result?.prisonDate || runner.prisonDate || "";
       const todayDate = result?.todayDate || runner.todayDate || new Date().toISOString().slice(0, 10);
@@ -1375,7 +1375,7 @@ function reviveSession(session: CnisSession): CnisSession {
     vinculos,
     analysis,
     reportHtml: session.reportHtml || (analysis ? buildCnisReportHtml({
-      nome: session.nome,
+      nome: session.nome || "",
       cpf: session.cpf,
       prisonDate: session.prisonDate,
       todayDate: session.todayDate,
@@ -1386,4 +1386,10 @@ function reviveSession(session: CnisSession): CnisSession {
 
 function formatDateTime(value: string) {
   return new Date(value).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" });
+}
+
+function getSessionTitle(session: CnisSession) {
+  if (session.nome) return session.nome;
+  const benefitType = session.benefitType || "auxilio_reclusao";
+  return `${benefitLabels[benefitType]} - ${session.cpf || "Sem CPF"}`;
 }
