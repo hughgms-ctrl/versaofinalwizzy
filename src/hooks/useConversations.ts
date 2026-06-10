@@ -282,12 +282,26 @@ export function useCreateConversation() {
         contactId = newContact.id;
       }
 
-      // 3. Check for existing open/pending/closed conversation
+      const { data: activeInstance } = await supabase
+        .from('whatsapp_instances')
+        .select('id, phone_number')
+        .eq('organization_id', profile.organization_id)
+        .eq('status', 'connected')
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      // 3. Check for an existing conversation for this exact company number.
       let existingConvQuery = supabase
         .from('conversations')
         .select('*, contact:contacts(*)')
         .eq('contact_id', contactId)
         .in('status', ['open', 'pending', 'closed'] as any);
+
+      existingConvQuery = activeInstance?.id
+        ? existingConvQuery.eq('whatsapp_instance_id', activeInstance.id)
+        : existingConvQuery.is('whatsapp_instance_id', null);
 
       existingConvQuery = data.workspaceId
         ? existingConvQuery.eq('workspace_id', data.workspaceId)
@@ -308,16 +322,6 @@ export function useCreateConversation() {
           isNew: false
         };
       }
-
-      const { data: activeInstance } = await supabase
-        .from('whatsapp_instances')
-        .select('id, phone_number')
-        .eq('organization_id', profile.organization_id)
-        .eq('status', 'connected')
-        .eq('is_active', true)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
 
       // 4. Create new conversation
       const { data: newConv, error: convError } = await supabase

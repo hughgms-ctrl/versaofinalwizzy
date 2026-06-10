@@ -207,6 +207,7 @@ Deno.serve(async (req) => {
           .select("id")
           .eq("contact_id", contactId)
           .eq("organization_id", pack.organization_id)
+          .is("whatsapp_instance_id", null)
           .order("last_message_at", { ascending: false })
           .limit(1)
           .maybeSingle();

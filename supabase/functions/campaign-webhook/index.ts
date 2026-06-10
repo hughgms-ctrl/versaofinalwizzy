@@ -52,6 +52,39 @@ function extractPhone(item: AnyObj): string {
     return String(raw).replace(/\D/g, '');
 }
 
+async function resolveCampaignInstance(supabase: any, organizationId: string, workspaceId?: string | null) {
+    if (workspaceId) {
+        const { data: workspace } = await supabase
+            .from('workspaces')
+            .select('whatsapp_instance_id')
+            .eq('id', workspaceId)
+            .eq('organization_id', organizationId)
+            .maybeSingle();
+
+        if (workspace?.whatsapp_instance_id) {
+            const { data: instance } = await supabase
+                .from('whatsapp_instances')
+                .select('id, phone_number, logical_phone')
+                .eq('id', workspace.whatsapp_instance_id)
+                .eq('organization_id', organizationId)
+                .maybeSingle();
+            if (instance?.id) return instance;
+        }
+    }
+
+    const { data: instance } = await supabase
+        .from('whatsapp_instances')
+        .select('id, phone_number, logical_phone')
+        .eq('organization_id', organizationId)
+        .eq('status', 'connected')
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+    return instance || null;
+}
+
 Deno.serve(async (req) => {
     if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
@@ -101,6 +134,8 @@ Deno.serve(async (req) => {
                 headers: { ...corsHeaders, 'Content-Type': 'application/json' },
             });
         }
+
+        const campaignInstance = await resolveCampaignInstance(supabase, campaign.organization_id, campaign.workspace_id);
 
         // 3. Body: objeto único ou array -> normaliza para array
         let body: unknown;
@@ -197,11 +232,17 @@ Deno.serve(async (req) => {
 
             // Encontra ou cria a conversa
             let conversationId: string | null = null;
-            const { data: existingConv } = await supabase
+            let existingConversationQuery = supabase
                 .from('conversations')
                 .select('id')
                 .eq('organization_id', orgId)
-                .eq('contact_id', contactId)
+                .eq('contact_id', contactId);
+
+            existingConversationQuery = campaignInstance?.id
+                ? existingConversationQuery.eq('whatsapp_instance_id', campaignInstance.id)
+                : existingConversationQuery.is('whatsapp_instance_id', null);
+
+            const { data: existingConv } = await existingConversationQuery
                 .order('updated_at', { ascending: false })
                 .limit(1)
                 .maybeSingle();
@@ -217,6 +258,8 @@ Deno.serve(async (req) => {
                         contact_id: contactId,
                         status: 'open',
                         workspace_id: campaign.workspace_id || null,
+                        whatsapp_instance_id: campaignInstance?.id || null,
+                        source_phone: campaignInstance?.phone_number || campaignInstance?.logical_phone || null,
                         metadata: { source: 'campaign_webhook', campaign_id: campaign.id },
                     })
                     .select('id')

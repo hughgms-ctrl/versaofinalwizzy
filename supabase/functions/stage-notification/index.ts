@@ -149,12 +149,17 @@ async function ensureRecipientConversation(
 
   if (!contact?.id) return null;
 
-  let { data: conversation } = await supabase
+  let conversationQuery = supabase
     .from("conversations")
     .select("id")
     .eq("organization_id", organizationId)
-    .eq("contact_id", contact.id)
-    .maybeSingle();
+    .eq("contact_id", contact.id);
+
+  conversationQuery = instance?.id
+    ? conversationQuery.eq("whatsapp_instance_id", instance.id)
+    : conversationQuery.is("whatsapp_instance_id", null);
+
+  let { data: conversation } = await conversationQuery.maybeSingle();
 
   if (!conversation?.id) {
     const { data: insertedConversation, error: conversationError } = await supabase
@@ -177,12 +182,17 @@ async function ensureRecipientConversation(
       .maybeSingle();
 
     if (conversationError) {
-      const { data: existingConversation } = await supabase
+      let retryConversationQuery = supabase
         .from("conversations")
         .select("id")
         .eq("organization_id", organizationId)
-        .eq("contact_id", contact.id)
-        .maybeSingle();
+        .eq("contact_id", contact.id);
+
+      retryConversationQuery = instance?.id
+        ? retryConversationQuery.eq("whatsapp_instance_id", instance.id)
+        : retryConversationQuery.is("whatsapp_instance_id", null);
+
+      const { data: existingConversation } = await retryConversationQuery.maybeSingle();
       conversation = existingConversation;
     } else {
       conversation = insertedConversation;

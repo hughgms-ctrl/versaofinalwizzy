@@ -140,6 +140,7 @@ Deno.serve(async (req) => {
         .select('id')
         .eq('organization_id', widget.organization_id)
         .eq('contact_id', contactId)
+        .is('whatsapp_instance_id', null)
         .maybeSingle();
 
       if (existingConversation) {

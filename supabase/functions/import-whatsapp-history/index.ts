@@ -202,12 +202,17 @@ Deno.serve(async (req) => {
         }
 
         // Find or create conversation
-        let { data: existingConversation } = await supabase
+        let existingConversationQuery = supabase
           .from('conversations')
           .select('id')
           .eq('organization_id', organizationId)
-          .eq('contact_id', contactId)
-          .single();
+          .eq('contact_id', contactId);
+
+        existingConversationQuery = instance?.id
+          ? existingConversationQuery.eq('whatsapp_instance_id', instance.id)
+          : existingConversationQuery.is('whatsapp_instance_id', null);
+
+        const { data: existingConversation } = await existingConversationQuery.maybeSingle();
 
         let conversationId: string;
 

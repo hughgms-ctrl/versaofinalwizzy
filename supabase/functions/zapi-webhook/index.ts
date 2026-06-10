@@ -2865,15 +2865,21 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
   }
 
   async function findOrCreateConversation(supabase: any, contactId: string, organizationId: string, whatsappInstanceId: string, sourcePhone?: string, workspaceId?: string | null) {
-    // IMPORTANT: Find conversation by contact_id to avoid mixing messages
-    const { data: existing } = await supabase
+    // A same customer can talk to different company numbers. Conversation identity
+    // must include the receiving WhatsApp instance to avoid cross-company routing.
+    let existingQuery = supabase
       .from('conversations').select('*')
-      .eq('contact_id', contactId).eq('organization_id', organizationId)
+      .eq('contact_id', contactId).eq('organization_id', organizationId);
+
+    existingQuery = whatsappInstanceId
+      ? existingQuery.eq('whatsapp_instance_id', whatsappInstanceId)
+      : existingQuery.is('whatsapp_instance_id', null);
+
+    const { data: existing } = await existingQuery
       .order('created_at', { ascending: false }).limit(1).maybeSingle();
 
     if (existing) {
       const updates: any = {};
-      if (existing.whatsapp_instance_id !== whatsappInstanceId) updates.whatsapp_instance_id = whatsappInstanceId;
       if (workspaceId && !existing.workspace_id) updates.workspace_id = workspaceId;
       if (!existing.source_phone && sourcePhone) updates.source_phone = sourcePhone;
       if (Object.keys(updates).length > 0) {
@@ -2894,9 +2900,15 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
 
     if (error) {
       if (error.code === '23505') {
-        const { data: raceExisting } = await supabase
+        let raceQuery = supabase
           .from('conversations').select('*')
-          .eq('contact_id', contactId).eq('organization_id', organizationId).limit(1).maybeSingle();
+          .eq('contact_id', contactId).eq('organization_id', organizationId);
+
+        raceQuery = whatsappInstanceId
+          ? raceQuery.eq('whatsapp_instance_id', whatsappInstanceId)
+          : raceQuery.is('whatsapp_instance_id', null);
+
+        const { data: raceExisting } = await raceQuery.limit(1).maybeSingle();
         if (raceExisting) return raceExisting;
       }
       throw error;

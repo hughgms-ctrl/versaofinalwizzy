@@ -74,14 +74,30 @@ export function ContactListItem({ contact, onSelect }: ContactListItemProps) {
     try {
       if (!profile?.organization_id) throw new Error("Organização não encontrada");
 
+      const { data: activeInstance } = await supabase
+        .from('whatsapp_instances')
+        .select('id, phone_number')
+        .eq('organization_id', profile.organization_id)
+        .eq('status', 'connected')
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
       // 1. Check if an active conversation exists
       let conversationId = null;
-      const { data: existingConv } = await supabase
+      let existingConversationQuery = supabase
         .from('conversations')
         .select('id')
         .eq('contact_id', contact.id)
-        .in('status', ['open', 'pending'])
-        .maybeSingle();
+        .eq('organization_id', profile.organization_id)
+        .in('status', ['open', 'pending']);
+
+      existingConversationQuery = activeInstance?.id
+        ? existingConversationQuery.eq('whatsapp_instance_id', activeInstance.id)
+        : existingConversationQuery.is('whatsapp_instance_id', null);
+
+      const { data: existingConv } = await existingConversationQuery.maybeSingle();
 
       if (existingConv) {
         conversationId = existingConv.id;
@@ -92,6 +108,8 @@ export function ContactListItem({ contact, onSelect }: ContactListItemProps) {
           .insert({
             contact_id: contact.id,
             organization_id: profile.organization_id,
+            whatsapp_instance_id: activeInstance?.id || null,
+            source_phone: activeInstance?.phone_number || null,
             status: 'pending',
             service_mode: 'ia',
           })

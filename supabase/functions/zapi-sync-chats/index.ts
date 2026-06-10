@@ -178,11 +178,12 @@ async function processChatsBatch(
       const { data: existingConv } = await supabase
         .from('conversations').select('*')
         .eq('contact_id', contact.id).eq('organization_id', organizationId)
+        .eq('whatsapp_instance_id', whatsappInstanceId)
         .order('created_at', { ascending: true }).limit(1).maybeSingle();
 
       if (existingConv) {
         await supabase.from('conversations').update({
-          unread_count: unreadCount, last_message_at: lastMessageTime, whatsapp_instance_id: whatsappInstanceId,
+          unread_count: unreadCount, last_message_at: lastMessageTime,
         }).eq('id', existingConv.id);
       } else {
         const { error: convError } = await supabase.from('conversations').insert({

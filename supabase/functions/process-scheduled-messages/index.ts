@@ -1,5 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { sendWhatsAppMessage } from '../_shared/whatsappProvider.ts';
+import { resolveWhatsAppInstance, sendWhatsAppMessage } from '../_shared/whatsappProvider.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -30,6 +30,26 @@ interface Contact {
   id: string;
   phone: string;
   organization_id: string;
+}
+
+async function resolveScheduledInstance(supabase: any, scheduled: ScheduledMessage) {
+  let workspaceInstanceId: string | null = null;
+
+  if (scheduled.workspace_id) {
+    const { data: workspace } = await supabase
+      .from('workspaces')
+      .select('whatsapp_instance_id')
+      .eq('id', scheduled.workspace_id)
+      .eq('organization_id', scheduled.organization_id)
+      .maybeSingle();
+    workspaceInstanceId = workspace?.whatsapp_instance_id || null;
+  }
+
+  return await resolveWhatsAppInstance(
+    supabase,
+    scheduled.organization_id,
+    workspaceInstanceId,
+  );
 }
 
 Deno.serve(async (req) => {
@@ -226,6 +246,8 @@ async function sendMessageToContacts(
   let successCount = 0;
   let failCount = 0;
   let lastError: string | undefined;
+  const scheduledInstance = await resolveScheduledInstance(supabase, scheduled);
+  const scheduledInstanceId = scheduledInstance?.id || null;
 
   for (let i = 0; i < contacts.length; i++) {
     const contact = contacts[i];
@@ -236,12 +258,17 @@ async function sendMessageToContacts(
       }
 
       // Get or create conversation
-      let { data: conversation } = await supabase
+      let conversationQuery = supabase
         .from('conversations')
         .select('id, whatsapp_instance_id')
         .eq('contact_id', contact.id)
-        .eq('organization_id', contact.organization_id)
-        .maybeSingle();
+        .eq('organization_id', contact.organization_id);
+
+      conversationQuery = scheduledInstanceId
+        ? conversationQuery.eq('whatsapp_instance_id', scheduledInstanceId)
+        : conversationQuery.is('whatsapp_instance_id', null);
+
+      let { data: conversation } = await conversationQuery.maybeSingle();
 
       if (!conversation) {
         const { data: newConv } = await supabase
@@ -250,6 +277,8 @@ async function sendMessageToContacts(
             contact_id: contact.id,
             organization_id: contact.organization_id,
             workspace_id: scheduled.workspace_id || null,
+            whatsapp_instance_id: scheduledInstanceId,
+            source_phone: scheduledInstance?.phone_number || scheduledInstance?.logical_phone || null,
             status: 'open'
           })
           .select('id, whatsapp_instance_id')
@@ -282,7 +311,7 @@ async function sendMessageToContacts(
         type: sendType,
         mediaUrl: scheduled.media_url,
         caption: scheduled.message_content,
-        conversationInstanceId: conversation.whatsapp_instance_id,
+        conversationInstanceId: conversation.whatsapp_instance_id || scheduledInstanceId,
       });
 
       console.log(`[scheduled ${scheduled.id}] ${sendResult.provider} -> ${phone}: ${sendResult.status}`);
@@ -350,15 +379,23 @@ async function executeFlowForContacts(
   let successCount = 0;
   let failCount = 0;
   let lastError: string | undefined;
+  const scheduledInstance = await resolveScheduledInstance(supabase, scheduled);
+  const scheduledInstanceId = scheduledInstance?.id || null;
 
   for (const contact of contacts) {
     try {
       // Get or create conversation
-      let { data: conversation } = await supabase
+      let conversationQuery = supabase
         .from('conversations')
         .select('id')
         .eq('contact_id', contact.id)
-        .maybeSingle();
+        .eq('organization_id', contact.organization_id);
+
+      conversationQuery = scheduledInstanceId
+        ? conversationQuery.eq('whatsapp_instance_id', scheduledInstanceId)
+        : conversationQuery.is('whatsapp_instance_id', null);
+
+      let { data: conversation } = await conversationQuery.maybeSingle();
 
       if (!conversation) {
         const { data: newConv } = await supabase
@@ -366,6 +403,9 @@ async function executeFlowForContacts(
           .insert({
             contact_id: contact.id,
             organization_id: contact.organization_id,
+            workspace_id: scheduled.workspace_id || null,
+            whatsapp_instance_id: scheduledInstanceId,
+            source_phone: scheduledInstance?.phone_number || scheduledInstance?.logical_phone || null,
             status: 'open'
           })
           .select('id')
