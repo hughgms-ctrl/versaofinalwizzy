@@ -1,54 +1,64 @@
 -- Keep Wizzy Flow tasks attached to their workspace and make common Flow/Sign
 -- list queries cheaper after the organization/workspace access migration.
 
-UPDATE public.tasks t
-SET workspace_id = p.workspace_id
-FROM public.projects p
-WHERE t.project_id = p.id
-  AND t.workspace_id IS NULL
-  AND p.workspace_id IS NOT NULL;
+DO $$
+BEGIN
+  IF to_regclass('public.tasks') IS NOT NULL AND to_regclass('public.projects') IS NOT NULL THEN
+    UPDATE public.tasks t
+    SET workspace_id = p.workspace_id
+    FROM public.projects p
+    WHERE t.project_id = p.id
+      AND t.workspace_id IS NULL
+      AND p.workspace_id IS NOT NULL;
+  END IF;
 
-DROP POLICY IF EXISTS "Wizzy Flow workspace task processes access" ON public.task_processes;
+  IF to_regclass('public.task_processes') IS NOT NULL
+    AND to_regclass('public.tasks') IS NOT NULL
+    AND to_regclass('public.projects') IS NOT NULL
+  THEN
+    DROP POLICY IF EXISTS "Wizzy Flow workspace task processes access" ON public.task_processes;
 
-CREATE POLICY "Wizzy Flow workspace task processes access"
-  ON public.task_processes
-  FOR ALL
-  USING (
-    EXISTS (
-      SELECT 1
-      FROM public.tasks t
-      LEFT JOIN public.projects p ON p.id = t.project_id
-      WHERE t.id = task_processes.task_id
-        AND (
-          (
-            t.workspace_id IS NOT NULL
-            AND public.user_has_workspace_access(auth.uid(), t.workspace_id)
-          )
-          OR (
-            p.workspace_id IS NOT NULL
-            AND public.user_has_workspace_access(auth.uid(), p.workspace_id)
-          )
+    CREATE POLICY "Wizzy Flow workspace task processes access"
+      ON public.task_processes
+      FOR ALL
+      USING (
+        EXISTS (
+          SELECT 1
+          FROM public.tasks t
+          LEFT JOIN public.projects p ON p.id = t.project_id
+          WHERE t.id = task_processes.task_id
+            AND (
+              (
+                t.workspace_id IS NOT NULL
+                AND public.user_has_workspace_access(auth.uid(), t.workspace_id)
+              )
+              OR (
+                p.workspace_id IS NOT NULL
+                AND public.user_has_workspace_access(auth.uid(), p.workspace_id)
+              )
+            )
         )
-    )
-  )
-  WITH CHECK (
-    EXISTS (
-      SELECT 1
-      FROM public.tasks t
-      LEFT JOIN public.projects p ON p.id = t.project_id
-      WHERE t.id = task_processes.task_id
-        AND (
-          (
-            t.workspace_id IS NOT NULL
-            AND public.user_has_workspace_access(auth.uid(), t.workspace_id)
-          )
-          OR (
-            p.workspace_id IS NOT NULL
-            AND public.user_has_workspace_access(auth.uid(), p.workspace_id)
-          )
+      )
+      WITH CHECK (
+        EXISTS (
+          SELECT 1
+          FROM public.tasks t
+          LEFT JOIN public.projects p ON p.id = t.project_id
+          WHERE t.id = task_processes.task_id
+            AND (
+              (
+                t.workspace_id IS NOT NULL
+                AND public.user_has_workspace_access(auth.uid(), t.workspace_id)
+              )
+              OR (
+                p.workspace_id IS NOT NULL
+                AND public.user_has_workspace_access(auth.uid(), p.workspace_id)
+              )
+            )
         )
-    )
-  );
+      );
+  END IF;
+END $$;
 
 DO $$
 BEGIN
