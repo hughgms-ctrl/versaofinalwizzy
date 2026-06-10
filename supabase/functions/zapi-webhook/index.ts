@@ -567,7 +567,7 @@ function receiptPatchFromStatus(statusValue: any) {
   return patch;
 }
 
-async function updateMessageReceiptByProviderId(supabase: any, msgId: any, statusValue: any) {
+async function updateMessageReceiptByProviderId(supabase: any, msgId: any, statusValue: any, conversationId?: string | null) {
   const rawId = String(msgId || '').trim();
   const normalizedId = normalizeProviderMessageId(msgId);
   if (!normalizedId) return false;
@@ -583,18 +583,21 @@ async function updateMessageReceiptByProviderId(supabase: any, msgId: any, statu
   ].filter(Boolean)));
 
   if (updateData.metadata) {
-    const { data: existing } = await supabase
+    let existingQuery = supabase
       .from('messages')
       .select('metadata')
-      .in('zapi_message_id', idCandidates)
-      .maybeSingle();
+      .in('zapi_message_id', idCandidates);
+    if (conversationId) existingQuery = existingQuery.eq('conversation_id', conversationId);
+    const { data: existing } = await existingQuery.maybeSingle();
     updateData.metadata = { ...(existing?.metadata || {}), ...updateData.metadata };
   }
 
-  const { error } = await supabase
+  let updateQuery = supabase
     .from('messages')
     .update(updateData)
     .in('zapi_message_id', idCandidates);
+  if (conversationId) updateQuery = updateQuery.eq('conversation_id', conversationId);
+  const { error } = await updateQuery;
 
   if (error) {
     console.error('[RECEIPT] Failed to update message receipt:', error);
@@ -1820,7 +1823,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
     organizationId,
     whatsappInstance.id,
     whatsappInstance.phone_number,
-    contact.workspace_id || fallbackWorkspaceId,
+    fallbackWorkspaceId || contact.workspace_id,
   );
 
   if (!fromMe) {
@@ -1837,6 +1840,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
   if (msgId) {
     const { data: existing } = await supabase
       .from('messages').select('*')
+      .eq('conversation_id', conversation.id)
       .eq('zapi_message_id', msgId).maybeSingle();
 
     if (existing) {
@@ -1847,6 +1851,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
         supabase,
         msgId,
         evolutionData.status || evolutionData.message?.status || msg.ack || payload.ack || payload.status,
+        conversation.id,
       );
       if (fromMe) {
         // If it's an eco and we already have it, it's definitely the one we sent.
@@ -1875,6 +1880,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
       if (msgId) {
         const { data: nowExists } = await supabase
           .from('messages').select('id')
+          .eq('conversation_id', conversation.id)
           .eq('zapi_message_id', msgId).maybeSingle();
         if (nowExists) {
           console.log(`[WEBHOOK] IA mode echo dedup (after wait): msgId=${msgId} already saved by orchestrator.`);
@@ -1882,6 +1888,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
             supabase,
             msgId,
             evolutionData.status || evolutionData.message?.status || msg.ack || payload.ack || payload.status,
+            conversation.id,
           );
           return respond({ success: true, duplicate: true, ia_echo: true });
         }
@@ -1898,6 +1905,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
         const { data: existingSentByHuman } = await supabase
           .from('messages')
           .select('id, sent_by')
+          .eq('conversation_id', conversation.id)
           .eq('zapi_message_id', msgId)
           .not('sent_by', 'is', null)
           .maybeSingle();
@@ -1907,6 +1915,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
             supabase,
             msgId,
             evolutionData.status || evolutionData.message?.status || msg.ack || payload.ack || payload.status,
+            conversation.id,
           );
           return respond({ success: true, duplicate: true, human_sent: true });
         }
@@ -2778,16 +2787,19 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
     if (!duplicateContacts.length) return;
 
     try {
-      const { data: keeperConversation } = await supabase
+      const scopeKey = (conversation: any) => conversation.whatsapp_instance_id || 'no_instance';
+      const { data: keeperConversations } = await supabase
         .from('conversations')
         .select('*')
         .eq('organization_id', organizationId)
         .eq('contact_id', keeperContact.id)
-        .order('last_message_at', { ascending: false, nullsFirst: false })
-        .limit(1)
-        .maybeSingle();
+        .order('last_message_at', { ascending: false, nullsFirst: false });
 
-      let targetConversation = keeperConversation;
+      const keeperByScope = new Map<string, any>();
+      for (const conversation of keeperConversations || []) {
+        const key = scopeKey(conversation);
+        if (!keeperByScope.has(key)) keeperByScope.set(key, conversation);
+      }
 
       for (const duplicateContact of duplicateContacts) {
         const { data: duplicateConversations } = await supabase
@@ -2798,6 +2810,9 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
           .order('last_message_at', { ascending: false, nullsFirst: false });
 
         for (const duplicateConversation of duplicateConversations || []) {
+          const key = scopeKey(duplicateConversation);
+          let targetConversation = keeperByScope.get(key);
+
           if (!targetConversation) {
             const { data: movedConversation, error: moveError } = await supabase
               .from('conversations')
@@ -2811,7 +2826,7 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
               .eq('id', duplicateConversation.id)
               .select()
               .maybeSingle();
-            if (!moveError && movedConversation) targetConversation = movedConversation;
+            if (!moveError && movedConversation) keeperByScope.set(key, movedConversation);
             continue;
           }
 

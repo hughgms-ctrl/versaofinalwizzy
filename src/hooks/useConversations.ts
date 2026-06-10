@@ -104,7 +104,7 @@ export function useConversations(options?: { includeArchived?: boolean; onlyArch
       }
 
       if (selectedWorkspaceId) {
-        query = query.or(`workspace_id.eq.${selectedWorkspaceId},workspace_id.is.null`);
+        query = query.eq('workspace_id', selectedWorkspaceId);
       }
 
       const { data, error } = await query;

@@ -523,6 +523,7 @@ Deno.serve(async (req) => {
           const { data: existing } = await supabase
             .from('messages')
             .select('id')
+            .eq('conversation_id', conversationId)
             .eq('zapi_message_id', zapiMsgId)
             .maybeSingle();
           if (existing) {
@@ -684,6 +685,7 @@ Deno.serve(async (req) => {
         const { data: existing } = await supabase
           .from('messages')
           .select('id')
+          .eq('conversation_id', conversationId)
           .eq('zapi_message_id', zapiMsgId)
           .maybeSingle();
         if (existing) {

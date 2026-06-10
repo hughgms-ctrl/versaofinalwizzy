@@ -181,7 +181,10 @@ Deno.serve(async (req) => {
       if (!msgId) { skippedCount++; continue; }
 
       const { data: existingMsg } = await supabase
-        .from('messages').select('id').eq('zapi_message_id', msgId).maybeSingle();
+        .from('messages').select('id')
+        .eq('conversation_id', conversationId)
+        .eq('zapi_message_id', msgId)
+        .maybeSingle();
       if (existingMsg) { skippedCount++; continue; }
 
       const { type: messageType, content, mediaUrl } = extractMessageContent(msg);

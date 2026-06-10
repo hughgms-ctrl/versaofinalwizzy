@@ -269,7 +269,7 @@ Deno.serve(async (req) => {
           const { error: insertError, data: inserted } = await supabase
             .from('messages')
             .upsert(messagesToInsert, {
-              onConflict: 'zapi_message_id',
+              onConflict: 'conversation_id,zapi_message_id',
               ignoreDuplicates: true
             })
             .select('id');
