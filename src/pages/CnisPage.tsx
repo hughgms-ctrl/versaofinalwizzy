@@ -136,12 +136,15 @@ export default function CnisPage() {
   const [selectedId, setSelectedId] = useState<string | null>(() => loadSessions()[0]?.id || null);
   const [form, setForm] = useState(emptyForm);
   const [runnerInstallMessage, setRunnerInstallMessage] = useState<string | null>(null);
+  const [runnerCheckLabel, setRunnerCheckLabel] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
   const visibleSessions = useMemo(
     () => selectedWorkspaceId ? sessions.filter((session) => !session.workspaceId || session.workspaceId === selectedWorkspaceId) : sessions,
     [selectedWorkspaceId, sessions],
   );
   const selected = visibleSessions.find((session) => session.id === selectedId) || null;
+  const runnerChecking = Boolean(runnerCheckLabel);
+  const runnerDownloadLabel = getRunnerDownloadLabel();
   const metrics = useMemo(() => {
     const active = visibleSessions.filter((session) => ["queued", "starting", "running", "waiting_user"].includes(session.status)).length;
     const completed = visibleSessions.filter((session) => session.status === "completed").length;
@@ -153,6 +156,16 @@ export default function CnisPage() {
   const persistSessions = (next: CnisSession[]) => {
     setSessions(next);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  };
+
+  const checkRunnerAvailable = async (action: "certificate-login" | "open-runner", label: string) => {
+    setRunnerInstallMessage(null);
+    setRunnerCheckLabel(label);
+    try {
+      await ensureRunnerAvailable(action);
+    } finally {
+      setRunnerCheckLabel(null);
+    }
   };
 
   useEffect(() => {
@@ -208,6 +221,8 @@ export default function CnisPage() {
   }, [localRunnerEnabled, selectedWorkspaceId, selectedId]);
 
   const createRunnerSession = async () => {
+    if (runnerChecking) return;
+
     if (!localRunnerEnabled) {
       toast({
         title: "Runner CNIS desativado",
@@ -236,8 +251,7 @@ export default function CnisPage() {
     }
 
     try {
-      await ensureRunnerAvailable("open-runner");
-      setRunnerInstallMessage(null);
+      await checkRunnerAvailable("open-runner", "Verificando se o runner local esta ativo para iniciar a consulta.");
     } catch (error) {
       setRunnerInstallMessage(getRunnerInstallMessage());
       toast({
@@ -385,6 +399,8 @@ export default function CnisPage() {
   };
 
   const openRunnerForSession = async (id: string) => {
+    if (runnerChecking) return;
+
     if (!localRunnerEnabled) {
       toast({
         title: "Runner CNIS desativado",
@@ -398,8 +414,7 @@ export default function CnisPage() {
     if (!target) return;
 
     try {
-      await ensureRunnerAvailable("open-runner");
-      setRunnerInstallMessage(null);
+      await checkRunnerAvailable("open-runner", "Verificando se o runner local esta ativo para abrir a janela.");
       if (target.runnerSessionId) {
         const response = await fetch(`${RUNNER_BASE_URL}/sessions/${target.runnerSessionId}/show`, { method: "POST" });
         const payload = await response.json();
@@ -475,6 +490,8 @@ export default function CnisPage() {
   };
 
   const openCertificateLogin = async () => {
+    if (runnerChecking) return;
+
     if (!localRunnerEnabled) {
       toast({
         title: "Runner CNIS desativado",
@@ -485,8 +502,7 @@ export default function CnisPage() {
     }
 
     try {
-      await ensureRunnerAvailable("certificate-login");
-      setRunnerInstallMessage(null);
+      await checkRunnerAvailable("certificate-login", "Verificando se o runner local esta ativo para abrir o login.");
       const response = await fetch(`${RUNNER_BASE_URL}/auth/certificate-login`, { method: "POST" });
       const payload = await response.json();
       if (!response.ok || !payload?.ok) throw new Error(payload?.error || "Nao consegui abrir o Chromium para login.");
@@ -549,14 +565,14 @@ export default function CnisPage() {
   const downloadRunnerPackage = () => {
     const installer = openRunnerInstaller();
     if (installer.opened) {
-      setRunnerInstallMessage(`Download iniciado para ${installer.platformLabel}. Depois de baixar, extraia o ZIP e execute install-protocol.cmd uma vez.`);
+      setRunnerInstallMessage(getRunnerDownloadedMessage(installer.platform));
       return;
     }
 
-    setRunnerInstallMessage("Nao ha pacote automatico configurado para este sistema. No momento o pacote pronto esta disponivel para Windows.");
+    setRunnerInstallMessage(getRunnerUnavailableMessage(installer.platform));
     toast({
       title: "Pacote indisponivel",
-      description: "No momento o download automatico do runner esta configurado apenas para Windows.",
+      description: getRunnerUnavailableMessage(installer.platform),
       variant: "destructive",
     });
   };
@@ -614,15 +630,15 @@ export default function CnisPage() {
                 <Badge variant="outline" className="hidden border-emerald-200 bg-emerald-50 text-emerald-700 lg:inline-flex">
                   Runner local
                 </Badge>
-                <Button variant="outline" size="sm" onClick={openCertificateLogin} className="gap-2">
-                  <Bot className="h-4 w-4" />
-                  Login certificado
+                <Button variant="outline" size="sm" onClick={openCertificateLogin} disabled={runnerChecking} className="gap-2">
+                  {runnerChecking ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bot className="h-4 w-4" />}
+                  {runnerChecking ? "Verificando runner" : "Login certificado"}
                 </Button>
                 <Button variant="outline" size="sm" onClick={finishCertificateLogin} className="gap-2">
                   <CheckCircle2 className="h-4 w-4" />
                   Concluir login
                 </Button>
-                <Button variant="outline" size="sm" onClick={createRunnerSession} className="gap-2">
+                <Button variant="outline" size="sm" onClick={createRunnerSession} disabled={runnerChecking} className="gap-2">
                   <Bot className="h-4 w-4" />
                   Nova consulta
                 </Button>
@@ -639,6 +655,15 @@ export default function CnisPage() {
               <MetricCard label="Qualificadas" value={metrics.qualified} />
               <MetricCard label="Com erro" value={metrics.failed} />
             </div>
+            {runnerCheckLabel && (
+              <div className="mt-3 flex items-start gap-3 rounded-md border border-cyan-200 bg-cyan-50 p-3 text-sm text-cyan-950">
+                <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin" />
+                <div>
+                  <p className="font-semibold">Lendo runner local</p>
+                  <p className="mt-1 text-xs">{runnerCheckLabel}</p>
+                </div>
+              </div>
+            )}
             {runnerInstallMessage && (
               <div className="mt-3 flex flex-col gap-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 sm:flex-row sm:items-center sm:justify-between">
                 <div>
@@ -647,7 +672,7 @@ export default function CnisPage() {
                 </div>
                 <Button type="button" variant="outline" size="sm" onClick={downloadRunnerPackage} className="shrink-0 gap-2 bg-white">
                   <Download className="h-4 w-4" />
-                  Baixar runner Windows
+                  {runnerDownloadLabel}
                 </Button>
               </div>
             )}
@@ -698,9 +723,9 @@ export default function CnisPage() {
                     <div className="grid gap-2">
                       {localRunnerEnabled && (
                         <>
-                          <Button onClick={createRunnerSession} className="gap-2">
-                            <Bot className="h-4 w-4" />
-                            Iniciar consulta(s)
+                          <Button onClick={createRunnerSession} disabled={runnerChecking} className="gap-2">
+                            {runnerChecking ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bot className="h-4 w-4" />}
+                            {runnerChecking ? "Verificando runner" : "Iniciar consulta(s)"}
                           </Button>
                           {runnerInstallMessage && (
                             <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950">
@@ -708,7 +733,7 @@ export default function CnisPage() {
                               <p className="mt-1">{runnerInstallMessage}</p>
                               <Button type="button" variant="outline" size="sm" onClick={downloadRunnerPackage} className="mt-3 w-full gap-2 bg-white">
                                 <Download className="h-4 w-4" />
-                                Baixar runner Windows
+                                {runnerDownloadLabel}
                               </Button>
                             </div>
                           )}
@@ -765,6 +790,7 @@ export default function CnisPage() {
                 <SessionDetail
                   session={selected}
                   localRunnerEnabled={localRunnerEnabled}
+                  runnerChecking={runnerChecking}
                   onDownload={() => openReport(selected)}
                   onCancel={() => cancelSession(selected.id)}
                   onOpenRunner={() => openRunnerForSession(selected.id)}
@@ -858,12 +884,14 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 function SessionDetail({
   session,
   localRunnerEnabled,
+  runnerChecking,
   onDownload,
   onCancel,
   onOpenRunner,
 }: {
   session: CnisSession;
   localRunnerEnabled: boolean;
+  runnerChecking: boolean;
   onDownload: () => void;
   onCancel: () => void | Promise<void>;
   onOpenRunner: () => void | Promise<void>;
@@ -883,9 +911,9 @@ function SessionDetail({
         </div>
         <div className="flex gap-2">
           {localRunnerEnabled && session.source === "runner" && (
-            <Button variant="outline" size="sm" onClick={onOpenRunner} className="gap-2">
-              <Bot className="h-4 w-4" />
-              Abrir runner
+            <Button variant="outline" size="sm" onClick={onOpenRunner} disabled={runnerChecking} className="gap-2">
+              {runnerChecking ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bot className="h-4 w-4" />}
+              {runnerChecking ? "Verificando runner" : "Abrir runner"}
             </Button>
           )}
           {session.reportHtml && (
@@ -1215,7 +1243,7 @@ function openRunnerInstaller() {
   const url = getRunnerInstallerUrl(platform);
 
   if (typeof window === "undefined" || !url) {
-    return { opened: false, platformLabel: getPlatformLabel(platform) };
+    return { opened: false, platform };
   }
 
   const anchor = document.createElement("a");
@@ -1227,7 +1255,7 @@ function openRunnerInstaller() {
   anchor.click();
   anchor.remove();
 
-  return { opened: true, platformLabel: getPlatformLabel(platform) };
+  return { opened: true, platform };
 }
 
 function getRunnerInstallerUrl(platform = detectClientPlatform()) {
@@ -1242,10 +1270,10 @@ function getRunnerInstallMessage() {
   const platform = detectClientPlatform();
   const url = getRunnerInstallerUrl(platform);
   if (!url) {
-    return "O Wizzy CNIS Runner ainda nao esta ativo neste computador. No momento o pacote automatico esta disponivel para Windows.";
+    return getRunnerUnavailableMessage(platform);
   }
 
-  return "O Wizzy CNIS Runner ainda nao esta ativo neste computador. Clique em Baixar runner Windows, extraia o ZIP e execute install-protocol.cmd uma vez. Depois volte aqui e clique em Login certificado novamente.";
+  return `O Wizzy CNIS Runner ainda nao esta ativo neste computador. Clique em ${getRunnerDownloadLabel(platform)} e conclua a instalacao uma vez. Depois volte aqui e clique em Login certificado novamente.`;
 }
 
 function detectClientPlatform(): "windows" | "macos" | "other" {
@@ -1263,6 +1291,32 @@ function getPlatformLabel(platform: "windows" | "macos" | "other") {
   if (platform === "windows") return "Windows";
   if (platform === "macos") return "Mac";
   return "este sistema";
+}
+
+function getRunnerDownloadLabel(platform = detectClientPlatform()) {
+  if (platform === "windows") return "Baixar runner Windows";
+  if (platform === "macos") return "Baixar runner Mac";
+  return "Baixar runner";
+}
+
+function getRunnerDownloadedMessage(platform: "windows" | "macos" | "other") {
+  if (platform === "windows") {
+    return "Download iniciado para Windows. Depois de baixar, extraia o ZIP e execute install-protocol.cmd uma vez.";
+  }
+  if (platform === "macos") {
+    return "Download iniciado para Mac. Depois de baixar, abra o pacote do runner e conclua a instalacao uma vez.";
+  }
+  return "Download iniciado. Depois de baixar, conclua a instalacao do runner uma vez.";
+}
+
+function getRunnerUnavailableMessage(platform: "windows" | "macos" | "other") {
+  if (platform === "macos") {
+    return "O Wizzy CNIS Runner para Mac ainda nao esta configurado para download automatico. Baixe a versao Mac quando ela estiver publicada.";
+  }
+  if (platform === "windows") {
+    return "O Wizzy CNIS Runner para Windows ainda nao esta configurado para download automatico.";
+  }
+  return "Nao ha pacote automatico do Wizzy CNIS Runner configurado para este sistema.";
 }
 
 function sleep(ms: number) {
