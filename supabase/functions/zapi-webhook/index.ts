@@ -2141,11 +2141,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
         if (campaignFull?.workspace_id) {
           console.log(`[CAMPAIGN] Assigning workspace ${campaignFull.workspace_id} from campaign`);
           await supabase.from('contacts').update({ workspace_id: campaignFull.workspace_id }).eq('id', contact.id);
-          const campaignWorkspaceIds = Array.from(new Set([...(conversation.workspace_ids || []), campaignFull.workspace_id].filter(Boolean)));
-          await supabase.from('conversations').update({
-            workspace_id: campaignFull.workspace_id,
-            workspace_ids: campaignWorkspaceIds,
-          }).eq('id', conversation.id);
+          await supabase.from('conversations').update({ workspace_id: campaignFull.workspace_id }).eq('id', conversation.id);
         }
 
         // Increment campaign counter
@@ -2901,18 +2897,10 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
 
     if (existing) {
       const updates: any = {};
-      const configuredWorkspaceIds = Array.from(new Set(workspaceIds.filter(Boolean)));
-
       // Do not move an existing conversation just because the same WhatsApp
       // number was later linked to other workspaces. Only fill an empty
       // workspace when routing is unambiguous.
       if (workspaceId && !existing.workspace_id) updates.workspace_id = workspaceId;
-      if (configuredWorkspaceIds.length === 1) {
-        const existingWorkspaceIds = Array.isArray(existing.workspace_ids) ? existing.workspace_ids : [];
-        if (existingWorkspaceIds.length === 0) {
-          updates.workspace_ids = configuredWorkspaceIds;
-        }
-      }
 
       if (!existing.source_phone && sourcePhone) updates.source_phone = sourcePhone;
       if (Object.keys(updates).length > 0) {
@@ -2927,7 +2915,6 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
         contact_id: contactId, organization_id: organizationId,
         whatsapp_instance_id: whatsappInstanceId, source_phone: sourcePhone || null,
         workspace_id: workspaceId || null,
-        workspace_ids: Array.from(new Set(workspaceIds.filter(Boolean))),
         status: 'open', unread_count: 0,
       })
       .select().single();

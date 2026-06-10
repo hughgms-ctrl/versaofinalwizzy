@@ -314,10 +314,9 @@ export function useCreateConversation() {
         if (data.workspaceId && !(existingConv as any).workspace_id) {
           await supabase
             .from('conversations')
-            .update({ workspace_id: data.workspaceId, workspace_ids: [data.workspaceId] } as any)
+            .update({ workspace_id: data.workspaceId } as any)
             .eq('id', existingConv.id);
           (existingConv as any).workspace_id = data.workspaceId;
-          (existingConv as any).workspace_ids = [data.workspaceId];
         }
         return {
           conversation: { ...existingConv, last_message: [] } as unknown as DbConversation,
@@ -335,7 +334,6 @@ export function useCreateConversation() {
           service_mode: 'ativo', // Outbound feature starts as "ativo" generally
           unread_count: 0,
           workspace_id: data.workspaceId || null,
-          workspace_ids: data.workspaceId ? [data.workspaceId] : [],
           whatsapp_instance_id: activeInstance?.id || null,
           source_phone: activeInstance?.phone_number || null,
         } as any)
