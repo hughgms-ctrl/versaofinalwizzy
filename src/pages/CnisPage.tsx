@@ -121,6 +121,7 @@ export default function CnisPage() {
   const [sessions, setSessions] = useState<CnisSession[]>(() => loadSessions());
   const [selectedId, setSelectedId] = useState<string | null>(() => loadSessions()[0]?.id || null);
   const [form, setForm] = useState(emptyForm);
+  const [runnerInstallMessage, setRunnerInstallMessage] = useState<string | null>(null);
   const visibleSessions = useMemo(
     () => selectedWorkspaceId ? sessions.filter((session) => !session.workspaceId || session.workspaceId === selectedWorkspaceId) : sessions,
     [selectedWorkspaceId, sessions],
@@ -221,7 +222,9 @@ export default function CnisPage() {
 
     try {
       await ensureRunnerAvailable("open-runner");
+      setRunnerInstallMessage(null);
     } catch (error) {
+      setRunnerInstallMessage(getRunnerInstallMessage());
       toast({
         title: "Runner local nao respondeu",
         description: error instanceof Error ? error.message : String(error),
@@ -381,6 +384,7 @@ export default function CnisPage() {
 
     try {
       await ensureRunnerAvailable("open-runner");
+      setRunnerInstallMessage(null);
       if (target.runnerSessionId) {
         const response = await fetch(`${RUNNER_BASE_URL}/sessions/${target.runnerSessionId}/show`, { method: "POST" });
         const payload = await response.json();
@@ -442,6 +446,7 @@ export default function CnisPage() {
       persistSessions(next);
       toast({ title: "Runner conectado", description: "A janela controlada sera aberta para esta consulta." });
     } catch (error) {
+      setRunnerInstallMessage(getRunnerInstallMessage());
       const next = sessions.map((session) => session.id === id ? {
         ...session,
         status: "waiting_user" as const,
@@ -466,6 +471,7 @@ export default function CnisPage() {
 
     try {
       await ensureRunnerAvailable("certificate-login");
+      setRunnerInstallMessage(null);
       const response = await fetch(`${RUNNER_BASE_URL}/auth/certificate-login`, { method: "POST" });
       const payload = await response.json();
       if (!response.ok || !payload?.ok) throw new Error(payload?.error || "Nao consegui abrir o Chromium para login.");
@@ -478,6 +484,7 @@ export default function CnisPage() {
       persistSessions(next);
       toast({ title: "Chromium visivel aberto", description: "Selecione o certificado digital e conclua o login no GERID." });
     } catch (error) {
+      setRunnerInstallMessage(getRunnerInstallMessage());
       toast({
         title: "Nao consegui abrir o login",
         description: error instanceof Error ? error.message : String(error),
@@ -523,6 +530,21 @@ export default function CnisPage() {
     const next = selectedWorkspaceId ? sessions.filter((session) => session.workspaceId && session.workspaceId !== selectedWorkspaceId) : [];
     persistSessions(next);
     setSelectedId(null);
+  };
+
+  const downloadRunnerPackage = () => {
+    const installer = openRunnerInstaller();
+    if (installer.opened) {
+      setRunnerInstallMessage(`Download iniciado para ${installer.platformLabel}. Depois de baixar, extraia o ZIP e execute install-protocol.cmd uma vez.`);
+      return;
+    }
+
+    setRunnerInstallMessage("Nao ha pacote automatico configurado para este sistema. No momento o pacote pronto esta disponivel para Windows.");
+    toast({
+      title: "Pacote indisponivel",
+      description: "No momento o download automatico do runner esta configurado apenas para Windows.",
+      variant: "destructive",
+    });
   };
 
   const deleteSession = async (id: string) => {
@@ -589,6 +611,18 @@ export default function CnisPage() {
               <MetricCard label="Qualificadas" value={metrics.qualified} />
               <MetricCard label="Com erro" value={metrics.failed} />
             </div>
+            {runnerInstallMessage && (
+              <div className="mt-3 flex flex-col gap-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="font-semibold">Runner local nao instalado ou bloqueado</p>
+                  <p className="mt-1 text-xs">{runnerInstallMessage}</p>
+                </div>
+                <Button type="button" variant="outline" size="sm" onClick={downloadRunnerPackage} className="shrink-0 gap-2 bg-white">
+                  <Download className="h-4 w-4" />
+                  Baixar runner Windows
+                </Button>
+              </div>
+            )}
           </div>
 
           <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[420px_minmax(0,1fr)]">
@@ -640,6 +674,16 @@ export default function CnisPage() {
                             <Bot className="h-4 w-4" />
                             Iniciar consulta(s)
                           </Button>
+                          {runnerInstallMessage && (
+                            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950">
+                              <p className="font-semibold">Runner local nao instalado ou bloqueado</p>
+                              <p className="mt-1">{runnerInstallMessage}</p>
+                              <Button type="button" variant="outline" size="sm" onClick={downloadRunnerPackage} className="mt-3 w-full gap-2 bg-white">
+                                <Download className="h-4 w-4" />
+                                Baixar runner Windows
+                              </Button>
+                            </div>
+                          )}
                         </>
                       )}
                     </div>
@@ -1085,13 +1129,10 @@ async function ensureRunnerAvailable(action: "certificate-login" | "open-runner"
   if (await isRunnerOnline()) return;
 
   launchRunnerProtocol(action);
-  const connected = await waitForRunner(20000);
+  const connected = await waitForRunner(12000);
   if (connected) return;
 
-  const installer = openRunnerInstaller();
-  throw new Error(installer.opened
-    ? `O Wizzy CNIS Runner ainda nao esta ativo neste computador. Iniciamos o download do pacote para ${installer.platformLabel}. Extraia o arquivo, execute install-protocol.cmd uma vez e clique em Login certificado novamente.`
-    : "O Wizzy CNIS Runner ainda nao esta ativo neste computador. Nenhum pacote oficial esta configurado para download automatico neste ambiente.");
+  throw new Error(getRunnerInstallMessage());
 }
 
 async function isRunnerOnline() {
@@ -1123,11 +1164,7 @@ function launchRunnerProtocol(action: "certificate-login" | "open-runner") {
 
 function openRunnerInstaller() {
   const platform = detectClientPlatform();
-  const url = platform === "macos"
-    ? RUNNER_INSTALLER_MACOS_URL
-    : platform === "windows"
-      ? RUNNER_INSTALLER_WINDOWS_URL
-      : RUNNER_INSTALLER_GENERIC_URL;
+  const url = getRunnerInstallerUrl(platform);
 
   if (typeof window === "undefined" || !url) {
     return { opened: false, platformLabel: getPlatformLabel(platform) };
@@ -1143,6 +1180,24 @@ function openRunnerInstaller() {
   anchor.remove();
 
   return { opened: true, platformLabel: getPlatformLabel(platform) };
+}
+
+function getRunnerInstallerUrl(platform = detectClientPlatform()) {
+  return platform === "macos"
+    ? RUNNER_INSTALLER_MACOS_URL
+    : platform === "windows"
+      ? RUNNER_INSTALLER_WINDOWS_URL
+      : RUNNER_INSTALLER_GENERIC_URL;
+}
+
+function getRunnerInstallMessage() {
+  const platform = detectClientPlatform();
+  const url = getRunnerInstallerUrl(platform);
+  if (!url) {
+    return "O Wizzy CNIS Runner ainda nao esta ativo neste computador. No momento o pacote automatico esta disponivel para Windows.";
+  }
+
+  return "O Wizzy CNIS Runner ainda nao esta ativo neste computador. Clique em Baixar runner Windows, extraia o ZIP e execute install-protocol.cmd uma vez. Depois volte aqui e clique em Login certificado novamente.";
 }
 
 function detectClientPlatform(): "windows" | "macos" | "other" {
