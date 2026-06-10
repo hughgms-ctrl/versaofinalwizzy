@@ -70,6 +70,9 @@ type RunnerSession = {
 const STORAGE_KEY = "wizzy:cnis:sessions:v1";
 const RUNNER_BASE_URL = import.meta.env.VITE_CNIS_RUNNER_URL || "http://127.0.0.1:8787";
 const RUNNER_PROTOCOL_URL = import.meta.env.VITE_CNIS_RUNNER_PROTOCOL_URL || "wizzy-cnis-runner://";
+const RUNNER_INSTALLER_WINDOWS_URL = import.meta.env.VITE_CNIS_RUNNER_WINDOWS_INSTALLER_URL || "https://github.com/hughgms-ctrl/versaofinalwizzy/releases/latest";
+const RUNNER_INSTALLER_MACOS_URL = import.meta.env.VITE_CNIS_RUNNER_MACOS_INSTALLER_URL || "https://github.com/hughgms-ctrl/versaofinalwizzy/releases/latest";
+const RUNNER_INSTALLER_GENERIC_URL = import.meta.env.VITE_CNIS_RUNNER_INSTALLER_URL || "https://github.com/hughgms-ctrl/versaofinalwizzy/releases/latest";
 const activeStatuses: SessionStatus[] = ["queued", "starting", "running", "waiting_user"];
 const finalStatuses: SessionStatus[] = ["completed", "failed", "cancelled"];
 const emptyForm = {
@@ -1108,7 +1111,8 @@ async function ensureRunnerAvailable(action: "certificate-login" | "open-runner"
   const connected = await waitForRunner(20000);
   if (connected) return;
 
-  throw new Error("Instale ou atualize o Wizzy CNIS Runner neste computador. Se o navegador ou sistema perguntar, permita abrir o runner local.");
+  const installer = openRunnerInstaller();
+  throw new Error(`O Wizzy CNIS Runner ainda nao esta ativo neste computador. ${installer.opened ? `Abrimos o instalador para ${installer.platformLabel}.` : "Nao consegui abrir o instalador automaticamente."} Conclua a instalacao uma vez e clique em Login certificado novamente. Se o navegador ou sistema perguntar, permita abrir o runner local.`);
 }
 
 async function isRunnerOnline() {
@@ -1136,6 +1140,47 @@ function launchRunnerProtocol(action: "certificate-login" | "open-runner") {
     ? RUNNER_PROTOCOL_URL
     : `${RUNNER_PROTOCOL_URL.replace(/\/+$/, "")}/`;
   window.location.href = `${base}${action}?return=${encodeURIComponent(window.location.href)}`;
+}
+
+function openRunnerInstaller() {
+  const platform = detectClientPlatform();
+  const url = platform === "macos"
+    ? RUNNER_INSTALLER_MACOS_URL
+    : platform === "windows"
+      ? RUNNER_INSTALLER_WINDOWS_URL
+      : RUNNER_INSTALLER_GENERIC_URL;
+
+  if (typeof window === "undefined" || !url) {
+    return { opened: false, platformLabel: getPlatformLabel(platform) };
+  }
+
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.target = "_blank";
+  anchor.rel = "noopener noreferrer";
+  anchor.download = "";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+
+  return { opened: true, platformLabel: getPlatformLabel(platform) };
+}
+
+function detectClientPlatform(): "windows" | "macos" | "other" {
+  if (typeof navigator === "undefined") return "other";
+  const userAgent = navigator.userAgent || "";
+  const platform = navigator.platform || "";
+  const userAgentDataPlatform = (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData?.platform || "";
+  const text = `${userAgent} ${platform} ${userAgentDataPlatform}`.toLowerCase();
+  if (text.includes("win")) return "windows";
+  if (text.includes("mac")) return "macos";
+  return "other";
+}
+
+function getPlatformLabel(platform: "windows" | "macos" | "other") {
+  if (platform === "windows") return "Windows";
+  if (platform === "macos") return "Mac";
+  return "este sistema";
 }
 
 function sleep(ms: number) {
