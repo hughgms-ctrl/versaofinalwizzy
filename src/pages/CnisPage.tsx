@@ -70,7 +70,7 @@ type RunnerSession = {
 const STORAGE_KEY = "wizzy:cnis:sessions:v1";
 const RUNNER_BASE_URL = import.meta.env.VITE_CNIS_RUNNER_URL || "http://127.0.0.1:8787";
 const RUNNER_PROTOCOL_URL = import.meta.env.VITE_CNIS_RUNNER_PROTOCOL_URL || "wizzy-cnis-runner://";
-const RUNNER_INSTALLER_WINDOWS_URL = import.meta.env.VITE_CNIS_RUNNER_WINDOWS_INSTALLER_URL || "";
+const RUNNER_INSTALLER_WINDOWS_URL = import.meta.env.VITE_CNIS_RUNNER_WINDOWS_INSTALLER_URL || "https://github.com/hughgms-ctrl/versaofinalwizzy/releases/download/cnis-runner-v0.1.1/wizzy-cnis-runner-win.zip";
 const RUNNER_INSTALLER_MACOS_URL = import.meta.env.VITE_CNIS_RUNNER_MACOS_INSTALLER_URL || "";
 const RUNNER_INSTALLER_GENERIC_URL = import.meta.env.VITE_CNIS_RUNNER_INSTALLER_URL || "";
 const activeStatuses: SessionStatus[] = ["queued", "starting", "running", "waiting_user"];
@@ -1090,8 +1090,8 @@ async function ensureRunnerAvailable(action: "certificate-login" | "open-runner"
 
   const installer = openRunnerInstaller();
   throw new Error(installer.opened
-    ? `O Wizzy CNIS Runner ainda nao esta ativo neste computador. Abrimos o instalador para ${installer.platformLabel}. Conclua a instalacao uma vez e clique em Login certificado novamente.`
-    : "O Wizzy CNIS Runner ainda nao esta ativo neste computador. Nenhum instalador oficial esta configurado para abertura automatica neste ambiente.");
+    ? `O Wizzy CNIS Runner ainda nao esta ativo neste computador. Iniciamos o download do pacote para ${installer.platformLabel}. Extraia o arquivo, execute install-protocol.cmd uma vez e clique em Login certificado novamente.`
+    : "O Wizzy CNIS Runner ainda nao esta ativo neste computador. Nenhum pacote oficial esta configurado para download automatico neste ambiente.");
 }
 
 async function isRunnerOnline() {

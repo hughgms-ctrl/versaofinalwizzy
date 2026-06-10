@@ -17,6 +17,30 @@ if (-not $outputPath.StartsWith($distRoot, [System.StringComparison]::OrdinalIgn
 
 $nodeExe = (Get-Command node.exe -ErrorAction Stop).Source
 
+function Copy-Tree($Source, $Destination) {
+  robocopy $Source $Destination /E /NFL /NDL /NJH /NJS /NP | Out-Null
+  if ($LASTEXITCODE -gt 7) {
+    throw "Falha ao copiar $Source para $Destination com robocopy. Codigo $LASTEXITCODE"
+  }
+  $global:LASTEXITCODE = 0
+}
+
+function Clear-Directory($Path) {
+  if (-not (Test-Path $Path)) { return }
+  $empty = Join-Path ([System.IO.Path]::GetTempPath()) ("wizzy-empty-" + [guid]::NewGuid().ToString("N"))
+  New-Item -ItemType Directory -Path $empty | Out-Null
+  try {
+    robocopy $empty $Path /MIR /NFL /NDL /NJH /NJS /NP | Out-Null
+    if ($LASTEXITCODE -gt 7) {
+      throw "Falha ao limpar $Path com robocopy. Codigo $LASTEXITCODE"
+    }
+    $global:LASTEXITCODE = 0
+    Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction SilentlyContinue
+  } finally {
+    Remove-Item -LiteralPath $empty -Recurse -Force -ErrorAction SilentlyContinue
+  }
+}
+
 Push-Location $runnerRoot
 try {
   if (-not (Test-Path "node_modules")) {
@@ -30,14 +54,14 @@ try {
 }
 
 if (Test-Path $outputPath) {
-  Remove-Item -LiteralPath $outputPath -Recurse -Force
+  Clear-Directory $outputPath
 }
 
 New-Item -ItemType Directory -Path $outputPath | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $outputPath "runtime") | Out-Null
 
-Copy-Item -LiteralPath (Join-Path $runnerRoot "src") -Destination $outputPath -Recurse
-Copy-Item -LiteralPath (Join-Path $runnerRoot "node_modules") -Destination $outputPath -Recurse
+Copy-Tree (Join-Path $runnerRoot "src") (Join-Path $outputPath "src")
+Copy-Tree (Join-Path $runnerRoot "node_modules") (Join-Path $outputPath "node_modules")
 Copy-Item -LiteralPath (Join-Path $runnerRoot "package.json") -Destination $outputPath
 Copy-Item -LiteralPath (Join-Path $runnerRoot "package-lock.json") -Destination $outputPath
 Copy-Item -LiteralPath (Join-Path $runnerRoot "README.md") -Destination $outputPath
@@ -51,7 +75,7 @@ Copy-Item -LiteralPath $nodeExe -Destination (Join-Path $outputPath "runtime\nod
 $extensionSource = Join-Path $repoRoot "Wizzy Cnis Leitura\cnis-checker"
 $extensionParent = Join-Path $outputPath "Wizzy Cnis Leitura"
 New-Item -ItemType Directory -Path $extensionParent -Force | Out-Null
-Copy-Item -LiteralPath $extensionSource -Destination $extensionParent -Recurse -Force
+Copy-Tree $extensionSource (Join-Path $extensionParent "cnis-checker")
 
 Write-Host "Pacote portatil criado em:"
 Write-Host $outputPath
