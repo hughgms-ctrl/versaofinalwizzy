@@ -91,6 +91,8 @@ export function useFlows() {
       return (data || []).map(row => mapRowToFlow(row));
     },
     enabled: !!profile?.organization_id,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
   });
 }
 
@@ -111,6 +113,8 @@ export function useFlow(flowId: string | null) {
       return data ? mapRowToFlow(data) : null;
     },
     enabled: !!flowId,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
   });
 }
 

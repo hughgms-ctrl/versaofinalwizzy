@@ -32,11 +32,15 @@ export function useDocumentTemplates() {
       const { data, error } = await (supabase as any)
         .from('document_templates')
         .select('*')
-        .order('created_at', { ascending: false });
+        .eq('organization_id', orgId)
+        .order('created_at', { ascending: false })
+        .limit(500);
       if (error) throw error;
       return data as DocumentTemplate[];
     },
     enabled: !!orgId,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
   });
 }
 

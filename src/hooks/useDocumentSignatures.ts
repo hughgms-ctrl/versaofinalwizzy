@@ -50,13 +50,16 @@ export function useDocumentSignatures(includeArchived = false) {
         .from('document_signatures')
         .select('*, generated_document:generated_documents(id, name, pdf_url, signed_pdf_url, status, submitted_by, pack_id, submission_group), archived_at')
         .eq('organization_id', orgId)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(500);
       if (!includeArchived) q = q.is('archived_at', null);
       const { data, error } = await q;
       if (error) throw error;
       return data as DocumentSignature[];
     },
     enabled: !!orgId,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
   });
 }
 

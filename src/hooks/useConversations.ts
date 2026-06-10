@@ -4,6 +4,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './useAuth';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 
+const CONVERSATION_LIST_LIMIT = 1000;
+
 export interface DbConversation {
   id: string;
   contact_id: string;
@@ -69,7 +71,7 @@ export interface DbMessage {
 }
 
 export function useConversations(options?: { includeArchived?: boolean; onlyArchived?: boolean; includeClosed?: boolean; onlyClosed?: boolean }) {
-  const { session } = useAuth();
+  const { session, profile } = useAuth();
   const { selectedWorkspaceId } = useWorkspaceContext();
   const queryClient = useQueryClient();
   const includeArchived = options?.includeArchived ?? false;
@@ -78,7 +80,7 @@ export function useConversations(options?: { includeArchived?: boolean; onlyArch
   const onlyClosed = options?.onlyClosed ?? false;
 
   const query = useQuery({
-    queryKey: ['conversations', { includeArchived, onlyArchived, includeClosed, onlyClosed, selectedWorkspaceId }],
+    queryKey: ['conversations', { includeArchived, onlyArchived, includeClosed, onlyClosed, selectedWorkspaceId, orgId: profile?.organization_id }],
     queryFn: async (): Promise<DbConversation[]> => {
       let query = supabase
         .from('conversations')
@@ -87,8 +89,9 @@ export function useConversations(options?: { includeArchived?: boolean; onlyArch
           contact:contacts(id, name, phone, avatar_url, email, workspace_id, created_at, metadata, contact_presence(presence_type, expires_at)),
           last_message:messages(id, content, type, direction, is_from_bot, read_at, delivered_at)
         `)
+        .eq('organization_id', profile!.organization_id)
         .order('last_message_at', { ascending: false, nullsFirst: false })
-        .range(0, 4999)
+        .range(0, CONVERSATION_LIST_LIMIT - 1)
         .order('created_at', { referencedTable: 'messages', ascending: false })
         .limit(1, { referencedTable: 'messages' });
 
@@ -112,12 +115,14 @@ export function useConversations(options?: { includeArchived?: boolean; onlyArch
       if (error) throw error;
       return (data || []) as unknown as DbConversation[];
     },
-    enabled: !!session,
+    enabled: !!session && !!profile?.organization_id,
+    staleTime: 15_000,
+    refetchOnWindowFocus: false,
   });
 
   // Subscribe to realtime updates for conversations
   useEffect(() => {
-    if (!session) return;
+    if (!session || !profile?.organization_id) return;
 
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
     const scheduleConversationsRefresh = () => {
@@ -126,20 +131,20 @@ export function useConversations(options?: { includeArchived?: boolean; onlyArch
       refreshTimer = setTimeout(() => {
         refreshTimer = null;
         queryClient.invalidateQueries({ queryKey: ['conversations'] });
-      }, 500);
+      }, 1500);
     };
 
     const channel = supabase
-      .channel('conversations-realtime')
+      .channel(`conversations-realtime-${profile.organization_id}`)
       .on(
         'postgres_changes',
         {
           event: '*',
           schema: 'public',
           table: 'conversations',
+          filter: `organization_id=eq.${profile.organization_id}`,
         },
-        (payload) => {
-          console.log('Conversation realtime update:', payload);
+        () => {
           scheduleConversationsRefresh();
         }
       )
@@ -149,6 +154,7 @@ export function useConversations(options?: { includeArchived?: boolean; onlyArch
           event: '*',
           schema: 'public',
           table: 'contact_presence',
+          filter: `organization_id=eq.${profile.organization_id}`,
         },
         () => {
           scheduleConversationsRefresh();
@@ -160,7 +166,7 @@ export function useConversations(options?: { includeArchived?: boolean; onlyArch
       if (refreshTimer) clearTimeout(refreshTimer);
       supabase.removeChannel(channel);
     };
-  }, [session, queryClient]);
+  }, [session, profile?.organization_id, queryClient]);
 
   return query;
 }
@@ -184,6 +190,8 @@ export function useMessages(conversationId: string | null) {
       return (data || []) as DbMessage[];
     },
     enabled: !!session && !!conversationId,
+    staleTime: 10_000,
+    refetchOnWindowFocus: false,
   });
 
   // Subscribe to realtime updates for messages
@@ -200,8 +208,7 @@ export function useMessages(conversationId: string | null) {
           table: 'messages',
           filter: `conversation_id=eq.${conversationId}`,
         },
-        (payload) => {
-          console.log('Message realtime update:', payload);
+        () => {
           queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
         }
       )

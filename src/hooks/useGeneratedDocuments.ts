@@ -32,11 +32,14 @@ export function useGeneratedDocuments() {
         .from('generated_documents')
         .select('*, document_packs(name)')
         .eq('organization_id', orgId)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(500);
       if (error) throw error;
       return data as GeneratedDocument[];
     },
     enabled: !!orgId,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
   });
 }
 
