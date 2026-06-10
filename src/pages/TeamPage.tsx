@@ -47,6 +47,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
+import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 
 const roleLabels = {
   owner: { label: 'Proprietário', color: 'bg-amber-500/10 text-amber-500' },
@@ -57,6 +58,7 @@ const roleLabels = {
 
 export default function TeamPage() {
   const queryClient = useQueryClient();
+  const { selectedOrganizationId, canManageOrganization } = useWorkspaceContext();
   const { data: teamMembers = [], isLoading } = useTeamMembers();
   const [selectedMember, setSelectedMember] = useState<TeamMember | null>(null);
   const [permissionsOpen, setPermissionsOpen] = useState(false);
@@ -87,7 +89,7 @@ export default function TeamPage() {
     setIsDeleting(true);
     try {
       const { data, error } = await supabase.functions.invoke('delete-user', {
-        body: { userId: memberToDelete.user_id },
+        body: { userId: memberToDelete.user_id, organizationId: selectedOrganizationId },
       });
 
       if (error) throw error;
@@ -116,9 +118,9 @@ export default function TeamPage() {
     <MainLayout 
       title="Equipe" 
       subtitle="Gerencie os membros da sua equipe"
-      showNewButton
+      showNewButton={canManageOrganization}
       newButtonLabel="Novo Membro"
-      onNewClick={() => setAddUserOpen(true)}
+      onNewClick={() => canManageOrganization && setAddUserOpen(true)}
     >
       <div className="space-y-4 md:space-y-6">
         {/* Stats Cards */}
@@ -212,6 +214,7 @@ export default function TeamPage() {
                           {roleLabels[member.role]?.label || 'Agente'}
                         </Badge>
                       </div>
+                      {canManageOrganization && (
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -238,6 +241,7 @@ export default function TeamPage() {
                           )}
                         </DropdownMenuContent>
                       </DropdownMenu>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -282,6 +286,7 @@ export default function TeamPage() {
                             {new Date(member.created_at).toLocaleDateString('pt-BR')}
                           </TableCell>
                           <TableCell>
+                            {canManageOrganization && (
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
                                 <Button variant="ghost" size="icon" className="h-8 w-8">
@@ -314,6 +319,7 @@ export default function TeamPage() {
                                 )}
                               </DropdownMenuContent>
                             </DropdownMenu>
+                            )}
                           </TableCell>
                         </TableRow>
                       ))}

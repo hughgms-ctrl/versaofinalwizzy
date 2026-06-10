@@ -42,17 +42,30 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Get caller's role and org
+    const body = await req.json();
+    const userId = body?.userId;
+    const requestedOrganizationId = typeof body?.organizationId === 'string' ? body.organizationId : undefined;
+
+    if (!userId) {
+      return new Response(
+        JSON.stringify({ error: 'Missing userId' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     const { data: callerProfile } = await supabase
       .from('profiles')
       .select('organization_id')
       .eq('user_id', caller.id)
       .single();
 
+    const organizationId = requestedOrganizationId || callerProfile?.organization_id;
+
     const { data: callerRole } = await supabase
-      .from('user_roles')
+      .from('organization_members')
       .select('role')
       .eq('user_id', caller.id)
+      .eq('organization_id', organizationId)
       .single();
 
     if (!callerProfile || !callerRole) {
@@ -63,19 +76,10 @@ Deno.serve(async (req) => {
     }
 
     // Only owners and admins can delete users
-    if (callerRole.role !== 'owner' && callerRole.role !== 'admin') {
+    if (!['owner', 'admin', 'platform_admin'].includes(callerRole.role)) {
       return new Response(
         JSON.stringify({ error: 'Only owners and admins can delete team members' }),
         { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    const { userId } = await req.json();
-
-    if (!userId) {
-      return new Response(
-        JSON.stringify({ error: 'Missing userId' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
@@ -87,62 +91,60 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Get target user's profile to verify same org
-    const { data: targetProfile } = await supabase
-      .from('profiles')
-      .select('organization_id')
+    const { data: targetMembership } = await supabase
+      .from('organization_members')
+      .select('role')
       .eq('user_id', userId)
+      .eq('organization_id', organizationId)
       .single();
 
-    if (!targetProfile || targetProfile.organization_id !== callerProfile.organization_id) {
+    if (!targetMembership) {
       return new Response(
         JSON.stringify({ error: 'User not found in your organization' }),
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Check if target is owner - owners cannot be deleted
-    const { data: targetRole } = await supabase
-      .from('user_roles')
-      .select('role')
-      .eq('user_id', userId)
-      .single();
-
-    if (targetRole?.role === 'owner') {
+    if (targetMembership.role === 'owner') {
       return new Response(
         JSON.stringify({ error: 'Cannot delete the organization owner' }),
         { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Delete user's permissions
+    const { data: organizationWorkspaces, error: workspacesError } = await supabase
+      .from('workspaces')
+      .select('id')
+      .eq('organization_id', organizationId);
+
+    if (workspacesError) throw workspacesError;
+
+    const organizationWorkspaceIds = (organizationWorkspaces || []).map((workspace: any) => workspace.id);
+    if (organizationWorkspaceIds.length > 0) {
+      await supabase
+        .from('workspace_members')
+        .delete()
+        .eq('user_id', userId)
+        .in('workspace_id', organizationWorkspaceIds);
+    }
+
     await supabase
       .from('user_permissions')
       .delete()
-      .eq('user_id', userId);
+      .eq('user_id', userId)
+      .eq('organization_id', organizationId);
 
-    // Delete user's role
     await supabase
       .from('user_roles')
       .delete()
-      .eq('user_id', userId);
+      .eq('user_id', userId)
+      .eq('organization_id', organizationId);
 
-    // Delete user's profile
     await supabase
-      .from('profiles')
+      .from('organization_members')
       .delete()
-      .eq('user_id', userId);
-
-    // Delete the auth user
-    const { error: deleteError } = await supabase.auth.admin.deleteUser(userId);
-
-    if (deleteError) {
-      console.error('Error deleting auth user:', deleteError);
-      return new Response(
-        JSON.stringify({ error: deleteError.message }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
+      .eq('user_id', userId)
+      .eq('organization_id', organizationId);
 
     return new Response(
       JSON.stringify({ success: true }),

@@ -91,6 +91,7 @@ Deno.serve(async (req) => {
     const adminClient = createClient(supabaseUrl, supabaseServiceKey)
     const body = await req.json()
     const planId = String(body.plan_id || '')
+    const requestedOrganizationId = String(body.organization_id || '').trim()
     const billingCycle = body.billing_cycle === 'yearly' ? 'yearly' : 'monthly'
     const entryFlowConfig = body.entry_flow_config || {}
     const requiresCardTrial = entryFlowConfig.require_card === true
@@ -103,6 +104,18 @@ Deno.serve(async (req) => {
       .maybeSingle()
     if (profileError) throw profileError
     if (!profile?.organization_id) throw new Error('Organização não encontrada')
+
+    const organizationId = requestedOrganizationId || profile.organization_id
+    const { data: membership, error: membershipError } = await adminClient
+      .from('organization_members')
+      .select('role')
+      .eq('user_id', user.id)
+      .eq('organization_id', organizationId)
+      .maybeSingle()
+    if (membershipError) throw membershipError
+    if (!membership || !['owner', 'admin', 'platform_admin'].includes(String(membership.role))) {
+      throw new Error('Apenas proprietarios e administradores podem gerenciar assinatura.')
+    }
 
     const [{ data: plan, error: planError }, { data: settingsRows }] = await Promise.all([
       adminClient
@@ -156,7 +169,7 @@ Deno.serve(async (req) => {
         provider: activeProvider,
       },
     )
-    const reference = `${profile.organization_id}|${plan.id}|${billingCycle}`
+    const reference = `${organizationId}|${plan.id}|${billingCycle}`
 
     if (activeProvider === 'asaas') {
       if (savedStrategy.asaas_enabled === false) throw new Error('ASAAS está desabilitado')
@@ -228,10 +241,10 @@ Deno.serve(async (req) => {
       params.set('mode', 'subscription')
       params.set('success_url', successUrl)
       params.set('cancel_url', cancelUrl)
-      params.set('client_reference_id', profile.organization_id)
+      params.set('client_reference_id', organizationId)
       params.set('line_items[0][price]', priceId)
       params.set('line_items[0][quantity]', '1')
-      params.set('metadata[organization_id]', profile.organization_id)
+      params.set('metadata[organization_id]', organizationId)
       params.set('metadata[plan_id]', plan.id)
       params.set('metadata[billing_cycle]', billingCycle)
       if (trialDays > 0) params.set('subscription_data[trial_period_days]', String(trialDays))

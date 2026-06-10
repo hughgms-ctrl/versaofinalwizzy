@@ -119,8 +119,8 @@ async function fetchPublicPlans(cacheBust = false): Promise<Plan[]> {
 
 const PlanUpgradePanel = () => {
   const { profile } = useAuth();
-  const { selectedWorkspace } = useWorkspaceContext();
-  const activeOrganizationId = selectedWorkspace?.organization_id || profile?.organization_id || null;
+  const { selectedOrganizationId, selectedWorkspace, canManageOrganization } = useWorkspaceContext();
+  const activeOrganizationId = selectedOrganizationId || selectedWorkspace?.organization_id || profile?.organization_id || null;
   const [isYearly, setIsYearly] = useState(false);
   const [loadingPlanId, setLoadingPlanId] = useState<string | null>(null);
   const autoCheckoutStarted = useRef(false);
@@ -172,6 +172,12 @@ const PlanUpgradePanel = () => {
 
   const handleUpgrade = async (plan: Plan) => {
     try {
+      if (!canManageOrganization) {
+        throw new Error('Apenas proprietarios ou administradores podem gerenciar a cobranca deste workspace.');
+      }
+      if (!activeOrganizationId) {
+        throw new Error('Organizacao ativa nao encontrada.');
+      }
       setLoadingPlanId(plan.id);
       const { data: session } = await supabase.auth.getSession();
       const accessToken = session.session?.access_token;
@@ -187,6 +193,7 @@ const PlanUpgradePanel = () => {
         body: JSON.stringify({
           plan_id: plan.id,
           billing_cycle: isYearly ? 'yearly' : 'monthly',
+          organization_id: activeOrganizationId,
           entry_flow_config: entryConfig,
         }),
       });
@@ -407,7 +414,7 @@ const PlanUpgradePanel = () => {
                 <Button
                   className="w-full mt-6"
                   variant={isCurrent ? "outline" : isPro ? "default" : "outline"}
-                  disabled={isCurrent || loadingPlanId === plan.id}
+                  disabled={isCurrent || loadingPlanId === plan.id || !canManageOrganization}
                   onClick={() => handleUpgrade(plan)}
                 >
                   {isCurrent ? "Plano atual" : loadingPlanId === plan.id ? "Abrindo checkout..." : "Selecionar plano"}

@@ -42,7 +42,7 @@ Deno.serve(async (req) => {
     const maxTeamMembers = Number((orgPlan as any)?.plan?.max_team_members || 0);
     if (maxTeamMembers > 0) {
       const { count: currentTeamMembers, error: teamCountError } = await supabase
-        .from('profiles')
+        .from('organization_members')
         .select('id', { count: 'exact', head: true })
         .eq('organization_id', organizationId);
 
@@ -116,14 +116,12 @@ Deno.serve(async (req) => {
         throw new Error('Falha ao criar perfil do usuário no banco de dados.');
       }
     } else {
-      const autoOrgId = autoProfile.organization_id;
-      console.log(`Found auto-created Org: ${autoOrgId}. Updating to Org: ${organizationId}`);
+      console.log(`Found auto-created profile in personal org: ${autoProfile.organization_id}. Adding membership to org: ${organizationId}`);
 
-      // Update profile to correct organization
+      // Keep the user's own organization intact. This account can participate in many organizations.
       const { error: profileUpdateError } = await supabase
         .from('profiles')
         .update({
-          organization_id: organizationId,
           full_name: fullName,
           phone: phone || null,
         })
@@ -136,33 +134,22 @@ Deno.serve(async (req) => {
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
-
-      // Delete the auto-created role
-      await supabase
-        .from('user_roles')
-        .delete()
-        .eq('user_id', userId);
-
-      // Delete auto-created whatsapp instance (if any)
-      await supabase
-        .from('whatsapp_instances')
-        .delete()
-        .eq('organization_id', autoOrgId);
-
-      // Delete auto-created organization (if different from target)
-      if (autoOrgId && autoOrgId !== organizationId) {
-        const { error: deleteOrgError } = await supabase
-          .from('organizations')
-          .delete()
-          .eq('id', autoOrgId);
-
-        if (deleteOrgError) {
-          console.error('Error deleting auto-org:', deleteOrgError);
-        }
-      }
     }
 
-    // Ensure user_roles is set correctly
+    // Ensure membership and organization-scoped role are set correctly.
+    const { error: memberError } = await supabase
+      .from('organization_members')
+      .upsert({
+        user_id: userId,
+        organization_id: organizationId,
+        role: role,
+      }, { onConflict: 'organization_id,user_id' });
+
+    if (memberError) {
+      console.error('Error setting organization membership:', memberError);
+      throw memberError;
+    }
+
     const { error: roleError } = await supabase
       .from('user_roles')
       .upsert({

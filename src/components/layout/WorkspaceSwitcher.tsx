@@ -14,8 +14,18 @@ interface WorkspaceSwitcherProps {
 }
 
 export function WorkspaceSwitcher({ collapsed }: WorkspaceSwitcherProps) {
-  const { selectedWorkspace, availableWorkspaces, setWorkspace, isAdmin } = useWorkspaceContext();
+  const {
+    selectedOrganization,
+    selectedOrganizationId,
+    organizationMemberships,
+    setOrganization,
+    selectedWorkspace,
+    availableWorkspaces,
+    setWorkspace,
+    isAdmin,
+  } = useWorkspaceContext();
   const hasAvailableWorkspaces = availableWorkspaces.length > 0;
+  const hasMultipleOrganizations = organizationMemberships.length > 1;
 
   return (
     <div className={cn("px-3 py-2", collapsed && "px-2")}>
@@ -34,7 +44,7 @@ export function WorkspaceSwitcher({ collapsed }: WorkspaceSwitcherProps) {
             {!collapsed && (
               <>
                 <span className="truncate flex-1 text-left text-sidebar-foreground font-medium">
-                  {selectedWorkspace?.name || (isAdmin ? 'Todos os Workspaces' : 'Sem workspace liberado')}
+                  {selectedWorkspace?.name || selectedOrganization?.name || (isAdmin ? 'Todos os Workspaces' : 'Sem workspace liberado')}
                 </span>
                 <ChevronDown className="h-3.5 w-3.5 text-sidebar-foreground/60 flex-shrink-0" />
               </>
@@ -42,6 +52,24 @@ export function WorkspaceSwitcher({ collapsed }: WorkspaceSwitcherProps) {
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-56">
+          {hasMultipleOrganizations && (
+            <>
+              {organizationMemberships.map((membership) => (
+                <DropdownMenuItem
+                  key={membership.organization_id}
+                  onClick={() => setOrganization(membership.organization_id)}
+                  className="gap-2"
+                >
+                  <Building2 className="h-4 w-4 text-muted-foreground" />
+                  <span className="truncate">{membership.organization?.name || 'Empresa'}</span>
+                  {membership.organization_id === selectedOrganizationId && (
+                    <span className="ml-auto h-2 w-2 rounded-full bg-primary" />
+                  )}
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuSeparator />
+            </>
+          )}
           {isAdmin && (
             <>
               <DropdownMenuItem onClick={() => setWorkspace(null)} className="gap-2">

@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './useAuth';
 import { toast } from './use-toast';
+import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 
 export interface UserPermissions {
   id: string;
@@ -29,18 +30,24 @@ export interface UserPermissions {
 
 export function useUserPermissions(userId?: string) {
   const { user } = useAuth();
+  const { selectedOrganizationId } = useWorkspaceContext();
   const targetUserId = userId || user?.id;
 
   return useQuery({
-    queryKey: ['user-permissions', targetUserId],
+    queryKey: ['user-permissions', targetUserId, selectedOrganizationId],
     queryFn: async (): Promise<UserPermissions | null> => {
       if (!targetUserId) return null;
 
-      const { data, error } = await (supabase as any)
+      let query = (supabase as any)
         .from('user_permissions')
         .select('*')
-        .eq('user_id', targetUserId)
-        .maybeSingle();
+        .eq('user_id', targetUserId);
+
+      if (selectedOrganizationId) {
+        query = query.eq('organization_id', selectedOrganizationId);
+      }
+
+      const { data, error } = await query.maybeSingle();
 
       if (error) throw error;
       return data as UserPermissions | null;
@@ -51,40 +58,43 @@ export function useUserPermissions(userId?: string) {
 
 export function useAllUserPermissions() {
   const { profile } = useAuth();
+  const { selectedOrganizationId } = useWorkspaceContext();
+  const organizationId = selectedOrganizationId || profile?.organization_id || null;
 
   return useQuery({
-    queryKey: ['all-user-permissions', profile?.organization_id],
+    queryKey: ['all-user-permissions', organizationId],
     queryFn: async (): Promise<UserPermissions[]> => {
-      if (!profile?.organization_id) return [];
+      if (!organizationId) return [];
 
       const { data, error } = await (supabase as any)
         .from('user_permissions')
         .select('*')
-        .eq('organization_id', profile.organization_id);
+        .eq('organization_id', organizationId);
 
       if (error) throw error;
       return (data || []) as UserPermissions[];
     },
-    enabled: !!profile?.organization_id,
+    enabled: !!organizationId,
   });
 }
 
 export function useUpdateUserPermissions() {
   const queryClient = useQueryClient();
   const { profile } = useAuth();
+  const { selectedOrganizationId } = useWorkspaceContext();
+  const organizationId = selectedOrganizationId || profile?.organization_id || null;
 
   return useMutation({
     mutationFn: async (permissions: Partial<UserPermissions> & { user_id: string }) => {
-      if (!profile?.organization_id) throw new Error('Organização não encontrada');
+      if (!organizationId) throw new Error('Organizacao nao encontrada');
 
       const { user_id, ...rest } = permissions;
 
-      // Upsert permissions
       const { error } = await (supabase as any)
         .from('user_permissions')
         .upsert({
           user_id,
-          organization_id: profile.organization_id,
+          organization_id: organizationId,
           ...rest,
         }, {
           onConflict: 'user_id,organization_id',
@@ -95,39 +105,42 @@ export function useUpdateUserPermissions() {
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['user-permissions', variables.user_id] });
       queryClient.invalidateQueries({ queryKey: ['all-user-permissions'] });
-      toast({ title: 'Permissões atualizadas!' });
+      toast({ title: 'Permissoes atualizadas!' });
     },
     onError: (error: any) => {
       console.error('Error updating permissions:', error);
-      toast({ title: 'Erro ao atualizar permissões', description: error.message, variant: 'destructive' });
+      toast({ title: 'Erro ao atualizar permissoes', description: error.message, variant: 'destructive' });
     },
   });
 }
 
-// Hook to check if current user has access to a module
 export function useCanAccessModule(module: string) {
-  const { user, profile } = useAuth();
+  const { user } = useAuth();
+  const { selectedOrganizationId } = useWorkspaceContext();
   const { data: permissions, isLoading } = useUserPermissions();
   const { data: userRole } = useQuery({
-    queryKey: ['user-role', user?.id],
+    queryKey: ['user-role', user?.id, selectedOrganizationId],
     queryFn: async () => {
       if (!user?.id) return null;
-      const { data } = await supabase
-        .from('user_roles')
+      let query = (supabase as any)
+        .from('organization_members')
         .select('role')
-        .eq('user_id', user.id)
-        .maybeSingle();
+        .eq('user_id', user.id);
+
+      if (selectedOrganizationId) {
+        query = query.eq('organization_id', selectedOrganizationId);
+      }
+
+      const { data } = await query.maybeSingle();
       return data?.role || null;
     },
     enabled: !!user?.id,
   });
 
-  // Owners and admins always have full access
-  if (userRole === 'owner' || userRole === 'admin') {
+  if (userRole === 'owner' || userRole === 'admin' || userRole === 'platform_admin') {
     return { canAccess: true, isLoading: false };
   }
 
-  // If no permissions set, deny by default for non-owners
   if (!permissions && !isLoading) {
     return { canAccess: false, isLoading: false };
   }
@@ -152,17 +165,17 @@ export function useCanAccessModule(module: string) {
   return { canAccess, isLoading };
 }
 
-// Hook to get current user's role
 export function useCurrentUserRole(organizationId?: string | null) {
   const { user, profile } = useAuth();
-  const scopedOrganizationId = organizationId ?? profile?.organization_id ?? null;
+  const { selectedOrganizationId } = useWorkspaceContext();
+  const scopedOrganizationId = organizationId ?? selectedOrganizationId ?? profile?.organization_id ?? null;
 
   return useQuery({
     queryKey: ['current-user-role', user?.id, scopedOrganizationId],
     queryFn: async () => {
       if (!user?.id) return null;
-      let query = supabase
-        .from('user_roles')
+      let query = (supabase as any)
+        .from('organization_members')
         .select('role')
         .eq('user_id', user.id);
 

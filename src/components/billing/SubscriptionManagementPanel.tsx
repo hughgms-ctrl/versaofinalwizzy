@@ -72,8 +72,8 @@ function getEventStatus(payload: any, fallback: string) {
 
 export function SubscriptionManagementPanel() {
   const { profile } = useAuth();
-  const { selectedWorkspace } = useWorkspaceContext();
-  const activeOrganizationId = selectedWorkspace?.organization_id || profile?.organization_id || null;
+  const { selectedOrganizationId, selectedWorkspace, canManageOrganization } = useWorkspaceContext();
+  const activeOrganizationId = selectedOrganizationId || selectedWorkspace?.organization_id || profile?.organization_id || null;
   const queryClient = useQueryClient();
   const [isOpeningCheckout, setIsOpeningCheckout] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
@@ -131,7 +131,7 @@ export function SubscriptionManagementPanel() {
   }, [data?.events]);
 
   const openCheckoutForCurrentPlan = async () => {
-    if (!currentPlan?.plan_id) return;
+    if (!currentPlan?.plan_id || !canManageOrganization) return;
 
     try {
       setIsOpeningCheckout(true);
@@ -149,6 +149,7 @@ export function SubscriptionManagementPanel() {
         body: JSON.stringify({
           plan_id: currentPlan.plan_id,
           billing_cycle: currentPlan.billing_cycle || "monthly",
+          organization_id: activeOrganizationId,
         }),
       });
       const checkout = await response.json().catch(() => null);
@@ -172,6 +173,7 @@ export function SubscriptionManagementPanel() {
   };
 
   const cancelSubscription = async () => {
+    if (!canManageOrganization) return;
     const confirmed = window.confirm(
       isTrial
         ? "Cancelar o teste agora? Isso cancela a assinatura antes da primeira cobranca."
@@ -192,7 +194,7 @@ export function SubscriptionManagementPanel() {
           Authorization: `Bearer ${accessToken}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ organization_id: activeOrganizationId }),
       });
       const result = await response.json().catch(() => null);
 
@@ -232,12 +234,16 @@ export function SubscriptionManagementPanel() {
               </p>
             </div>
           </div>
-          <Button asChild>
-            <Link to="/plans">
-              Ver planos
-              <ArrowUpRight className="ml-2 h-4 w-4" />
-            </Link>
-          </Button>
+          {canManageOrganization ? (
+            <Button asChild>
+              <Link to="/plans">
+                Ver planos
+                <ArrowUpRight className="ml-2 h-4 w-4" />
+              </Link>
+            </Button>
+          ) : (
+            <Badge variant="outline">Somente administradores</Badge>
+          )}
         </div>
       </div>
     );
@@ -290,7 +296,7 @@ export function SubscriptionManagementPanel() {
 
       <div className="flex flex-col gap-2 sm:flex-row">
         {isPastDue && (
-          <Button onClick={openCheckoutForCurrentPlan} disabled={isOpeningCheckout}>
+          <Button onClick={openCheckoutForCurrentPlan} disabled={isOpeningCheckout || !canManageOrganization}>
             {isOpeningCheckout ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ReceiptText className="mr-2 h-4 w-4" />}
             Pagar pendência
           </Button>
@@ -302,7 +308,7 @@ export function SubscriptionManagementPanel() {
           </Link>
         </Button>
         {["trial", "trialing", "active", "paid"].includes(String(paymentStatus || "").toLowerCase()) && (
-          <Button variant="outline" onClick={cancelSubscription} disabled={isCancelling}>
+          <Button variant="outline" onClick={cancelSubscription} disabled={isCancelling || !canManageOrganization}>
             {isCancelling ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <XCircle className="mr-2 h-4 w-4" />}
             {isTrial ? "Cancelar teste" : "Cancelar assinatura"}
           </Button>

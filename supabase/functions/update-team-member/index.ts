@@ -37,22 +37,25 @@ Deno.serve(async (req) => {
       .eq('user_id', caller.id)
       .maybeSingle();
 
+    const body = await req.json();
+    const requestedOrganizationId = typeof body.organizationId === 'string' ? body.organizationId : undefined;
+    const organizationId = requestedOrganizationId || callerProfile?.organization_id || '';
+
     const { data: callerRole, error: callerRoleError } = await admin
-      .from('user_roles')
+      .from('organization_members')
       .select('role')
       .eq('user_id', caller.id)
-      .eq('organization_id', callerProfile?.organization_id || '')
+      .eq('organization_id', organizationId)
       .maybeSingle();
 
     if (callerRoleError) {
       return json({ error: callerRoleError.message }, 500);
     }
 
-    if (!callerProfile || !callerRole || !['owner', 'admin'].includes(callerRole.role)) {
+    if (!callerProfile || !callerRole || !['owner', 'admin', 'platform_admin'].includes(callerRole.role)) {
       return json({ error: 'Only owners and admins can update team members' }, 403);
     }
 
-    const body = await req.json();
     const userId = String(body.userId || '');
     const fullName = typeof body.fullName === 'string' ? body.fullName.trim() : undefined;
     const phone = typeof body.phone === 'string' ? body.phone.trim() : undefined;
@@ -63,24 +66,18 @@ Deno.serve(async (req) => {
       return json({ error: 'Missing userId' }, 400);
     }
 
-    const { data: targetProfile } = await admin
-      .from('profiles')
-      .select('id, organization_id')
+    const { data: targetMembership } = await admin
+      .from('organization_members')
+      .select('id, role')
       .eq('user_id', userId)
+      .eq('organization_id', organizationId)
       .maybeSingle();
 
-    if (!targetProfile || targetProfile.organization_id !== callerProfile.organization_id) {
+    if (!targetMembership) {
       return json({ error: 'User not found in your organization' }, 404);
     }
 
-    const { data: targetRole } = await admin
-      .from('user_roles')
-      .select('role')
-      .eq('user_id', userId)
-      .eq('organization_id', callerProfile.organization_id)
-      .maybeSingle();
-
-    if (targetRole?.role === 'owner' && userId !== caller.id) {
+    if (targetMembership.role === 'owner' && userId !== caller.id) {
       return json({ error: 'Organization owner cannot be edited here' }, 403);
     }
 
@@ -96,7 +93,7 @@ Deno.serve(async (req) => {
         .from('user_roles')
         .update({ role })
         .eq('user_id', userId)
-        .eq('organization_id', callerProfile.organization_id)
+        .eq('organization_id', organizationId)
         .select('id')
         .maybeSingle();
 
@@ -107,7 +104,7 @@ Deno.serve(async (req) => {
           .from('user_roles')
           .insert({
             user_id: userId,
-            organization_id: callerProfile.organization_id,
+            organization_id: organizationId,
             role,
           });
 
@@ -123,8 +120,7 @@ Deno.serve(async (req) => {
       const { error } = await admin
         .from('profiles')
         .update(profileUpdates)
-        .eq('user_id', userId)
-        .eq('organization_id', callerProfile.organization_id);
+        .eq('user_id', userId);
 
       if (error) throw error;
     }
@@ -134,7 +130,7 @@ Deno.serve(async (req) => {
         const { data: validWorkspaces, error: workspaceError } = await admin
           .from('workspaces')
           .select('id')
-          .eq('organization_id', callerProfile.organization_id)
+          .eq('organization_id', organizationId)
           .in('id', workspaceIds);
 
         if (workspaceError) throw workspaceError;
@@ -146,10 +142,26 @@ Deno.serve(async (req) => {
         }
       }
 
-      const { error: deleteError } = await admin
+      const { data: organizationWorkspaces, error: organizationWorkspacesError } = await admin
+        .from('workspaces')
+        .select('id')
+        .eq('organization_id', organizationId);
+
+      if (organizationWorkspacesError) throw organizationWorkspacesError;
+      const organizationWorkspaceIds = (organizationWorkspaces || []).map((workspace: any) => workspace.id);
+
+      let deleteQuery = admin
         .from('workspace_members')
         .delete()
         .eq('user_id', userId);
+
+      if (organizationWorkspaceIds.length > 0) {
+        deleteQuery = deleteQuery.in('workspace_id', organizationWorkspaceIds);
+      } else {
+        deleteQuery = deleteQuery.eq('workspace_id', '00000000-0000-0000-0000-000000000000');
+      }
+
+      const { error: deleteError } = await deleteQuery;
 
       if (deleteError) throw deleteError;
 

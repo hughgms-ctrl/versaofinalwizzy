@@ -12,6 +12,7 @@ import { Loader2, Eye, EyeOff } from 'lucide-react';
 import { LimitUpgradeDialog } from '@/components/billing/LimitUpgradeDialog';
 import { useOrganizationPlan } from '@/hooks/useOrganizationPlan';
 import { isPlanLimitError } from '@/lib/planLimitErrors';
+import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 
 interface AddUserDialogProps {
   open: boolean;
@@ -20,8 +21,10 @@ interface AddUserDialogProps {
 
 export function AddUserDialog({ open, onOpenChange }: AddUserDialogProps) {
   const { profile } = useAuth();
+  const { selectedOrganizationId, canManageOrganization } = useWorkspaceContext();
+  const organizationId = selectedOrganizationId || profile?.organization_id || null;
   const queryClient = useQueryClient();
-  const { usage } = useOrganizationPlan();
+  const { usage } = useOrganizationPlan(organizationId);
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showLimitDialog, setShowLimitDialog] = useState(false);
@@ -45,7 +48,7 @@ export function AddUserDialog({ open, onOpenChange }: AddUserDialogProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!profile?.organization_id) return;
+    if (!organizationId || !canManageOrganization) return;
 
     setIsLoading(true);
     try {
@@ -61,7 +64,7 @@ export function AddUserDialog({ open, onOpenChange }: AddUserDialogProps) {
           phone: formData.phone,
           role: formData.role,
           password: formData.password,
-          organizationId: profile.organization_id,
+          organizationId,
         },
       });
 

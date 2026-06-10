@@ -23,17 +23,58 @@ export interface WorkspaceMember {
   created_at: string;
 }
 
-export function useWorkspaces() {
+export type OrganizationRole = 'owner' | 'admin' | 'supervisor' | 'agent' | 'platform_admin';
+
+export interface OrganizationMembership {
+  id: string;
+  organization_id: string;
+  user_id: string;
+  role: OrganizationRole;
+  created_at: string;
+  organization?: {
+    id: string;
+    name: string;
+    slug: string;
+    logo_url: string | null;
+  } | null;
+}
+
+export function useOrganizationMemberships() {
   const { session } = useAuth();
 
   return useQuery({
-    queryKey: ['workspaces'],
+    queryKey: ['organization-memberships', session?.user?.id],
+    queryFn: async (): Promise<OrganizationMembership[]> => {
+      if (!session?.user?.id) return [];
+      const { data, error } = await (supabase as any)
+        .from('organization_members')
+        .select('id, organization_id, user_id, role, created_at, organization:organizations(id, name, slug, logo_url)')
+        .eq('user_id', session.user.id)
+        .order('created_at');
+
+      if (error) throw error;
+      return (data || []) as OrganizationMembership[];
+    },
+    enabled: !!session?.user?.id,
+  });
+}
+
+export function useWorkspaces(organizationId?: string | null) {
+  const { session } = useAuth();
+
+  return useQuery({
+    queryKey: ['workspaces', organizationId || 'all'],
     queryFn: async (): Promise<Workspace[]> => {
-      const { data, error } = await supabase
+      let query = supabase
         .from('workspaces')
         .select('*')
-        .eq('is_active', true)
-        .order('name');
+        .eq('is_active', true);
+
+      if (organizationId) {
+        query = query.eq('organization_id', organizationId);
+      }
+
+      const { data, error } = await query.order('name');
 
       if (error) throw error;
       return (data || []) as unknown as Workspace[];
@@ -106,20 +147,23 @@ export function useCreateWorkspace() {
   return useMutation({
     mutationFn: async (workspace: {
       name: string;
+      organization_id?: string;
       description?: string;
       filter_tag_ids?: string[];
       color?: string;
       whatsapp_instance_id?: string | null;
     }) => {
-      if (!profile?.organization_id) throw new Error('No organization');
+      const organizationId = workspace.organization_id || profile?.organization_id;
+      if (!organizationId) throw new Error('No organization');
       if (usage.workspaceLimit > 0 && usage.workspaceCount >= usage.workspaceLimit) {
         throw new Error(`Limite de workspaces atingido neste plano (${usage.workspaceCount}/${usage.workspaceLimit}). Faça upgrade para criar mais workspaces.`);
       }
+      const { organization_id: _organizationId, ...workspaceInput } = workspace;
       const { data, error } = await supabase
         .from('workspaces')
         .insert({
-          ...workspace,
-          organization_id: profile.organization_id,
+          ...workspaceInput,
+          organization_id: organizationId,
         } as any)
         .select()
         .single();

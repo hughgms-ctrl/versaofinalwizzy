@@ -52,6 +52,8 @@ Deno.serve(async (req) => {
     }
 
     const adminClient = createClient(supabaseUrl, supabaseServiceKey)
+    const body = await req.json().catch(() => ({}))
+    const requestedOrganizationId = String(body?.organization_id || '').trim()
     const { data: profile, error: profileError } = await adminClient
       .from('profiles')
       .select('organization_id')
@@ -59,12 +61,24 @@ Deno.serve(async (req) => {
       .maybeSingle()
     if (profileError) throw profileError
     if (!profile?.organization_id) throw new Error('Organizacao nao encontrada')
+    const organizationId = requestedOrganizationId || profile.organization_id
+
+    const { data: membership, error: membershipError } = await adminClient
+      .from('organization_members')
+      .select('role')
+      .eq('user_id', user.id)
+      .eq('organization_id', organizationId)
+      .maybeSingle()
+    if (membershipError) throw membershipError
+    if (!membership || !['owner', 'admin', 'platform_admin'].includes(String(membership.role))) {
+      throw new Error('Apenas proprietarios e administradores podem gerenciar assinatura.')
+    }
 
     const [{ data: orgPlan, error: planError }, { data: settingsRows }] = await Promise.all([
       adminClient
         .from('organization_plans')
         .select('id, organization_id, asaas_subscription_id, stripe_subscription_id')
-        .eq('organization_id', profile.organization_id)
+        .eq('organization_id', organizationId)
         .maybeSingle(),
       adminClient
         .from('platform_settings')
@@ -105,10 +119,10 @@ Deno.serve(async (req) => {
         payment_status: 'canceled',
         updated_at: now,
       })
-      .eq('organization_id', profile.organization_id)
+      .eq('organization_id', organizationId)
 
     await adminClient.from('billing_events').insert({
-      organization_id: profile.organization_id,
+      organization_id: organizationId,
       event_type: 'subscription_cancelled_by_customer',
       payload: { source: 'billing-cancel', asaas_subscription_id: orgPlan.asaas_subscription_id || null },
       processed_at: now,
