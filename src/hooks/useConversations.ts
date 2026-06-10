@@ -16,6 +16,7 @@ export interface DbConversation {
   metadata: Record<string, any> | null;
   closed_at: string | null;
   workspace_id?: string | null;
+  workspace_ids?: string[] | null;
   source_phone?: string | null;
   whatsapp_instance_id?: string | null;
   created_at: string;
@@ -104,7 +105,7 @@ export function useConversations(options?: { includeArchived?: boolean; onlyArch
       }
 
       if (selectedWorkspaceId) {
-        query = query.eq('workspace_id', selectedWorkspaceId);
+        query = query.or(`workspace_id.eq.${selectedWorkspaceId},workspace_ids.cs.{${selectedWorkspaceId}}`);
       }
 
       const { data, error } = await query;
@@ -304,7 +305,7 @@ export function useCreateConversation() {
         : existingConvQuery.is('whatsapp_instance_id', null);
 
       existingConvQuery = data.workspaceId
-        ? existingConvQuery.eq('workspace_id', data.workspaceId)
+        ? existingConvQuery.or(`workspace_id.eq.${data.workspaceId},workspace_ids.cs.{${data.workspaceId}}`)
         : existingConvQuery.is('workspace_id', null);
 
       const { data: existingConv } = await existingConvQuery.maybeSingle();
@@ -313,9 +314,10 @@ export function useCreateConversation() {
         if (data.workspaceId && !(existingConv as any).workspace_id) {
           await supabase
             .from('conversations')
-            .update({ workspace_id: data.workspaceId } as any)
+            .update({ workspace_id: data.workspaceId, workspace_ids: [data.workspaceId] } as any)
             .eq('id', existingConv.id);
           (existingConv as any).workspace_id = data.workspaceId;
+          (existingConv as any).workspace_ids = [data.workspaceId];
         }
         return {
           conversation: { ...existingConv, last_message: [] } as unknown as DbConversation,
@@ -333,6 +335,7 @@ export function useCreateConversation() {
           service_mode: 'ativo', // Outbound feature starts as "ativo" generally
           unread_count: 0,
           workspace_id: data.workspaceId || null,
+          workspace_ids: data.workspaceId ? [data.workspaceId] : [],
           whatsapp_instance_id: activeInstance?.id || null,
           source_phone: activeInstance?.phone_number || null,
         } as any)

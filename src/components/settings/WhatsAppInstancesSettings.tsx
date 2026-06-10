@@ -12,13 +12,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@/components/ui/dialog';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Smartphone,
   Plus,
@@ -355,8 +349,8 @@ export function WhatsAppInstancesSettings() {
     }
   };
 
-  const getWorkspaceForInstance = (instanceId: string) => {
-    return workspaces.find(w => w.whatsapp_instance_id === instanceId);
+  const getWorkspacesForInstance = (instanceId: string) => {
+    return workspaces.filter(w => w.whatsapp_instance_id === instanceId);
   };
 
   if (isLoading) {
@@ -475,7 +469,7 @@ export function WhatsAppInstancesSettings() {
             return (
               <div className="space-y-3">
                 {visibleInstances.map((instance) => {
-                  const workspace = getWorkspaceForInstance(instance.id);
+                  const linkedWorkspaces = getWorkspacesForInstance(instance.id);
                   const isConnected = instance.status === 'connected';
                   const hasCredentials = hasProviderCredentials(instance);
 
@@ -506,9 +500,14 @@ export function WhatsAppInstancesSettings() {
                           </div>
                           <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
                             {instance.phone_number && <span>{instance.phone_number}</span>}
-                            {workspace && (
-                              <Badge variant="outline" className="text-[10px] py-0" style={{ borderColor: workspace.color, color: workspace.color }}>
+                            {linkedWorkspaces.slice(0, 3).map((workspace) => (
+                              <Badge key={workspace.id} variant="outline" className="text-[10px] py-0" style={{ borderColor: workspace.color, color: workspace.color }}>
                                 {workspace.name}
+                              </Badge>
+                            ))}
+                            {linkedWorkspaces.length > 3 && (
+                              <Badge variant="outline" className="text-[10px] py-0">
+                                +{linkedWorkspaces.length - 3}
                               </Badge>
                             )}
                           </div>
@@ -575,12 +574,17 @@ function EditInstanceDialog({ open, onOpenChange, instance }: { open: boolean; o
   const [label, setLabel] = useState(instance.label || '');
   const [isLoading, setIsLoading] = useState(false);
 
-  const currentWorkspace = workspaces.find(w => w.whatsapp_instance_id === instance.id);
-  const [workspaceId, setWorkspaceId] = useState(currentWorkspace?.id || 'none');
+  const currentWorkspaceIds = workspaces
+    .filter(w => w.whatsapp_instance_id === instance.id)
+    .map(w => w.id);
+  const [workspaceIds, setWorkspaceIds] = useState<string[]>(currentWorkspaceIds);
 
   useEffect(() => {
-    const ws = workspaces.find(w => w.whatsapp_instance_id === instance.id);
-    setWorkspaceId(ws?.id || 'none');
+    setWorkspaceIds(
+      workspaces
+        .filter(w => w.whatsapp_instance_id === instance.id)
+        .map(w => w.id)
+    );
   }, [workspaces, instance.id]);
 
   useEffect(() => {
@@ -593,18 +597,39 @@ function EditInstanceDialog({ open, onOpenChange, instance }: { open: boolean; o
       // Update label
       await updateLabel.mutateAsync({ instanceId: instance.id, label: label.trim() });
 
-      // Handle workspace linking
-      if (currentWorkspace && currentWorkspace.id !== workspaceId && workspaceId === 'none') {
-        await supabase.from('workspaces').update({ whatsapp_instance_id: null }).eq('id', currentWorkspace.id);
-      } else if (currentWorkspace && currentWorkspace.id !== workspaceId && workspaceId !== 'none') {
-        await supabase.from('workspaces').update({ whatsapp_instance_id: null }).eq('id', currentWorkspace.id);
-        await supabase.from('workspaces').update({ whatsapp_instance_id: instance.id }).eq('id', workspaceId);
-      } else if (!currentWorkspace && workspaceId && workspaceId !== 'none') {
-        await supabase.from('workspaces').update({ whatsapp_instance_id: instance.id }).eq('id', workspaceId);
+      const previousIds = new Set(currentWorkspaceIds);
+      const nextIds = new Set(workspaceIds);
+      const removedIds = [...previousIds].filter(id => !nextIds.has(id));
+      const addedIds = [...nextIds].filter(id => !previousIds.has(id));
+
+      if (removedIds.length > 0) {
+        const { error } = await supabase
+          .from('workspaces')
+          .update({ whatsapp_instance_id: null } as any)
+          .in('id', removedIds);
+        if (error) throw error;
       }
+
+      if (addedIds.length > 0) {
+        const { error } = await supabase
+          .from('workspaces')
+          .update({ whatsapp_instance_id: instance.id } as any)
+          .in('id', addedIds);
+        if (error) throw error;
+      }
+
+      const { error: conversationError } = await supabase
+        .from('conversations')
+        .update({
+          workspace_id: workspaceIds[0] || null,
+          workspace_ids: workspaceIds,
+        } as any)
+        .eq('whatsapp_instance_id', instance.id);
+      if (conversationError) throw conversationError;
 
       queryClient.invalidateQueries({ queryKey: ['whatsapp-instances'] });
       queryClient.invalidateQueries({ queryKey: ['workspaces'] });
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
       toast({ title: 'Instância atualizada!' });
       onOpenChange(false);
     } catch (error: any) {
@@ -619,7 +644,7 @@ function EditInstanceDialog({ open, onOpenChange, instance }: { open: boolean; o
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>Editar Instância</DialogTitle>
-          <DialogDescription>Altere o nome e o workspace vinculado.</DialogDescription>
+          <DialogDescription>Altere o nome e os workspaces vinculados.</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div>
@@ -627,18 +652,42 @@ function EditInstanceDialog({ open, onOpenChange, instance }: { open: boolean; o
             <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Ex: Número Principal" className="mt-1" />
           </div>
           <div>
-            <Label>Workspace vinculado</Label>
-            <Select value={workspaceId} onValueChange={setWorkspaceId}>
-              <SelectTrigger className="mt-1">
-                <SelectValue placeholder="Nenhum" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Nenhum (número geral)</SelectItem>
-                {workspaces.map(w => (
-                  <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Label>Workspaces vinculados</Label>
+            <div className="mt-2 max-h-64 space-y-2 overflow-y-auto rounded-md border p-2">
+              {workspaces.length === 0 ? (
+                <p className="px-2 py-3 text-sm text-muted-foreground">Nenhum workspace ativo encontrado.</p>
+              ) : (
+                workspaces.map((workspace) => {
+                  const checked = workspaceIds.includes(workspace.id);
+                  const linkedToAnother = !!workspace.whatsapp_instance_id && workspace.whatsapp_instance_id !== instance.id;
+
+                  return (
+                    <label
+                      key={workspace.id}
+                      className="flex cursor-pointer items-center gap-3 rounded-md px-2 py-2 hover:bg-muted"
+                    >
+                      <Checkbox
+                        checked={checked}
+                        onCheckedChange={(value) => {
+                          setWorkspaceIds((current) => {
+                            if (value) return Array.from(new Set([...current, workspace.id]));
+                            return current.filter(id => id !== workspace.id);
+                          });
+                        }}
+                      />
+                      <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: workspace.color }} />
+                      <span className="flex-1 text-sm">{workspace.name}</span>
+                      {linkedToAnother && (
+                        <Badge variant="outline" className="text-[10px]">outro numero</Badge>
+                      )}
+                    </label>
+                  );
+                })
+              )}
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Conversas recebidas por este numero ficam visiveis nos workspaces selecionados.
+            </p>
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>

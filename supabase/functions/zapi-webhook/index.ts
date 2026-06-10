@@ -1775,7 +1775,8 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
   }
 
   const organizationId = whatsappInstance.organization_id;
-  const fallbackWorkspaceId = await resolveWorkspaceForInstance(supabase, organizationId, whatsappInstance.id);
+  const fallbackWorkspaceIds = await resolveWorkspacesForInstance(supabase, organizationId, whatsappInstance.id);
+  const fallbackWorkspaceId = fallbackWorkspaceIds[0] || null;
 
   // Find or create contact
   // If the message is fromMe, pushName is our own pushName, not the client's.
@@ -1824,6 +1825,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
     whatsappInstance.id,
     whatsappInstance.phone_number,
     fallbackWorkspaceId || contact.workspace_id,
+    fallbackWorkspaceIds.length > 0 ? fallbackWorkspaceIds : (contact.workspace_id ? [contact.workspace_id] : []),
   );
 
   if (!fromMe) {
@@ -2139,7 +2141,11 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
         if (campaignFull?.workspace_id) {
           console.log(`[CAMPAIGN] Assigning workspace ${campaignFull.workspace_id} from campaign`);
           await supabase.from('contacts').update({ workspace_id: campaignFull.workspace_id }).eq('id', contact.id);
-          await supabase.from('conversations').update({ workspace_id: campaignFull.workspace_id }).eq('id', conversation.id);
+          const campaignWorkspaceIds = Array.from(new Set([...(conversation.workspace_ids || []), campaignFull.workspace_id].filter(Boolean)));
+          await supabase.from('conversations').update({
+            workspace_id: campaignFull.workspace_id,
+            workspace_ids: campaignWorkspaceIds,
+          }).eq('id', conversation.id);
         }
 
         // Increment campaign counter
@@ -2692,16 +2698,16 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
 
 // ========== HELPERS ==========
 
-  async function resolveWorkspaceForInstance(supabase: any, organizationId: string, whatsappInstanceId?: string | null): Promise<string | null> {
+  async function resolveWorkspacesForInstance(supabase: any, organizationId: string, whatsappInstanceId?: string | null): Promise<string[]> {
     if (whatsappInstanceId) {
-      const { data: instanceWorkspace } = await supabase
+      const { data: instanceWorkspaces } = await supabase
         .from('workspaces')
         .select('id')
         .eq('organization_id', organizationId)
         .eq('whatsapp_instance_id', whatsappInstanceId)
-        .limit(1)
-        .maybeSingle();
-      if (instanceWorkspace?.id) return instanceWorkspace.id;
+        .eq('is_active', true)
+        .order('created_at', { ascending: true });
+      if (instanceWorkspaces?.length) return instanceWorkspaces.map((workspace: any) => workspace.id);
     }
 
     const { data: workspaces } = await supabase
@@ -2711,7 +2717,7 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
       .order('created_at', { ascending: true })
       .limit(2);
 
-    return workspaces?.length === 1 ? workspaces[0].id : null;
+    return workspaces?.length === 1 ? [workspaces[0].id] : [];
   }
 
   async function findOrCreateContact(supabase: any, phone: string, organizationId: string, name: string | null, avatarUrl: string | null, workspaceId?: string | null) {
@@ -2879,7 +2885,7 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
     }
   }
 
-  async function findOrCreateConversation(supabase: any, contactId: string, organizationId: string, whatsappInstanceId: string, sourcePhone?: string, workspaceId?: string | null) {
+  async function findOrCreateConversation(supabase: any, contactId: string, organizationId: string, whatsappInstanceId: string, sourcePhone?: string, workspaceId?: string | null, workspaceIds: string[] = []) {
     // A same customer can talk to different company numbers. Conversation identity
     // must include the receiving WhatsApp instance to avoid cross-company routing.
     let existingQuery = supabase
@@ -2896,6 +2902,8 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
     if (existing) {
       const updates: any = {};
       if (workspaceId && !existing.workspace_id) updates.workspace_id = workspaceId;
+      const nextWorkspaceIds = Array.from(new Set([...(existing.workspace_ids || []), ...workspaceIds].filter(Boolean)));
+      if (nextWorkspaceIds.length > 0) updates.workspace_ids = nextWorkspaceIds;
       if (!existing.source_phone && sourcePhone) updates.source_phone = sourcePhone;
       if (Object.keys(updates).length > 0) {
         await supabase.from('conversations').update(updates).eq('id', existing.id);
@@ -2909,6 +2917,7 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
         contact_id: contactId, organization_id: organizationId,
         whatsapp_instance_id: whatsappInstanceId, source_phone: sourcePhone || null,
         workspace_id: workspaceId || null,
+        workspace_ids: Array.from(new Set(workspaceIds.filter(Boolean))),
         status: 'open', unread_count: 0,
       })
       .select().single();
