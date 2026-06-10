@@ -869,6 +869,17 @@
         return false;
       }
 
+      if (isRetirementSimulationPage()) {
+        setAutomationStatus("Passei da etapa 6. Voltando para Relacoes Previdenciarias...", "neutral");
+        const relationsStep = findWizardStepButton("Relacoes Previdenciarias") || findWizardStepButton("Relações Previdenciárias");
+        if (!relationsStep) {
+          throw new Error("Estou na simulacao, mas nao consegui localizar a etapa Relacoes Previdenciarias para voltar.");
+        }
+        clickHard(relationsStep);
+        scheduleAutomationResume();
+        return false;
+      }
+
       if (isRealRelationsPage()) {
         setAutomationStatus("Tela de Relacoes Previdenciarias localizada. Gerando relatorio.", "ok");
         await setAutomationRunning(false);
@@ -992,6 +1003,13 @@
       hasPageText("Início");
 
     return hasRelationsInstruction && hasTableHeader;
+  }
+
+  function isRetirementSimulationPage() {
+    return hasPageText("Simulacao de Aposentadoria") ||
+      hasPageText("SimulaÃ§Ã£o de Aposentadoria") ||
+      hasPageText("Valor simulado") ||
+      hasPageText("Tenho direito?");
   }
 
   async function waitForStablePage() {
@@ -1820,6 +1838,7 @@
       return;
     }
 
+    const initialSignature = getWizardStepSignature();
     document.activeElement?.blur?.();
     await revealWizardFooter();
 
@@ -1827,12 +1846,12 @@
     if (idButton && isVisible(idButton) && !isDisabled(idButton)) {
       for (let attempt = 0; attempt < 3; attempt += 1) {
         if (useDebuggerClick) {
-          await clickNextWithRunnerFallback(idButton);
+          await clickNextWithRunnerFallback(idButton, initialSignature);
         } else {
           await clickWizardNextButton(idButton);
         }
         await sleep(1100);
-        if (!isServiceSelectionPage() || !document.body.contains(idButton) || !isVisible(idButton)) break;
+        if (isRealRelationsPage() || getWizardStepSignature() !== initialSignature || !document.body.contains(idButton) || !isVisible(idButton)) break;
       }
       return;
     }
@@ -1843,7 +1862,7 @@
       nextButton.removeAttribute?.("disabled");
       nextButton.classList?.remove?.("disabled");
       if (useDebuggerClick) {
-        await clickNextWithRunnerFallback(nextButton);
+        await clickNextWithRunnerFallback(nextButton, initialSignature);
       } else {
         await clickWizardNextButton(nextButton);
       }
@@ -1857,12 +1876,34 @@
     await sleep(900);
   }
 
-  async function clickNextWithRunnerFallback(button) {
+  async function clickNextWithRunnerFallback(button, initialSignature = getWizardStepSignature()) {
     await withSidebarClickThrough(async () => {
-      await clickElementWithRunner(button);
-      await sleep(250);
-      await clickWizardNextButton(button);
+      const clickedByRunner = await clickElementWithRunner(button);
+      await sleep(950);
+
+      if (isRealRelationsPage() || getWizardStepSignature() !== initialSignature) return;
+      if (!clickedByRunner) {
+        await clickWizardNextButton(button);
+      }
     });
+  }
+
+  function getWizardStepSignature() {
+    const activeStep = Array.from(document.querySelectorAll("button, .wizard-progress-btn, .active, .current, [aria-current='step']"))
+      .map(element => normalizeForCompare(element.innerText || element.textContent || element.getAttribute("aria-label") || ""))
+      .find(text => text && /\b[1-9]\b/.test(text));
+
+    return [
+      location.href,
+      activeStep || "",
+      isServiceSelectionPage() ? "service" : "",
+      isRequesterCpfPage() ? "requester-cpf" : "",
+      isRetirementNoticePageStrict() ? "notice" : "",
+      isRequesterDetailsPage() ? "requester-details" : "",
+      isInformativePage() ? "informative" : "",
+      isRealRelationsPage() ? "relations" : "",
+      isRetirementSimulationPage() ? "simulation" : ""
+    ].join("|");
   }
 
   async function withSidebarClickThrough(task) {
@@ -1946,28 +1987,13 @@
   }
 
   async function clickWizardNextButton(button) {
+    if (isRealRelationsPage()) return;
+
     button.scrollIntoView?.({ block: "nearest", inline: "center" });
     await sleep(250);
     button.focus?.();
     clickHard(button);
-    button.click?.();
-    await clickInPageWorld("#btn-next", "Avançar");
-
-    ["Enter", " "].forEach(key => {
-      button.dispatchEvent(new KeyboardEvent("keydown", { key, code: key === " " ? "Space" : key, bubbles: true, cancelable: true }));
-      button.dispatchEvent(new KeyboardEvent("keyup", { key, code: key === " " ? "Space" : key, bubbles: true, cancelable: true }));
-    });
-
-    const rect = button.getBoundingClientRect();
-    const x = rect.left + rect.width / 2;
-    const y = rect.top + rect.height / 2;
-    const target = document.elementFromPoint(x, y);
-    target?.dispatchEvent(new MouseEvent("click", {
-      bubbles: true,
-      cancelable: true,
-      clientX: x,
-      clientY: y
-    }));
+    await sleep(500);
   }
 
   function clickInPageWorld(selector, textHint = "") {
