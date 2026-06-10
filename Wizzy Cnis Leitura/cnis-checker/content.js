@@ -52,6 +52,27 @@
   let automationResumeTimer = null;
   let currentReportContext = null;
   let autoAnalyzeSessionId = "";
+  let currentBenefitType = "auxilio_reclusao";
+
+  function getBenefitEventDateLabel(benefitType = currentBenefitType) {
+    if (benefitType === "pensao_morte") return "Data do obito";
+    if (benefitType === "salario_maternidade") return "Nascimento ou previsao";
+    return "Data da prisao";
+  }
+
+  function setBenefitType(benefitType) {
+    currentBenefitType = ["auxilio_reclusao", "pensao_morte", "salario_maternidade"].includes(benefitType)
+      ? benefitType
+      : "auxilio_reclusao";
+    const hidden = document.getElementById("benefitType");
+    if (hidden) hidden.value = currentBenefitType;
+    const label = document.getElementById("eventDateLabel");
+    if (label) label.textContent = getBenefitEventDateLabel(currentBenefitType);
+  }
+
+  function getCurrentBenefitType() {
+    return document.getElementById("benefitType")?.value || currentBenefitType || "auxilio_reclusao";
+  }
 
   function ensureCriticalSidebarStyles() {
     if (document.getElementById("cnisSidebarCriticalStyle")) return;
@@ -161,7 +182,9 @@
           <label for="cpfPessoa">CPF</label>
           <input type="text" id="cpfPessoa" placeholder="000.000.000-00">
 
-          <label for="prisonDate">Data da prisao</label>
+          <input type="hidden" id="benefitType" value="auxilio_reclusao">
+
+          <label id="eventDateLabel" for="prisonDate">Data da prisao</label>
           <input type="date" id="prisonDate">
 
           <label for="todayDate">Data de hoje</label>
@@ -195,7 +218,7 @@
     const todayDateInput = sidebar.querySelector("#todayDate");
     if (todayDateInput && !todayDateInput.value) todayDateInput.value = formatISODateFromDate(new Date());
 
-    sidebar.querySelectorAll("#automationMode, #nomePessoa, #cpfPessoa, #prisonDate, #todayDate").forEach(field => {
+    sidebar.querySelectorAll("#automationMode, #nomePessoa, #cpfPessoa, #prisonDate, #todayDate, #benefitType").forEach(field => {
       field.addEventListener("input", saveFormState);
       field.addEventListener("change", saveFormState);
     });
@@ -255,12 +278,13 @@
       const cpf = document.getElementById("cpfPessoa").value.trim();
       const prisonDate = document.getElementById("prisonDate").value;
       const todayDate = getTodayDateValue();
-      const analysis = analyzeCNIS(data.vinculos, prisonDate, todayDate);
+      const benefitType = getCurrentBenefitType();
+      const analysis = analyzeCNISWithOptions(data.vinculos, prisonDate, { todayDate, benefitType });
       const historyId = makeHistoryId();
       const createdAt = new Date().toISOString();
 
       renderInteractiveReport(nome, cpf, prisonDate, todayDate, data.vinculos, analysis, {}, historyId);
-      addHistoryEntry({ id: historyId, nome, cpf, prisonDate, todayDate, vinculos: data.vinculos, createdAt }, true);
+      addHistoryEntry({ id: historyId, nome, cpf, prisonDate, todayDate, benefitType, vinculos: data.vinculos, createdAt }, true);
       await setAutomationRunning(false);
       automationActive = false;
       automationActiveSince = 0;
@@ -1195,11 +1219,12 @@
       const currentCpf = document.getElementById("cpfPessoa").value.trim();
       const prisonDate = document.getElementById("prisonDate").value;
       const todayDate = getTodayDateValue();
-      const analysis = analyzeCNIS(data.vinculos, prisonDate, todayDate);
+      const benefitType = getCurrentBenefitType();
+      const analysis = analyzeCNISWithOptions(data.vinculos, prisonDate, { todayDate, benefitType });
       const historyId = makeHistoryId();
       const createdAt = new Date().toISOString();
       renderInteractiveReport(nome, currentCpf, prisonDate, todayDate, data.vinculos, analysis, {}, historyId);
-      addHistoryEntry({ id: historyId, nome, cpf: currentCpf, prisonDate, todayDate, vinculos: data.vinculos, createdAt }, true);
+      addHistoryEntry({ id: historyId, nome, cpf: currentCpf, prisonDate, todayDate, benefitType, vinculos: data.vinculos, createdAt }, true);
       await setAutomationRunning(false);
     } catch (error) {
       const message = error.message || "Nao consegui retomar a automacao.";
@@ -1224,7 +1249,8 @@
       nome: document.getElementById("nomePessoa")?.value || "",
       cpf: document.getElementById("cpfPessoa")?.value || "",
       prisonDate: document.getElementById("prisonDate")?.value || "",
-      todayDate: document.getElementById("todayDate")?.value || ""
+      todayDate: document.getElementById("todayDate")?.value || "",
+      benefitType: getCurrentBenefitType()
     };
 
     safeStorageSet({ [FORM_STATE_KEY]: state });
@@ -1423,6 +1449,7 @@
       if (state.cpf) document.getElementById("cpfPessoa").value = state.cpf;
       if (state.prisonDate) document.getElementById("prisonDate").value = state.prisonDate;
       document.getElementById("todayDate").value = state.todayDate || formatISODateFromDate(new Date());
+      setBenefitType(state.benefitType || currentBenefitType);
     });
   }
 
@@ -1445,7 +1472,9 @@
     set("cpfPessoa", data.cpf);
     set("prisonDate", data.prisonDate);
     set("todayDate", data.todayDate);
+    setBenefitType(data.benefitType);
     saveFormState();
+    window.setTimeout(() => setBenefitType(data.benefitType), 80);
     keepSidebarOpen = true;
     maybeAutoAnalyze(data);
   }
@@ -2682,6 +2711,7 @@
   }
 
   function analyzeCNISWithOptions(vinculos, prisonDateValue, options = {}) {
+    const benefitType = options.benefitType || "auxilio_reclusao";
     const prisonDate = parseISODate(prisonDateValue);
     const todayDate = parseISODate(options.todayDate) || getTodayDate();
     const retroactiveValue = calculateRetroactiveValue(prisonDate, todayDate);
@@ -2750,7 +2780,7 @@
     let contribuicoesCarenciaLancadas = countContribuicoes(afterLastLossCarencia);
     let competenciasCarencia = uniqueCompetencias(afterLastLossCarencia).length;
     let concomitantesCarencia = contribuicoesCarenciaLancadas - competenciasCarencia;
-    const carenciaNecessaria = getRequiredCarencia(prisonDate);
+    const carenciaNecessaria = benefitType === "auxilio_reclusao" ? getRequiredCarencia(prisonDate) : 0;
     const carenciaExigida = carenciaNecessaria > 0;
     const lastContributionDate = contributionOrderedUntilPrison.reduce((latest, vinculo) => {
       return !latest || vinculo.fimDate > latest ? vinculo.fimDate : latest;
@@ -2787,9 +2817,11 @@
       incapacityBenefitCompetenciasCarencia = 0;
     }
     const carenciaOk = !carenciaExigida || competenciasCarencia >= carenciaNecessaria;
-    const direito = carenciaOk && mantemQualidade;
+    const direito = benefitType === "auxilio_reclusao" ? carenciaOk && mantemQualidade : mantemQualidade;
 
     return {
+      benefitType,
+      eventDateLabel: getBenefitEventDateLabel(benefitType),
       vinculos: rawOrdered,
       perdas: graceGaps.filter(gap => gap.perda),
       graceGaps,
@@ -2821,6 +2853,12 @@
 
   function renderReport(nome, cpf, prisonDate, analysis) {
     const dateLabel = analysis.prisonDate ? formatDate(analysis.prisonDate) : "Nao informada";
+    const eventLabel = analysis.eventDateLabel || getBenefitEventDateLabel(analysis.benefitType);
+    const benefitLabel = analysis.benefitType === "pensao_morte"
+      ? "Pensao por morte"
+      : analysis.benefitType === "salario_maternidade"
+        ? "Salario-maternidade"
+        : "Auxilio-reclusao";
     const qualidadeAte = analysis.qualidadeAte ? formatDate(analysis.qualidadeAte) : "Nao calculada";
     const lastContribution = analysis.lastContributionDate ? formatMonthYear(analysis.lastContributionDate) : "Nao localizada";
 
@@ -2840,7 +2878,7 @@
       <section class="report-section">
         <div class="report-hero ${analysis.direito ? "approved" : "denied"}">
           <span class="status-pill ${analysis.direito ? "ok" : "fail"}">${analysis.direito ? "Direito indicado" : "Direito nao indicado"}</span>
-          <h3>Auxilio-reclusao em ${escapeHTML(dateLabel)}</h3>
+          <h3>${escapeHTML(benefitLabel)} em ${escapeHTML(dateLabel)}</h3>
           <p>${renderConclusionText(analysis)}</p>
         </div>
 
@@ -2881,7 +2919,7 @@
         </div>
 
         <div class="report-block">
-          <h4>4. Condicao de segurado na prisao</h4>
+          <h4>4. Condicao de segurado no evento</h4>
           <p class="${analysis.mantemQualidade ? "ok" : "fail"}">
             Ultima contribuicao em ${escapeHTML(lastContribution)}. Periodo de graca ate ${escapeHTML(qualidadeAte)}${analysis.finalAutomaticGraceMonths ? " com prorrogacao automatica de 12 meses por mais de 120 contribuicoes." : "."}
           </p>
@@ -2940,13 +2978,15 @@
     const report = document.getElementById("report");
     if (!report) return;
 
-    const currentAnalysis = analysis || analyzeCNISWithOptions(vinculos, prisonDate, { desempregoLosses, todayDate });
+    const benefitType = analysis?.benefitType || getCurrentBenefitType();
+    const currentAnalysis = analysis || analyzeCNISWithOptions(vinculos, prisonDate, { desempregoLosses, todayDate, benefitType });
     currentReportContext = {
       historyId: historyId || currentReportContext?.historyId || makeHistoryId(),
       nome,
       cpf,
       prisonDate,
       todayDate,
+      benefitType,
       vinculos,
       desempregoLosses,
       analysis: currentAnalysis
@@ -2996,7 +3036,8 @@
 
     const analysis = analyzeCNISWithOptions(currentReportContext.vinculos, currentReportContext.prisonDate, {
       desempregoLosses: currentReportContext.desempregoLosses,
-      todayDate: currentReportContext.todayDate
+      todayDate: currentReportContext.todayDate,
+      benefitType: currentReportContext.benefitType
     });
 
     renderInteractiveReport(
@@ -3021,6 +3062,7 @@
       cpf: currentReportContext.cpf,
       prisonDate: currentReportContext.prisonDate,
       todayDate: currentReportContext.todayDate,
+      benefitType: currentReportContext.benefitType,
       vinculos: currentReportContext.vinculos,
       desempregoLosses: currentReportContext.desempregoLosses,
       updatedAt: new Date().toISOString()
@@ -3143,9 +3185,10 @@
 
   function renderCarenciaStatus(analysis) {
     if (!analysis.carenciaExigida) {
+      const eventLabel = analysis.eventDateLabel || getBenefitEventDateLabel(analysis.benefitType);
       return `
         <p class="ok">
-          Carencia nao exigida para a data da prisao. Foram identificadas ${analysis.competenciasCarencia} competencia(s) apos a ultima perda, mas esse requisito nao se aplica ao caso.
+          Carencia nao exigida para ${escapeHTML(eventLabel.toLowerCase())}. Foram identificadas ${analysis.competenciasCarencia} competencia(s) apos a ultima perda, mas esse requisito nao se aplica ao caso.
         </p>
       `;
     }
@@ -3158,6 +3201,8 @@
   }
 
   function renderCarenciaLawNote(analysis) {
+    if (analysis.benefitType !== "auxilio_reclusao") return "";
+
     let caseText = "Data da prisao nao informada; por cautela, foi considerada a carencia de 24 contribuicoes mensais.";
 
     if (analysis.prisonDate && !analysis.carenciaExigida) {
@@ -3174,16 +3219,17 @@
   }
 
   function renderConclusionText(analysis) {
+    const eventLabel = (analysis.eventDateLabel || getBenefitEventDateLabel(analysis.benefitType)).toLowerCase();
     if (!analysis.carenciaExigida && analysis.mantemQualidade) {
-      return "Carencia nao exigida pela data da prisao e qualidade de segurado mantida.";
+      return `Carencia nao exigida para ${eventLabel} e qualidade de segurado mantida.`;
     }
 
     if (!analysis.carenciaExigida && !analysis.mantemQualidade) {
-      return "Carencia nao exigida pela data da prisao, mas a qualidade de segurado nao estava mantida.";
+      return `Carencia nao exigida para ${eventLabel}, mas a qualidade de segurado nao estava mantida.`;
     }
 
     if (analysis.direito) {
-      return `Carencia cumprida com ${analysis.competenciasCarencia} contribuicoes apos a ultima perda e qualidade de segurado mantida na data da prisao.`;
+      return `Carencia cumprida com ${analysis.competenciasCarencia} contribuicoes apos a ultima perda e qualidade de segurado mantida no evento.`;
     }
 
     if (!analysis.carenciaOk && analysis.mantemQualidade) {
@@ -3191,26 +3237,35 @@
     }
 
     if (analysis.carenciaOk && !analysis.mantemQualidade) {
-      return "Carencia cumprida, mas a qualidade de segurado nao estava mantida na data da prisao.";
+      return "Carencia cumprida, mas a qualidade de segurado nao estava mantida no evento.";
     }
 
-    return "Carencia insuficiente e qualidade de segurado nao confirmada na data da prisao.";
+    return "Carencia insuficiente e qualidade de segurado nao confirmada no evento.";
   }
 
   function renderFinalConclusion(analysis, dateLabel) {
+    const benefitLabel = analysis.benefitType === "pensao_morte"
+      ? "pensao por morte"
+      : analysis.benefitType === "salario_maternidade"
+        ? "salario-maternidade"
+        : "auxilio-reclusao";
     if (analysis.direito) {
       if (!analysis.carenciaExigida) {
-        return `Neste caso, ha indicacao de direito ao auxilio-reclusao em ${escapeHTML(dateLabel)}, pois a carencia nao era exigida na data da prisao e a qualidade de segurado estava mantida.`;
+        return `Neste caso, ha indicacao de direito ao ${escapeHTML(benefitLabel)} em ${escapeHTML(dateLabel)}, pois a carencia nao e exigida e a qualidade de segurado estava mantida.`;
       }
 
-      return `Neste caso, ha indicacao de direito ao auxilio-reclusao em ${escapeHTML(dateLabel)}, pois a carencia foi cumprida e a qualidade de segurado estava mantida.`;
+      return `Neste caso, ha indicacao de direito ao ${escapeHTML(benefitLabel)} em ${escapeHTML(dateLabel)}, pois a carencia foi cumprida e a qualidade de segurado estava mantida.`;
     }
 
-    return `Neste caso, nao ha indicacao de direito ao auxilio-reclusao em ${escapeHTML(dateLabel)}, pelos criterios analisados acima.`;
+    return `Neste caso, nao ha indicacao de direito ao ${escapeHTML(benefitLabel)} em ${escapeHTML(dateLabel)}, pelos criterios analisados acima.`;
   }
 
   function addHistoryEntry(entry, persist) {
-    const analysis = analyzeCNIS(entry.vinculos || [], entry.prisonDate, entry.todayDate);
+    const analysis = analyzeCNISWithOptions(entry.vinculos || [], entry.prisonDate, {
+      todayDate: entry.todayDate,
+      benefitType: entry.benefitType || getCurrentBenefitType(),
+      desempregoLosses: entry.desempregoLosses || {}
+    });
     const storedEntry = prepareHistoryEntry(entry, analysis);
 
     if (persist) {
@@ -3229,9 +3284,11 @@
         id: entry.id,
         vinculos: entry.vinculos || [],
         desempregoLosses: entry.desempregoLosses || {},
+        benefitType: entry.benefitType || analysis.benefitType,
         todayDate: entry.todayDate || ""
       }),
       summary: entry.summary || {
+        benefitType: analysis.benefitType,
         direito: analysis.direito,
         carenciaOk: analysis.carenciaOk,
         mantemQualidade: analysis.mantemQualidade,
@@ -3431,6 +3488,7 @@
 
   function buildReportBodyHTML(nome, cpf, prisonDate, todayDate, analysis) {
     const dateLabel = analysis.prisonDate ? formatDate(analysis.prisonDate) : "Nao informada";
+    const eventLabel = analysis.eventDateLabel || getBenefitEventDateLabel(analysis.benefitType);
     const qualidadeAte = analysis.qualidadeAte ? formatDate(analysis.qualidadeAte) : "Nao calculada";
     const lastContribution = analysis.lastContributionDate ? formatMonthYear(analysis.lastContributionDate) : "Nao localizada";
     const conclusionTone = analysis.direito ? "ok" : "fail";
@@ -3439,13 +3497,13 @@
       <section class="hero">
         <span class="badge ${analysis.direito ? "badge-ok" : "badge-fail"}">${analysis.direito ? "Direito indicado" : "Direito nao indicado"}</span>
         <h1>Relatorio de Previdencia Social</h1>
-        <p>Analise de carencia, qualidade de segurado e perdas entre vinculos para prisao em ${escapeHTML(dateLabel)}.</p>
+        <p>Analise de carencia, qualidade de segurado e perdas entre vinculos para ${escapeHTML(eventLabel.toLowerCase())} em ${escapeHTML(dateLabel)}.</p>
       </section>
 
       <section class="person">
         <div class="box"><span>Nome</span><strong>${escapeHTML(nome || "Nao informado")}</strong></div>
         <div class="box"><span>CPF</span><strong>${escapeHTML(cpf || "Nao informado")}</strong></div>
-        <div class="box"><span>Data da prisao</span><strong>${escapeHTML(formatISODate(prisonDate) || "Nao informada")}</strong></div>
+        <div class="box"><span>${escapeHTML(eventLabel)}</span><strong>${escapeHTML(formatISODate(prisonDate) || "Nao informada")}</strong></div>
         <div class="box"><span>Data de hoje</span><strong>${escapeHTML(formatISODate(todayDate) || formatDate(analysis.todayDate))}</strong></div>
       </section>
 

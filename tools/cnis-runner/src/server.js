@@ -562,7 +562,7 @@ async function injectCnisPanel(session) {
         <input id="nomePessoa" value="${String(data.nome || "").replace(/"/g, "&quot;")}" style="width:100%;height:40px;background:#0d0f12;color:#f4f7fb;border:1px solid #303640;border-radius:6px;padding:0 11px;box-sizing:border-box">
         <label style="display:block;margin:12px 0 6px;color:#aab4c0;font-size:12px;font-weight:700">CPF</label>
         <input id="cpfPessoa" value="${String(data.cpf || "").replace(/"/g, "&quot;")}" style="width:100%;height:40px;background:#0d0f12;color:#f4f7fb;border:1px solid #303640;border-radius:6px;padding:0 11px;box-sizing:border-box">
-        <label style="display:block;margin:12px 0 6px;color:#aab4c0;font-size:12px;font-weight:700">Data da prisao</label>
+        <label style="display:block;margin:12px 0 6px;color:#aab4c0;font-size:12px;font-weight:700">${data.benefitType === "pensao_morte" ? "Data do obito" : data.benefitType === "salario_maternidade" ? "Nascimento ou previsao" : "Data da prisao"}</label>
         <input id="prisonDate" type="date" value="${String(data.prisonDate || "")}" style="width:100%;height:40px;background:#0d0f12;color:#f4f7fb;border:1px solid #303640;border-radius:6px;padding:0 11px;box-sizing:border-box">
         <label style="display:block;margin:12px 0 6px;color:#aab4c0;font-size:12px;font-weight:700">Data de hoje</label>
         <input id="todayDate" type="date" value="${String(data.todayDate || "")}" style="width:100%;height:40px;background:#0d0f12;color:#f4f7fb;border:1px solid #303640;border-radius:6px;padding:0 11px;box-sizing:border-box">
@@ -613,6 +613,7 @@ async function injectCnisPanel(session) {
     cpf: session.cpf,
     prisonDate: session.prisonDate,
     todayDate: session.todayDate,
+    benefitType: session.benefitType,
   });
 }
 
