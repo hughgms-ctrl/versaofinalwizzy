@@ -129,13 +129,6 @@ export function Header({
 
         <NotificationDropdown />
       </div>
-
-      <div className="w-full md:hidden">
-        <OrganizationSwitcher
-          contentAlign="start"
-          triggerClassName="flex h-9 w-full max-w-none rounded-lg px-3 text-sm"
-        />
-      </div>
     </header>
   );
 }
