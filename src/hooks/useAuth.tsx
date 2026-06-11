@@ -1,4 +1,5 @@
-import React, { useState, useEffect, createContext, useContext, ReactNode } from 'react';
+import React, { useState, useEffect, createContext, useContext, ReactNode, useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { getPublicAppOrigin } from '@/lib/publicOrigin';
 import { User, Session } from '@supabase/supabase-js';
@@ -29,26 +30,13 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchProfile = async (userId: string) => {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('user_id', userId)
-      .single();
-    
-    if (!error && data) {
-      setProfile(data as Profile);
-      // Track fingerprint after profile is loaded (so we have org context)
-      trackFingerprint();
-    }
-  };
-
-  const trackFingerprint = async () => {
+  const trackFingerprint = useCallback(async () => {
     try {
       const browserData = {
         screen_resolution: `${window.screen.width}x${window.screen.height}`,
@@ -64,7 +52,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       console.error('Error tracking fingerprint:', err);
     }
-  };
+  }, []);
+
+  const fetchProfile = useCallback(async (userId: string) => {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('user_id', userId)
+      .single();
+    
+    if (!error && data && data.user_id === userId) {
+      setProfile(data as Profile);
+      // Track fingerprint after profile is loaded (so we have org context)
+      trackFingerprint();
+    }
+  }, [trackFingerprint]);
 
   const isPendingApproval = (u: User | null) => {
     if (!u) return false;
@@ -72,6 +74,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const userMeta = (u.user_metadata || {}) as Record<string, unknown>;
     return appMeta.pending_approval === true || userMeta.pending_approval === true;
   };
+
+  const clearWorkspaceSelection = useCallback(() => {
+    localStorage.removeItem('selectedOrganizationId');
+    localStorage.removeItem('selectedWorkspaceId');
+  }, []);
 
   useEffect(() => {
     // Set up auth state listener BEFORE checking session
@@ -82,6 +89,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(null);
         setUser(null);
         setProfile(null);
+        clearWorkspaceSelection();
+        queryClient.clear();
         setLoading(false);
         return;
       }
@@ -90,10 +99,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(session?.user ?? null);
       
       if (session?.user) {
+        setProfile((current) => current?.user_id === session.user.id ? current : null);
         // Fetch profile after auth state change
         setTimeout(() => fetchProfile(session.user.id), 100);
       } else {
         setProfile(null);
+        clearWorkspaceSelection();
+        queryClient.clear();
       }
       setLoading(false);
     });
@@ -105,6 +117,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(null);
         setUser(null);
         setProfile(null);
+        clearWorkspaceSelection();
+        queryClient.clear();
         setLoading(false);
         return;
       }
@@ -113,13 +127,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(session?.user ?? null);
       
       if (session?.user) {
+        setProfile((current) => current?.user_id === session.user.id ? current : null);
         fetchProfile(session.user.id);
+      } else {
+        clearWorkspaceSelection();
       }
       setLoading(false);
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [clearWorkspaceSelection, fetchProfile, queryClient]);
 
   const signUp = async (email: string, password: string, fullName: string, companyName: string, timezone?: string) => {
     try {
@@ -217,6 +234,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = async () => {
     setProfile(null);
+    setUser(null);
+    setSession(null);
+    clearWorkspaceSelection();
+    queryClient.clear();
     await supabase.auth.signOut();
   };
 

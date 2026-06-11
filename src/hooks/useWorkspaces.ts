@@ -151,7 +151,7 @@ export function useUserWorkspaces() {
   const { session } = useAuth();
 
   return useQuery({
-    queryKey: ['user-workspaces'],
+    queryKey: ['user-workspaces', session?.user?.id],
     queryFn: async (): Promise<string[]> => {
       if (!session?.user?.id) return [];
       const { data, error } = await supabase

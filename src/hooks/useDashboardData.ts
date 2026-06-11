@@ -44,26 +44,13 @@ async function getWorkspaceConversationIds(
   if (!workspaceId) return null; // null means no filter
 
   const workspace = workspaces.find((w: any) => w.id === workspaceId);
-  if (!workspace || !workspace.filter_tag_ids || workspace.filter_tag_ids.length === 0) {
-    return null;
-  }
+  if (!workspace) return [];
 
-  // Get contacts that have any of the workspace tags
-  const { data: contactTags } = await supabase
-    .from('contact_tags')
-    .select('contact_id')
-    .in('tag_id', workspace.filter_tag_ids);
-
-  if (!contactTags || contactTags.length === 0) return [];
-
-  const contactIds = [...new Set(contactTags.map((ct: any) => ct.contact_id))];
-
-  // Get conversations for those contacts
   const { data: conversations } = await supabase
     .from('conversations')
     .select('id')
     .eq('organization_id', orgId)
-    .in('contact_id', contactIds);
+    .eq('workspace_id', workspaceId);
 
   return conversations?.map((c: any) => c.id) || [];
 }
@@ -75,16 +62,17 @@ export interface DateRange {
 
 export function useDashboardMetrics(range?: DateRange) {
   const { profile } = useAuth();
-  const { selectedWorkspaceId, workspaces } = useWorkspaceContext();
+  const { selectedOrganizationId, selectedWorkspaceId, workspaces } = useWorkspaceContext();
+  const organizationId = selectedOrganizationId || profile?.organization_id || null;
 
   const sinceISO = range?.sinceISO ?? startOfDay(new Date()).toISOString();
   const untilISO = range?.untilISO ?? null;
   const rangeKey = `${sinceISO}|${untilISO ?? 'now'}`;
 
   return useQuery({
-    queryKey: ['dashboard-metrics', profile?.organization_id, selectedWorkspaceId, rangeKey],
+    queryKey: ['dashboard-metrics', organizationId, selectedWorkspaceId, rangeKey],
     queryFn: async (): Promise<DashboardMetrics> => {
-      if (!profile?.organization_id) {
+      if (!organizationId) {
         return {
           conversationsToday: 0,
           resolvedToday: 0,
@@ -96,7 +84,7 @@ export function useDashboardMetrics(range?: DateRange) {
       }
 
       const wsConvIds = await getWorkspaceConversationIds(
-        profile.organization_id,
+        organizationId,
         selectedWorkspaceId,
         workspaces
       );
@@ -118,7 +106,7 @@ export function useDashboardMetrics(range?: DateRange) {
         let q = supabase
           .from('conversations')
           .select('*', { count: 'exact', head: true })
-          .eq('organization_id', profile.organization_id);
+          .eq('organization_id', organizationId);
         if (wsConvIds) q = q.in('id', wsConvIds);
         return q;
       };
@@ -149,7 +137,7 @@ export function useDashboardMetrics(range?: DateRange) {
         const { data: allConvs } = await supabase
           .from('conversations')
           .select('id')
-          .eq('organization_id', profile.organization_id);
+          .eq('organization_id', organizationId);
         convIdsForMessages = allConvs?.map(c => c.id) || [];
       }
 
@@ -190,20 +178,21 @@ export function useDashboardMetrics(range?: DateRange) {
         openConversations: openConversations || 0,
       };
     },
-    enabled: !!profile?.organization_id,
+    enabled: !!organizationId,
     refetchInterval: 30000,
   });
 }
 
 export function useConversationsByHour(range?: DateRange) {
   const { profile } = useAuth();
-  const { selectedWorkspaceId, workspaces } = useWorkspaceContext();
+  const { selectedOrganizationId, selectedWorkspaceId, workspaces } = useWorkspaceContext();
+  const organizationId = selectedOrganizationId || profile?.organization_id || null;
   const rangeKey = range ? `${range.sinceISO}|${range.untilISO}` : '24h';
 
   return useQuery({
-    queryKey: ['conversations-by-hour', profile?.organization_id, selectedWorkspaceId, rangeKey],
+    queryKey: ['conversations-by-hour', organizationId, selectedWorkspaceId, rangeKey],
     queryFn: async (): Promise<ConversationsByHour[]> => {
-      if (!profile?.organization_id) return [];
+      if (!organizationId) return [];
 
       const now = new Date();
       const sinceDate = range ? new Date(range.sinceISO) : subHours(now, 24);
@@ -229,7 +218,7 @@ export function useConversationsByHour(range?: DateRange) {
       }
 
       const wsConvIds = await getWorkspaceConversationIds(
-        profile.organization_id,
+        organizationId,
         selectedWorkspaceId,
         workspaces
       );
@@ -241,7 +230,7 @@ export function useConversationsByHour(range?: DateRange) {
         const { data: conversations } = await supabase
           .from('conversations')
           .select('id')
-          .eq('organization_id', profile.organization_id);
+          .eq('organization_id', organizationId);
         convIds = conversations?.map(c => c.id) || [];
       }
 
@@ -276,7 +265,7 @@ export function useConversationsByHour(range?: DateRange) {
 
       return buckets;
     },
-    enabled: !!profile?.organization_id,
+    enabled: !!organizationId,
     refetchInterval: 60000,
   });
 }
@@ -284,18 +273,19 @@ export function useConversationsByHour(range?: DateRange) {
 
 export function useResolutionData(range?: DateRange) {
   const { profile } = useAuth();
-  const { selectedWorkspaceId, workspaces } = useWorkspaceContext();
+  const { selectedOrganizationId, selectedWorkspaceId, workspaces } = useWorkspaceContext();
+  const organizationId = selectedOrganizationId || profile?.organization_id || null;
   const rangeKey = range ? `${range.sinceISO}|${range.untilISO}` : 'all';
 
   return useQuery({
-    queryKey: ['resolution-data', profile?.organization_id, selectedWorkspaceId, rangeKey],
+    queryKey: ['resolution-data', organizationId, selectedWorkspaceId, rangeKey],
     queryFn: async (): Promise<ResolutionData[]> => {
-      if (!profile?.organization_id) {
+      if (!organizationId) {
         return [{ name: 'Sem dados', value: 100, color: 'hsl(220 9% 46%)' }];
       }
 
       const wsConvIds = await getWorkspaceConversationIds(
-        profile.organization_id,
+        organizationId,
         selectedWorkspaceId,
         workspaces
       );
@@ -303,7 +293,7 @@ export function useResolutionData(range?: DateRange) {
       let query = supabase
         .from('conversations')
         .select('id, status, last_message_at')
-        .eq('organization_id', profile.organization_id);
+        .eq('organization_id', organizationId);
 
       if (range) {
         query = query.gte('created_at', range.sinceISO).lte('created_at', range.untilISO);
@@ -375,22 +365,23 @@ export function useResolutionData(range?: DateRange) {
 
       return result.length > 0 ? result : [{ name: 'Sem dados', value: 100, color: 'hsl(220 9% 46%)' }];
     },
-    enabled: !!profile?.organization_id,
+    enabled: !!organizationId,
     refetchInterval: 60000,
   });
 }
 
 export function useRecentConversations(limit = 5) {
   const { profile } = useAuth();
-  const { selectedWorkspaceId, workspaces } = useWorkspaceContext();
+  const { selectedOrganizationId, selectedWorkspaceId, workspaces } = useWorkspaceContext();
+  const organizationId = selectedOrganizationId || profile?.organization_id || null;
 
   return useQuery({
-    queryKey: ['recent-conversations-dashboard', profile?.organization_id, selectedWorkspaceId, limit],
+    queryKey: ['recent-conversations-dashboard', organizationId, selectedWorkspaceId, limit],
     queryFn: async (): Promise<RecentConversation[]> => {
-      if (!profile?.organization_id) return [];
+      if (!organizationId) return [];
 
       const wsConvIds = await getWorkspaceConversationIds(
-        profile.organization_id,
+        organizationId,
         selectedWorkspaceId,
         workspaces
       );
@@ -406,7 +397,7 @@ export function useRecentConversations(limit = 5) {
           last_message_at,
           contact:contacts(name, phone)
         `)
-        .eq('organization_id', profile.organization_id)
+        .eq('organization_id', organizationId)
         .order('last_message_at', { ascending: false })
         .limit(limit);
 
@@ -444,20 +435,21 @@ export function useRecentConversations(limit = 5) {
 
       return result;
     },
-    enabled: !!profile?.organization_id,
+    enabled: !!organizationId,
     refetchInterval: 15000,
   });
 }
 
 export function useTeamPerformance(period: string = '7d', range?: DateRange) {
   const { profile } = useAuth();
-  const { selectedWorkspaceId, workspaces } = useWorkspaceContext();
+  const { selectedOrganizationId, selectedWorkspaceId, workspaces } = useWorkspaceContext();
+  const organizationId = selectedOrganizationId || profile?.organization_id || null;
   const rangeKey = range ? `${range.sinceISO}|${range.untilISO}` : period;
 
   return useQuery({
-    queryKey: ['team-performance', profile?.organization_id, selectedWorkspaceId, rangeKey],
+    queryKey: ['team-performance', organizationId, selectedWorkspaceId, rangeKey],
     queryFn: async () => {
-      if (!profile?.organization_id) return [];
+      if (!organizationId) return [];
 
       let since: string;
       let until: string | null = null;
@@ -473,7 +465,7 @@ export function useTeamPerformance(period: string = '7d', range?: DateRange) {
       }
 
       const wsConvIds = await getWorkspaceConversationIds(
-        profile.organization_id,
+        organizationId,
         selectedWorkspaceId,
         workspaces
       );
@@ -483,7 +475,7 @@ export function useTeamPerformance(period: string = '7d', range?: DateRange) {
       const { data: profiles } = await supabase
         .from('profiles')
         .select('id, user_id, full_name, avatar_url')
-        .eq('organization_id', profile.organization_id);
+        .eq('organization_id', organizationId);
 
       if (!profiles) return [];
 
@@ -491,7 +483,7 @@ export function useTeamPerformance(period: string = '7d', range?: DateRange) {
       let convQuery = supabase
         .from('conversations')
         .select('id, intervened_by, assigned_to, intervened_at, updated_at')
-        .eq('organization_id', profile.organization_id)
+        .eq('organization_id', organizationId)
         .gte('updated_at', since);
       if (until) convQuery = convQuery.lte('updated_at', until);
 
@@ -525,7 +517,7 @@ export function useTeamPerformance(period: string = '7d', range?: DateRange) {
 
       return result.filter(m => m.conversationsHandled > 0);
     },
-    enabled: !!profile?.organization_id,
+    enabled: !!organizationId,
     refetchInterval: 60000,
   });
 }
@@ -554,12 +546,13 @@ export interface AgentPerformanceData {
 
 export function useReportsMetrics(period: string) {
   const { profile } = useAuth();
-  const { selectedWorkspaceId, workspaces } = useWorkspaceContext();
+  const { selectedOrganizationId, selectedWorkspaceId, workspaces } = useWorkspaceContext();
+  const organizationId = selectedOrganizationId || profile?.organization_id || null;
 
   return useQuery({
-    queryKey: ['reports-metrics', profile?.organization_id, selectedWorkspaceId, period],
+    queryKey: ['reports-metrics', organizationId, selectedWorkspaceId, period],
     queryFn: async (): Promise<ReportsMetrics> => {
-      if (!profile?.organization_id) {
+      if (!organizationId) {
         return { totalConversations: 0, avgResponseTime: 0, aiPercentage: 0, totalMessages: 0 };
       }
 
@@ -570,7 +563,7 @@ export function useReportsMetrics(period: string) {
         : subDays(new Date(), days).toISOString();
 
       const wsConvIds = await getWorkspaceConversationIds(
-        profile.organization_id,
+        organizationId,
         selectedWorkspaceId,
         workspaces
       );
@@ -582,7 +575,7 @@ export function useReportsMetrics(period: string) {
       let convQuery = supabase
         .from('conversations')
         .select('id', { count: 'exact' })
-        .eq('organization_id', profile.organization_id)
+        .eq('organization_id', organizationId)
         .gte('created_at', since);
       if (wsConvIds) convQuery = convQuery.in('id', wsConvIds);
 
@@ -616,25 +609,26 @@ export function useReportsMetrics(period: string) {
         totalMessages,
       };
     },
-    enabled: !!profile?.organization_id,
+    enabled: !!organizationId,
     refetchInterval: 60000,
   });
 }
 
 export function useConversationsByDay(period: string) {
   const { profile } = useAuth();
-  const { selectedWorkspaceId, workspaces } = useWorkspaceContext();
+  const { selectedOrganizationId, selectedWorkspaceId, workspaces } = useWorkspaceContext();
+  const organizationId = selectedOrganizationId || profile?.organization_id || null;
 
   return useQuery({
-    queryKey: ['conversations-by-day', profile?.organization_id, selectedWorkspaceId, period],
+    queryKey: ['conversations-by-day', organizationId, selectedWorkspaceId, period],
     queryFn: async (): Promise<ConversationsByDay[]> => {
-      if (!profile?.organization_id) return [];
+      if (!organizationId) return [];
 
       const daysMap: Record<string, number> = { today: 1, '7d': 7, '30d': 30, '90d': 90 };
       const days = daysMap[period] ?? 7;
 
       const wsConvIds = await getWorkspaceConversationIds(
-        profile.organization_id,
+        organizationId,
         selectedWorkspaceId,
         workspaces
       );
@@ -643,7 +637,7 @@ export function useConversationsByDay(period: string) {
       let convQuery = supabase
         .from('conversations')
         .select('id')
-        .eq('organization_id', profile.organization_id);
+        .eq('organization_id', organizationId);
       if (wsConvIds !== null) {
         if (wsConvIds.length === 0) return [];
         convQuery = convQuery.in('id', wsConvIds);
@@ -688,19 +682,20 @@ export function useConversationsByDay(period: string) {
         total: data.ia + data.humano,
       }));
     },
-    enabled: !!profile?.organization_id,
+    enabled: !!organizationId,
     refetchInterval: 60000,
   });
 }
 
 export function useReportsStatusDistribution(period: string) {
   const { profile } = useAuth();
-  const { selectedWorkspaceId, workspaces } = useWorkspaceContext();
+  const { selectedOrganizationId, selectedWorkspaceId, workspaces } = useWorkspaceContext();
+  const organizationId = selectedOrganizationId || profile?.organization_id || null;
 
   return useQuery({
-    queryKey: ['reports-status-distribution', profile?.organization_id, selectedWorkspaceId, period],
+    queryKey: ['reports-status-distribution', organizationId, selectedWorkspaceId, period],
     queryFn: async (): Promise<ResolutionData[]> => {
-      if (!profile?.organization_id) {
+      if (!organizationId) {
         return [{ name: 'Sem dados', value: 100, color: 'hsl(220 9% 46%)' }];
       }
 
@@ -711,7 +706,7 @@ export function useReportsStatusDistribution(period: string) {
         : subDays(new Date(), days).toISOString();
 
       const wsConvIds = await getWorkspaceConversationIds(
-        profile.organization_id,
+        organizationId,
         selectedWorkspaceId,
         workspaces
       );
@@ -719,7 +714,7 @@ export function useReportsStatusDistribution(period: string) {
       let query = supabase
         .from('conversations')
         .select('status', { count: 'exact' })
-        .eq('organization_id', profile.organization_id)
+        .eq('organization_id', organizationId)
         .gte('created_at', since);
 
       if (wsConvIds !== null) {
@@ -745,19 +740,20 @@ export function useReportsStatusDistribution(period: string) {
 
       return result.length > 0 ? result : [{ name: 'Sem dados', value: 100, color: 'hsl(220 9% 46%)' }];
     },
-    enabled: !!profile?.organization_id,
+    enabled: !!organizationId,
     refetchInterval: 60000,
   });
 }
 
 export function useReportsAgentPerformance(period: string) {
   const { profile } = useAuth();
-  const { selectedWorkspaceId, workspaces } = useWorkspaceContext();
+  const { selectedOrganizationId, selectedWorkspaceId, workspaces } = useWorkspaceContext();
+  const organizationId = selectedOrganizationId || profile?.organization_id || null;
 
   return useQuery({
-    queryKey: ['reports-agent-performance', profile?.organization_id, selectedWorkspaceId, period],
+    queryKey: ['reports-agent-performance', organizationId, selectedWorkspaceId, period],
     queryFn: async (): Promise<AgentPerformanceData[]> => {
-      if (!profile?.organization_id) return [];
+      if (!organizationId) return [];
 
       const daysMap: Record<string, number> = { today: 0, '7d': 7, '30d': 30, '90d': 90 };
       const days = daysMap[period] ?? 7;
@@ -766,7 +762,7 @@ export function useReportsAgentPerformance(period: string) {
         : subDays(new Date(), days).toISOString();
 
       const wsConvIds = await getWorkspaceConversationIds(
-        profile.organization_id,
+        organizationId,
         selectedWorkspaceId,
         workspaces
       );
@@ -774,7 +770,7 @@ export function useReportsAgentPerformance(period: string) {
       const { data: allProfiles } = await supabase
         .from('profiles')
         .select('id, user_id, full_name, avatar_url')
-        .eq('organization_id', profile.organization_id);
+        .eq('organization_id', organizationId);
 
       if (!allProfiles) return [];
 
@@ -784,7 +780,7 @@ export function useReportsAgentPerformance(period: string) {
         let query = supabase
           .from('conversations')
           .select('*', { count: 'exact', head: true })
-          .eq('organization_id', profile.organization_id)
+          .eq('organization_id', organizationId)
           .eq('assigned_to', member.user_id)
           .gte('created_at', since);
 
@@ -806,7 +802,7 @@ export function useReportsAgentPerformance(period: string) {
 
       return result.sort((a, b) => b.atendimentos - a.atendimentos);
     },
-    enabled: !!profile?.organization_id,
+    enabled: !!organizationId,
     refetchInterval: 60000,
   });
 }
