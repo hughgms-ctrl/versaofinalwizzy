@@ -32,6 +32,8 @@ export interface RecentConversation {
   lastMessageAt: Date;
   status: string;
   isFromBot: boolean;
+  lastMessageDirection: 'inbound' | 'outbound' | null;
+  isAwaitingResponse: boolean;
   unreadCount: number;
 }
 
@@ -111,9 +113,9 @@ export function useDashboardMetrics(range?: DateRange) {
         return q;
       };
 
-      // Conversations in range
-      let conversationsTodayQ = buildConvQuery().gte('created_at', sinceISO);
-      if (untilISO) conversationsTodayQ = conversationsTodayQ.lte('created_at', untilISO);
+      // Conversations with activity in range
+      let conversationsTodayQ = buildConvQuery().gte('last_message_at', sinceISO);
+      if (untilISO) conversationsTodayQ = conversationsTodayQ.lte('last_message_at', untilISO);
       const { count: conversationsToday } = await conversationsTodayQ;
 
       // Resolved in range (closed + archived)
@@ -127,8 +129,6 @@ export function useDashboardMetrics(range?: DateRange) {
       const resolvedToday = (closedTodayCount || 0) + (archivedTodayCount || 0);
 
       // Open conversations (current snapshot — independente do período)
-      const { count: openConversations } = await buildConvQuery().eq('status', 'open');
-
       // Get conversation IDs for message queries
       let convIdsForMessages: string[];
       if (wsConvIds) {
@@ -139,6 +139,40 @@ export function useDashboardMetrics(range?: DateRange) {
           .select('id')
           .eq('organization_id', organizationId);
         convIdsForMessages = allConvs?.map(c => c.id) || [];
+      }
+
+      let openConversations = 0;
+      if (convIdsForMessages.length > 0) {
+        let activeConvQ = supabase
+          .from('conversations')
+          .select('id, status, closed_at, last_message_at')
+          .eq('organization_id', organizationId)
+          .neq('status', 'archived')
+          .neq('status', 'closed' as any)
+          .is('closed_at', null)
+          .order('last_message_at', { ascending: false, nullsFirst: false });
+
+        if (wsConvIds) activeConvQ = activeConvQ.in('id', wsConvIds);
+
+        const { data: activeConvs } = await activeConvQ;
+        const activeConvIds = activeConvs?.map(c => c.id) || [];
+
+        if (activeConvIds.length > 0) {
+          const { data: lastMsgs } = await (supabase as any)
+            .from('messages')
+            .select('conversation_id, direction, created_at')
+            .in('conversation_id', activeConvIds)
+            .order('created_at', { ascending: false });
+
+          const lastDirByConv = new Map<string, 'inbound' | 'outbound'>();
+          (lastMsgs || []).forEach((msg: any) => {
+            if (!lastDirByConv.has(msg.conversation_id)) {
+              lastDirByConv.set(msg.conversation_id, msg.direction);
+            }
+          });
+
+          openConversations = activeConvIds.filter(id => lastDirByConv.get(id) === 'inbound').length;
+        }
       }
 
       let totalMessages = 0;
@@ -175,7 +209,7 @@ export function useDashboardMetrics(range?: DateRange) {
         totalMessages,
         avgResponseTime: 0,
         aiHandledPercentage,
-        openConversations: openConversations || 0,
+        openConversations,
       };
     },
     enabled: !!organizationId,
@@ -296,7 +330,7 @@ export function useResolutionData(range?: DateRange) {
         .eq('organization_id', organizationId);
 
       if (range) {
-        query = query.gte('created_at', range.sinceISO).lte('created_at', range.untilISO);
+        query = query.gte('last_message_at', range.sinceISO).lte('last_message_at', range.untilISO);
       }
 
       if (wsConvIds !== null) {
@@ -395,6 +429,7 @@ export function useRecentConversations(limit = 5) {
           status,
           unread_count,
           last_message_at,
+          closed_at,
           contact:contacts(name, phone)
         `)
         .eq('organization_id', organizationId)
@@ -414,7 +449,7 @@ export function useRecentConversations(limit = 5) {
       for (const conv of conversations) {
         const { data: lastMsg } = await (supabase as any)
           .from('messages')
-          .select('content, is_from_bot')
+          .select('content, is_from_bot, direction')
           .eq('conversation_id', conv.id)
           .order('created_at', { ascending: false })
           .limit(1)
@@ -429,6 +464,12 @@ export function useRecentConversations(limit = 5) {
           lastMessageAt: new Date(conv.last_message_at || Date.now()),
           status: conv.status as any,
           isFromBot: lastMsg?.is_from_bot || false,
+          lastMessageDirection: lastMsg?.direction || null,
+          isAwaitingResponse:
+            conv.status !== 'archived'
+            && conv.status !== 'closed'
+            && !(conv as any).closed_at
+            && lastMsg?.direction === 'inbound',
           unreadCount: conv.unread_count || 0,
         });
       }
