@@ -265,11 +265,15 @@ async function upsertDefaultPermissions(admin: any, userId: string, organization
     organization_id: organizationId,
     can_access_dashboard: true,
     can_access_conversations: false,
+    can_access_contacts: false,
+    can_access_groups: false,
     can_access_pipeline: false,
     can_access_flows: false,
+    can_access_campaigns: false,
     can_access_reports: false,
     can_access_agents: false,
     can_access_settings: false,
+    can_access_integrations: false,
     can_access_team: false,
     can_access_scheduled: false,
     can_access_calendar: false,
@@ -286,6 +290,8 @@ async function upsertDefaultPermissions(admin: any, userId: string, organization
 
   if (role === 'supervisor') {
     permissions.can_access_conversations = true;
+    permissions.can_access_contacts = true;
+    permissions.can_access_groups = true;
     permissions.can_access_pipeline = true;
     permissions.can_access_reports = true;
     permissions.can_access_team = true;
@@ -293,13 +299,19 @@ async function upsertDefaultPermissions(admin: any, userId: string, organization
     permissions.can_access_calendar = true;
   } else if (role === 'agent') {
     permissions.can_access_conversations = true;
+    permissions.can_access_contacts = true;
+    permissions.can_access_groups = true;
   } else if (role === 'admin') {
     permissions.can_access_conversations = true;
+    permissions.can_access_contacts = true;
+    permissions.can_access_groups = true;
     permissions.can_access_pipeline = true;
     permissions.can_access_flows = true;
+    permissions.can_access_campaigns = true;
     permissions.can_access_reports = true;
     permissions.can_access_agents = true;
     permissions.can_access_settings = true;
+    permissions.can_access_integrations = true;
     permissions.can_access_team = true;
     permissions.can_access_scheduled = true;
     permissions.can_access_calendar = true;

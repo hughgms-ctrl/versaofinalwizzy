@@ -14,7 +14,9 @@ import {
   LogOut,
   Menu,
   BookUser,
+  UsersRound,
   Megaphone,
+  Plug,
   MousePointerClick,
   Lock
 } from 'lucide-react';
@@ -41,16 +43,18 @@ interface NavItem {
 const navigation: NavItem[] = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, module: 'dashboard', planModule: 'dashboard' },
   { name: 'Conversas', href: '/conversations', icon: MessageSquare, module: 'conversations', planModule: 'conversations' },
-  { name: 'Contatos', href: '/contacts', icon: BookUser, module: 'conversations', planModule: 'contacts' },
+  { name: 'Contatos', href: '/contacts', icon: BookUser, module: 'contacts', planModule: 'contacts' },
+  { name: 'Grupos', href: '/groups', icon: UsersRound, module: 'groups', planModule: 'conversations' },
   { name: 'Agenda', href: '/calendar', icon: Calendar, module: 'calendar', planModule: 'calendar' },
   { name: 'Pipeline', href: '/pipeline', icon: Kanban, module: 'pipeline', planModule: 'pipeline' },
   { name: 'Fluxos', href: '/flows', icon: Workflow, module: 'flows', planModule: 'flows' },
-  { name: 'Campanhas', href: '/campaigns', icon: Megaphone, module: 'flows', planModule: 'campaigns' },
+  { name: 'Campanhas', href: '/campaigns', icon: Megaphone, module: 'campaigns', planModule: 'campaigns' },
   { name: 'Ferramentas', href: '/tools', icon: MousePointerClick, module: 'tools', planModule: 'tools' },
   { name: 'Programados', href: '/scheduled', icon: CalendarClock, module: 'scheduled', planModule: 'scheduled' },
   { name: 'Agentes IA', href: '/agents', icon: Bot, module: 'agents', planModule: 'agents' },
   { name: 'Equipe', href: '/team', icon: Users, module: 'team', planModule: 'team' },
   { name: 'Relatórios', href: '/reports', icon: BarChart3, module: 'reports' },
+  { name: 'Integrações', href: '/integrations', icon: Plug, module: 'integrations', planModule: 'integrations' },
   { name: 'Configurações', href: '/settings', icon: Settings, module: 'settings' },
 ];
 
@@ -73,11 +77,15 @@ export function MobileNav() {
     const moduleMap: Record<string, keyof typeof permissions> = {
       dashboard: 'can_access_dashboard',
       conversations: 'can_access_conversations',
+      contacts: 'can_access_contacts',
+      groups: 'can_access_groups',
       pipeline: 'can_access_pipeline',
       flows: 'can_access_flows',
+      campaigns: 'can_access_campaigns',
       reports: 'can_access_reports',
       agents: 'can_access_agents',
       settings: 'can_access_settings',
+      integrations: 'can_access_integrations',
       team: 'can_access_team',
       scheduled: 'can_access_scheduled',
       calendar: 'can_access_calendar',

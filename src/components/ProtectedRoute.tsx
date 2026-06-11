@@ -20,7 +20,9 @@ function getPlanModuleForPath(pathname: string): string | null {
   if (pathname.startsWith('/tools/quiz')) return 'quiz';
   if (pathname.startsWith('/tools/wizzy-flow')) return 'wizzy_flow';
   if (pathname.startsWith('/tools')) return 'tools';
-  if (pathname.startsWith('/conversations') || pathname.startsWith('/contacts') || pathname.startsWith('/groups')) return 'conversations';
+  if (pathname.startsWith('/conversations')) return 'conversations';
+  if (pathname.startsWith('/contacts')) return 'contacts';
+  if (pathname.startsWith('/groups')) return 'conversations';
   if (pathname.startsWith('/calendar')) return 'calendar';
   if (pathname.startsWith('/pipeline')) return 'pipeline';
   if (pathname.startsWith('/flows') || pathname.startsWith('/flow-builder')) return 'flows';
@@ -43,15 +45,19 @@ function getPermissionModuleForPath(pathname: string): string | null {
   if (pathname.startsWith('/tools/carousel')) return 'tool_carousel';
   if (pathname.startsWith('/tools/cnis')) return 'tool_cnis';
   if (pathname.startsWith('/tools')) return 'tools';
-  if (pathname.startsWith('/conversations') || pathname.startsWith('/contacts') || pathname.startsWith('/groups')) return 'conversations';
+  if (pathname.startsWith('/conversations')) return 'conversations';
+  if (pathname.startsWith('/contacts')) return 'contacts';
+  if (pathname.startsWith('/groups')) return 'groups';
   if (pathname.startsWith('/calendar')) return 'calendar';
   if (pathname.startsWith('/pipeline')) return 'pipeline';
-  if (pathname.startsWith('/flows') || pathname.startsWith('/flow-builder') || pathname.startsWith('/campaigns')) return 'flows';
+  if (pathname.startsWith('/flows') || pathname.startsWith('/flow-builder')) return 'flows';
+  if (pathname.startsWith('/campaigns')) return 'campaigns';
   if (pathname.startsWith('/scheduled')) return 'scheduled';
   if (pathname.startsWith('/agents') || pathname.startsWith('/master-agent')) return 'agents';
   if (pathname.startsWith('/team')) return 'team';
   if (pathname.startsWith('/reports')) return 'reports';
-  if (pathname.startsWith('/integrations') || pathname.startsWith('/settings')) return 'settings';
+  if (pathname.startsWith('/integrations')) return 'integrations';
+  if (pathname.startsWith('/settings')) return 'settings';
   if (pathname.startsWith('/dashboard')) return 'dashboard';
   return null;
 }
@@ -183,11 +189,15 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
     const permissionMap: Record<string, keyof NonNullable<typeof permissions>> = {
       dashboard: 'can_access_dashboard',
       conversations: 'can_access_conversations',
+      contacts: 'can_access_contacts',
+      groups: 'can_access_groups',
       pipeline: 'can_access_pipeline',
       flows: 'can_access_flows',
+      campaigns: 'can_access_campaigns',
       reports: 'can_access_reports',
       agents: 'can_access_agents',
       settings: 'can_access_settings',
+      integrations: 'can_access_integrations',
       team: 'can_access_team',
       scheduled: 'can_access_scheduled',
       calendar: 'can_access_calendar',

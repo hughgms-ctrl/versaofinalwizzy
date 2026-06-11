@@ -11,11 +11,15 @@ export interface UserPermissions {
   organization_id: string;
   can_access_dashboard: boolean;
   can_access_conversations: boolean;
+  can_access_contacts: boolean;
+  can_access_groups: boolean;
   can_access_pipeline: boolean;
   can_access_flows: boolean;
+  can_access_campaigns: boolean;
   can_access_reports: boolean;
   can_access_agents: boolean;
   can_access_settings: boolean;
+  can_access_integrations: boolean;
   can_access_team: boolean;
   can_access_scheduled: boolean;
   can_access_calendar: boolean;
@@ -166,11 +170,15 @@ export function useCanAccessModule(module: string) {
   const moduleMap: Record<string, keyof UserPermissions> = {
     dashboard: 'can_access_dashboard',
     conversations: 'can_access_conversations',
+    contacts: 'can_access_contacts',
+    groups: 'can_access_groups',
     pipeline: 'can_access_pipeline',
     flows: 'can_access_flows',
+    campaigns: 'can_access_campaigns',
     reports: 'can_access_reports',
     agents: 'can_access_agents',
     settings: 'can_access_settings',
+    integrations: 'can_access_integrations',
     team: 'can_access_team',
     scheduled: 'can_access_scheduled',
     calendar: 'can_access_calendar',

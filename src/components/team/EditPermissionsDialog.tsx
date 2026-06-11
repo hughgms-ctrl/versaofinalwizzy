@@ -41,6 +41,10 @@ import {
   GitBranch,
   Images,
   SearchCheck,
+  BookUser,
+  UsersRound,
+  Megaphone,
+  Plug,
 } from 'lucide-react';
 import { TeamMember } from '@/hooks/useTeamMembers';
 import { useUserPermissions, useUpdateUserPermissions, UserPermissions } from '@/hooks/useUserPermissions';
@@ -62,11 +66,15 @@ interface EditPermissionsDialogProps {
 const defaultPermissions: Partial<UserPermissions> = {
   can_access_dashboard: true,
   can_access_conversations: false,
+  can_access_contacts: false,
+  can_access_groups: false,
   can_access_pipeline: false,
   can_access_flows: false,
+  can_access_campaigns: false,
   can_access_reports: false,
   can_access_agents: false,
   can_access_settings: false,
+  can_access_integrations: false,
   can_access_team: false,
   can_access_scheduled: false,
   can_access_calendar: false,
@@ -89,11 +97,15 @@ const defaultPermissions: Partial<UserPermissions> = {
 const supervisorDefaultPermissions: Partial<UserPermissions> = {
   can_access_dashboard: true,
   can_access_conversations: true,
+  can_access_contacts: true,
+  can_access_groups: true,
   can_access_pipeline: true,
   can_access_flows: false,
+  can_access_campaigns: false,
   can_access_reports: true,
   can_access_agents: false,
   can_access_settings: false,
+  can_access_integrations: false,
   can_access_team: true,
   can_access_scheduled: true,
   can_access_calendar: true,
@@ -156,11 +168,15 @@ export function EditPermissionsDialog({ open, onOpenChange, member }: EditPermis
       setPermissions({
         can_access_dashboard: existingPermissions.can_access_dashboard ?? true,
         can_access_conversations: existingPermissions.can_access_conversations,
+        can_access_contacts: (existingPermissions as any).can_access_contacts ?? existingPermissions.can_access_conversations,
+        can_access_groups: (existingPermissions as any).can_access_groups ?? existingPermissions.can_access_conversations,
         can_access_pipeline: existingPermissions.can_access_pipeline,
         can_access_flows: existingPermissions.can_access_flows,
+        can_access_campaigns: (existingPermissions as any).can_access_campaigns ?? existingPermissions.can_access_flows,
         can_access_reports: existingPermissions.can_access_reports,
         can_access_agents: existingPermissions.can_access_agents,
         can_access_settings: existingPermissions.can_access_settings,
+        can_access_integrations: (existingPermissions as any).can_access_integrations ?? existingPermissions.can_access_settings,
         can_access_team: existingPermissions.can_access_team,
         can_access_scheduled: existingPermissions.can_access_scheduled,
         can_access_calendar: (existingPermissions as any).can_access_calendar ?? true,
@@ -302,6 +318,18 @@ export function EditPermissionsDialog({ open, onOpenChange, member }: EditPermis
                     onCheckedChange={(v) => toggleModule('can_access_conversations', v)}
                   />
                   <ModuleSwitch
+                    icon={BookUser}
+                    label="Contatos"
+                    checked={permissions.can_access_contacts || false}
+                    onCheckedChange={(v) => toggleModule('can_access_contacts', v)}
+                  />
+                  <ModuleSwitch
+                    icon={UsersRound}
+                    label="Grupos"
+                    checked={permissions.can_access_groups || false}
+                    onCheckedChange={(v) => toggleModule('can_access_groups', v)}
+                  />
+                  <ModuleSwitch
                     icon={Kanban}
                     label="Pipeline"
                     checked={permissions.can_access_pipeline || false}
@@ -320,6 +348,12 @@ export function EditPermissionsDialog({ open, onOpenChange, member }: EditPermis
                     onCheckedChange={(v) => toggleModule('can_access_flows', v)}
                   />
                   <ModuleSwitch
+                    icon={Megaphone}
+                    label="Campanhas"
+                    checked={permissions.can_access_campaigns || false}
+                    onCheckedChange={(v) => toggleModule('can_access_campaigns', v)}
+                  />
+                  <ModuleSwitch
                     icon={BarChart3}
                     label="Relatórios"
                     checked={permissions.can_access_reports || false}
@@ -336,6 +370,12 @@ export function EditPermissionsDialog({ open, onOpenChange, member }: EditPermis
                     label="Configurações"
                     checked={permissions.can_access_settings || false}
                     onCheckedChange={(v) => toggleModule('can_access_settings', v)}
+                  />
+                  <ModuleSwitch
+                    icon={Plug}
+                    label="Integrações"
+                    checked={permissions.can_access_integrations || false}
+                    onCheckedChange={(v) => toggleModule('can_access_integrations', v)}
                   />
                   <ModuleSwitch
                     icon={Users}
