@@ -146,7 +146,7 @@ const products: Product[] = [
 const soonProducts = [
   ["Wizzy Pages", "Landing pages com IA e SEO otimizado para captar clientes"],
   ["Wizzy Carrossel", "Fábrica de carrosséis prontos para Instagram e LinkedIn"],
-  ["Wizzy CNIS", "Análise automática de CNIS para previdenciário"],
+  ["Wizzy Prev", "Análise automática de CNIS para previdenciário"],
   ["E muito mais", "Sempre novos módulos para facilitar a vida do advogado"],
 ];
 

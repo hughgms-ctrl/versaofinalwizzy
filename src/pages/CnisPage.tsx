@@ -80,7 +80,7 @@ type RunnerSession = {
 const STORAGE_KEY = "wizzy:cnis:sessions:v1";
 const RUNNER_BASE_URL = import.meta.env.VITE_CNIS_RUNNER_URL || "http://127.0.0.1:8787";
 const RUNNER_PROTOCOL_URL = import.meta.env.VITE_CNIS_RUNNER_PROTOCOL_URL || "wizzy-cnis-runner://";
-const RUNNER_INSTALLER_WINDOWS_URL = import.meta.env.VITE_CNIS_RUNNER_WINDOWS_INSTALLER_URL || "https://github.com/hughgms-ctrl/versaofinalwizzy/releases/download/cnis-runner-v0.1.1/wizzy-cnis-runner-win.zip";
+const RUNNER_INSTALLER_WINDOWS_URL = import.meta.env.VITE_CNIS_RUNNER_WINDOWS_INSTALLER_URL || "https://github.com/hughgms-ctrl/versaofinalwizzy/releases/download/cnis-runner-v0.1.1/wizzy-prev-runner-win.exe";
 const RUNNER_INSTALLER_MACOS_URL = import.meta.env.VITE_CNIS_RUNNER_MACOS_INSTALLER_URL || "";
 const RUNNER_INSTALLER_GENERIC_URL = import.meta.env.VITE_CNIS_RUNNER_INSTALLER_URL || "";
 const activeStatuses: SessionStatus[] = ["queued", "starting", "running", "waiting_user"];
@@ -225,7 +225,7 @@ export default function CnisPage() {
 
     if (!localRunnerEnabled) {
       toast({
-        title: "Runner CNIS desativado",
+        title: "Runner Wizzy Prev desativado",
         description: "Ative o runner no ambiente para abrir o navegador controlado.",
         variant: "destructive",
       });
@@ -325,7 +325,7 @@ export default function CnisPage() {
   const createDemoSession = async () => {
     if (!localRunnerEnabled) {
       toast({
-        title: "Runner CNIS desativado",
+        title: "Runner Wizzy Prev desativado",
         description: "Ative o runner no ambiente para abrir a demo controlada.",
         variant: "destructive",
       });
@@ -344,7 +344,7 @@ export default function CnisPage() {
       todayDate: form.todayDate,
       benefitType: "auxilio_reclusao",
       source: "runner",
-      progressLabel: "Abrindo demo completa do runner CNIS.",
+      progressLabel: "Abrindo demo completa do runner Wizzy Prev.",
       vinculos: [],
       analysis: null,
       reportHtml: "",
@@ -372,7 +372,7 @@ export default function CnisPage() {
         status: payload.session.status || "starting",
         progressLabel: payload.session.progressLabel || "Demo enviada para o runner local.",
       };
-      toast({ title: "Demo CNIS aberta", description: "A tela sera espelhada e o resultado entrara no historico automaticamente." });
+      toast({ title: "Demo Wizzy Prev aberta", description: "A tela sera espelhada e o resultado entrara no historico automaticamente." });
     } catch (error) {
       session = {
         ...session,
@@ -403,7 +403,7 @@ export default function CnisPage() {
 
     if (!localRunnerEnabled) {
       toast({
-        title: "Runner CNIS desativado",
+        title: "Runner Wizzy Prev desativado",
         description: "Ative o runner no ambiente para abrir o navegador controlado.",
         variant: "destructive",
       });
@@ -494,7 +494,7 @@ export default function CnisPage() {
 
     if (!localRunnerEnabled) {
       toast({
-        title: "Runner CNIS desativado",
+        title: "Runner Wizzy Prev desativado",
         description: "Ative o runner local para abrir o login com certificado.",
         variant: "destructive",
       });
@@ -615,7 +615,7 @@ export default function CnisPage() {
               <ArrowLeft className="h-4 w-4" />
               <span className="sr-only">Voltar para Wizzy</span>
             </Button>
-            <h1 className="shrink-0 text-lg font-semibold text-primary sm:text-xl">Wizzy CNIS</h1>
+            <h1 className="shrink-0 text-lg font-semibold text-primary sm:text-xl">Wizzy Prev</h1>
             <WorkspaceSelector
               loading={loadingWorkspaces}
               selectedWorkspaceId={selectedWorkspaceId}
@@ -727,16 +727,6 @@ export default function CnisPage() {
                             {runnerChecking ? <Loader2 className="h-4 w-4 animate-spin" /> : <Bot className="h-4 w-4" />}
                             {runnerChecking ? "Verificando runner" : "Iniciar consulta(s)"}
                           </Button>
-                          {runnerInstallMessage && (
-                            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950">
-                              <p className="font-semibold">Runner local nao instalado ou bloqueado</p>
-                              <p className="mt-1">{runnerInstallMessage}</p>
-                              <Button type="button" variant="outline" size="sm" onClick={downloadRunnerPackage} className="mt-3 w-full gap-2 bg-white">
-                                <Download className="h-4 w-4" />
-                                {runnerDownloadLabel}
-                              </Button>
-                            </div>
-                          )}
                         </>
                       )}
                     </div>
@@ -799,7 +789,7 @@ export default function CnisPage() {
                 <div className="flex h-full items-center justify-center p-8 text-center text-muted-foreground">
                   <div>
                     <FileText className="mx-auto mb-4 h-12 w-12 opacity-40" />
-                    <p className="text-lg font-medium text-foreground">Crie ou selecione uma consulta CNIS</p>
+                    <p className="text-lg font-medium text-foreground">Crie ou selecione uma consulta</p>
                     <p className="mt-1 text-sm">O resultado da simulacao aparece aqui.</p>
                   </div>
                 </div>
@@ -815,7 +805,7 @@ export default function CnisPage() {
               </AlertDialogTitle>
               <AlertDialogDescription>
                 {confirmAction?.type === "clear"
-                  ? "Todas as consultas deste historico serao removidas da Wizzy CNIS. Esta acao nao pode ser desfeita."
+                  ? "Todas as consultas deste historico serao removidas do Wizzy Prev. Esta acao nao pode ser desfeita."
                   : `A consulta ${confirmTarget?.cpf ? `do CPF ${confirmTarget.cpf}` : "selecionada"} sera removida do historico. Esta acao nao pode ser desfeita.`}
               </AlertDialogDescription>
             </AlertDialogHeader>
@@ -1273,7 +1263,7 @@ function getRunnerInstallMessage() {
     return getRunnerUnavailableMessage(platform);
   }
 
-  return `O Wizzy CNIS Runner ainda nao esta ativo neste computador. Clique em ${getRunnerDownloadLabel(platform)} e conclua a instalacao uma vez. Depois volte aqui e clique em Login certificado novamente.`;
+  return `O Wizzy Prev Runner ainda nao esta ativo neste computador. Clique em ${getRunnerDownloadLabel(platform)} e conclua a instalacao uma vez. Depois volte aqui e clique em Login certificado novamente.`;
 }
 
 function detectClientPlatform(): "windows" | "macos" | "other" {
@@ -1301,7 +1291,7 @@ function getRunnerDownloadLabel(platform = detectClientPlatform()) {
 
 function getRunnerDownloadedMessage(platform: "windows" | "macos" | "other") {
   if (platform === "windows") {
-    return "Download iniciado para Windows. Depois de baixar, extraia o ZIP e execute install-protocol.cmd uma vez.";
+    return "Download iniciado para Windows. Depois de baixar, execute o instalador uma vez.";
   }
   if (platform === "macos") {
     return "Download iniciado para Mac. Depois de baixar, abra o pacote do runner e conclua a instalacao uma vez.";
@@ -1311,12 +1301,12 @@ function getRunnerDownloadedMessage(platform: "windows" | "macos" | "other") {
 
 function getRunnerUnavailableMessage(platform: "windows" | "macos" | "other") {
   if (platform === "macos") {
-    return "O Wizzy CNIS Runner para Mac ainda nao esta configurado para download automatico. Baixe a versao Mac quando ela estiver publicada.";
+    return "O Wizzy Prev Runner para Mac ainda nao esta configurado para download automatico. Baixe a versao Mac quando ela estiver publicada.";
   }
   if (platform === "windows") {
-    return "O Wizzy CNIS Runner para Windows ainda nao esta configurado para download automatico.";
+    return "O Wizzy Prev Runner para Windows ainda nao esta configurado para download automatico.";
   }
-  return "Nao ha pacote automatico do Wizzy CNIS Runner configurado para este sistema.";
+  return "Nao ha pacote automatico do Wizzy Prev Runner configurado para este sistema.";
 }
 
 function sleep(ms: number) {
