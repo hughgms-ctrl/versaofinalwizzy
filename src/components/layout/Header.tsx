@@ -37,8 +37,8 @@ export function Header({
   const { privacyMode, togglePrivacy } = usePrivacy();
   
   return (
-    <header className="sticky top-0 z-30 flex h-14 md:h-16 items-center justify-between border-b border-border bg-card/95 backdrop-blur-xl px-3 md:px-6 shadow-sm">
-      <div className="flex items-center gap-3">
+    <header className="sticky top-0 z-30 flex min-h-14 flex-wrap items-center justify-between gap-x-2 gap-y-2 border-b border-border bg-card/95 px-3 py-2 shadow-sm backdrop-blur-xl md:h-16 md:flex-nowrap md:px-6 md:py-0">
+      <div className="flex min-w-0 flex-1 items-center gap-3">
         {/* Mobile Nav Trigger */}
         {backTo ? (
           <Tooltip>
@@ -58,14 +58,16 @@ export function Header({
           <MobileNav />
         )}
         
-        <div className="flex flex-col">
-          <h1 className="text-base md:text-xl font-bold text-foreground">{title}</h1>
+        <div className="flex min-w-0 flex-col">
+          <h1 className="truncate text-base font-bold text-foreground md:text-xl">{title}</h1>
           {subtitle && <p className="text-xs md:text-sm text-muted-foreground hidden sm:block">{subtitle}</p>}
         </div>
       </div>
 
-      <div className="flex flex-1 items-center justify-end gap-2 md:gap-4">
-        <OrganizationSwitcher />
+      <div className="flex shrink-0 items-center justify-end gap-1.5 md:flex-1 md:gap-4">
+        <div className="hidden md:block">
+          <OrganizationSwitcher />
+        </div>
 
         {showSearch && (
           <div className="relative hidden md:block">
@@ -126,6 +128,13 @@ export function Header({
         </Tooltip>
 
         <NotificationDropdown />
+      </div>
+
+      <div className="w-full md:hidden">
+        <OrganizationSwitcher
+          contentAlign="start"
+          triggerClassName="flex h-9 w-full max-w-none rounded-lg px-3 text-sm"
+        />
       </div>
     </header>
   );

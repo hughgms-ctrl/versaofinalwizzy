@@ -491,32 +491,32 @@ function TrialInfoBadges({ org }: { org: any }) {
   const isExpired = typeof details.daysRemaining === 'number' && details.daysRemaining <= 0;
 
   return (
-    <div className="mt-1 flex max-w-[260px] flex-wrap gap-1">
-      <Badge variant="outline" className="border-primary/40 text-primary">
+    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+      <Badge variant="outline" className="h-6 border-primary/40 px-2.5 text-primary">
         Teste gratis
       </Badge>
       {details.hasGatewaySubscription ? (
-        <Badge variant="outline" className="border-emerald-500/40 text-emerald-600">
+        <Badge variant="outline" className="h-6 border-emerald-500/40 px-2.5 text-emerald-600">
           <CreditCard className="mr-1 h-3 w-3" />
           Cartao ativado{details.provider ? ` (${details.provider})` : ''}
         </Badge>
       ) : details.requireCard ? (
-        <Badge variant="outline" className="text-muted-foreground">
+        <Badge variant="outline" className="h-6 px-2.5 text-muted-foreground">
           <CreditCard className="mr-1 h-3 w-3" />
           Cartao pendente
         </Badge>
       ) : (
-        <Badge variant="outline" className="border-slate-300 text-slate-600">
+        <Badge variant="outline" className="h-6 border-slate-300 px-2.5 text-slate-600">
           Sem cartao
         </Badge>
       )}
       {details.trialDays > 0 && (
-        <Badge variant="outline" className="text-muted-foreground">
+        <Badge variant="outline" className="h-6 px-2.5 text-muted-foreground">
           {details.trialDays} dias configurados
         </Badge>
       )}
       {details.trialEndsAt && (
-        <Badge variant="outline" className={isExpired ? 'border-destructive/40 text-destructive' : 'text-muted-foreground'}>
+        <Badge variant="outline" className={isExpired ? 'h-6 border-destructive/40 px-2.5 text-destructive' : 'h-6 px-2.5 text-muted-foreground'}>
           <CalendarClock className="mr-1 h-3 w-3" />
           Ate {new Date(details.trialEndsAt).toLocaleDateString('pt-BR')}
           {typeof details.daysRemaining === 'number'
@@ -527,7 +527,7 @@ function TrialInfoBadges({ org }: { org: any }) {
         </Badge>
       )}
       {details.requireCard && !details.hasGatewaySubscription && details.checkoutStartedAt && (
-        <Badge variant="outline" className="text-muted-foreground">
+        <Badge variant="outline" className="h-6 px-2.5 text-muted-foreground">
           Checkout iniciado
         </Badge>
       )}
@@ -579,17 +579,19 @@ function PlanAccessDetailsRow({ org }: { org: any }) {
 
   return (
     <TableRow>
-      <TableCell colSpan={9} className="bg-muted/20 px-6 py-3">
-        <div className="flex flex-wrap items-center gap-3 text-sm">
-          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+      <TableCell colSpan={9} className="bg-muted/20 px-6 py-4">
+        <div className="grid gap-3 text-sm md:grid-cols-[150px_minmax(0,1fr)] md:items-start">
+          <span className="pt-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Acesso e cobranca
           </span>
-          {hasManualAccess && (
-            <Badge variant="outline" className="border-emerald-500/40 text-emerald-600">
-              Uso liberado
-            </Badge>
-          )}
-          <TrialInfoBadges org={org} />
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            {hasManualAccess && (
+              <Badge variant="outline" className="h-6 border-emerald-500/40 px-2.5 text-emerald-600">
+                Uso liberado
+              </Badge>
+            )}
+            <TrialInfoBadges org={org} />
+          </div>
         </div>
       </TableCell>
     </TableRow>

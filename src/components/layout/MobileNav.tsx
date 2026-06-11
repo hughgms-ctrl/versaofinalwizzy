@@ -29,6 +29,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import wizzyLogo from '@/assets/wizzy-logo.png';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
+import { OrganizationSwitcher } from './OrganizationSwitcher';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { useOrganizationPlan } from '@/hooks/useOrganizationPlan';
 
@@ -139,8 +140,13 @@ export function MobileNav() {
           </SheetTitle>
         </SheetHeader>
 
-        {/* Workspace Switcher */}
-        <WorkspaceSwitcher collapsed={false} />
+        <div className="space-y-2 border-b border-border p-3">
+          <OrganizationSwitcher
+            contentAlign="start"
+            triggerClassName="flex h-10 w-full max-w-none rounded-lg px-3"
+          />
+          <WorkspaceSwitcher collapsed={false} />
+        </div>
 
         <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
           {visibleNavigation.map((item) => {

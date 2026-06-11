@@ -23,7 +23,12 @@ import { cn } from '@/lib/utils';
 
 const ownerRoles = new Set(['owner', 'admin', 'platform_admin']);
 
-export function OrganizationSwitcher() {
+interface OrganizationSwitcherProps {
+  triggerClassName?: string;
+  contentAlign?: 'start' | 'center' | 'end';
+}
+
+export function OrganizationSwitcher({ triggerClassName, contentAlign = 'center' }: OrganizationSwitcherProps) {
   const navigate = useNavigate();
   const [subscriptionDialogOpen, setSubscriptionDialogOpen] = useState(false);
   const {
@@ -51,14 +56,19 @@ export function OrganizationSwitcher() {
         <DropdownMenuTrigger asChild>
           <Button
             variant="outline"
-            className="hidden min-w-0 max-w-64 justify-between gap-2 bg-background/70 md:flex"
+            className={cn(
+              triggerClassName
+                ? "min-w-0 justify-between gap-2 bg-background/70"
+                : "hidden min-w-0 max-w-64 justify-between gap-2 bg-background/70 md:flex",
+              triggerClassName,
+            )}
           >
             <Building2 className="h-4 w-4 shrink-0 text-muted-foreground" />
             <span className="min-w-0 flex-1 truncate text-left">{selectedName}</span>
             <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="center" className="w-72">
+        <DropdownMenuContent align={contentAlign} className="w-72">
           {organizationMemberships.map((membership) => {
             const isOwn = ownerRoles.has(membership.role);
             const isSelected = membership.organization_id === selectedOrganizationId;
