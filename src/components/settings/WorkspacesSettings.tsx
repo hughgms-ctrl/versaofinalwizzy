@@ -33,6 +33,7 @@ import { useOrganizationPlan } from '@/hooks/useOrganizationPlan';
 import { LimitUpgradeDialog } from '@/components/billing/LimitUpgradeDialog';
 import { enforceEntryCreationLimit, enforceEntryFeatureAccess } from '@/lib/entryFlow';
 import { isPlanLimitError } from '@/lib/planLimitErrors';
+import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 
 const WORKSPACE_COLORS = [
   '#6366f1', '#8b5cf6', '#ec4899', '#ef4444', '#f97316',
@@ -40,7 +41,8 @@ const WORKSPACE_COLORS = [
 ];
 
 export function WorkspacesSettings() {
-  const { data: allWorkspaces = [], isLoading } = useAllWorkspaces();
+  const { selectedOrganizationId } = useWorkspaceContext();
+  const { data: allWorkspaces = [], isLoading } = useAllWorkspaces(selectedOrganizationId);
   const workspaces = [...allWorkspaces].sort((a, b) => {
     if (a.is_active !== b.is_active) return a.is_active ? -1 : 1;
     return a.name.localeCompare(b.name);
@@ -236,6 +238,7 @@ function WorkspaceFormDialog({
   const updateWorkspace = useUpdateWorkspace();
   const manageMembers = useManageWorkspaceMembers();
   const { toast } = useToast();
+  const { selectedOrganizationId } = useWorkspaceContext();
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -305,6 +308,7 @@ function WorkspaceFormDialog({
       } else {
         const newWorkspace = await createWorkspace.mutateAsync({
           name: name.trim(),
+          organization_id: selectedOrganizationId || undefined,
           description: description.trim() || undefined,
           color,
           filter_tag_ids: selectedTagIds,

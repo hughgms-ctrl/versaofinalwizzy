@@ -24,6 +24,11 @@ export interface WorkspaceMember {
   created_at: string;
 }
 
+export interface UserWorkspaceAccess {
+  workspace_id: string;
+  organization_id: string;
+}
+
 export type OrganizationRole = 'owner' | 'admin' | 'supervisor' | 'agent' | 'platform_admin';
 
 export interface OrganizationMembership {
@@ -110,15 +115,39 @@ export function useWorkspaces(organizationId?: string | null) {
   });
 }
 
-export function useAllWorkspaces() {
+export function useAllWorkspaces(organizationId?: string | null) {
   const { session } = useAuth();
 
   return useQuery({
-    queryKey: ['workspaces', 'all'],
+    queryKey: ['workspaces', 'all', organizationId || 'visible'],
+    queryFn: async (): Promise<Workspace[]> => {
+      let query = supabase
+        .from('workspaces')
+        .select('*');
+
+      if (organizationId) {
+        query = query.eq('organization_id', organizationId);
+      }
+
+      const { data, error } = await query.order('name');
+
+      if (error) throw error;
+      return (data || []) as unknown as Workspace[];
+    },
+    enabled: !!session,
+  });
+}
+
+export function useVisibleWorkspaces() {
+  const { session } = useAuth();
+
+  return useQuery({
+    queryKey: ['workspaces', 'visible', session?.user?.id],
     queryFn: async (): Promise<Workspace[]> => {
       const { data, error } = await supabase
         .from('workspaces')
         .select('*')
+        .eq('is_active', true)
         .order('name');
 
       if (error) throw error;
@@ -161,6 +190,33 @@ export function useUserWorkspaces() {
 
       if (error) throw error;
       return (data || []).map((d: any) => d.workspace_id);
+    },
+    enabled: !!session,
+  });
+}
+
+export function useUserWorkspaceAccess() {
+  const { session } = useAuth();
+
+  return useQuery({
+    queryKey: ['user-workspace-access', session?.user?.id],
+    queryFn: async (): Promise<UserWorkspaceAccess[]> => {
+      if (!session?.user?.id) return [];
+      const { data, error } = await supabase
+        .from('workspace_members')
+        .select('workspace_id, workspace:workspaces(organization_id)')
+        .eq('user_id', session.user.id);
+
+      if (error) throw error;
+
+      return (data || [])
+        .map((row: any) => ({
+          workspace_id: row.workspace_id,
+          organization_id: Array.isArray(row.workspace)
+            ? row.workspace[0]?.organization_id
+            : row.workspace?.organization_id,
+        }))
+        .filter((row: UserWorkspaceAccess) => row.workspace_id && row.organization_id);
     },
     enabled: !!session,
   });

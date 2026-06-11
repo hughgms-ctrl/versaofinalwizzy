@@ -3,7 +3,7 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
-import { Loader2 } from 'lucide-react';
+import { AlertCircle, Building2, Loader2 } from 'lucide-react';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { clearStoredEntryAssignment, getStoredEntryAssignment, hasEntryLimitedAccessAssignment, isEntryTrialExpired } from '@/lib/entryFlow';
 import { useOrganizationPlan } from '@/hooks/useOrganizationPlan';
@@ -50,7 +50,14 @@ function getPermissionModuleForPath(pathname: string): string | null {
 
 export function ProtectedRoute({ children }: ProtectedRouteProps) {
   const { user, profile, loading } = useAuth();
-  const { selectedOrganizationId, loading: workspaceLoading } = useWorkspaceContext();
+  const {
+    selectedOrganization,
+    selectedOrganizationId,
+    availableWorkspaces,
+    currentOrganizationRole,
+    hasExternalOrganizationMembership,
+    loading: workspaceLoading,
+  } = useWorkspaceContext();
   const location = useLocation();
   const activeOrganizationId = selectedOrganizationId || profile?.organization_id || null;
   const routePlanModule = getPlanModuleForPath(location.pathname);
@@ -122,9 +129,35 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
     return <Navigate to="/auth" replace />;
   }
 
+  const isManager = currentOrganizationRole === 'owner' || currentOrganizationRole === 'admin' || currentOrganizationRole === 'platform_admin';
+  const isExternalOrganization = Boolean(selectedOrganizationId && selectedOrganizationId !== profile?.organization_id);
+  const isWorkspaceScopedRoute = Boolean(routePlanModule || routePermissionModule);
+  const shouldShowNoWorkspaceMessage = Boolean(
+    activeOrganizationId
+    && isWorkspaceScopedRoute
+    && !isManager
+    && availableWorkspaces.length === 0
+    && (hasExternalOrganizationMembership || isExternalOrganization)
+  );
+
+  if (shouldShowNoWorkspaceMessage) {
+    return (
+      <NoWorkspaceAccessMessage organizationName={selectedOrganization?.name || 'sua organizacao'} />
+    );
+  }
+
   const isAllowedOnboardingPath = allowedWithoutPlan.some((path) => (
     location.pathname === path || location.pathname.startsWith(`${path}/`)
   ));
+  if (activeOrganizationId && !hasActiveAccess && !isAllowedOnboardingPath && !isManager) {
+    return (
+      <NoWorkspaceAccessMessage
+        organizationName={selectedOrganization?.name || 'sua organizacao'}
+        billingBlocked
+      />
+    );
+  }
+
   if (activeOrganizationId && !hasActiveAccess && !isAllowedOnboardingPath && !hasEntryLimitedAccess) {
     return <Navigate to="/plans" replace state={{ from: location }} />;
   }
@@ -159,4 +192,34 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   }
 
   return <>{children}</>;
+}
+
+function NoWorkspaceAccessMessage({
+  organizationName,
+  billingBlocked = false,
+}: {
+  organizationName: string;
+  billingBlocked?: boolean;
+}) {
+  return (
+    <div className="min-h-screen bg-background flex items-center justify-center p-6">
+      <div className="w-full max-w-md rounded-lg border bg-card p-6 text-center shadow-sm">
+        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+          {billingBlocked ? (
+            <AlertCircle className="h-6 w-6 text-muted-foreground" />
+          ) : (
+            <Building2 className="h-6 w-6 text-muted-foreground" />
+          )}
+        </div>
+        <h1 className="text-lg font-semibold text-foreground">
+          {billingBlocked ? 'Acesso pausado pela organizacao' : 'Nenhum workspace liberado'}
+        </h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          {billingBlocked
+            ? `A organizacao ${organizationName} precisa regularizar o plano para liberar o acesso. Fale com o administrador.`
+            : `Voce foi adicionada a ${organizationName}, mas ainda nao esta em nenhum workspace dessa organizacao. Faca contato com o administrador para liberar seu acesso.`}
+        </p>
+      </div>
+    </div>
+  );
 }
