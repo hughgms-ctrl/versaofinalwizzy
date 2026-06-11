@@ -273,6 +273,13 @@ async function upsertDefaultPermissions(admin: any, userId: string, organization
     can_access_team: false,
     can_access_scheduled: false,
     can_access_calendar: false,
+    can_access_tools: false,
+    can_access_tool_widgets: false,
+    can_access_tool_documents: false,
+    can_access_tool_quiz: false,
+    can_access_tool_wizzy_flow: false,
+    can_access_tool_carousel: false,
+    can_access_tool_cnis: false,
     conversations_filter_type: 'all',
     pipeline_access_type: 'all',
   };
@@ -296,6 +303,13 @@ async function upsertDefaultPermissions(admin: any, userId: string, organization
     permissions.can_access_team = true;
     permissions.can_access_scheduled = true;
     permissions.can_access_calendar = true;
+    permissions.can_access_tools = true;
+    permissions.can_access_tool_widgets = true;
+    permissions.can_access_tool_documents = true;
+    permissions.can_access_tool_quiz = true;
+    permissions.can_access_tool_wizzy_flow = true;
+    permissions.can_access_tool_carousel = true;
+    permissions.can_access_tool_cnis = true;
   }
 
   const { error } = await admin

@@ -20,6 +20,13 @@ export interface UserPermissions {
   can_access_scheduled: boolean;
   can_access_calendar: boolean;
   can_access_operations: boolean;
+  can_access_tools: boolean;
+  can_access_tool_widgets: boolean;
+  can_access_tool_documents: boolean;
+  can_access_tool_quiz: boolean;
+  can_access_tool_wizzy_flow: boolean;
+  can_access_tool_carousel: boolean;
+  can_access_tool_cnis: boolean;
   conversations_filter_type: 'all' | 'assigned' | 'tags' | 'assigned_and_tags';
   conversations_allowed_tags: string[];
   pipeline_access_type: 'all' | 'specific';
@@ -168,6 +175,13 @@ export function useCanAccessModule(module: string) {
     scheduled: 'can_access_scheduled',
     calendar: 'can_access_calendar',
     operations: 'can_access_operations',
+    tools: 'can_access_tools',
+    tool_widgets: 'can_access_tool_widgets',
+    tool_documents: 'can_access_tool_documents',
+    tool_quiz: 'can_access_tool_quiz',
+    tool_wizzy_flow: 'can_access_tool_wizzy_flow',
+    tool_carousel: 'can_access_tool_carousel',
+    tool_cnis: 'can_access_tool_cnis',
   };
 
   const key = moduleMap[module];

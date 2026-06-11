@@ -9,6 +9,8 @@ import { useState } from 'react';
 import UpgradeModal from '@/components/billing/UpgradeModal';
 import { useAuth } from '@/hooks/useAuth';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
+import { useCurrentUserRole, useUserPermissions } from '@/hooks/useUserPermissions';
+import { isManagerRole } from '@/lib/defaultAppRoute';
 
 const tools = [
   {
@@ -17,6 +19,7 @@ const tools = [
     icon: MousePointerClick,
     href: '/tools/buttons',
     planModule: 'widgets',
+    permissionKey: 'can_access_tool_widgets',
   },
   {
     name: 'Wizzy Sign',
@@ -24,6 +27,7 @@ const tools = [
     icon: FileText,
     href: '/tools/documents',
     planModule: 'documents',
+    permissionKey: 'can_access_tool_documents',
   },
   {
     name: 'Wizzy Quiz',
@@ -31,6 +35,7 @@ const tools = [
     icon: HelpCircle,
     href: '/tools/quiz',
     planModule: 'quiz',
+    permissionKey: 'can_access_tool_quiz',
   },
   {
     name: 'Wizzy Flow',
@@ -38,12 +43,14 @@ const tools = [
     icon: GitBranch,
     href: '/tools/wizzy-flow',
     planModule: 'wizzy_flow',
+    permissionKey: 'can_access_tool_wizzy_flow',
   },
   {
     name: 'Wizzy Carrossel',
     description: 'Gere carrosséis para o Instagram com IA — textos e imagens criados automaticamente, prontos pra baixar.',
     icon: Images,
     href: '/tools/carousel',
+    permissionKey: 'can_access_tool_carousel',
   },
   {
     name: 'Wizzy Pages',
@@ -62,6 +69,7 @@ const tools = [
     description: 'Análise de CNIS para fins de Auxílio Reclusão e outros.',
     icon: SearchCheck,
     href: '/tools/cnis',
+    permissionKey: 'can_access_tool_cnis',
   },
 ];
 
@@ -71,11 +79,23 @@ export default function ToolsPage() {
   const { selectedWorkspace } = useWorkspaceContext();
   const activeOrganizationId = selectedWorkspace?.organization_id || profile?.organization_id || null;
   const { canAccessModule } = useOrganizationPlan(activeOrganizationId);
+  const { data: userRole } = useCurrentUserRole(activeOrganizationId);
+  const { data: permissions } = useUserPermissions();
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [blockedModule, setBlockedModule] = useState<string | undefined>();
+  const isManager = isManagerRole(userRole);
+
+  const canAccessTool = (tool: typeof tools[0]) => {
+    if (isManager) return true;
+    if (!tool.permissionKey) return false;
+    return Boolean((permissions as any)?.can_access_tools && (permissions as any)?.[tool.permissionKey]);
+  };
+
+  const visibleTools = tools.filter((tool) => canAccessTool(tool));
 
   const handleClick = (tool: typeof tools[0]) => {
     if (tool.comingSoon) return;
+    if (!canAccessTool(tool)) return;
     if (tool.planModule && !canAccessModule(tool.planModule)) {
       setBlockedModule(tool.name);
       setUpgradeOpen(true);
@@ -93,7 +113,7 @@ export default function ToolsPage() {
         </div>
 
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {tools.map((tool) => {
+          {visibleTools.map((tool) => {
             const isLocked = tool.planModule ? !canAccessModule(tool.planModule) : false;
             const isComingSoon = Boolean(tool.comingSoon);
             return (
@@ -121,6 +141,12 @@ export default function ToolsPage() {
             );
           })}
         </div>
+
+        {visibleTools.filter((tool) => !tool.comingSoon).length === 0 && (
+          <div className="rounded-lg border bg-card p-6 text-center text-sm text-muted-foreground">
+            Nenhuma ferramenta foi liberada para seu usuario.
+          </div>
+        )}
       </div>
       <UpgradeModal open={upgradeOpen} onOpenChange={setUpgradeOpen} moduleName={blockedModule} />
     </MainLayout>

@@ -35,6 +35,12 @@ import {
   Building2,
   LayoutDashboard,
   Briefcase,
+  MousePointerClick,
+  FileText,
+  HelpCircle,
+  GitBranch,
+  Images,
+  SearchCheck,
 } from 'lucide-react';
 import { TeamMember } from '@/hooks/useTeamMembers';
 import { useUserPermissions, useUpdateUserPermissions, UserPermissions } from '@/hooks/useUserPermissions';
@@ -65,6 +71,13 @@ const defaultPermissions: Partial<UserPermissions> = {
   can_access_scheduled: false,
   can_access_calendar: false,
   can_access_operations: false,
+  can_access_tools: false,
+  can_access_tool_widgets: false,
+  can_access_tool_documents: false,
+  can_access_tool_quiz: false,
+  can_access_tool_wizzy_flow: false,
+  can_access_tool_carousel: false,
+  can_access_tool_cnis: false,
   conversations_filter_type: 'all',
   conversations_allowed_tags: [],
   pipeline_access_type: 'all',
@@ -85,6 +98,13 @@ const supervisorDefaultPermissions: Partial<UserPermissions> = {
   can_access_scheduled: true,
   can_access_calendar: true,
   can_access_operations: true,
+  can_access_tools: false,
+  can_access_tool_widgets: false,
+  can_access_tool_documents: false,
+  can_access_tool_quiz: false,
+  can_access_tool_wizzy_flow: false,
+  can_access_tool_carousel: false,
+  can_access_tool_cnis: false,
   conversations_filter_type: 'all',
   conversations_allowed_tags: [],
   pipeline_access_type: 'all',
@@ -145,6 +165,13 @@ export function EditPermissionsDialog({ open, onOpenChange, member }: EditPermis
         can_access_scheduled: existingPermissions.can_access_scheduled,
         can_access_calendar: (existingPermissions as any).can_access_calendar ?? true,
         can_access_operations: (existingPermissions as any).can_access_operations ?? false,
+        can_access_tools: (existingPermissions as any).can_access_tools ?? false,
+        can_access_tool_widgets: (existingPermissions as any).can_access_tool_widgets ?? false,
+        can_access_tool_documents: (existingPermissions as any).can_access_tool_documents ?? false,
+        can_access_tool_quiz: (existingPermissions as any).can_access_tool_quiz ?? false,
+        can_access_tool_wizzy_flow: (existingPermissions as any).can_access_tool_wizzy_flow ?? false,
+        can_access_tool_carousel: (existingPermissions as any).can_access_tool_carousel ?? false,
+        can_access_tool_cnis: (existingPermissions as any).can_access_tool_cnis ?? false,
         conversations_filter_type: existingPermissions.conversations_filter_type,
         conversations_allowed_tags: existingPermissions.conversations_allowed_tags || [],
         pipeline_access_type: existingPermissions.pipeline_access_type,
@@ -176,7 +203,18 @@ export function EditPermissionsDialog({ open, onOpenChange, member }: EditPermis
   };
 
   const toggleModule = (key: keyof UserPermissions, value: boolean) => {
-    setPermissions(prev => ({ ...prev, [key]: value }));
+    setPermissions(prev => ({
+      ...prev,
+      [key]: value,
+      ...(key === 'can_access_tools' && !value ? {
+        can_access_tool_widgets: false,
+        can_access_tool_documents: false,
+        can_access_tool_quiz: false,
+        can_access_tool_wizzy_flow: false,
+        can_access_tool_carousel: false,
+        can_access_tool_cnis: false,
+      } : {}),
+    }));
   };
 
   const toggleTag = (tagId: string) => {
@@ -317,8 +355,64 @@ export function EditPermissionsDialog({ open, onOpenChange, member }: EditPermis
                     checked={permissions.can_access_operations || false}
                     onCheckedChange={(v) => toggleModule('can_access_operations', v)}
                   />
+                  <ModuleSwitch
+                    icon={MousePointerClick}
+                    label="Ferramentas"
+                    checked={permissions.can_access_tools || false}
+                    onCheckedChange={(v) => toggleModule('can_access_tools', v)}
+                  />
                 </div>
               </div>
+
+              {permissions.can_access_tools && (
+                <>
+                  <Separator />
+                  <div>
+                    <h3 className="text-sm font-medium mb-4 flex items-center gap-2">
+                      <MousePointerClick className="h-4 w-4" />
+                      Ferramentas liberadas
+                    </h3>
+                    <div className="grid grid-cols-2 gap-4">
+                      <ModuleSwitch
+                        icon={MousePointerClick}
+                        label="Wizzy Forms"
+                        checked={permissions.can_access_tool_widgets || false}
+                        onCheckedChange={(v) => toggleModule('can_access_tool_widgets', v)}
+                      />
+                      <ModuleSwitch
+                        icon={FileText}
+                        label="Wizzy Sign"
+                        checked={permissions.can_access_tool_documents || false}
+                        onCheckedChange={(v) => toggleModule('can_access_tool_documents', v)}
+                      />
+                      <ModuleSwitch
+                        icon={HelpCircle}
+                        label="Wizzy Quiz"
+                        checked={permissions.can_access_tool_quiz || false}
+                        onCheckedChange={(v) => toggleModule('can_access_tool_quiz', v)}
+                      />
+                      <ModuleSwitch
+                        icon={GitBranch}
+                        label="Wizzy Flow"
+                        checked={permissions.can_access_tool_wizzy_flow || false}
+                        onCheckedChange={(v) => toggleModule('can_access_tool_wizzy_flow', v)}
+                      />
+                      <ModuleSwitch
+                        icon={Images}
+                        label="Wizzy Carrossel"
+                        checked={permissions.can_access_tool_carousel || false}
+                        onCheckedChange={(v) => toggleModule('can_access_tool_carousel', v)}
+                      />
+                      <ModuleSwitch
+                        icon={SearchCheck}
+                        label="Wizzy Prev"
+                        checked={permissions.can_access_tool_cnis || false}
+                        onCheckedChange={(v) => toggleModule('can_access_tool_cnis', v)}
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
 
               {/* Conversations Restrictions */}
               {permissions.can_access_conversations && (

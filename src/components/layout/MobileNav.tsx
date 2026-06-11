@@ -46,7 +46,7 @@ const navigation: NavItem[] = [
   { name: 'Pipeline', href: '/pipeline', icon: Kanban, module: 'pipeline', planModule: 'pipeline' },
   { name: 'Fluxos', href: '/flows', icon: Workflow, module: 'flows', planModule: 'flows' },
   { name: 'Campanhas', href: '/campaigns', icon: Megaphone, module: 'flows', planModule: 'campaigns' },
-  { name: 'Ferramentas', href: '/tools', icon: MousePointerClick, module: 'flows', planModule: 'tools' },
+  { name: 'Ferramentas', href: '/tools', icon: MousePointerClick, module: 'tools', planModule: 'tools' },
   { name: 'Programados', href: '/scheduled', icon: CalendarClock, module: 'scheduled', planModule: 'scheduled' },
   { name: 'Agentes IA', href: '/agents', icon: Bot, module: 'agents', planModule: 'agents' },
   { name: 'Equipe', href: '/team', icon: Users, module: 'team', planModule: 'team' },
@@ -82,6 +82,7 @@ export function MobileNav() {
       scheduled: 'can_access_scheduled',
       calendar: 'can_access_calendar',
       operations: 'can_access_operations',
+      tools: 'can_access_tools',
     };
 
     const key = moduleMap[module];

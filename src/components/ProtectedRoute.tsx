@@ -36,10 +36,17 @@ function getPlanModuleForPath(pathname: string): string | null {
 }
 
 function getPermissionModuleForPath(pathname: string): string | null {
+  if (pathname.startsWith('/tools/documents') || pathname.startsWith('/documents')) return 'tool_documents';
+  if (pathname.startsWith('/tools/buttons') || pathname.startsWith('/widgets')) return 'tool_widgets';
+  if (pathname.startsWith('/tools/quiz')) return 'tool_quiz';
+  if (pathname.startsWith('/tools/wizzy-flow')) return 'tool_wizzy_flow';
+  if (pathname.startsWith('/tools/carousel')) return 'tool_carousel';
+  if (pathname.startsWith('/tools/cnis')) return 'tool_cnis';
+  if (pathname.startsWith('/tools')) return 'tools';
   if (pathname.startsWith('/conversations') || pathname.startsWith('/contacts') || pathname.startsWith('/groups')) return 'conversations';
   if (pathname.startsWith('/calendar')) return 'calendar';
   if (pathname.startsWith('/pipeline')) return 'pipeline';
-  if (pathname.startsWith('/flows') || pathname.startsWith('/flow-builder') || pathname.startsWith('/campaigns') || pathname.startsWith('/tools')) return 'flows';
+  if (pathname.startsWith('/flows') || pathname.startsWith('/flow-builder') || pathname.startsWith('/campaigns')) return 'flows';
   if (pathname.startsWith('/scheduled')) return 'scheduled';
   if (pathname.startsWith('/agents') || pathname.startsWith('/master-agent')) return 'agents';
   if (pathname.startsWith('/team')) return 'team';
@@ -184,9 +191,17 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
       team: 'can_access_team',
       scheduled: 'can_access_scheduled',
       calendar: 'can_access_calendar',
+      tools: 'can_access_tools',
+      tool_widgets: 'can_access_tool_widgets',
+      tool_documents: 'can_access_tool_documents',
+      tool_quiz: 'can_access_tool_quiz',
+      tool_wizzy_flow: 'can_access_tool_wizzy_flow',
+      tool_carousel: 'can_access_tool_carousel',
+      tool_cnis: 'can_access_tool_cnis',
     };
     const permissionKey = permissionMap[routePermissionModule];
-    const hasPermission = isManager || (permissionKey ? Boolean(permissions?.[permissionKey]) : false);
+    const hasParentToolPermission = !routePermissionModule.startsWith('tool_') || Boolean(permissions?.can_access_tools);
+    const hasPermission = isManager || (permissionKey ? Boolean(permissions?.[permissionKey]) && hasParentToolPermission : false);
     if (!hasPermission) {
       const fallbackRoute = getDefaultAppRoute({
         role: userRole,

@@ -15,7 +15,7 @@ const defaultRouteOrder: DefaultRouteItem[] = [
   { path: '/pipeline', permissionModule: 'pipeline', planModule: 'pipeline' },
   { path: '/flows', permissionModule: 'flows', planModule: 'flows' },
   { path: '/campaigns', permissionModule: 'flows', planModule: 'campaigns' },
-  { path: '/tools', permissionModule: 'flows', planModule: 'tools' },
+  { path: '/tools', permissionModule: 'tools', planModule: 'tools' },
   { path: '/scheduled', permissionModule: 'scheduled', planModule: 'scheduled' },
   { path: '/agents', permissionModule: 'agents', planModule: 'agents' },
   { path: '/team', permissionModule: 'team', planModule: 'team' },
@@ -35,6 +35,13 @@ const permissionFieldByModule: Record<string, string> = {
   team: 'can_access_team',
   scheduled: 'can_access_scheduled',
   calendar: 'can_access_calendar',
+  tools: 'can_access_tools',
+  tool_widgets: 'can_access_tool_widgets',
+  tool_documents: 'can_access_tool_documents',
+  tool_quiz: 'can_access_tool_quiz',
+  tool_wizzy_flow: 'can_access_tool_wizzy_flow',
+  tool_carousel: 'can_access_tool_carousel',
+  tool_cnis: 'can_access_tool_cnis',
 };
 
 export function isManagerRole(role?: string | null) {
