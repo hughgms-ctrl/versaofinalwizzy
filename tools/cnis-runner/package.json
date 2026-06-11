@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node src/server.js",
     "check": "node --check src/server.js",
+    "build:installer:win": "powershell -NoProfile -ExecutionPolicy Bypass -File build-installer-win.ps1",
     "build:portable": "powershell -NoProfile -ExecutionPolicy Bypass -File build-portable.ps1",
     "build:portable:win": "powershell -NoProfile -ExecutionPolicy Bypass -File build-portable.ps1",
     "build:portable:mac": "sh build-portable-macos.sh"

@@ -77,6 +77,20 @@ $extensionParent = Join-Path $outputPath "Wizzy Cnis Leitura"
 New-Item -ItemType Directory -Path $extensionParent -Force | Out-Null
 Copy-Tree $extensionSource (Join-Path $extensionParent "cnis-checker")
 
+$zipPath = "$outputPath.zip"
+if (Test-Path $zipPath) {
+  Remove-Item -LiteralPath $zipPath -Force
+}
+
+$outputName = Split-Path -Leaf $outputPath
+& tar.exe -a -cf $zipPath -C $distRoot $outputName
+if ($LASTEXITCODE -ne 0) {
+  throw "Falha ao criar ZIP em $zipPath com tar.exe. Codigo $LASTEXITCODE"
+}
+$global:LASTEXITCODE = 0
+
 Write-Host "Pacote portatil criado em:"
 Write-Host $outputPath
+Write-Host "ZIP criado em:"
+Write-Host $zipPath
 Write-Host "No cliente, execute install-protocol.cmd uma vez. Nao precisa Node/npm instalado."
