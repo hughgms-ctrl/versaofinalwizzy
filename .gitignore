@@ -18,6 +18,7 @@ dist-ssr
 # CNIS runner local runtime
 tools/cnis-runner/.cnis-chromium-profile/
 tools/cnis-runner/runner*.log
+public/downloads/*.exe
 Wizzy Cnis Leitura/cnis-checker/.git/
 Wizzy Cnis Leitura/cnis-checker/.git.local-backup/
 
