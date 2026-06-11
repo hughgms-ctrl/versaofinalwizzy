@@ -71,9 +71,9 @@ export function Sidebar() {
   const { selectedOrganizationId, selectedWorkspace } = useWorkspaceContext();
   const { profile, signOut } = useAuth();
   const activeOrganizationId = selectedOrganizationId || selectedWorkspace?.organization_id || profile?.organization_id || null;
-  const { data: userRole } = useCurrentUserRole(activeOrganizationId);
-  const { data: permissions } = useUserPermissions();
-  const { canAccessModule: canAccessPlanModule } = useOrganizationPlan(activeOrganizationId);
+  const { data: userRole, isLoading: roleLoading } = useCurrentUserRole(activeOrganizationId);
+  const { data: permissions, isLoading: permissionsLoading } = useUserPermissions();
+  const { canAccessModule: canAccessPlanModule, isLoading: planLoading } = useOrganizationPlan(activeOrganizationId);
   const { data: showClientPlansMenu = false } = usePlatformSetting<boolean>('show_client_plans_menu', false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [blockedModule, setBlockedModule] = useState<string | undefined>();
@@ -82,6 +82,7 @@ export function Sidebar() {
   // Check if user can access a module (permission-based)
   const canAccessModule = (module?: string) => {
     if (!module) return true;
+    if (roleLoading || permissionsLoading) return true;
     if (userRole === 'owner' || userRole === 'admin' || userRole === 'platform_admin') return true;
     if (!permissions) return false;
 
@@ -110,7 +111,7 @@ export function Sidebar() {
   };
 
   const handleNavClick = (e: React.MouseEvent, item: NavItem) => {
-    if (item.planModule && !canAccessPlanModule(item.planModule)) {
+    if (!planLoading && item.planModule && !canAccessPlanModule(item.planModule)) {
       e.preventDefault();
       setBlockedModule(item.name);
       setUpgradeOpen(true);
@@ -150,7 +151,7 @@ export function Sidebar() {
         <nav className="flex-1 space-y-1 px-3 py-4 overflow-y-auto">
           {visibleNavigation.map((item) => {
             const isActive = item.href === '/' ? location.pathname === '/' : location.pathname.startsWith(item.href);
-            const isLocked = item.planModule ? !canAccessPlanModule(item.planModule) : false;
+            const isLocked = !planLoading && item.planModule ? !canAccessPlanModule(item.planModule) : false;
             return (
               <Link
                 key={item.name}

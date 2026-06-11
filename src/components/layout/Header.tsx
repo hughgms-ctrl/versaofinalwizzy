@@ -1,9 +1,11 @@
-import { Search, Plus, Moon, Sun, Volume2, VolumeOff, Eye, EyeOff } from 'lucide-react';
+import { ArrowLeft, Search, Plus, Moon, Sun, Volume2, VolumeOff, Eye, EyeOff } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { NotificationDropdown } from './NotificationDropdown';
 import { MobileNav } from './MobileNav';
+import { OrganizationSwitcher } from './OrganizationSwitcher';
 import { useNotificationSettings } from '@/hooks/useNotificationSettings';
 import { usePrivacy } from '@/contexts/PrivacyContext';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -15,6 +17,8 @@ interface HeaderProps {
   showNewButton?: boolean;
   onNewClick?: () => void;
   newButtonLabel?: string;
+  backTo?: string;
+  backLabel?: string;
 }
 
 export function Header({ 
@@ -23,8 +27,11 @@ export function Header({
   showSearch = true, 
   showNewButton = false,
   onNewClick,
-  newButtonLabel = "Novo"
+  newButtonLabel = "Novo",
+  backTo,
+  backLabel = 'Voltar'
 }: HeaderProps) {
+  const navigate = useNavigate();
   const { theme, setTheme } = useTheme();
   const { settings, updateSettings } = useNotificationSettings();
   const { privacyMode, togglePrivacy } = usePrivacy();
@@ -33,7 +40,23 @@ export function Header({
     <header className="sticky top-0 z-30 flex h-14 md:h-16 items-center justify-between border-b border-border bg-card/95 backdrop-blur-xl px-3 md:px-6 shadow-sm">
       <div className="flex items-center gap-3">
         {/* Mobile Nav Trigger */}
-        <MobileNav />
+        {backTo ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-9 w-9 text-muted-foreground hover:text-foreground"
+                onClick={() => navigate(backTo)}
+              >
+                <ArrowLeft className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{backLabel}</TooltipContent>
+          </Tooltip>
+        ) : (
+          <MobileNav />
+        )}
         
         <div className="flex flex-col">
           <h1 className="text-base md:text-xl font-bold text-foreground">{title}</h1>
@@ -41,7 +64,9 @@ export function Header({
         </div>
       </div>
 
-      <div className="flex items-center gap-2 md:gap-4">
+      <div className="flex flex-1 items-center justify-end gap-2 md:gap-4">
+        <OrganizationSwitcher />
+
         {showSearch && (
           <div className="relative hidden md:block">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />

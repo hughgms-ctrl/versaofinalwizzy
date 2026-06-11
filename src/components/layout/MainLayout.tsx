@@ -15,6 +15,9 @@ interface MainLayoutProps {
   onNewClick?: () => void;
   newButtonLabel?: string;
   fullWidth?: boolean;
+  hideSidebar?: boolean;
+  backTo?: string;
+  backLabel?: string;
 }
 
 export function MainLayout({ 
@@ -25,19 +28,24 @@ export function MainLayout({
   showNewButton,
   onNewClick,
   newButtonLabel,
-  fullWidth = false
+  fullWidth = false,
+  hideSidebar = false,
+  backTo,
+  backLabel
 }: MainLayoutProps) {
   const { collapsed } = useSidebarContext();
 
   return (
     <div className="min-h-screen bg-background">
       {/* Sidebar - hidden on mobile */}
-      <div className="hidden md:block">
-        <Sidebar />
-      </div>
+      {!hideSidebar && (
+        <div className="hidden md:block">
+          <Sidebar />
+        </div>
+      )}
       <div className={cn(
         "transition-all duration-300",
-        collapsed ? "md:pl-20" : "md:pl-20 lg:pl-64"
+        hideSidebar ? "md:pl-0" : collapsed ? "md:pl-20" : "md:pl-20 lg:pl-64"
       )}>
         
         <Header 
@@ -47,6 +55,8 @@ export function MainLayout({
           showNewButton={showNewButton}
           onNewClick={onNewClick}
           newButtonLabel={newButtonLabel}
+          backTo={backTo}
+          backLabel={backLabel}
         />
         <PlanUsageAlert />
         <main className={cn(

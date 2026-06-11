@@ -6,6 +6,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { AlertCircle, Building2, Loader2 } from 'lucide-react';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { clearStoredEntryAssignment, getStoredEntryAssignment, hasEntryLimitedAccessAssignment, isEntryTrialExpired } from '@/lib/entryFlow';
+import { getDefaultAppRoute, isManagerRole } from '@/lib/defaultAppRoute';
 import { useOrganizationPlan } from '@/hooks/useOrganizationPlan';
 import { useCurrentUserRole, useUserPermissions } from '@/hooks/useUserPermissions';
 
@@ -129,7 +130,7 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
     return <Navigate to="/auth" replace />;
   }
 
-  const isManager = currentOrganizationRole === 'owner' || currentOrganizationRole === 'admin' || currentOrganizationRole === 'platform_admin';
+  const isManager = isManagerRole(currentOrganizationRole);
   const isExternalOrganization = Boolean(selectedOrganizationId && selectedOrganizationId !== profile?.organization_id);
   const isWorkspaceScopedRoute = Boolean(routePlanModule || routePermissionModule);
   const shouldShowNoWorkspaceMessage = Boolean(
@@ -171,7 +172,7 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   }
 
   if (routePermissionModule && !isAllowedOnboardingPath) {
-    const isManager = userRole === 'owner' || userRole === 'admin' || userRole === 'platform_admin';
+    const isManager = isManagerRole(userRole);
     const permissionMap: Record<string, keyof NonNullable<typeof permissions>> = {
       dashboard: 'can_access_dashboard',
       conversations: 'can_access_conversations',
@@ -187,7 +188,12 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
     const permissionKey = permissionMap[routePermissionModule];
     const hasPermission = isManager || (permissionKey ? Boolean(permissions?.[permissionKey]) : false);
     if (!hasPermission) {
-      return <Navigate to={routePermissionModule === 'dashboard' ? '/profile' : '/dashboard'} replace state={{ from: location, reason: 'permission_denied' }} />;
+      const fallbackRoute = getDefaultAppRoute({
+        role: userRole,
+        permissions,
+        canAccessPlanModule,
+      });
+      return <Navigate to={fallbackRoute} replace state={{ from: location, reason: 'permission_denied' }} />;
     }
   }
 

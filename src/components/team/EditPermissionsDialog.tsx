@@ -44,6 +44,8 @@ import { useSetUserWorkspaces, useWorkspaces } from '@/hooks/useWorkspaces';
 import { useConversationSharesByMember, useUnshareConversation } from '@/hooks/useConversationShares';
 import { useConversations } from '@/hooks/useConversations';
 import { Share2, Trash2 } from 'lucide-react';
+import { useAuth } from '@/hooks/useAuth';
+import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 
 interface EditPermissionsDialogProps {
   open: boolean;
@@ -91,10 +93,13 @@ const supervisorDefaultPermissions: Partial<UserPermissions> = {
 };
 
 export function EditPermissionsDialog({ open, onOpenChange, member }: EditPermissionsDialogProps) {
+  const { profile } = useAuth();
+  const { selectedOrganizationId } = useWorkspaceContext();
+  const organizationId = selectedOrganizationId || profile?.organization_id || null;
   const { data: existingPermissions, isLoading: loadingPermissions } = useUserPermissions(member?.user_id);
   const { data: tags = [] } = useTags();
   const { data: pipelines = [] } = usePipelines();
-  const { data: workspaces = [] } = useWorkspaces();
+  const { data: workspaces = [] } = useWorkspaces(organizationId);
   const updatePermissions = useUpdateUserPermissions();
   const setUserWorkspaces = useSetUserWorkspaces();
   const { data: memberShares = [] } = useConversationSharesByMember(member?.user_id);
@@ -111,13 +116,20 @@ export function EditPermissionsDialog({ open, onOpenChange, member }: EditPermis
       const fetchMemberWorkspaces = async () => {
         const { data } = await (await import('@/integrations/supabase/client')).supabase
           .from('workspace_members')
-          .select('workspace_id')
+          .select('workspace_id, workspace:workspaces(organization_id)')
           .eq('user_id', member.user_id);
-        setSelectedWorkspaceIds((data || []).map((d: any) => d.workspace_id));
+        setSelectedWorkspaceIds((data || [])
+          .filter((d: any) => {
+            const workspaceOrgId = Array.isArray(d.workspace)
+              ? d.workspace[0]?.organization_id
+              : d.workspace?.organization_id;
+            return !organizationId || workspaceOrgId === organizationId;
+          })
+          .map((d: any) => d.workspace_id));
       };
       fetchMemberWorkspaces();
     }
-  }, [member?.user_id, open]);
+  }, [member?.user_id, open, organizationId]);
 
   useEffect(() => {
     if (existingPermissions) {
@@ -157,6 +169,7 @@ export function EditPermissionsDialog({ open, onOpenChange, member }: EditPermis
     await setUserWorkspaces.mutateAsync({
       userId: member.user_id,
       workspaceIds: selectedWorkspaceIds,
+      organizationId,
     });
 
     onOpenChange(false);

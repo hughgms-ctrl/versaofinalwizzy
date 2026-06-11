@@ -328,12 +328,14 @@ export function useSetUserWorkspaces() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ userId, workspaceIds }: {
+    mutationFn: async ({ userId, workspaceIds, organizationId }: {
       userId: string;
       workspaceIds: string[];
+      organizationId?: string | null;
     }) => {
+      if (!organizationId) throw new Error('Organizacao nao encontrada');
       const { data, error } = await supabase.functions.invoke('update-team-member', {
-        body: { userId, workspaceIds },
+        body: { userId, workspaceIds, organizationId },
       });
 
       if (error) throw await getFunctionError(error);

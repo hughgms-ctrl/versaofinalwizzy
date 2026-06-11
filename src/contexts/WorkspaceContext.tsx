@@ -119,9 +119,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // Auto-select first workspace for non-admins if none selected
   useEffect(() => {
     if (!isAdmin && availableWorkspaces.length > 0 && !selectedWorkspaceId) {
-      setSelectedWorkspaceId(availableWorkspaces[0].id);
+      const nextWorkspaceId = availableWorkspaces[0].id;
+      setSelectedWorkspaceId(nextWorkspaceId);
+      const key = getWorkspaceStorageKey(userId);
+      if (key) localStorage.setItem(key, nextWorkspaceId);
     }
-  }, [isAdmin, availableWorkspaces, selectedWorkspaceId]);
+  }, [isAdmin, availableWorkspaces, selectedWorkspaceId, userId]);
 
   // Clear selection if workspace no longer available
   useEffect(() => {
