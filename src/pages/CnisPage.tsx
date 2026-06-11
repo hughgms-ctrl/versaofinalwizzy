@@ -80,7 +80,7 @@ type RunnerSession = {
 const STORAGE_KEY = "wizzy:cnis:sessions:v1";
 const RUNNER_BASE_URL = import.meta.env.VITE_CNIS_RUNNER_URL || "http://127.0.0.1:8787";
 const RUNNER_PROTOCOL_URL = import.meta.env.VITE_CNIS_RUNNER_PROTOCOL_URL || "wizzy-cnis-runner://";
-const RUNNER_INSTALLER_WINDOWS_URL = import.meta.env.VITE_CNIS_RUNNER_WINDOWS_INSTALLER_URL || "https://github.com/hughgms-ctrl/versaofinalwizzy/releases/download/cnis-runner-v0.1.1/wizzy-prev-runner-win.exe";
+const RUNNER_INSTALLER_WINDOWS_URL = import.meta.env.VITE_CNIS_RUNNER_WINDOWS_INSTALLER_URL || "/downloads/wizzy-prev-runner-win.exe";
 const RUNNER_INSTALLER_MACOS_URL = import.meta.env.VITE_CNIS_RUNNER_MACOS_INSTALLER_URL || "";
 const RUNNER_INSTALLER_GENERIC_URL = import.meta.env.VITE_CNIS_RUNNER_INSTALLER_URL || "";
 const activeStatuses: SessionStatus[] = ["queued", "starting", "running", "waiting_user"];
@@ -562,8 +562,8 @@ export default function CnisPage() {
     setSelectedId(null);
   };
 
-  const downloadRunnerPackage = () => {
-    const installer = openRunnerInstaller();
+  const downloadRunnerPackage = async () => {
+    const installer = await openRunnerInstaller();
     if (installer.opened) {
       setRunnerInstallMessage(getRunnerDownloadedMessage(installer.platform));
       return;
@@ -1228,7 +1228,7 @@ function launchRunnerProtocol(action: "certificate-login" | "open-runner") {
   window.location.href = `${base}${action}?return=${encodeURIComponent(window.location.href)}`;
 }
 
-function openRunnerInstaller() {
+async function openRunnerInstaller() {
   const platform = detectClientPlatform();
   const url = getRunnerInstallerUrl(platform);
 
@@ -1236,11 +1236,14 @@ function openRunnerInstaller() {
     return { opened: false, platform };
   }
 
+  const available = await isDownloadAssetAvailable(url);
+  if (!available) {
+    return { opened: false, platform };
+  }
+
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.target = "_blank";
-  anchor.rel = "noopener noreferrer";
-  anchor.download = "";
+  anchor.download = getRunnerInstallerFilename(platform);
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
@@ -1254,6 +1257,29 @@ function getRunnerInstallerUrl(platform = detectClientPlatform()) {
     : platform === "windows"
       ? RUNNER_INSTALLER_WINDOWS_URL
       : RUNNER_INSTALLER_GENERIC_URL;
+}
+
+async function isDownloadAssetAvailable(url: string) {
+  try {
+    const response = await fetch(url, { method: "HEAD", cache: "no-store" });
+    if (!response.ok) return false;
+
+    const contentType = response.headers.get("content-type") || "";
+    if (contentType.includes("text/html")) return false;
+
+    const length = Number(response.headers.get("content-length") || 0);
+    if (length > 0 && length < 1024 * 1024) return false;
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function getRunnerInstallerFilename(platform: "windows" | "macos" | "other") {
+  if (platform === "windows") return "wizzy-prev-runner-win.exe";
+  if (platform === "macos") return "wizzy-prev-runner-mac.dmg";
+  return "wizzy-prev-runner";
 }
 
 function getRunnerInstallMessage() {
