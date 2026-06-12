@@ -50,7 +50,7 @@ const navigation: NavItem[] = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, module: 'dashboard' },
   { name: 'Conversas', href: '/conversations', icon: MessageSquare, module: 'conversations', planModule: 'conversations' },
   { name: 'Contatos', href: '/contacts', icon: BookUser, module: 'contacts', planModule: 'contacts' },
-  { name: 'Grupos', href: '/groups', icon: UsersRound, module: 'groups', planModule: 'conversations' },
+  { name: 'Grupos', href: '/groups', icon: UsersRound, module: 'groups', planModule: 'groups' },
   { name: 'Agenda', href: '/calendar', icon: Calendar, module: 'calendar', planModule: 'calendar' },
   { name: 'Pipeline', href: '/pipeline', icon: Kanban, module: 'pipeline', planModule: 'pipeline' },
   { name: 'Fluxos', href: '/flows', icon: Workflow, module: 'flows', planModule: 'flows' },

@@ -10,7 +10,7 @@ const defaultRouteOrder: DefaultRouteItem[] = [
   { path: '/dashboard', permissionModule: 'dashboard', planModule: 'dashboard' },
   { path: '/conversations', permissionModule: 'conversations', planModule: 'conversations' },
   { path: '/contacts', permissionModule: 'contacts', planModule: 'contacts' },
-  { path: '/groups', permissionModule: 'groups', planModule: 'conversations' },
+  { path: '/groups', permissionModule: 'groups', planModule: 'groups' },
   { path: '/calendar', permissionModule: 'calendar', planModule: 'calendar' },
   { path: '/pipeline', permissionModule: 'pipeline', planModule: 'pipeline' },
   { path: '/flows', permissionModule: 'flows', planModule: 'flows' },

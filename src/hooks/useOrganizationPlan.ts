@@ -3,9 +3,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 
 export const WIZZY_CRM_MODULES = [
+  'crm',
   'dashboard',
   'conversations',
   'contacts',
+  'groups',
   'calendar',
   'pipeline',
   'flows',
@@ -16,16 +18,18 @@ export const WIZZY_CRM_MODULES = [
   'integrations',
   'settings',
   'team',
-  'tools',
   'orchestrator',
   'ai',
 ];
 
 export const EXTRA_TOOL_MODULES = [
+  'tools',
   'documents',
   'widgets',
   'quiz',
   'wizzy_flow',
+  'carousel',
+  'cnis',
 ];
 
 function getCurrentUsagePeriod() {
@@ -80,8 +84,22 @@ export function useOrganizationPlan(organizationIdOverride?: string | null) {
 
   const canAccessModule = (module: string): boolean => {
     if (!hasActiveAccess) return false;
-    if (WIZZY_CRM_MODULES.includes(module)) return true;
-    // Core access comes from the active subscription. Extra tools are plan-scoped.
+
+    if (WIZZY_CRM_MODULES.includes(module)) {
+      const hasCrmBundle = allowedModules.includes('crm');
+      const hasLegacyCrmModules = allowedModules.some((allowedModule) =>
+        allowedModule !== 'crm' && WIZZY_CRM_MODULES.includes(allowedModule)
+      );
+      if (module === 'crm') return hasCrmBundle || hasLegacyCrmModules;
+      return hasCrmBundle || hasLegacyCrmModules ? allowedModules.includes(module) : false;
+    }
+
+    if (module === 'tools') {
+      return allowedModules.includes('tools')
+        || EXTRA_TOOL_MODULES.some((toolModule) => toolModule !== 'tools' && allowedModules.includes(toolModule));
+    }
+
+    // Extra tools are plan-scoped.
     return allowedModules.includes(module);
   };
 

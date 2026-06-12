@@ -90,6 +90,60 @@ function generateMessageId(phone: string, timestamp: Date, content: string): str
   return `import_${hash}`;
 }
 
+function cleanOriginPhone(value: unknown): string | null {
+  if (typeof value !== 'string' && typeof value !== 'number') return null;
+  const raw = String(value).split('@')[0].split(':')[0];
+  const digits = raw.replace(/\D/g, '');
+  return digits.length >= 8 ? digits : null;
+}
+
+function getConnectedPhoneSnapshot(instance: any): string | null {
+  const candidates = [
+    instance?.phone_number,
+    instance?.logical_phone,
+    instance?.provider_settings?.phone_number,
+    instance?.provider_settings?.phoneNumber,
+    instance?.provider_settings?.connected_phone,
+    instance?.provider_settings?.connectedPhone,
+  ];
+
+  for (const candidate of candidates) {
+    const phone = cleanOriginPhone(candidate);
+    if (phone) return phone;
+  }
+
+  return null;
+}
+
+async function recordConversationOriginAudit(
+  supabase: any,
+  organizationId: string,
+  conversationId: string,
+  instance: any,
+  messageId: string | null,
+  capturedFrom: string,
+  metadata: Record<string, unknown> = {},
+) {
+  try {
+    const { error } = await supabase.rpc('record_conversation_origin_audit', {
+      _organization_id: organizationId,
+      _conversation_id: conversationId,
+      _whatsapp_instance_id: instance?.id || null,
+      _message_id: messageId,
+      _connected_phone: getConnectedPhoneSnapshot(instance),
+      _provider: instance?.provider || null,
+      _provider_instance_id: instance?.evolution_instance_id || instance?.zapi_instance_id || null,
+      _provider_instance_name: instance?.evolution_instance_name || instance?.zapi_instance_id || null,
+      _captured_from: capturedFrom,
+      _metadata: metadata,
+    });
+
+    if (error) console.error('[ORIGIN_AUDIT] Failed to record origin:', error);
+  } catch (error) {
+    console.error('[ORIGIN_AUDIT] Failed to record origin:', error);
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -139,7 +193,7 @@ Deno.serve(async (req) => {
     // Get WhatsApp instance for this org
     const { data: instance } = await supabase
       .from('whatsapp_instances')
-      .select('id')
+      .select('*')
       .eq('organization_id', organizationId)
       .single();
 
@@ -238,6 +292,16 @@ Deno.serve(async (req) => {
           conversationsImported++;
         }
 
+        await recordConversationOriginAudit(
+          supabase,
+          organizationId,
+          conversationId,
+          instance,
+          null,
+          'import-whatsapp-history:conversation',
+          { contactPhone },
+        );
+
         // Import messages
         const messages = chat.messages || [];
         const messagesToInsert: any[] = [];
@@ -272,12 +336,27 @@ Deno.serve(async (req) => {
               onConflict: 'conversation_id,zapi_message_id',
               ignoreDuplicates: true
             })
-            .select('id');
+            .select('id, zapi_message_id, direction');
 
           if (insertError) {
             errors.push(`Erro ao inserir mensagens para ${contactPhone}: ${insertError.message}`);
           } else {
             messagesImported += inserted?.length || 0;
+            for (const message of inserted || []) {
+              await recordConversationOriginAudit(
+                supabase,
+                organizationId,
+                conversationId,
+                instance,
+                message.id,
+                'import-whatsapp-history:message',
+                {
+                  contactPhone,
+                  messageProviderId: message.zapi_message_id || null,
+                  direction: message.direction || null,
+                },
+              );
+            }
           }
 
           // Update last_message_at

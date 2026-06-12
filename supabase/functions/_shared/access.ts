@@ -36,9 +36,11 @@ export function hasValidOrganizationPlan(planRow: any) {
 export function planAllowsModule(planRow: any, moduleName?: string | null) {
   if (!moduleName) return true;
   const coreModules = new Set([
+    'crm',
     'dashboard',
     'conversations',
     'contacts',
+    'groups',
     'calendar',
     'pipeline',
     'flows',
@@ -49,14 +51,26 @@ export function planAllowsModule(planRow: any, moduleName?: string | null) {
     'integrations',
     'settings',
     'team',
-    'tools',
     'orchestrator',
     'ai',
   ]);
-  if (coreModules.has(moduleName)) return true;
   const allowedModules = Array.isArray(planRow?.plan?.allowed_modules)
     ? planRow.plan.allowed_modules
     : [];
+  if (coreModules.has(moduleName)) {
+    const hasCrmBundle = allowedModules.includes('crm');
+    const hasLegacyCrmModules = allowedModules.some((allowedModule: string) =>
+      allowedModule !== 'crm' && coreModules.has(allowedModule)
+    );
+    if (moduleName === 'crm') return hasCrmBundle || hasLegacyCrmModules;
+    return hasCrmBundle || hasLegacyCrmModules ? allowedModules.includes(moduleName) : false;
+  }
+  if (moduleName === 'tools') {
+    return allowedModules.includes('tools')
+      || ['documents', 'widgets', 'quiz', 'wizzy_flow', 'carousel', 'cnis'].some((toolModule) =>
+        allowedModules.includes(toolModule)
+      );
+  }
   return allowedModules.includes(moduleName);
 }
 

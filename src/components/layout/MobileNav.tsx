@@ -45,7 +45,7 @@ const navigation: NavItem[] = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, module: 'dashboard', planModule: 'dashboard' },
   { name: 'Conversas', href: '/conversations', icon: MessageSquare, module: 'conversations', planModule: 'conversations' },
   { name: 'Contatos', href: '/contacts', icon: BookUser, module: 'contacts', planModule: 'contacts' },
-  { name: 'Grupos', href: '/groups', icon: UsersRound, module: 'groups', planModule: 'conversations' },
+  { name: 'Grupos', href: '/groups', icon: UsersRound, module: 'groups', planModule: 'groups' },
   { name: 'Agenda', href: '/calendar', icon: Calendar, module: 'calendar', planModule: 'calendar' },
   { name: 'Pipeline', href: '/pipeline', icon: Kanban, module: 'pipeline', planModule: 'pipeline' },
   { name: 'Fluxos', href: '/flows', icon: Workflow, module: 'flows', planModule: 'flows' },
@@ -54,9 +54,9 @@ const navigation: NavItem[] = [
   { name: 'Programados', href: '/scheduled', icon: CalendarClock, module: 'scheduled', planModule: 'scheduled' },
   { name: 'Agentes IA', href: '/agents', icon: Bot, module: 'agents', planModule: 'agents' },
   { name: 'Equipe', href: '/team', icon: Users, module: 'team', planModule: 'team' },
-  { name: 'Relatórios', href: '/reports', icon: BarChart3, module: 'reports' },
+  { name: 'Relatórios', href: '/reports', icon: BarChart3, module: 'reports', planModule: 'reports' },
   { name: 'Integrações', href: '/integrations', icon: Plug, module: 'integrations', planModule: 'integrations' },
-  { name: 'Configurações', href: '/settings', icon: Settings, module: 'settings' },
+  { name: 'Configurações', href: '/settings', icon: Settings, module: 'settings', planModule: 'settings' },
 ];
 
 export function MobileNav() {

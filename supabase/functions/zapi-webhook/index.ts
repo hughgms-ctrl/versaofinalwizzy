@@ -764,6 +764,78 @@ function isGroupChat(chatid: string): boolean {
   return chatid?.includes('@g.us') || chatid?.includes('@broadcast') || false;
 }
 
+function cleanOriginPhone(value: unknown): string | null {
+  if (typeof value !== 'string' && typeof value !== 'number') return null;
+  const raw = String(value).split('@')[0].split(':')[0];
+  const digits = raw.replace(/\D/g, '');
+  return digits.length >= 8 ? digits : null;
+}
+
+function getConnectedPhoneSnapshot(instance: any, payload?: any): string | null {
+  const candidates = [
+    instance?.phone_number,
+    instance?.logical_phone,
+    instance?.provider_settings?.phone_number,
+    instance?.provider_settings?.phoneNumber,
+    instance?.provider_settings?.connected_phone,
+    instance?.provider_settings?.connectedPhone,
+    payload?.connected_phone,
+    payload?.connectedPhone,
+    payload?.phone_number,
+    payload?.phoneNumber,
+    payload?.instancePhone,
+    payload?.instance_phone,
+    payload?.owner,
+    payload?.ownerJid,
+    payload?.me?.id,
+    payload?.me?.jid,
+    payload?.data?.owner,
+    payload?.data?.ownerJid,
+    payload?.data?.me?.id,
+    payload?.data?.me?.jid,
+  ];
+
+  for (const candidate of candidates) {
+    const phone = cleanOriginPhone(candidate);
+    if (phone) return phone;
+  }
+
+  return null;
+}
+
+async function recordConversationOriginAudit(
+  supabase: any,
+  params: {
+    organizationId: string;
+    conversationId: string;
+    whatsappInstance?: any;
+    messageId?: string | null;
+    connectedPhone?: string | null;
+    capturedFrom: string;
+    metadata?: Record<string, unknown>;
+  },
+) {
+  try {
+    const instance = params.whatsappInstance || {};
+    const { error } = await supabase.rpc('record_conversation_origin_audit', {
+      _organization_id: params.organizationId,
+      _conversation_id: params.conversationId,
+      _whatsapp_instance_id: instance.id || null,
+      _message_id: params.messageId || null,
+      _connected_phone: params.connectedPhone || getConnectedPhoneSnapshot(instance) || null,
+      _provider: instance.provider || null,
+      _provider_instance_id: instance.evolution_instance_id || instance.zapi_instance_id || null,
+      _provider_instance_name: instance.evolution_instance_name || instance.zapi_instance_id || null,
+      _captured_from: params.capturedFrom,
+      _metadata: params.metadata || {},
+    });
+
+    if (error) console.error('[ORIGIN_AUDIT] Failed to record origin:', error);
+  } catch (error) {
+    console.error('[ORIGIN_AUDIT] Failed to record origin:', error);
+  }
+}
+
 // ── RATE LIMITING for webhook ──
 const webhookRateStore = new Map<string, { count: number; resetAt: number }>()
 const WEBHOOK_RATE_LIMIT = 300 // per minute per IP
@@ -1826,6 +1898,20 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
     whatsappInstance.phone_number,
     fallbackWorkspaceId || (fallbackWorkspaceIds.length === 0 ? contact.workspace_id : null),
   );
+  const connectedPhoneSnapshot = getConnectedPhoneSnapshot(whatsappInstance, payload);
+  await recordConversationOriginAudit(supabase, {
+    organizationId,
+    conversationId: conversation.id,
+    whatsappInstance,
+    connectedPhone: connectedPhoneSnapshot,
+    capturedFrom: 'zapi-webhook:conversation',
+    metadata: {
+      eventType,
+      instanceId,
+      instanceName,
+      messageProviderId: msgId || null,
+    },
+  });
 
   if (!fromMe) {
     await supabase.from('contact_presence').upsert({
@@ -2057,6 +2143,24 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
   if (messageError) {
     console.error('Error inserting message:', messageError);
     throw messageError;
+  }
+
+  if (savedMessage?.id) {
+    await recordConversationOriginAudit(supabase, {
+      organizationId,
+      conversationId: conversation.id,
+      whatsappInstance,
+      messageId: savedMessage.id,
+      connectedPhone: connectedPhoneSnapshot,
+      capturedFrom: 'zapi-webhook:message',
+      metadata: {
+        eventType,
+        instanceId,
+        instanceName,
+        messageProviderId: msgId || null,
+        direction: fromMe ? 'outbound' : 'inbound',
+      },
+    });
   }
 
   // Update conversation timestamps

@@ -19,10 +19,12 @@ function getPlanModuleForPath(pathname: string): string | null {
   if (pathname.startsWith('/tools/buttons') || pathname.startsWith('/widgets')) return 'widgets';
   if (pathname.startsWith('/tools/quiz')) return 'quiz';
   if (pathname.startsWith('/tools/wizzy-flow')) return 'wizzy_flow';
+  if (pathname.startsWith('/tools/carousel')) return 'carousel';
+  if (pathname.startsWith('/tools/cnis')) return 'cnis';
   if (pathname.startsWith('/tools')) return 'tools';
   if (pathname.startsWith('/conversations')) return 'conversations';
   if (pathname.startsWith('/contacts')) return 'contacts';
-  if (pathname.startsWith('/groups')) return 'conversations';
+  if (pathname.startsWith('/groups')) return 'groups';
   if (pathname.startsWith('/calendar')) return 'calendar';
   if (pathname.startsWith('/pipeline')) return 'pipeline';
   if (pathname.startsWith('/flows') || pathname.startsWith('/flow-builder')) return 'flows';

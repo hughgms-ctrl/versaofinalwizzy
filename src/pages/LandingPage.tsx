@@ -196,9 +196,11 @@ const extraModuleLabels: Record<string, string> = {
   widgets: "Wizzy Forms",
   quiz: "Wizzy Quest",
   wizzy_flow: "Wizzy Flow",
+  carousel: "Wizzy Carrossel",
+  cnis: "Wizzy Prev / CNIS",
 };
 
-const orderedExtraModules = ["documents", "widgets", "quiz", "wizzy_flow"];
+const orderedExtraModules = ["documents", "widgets", "quiz", "wizzy_flow", "carousel", "cnis"];
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://zaobtetbjpuzibjymhzw.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY =
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||

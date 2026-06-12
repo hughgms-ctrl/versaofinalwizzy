@@ -13,48 +13,39 @@ import { AlertTriangle, CreditCard, Plus, Edit, Users, Check, X, RefreshCw } fro
 import { useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { EXTRA_TOOL_MODULES } from '@/hooks/useOrganizationPlan';
+import { EXTRA_TOOL_MODULES, WIZZY_CRM_MODULES } from '@/hooks/useOrganizationPlan';
 
-const ALL_MODULES = [
+const CRM_MODULES = [
+  { value: 'dashboard', label: 'Dashboard' },
   { value: 'conversations', label: 'Conversas' },
-  { value: 'pipeline', label: 'Pipeline' },
   { value: 'contacts', label: 'Contatos' },
-  { value: 'flows', label: 'Fluxos' },
-  { value: 'documents', label: 'Wizzy Sign' },
-  { value: 'agents', label: 'Agentes IA' },
-  { value: 'reports', label: 'Relatórios' },
-  { value: 'campaigns', label: 'Campanhas' },
+  { value: 'groups', label: 'Grupos' },
+  { value: 'pipeline', label: 'Pipeline' },
   { value: 'calendar', label: 'Agenda' },
-  { value: 'orchestrator', label: 'Orquestrador' },
-  { value: 'ai', label: 'Inteligência Artificial' },
-  { value: 'widgets', label: 'Wizzy Forms' },
-  { value: 'settings', label: 'Configurações' },
-  { value: 'team', label: 'Equipe' },
+  { value: 'flows', label: 'Fluxos' },
+  { value: 'campaigns', label: 'Campanhas' },
   { value: 'scheduled', label: 'Programados' },
-  { value: 'integrations', label: 'Integrações' },
-];
-
-const CORE_CRM_FEATURES = [
-  'Conversas',
-  'Contatos',
-  'Pipeline',
-  'Agenda',
-  'Fluxos',
-  'Campanhas',
-  'Programados',
-  'Agentes IA',
-  'Relatorios',
-  'Integracoes',
-  'Configuracoes',
-  'Equipe',
-];
+  { value: 'agents', label: 'Agentes IA' },
+  { value: 'reports', label: 'Relatorios' },
+  { value: 'integrations', label: 'Integracoes' },
+  { value: 'settings', label: 'Configuracoes' },
+  { value: 'team', label: 'Equipe' },
+  { value: 'orchestrator', label: 'Orquestrador' },
+  { value: 'ai', label: 'Inteligencia Artificial' },
+].filter((mod) => WIZZY_CRM_MODULES.includes(mod.value));
 
 const EXTRA_MODULES = [
+  { value: 'tools', label: 'Ferramentas' },
   { value: 'documents', label: 'Wizzy Sign' },
   { value: 'widgets', label: 'Wizzy Forms' },
   { value: 'quiz', label: 'Wizzy Quiz' },
   { value: 'wizzy_flow', label: 'Wizzy Flow' },
+  { value: 'carousel', label: 'Wizzy Carrossel' },
+  { value: 'cnis', label: 'Wizzy Prev / CNIS' },
 ].filter((mod) => EXTRA_TOOL_MODULES.includes(mod.value));
+
+const CRM_VALUES = ['crm', ...CRM_MODULES.map((mod) => mod.value)];
+const EXTRA_VALUES = EXTRA_MODULES.map((mod) => mod.value);
 
 const PAYMENT_METHOD_LABELS: Record<string, string> = {
   PIX: 'Pix',
@@ -89,7 +80,7 @@ const emptyPlan: PlanForm = {
   name: '', slug: '', price_monthly: 0, price_yearly: 0, trial_enabled: false, trial_days: 0, max_team_members: 3,
   max_workspaces: null, max_whatsapp_numbers: null, max_conversations: null, max_ai_requests_month: null,
   storage_limit_bytes: 1073741824, ai_mode: 'own_api', is_active: true,
-  allowed_modules: [], features: {}, asaas_billing_type: 'UNDEFINED',
+  allowed_modules: CRM_VALUES, features: {}, asaas_billing_type: 'UNDEFINED',
   stripe_monthly_price_id: '', stripe_yearly_price_id: '',
 };
 
@@ -178,22 +169,66 @@ export default function AdminPlansPage() {
   const toggleModule = (mod: string) => {
     if (!editPlan) return;
     const modules = editPlan.allowed_modules || [];
+    const hasModule = modules.includes(mod);
+    if (mod === 'crm' || mod === 'tools') {
+      const groupValues = mod === 'crm' ? CRM_VALUES : EXTRA_VALUES;
+      setEditPlan({
+        ...editPlan,
+        allowed_modules: hasModule
+          ? modules.filter((module) => !groupValues.includes(module))
+          : [...modules, mod],
+      });
+      return;
+    }
+
+    const parentModule = CRM_MODULES.some((module) => module.value === mod)
+      ? 'crm'
+      : EXTRA_MODULES.some((module) => module.value === mod)
+        ? 'tools'
+        : null;
+    const nextModules = hasModule
+      ? modules.filter(m => m !== mod)
+      : [...modules, mod];
+    if (parentModule && !nextModules.includes(parentModule)) {
+      nextModules.push(parentModule);
+    }
     setEditPlan({
       ...editPlan,
-      allowed_modules: modules.includes(mod)
-        ? modules.filter(m => m !== mod)
-        : [...modules, mod],
+      allowed_modules: nextModules,
     });
   };
 
-  const selectAllModules = () => {
+  const setModules = (values: string[], enabled: boolean) => {
     if (!editPlan) return;
-    setEditPlan({ ...editPlan, allowed_modules: EXTRA_MODULES.map(m => m.value) });
+    const modules = new Set(editPlan.allowed_modules || []);
+    values.forEach((value) => {
+      if (enabled) {
+        modules.add(value);
+      } else {
+        modules.delete(value);
+      }
+    });
+    setEditPlan({ ...editPlan, allowed_modules: Array.from(modules) });
   };
 
-  const deselectAllModules = () => {
+  const selectAllCrmModules = () => {
     if (!editPlan) return;
-    setEditPlan({ ...editPlan, allowed_modules: [] });
+    setModules(CRM_VALUES, true);
+  };
+
+  const deselectAllCrmModules = () => {
+    if (!editPlan) return;
+    setModules(CRM_VALUES, false);
+  };
+
+  const selectAllExtraModules = () => {
+    if (!editPlan) return;
+    setModules(EXTRA_VALUES, true);
+  };
+
+  const deselectAllExtraModules = () => {
+    if (!editPlan) return;
+    setModules(EXTRA_VALUES, false);
   };
 
   return (
@@ -328,6 +363,34 @@ export default function AdminPlansPage() {
                       {(plan.features?.payment?.stripe?.monthly_price_id || plan.features?.payment?.stripe?.yearly_price_id) && (
                         <p>Stripe: Price IDs configurados</p>
                       )}
+                    </div>
+
+                    <Separator />
+
+                    <div className="space-y-1">
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Wizzy CRM</p>
+                      <div className="flex flex-wrap gap-1">
+                        <Badge
+                          variant={modules.includes('crm') ? 'default' : 'outline'}
+                          className={`text-xs ${!modules.includes('crm') ? 'opacity-40' : ''}`}
+                        >
+                          {modules.includes('crm') ? <Check className="w-3 h-3 mr-0.5" /> : <X className="w-3 h-3 mr-0.5" />}
+                          CRM
+                        </Badge>
+                        {CRM_MODULES.map(mod => {
+                          const has = modules.includes(mod.value);
+                          return (
+                            <Badge
+                              key={mod.value}
+                              variant={has ? 'secondary' : 'outline'}
+                              className={`text-xs ${!has ? 'opacity-40' : ''}`}
+                            >
+                              {has ? <Check className="w-3 h-3 mr-0.5" /> : <X className="w-3 h-3 mr-0.5" />}
+                              {mod.label}
+                            </Badge>
+                          );
+                        })}
+                      </div>
                     </div>
 
                     <Separator />
@@ -523,27 +586,50 @@ export default function AdminPlansPage() {
                 {/* Modules */}
                 <div className="space-y-3">
                   <div className="space-y-2 rounded-md border bg-muted/30 p-3">
-                    <Label className="text-base font-semibold">Wizzy CRM</Label>
+                    <div className="flex items-center justify-between gap-3">
+                      <Label className="text-base font-semibold">Wizzy CRM</Label>
+                      <div className="flex gap-2">
+                        <Button type="button" variant="ghost" size="sm" onClick={selectAllCrmModules}>
+                          Selecionar todos
+                        </Button>
+                        <Button type="button" variant="ghost" size="sm" onClick={deselectAllCrmModules}>
+                          Limpar
+                        </Button>
+                      </div>
+                    </div>
                     <p className="text-sm text-muted-foreground">
-                      O CRM principal fica incluido em todos os planos. Use limites de membros e storage para diferenciar os pacotes.
+                      Use a chave geral CRM e as chaves individuais para liberar ou bloquear areas separadas.
                     </p>
-                    <div className="flex flex-wrap gap-1">
-                      {CORE_CRM_FEATURES.map((feature) => (
-                        <Badge key={feature} variant="secondary" className="text-xs">
-                          <Check className="mr-1 h-3 w-3" />
-                          {feature}
-                        </Badge>
+                    <label className="flex items-center gap-2 p-2 rounded-md border border-border hover:bg-accent/50 cursor-pointer transition-colors">
+                      <Checkbox
+                        checked={(editPlan.allowed_modules || []).includes('crm')}
+                        onCheckedChange={() => toggleModule('crm')}
+                      />
+                      <span className="text-sm font-medium">CRM</span>
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {CRM_MODULES.map(mod => (
+                        <label
+                          key={mod.value}
+                          className="flex items-center gap-2 p-2 rounded-md border border-border hover:bg-accent/50 cursor-pointer transition-colors"
+                        >
+                          <Checkbox
+                            checked={(editPlan.allowed_modules || []).includes(mod.value)}
+                            onCheckedChange={() => toggleModule(mod.value)}
+                          />
+                          <span className="text-sm">{mod.label}</span>
+                        </label>
                       ))}
                     </div>
                   </div>
 
                   <div className="flex items-center justify-between">
-                    <Label className="text-base font-semibold">Ferramentas extras</Label>
+                    <Label className="text-base font-semibold">Ferramentas</Label>
                     <div className="flex gap-2">
-                      <Button type="button" variant="ghost" size="sm" onClick={selectAllModules}>
+                      <Button type="button" variant="ghost" size="sm" onClick={selectAllExtraModules}>
                         Selecionar todos
                       </Button>
-                      <Button type="button" variant="ghost" size="sm" onClick={deselectAllModules}>
+                      <Button type="button" variant="ghost" size="sm" onClick={deselectAllExtraModules}>
                         Limpar
                       </Button>
                     </div>

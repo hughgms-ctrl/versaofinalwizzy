@@ -92,6 +92,59 @@ function isValidPhoneNumber(phone: string): boolean {
   return true;
 }
 
+function cleanOriginPhone(value: unknown): string | null {
+  if (typeof value !== 'string' && typeof value !== 'number') return null;
+  const raw = String(value).split('@')[0].split(':')[0];
+  const digits = raw.replace(/\D/g, '');
+  return digits.length >= 8 ? digits : null;
+}
+
+function getConnectedPhoneSnapshot(instance: any): string | null {
+  const candidates = [
+    instance?.phone_number,
+    instance?.logical_phone,
+    instance?.provider_settings?.phone_number,
+    instance?.provider_settings?.phoneNumber,
+    instance?.provider_settings?.connected_phone,
+    instance?.provider_settings?.connectedPhone,
+  ];
+
+  for (const candidate of candidates) {
+    const phone = cleanOriginPhone(candidate);
+    if (phone) return phone;
+  }
+
+  return null;
+}
+
+async function recordConversationOriginAudit(
+  supabase: any,
+  organizationId: string,
+  conversationId: string,
+  instance: any,
+  capturedFrom: string,
+  metadata: Record<string, unknown> = {},
+) {
+  try {
+    const { error } = await supabase.rpc('record_conversation_origin_audit', {
+      _organization_id: organizationId,
+      _conversation_id: conversationId,
+      _whatsapp_instance_id: instance?.id || null,
+      _message_id: null,
+      _connected_phone: getConnectedPhoneSnapshot(instance),
+      _provider: instance?.provider || null,
+      _provider_instance_id: instance?.evolution_instance_id || instance?.zapi_instance_id || null,
+      _provider_instance_name: instance?.evolution_instance_name || instance?.zapi_instance_id || null,
+      _captured_from: capturedFrom,
+      _metadata: metadata,
+    });
+
+    if (error) console.error('[ORIGIN_AUDIT] Failed to record origin:', error);
+  } catch (error) {
+    console.error('[ORIGIN_AUDIT] Failed to record origin:', error);
+  }
+}
+
 async function fetchContactProfile(uazapiBaseUrl: string, token: string, phone: string): Promise<{ name?: string; profilePicUrl?: string } | null> {
   try {
     const resp = await fetch(`${uazapiBaseUrl}/contact/info`, {
@@ -113,7 +166,7 @@ async function fetchContactProfile(uazapiBaseUrl: string, token: string, phone: 
 
 async function processChatsBatch(
   supabase: any, chats: UAZAPIChat[], organizationId: string, whatsappInstanceId: string,
-  uazapiBaseUrl: string, instanceToken: string
+  uazapiBaseUrl: string, instanceToken: string, instanceInfo: any
 ): Promise<{ processed: number; errors: string[] }> {
   let processed = 0;
   const errors: string[] = [];
@@ -185,12 +238,28 @@ async function processChatsBatch(
         await supabase.from('conversations').update({
           unread_count: unreadCount, last_message_at: lastMessageTime,
         }).eq('id', existingConv.id);
+        await recordConversationOriginAudit(
+          supabase,
+          organizationId,
+          existingConv.id,
+          instanceInfo,
+          'zapi-sync-chats:conversation',
+          { contactPhone: normalizedPhone, chatId: chat.id || chat.jid || null },
+        );
       } else {
-        const { error: convError } = await supabase.from('conversations').insert({
+        const { data: newConv, error: convError } = await supabase.from('conversations').insert({
           contact_id: contact.id, organization_id: organizationId, whatsapp_instance_id: whatsappInstanceId,
           source_phone: null, status: 'open', unread_count: unreadCount, last_message_at: lastMessageTime,
-        });
+        }).select('id').single();
         if (convError) { errors.push(`Conversation ${normalizedPhone}: ${convError.message}`); continue; }
+        await recordConversationOriginAudit(
+          supabase,
+          organizationId,
+          newConv.id,
+          instanceInfo,
+          'zapi-sync-chats:conversation',
+          { contactPhone: normalizedPhone, chatId: chat.id || chat.jid || null },
+        );
       }
       processed++;
     } catch (chatError) {
@@ -326,7 +395,7 @@ Deno.serve(async (req) => {
       const batch = individualChats.slice(i, i + BATCH_SIZE);
       const { processed, errors } = await processChatsBatch(
         supabase, batch, profile.organization_id, instance.id,
-        uazapiBaseUrl, instance.zapi_token
+        uazapiBaseUrl, instance.zapi_token, instance
       );
       totalProcessed += processed;
       allErrors.push(...errors);

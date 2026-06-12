@@ -50,6 +50,7 @@ const tools = [
     description: 'Gere carrosséis para o Instagram com IA — textos e imagens criados automaticamente, prontos pra baixar.',
     icon: Images,
     href: '/tools/carousel',
+    planModule: 'carousel',
     permissionKey: 'can_access_tool_carousel',
   },
   {
@@ -69,6 +70,7 @@ const tools = [
     description: 'Análise de CNIS para fins de Auxílio Reclusão e outros.',
     icon: SearchCheck,
     href: '/tools/cnis',
+    planModule: 'cnis',
     permissionKey: 'can_access_tool_cnis',
   },
 ];

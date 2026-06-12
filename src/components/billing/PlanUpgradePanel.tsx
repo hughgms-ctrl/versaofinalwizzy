@@ -23,7 +23,7 @@ const moduleLabels: Record<string, string> = {
 };
 
 const visibleModules = [
-  "documents", "widgets", "quiz", "wizzy_flow"
+  "documents", "widgets", "quiz", "wizzy_flow", "carousel", "cnis"
 ];
 
 interface Plan {
@@ -406,7 +406,9 @@ const PlanUpgradePanel = () => {
                         ) : (
                           <X className="w-4 h-4 shrink-0" />
                         )}
-                        <span className="text-muted-foreground">{moduleLabels[mod] || mod}</span>
+                        <span className="text-muted-foreground">
+                          {moduleLabels[mod] || (mod === 'carousel' ? 'Wizzy Carrossel' : mod === 'cnis' ? 'Wizzy Prev / CNIS' : mod)}
+                        </span>
                       </div>
                     );
                   })}
