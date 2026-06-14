@@ -17,7 +17,7 @@ export function useNewMessageNotifications() {
   const { session, user } = useAuth();
   const { settings } = useNotificationSettings();
   const queryClient = useQueryClient();
-  const { availableWorkspaces, isAdmin, loading: workspacesLoading } = useWorkspaceContext();
+  const { availableWorkspaces, isAdmin, selectedOrganizationId, loading: workspacesLoading } = useWorkspaceContext();
   const { data: userRole, isLoading: roleLoading } = useCurrentUserRole();
   const { data: userPermissions, isLoading: permissionsLoading } = useUserPermissions();
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -157,6 +157,7 @@ export function useNewMessageNotifications() {
     if (
       !session?.user?.id ||
       !settings.newMessageEnabled ||
+      !selectedOrganizationId ||
       roleLoading ||
       permissionsLoading ||
       workspacesLoading
@@ -164,8 +165,13 @@ export function useNewMessageNotifications() {
 
     console.log('Setting up real-time message notifications...');
 
+    // NOTE: `messages` não possui coluna `organization_id` (só `conversation_id`),
+    // então não é possível filtrar o canal por org no nível do banco. O escopo de org
+    // é garantido por (1) nome de canal único por org — recria a inscrição ao trocar de
+    // org — e (2) validação explícita de `organization_id` no callback antes de notificar.
+    // TODO(perf/fase6): adicionar `organization_id` em `messages` para filtrar no DB.
     const channel = supabase
-      .channel('new-messages-notification')
+      .channel(`new-messages-notification:${selectedOrganizationId}`)
       .on(
         'postgres_changes',
         {
@@ -176,7 +182,7 @@ export function useNewMessageNotifications() {
         },
         async (payload) => {
           console.log('New inbound message received:', payload);
-          
+
           const message = payload.new as {
             id: string;
             content: string | null;
@@ -187,9 +193,15 @@ export function useNewMessageNotifications() {
           // Fetch contact info for the conversation
           const { data: conversation } = await supabase
             .from('conversations')
-            .select('id, workspace_id, assigned_to, contact:contacts(id, name, phone, workspace_id)')
+            .select('id, organization_id, workspace_id, assigned_to, contact:contacts(id, name, phone, workspace_id)')
             .eq('id', message.conversation_id)
             .single();
+
+          // Escopo de organização: ignora mensagens de outra org (defesa contra
+          // eventos cross-tenant que cheguem pelo canal sem filtro de DB).
+          if (conversation && conversation.organization_id !== selectedOrganizationId) {
+            return;
+          }
 
           if (conversation?.contact) {
             const canNotify = await canNotifyConversation(conversation as any);
@@ -216,6 +228,7 @@ export function useNewMessageNotifications() {
     canNotifyConversation,
     permissionsLoading,
     roleLoading,
+    selectedOrganizationId,
     session?.user?.id,
     settings.newMessageEnabled,
     showNotification,

@@ -2,26 +2,33 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './useAuth';
+import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 
 export function useFollowUpStatus() {
   const { session } = useAuth();
   const queryClient = useQueryClient();
+  const { selectedOrganizationId } = useWorkspaceContext();
 
-  // Realtime: invalidate on any flow_executions change
+  // Realtime: invalidate on flow_executions changes scoped to the current org.
+  // O canal é único por org (recria ao trocar) e cobre as atualizações em tempo
+  // real — o antigo refetchInterval de 30s foi removido por ser redundante.
   useEffect(() => {
+    if (!selectedOrganizationId) return;
+
     const channel = supabase
-      .channel('follow-up-status')
+      .channel(`follow-up-status:${selectedOrganizationId}`)
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
         table: 'flow_executions',
+        filter: `organization_id=eq.${selectedOrganizationId}`,
       }, () => {
         queryClient.invalidateQueries({ queryKey: ['follow-up-status'] });
       })
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [queryClient]);
+  }, [queryClient, selectedOrganizationId]);
 
   return useQuery({
     queryKey: ['follow-up-status'],
@@ -49,6 +56,5 @@ export function useFollowUpStatus() {
       return map;
     },
     enabled: !!session,
-    refetchInterval: 30000,
   });
 }
