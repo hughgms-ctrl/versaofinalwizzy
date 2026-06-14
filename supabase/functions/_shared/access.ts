@@ -40,7 +40,6 @@ export function planAllowsModule(planRow: any, moduleName?: string | null) {
     'dashboard',
     'conversations',
     'contacts',
-    'groups',
     'calendar',
     'pipeline',
     'flows',

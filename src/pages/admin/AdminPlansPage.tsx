@@ -19,7 +19,6 @@ const CRM_MODULES = [
   { value: 'dashboard', label: 'Dashboard' },
   { value: 'conversations', label: 'Conversas' },
   { value: 'contacts', label: 'Contatos' },
-  { value: 'groups', label: 'Grupos' },
   { value: 'pipeline', label: 'Pipeline' },
   { value: 'calendar', label: 'Agenda' },
   { value: 'flows', label: 'Fluxos' },
@@ -44,8 +43,17 @@ const EXTRA_MODULES = [
   { value: 'cnis', label: 'Wizzy Prev / CNIS' },
 ].filter((mod) => EXTRA_TOOL_MODULES.includes(mod.value));
 
+// Módulos independentes: aparecem no bloco "Ferramentas" do editor, mas não
+// pertencem ao bundle CRM nem ao bundle 'tools' (ligar/desligar não arrasta nenhum pacote).
+const STANDALONE_MODULES = [
+  { value: 'groups', label: 'Grupos' },
+];
+
+const EXTRA_DISPLAY_MODULES = [...EXTRA_MODULES, ...STANDALONE_MODULES];
+
 const CRM_VALUES = ['crm', ...CRM_MODULES.map((mod) => mod.value)];
 const EXTRA_VALUES = EXTRA_MODULES.map((mod) => mod.value);
+const EXTRA_SECTION_VALUES = [...EXTRA_VALUES, ...STANDALONE_MODULES.map((mod) => mod.value)];
 
 const PAYMENT_METHOD_LABELS: Record<string, string> = {
   PIX: 'Pix',
@@ -223,12 +231,12 @@ export default function AdminPlansPage() {
 
   const selectAllExtraModules = () => {
     if (!editPlan) return;
-    setModules(EXTRA_VALUES, true);
+    setModules(EXTRA_SECTION_VALUES, true);
   };
 
   const deselectAllExtraModules = () => {
     if (!editPlan) return;
-    setModules(EXTRA_VALUES, false);
+    setModules(EXTRA_SECTION_VALUES, false);
   };
 
   return (
@@ -398,7 +406,7 @@ export default function AdminPlansPage() {
                     <div className="space-y-1">
                       <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Ferramentas extras</p>
                       <div className="flex flex-wrap gap-1">
-                        {EXTRA_MODULES.map(mod => {
+                        {EXTRA_DISPLAY_MODULES.map(mod => {
                           const has = modules.includes(mod.value);
                           return (
                             <Badge
@@ -411,7 +419,7 @@ export default function AdminPlansPage() {
                             </Badge>
                           );
                         })}
-                        {EXTRA_MODULES.length === 0 && (
+                        {EXTRA_DISPLAY_MODULES.length === 0 && (
                           <span className="text-xs text-muted-foreground">Nenhuma ferramenta extra cadastrada.</span>
                         )}
                       </div>
@@ -635,7 +643,7 @@ export default function AdminPlansPage() {
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-2">
-                    {EXTRA_MODULES.map(mod => (
+                    {EXTRA_DISPLAY_MODULES.map(mod => (
                       <label
                         key={mod.value}
                         className="flex items-center gap-2 p-2 rounded-md border border-border hover:bg-accent/50 cursor-pointer transition-colors"

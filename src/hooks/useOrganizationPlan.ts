@@ -7,7 +7,6 @@ export const WIZZY_CRM_MODULES = [
   'dashboard',
   'conversations',
   'contacts',
-  'groups',
   'calendar',
   'pipeline',
   'flows',
