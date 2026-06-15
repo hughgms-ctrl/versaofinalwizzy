@@ -28,8 +28,8 @@ valide conforme a seção "Validação" e marque [x] os concluídos. Não avance
 ## Estado geral (atualize ao concluir cada fase)
 
 - [~] **Fase 0** — Preparação e baseline *(branch + mecanismo de deploy OK; baseline SQL aguardando colar resultados em `docs/baseline_perf.md`)*
-- [~] **Fase 1** — Quick wins: filtros de Realtime + RLS `(select auth.uid())` *(1A frontend ✅ feito e typecheck OK; 1B Lote 1 ✅ migration criada, aguardando aplicação manual no SQL Editor + smoke test. Lotes 2/3 pendentes.)*
-- [~] **Fase 2** — Índices (FK + compostos) *(16 migrations criadas e verificadas na fonte; aguardando aplicação manual no SQL Editor + validação de seq/idx scan)*
+- [~] **Fase 1** — Quick wins: filtros de Realtime + RLS `(select auth.uid())` *(1A frontend ✅; **1B Lote 1 ✅ (12 políticas) e Lote 2 ✅ (11 políticas, incluindo as 4 "by workspace" de contacts/conversations) — ambos aplicados e validados no SQL Editor em 2026-06-15**. Falta só o **Lote 3** (documents, flows, carousels, configs).)*
+- [x] **Fase 2** — Índices (FK + compostos) *(16 migrations criadas, verificadas na fonte, aplicadas no SQL Editor e confirmadas via `pg_indexes` — 16/16 presentes em 2026-06-15)*
 - [ ] **Fase 3** — Edge Functions críticas (OOM / N+1)
 - [ ] **Fase 4** — Dashboard: RPCs + redução de polling
 - [ ] **Fase 5** — Retenção/limpeza (pg_cron) + busca (FTS)
@@ -97,7 +97,29 @@ FROM pg_stat_user_tables WHERE n_live_tup > 1000 ORDER BY seq_scan DESC LIMIT 20
 - [x] Criar migration nova — **`supabase/migrations/20260614120000_rls_select_auth_uid_lote1.sql`** (Lote 1).
 - [~] Estratégia: **recriar** as políticas trocando `auth.uid()` → `(select auth.uid())`. Priorizar as tabelas quentes primeiro (não precisa fazer as 290 de uma vez):
   - [x] **Lote 1 (quentes):** `messages`, `conversations`, `contacts`, `contact_tags`, `conversation_pipeline_positions`. — 12 políticas recriadas a partir das definições **vigentes** (nomes/cláusulas literais conferidos na fonte). Estrutura preservada (FOR ALL sem WITH CHECK mantidos sem WITH CHECK).
-  - [ ] **Lote 2:** `tasks`, `subtasks`, `task_assignees`, `task_processes`, `task_attachments`, `case_tasks`, `cases`.
+  - [x] **Lote 2:** `tasks`, `subtasks`, `task_assignees`, `task_processes`, `task_attachments`, `case_tasks`, `cases` **+ as 4 "by workspace" de contacts/conversations**. ✅ **Aplicado e validado em 2026-06-15** — `pg_policies` confirma as 11 políticas com `(select auth.uid())` (checagem por regex deu `false` para uid nu em todas).
+    > ⚠️ **Descoberto na validação do Lote 1 (2026-06-15):** `contacts` e `conversations` têm políticas **paralelas "by workspace"** (`Users can manage/view contacts by workspace`, `Users can manage/view conversations by workspace`) que ainda usam `auth.uid()` nu. Como RLS é OR das permissivas, o ganho nessas duas tabelas quentes só é total quando essas 4 também forem convertidas. **Incluir no Lote 2.**
+    >
+    > **Progresso (2026-06-15):** migration **`20260615130000_rls_select_auth_uid_lote2.sql`** criada e **conferida contra o `pg_policies` VIVO** (não só a fonte). Inventário real (11 políticas convertidas):
+    > - `tasks`: "Wizzy Flow tasks access" *(só 1 política viva — a "workspace tasks access" guardada por NOT EXISTS nunca foi criada no banco)*
+    > - `subtasks`: "Wizzy Flow task child access"
+    > - `task_assignees`: "Wizzy Flow task child access" *(idem: só 1 viva)*
+    > - `task_processes`: "Wizzy Flow task child access" + "Wizzy Flow workspace task processes access" (ambas LEFT JOIN projects)
+    > - `task_attachments`: "Wizzy Flow task child access"
+    > - `cases`: "cases_admin_full_access" + "cases_member_workspace_access" (FOR ALL TO authenticated)
+    > - `case_tasks`: "case_tasks_org_access" (FOR ALL TO authenticated)
+    > - `contacts` (by workspace): "Users can manage contacts by workspace" (ALL) + "Users can view contacts by workspace" (SELECT) — role public
+    > - `conversations` (by workspace): "Users can manage conversations by workspace" (ALL) + "Users can view conversations by workspace" (SELECT) — role public
+    >
+    > As "…in their organization" de contacts/conversations já tinham sido convertidas no Lote 1 (confirmado: aparecem como `(SELECT auth.uid())` no dump) — não são tocadas.
+    >
+    > **Pendente para fechar o Lote 2:** aplicar a migration no **SQL Editor** e confirmar via `pg_policies` que as 11 políticas usam `(select auth.uid())` + smoke test (tasks/casos/chat/contatos carregando). Query de verificação:
+    > ```sql
+    > SELECT tablename, policyname, qual, with_check FROM pg_policies
+    > WHERE schemaname='public' AND tablename IN
+    >   ('tasks','subtasks','task_assignees','task_processes','task_attachments','case_tasks','cases','contacts','conversations')
+    > ORDER BY tablename, policyname;
+    > ```
   - [ ] **Lote 3:** restante (documents, flows, carousels, configs).
 - [ ] Para cada política, padrão:
 ```sql
@@ -110,8 +132,8 @@ CREATE POLICY "<nome>" ON public.<tabela>
 - [x] Helpers SECURITY DEFINER (`get_user_org_id`, `user_has_workspace_access` etc.) **não** mudam — só a forma como recebem o uid. (Apenas `get_user_org_id` é usado no Lote 1; preservado, recebendo `(select auth.uid())`.)
 
 **Validação 1B:** ⚠️ requer aplicação manual no banco — ver mecanismo de deploy.
-- [ ] ~~`supabase db push`~~ **NÃO** rodar (regra de deploy). Aplicar `20260614120000_rls_select_auth_uid_lote1.sql` via **SQL Editor do Supabase** / fluxo Lovable. *(aguardando aplicação pelo usuário)*
-- [ ] Smoke test: login normal, abrir chat/contatos/tasks — tudo carrega (RLS não quebrou acesso). *(pós-aplicação)*
+- [x] ~~`supabase db push`~~ **NÃO** rodar (regra de deploy). Aplicar `20260614120000_rls_select_auth_uid_lote1.sql` via **SQL Editor do Supabase** / fluxo Lovable. ✅ **Aplicado em 2026-06-15**; `pg_policies` confirma as **12 políticas do Lote 1 com `(select auth.uid())`**.
+- [x] Smoke test: login normal, abrir chat/contatos/tasks — tudo carrega (RLS não quebrou acesso). ✅ **2026-06-15** — chat, contatos e pipeline carregando normalmente; RLS íntegro.
 - [ ] `EXPLAIN ANALYZE` numa listagem de mensagens antes/depois: o tempo deve cair e o plano não deve mostrar reavaliação de função por linha. *(pós-aplicação)*
 
 ---
@@ -147,6 +169,7 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_entry_flow_events_name_user ON publi
 ```
 
 **Validação:** após aplicar, repetir a query de "seq scans" da Fase 0 — `seq_scan` deve parar de crescer nessas tabelas e `idx_scan` aumentar. `EXPLAIN` de um cascade-delete de org não deve mostrar seq scan nas filhas.
+  > ✅ **Aplicado e confirmado (2026-06-15):** os 16 `CREATE INDEX CONCURRENTLY` rodados um-a-um no SQL Editor; `pg_indexes` retorna **16/16** índices presentes no schema `public`. Snapshot de `pg_stat_user_tables` mostra `idx_scan` na casa das centenas de milhões em `conversations`/`contacts` (índices em uso). Obs.: o `seq_scan` daquela query é cumulativo desde o boot do banco — o ganho deve ser medido pelo *delta* daqui pra frente (baseline da Fase 0 ficou pendente).
 
 ---
 
