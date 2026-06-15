@@ -20,9 +20,10 @@ export interface ScheduledMessage {
   media_url: string | null;
   media_type: string | null;
   flow_id: string | null;
-  target_type: 'single' | 'tag' | 'manual';
+  target_type: 'single' | 'tag' | 'manual' | 'group' | 'groups';
   contact_id: string | null;
   tag_id: string | null;
+  group_jids: string[] | null;
   name: string | null;
   error_message: string | null;
   delay_between_contacts: number | null;
@@ -65,10 +66,11 @@ export interface UpdateScheduledMessageInput {
   media_url?: string | null;
   media_type?: string | null;
   flow_id?: string | null;
-  target_type?: 'single' | 'tag' | 'manual';
+  target_type?: 'single' | 'tag' | 'manual' | 'group' | 'groups';
   contact_id?: string | null;
   tag_id?: string | null;
   contact_ids?: string[];
+  group_jids?: string[]; // For group / mass-group targets
   name?: string | null;
   delay_between_contacts?: number | null;
 }

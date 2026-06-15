@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -25,22 +25,37 @@ import {
 import { useConversations } from '@/hooks/useConversations';
 import { useTags } from '@/hooks/useTags';
 import { useFlows } from '@/hooks/useFlows';
+import { useWhatsAppGroups } from '@/hooks/useWhatsAppGroups';
 import { useUpdateScheduledMessage, ScheduledMessage } from '@/hooks/useScheduledMessages';
-import { 
-  Calendar, 
-  Clock, 
-  MessageSquare, 
-  Workflow, 
-  User, 
-  Tag, 
+import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
+import {
+  Calendar,
+  Clock,
+  MessageSquare,
+  Workflow,
+  User,
+  Tag,
   Users,
   Repeat,
   Search,
   X,
   Loader2,
-  Timer
+  Timer,
+  Upload,
+  Image,
+  Mic,
+  Square,
+  Trash2
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { toast } from '@/hooks/use-toast';
+
+const getMediaKind = (type: string) => {
+  if (type.startsWith('image/')) return 'Imagem';
+  if (type.startsWith('audio/')) return 'Áudio';
+  if (type.startsWith('video/')) return 'Vídeo';
+  return 'Arquivo';
+};
 
 interface EditScheduledMessageDialogProps {
   open: boolean;
@@ -56,12 +71,20 @@ export function EditScheduledMessageDialog({
   const { data: conversations = [] } = useConversations();
   const { data: tags = [] } = useTags();
   const { data: flows = [] } = useFlows();
+  const { data: whatsappGroups = [] } = useWhatsAppGroups();
   const updateMutation = useUpdateScheduledMessage();
+  const { selectedWorkspaceId } = useWorkspaceContext();
 
   // Form state
   const [contentType, setContentType] = useState<'message' | 'flow'>('message');
-  const [targetType, setTargetType] = useState<'single' | 'tag' | 'manual'>('single');
+  const [targetType, setTargetType] = useState<'single' | 'tag' | 'manual' | 'group'>('single');
+  const [selectedGroupJids, setSelectedGroupJids] = useState<string[]>([]);
   const [messageContent, setMessageContent] = useState('');
+  const [mediaUrl, setMediaUrl] = useState('');
+  const [mediaType, setMediaType] = useState('');
+  const [mediaName, setMediaName] = useState('');
+  const [isUploadingMedia, setIsUploadingMedia] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
   const [flowId, setFlowId] = useState<string>('');
   const [contactId, setContactId] = useState<string>('');
   const [tagId, setTagId] = useState<string>('');
@@ -73,13 +96,20 @@ export function EditScheduledMessageDialog({
   const [name, setName] = useState('');
   const [contactSearch, setContactSearch] = useState('');
   const [delayBetweenContacts, setDelayBetweenContacts] = useState<number>(10);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
 
   // Populate form when message changes
   useEffect(() => {
     if (message && open) {
+      const isGroupTarget = message.target_type === 'group' || message.target_type === 'groups';
       setContentType(message.content_type);
-      setTargetType(message.target_type);
+      setTargetType(isGroupTarget ? 'group' : (message.target_type as 'single' | 'tag' | 'manual'));
       setMessageContent(message.message_content || '');
+      setMediaUrl(message.media_url || '');
+      setMediaType(message.media_type || '');
+      setMediaName(message.media_url ? (message.media_type ? getMediaKind(message.media_type) : 'Arquivo') : '');
       setFlowId(message.flow_id || '');
       setContactId(message.contact_id || '');
       setTagId(message.tag_id || '');
@@ -90,6 +120,16 @@ export function EditScheduledMessageDialog({
       // Load selected contact IDs for manual target type
       if (message.target_type === 'manual' && (message as any).contact_ids) {
         setSelectedContactIds((message as any).contact_ids);
+      } else {
+        setSelectedContactIds([]);
+      }
+
+      // Load selected group JIDs for group target type
+      if (isGroupTarget) {
+        const jids = message.group_jids;
+        setSelectedGroupJids(Array.isArray(jids) ? jids : []);
+      } else {
+        setSelectedGroupJids([]);
       }
 
       const dt = new Date(message.next_execution_at || message.scheduled_at);
@@ -137,23 +177,117 @@ export function EditScheduledMessageDialog({
 
   const activeFlows = useMemo(() => flows.filter((f: any) => f.is_active), [flows]);
 
+  const uploadScheduledMedia = async (file: File) => {
+    setIsUploadingMedia(true);
+    try {
+      const ext = file.name.split('.').pop() || 'bin';
+      const safeWorkspace = selectedWorkspaceId || 'global';
+      const fileName = `${safeWorkspace}/${Date.now()}-${crypto.randomUUID()}.${ext}`;
+      const { data, error } = await supabase.storage
+        .from('chat-media')
+        .upload(`scheduled/${fileName}`, file, {
+          cacheControl: '3600',
+          upsert: false,
+          contentType: file.type || undefined,
+        });
+
+      if (error) throw error;
+
+      const { data: urlData } = supabase.storage
+        .from('chat-media')
+        .getPublicUrl(data.path);
+
+      setMediaUrl(urlData.publicUrl);
+      setMediaType(file.type || 'application/octet-stream');
+      setMediaName(file.name);
+    } catch (error: any) {
+      toast({
+        title: 'Erro no upload',
+        description: error.message || 'Não foi possível anexar a mídia.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsUploadingMedia(false);
+    }
+  };
+
+  const handlePaste = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const file = Array.from(event.clipboardData.files || []).find(item => item.type.startsWith('image/'));
+    if (file) {
+      event.preventDefault();
+      void uploadScheduledMedia(file);
+    }
+  };
+
+  const startRecording = async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      toast({ title: 'Gravação indisponível', description: 'Seu navegador não permitiu gravar áudio.', variant: 'destructive' });
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) audioChunksRef.current.push(event.data);
+      };
+      recorder.onstop = () => {
+        const type = recorder.mimeType || 'audio/webm';
+        const blob = new Blob(audioChunksRef.current, { type });
+        const ext = type.includes('ogg') ? 'ogg' : type.includes('mp4') ? 'm4a' : 'webm';
+        const file = new File([blob], `audio-programado.${ext}`, { type });
+        stream.getTracks().forEach(track => track.stop());
+        void uploadScheduledMedia(file);
+      };
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+      setIsRecording(true);
+    } catch (error: any) {
+      toast({
+        title: 'Microfone bloqueado',
+        description: error.message || 'Permita acesso ao microfone para gravar áudio.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const stopRecording = () => {
+    mediaRecorderRef.current?.stop();
+    setIsRecording(false);
+  };
+
+  const clearMedia = () => {
+    setMediaUrl('');
+    setMediaType('');
+    setMediaName('');
+  };
+
   const handleSubmit = async () => {
     if (!message || !scheduledDate || !scheduledTime) return;
-    
+
     const scheduledAt = new Date(`${scheduledDate}T${scheduledTime}`).toISOString();
-    
+
+    // Groups only support direct messages (flows operate on a contact/conversation).
+    const isGroupTarget = targetType === 'group';
+    const effectiveContentType = isGroupTarget ? 'message' : contentType;
+    const resolvedGroupTarget = selectedGroupJids.length > 1 ? 'groups' : 'group';
+
     await updateMutation.mutateAsync({
       id: message.id,
       scheduled_at: scheduledAt,
       recurrence_type: recurrenceType,
       recurrence_end_at: recurrenceEndDate ? new Date(`${recurrenceEndDate}T23:59:59`).toISOString() : null,
-      content_type: contentType,
-      message_content: contentType === 'message' ? messageContent : null,
-      flow_id: contentType === 'flow' ? flowId : null,
-      target_type: targetType,
+      content_type: effectiveContentType,
+      message_content: effectiveContentType === 'message' ? messageContent : null,
+      media_url: effectiveContentType === 'message' ? mediaUrl || null : null,
+      media_type: effectiveContentType === 'message' ? mediaType || null : null,
+      flow_id: effectiveContentType === 'flow' ? flowId : null,
+      target_type: isGroupTarget ? resolvedGroupTarget : targetType,
       contact_id: targetType === 'single' ? contactId : null,
       tag_id: targetType === 'tag' ? tagId : null,
       contact_ids: targetType === 'manual' ? selectedContactIds : undefined,
+      group_jids: isGroupTarget ? selectedGroupJids : undefined,
       name: name || null,
       delay_between_contacts: delayBetweenContacts > 0 ? delayBetweenContacts : null,
     });
@@ -162,14 +296,24 @@ export function EditScheduledMessageDialog({
   };
 
   const toggleContact = (id: string) => {
-    setSelectedContactIds(prev => 
+    setSelectedContactIds(prev =>
       prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]
     );
   };
 
+  const toggleGroup = (jid: string) => {
+    setSelectedGroupJids(prev => (prev.includes(jid) ? prev.filter(j => j !== jid) : [...prev, jid]));
+  };
+
   const isValid = () => {
     if (!scheduledDate || !scheduledTime) return false;
-    if (contentType === 'message' && !messageContent.trim()) return false;
+    if (targetType === 'group') {
+      // Groups only support direct messages
+      if (!messageContent.trim() && !mediaUrl) return false;
+      if (selectedGroupJids.length === 0) return false;
+      return true;
+    }
+    if (contentType === 'message' && !messageContent.trim() && !mediaUrl) return false;
     if (contentType === 'flow' && !flowId) return false;
     if (targetType === 'single' && !contactId) return false;
     if (targetType === 'tag' && !tagId) return false;
@@ -197,10 +341,11 @@ export function EditScheduledMessageDialog({
             </div>
 
             {/* Content Type */}
+            {targetType !== 'group' && (
             <div className="space-y-3">
               <Label>O que deseja enviar?</Label>
-              <RadioGroup 
-                value={contentType} 
+              <RadioGroup
+                value={contentType}
                 onValueChange={(v) => setContentType(v as 'message' | 'flow')}
                 className="flex gap-4"
               >
@@ -226,22 +371,60 @@ export function EditScheduledMessageDialog({
                 </div>
               </RadioGroup>
             </div>
+            )}
 
             {/* Message Content */}
-            {contentType === 'message' && (
+            {(contentType === 'message' || targetType === 'group') && (
               <div className="space-y-2">
                 <Label>Mensagem</Label>
                 <Textarea
                   placeholder="Digite a mensagem..."
                   value={messageContent}
                   onChange={(e) => setMessageContent(e.target.value)}
+                  onPaste={handlePaste}
                   rows={4}
                 />
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    className="hidden"
+                    accept="image/*,audio/*,video/*,application/pdf"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0];
+                      if (file) void uploadScheduledMedia(file);
+                      event.currentTarget.value = '';
+                    }}
+                  />
+                  <Button type="button" variant="outline" size="sm" className="gap-2" onClick={() => fileInputRef.current?.click()} disabled={isUploadingMedia}>
+                    {isUploadingMedia ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                    Anexar mídia
+                  </Button>
+                  <Button type="button" variant={isRecording ? 'destructive' : 'outline'} size="sm" className="gap-2" onClick={isRecording ? stopRecording : startRecording} disabled={isUploadingMedia}>
+                    {isRecording ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                    {isRecording ? 'Parar gravação' : 'Gravar áudio'}
+                  </Button>
+                  <span className="text-xs text-muted-foreground">Cole prints com Ctrl+V no campo de mensagem.</span>
+                </div>
+                {mediaUrl && (
+                  <div className="flex items-center justify-between gap-3 rounded-md border bg-muted/40 p-3">
+                    <div className="flex min-w-0 items-center gap-2">
+                      {mediaType.startsWith('image/') ? <Image className="h-4 w-4 text-primary" /> : <Upload className="h-4 w-4 text-primary" />}
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">{mediaName || getMediaKind(mediaType)}</p>
+                        <p className="text-xs text-muted-foreground">{getMediaKind(mediaType)} anexado</p>
+                      </div>
+                    </div>
+                    <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={clearMedia}>
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
 
             {/* Flow Selection */}
-            {contentType === 'flow' && (
+            {contentType === 'flow' && targetType !== 'group' && (
               <div className="space-y-2">
                 <Label>Selecione o fluxo</Label>
                 <Select value={flowId} onValueChange={setFlowId}>
@@ -262,10 +445,14 @@ export function EditScheduledMessageDialog({
             {/* Target Type */}
             <div className="space-y-3">
               <Label>Para quem enviar?</Label>
-              <RadioGroup 
-                value={targetType} 
-                onValueChange={(v) => setTargetType(v as 'single' | 'tag' | 'manual')}
-                className="flex gap-4"
+              <RadioGroup
+                value={targetType}
+                onValueChange={(v) => {
+                  const next = v as 'single' | 'tag' | 'manual' | 'group';
+                  setTargetType(next);
+                  if (next === 'group') setContentType('message');
+                }}
+                className="grid gap-3 md:grid-cols-2"
               >
                 <div className={cn(
                   "flex-1 flex items-center gap-3 p-4 rounded-lg border cursor-pointer transition-colors",
@@ -295,6 +482,16 @@ export function EditScheduledMessageDialog({
                   <Label htmlFor="edit-manual" className="flex items-center gap-2 cursor-pointer flex-1">
                     <Users className="h-4 w-4" />
                     Selecionar
+                  </Label>
+                </div>
+                <div className={cn(
+                  "flex-1 flex items-center gap-3 p-4 rounded-lg border cursor-pointer transition-colors",
+                  targetType === 'group' ? "border-primary bg-primary/5" : "border-border hover:bg-accent"
+                )}>
+                  <RadioGroupItem value="group" id="edit-group" />
+                  <Label htmlFor="edit-group" className="flex items-center gap-2 cursor-pointer flex-1">
+                    <Users className="h-4 w-4" />
+                    Grupo(s)
                   </Label>
                 </div>
               </RadioGroup>
@@ -387,6 +584,42 @@ export function EditScheduledMessageDialog({
               </div>
             )}
 
+            {/* Group Selection */}
+            {targetType === 'group' && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label>Selecione os grupos</Label>
+                  {selectedGroupJids.length > 0 && (
+                    <Badge variant="secondary">{selectedGroupJids.length} selecionado(s)</Badge>
+                  )}
+                </div>
+                <div className="border rounded-lg max-h-48 overflow-auto">
+                  {whatsappGroups.length === 0 ? (
+                    <p className="p-4 text-sm text-muted-foreground text-center">
+                      Nenhum grupo. Sincronize na aba Grupos.
+                    </p>
+                  ) : (
+                    whatsappGroups.map((group: any) => (
+                      <div
+                        key={group.id}
+                        className="flex items-center gap-3 p-3 hover:bg-accent cursor-pointer border-b last:border-0"
+                        onClick={() => toggleGroup(group.group_jid)}
+                      >
+                        <Checkbox
+                          checked={selectedGroupJids.includes(group.group_jid)}
+                          onCheckedChange={() => toggleGroup(group.group_jid)}
+                        />
+                        <p className="text-sm font-medium truncate">{group.name || group.group_jid}</p>
+                      </div>
+                    ))
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Marque vários grupos para envio em massa. Fluxos não se aplicam a grupos.
+                </p>
+              </div>
+            )}
+
             {/* Schedule */}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
@@ -406,7 +639,7 @@ export function EditScheduledMessageDialog({
             </div>
 
             {/* Delay between contacts */}
-            {(targetType === 'tag' || targetType === 'manual') && (
+            {(targetType === 'tag' || targetType === 'manual' || targetType === 'group') && (
               <div className="space-y-2">
                 <Label className="flex items-center gap-2">
                   <Timer className="h-4 w-4" />
