@@ -29,7 +29,7 @@ valide conforme a seção "Validação" e marque [x] os concluídos. Não avance
 
 - [~] **Fase 0** — Preparação e baseline *(branch + mecanismo de deploy OK; baseline SQL aguardando colar resultados em `docs/baseline_perf.md`)*
 - [~] **Fase 1** — Quick wins: filtros de Realtime + RLS `(select auth.uid())` *(1A frontend ✅ feito e typecheck OK; 1B Lote 1 ✅ migration criada, aguardando aplicação manual no SQL Editor + smoke test. Lotes 2/3 pendentes.)*
-- [ ] **Fase 2** — Índices (FK + compostos)
+- [~] **Fase 2** — Índices (FK + compostos) *(16 migrations criadas e verificadas na fonte; aguardando aplicação manual no SQL Editor + validação de seq/idx scan)*
 - [ ] **Fase 3** — Edge Functions críticas (OOM / N+1)
 - [ ] **Fase 4** — Dashboard: RPCs + redução de polling
 - [ ] **Fase 5** — Retenção/limpeza (pg_cron) + busca (FTS)
@@ -120,8 +120,10 @@ CREATE POLICY "<nome>" ON public.<tabela>
 
 **Contexto:** FK no Postgres não cria índice; sem ele, cascade-delete e JOIN fazem seq scan. `CREATE INDEX CONCURRENTLY` **não bloqueia** escrita, mas **não roda em transação** — portanto **uma migration por índice** (ou desabilitar a transação do runner).
 
-- [ ] Antes de criar, confirmar o que **já existe** (não duplicar): ler `supabase/migrations/20260610213000_add_performance_indexes.sql` e `20260610184500_fix_wizzy_flow_workspace_tasks.sql`.
-- [ ] Criar migrations (uma por índice, nome `<timestamp>_idx_<n>.sql`):
+- [x] Antes de criar, confirmar o que **já existe** (não duplicar): ler `supabase/migrations/20260610213000_add_performance_indexes.sql` e `20260610184500_fix_wizzy_flow_workspace_tasks.sql`.
+  > ✅ Ambas lidas. Índices já existentes mapeados (conversations org/workspace/status/instance, messages(conversation_id,created_at), tasks/projects/subtasks/task_*, document_*, flows, contact_presence). **Nenhum dos 16 abaixo duplica** os existentes (ex.: `idx_conversations_org_instance_contact` lidera por org+instance, não serve lookup só por `contact_id`; os UNIQUE de `organization_members`/`workspace_members` lideram pela coluna errada para os helpers RLS).
+- [x] Criar migrations (uma por índice, nome `<timestamp>_idx_<n>.sql`):
+  > ✅ 16 migrations criadas (`20260615120000`…`20260615121500`), **uma por índice**, todas `CREATE INDEX CONCURRENTLY IF NOT EXISTS`. Cada coluna/tabela foi **conferida na fonte** (CREATE TABLE/ALTER nas migrations): conversations(contact_id, assigned_to), messages(sent_by), profiles(organization_id), campaign_queue(organization_id, campaign_id), calendar_bookings(organization_id, starts_at), billing_events(organization_id, created_at), flow_node_logs(organization_id), case_activity_log(organization_id, created_at), organization_members(user_id), workspace_members(user_id, workspace_id), contacts(organization_id, created_at), conversation_stage_history(conversation_id, created_at), flow_executions(status, remarketing_step, timeout_at — colunas add via ALTER 20260308172848/174356), entry_flow_events(event_name, user_id, created_at). **Aplicação:** manual no SQL Editor, **um arquivo por vez** (CONCURRENTLY não roda em transação — não colar os 16 juntos).
 ```sql
 -- FK sem índice
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_conversations_contact_id   ON public.conversations(contact_id);
