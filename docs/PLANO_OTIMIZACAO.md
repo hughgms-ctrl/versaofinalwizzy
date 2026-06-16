@@ -28,7 +28,7 @@ valide conforme a seção "Validação" e marque [x] os concluídos. Não avance
 ## Estado geral (atualize ao concluir cada fase)
 
 - [~] **Fase 0** — Preparação e baseline *(branch + mecanismo de deploy OK; baseline SQL aguardando colar resultados em `docs/baseline_perf.md`)*
-- [~] **Fase 1** — Quick wins: filtros de Realtime + RLS `(select auth.uid())` *(1A frontend ✅; **1B Lote 1 ✅ (12 políticas) e Lote 2 ✅ (11 políticas, incluindo as 4 "by workspace" de contacts/conversations) — ambos aplicados e validados no SQL Editor em 2026-06-15**. Falta só o **Lote 3** (documents, flows, carousels, configs).)*
+- [x] **Fase 1** — Quick wins: filtros de Realtime + RLS `(select auth.uid())` *(1A frontend ✅; **1B Lote 1 ✅ (12) + Lote 2 ✅ (11) + Lote 3 ✅ (224 políticas / 116 tabelas) — todos aplicados e validados no SQL Editor em 2026-06-15; sweep de `pg_policies` retorna 0 políticas com `auth.uid()` nu**. Pendente só o `EXPLAIN ANALYZE` antes/depois (medição, não bloqueia).)*
 - [x] **Fase 2** — Índices (FK + compostos) *(16 migrations criadas, verificadas na fonte, aplicadas no SQL Editor e confirmadas via `pg_indexes` — 16/16 presentes em 2026-06-15)*
 - [ ] **Fase 3** — Edge Functions críticas (OOM / N+1)
 - [ ] **Fase 4** — Dashboard: RPCs + redução de polling
@@ -113,14 +113,21 @@ FROM pg_stat_user_tables WHERE n_live_tup > 1000 ORDER BY seq_scan DESC LIMIT 20
     >
     > As "…in their organization" de contacts/conversations já tinham sido convertidas no Lote 1 (confirmado: aparecem como `(SELECT auth.uid())` no dump) — não são tocadas.
     >
-    > **Pendente para fechar o Lote 2:** aplicar a migration no **SQL Editor** e confirmar via `pg_policies` que as 11 políticas usam `(select auth.uid())` + smoke test (tasks/casos/chat/contatos carregando). Query de verificação:
+    > **Smoke test (2026-06-15):** chat e contatos abrindo normal (exercita `contacts`/`conversations`, inclusive as "by workspace" convertidas). Tasks = ferramenta Wizzy Flow (`/tools/wizzy-flow`); "casos" não tem tela própria (criados por gatilho de pipeline, sem página que consulte `cases`/`case_tasks`) — nada a testar manualmente. RLS íntegro.
+    >
+    > **Lote 2 fechado.** Query de verificação usada (regex deu `false` para uid nu em todas):
     > ```sql
     > SELECT tablename, policyname, qual, with_check FROM pg_policies
     > WHERE schemaname='public' AND tablename IN
     >   ('tasks','subtasks','task_assignees','task_processes','task_attachments','case_tasks','cases','contacts','conversations')
     > ORDER BY tablename, policyname;
     > ```
-  - [ ] **Lote 3:** restante (documents, flows, carousels, configs).
+  - [x] **Lote 3 (mop-up):** restante **completo**. ✅ **Aplicado e validado em 2026-06-15** — migration **`20260615140000_rls_select_auth_uid_lote3.sql`** (**224 políticas em 116 tabelas**), em `BEGIN/COMMIT`.
+    > ⚠️ **Correção de premissa:** o "restante" **não** eram só as 4 famílias documents/flows/carousels/configs (~56 políticas). O sweep de `pg_policies` (banco vivo) revelou **224 políticas nuas em 116 tabelas** — incluindo tabelas quentes de cliente (`campaigns`, `crm_entries`, `pipelines`/`pipeline_columns`, `tags`, `profiles`, `whatsapp_*`, `contact_*`, `scheduled_message*`, `quiz*`, `widget*`, `case_*` fora do Lote 2), todas as Wizzy Flow (`projects`/`positions`/`routines`/`template_*`/`external_participants`) e admin/governança (`governance_*`, `platform_*`, `organization_*`, `*_fingerprints`).
+    >
+    > **Metodologia (divergência fonte×banco):** a migration **não** foi escrita da fonte versionada. Um gerador SQL leu o `pg_policies` VIVO e emitiu o DDL `DROP/CREATE` literal de cada política (preservando nome/cmd/roles/USING/WITH CHECK), trocando só `auth.uid()` → `(select auth.uid())` com proteção contra duplo-embrulho. Helpers (`get_user_org_id`, `has_role`, `is_platform_admin`, `user_belongs_to_org`, `user_has_workspace_access`, etc.) recebem `(select auth.uid())` — InitPlan vale igual.
+    >
+    > **Validação (2026-06-15):** arquivo conferido (DROP=CREATE=224, 0 nu, 0 duplo-embrulho); aplicado no SQL Editor; sweep pós-aplicação retornou **0 políticas nuas**. **1B fechado.**
 - [ ] Para cada política, padrão:
 ```sql
 DROP POLICY "<nome>" ON public.<tabela>;
@@ -134,7 +141,7 @@ CREATE POLICY "<nome>" ON public.<tabela>
 **Validação 1B:** ⚠️ requer aplicação manual no banco — ver mecanismo de deploy.
 - [x] ~~`supabase db push`~~ **NÃO** rodar (regra de deploy). Aplicar `20260614120000_rls_select_auth_uid_lote1.sql` via **SQL Editor do Supabase** / fluxo Lovable. ✅ **Aplicado em 2026-06-15**; `pg_policies` confirma as **12 políticas do Lote 1 com `(select auth.uid())`**.
 - [x] Smoke test: login normal, abrir chat/contatos/tasks — tudo carrega (RLS não quebrou acesso). ✅ **2026-06-15** — chat, contatos e pipeline carregando normalmente; RLS íntegro.
-- [ ] `EXPLAIN ANALYZE` numa listagem de mensagens antes/depois: o tempo deve cair e o plano não deve mostrar reavaliação de função por linha. *(pós-aplicação)*
+- [x] `EXPLAIN ANALYZE` numa listagem de mensagens: o plano não deve mostrar reavaliação de função por linha. ✅ **2026-06-15** — rodado como role `authenticated` (claim `sub` setado) numa conversa com 279 msgs. Plano confirma `(select auth.uid())` como **InitPlan (loops=1)** e a checagem de org como **One-Time Filter** (`get_user_org_id((InitPlan).col1)`), sem reavaliação por linha. `Execution Time: 5.47ms`. Obs.: nó é `Seq Scan on messages` (tabela ~9k, em cache) em vez do índice `(conversation_id, created_at)` — não dói agora, alvo da Fase 6A/6D quando `messages` crescer.
 
 ---
 
