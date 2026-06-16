@@ -265,21 +265,46 @@ async function preloadConversations(
     if (!map.has(conv.contact_id)) map.set(conv.contact_id, conv);
   }
 
+  // Cria as conversas faltantes uma a uma (NÃO em lote): um insert em lote é
+  // tudo-ou-nada — se uma linha colidir com o índice único
+  // (contact_id, organization_id, COALESCE(whatsapp_instance_id, zero)), TODAS
+  // falhariam e os envios seriam pulados silenciosamente. Em caso de falha,
+  // re-SELECT recupera a conversa existente (corrida/colisão) e loga o erro real.
   const missing = contacts.filter((c) => !map.has(c.id));
-  if (missing.length > 0) {
-    const rows = missing.map((c) => ({
-      contact_id: c.id,
-      organization_id: c.organization_id,
-      workspace_id: scheduled.workspace_id || null,
-      whatsapp_instance_id: scheduledInstanceId,
-      source_phone: scheduledInstance?.phone_number || scheduledInstance?.logical_phone || null,
-      status: 'open',
-    }));
-    const { data: created } = await supabase
+  for (const c of missing) {
+    const { data: created, error: insErr } = await supabase
       .from('conversations')
-      .insert(rows)
-      .select('id, whatsapp_instance_id, contact_id');
-    for (const conv of created || []) map.set(conv.contact_id, conv);
+      .insert({
+        contact_id: c.id,
+        organization_id: c.organization_id,
+        workspace_id: scheduled.workspace_id || null,
+        whatsapp_instance_id: scheduledInstanceId,
+        source_phone: scheduledInstance?.phone_number || scheduledInstance?.logical_phone || null,
+        status: 'open',
+      })
+      .select('id, whatsapp_instance_id, contact_id')
+      .single();
+
+    if (created) {
+      map.set(c.id, created);
+      continue;
+    }
+
+    // Insert falhou (provável conversa já existente). Recupera por SELECT.
+    let again = supabase
+      .from('conversations')
+      .select('id, whatsapp_instance_id, contact_id')
+      .eq('contact_id', c.id);
+    again = scheduledInstanceId
+      ? again.eq('whatsapp_instance_id', scheduledInstanceId)
+      : again.is('whatsapp_instance_id', null);
+    const { data: refound } = await again.maybeSingle();
+
+    if (refound) {
+      map.set(c.id, refound);
+    } else {
+      console.error(`[scheduled ${scheduled.id}] could not create/find conversation for contact ${c.id}:`, insErr);
+    }
   }
 
   return map;
@@ -314,7 +339,14 @@ async function sendMessageToContacts(
         await new Promise(resolve => setTimeout(resolve, delayMs));
       }
 
-      if (!conversation) continue;
+      // Sem conversa = falha real (não pular em silêncio, senão o agendamento
+      // seria marcado 'sent' sem nada ter sido enviado).
+      if (!conversation) {
+        failCount++;
+        lastError = `Não foi possível obter/criar conversa para o contato ${contact.id}`;
+        console.error(`[scheduled ${scheduled.id}] ${lastError}`);
+        continue;
+      }
 
       // Send through the configured WhatsApp provider.
       const phone = contact.phone.replace(/\D/g, '');
@@ -385,7 +417,15 @@ async function sendMessageToContacts(
   // Gravações em lote (1 insert de mensagens, 1 update de conversas, 1 update de status manual).
   if (messagesToInsert.length > 0) {
     const { error: msgErr } = await supabase.from('messages').insert(messagesToInsert);
-    if (msgErr) console.error(`[scheduled ${scheduled.id}] batch message insert failed:`, msgErr);
+    if (msgErr) {
+      // Fallback por linha: a mensagem já foi ENVIADA no WhatsApp; não podemos
+      // perder o registro só porque uma linha do lote falhou.
+      console.error(`[scheduled ${scheduled.id}] batch message insert failed, retrying per-row:`, msgErr);
+      for (const row of messagesToInsert) {
+        const { error: rowErr } = await supabase.from('messages').insert(row);
+        if (rowErr) console.error(`[scheduled ${scheduled.id}] message insert failed:`, rowErr);
+      }
+    }
   }
   if (touchedConversationIds.size > 0) {
     await supabase
