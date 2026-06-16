@@ -12,52 +12,50 @@ const corsHeaders = {
  * which should NOT cancel the follow-up sequence.
  */
 async function contactRespondedAfterLastFollowUp(
-  supabase: any, 
+  supabase: any,
   conversationId: string,
   executionStartedAt: string
 ): Promise<boolean> {
-  // 1. Find the last remarketing follow-up message we sent AFTER this execution started
-  //    This prevents old follow-up messages from previous executions from interfering
-  const { data: lastFollowUp } = await supabase
+  // FASE 3E: 1 query em vez de 2. Buscamos as mensagens posteriores ao início da
+  // execução (janela recente) e computamos em memória, preservando a semântica.
+  const { data: rows } = await supabase
     .from('messages')
-    .select('created_at')
+    .select('created_at, is_from_bot, direction, metadata')
     .eq('conversation_id', conversationId)
-    .eq('is_from_bot', true)
-    .eq('metadata->>source', 'remarketing_followup')
     .gt('created_at', executionStartedAt)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .order('created_at', { ascending: true });
 
-  // 2. If no follow-up was sent in THIS execution, we're at step 0
-  //    Check if contact sent a message AFTER this execution started
-  //    (meaning they responded before we even sent the first follow-up)
-  if (!lastFollowUp?.created_at) {
-    // Check for inbound messages after execution start
-    const { data: recentInbound } = await supabase
-      .from('messages')
-      .select('id')
-      .eq('conversation_id', conversationId)
-      .eq('is_from_bot', false)
-      .eq('direction', 'inbound')
-      .gt('created_at', executionStartedAt)
-      .limit(1)
-      .maybeSingle();
+  return computeRespondedAfterLastFollowUp(rows || [], executionStartedAt);
+}
 
-    return !!recentInbound;
+/**
+ * Lógica pura (sem I/O) de `contactRespondedAfterLastFollowUp`, para reuso com
+ * mensagens pré-carregadas em lote. `rows` já deve estar filtrado por
+ * created_at > executionStartedAt.
+ */
+function computeRespondedAfterLastFollowUp(
+  rows: any[],
+  executionStartedAt: string
+): boolean {
+  const startMs = new Date(executionStartedAt).getTime();
+  const relevant = rows.filter((m: any) => new Date(m.created_at).getTime() > startMs);
+
+  // 1. Última mensagem de follow-up de remarketing enviada NESTA execução.
+  let lastFollowUpMs: number | null = null;
+  for (const m of relevant) {
+    if (m.is_from_bot === true && (m.metadata?.source) === 'remarketing_followup') {
+      const ms = new Date(m.created_at).getTime();
+      if (lastFollowUpMs === null || ms > lastFollowUpMs) lastFollowUpMs = ms;
+    }
   }
 
-  // 3. Check if contact sent a message AFTER the last follow-up of THIS execution
-  const { data: recentMsg } = await supabase
-    .from('messages')
-    .select('id')
-    .eq('conversation_id', conversationId)
-    .eq('is_from_bot', false)
-    .gt('created_at', lastFollowUp.created_at)
-    .limit(1)
-    .maybeSingle();
+  // 2. Sem follow-up ainda (step 0): respondeu se houve INBOUND não-bot após o início.
+  if (lastFollowUpMs === null) {
+    return relevant.some((m: any) => m.is_from_bot === false && m.direction === 'inbound');
+  }
 
-  return !!recentMsg;
+  // 3. Respondeu se houve mensagem não-bot após o último follow-up desta execução.
+  return relevant.some((m: any) => m.is_from_bot === false && new Date(m.created_at).getTime() > lastFollowUpMs!);
 }
 
 function getNowInSaoPauloHHMM(): string {
@@ -415,6 +413,72 @@ Deno.serve(async (req) => {
     console.log(`[FLOW TIMEOUTS] Found ${timedOut.length} timed-out executions.`);
     let processed = 0;
 
+    // ─── FASE 3E: pré-carga em lote (elimina o N+1 dentro do loop) ───────────
+    const convIds = [...new Set(timedOut.map((e: any) => e.conversation_id).filter(Boolean))];
+
+    const convById = new Map<string, any>();
+    if (convIds.length) {
+      const { data: convRows } = await supabase
+        .from('conversations')
+        .select('id, contact_id, organization_id, whatsapp_instance_id, service_mode, metadata')
+        .in('id', convIds);
+      for (const c of convRows || []) convById.set(c.id, c);
+    }
+
+    const contactById = new Map<string, any>();
+    const contactIds = [...new Set([...convById.values()].map((c: any) => c.contact_id).filter(Boolean))];
+    if (contactIds.length) {
+      const { data: contactRows } = await supabase
+        .from('contacts')
+        .select('id, phone')
+        .in('id', contactIds);
+      for (const ct of contactRows || []) contactById.set(ct.id, ct);
+    }
+
+    // Instâncias conectadas das orgs envolvidas — resolvidas em memória.
+    const orgIds = [...new Set([...convById.values()].map((c: any) => c.organization_id).filter(Boolean))];
+    const connectedInstancesByOrg = new Map<string, any[]>();
+    const instanceById = new Map<string, any>();
+    if (orgIds.length) {
+      const { data: instRows } = await supabase
+        .from('whatsapp_instances')
+        .select('*')
+        .in('organization_id', orgIds)
+        .eq('status', 'connected')
+        .order('updated_at', { ascending: false });
+      for (const inst of instRows || []) {
+        instanceById.set(inst.id, inst);
+        if (!connectedInstancesByOrg.has(inst.organization_id)) connectedInstancesByOrg.set(inst.organization_id, []);
+        connectedInstancesByOrg.get(inst.organization_id)!.push(inst);
+      }
+    }
+
+    const resolveInstance = (organizationId: string, conversationInstanceId?: string | null) => {
+      if (conversationInstanceId) {
+        const inst = instanceById.get(conversationInstanceId);
+        if (inst && inst.organization_id === organizationId) return inst;
+      }
+      return (connectedInstancesByOrg.get(organizationId) || [])[0] || null;
+    };
+
+    // Mensagens posteriores ao started_at mais antigo — uma query para o cálculo
+    // de "contato respondeu" de todas as execuções (computeRespondedAfterLastFollowUp).
+    const respondedRowsByConv = new Map<string, any[]>();
+    const startedAts = timedOut.map((e: any) => e.started_at).filter(Boolean).sort();
+    if (convIds.length && startedAts.length) {
+      const { data: msgRows } = await supabase
+        .from('messages')
+        .select('conversation_id, created_at, is_from_bot, direction, metadata')
+        .in('conversation_id', convIds)
+        .gt('created_at', startedAts[0])
+        .order('created_at', { ascending: true });
+      for (const m of msgRows || []) {
+        if (!respondedRowsByConv.has(m.conversation_id)) respondedRowsByConv.set(m.conversation_id, []);
+        respondedRowsByConv.get(m.conversation_id)!.push(m);
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     for (const exec of timedOut) {
       try {
         // ═══════════════════════════════════════════════════════════════
@@ -426,11 +490,7 @@ Deno.serve(async (req) => {
         const isChatFollowUpEarly = execVarsEarly.source === 'chat_follow_up';
 
         if (isChatFollowUpEarly) {
-          const { data: convCheck } = await supabase
-            .from('conversations')
-            .select('service_mode, metadata')
-            .eq('id', exec.conversation_id)
-            .single();
+          const convCheck = convById.get(exec.conversation_id) || null;
 
           const pausedUntil = (convCheck?.metadata as any)?.ai_paused_until;
           const isPaused = pausedUntil === 'permanent' || (pausedUntil && new Date(pausedUntil).getTime() > Date.now());
@@ -455,8 +515,8 @@ Deno.serve(async (req) => {
         // This is the CRITICAL check that prevents sending follow-ups 
         // to contacts who already responded.
         // ═══════════════════════════════════════════════════════════════
-        const responded = await contactRespondedAfterLastFollowUp(
-          supabase, exec.conversation_id, exec.started_at
+        const responded = computeRespondedAfterLastFollowUp(
+          respondedRowsByConv.get(exec.conversation_id) || [], exec.started_at
         );
 
         if (responded) {
@@ -546,24 +606,12 @@ Deno.serve(async (req) => {
           let followUpSent = !(step.message || step.mediaUrl);
 
           if (step.message || step.mediaUrl) {
-            const { data: conv } = await supabase
-              .from('conversations')
-              .select('contact_id, organization_id, whatsapp_instance_id')
-              .eq('id', exec.conversation_id)
-              .single();
+            const conv = convById.get(exec.conversation_id) || null;
 
             if (conv) {
-              const { data: contact } = await supabase
-                .from('contacts')
-                .select('phone')
-                .eq('id', conv.contact_id)
-                .single();
+              const contact = contactById.get(conv.contact_id) || null;
 
-              const instance = await loadConversationInstance(
-                supabase,
-                conv.organization_id,
-                conv.whatsapp_instance_id,
-              );
+              const instance = resolveInstance(conv.organization_id, conv.whatsapp_instance_id);
 
               if (contact?.phone && instance) {
                 const variables = exec.variables || {};

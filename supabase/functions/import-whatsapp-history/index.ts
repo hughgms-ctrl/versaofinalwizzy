@@ -342,21 +342,10 @@ Deno.serve(async (req) => {
             errors.push(`Erro ao inserir mensagens para ${contactPhone}: ${insertError.message}`);
           } else {
             messagesImported += inserted?.length || 0;
-            for (const message of inserted || []) {
-              await recordConversationOriginAudit(
-                supabase,
-                organizationId,
-                conversationId,
-                instance,
-                message.id,
-                'import-whatsapp-history:message',
-                {
-                  contactPhone,
-                  messageProviderId: message.zapi_message_id || null,
-                  direction: message.direction || null,
-                },
-              );
-            }
+            // FASE 3D: auditoria de origem é registrada 1×/conversa (acima, em
+            // recordConversationOriginAudit). O antigo loop 1×/mensagem gerava
+            // milhares de RPCs sequenciais (10 chats × 1.000 msgs = 10.000 RPCs),
+            // estourando timeout e inflando `conversation_origin_audit`.
           }
 
           // Update last_message_at

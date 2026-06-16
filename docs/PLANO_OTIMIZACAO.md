@@ -30,7 +30,7 @@ valide conforme a seção "Validação" e marque [x] os concluídos. Não avance
 - [~] **Fase 0** — Preparação e baseline *(branch + mecanismo de deploy OK; baseline SQL aguardando colar resultados em `docs/baseline_perf.md`)*
 - [x] **Fase 1** — Quick wins: filtros de Realtime + RLS `(select auth.uid())` *(1A frontend ✅; **1B Lote 1 ✅ (12) + Lote 2 ✅ (11) + Lote 3 ✅ (224 políticas / 116 tabelas) — todos aplicados e validados no SQL Editor em 2026-06-15; sweep de `pg_policies` retorna 0 políticas com `auth.uid()` nu**. Pendente só o `EXPLAIN ANALYZE` antes/depois (medição, não bloqueia).)*
 - [x] **Fase 2** — Índices (FK + compostos) *(16 migrations criadas, verificadas na fonte, aplicadas no SQL Editor e confirmadas via `pg_indexes` — 16/16 presentes em 2026-06-15)*
-- [ ] **Fase 3** — Edge Functions críticas (OOM / N+1)
+- [~] **Fase 3** — Edge Functions críticas (OOM / N+1) *(código pronto p/ 3A–3F em 2026-06-16; **pendente**: aplicar 2 migrations no SQL Editor + deploy/teste das funções. Ver notas por item.)*
 - [ ] **Fase 4** — Dashboard: RPCs + redução de polling
 - [ ] **Fase 5** — Retenção/limpeza (pg_cron) + busca (FTS)
 - [ ] **Fase 6** — Estrutural: particionamento e denormalização
@@ -127,7 +127,7 @@ FROM pg_stat_user_tables WHERE n_live_tup > 1000 ORDER BY seq_scan DESC LIMIT 20
     >
     > **Metodologia (divergência fonte×banco):** a migration **não** foi escrita da fonte versionada. Um gerador SQL leu o `pg_policies` VIVO e emitiu o DDL `DROP/CREATE` literal de cada política (preservando nome/cmd/roles/USING/WITH CHECK), trocando só `auth.uid()` → `(select auth.uid())` com proteção contra duplo-embrulho. Helpers (`get_user_org_id`, `has_role`, `is_platform_admin`, `user_belongs_to_org`, `user_has_workspace_access`, etc.) recebem `(select auth.uid())` — InitPlan vale igual.
     >
-    > **Validação (2026-06-15):** arquivo conferido (DROP=CREATE=224, 0 nu, 0 duplo-embrulho); aplicado no SQL Editor; sweep pós-aplicação retornou **0 políticas nuas**. **1B fechado.**
+    > **Validação (2026-06-15):** arquivo conferido (DROP=CREATE=224, 0 nu, 0 duplo-embrulho); aplicado no SQL Editor; sweep pós-aplicação retornou **0 políticas nuas**. **Smoke test (2026-06-16): app abrindo normal** (chat, contatos, pipeline, tasks/Wizzy Flow, campanhas, documentos, carrosséis, configs) — RLS íntegro. **1B fechado.**
 - [ ] Para cada política, padrão:
 ```sql
 DROP POLICY "<nome>" ON public.<tabela>;
@@ -184,23 +184,30 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_entry_flow_events_name_user ON publi
 
 **Contexto:** funções que carregam tabelas inteiras na memória do worker ou fazem 1 query por item em loop. Cada item abaixo é independente — fazer e testar isoladamente.
 
-- [ ] **3A — `auto-close-conversations` (OOM, Crítica).** `index.ts:48-52` traz todas as mensagens de 500 conversas sem `.limit()`. Solução preferida: desnormalizar.
-  1. Migration: `ALTER TABLE conversations ADD COLUMN last_message_direction text;`
-  2. Popular no webhook de ingestão (`zapi-webhook`/`zapi-sync-messages`) ao inserir mensagem.
-  3. Backfill único: `UPDATE conversations c SET last_message_direction = (SELECT direction FROM messages m WHERE m.conversation_id=c.id ORDER BY created_at DESC LIMIT 1);`
-  4. Reescrever o fechamento: `UPDATE conversations SET status='closed' WHERE status='open' AND last_message_at < cutoff AND last_message_direction='outbound';` — remove totalmente a leitura de `messages`.
-- [ ] **3B — `zapi-cleanup` (full-table cross-org, Alta).** Mover dedup para SQL e paginar:
-  - dedup de mensagens: `DELETE FROM messages a USING messages b WHERE a.conversation_id=b.conversation_id AND a.zapi_message_id=b.zapi_message_id AND a.ctid > b.ctid;`
-  - paginar `contacts` por cursor (`id`); proteger `forceCleanup` para nunca rodar síncrono cross-org.
-- [ ] **3C — `process-scheduled-messages` (N+1, cron 1 min).** `index.ts:252,385`:
-  - pré-carregar conversas: `conversations.select(...).in('contact_id', ids)` → `Map`.
-  - inserir `messages` em lote.
-  - substituir `setTimeout(delayMs)` por reagendamento (`campaign_queue.scheduled_for`); limitar a ~200 contatos/invoke.
-- [ ] **3D — `import-whatsapp-history` + auditoria (Alta).** `index.ts:345`: a RPC `record_conversation_origin_audit` roda 1×/mensagem. Mudar para **1×/conversa** (chamar fora do loop de mensagens).
-- [ ] **3E — `process-flow-timeouts` (Alta).** Pré-carregar `conversations`/`contacts`/`whatsapp_instances` das execuções em lote (`.in('id',...)`); unificar `contactRespondedAfterLastFollowUp` em 1 query. (Índice `flow_executions(status, remarketing_step, timeout_at)` já vem na Fase 2.)
-- [ ] **3F — `agent-orchestrator` (caminho mais quente).** `index.ts:325`: trocar `messages.select('*').limit(80)` por colunas explícitas; substituir polling de transcrição (170-186) por payload/realtime; cachear tags/pipelines/agents por org.
+- [~] **3A — `auto-close-conversations` (OOM, Crítica).** Desnormalização **via trigger** (decisão 2026-06-16; popular no webhook foi descartado — há 11 funções que inserem em `messages`, várias rotas ficariam sem atualizar).
+  > ✅ **Código pronto.** Migration **`20260616120000_fase3a_last_message_direction.sql`**: (1) `ALTER conversations ADD COLUMN last_message_direction text`; (2) trigger `trg_sync_last_message_direction` AFTER INSERT em `messages` que só sobrescreve quando `NEW.created_at >= COALESCE(last_message_at,'-infinity')` — protege contra imports de histórico (mensagens antigas não viram "última direção"); (3) backfill por subquery correlacionada (usa índice da Fase 2). `auto-close/index.ts` reescrito: **um único UPDATE** `status='open' AND last_message_at<cutoff AND last_message_direction='outbound'`, sem ler `messages` nem `.limit(500)`.
+  > ⚠️ **Ordem de deploy:** aplicar a migration **ANTES** de publicar a função (a coluna precisa existir, senão o UPDATE falha).
+- [~] **3B — `zapi-cleanup` (full-table cross-org, Alta).**
+  > ✅ **Código pronto.** Migration **`20260616121000_fase3b_dedup_org_messages.sql`**: RPC `dedup_org_messages(_organization_id)` que faz o dedup em **um DELETE … USING** por `(conversation_id, zapi_message_id)` escopado à org (mantém a 1ª cópia; mesma chave do upsert de ingestão). Edge function: o `select('*')`+`Map`+delete-em-lotes foi substituído por `supabase.rpc('dedup_org_messages', …)`. `forceCleanup` agora **exige `organizationId`** (retorna 400 sem ele) — nunca roda cross-org síncrono.
+  > 🔸 **Desvio consciente:** **não** paginei `contacts` por cursor. O dedup de contatos agrupa por `phoneMatchKey` em memória — paginar quebraria o agrupamento cross-página. A fonte real de OOM (varredura de `messages`) foi para o SQL; `contacts` por org é limitado. Paginação de contatos exigiria agrupamento server-side (item futuro, se necessário).
+- [~] **3C — `process-scheduled-messages` (N+1, cron 1 min).**
+  > ✅ **Código pronto (batching).** Novo helper `preloadConversations`: **1 SELECT** das conversas existentes por `.in('contact_id', ids)` + **1 INSERT em lote** das faltantes → `Map`. Em `sendMessageToContacts`, as gravações viraram lote no fim: **1 insert de `messages`**, **1 update de `last_message_at`** (todas as convs tocadas) e **1 update** de `scheduled_message_contacts` (status manual). `executeFlowForContacts` usa o mesmo preload. Eram ~5 queries/contato; agora ~constante + as chamadas externas.
+  > 🔸 **Desvio consciente:** **não** troquei `setTimeout(delayMs)`→reagendamento nem apliquei cap de ~200/invoke. O `setTimeout` é throttle anti-bloqueio (sequencial, intencional). Cap + reschedule para campanhas de **tag** exige persistir progresso por contato (hoje só `manual` tem `scheduled_message_contacts`); sem isso, capar **descarta destinatários** silenciosamente. Fica como item de redesenho (precisa de tracking por contato p/ tag).
+- [x] **3D — `import-whatsapp-history` + auditoria (Alta).** ✅ **Feito.** O loop `for (const message of inserted)` que chamava `record_conversation_origin_audit` **1×/mensagem** (10k+ RPCs) foi **removido**; a auditoria **1×/conversa** já existia (linha ~295) e cobre o caso. Sem migration.
+- [~] **3E — `process-flow-timeouts` (Alta).**
+  > ✅ **Código pronto.** Na PHASE 2, pré-carga em lote antes do loop: `conversations` (id/contact/org/instance/service_mode/metadata), `contacts` (phone) e `whatsapp_instances` conectadas das orgs envolvidas (resolvidas em memória via `resolveInstance`). `contactRespondedAfterLastFollowUp` foi de **2 queries→1** e extraído para `computeRespondedAfterLastFollowUp` (lógica pura), alimentado por **1 query** de mensagens posteriores ao `started_at` mais antigo (agrupadas por conversa) — semântica de segurança (não reenviar a quem respondeu) **preservada**. Índice da Fase 2 já presente.
+- [~] **3F — `agent-orchestrator` (caminho mais quente).**
+  > ✅ **Código pronto.** `messages.select('*').limit(80)` → **colunas explícitas** `id, content, direction, type, created_at` (campos realmente usados; elimina trazer `metadata`/mídia de 80 msgs por turno). `agents`/`tags`/`pipelines` agora via `loadOrgConfigCached` (cache em memória por org, **TTL 20s**) — corta 3 queries/turno. *Não* cacheei `training_rules`/`qualification_rules` (devem aplicar imediatamente).
+  > 🔸 **Desvio consciente:** **não** substituí o polling de transcrição (170-186). Removê-lo com segurança exige o chamador (`zapi-webhook`) passar a transcrição no payload ou disparo via realtime pós-transcrição — mudança cross-função fora do escopo de um ajuste isolado. Só ocorre no caminho de mídia. Fica como item futuro.
 
-**Validação Fase 3:** invocar cada função manualmente (curl/painel) com payload realista e conferir nos logs: sem timeout, memória estável, nº de queries reduzido. Para 3A, confirmar que conversas continuam fechando corretamente.
+**Validação Fase 3 (manual — a fazer):**
+1. **Aplicar as 2 migrations no SQL Editor** (regra de deploy Lovable — NÃO `db push`): `20260616120000_fase3a_*` (rodar inteiro; transacional) e `20260616121000_fase3b_*`. Aplicar 3A **antes** de publicar `auto-close`.
+2. **Deploy das 6 funções** alteradas via fluxo Lovable.
+3. **Smoke por função** (painel/curl, payload realista) conferindo logs: sem timeout, memória estável, menos queries.
+   - **3A:** após a migration, conferir `SELECT count(*) FROM conversations WHERE last_message_direction IS NOT NULL` (backfill ok) e que conversas com última msg outbound + inativas continuam fechando.
+   - **3D:** importar um chat e ver **1** linha em `conversation_origin_audit` por conversa (não por mensagem).
+   - **3E/3C:** rodar o cron e ver no log nº de queries reduzido; follow-ups e agendamentos disparando normal.
+   - **3B:** chamar `?action=cleanup&organizationId=<org>`; conferir contagem de removidos; `forceCleanup` sem org → 400.
 
 ---
 

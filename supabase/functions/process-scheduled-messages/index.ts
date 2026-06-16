@@ -236,6 +236,55 @@ async function getTargetContacts(
   return [];
 }
 
+/**
+ * FASE 3C: pré-carrega as conversas existentes dos contatos em UMA query e cria
+ * as faltantes em UM insert em lote (em vez de 1 SELECT + 1 INSERT por contato).
+ * Retorna um Map contact_id → conversation ({ id, whatsapp_instance_id }).
+ */
+async function preloadConversations(
+  supabase: any,
+  scheduled: ScheduledMessage,
+  contacts: Contact[],
+  scheduledInstanceId: string | null,
+  scheduledInstance: any,
+): Promise<Map<string, any>> {
+  const map = new Map<string, any>();
+  const ids = contacts.map((c) => c.id);
+  if (ids.length === 0) return map;
+
+  let query = supabase
+    .from('conversations')
+    .select('id, whatsapp_instance_id, contact_id')
+    .in('contact_id', ids);
+  query = scheduledInstanceId
+    ? query.eq('whatsapp_instance_id', scheduledInstanceId)
+    : query.is('whatsapp_instance_id', null);
+
+  const { data: existing } = await query;
+  for (const conv of existing || []) {
+    if (!map.has(conv.contact_id)) map.set(conv.contact_id, conv);
+  }
+
+  const missing = contacts.filter((c) => !map.has(c.id));
+  if (missing.length > 0) {
+    const rows = missing.map((c) => ({
+      contact_id: c.id,
+      organization_id: c.organization_id,
+      workspace_id: scheduled.workspace_id || null,
+      whatsapp_instance_id: scheduledInstanceId,
+      source_phone: scheduledInstance?.phone_number || scheduledInstance?.logical_phone || null,
+      status: 'open',
+    }));
+    const { data: created } = await supabase
+      .from('conversations')
+      .insert(rows)
+      .select('id, whatsapp_instance_id, contact_id');
+    for (const conv of created || []) map.set(conv.contact_id, conv);
+  }
+
+  return map;
+}
+
 async function sendMessageToContacts(
   supabase: any,
   scheduled: ScheduledMessage,
@@ -249,41 +298,20 @@ async function sendMessageToContacts(
   const scheduledInstance = await resolveScheduledInstance(supabase, scheduled);
   const scheduledInstanceId = scheduledInstance?.id || null;
 
+  const convByContact = await preloadConversations(supabase, scheduled, contacts, scheduledInstanceId, scheduledInstance);
+
+  // Acumuladores para gravação em lote no fim (1 insert de messages + 1 update de conversas).
+  const messagesToInsert: any[] = [];
+  const touchedConversationIds = new Set<string>();
+  const sentManualContactIds: string[] = [];
+
   for (let i = 0; i < contacts.length; i++) {
     const contact = contacts[i];
+    const conversation = convByContact.get(contact.id);
     try {
-      // Delay between contacts (skip first)
+      // Delay between contacts (skip first) — throttle anti-bloqueio do WhatsApp.
       if (i > 0 && delayMs > 0) {
         await new Promise(resolve => setTimeout(resolve, delayMs));
-      }
-
-      // Get or create conversation
-      let conversationQuery = supabase
-        .from('conversations')
-        .select('id, whatsapp_instance_id')
-        .eq('contact_id', contact.id)
-        .eq('organization_id', contact.organization_id);
-
-      conversationQuery = scheduledInstanceId
-        ? conversationQuery.eq('whatsapp_instance_id', scheduledInstanceId)
-        : conversationQuery.is('whatsapp_instance_id', null);
-
-      let { data: conversation } = await conversationQuery.maybeSingle();
-
-      if (!conversation) {
-        const { data: newConv } = await supabase
-          .from('conversations')
-          .insert({
-            contact_id: contact.id,
-            organization_id: contact.organization_id,
-            workspace_id: scheduled.workspace_id || null,
-            whatsapp_instance_id: scheduledInstanceId,
-            source_phone: scheduledInstance?.phone_number || scheduledInstance?.logical_phone || null,
-            status: 'open'
-          })
-          .select('id, whatsapp_instance_id')
-          .single();
-        conversation = newConv;
       }
 
       if (!conversation) continue;
@@ -320,8 +348,8 @@ async function sendMessageToContacts(
         throw new Error(`${sendResult.provider} ${sendResult.status}: ${sendResult.responseText.slice(0, 300)}`);
       }
 
-      // Save message to database
-      await supabase.from('messages').insert({
+      // Acumula a mensagem para insert em lote.
+      messagesToInsert.push({
         conversation_id: conversation.id,
         content: scheduled.message_content,
         type: scheduled.media_url ? (scheduled.media_type?.split('/')[0] || 'document') : 'text',
@@ -336,21 +364,8 @@ async function sendMessageToContacts(
           provider_response: sendResult.responseJson || sendResult.responseText,
         },
       });
-
-      // Update conversation
-      await supabase
-        .from('conversations')
-        .update({ last_message_at: new Date().toISOString() })
-        .eq('id', conversation.id);
-
-      // Update contact status in manual selection
-      if (scheduled.target_type === 'manual') {
-        await supabase
-          .from('scheduled_message_contacts')
-          .update({ status: 'sent', sent_at: new Date().toISOString() })
-          .eq('scheduled_message_id', scheduled.id)
-          .eq('contact_id', contact.id);
-      }
+      touchedConversationIds.add(conversation.id);
+      if (scheduled.target_type === 'manual') sentManualContactIds.push(contact.id);
 
       successCount++;
     } catch (err: any) {
@@ -365,6 +380,25 @@ async function sendMessageToContacts(
           .eq('contact_id', contact.id);
       }
     }
+  }
+
+  // Gravações em lote (1 insert de mensagens, 1 update de conversas, 1 update de status manual).
+  if (messagesToInsert.length > 0) {
+    const { error: msgErr } = await supabase.from('messages').insert(messagesToInsert);
+    if (msgErr) console.error(`[scheduled ${scheduled.id}] batch message insert failed:`, msgErr);
+  }
+  if (touchedConversationIds.size > 0) {
+    await supabase
+      .from('conversations')
+      .update({ last_message_at: new Date().toISOString() })
+      .in('id', [...touchedConversationIds]);
+  }
+  if (sentManualContactIds.length > 0) {
+    await supabase
+      .from('scheduled_message_contacts')
+      .update({ status: 'sent', sent_at: new Date().toISOString() })
+      .eq('scheduled_message_id', scheduled.id)
+      .in('contact_id', sentManualContactIds);
   }
 
   return { successCount, failCount, lastError };
@@ -382,37 +416,12 @@ async function executeFlowForContacts(
   const scheduledInstance = await resolveScheduledInstance(supabase, scheduled);
   const scheduledInstanceId = scheduledInstance?.id || null;
 
+  // FASE 3C: pré-carrega/cria conversas em lote (mesma estratégia de sendMessageToContacts).
+  const convByContact = await preloadConversations(supabase, scheduled, contacts, scheduledInstanceId, scheduledInstance);
+
   for (const contact of contacts) {
     try {
-      // Get or create conversation
-      let conversationQuery = supabase
-        .from('conversations')
-        .select('id')
-        .eq('contact_id', contact.id)
-        .eq('organization_id', contact.organization_id);
-
-      conversationQuery = scheduledInstanceId
-        ? conversationQuery.eq('whatsapp_instance_id', scheduledInstanceId)
-        : conversationQuery.is('whatsapp_instance_id', null);
-
-      let { data: conversation } = await conversationQuery.maybeSingle();
-
-      if (!conversation) {
-        const { data: newConv } = await supabase
-          .from('conversations')
-          .insert({
-            contact_id: contact.id,
-            organization_id: contact.organization_id,
-            workspace_id: scheduled.workspace_id || null,
-            whatsapp_instance_id: scheduledInstanceId,
-            source_phone: scheduledInstance?.phone_number || scheduledInstance?.logical_phone || null,
-            status: 'open'
-          })
-          .select('id')
-          .single();
-        conversation = newConv;
-      }
-
+      const conversation = convByContact.get(contact.id);
       if (!conversation) continue;
 
       // Call flow-execute function

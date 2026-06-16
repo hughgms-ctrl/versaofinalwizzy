@@ -44,6 +44,33 @@ interface DocumentCollectionContext {
 const MAX_TOOL_ROUNDS = 3;
 type Provider = 'evolution' | 'uazapi';
 
+// FASE 3F: cache curto por organização para dados de configuração que mudam
+// raramente (agents, tags, pipelines). O orquestrador é o caminho mais quente do
+// produto; isso evita 3 queries por turno de IA. TTL curto = staleness ≤20s.
+const ORG_CONFIG_TTL_MS = 20_000;
+const orgConfigCache = new Map<string, { at: number; agents: any[]; tags: any[]; pipelines: any[] }>();
+
+async function loadOrgConfigCached(supabase: any, organizationId: string) {
+  const now = Date.now();
+  const cached = orgConfigCache.get(organizationId);
+  if (cached && (now - cached.at) < ORG_CONFIG_TTL_MS) {
+    return { agents: cached.agents, tags: cached.tags, pipelines: cached.pipelines };
+  }
+  const [agentsResult, tagsResult, pipelinesResult] = await Promise.all([
+    supabase.from('ai_agents').select('*').eq('organization_id', organizationId).eq('is_active', true),
+    supabase.from('tags').select('*').eq('organization_id', organizationId),
+    supabase.from('pipelines').select('*, columns:pipeline_columns!pipeline_columns_pipeline_id_fkey(*)').eq('organization_id', organizationId),
+  ]);
+  const value = {
+    at: now,
+    agents: agentsResult.data || [],
+    tags: tagsResult.data || [],
+    pipelines: pipelinesResult.data || [],
+  };
+  orgConfigCache.set(organizationId, value);
+  return { agents: value.agents, tags: value.tags, pipelines: value.pipelines };
+}
+
 function normalizeBaseUrl(value?: string | null): string {
   return (value || '').trim().replace(/\/$/, '');
 }
@@ -319,16 +346,16 @@ Deno.serve(async (req) => {
 
     // 3. Load context in parallel (including training rules)
     const [
-      messagesResult, agentsResult, tagsResult, contactTagsResult,
-      pipelinesResult, pipelinePositionsResult, flowsResult, workspaceConfig, integrationConfig,
+      messagesResult, orgConfig, contactTagsResult,
+      pipelinePositionsResult, flowsResult, workspaceConfig, integrationConfig,
       organizationPlanResult, aiModelStrategy, trainingRulesResult, qualificationRulesResult,
     ] = await Promise.all([
-      supabase.from('messages').select('*').eq('conversation_id', conversationId)
+      // FASE 3F: colunas explícitas (em vez de '*'), evitando trazer metadata/mídia de até 80 msgs por turno.
+      supabase.from('messages').select('id, content, direction, type, created_at').eq('conversation_id', conversationId)
         .order('created_at', { ascending: false }).limit(80),
-      supabase.from('ai_agents').select('*').eq('organization_id', organizationId).eq('is_active', true),
-      supabase.from('tags').select('*').eq('organization_id', organizationId),
+      // FASE 3F: agents/tags/pipelines via cache curto por org (ver loadOrgConfigCached).
+      loadOrgConfigCached(supabase, organizationId),
       supabase.from('contact_tags').select('*, tag:tags(*)').eq('contact_id', contactId),
-      supabase.from('pipelines').select('*, columns:pipeline_columns!pipeline_columns_pipeline_id_fkey(*)').eq('organization_id', organizationId),
       supabase.from('conversation_pipeline_positions')
         .select('*, pipeline:pipelines(name), column:pipeline_columns(name)')
         .eq('conversation_id', conversationId),
@@ -344,7 +371,7 @@ Deno.serve(async (req) => {
     ]);
 
     const rawMessages = (messagesResult.data || []).reverse();
-    const agents = agentsResult.data || [];
+    const agents = orgConfig.agents;
 
     // Fetch media transcriptions for messages that are audio/image/video
     const mediaMessageIds = rawMessages
@@ -375,9 +402,9 @@ Deno.serve(async (req) => {
       }
       return m;
     });
-    const allTags = tagsResult.data || [];
+    const allTags = orgConfig.tags;
     const contactTags = contactTagsResult.data || [];
-    const pipelines = pipelinesResult.data || [];
+    const pipelines = orgConfig.pipelines;
     const pipelinePositions = pipelinePositionsResult.data || [];
     const flows = flowsResult.data || [];
     const trainingRules = trainingRulesResult.data || [];

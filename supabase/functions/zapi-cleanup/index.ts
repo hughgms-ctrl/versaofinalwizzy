@@ -462,12 +462,17 @@ Deno.serve(async (req) => {
         if (forceCleanup) {
             const url = new URL(req.url);
             const requestedOrgId = url.searchParams.get('organizationId');
-            const { data: orgs } = requestedOrgId
-                ? await supabase.from('organizations').select('id').eq('id', requestedOrgId).limit(1)
-                : await supabase.from('organizations').select('id');
+            // FASE 3B: o modo emergência NUNCA roda cross-org síncrono. Exige um
+            // organizationId explícito; uma org por vez.
+            if (!requestedOrgId) {
+                return new Response(JSON.stringify({ error: 'forceCleanup requires an explicit organizationId (cross-org cleanup is disabled).' }), {
+                    status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                });
+            }
+            const { data: orgs } = await supabase.from('organizations').select('id').eq('id', requestedOrgId).limit(1);
             organizationIds = (orgs || []).map((org: any) => org.id);
             organizationId = organizationIds[0] || null;
-            console.log(`EMERGENCY CLEANUP V4 - Organizations: ${organizationIds.join(', ')}`);
+            console.log(`EMERGENCY CLEANUP (single org) - Organizations: ${organizationIds.join(', ')}`);
         } else if (authHeader) {
             const token = authHeader.replace(/^Bearer\s+/i, '');
             if (token === supabaseKey) {
@@ -492,7 +497,6 @@ Deno.serve(async (req) => {
         }
 
         const cleanupResults = [];
-        let totalDuplicateMessageIds = 0;
         let totalDeletedMessages = 0;
         let totalMergedContacts = 0;
 
@@ -514,67 +518,32 @@ Deno.serve(async (req) => {
             });
         }
 
-        // 1. Find ALL messages that have a duplicate zapi_message_id across ALL conversations in the org
-            const { data: allDuplicates, error: dupError } = await supabase
-                .from('messages')
-                .select('id, zapi_message_id, conversation_id, conversations!inner(organization_id)')
-                .eq('conversations.organization_id', currentOrganizationId)
-                .not('zapi_message_id', 'is', null);
+        // FASE 3B: dedup feito no banco (RPC dedup_org_messages → DELETE ... USING),
+        // sem carregar todas as mensagens da org na memória do worker (era risco de OOM).
+            const { data: deletedCount, error: dedupError } = await supabase
+                .rpc('dedup_org_messages', { _organization_id: currentOrganizationId });
 
-            if (dupError) throw dupError;
+            if (dedupError) throw dedupError;
 
-            // Group by zapi_message_id
-            const messageMap = new Map<string, any[]>();
-            for (const msg of allDuplicates || []) {
-                if (!messageMap.has(msg.zapi_message_id)) messageMap.set(msg.zapi_message_id, []);
-                messageMap.get(msg.zapi_message_id)!.push(msg);
-            }
-
-            const toDeleteIds: string[] = [];
-            let duplicateCount = 0;
-
-            for (const [_zapiId, msgs] of messageMap.entries()) {
-                if (msgs.length > 1) {
-                    duplicateCount++;
-                    // Keep the first one and delete the redundant copies.
-                    const [_first, ...others] = msgs;
-                    others.forEach(m => toDeleteIds.push(m.id));
-                }
-            }
-
-            console.log(`Org ${currentOrganizationId}: found ${duplicateCount} duplicate message IDs. Total copies to delete: ${toDeleteIds.length}`);
-
-            if (toDeleteIds.length > 0) {
-                // Delete in batches of 100
-                for (let i = 0; i < toDeleteIds.length; i += 100) {
-                    const batch = toDeleteIds.slice(i, i + 100);
-                    const { error: delError } = await supabase
-                        .from('messages')
-                        .delete()
-                        .in('id', batch);
-                    if (delError) console.error('Delete error:', delError);
-                }
-            }
+            const deletedMessages = deletedCount || 0;
+            console.log(`Org ${currentOrganizationId}: dedup removed ${deletedMessages} redundant message copies.`);
 
             const contactCleanup = await cleanupDuplicateContacts(supabase, currentOrganizationId);
-            totalDuplicateMessageIds += duplicateCount;
-            totalDeletedMessages += toDeleteIds.length;
+            totalDeletedMessages += deletedMessages;
             totalMergedContacts += contactCleanup.mergedCount;
             cleanupResults.push({
                 organizationId: currentOrganizationId,
-                foundDuplicates: duplicateCount,
-                deletedCount: toDeleteIds.length,
+                deletedCount: deletedMessages,
                 contactCleanup,
             });
         }
 
         return new Response(JSON.stringify({
             success: true,
-            foundDuplicates: totalDuplicateMessageIds,
             deletedCount: totalDeletedMessages,
             mergedContacts: totalMergedContacts,
             results: cleanupResults,
-            message: `Removed ${totalDeletedMessages} redundant messages across ${totalDuplicateMessageIds} IDs and merged ${totalMergedContacts} duplicate contacts.`
+            message: `Removed ${totalDeletedMessages} redundant messages and merged ${totalMergedContacts} duplicate contacts.`
         }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
