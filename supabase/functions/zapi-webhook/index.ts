@@ -3033,6 +3033,20 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
 
         const { data: raceExisting } = await raceQuery.limit(1).maybeSingle();
         if (raceExisting) return raceExisting;
+
+        // FALLBACK: o banco vivo ainda aplica uniqueness por (contact_id,
+        // organization_id) — índice legado `idx_conversations_contact_org_unique`
+        // (o escopo por instância da migration 20260610173000 não foi totalmente
+        // aplicado). Nesse caso a conversa existente está sob OUTRA instância e a
+        // busca acima (filtrada por instância) não a encontra → o insert estourava
+        // 23505 e a mensagem RECEBIDA era perdida. Reutilizamos a conversa do
+        // contato/org (a mais recente), espelhando o modelo real do banco.
+        const { data: anyExisting } = await supabase
+          .from('conversations').select('*')
+          .eq('contact_id', contactId).eq('organization_id', organizationId)
+          .order('last_message_at', { ascending: false, nullsFirst: false })
+          .limit(1).maybeSingle();
+        if (anyExisting) return anyExisting;
       }
       throw error;
     }
