@@ -3186,7 +3186,8 @@ async function recoverVisibleReply(args: {
     clearTimeout(tid);
 
     if (!response.ok) {
-      console.warn(`${args.logPrefix} recovery AI error: ${response.status}`);
+      const errBody = await response.text().catch(() => '');
+      console.warn(`${args.logPrefix} recovery AI error: ${response.status} ${errBody.slice(0, 500)}`);
       return null;
     }
 
