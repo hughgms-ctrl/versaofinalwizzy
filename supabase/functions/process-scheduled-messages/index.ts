@@ -290,21 +290,18 @@ async function preloadConversations(
       continue;
     }
 
-    // Insert falhou → a colisão indica que JÁ existe conversa para este contato.
-    // O banco pode aplicar uniqueness por (contact_id, organization_id) OU por
-    // (contact_id, org, instance). Por isso recuperamos QUALQUER conversa do
-    // contato/org (sem filtrar por instância) e preferimos a da instância
-    // agendada; senão, a mais recente. Assim funciona nos dois modelos.
-    const { data: refoundRows } = await supabase
+    // Insert falhou numa corrida da MESMA instância: recupera a conversa existente.
+    // Escopo por instância ativo → o 23505 só ocorre para (contato, org, instância)
+    // idêntico; recuperamos com o MESMO filtro de instância (não mesclar números).
+    let again = supabase
       .from('conversations')
-      .select('id, whatsapp_instance_id, contact_id, last_message_at')
+      .select('id, whatsapp_instance_id, contact_id')
       .eq('contact_id', c.id)
-      .eq('organization_id', c.organization_id)
-      .order('last_message_at', { ascending: false, nullsFirst: false });
-
-    const refound = (refoundRows || []).find((r: any) => r.whatsapp_instance_id === scheduledInstanceId)
-      || (refoundRows || [])[0]
-      || null;
+      .eq('organization_id', c.organization_id);
+    again = scheduledInstanceId
+      ? again.eq('whatsapp_instance_id', scheduledInstanceId)
+      : again.is('whatsapp_instance_id', null);
+    const { data: refound } = await again.maybeSingle();
 
     if (refound) {
       map.set(c.id, refound);
