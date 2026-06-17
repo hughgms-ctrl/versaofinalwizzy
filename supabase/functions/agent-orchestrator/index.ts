@@ -411,25 +411,11 @@ Deno.serve(async (req) => {
     const qualificationRules = qualificationRulesResult.data || [];
     console.log(`[ORCHESTRATOR] Loaded ${trainingRules.length} training rules and ${qualificationRules.length} qualification rules for org ${organizationId}`);
 
-    const planAIMode = (organizationPlanResult.data as any)?.plan?.ai_mode || 'own_api';
-    const usesPlatformAI = planAIMode === 'platform_api';
-    const adminAgentsModel = aiModelStrategy.features?.agents || aiModelStrategy.default_model || 'gpt-4o-mini';
-    const effectiveIntegrationConfig = usesPlatformAI
-      ? {
-          ...(integrationConfig || {}),
-          ai_provider: PLATFORM_OPENAI_API_KEY ? 'openai' : 'lovable',
-          default_model: PLATFORM_OPENAI_API_KEY ? adminAgentsModel : (integrationConfig?.default_model || 'google/gemini-2.5-flash'),
-          openai_api_key: PLATFORM_OPENAI_API_KEY || integrationConfig?.openai_api_key || null,
-        }
-      : {
-          ...(integrationConfig || {}),
-          ai_provider: 'openai',
-          default_model: adminAgentsModel,
-        };
-
-    // Admin controls the model used for agents. Client only provides the API key on own-api plans.
-    const finalProvider = effectiveIntegrationConfig?.ai_provider || 'openai';
-    const finalModel = effectiveIntegrationConfig?.default_model || adminAgentsModel;
+    // REGRA DE NEGÓCIO: cada organização usa SOMENTE a IA configurada no painel
+    // dela (provedor + chave própria + modelo). SEM fallback para o gateway
+    // Lovable nem para chave da plataforma. Se a org não configurou IA, não
+    // respondemos (e logamos um aviso para diagnóstico).
+    const effectiveIntegrationConfig = integrationConfig || null;
 
     // Enrich messageContent if it's just '[mídia]' — use the last inbound message's enriched content
     let enrichedMessageContent = messageContent;
@@ -441,10 +427,16 @@ Deno.serve(async (req) => {
       }
     }
 
-    const aiConfig = resolveAIConfig(effectiveIntegrationConfig, 'agents', LOVABLE_API_KEY!, finalProvider, finalModel);
+    const aiConfig = resolveAIConfig(effectiveIntegrationConfig, 'agents', LOVABLE_API_KEY!);
+    if (!aiConfig) {
+      console.warn(`[ORCHESTRATOR] Org ${organizationId} sem IA configurada no painel (provedor/chave ausente) — não respondendo.`);
+      return new Response(JSON.stringify({ success: false, reason: 'no_ai_configured' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
     const aiModel = aiConfig.model;
-    
-    console.log(`[ORCHESTRATOR] AI Config: Provider=${finalProvider}, Model=${aiModel} (Target=${finalModel})`);
+
+    console.log(`[ORCHESTRATOR] AI Config: endpoint=${aiConfig.endpoint}, model=${aiModel}`);
 
     // Load organization timezone for temporal context (default: America/Sao_Paulo)
     let organizationTimezone = 'America/Sao_Paulo';
@@ -588,20 +580,17 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
 
   const agent = agentId ? agents.find((a: any) => a.id === agentId) : null;
 
-  // Resolve AI config — IDENTICAL to production (line 223-227 + resolveAgentConfig)
-  // 1. Start with master prompt provider/model → integration_configs → defaults
-  const masterProvider = integrationConfig?.ai_provider || 'lovable';
-  const masterModel = integrationConfig?.default_model || 'google/gemini-2.5-flash';
-  const baseAiConfig = resolveAIConfig(integrationConfig, 'agents', LOVABLE_API_KEY, masterProvider, masterModel);
-  
-  // 2. Check agent-level overrides (same as resolveAgentConfig in production)
-  let aiConfig = baseAiConfig;
-  if (agent?.provider || agent?.model) {
-    const agentProvider = agent.provider || integrationConfig?.ai_provider || 'lovable';
-    const agentModel = agent.model || integrationConfig?.default_model || 'google/gemini-2.5-flash';
-    aiConfig = resolveAIConfig(integrationConfig, 'agents', LOVABLE_API_KEY, agentProvider, agentModel);
+  // Resolve AI config — SOMENTE a IA configurada no painel da org (provedor +
+  // chave). Sem Lovable. Override de provedor/modelo do agente quando houver.
+  const aiConfig = resolveAIConfig(
+    integrationConfig, 'agents', LOVABLE_API_KEY,
+    agent?.provider || undefined,
+    agent?.model || undefined,
+  );
+  if (!aiConfig) {
+    return { error: 'IA não configurada no painel da organização. Configure o provedor (OpenAI/Gemini) e a chave de API.' };
   }
-  
+
   console.log(`[SIMULATION] AI Config resolved: model=${aiConfig.model}, endpoint=${aiConfig.endpoint}`);
   console.log(`[SIMULATION] Context: agentId=${agentId}, agentName=${agentName}, historyLen=${(conversationHistory || []).length}`);
   // Build system prompt — EXACT SAME as invokeAgentAI
@@ -3445,9 +3434,12 @@ function stripInternalAnnotations(text: string): string {
 
 function resolveAgentConfig(ctx: any, agent: any, integrationConfig: any): AIConfigResult {
   if (agent?.provider || agent?.model) {
-    const provider = agent.provider || integrationConfig?.ai_provider || 'lovable';
-    const model = agent.model || integrationConfig?.default_model || 'google/gemini-2.5-flash';
-    return resolveAIConfig(integrationConfig, 'agents', ctx.LOVABLE_API_KEY, provider, model);
+    const provider = agent.provider || integrationConfig?.ai_provider || undefined;
+    const model = agent.model || integrationConfig?.default_model || undefined;
+    const cfg = resolveAIConfig(integrationConfig, 'agents', ctx.LOVABLE_API_KEY, provider, model);
+    if (cfg) return cfg;
+    // Override do agente não resolve (provedor/chave ausente) → usa a config
+    // já validada da org (ctx), em vez de cair em Lovable.
   }
   return { endpoint: ctx.aiEndpoint, apiKey: ctx.aiApiKey, model: ctx.aiModel };
 }
@@ -3533,55 +3525,34 @@ async function recordAIUsage(supabase: any, organizationId: string) {
 function resolveAIConfig(
   integrationConfig: any,
   feature: string,
-  lovableApiKey: string,
+  _lovableApiKey?: string,        // mantido por compatibilidade de assinatura; NÃO usado
   overrideProvider?: string,
   overrideModel?: string
-): AIConfigResult {
-  const LOVABLE_ENDPOINT = 'https://ai.gateway.lovable.dev/v1/chat/completions';
+): AIConfigResult | null {
   const OPENAI_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
   const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions';
 
-  if (!integrationConfig) {
-    return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model: 'google/gemini-2.5-flash' };
-  }
+  // REGRA: usar SOMENTE a IA configurada no painel da org. Sem gateway Lovable
+  // e sem fallback. Sem config válida (provedor + chave) → retorna null e o
+  // chamador decide não responder.
+  if (!integrationConfig) return null;
 
-  // Check feature-specific override first
   const featureProvider = integrationConfig[`${feature}_provider`];
   const featureModel = integrationConfig[`${feature}_model`];
-  let provider = overrideProvider || featureProvider || integrationConfig.ai_provider || 'lovable';
-  
-  // Set provider-appropriate default model
-  const defaultModelForProvider = provider === 'openai' 
-    ? 'gpt-4o-mini' 
-    : (provider === 'gemini' ? 'gemini-2.5-flash' : 'google/gemini-2.5-flash');
+  const provider = overrideProvider || featureProvider || integrationConfig.ai_provider || null;
+  let model = overrideModel || featureModel || integrationConfig.default_model || '';
 
-  let model = overrideModel || featureModel || integrationConfig.default_model || defaultModelForProvider;
-
-  // Ensure format is correct depending on provider
+  if (provider === 'openai') {
+    if (!integrationConfig.openai_api_key) return null;
+    model = (model || 'gpt-4o-mini').replace('openai/', '').replace('google/', '');
+    return { endpoint: OPENAI_ENDPOINT, apiKey: integrationConfig.openai_api_key, model };
+  }
   if (provider === 'gemini') {
-    model = model.replace('google/', '').replace('openai/', '');
-  } else if (provider === 'openai') {
-    model = model.replace('openai/', '').replace('google/', '');
-  } else if (provider === 'lovable') {
-    if (!model.startsWith('google/') && !model.startsWith('openai/')) {
-      model = (model.includes('gpt') || model.includes('o1')) ? `openai/${model}` : `google/${model}`;
-    }
+    if (!integrationConfig.gemini_api_key) return null;
+    model = (model || 'gemini-2.5-flash').replace('google/', '').replace('openai/', '');
+    return { endpoint: GEMINI_ENDPOINT, apiKey: integrationConfig.gemini_api_key, model };
   }
 
-  switch (provider) {
-    case 'openai':
-      if (!integrationConfig.openai_api_key) {
-        console.warn('OpenAI selected but no API key, falling back to Lovable');
-        return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model: 'google/gemini-2.5-flash' };
-      }
-      return { endpoint: OPENAI_ENDPOINT, apiKey: integrationConfig.openai_api_key, model };
-    case 'gemini':
-      if (!integrationConfig.gemini_api_key) {
-        console.warn('Gemini selected but no API key, falling back to Lovable');
-        return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model: 'google/gemini-2.5-flash' };
-      }
-      return { endpoint: GEMINI_ENDPOINT, apiKey: integrationConfig.gemini_api_key, model };
-    default:
-      return { endpoint: LOVABLE_ENDPOINT, apiKey: lovableApiKey, model };
-  }
+  // provider 'lovable', vazio ou desconhecido → org sem IA própria configurada.
+  return null;
 }
