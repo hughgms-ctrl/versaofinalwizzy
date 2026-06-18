@@ -31,7 +31,7 @@ valide conforme a seção "Validação" e marque [x] os concluídos. Não avance
 - [x] **Fase 1** — Quick wins: filtros de Realtime + RLS `(select auth.uid())` *(1A frontend ✅; **1B Lote 1 ✅ (12) + Lote 2 ✅ (11) + Lote 3 ✅ (224 políticas / 116 tabelas) — todos aplicados e validados no SQL Editor em 2026-06-15; sweep de `pg_policies` retorna 0 políticas com `auth.uid()` nu**. Pendente só o `EXPLAIN ANALYZE` antes/depois (medição, não bloqueia).)*
 - [x] **Fase 2** — Índices (FK + compostos) *(16 migrations criadas, verificadas na fonte, aplicadas no SQL Editor e confirmadas via `pg_indexes` — 16/16 presentes em 2026-06-15)*
 - [x] **Fase 3** — Edge Functions críticas (OOM / N+1) *(3A,3B,3C,3E,3F validados em 2026-06-16/17; **3D** = código feito, smoke adiado (import é raro). Bônus: corrigido bug pré-existente que **perdia mensagens recebidas** — trigger `auto_assign_workspace` (uuid[]) + ativação do escopo de conversa por instância. Migrations aplicadas: `20260616120000` (3A), `20260616121000` (3B), `20260616122000` (fix trigger), `20260616124000` (escopo por instância).)*
-- [~] **Fase 4** — Dashboard: RPCs + redução de polling *(4A RPCs aplicadas + isolamento validado; 4B/4C/4D código pronto e `tsc` limpo — aguardando deploy Lovable + validação no dashboard com aba de Rede)*
+- [x] **Fase 4** — Dashboard: RPCs + redução de polling *(4A RPCs aplicadas + isolamento validado; 4B/4C/4D `tsc` limpo, deploy Lovable feito e validado no dashboard; commit `d39a5c6` em `main`. Pendência de negócio descoberta na validação — conversas em IA sem workspace — documentada e adiada por decisão do dono.)*
 - [ ] **Fase 5** — Retenção/limpeza (pg_cron) + busca (FTS)
 - [ ] **Fase 6** — Estrutural: particionamento e denormalização
 
@@ -274,7 +274,8 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_entry_flow_events_name_user ON publi
 
 **Contexto:** ~19 tabelas de log crescem sem limite; busca usa `ILIKE '%x%'` (seq scan).
 
-- [ ] **5A — Jobs `pg_cron`** (extensão já habilitada). Migration:
+- [x] **5A — Jobs `pg_cron`** (extensão já habilitada). Migration:
+  > **Implementado (2026-06-18) — aguardando aplicação manual + validação:** `supabase/migrations/20260618120000_fase5a_pg_cron_retencao.sql` — 7 jobs. Correções vs. plano: `campaign_queue` usa `status IN ('processed','failed')` (o valor real é `'processed'`, não `'sent'` — `process-campaign-queue/index.ts:61`); `contact_presence` e `signature_otp_codes` purgados por `expires_at` (mais correto que `created_at`). Auditoria legal fora. **Validar** após colar no SQL Editor: `SELECT jobname,schedule,active FROM cron.job` deve listar os 7 jobs ativos.
 ```sql
 SELECT cron.schedule('purge-flow-node-logs','0 3 * * *',
   $$DELETE FROM public.flow_node_logs WHERE created_at < now() - interval '90 days';$$);
@@ -292,7 +293,8 @@ SELECT cron.schedule('purge-signature-otp','0 * * * *',
   $$DELETE FROM public.signature_otp_codes WHERE created_at < now() - interval '1 day';$$);
 ```
   > **NÃO** purgar auditoria legal: `billing_events`, `admin_audit_logs`, `conversation_origin_audit`, `signature_evidence` — apenas arquivar se necessário.
-- [ ] **5B — Busca FTS** (substitui `useMessageSearch` `ILIKE`):
+- [x] **5B — Busca FTS** (substitui `useMessageSearch` `ILIKE`):
+  > **Implementado (2026-06-18) — aguardando aplicação manual + validação:** estratégia B (coluna comum + trigger + backfill em lotes) em vez de `GENERATED STORED`, p/ evitar lock longo de reescrita de `messages`. Arquivos: `20260618120100_fase5b_messages_content_tsv_rpc.sql` (coluna `content_tsv` nullable + trigger `trg_messages_content_tsv` + RPC `search_messages` SECURITY DEFINER c/ `user_is_org_member` + filtro por `conversations.organization_id` + GRANT só authenticated) e `20260618120200_..._idx_..._concurrently.sql` (índice GIN, arquivo isolado, fora de transação). Backfill manual em lotes de 5.000 até `UPDATE 0` (bloco no fim da migration). `src/hooks/useMessageSearch.ts`: RPC + debounce 300 ms. Snippet retorna `content` cru (front já faz highlight). **Validar** após aplicar: `EXPLAIN` da query interna deve mostrar Bitmap Index Scan em `idx_messages_content_tsv` (não Seq Scan); testar busca com 2 contas distintas p/ confirmar isolamento.
 ```sql
 ALTER TABLE public.messages ADD COLUMN content_tsv tsvector
   GENERATED ALWAYS AS (to_tsvector('portuguese', coalesce(content,''))) STORED;
