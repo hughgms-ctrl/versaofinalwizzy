@@ -37,6 +37,37 @@ valide conforme a seção "Validação" e marque [x] os concluídos. Não avance
 
 ---
 
+## ⚠️ PENDÊNCIA DE NEGÓCIO — DECIDIR DEPOIS (não bloqueia a Fase 4)
+
+> 🔔 **Conversas atendidas pela IA ficam SEM workspace (`workspace_id = null`) → somem do dashboard quando há um workspace selecionado.** *(descoberto em 2026-06-18, durante a validação da Fase 4)*
+>
+> **Não é bug da Fase 4** — é comportamento de **trigger pré-existente** + **decisão de negócio**.
+>
+> **Causa raiz (dois triggers, os dois deixam passar o caso comum):**
+> 1. `auto_assign_workspace` (BEFORE INSERT em `conversations`, migration `20260616122000`): só atribui workspace se o contato **já tem** tag que casa com um workspace **no momento do INSERT**. Contato novo entra **sem tag** → `workspace_id` fica null.
+> 2. `auto_assign_workspace_on_tag` (AFTER INSERT em `contact_tags`, migration `20260308200320`): seria a rede de segurança quando a tag chega depois, **MAS tem um guard** (linhas 13-21) que faz `RETURN NEW` (pula a atribuição) se o contato tem **qualquer conversa aberta em IA** (`service_mode='ia' AND status='open'`). Logo, toda conversa em atendimento de IA **nunca** recebe workspace por tag enquanto a IA estiver no comando.
+>
+> **Decisão pendente (do dono):** conversas atendidas pela IA **devem** receber workspace por tag? Como workspace é só rótulo/filtro móvel (não deveria atrapalhar o atendimento), a inclinação é **sim**.
+>
+> **Se SIM, o fix (a fazer depois):** afrouxar/remover o guard de IA em `auto_assign_workspace_on_tag` (CREATE OR REPLACE; aplicar manual no SQL Editor — regra de deploy Lovable) **+ backfill** das conversas já órfãs:
+> ```sql
+> -- backfill: atribui workspace às conversas sem workspace cujo contato casa com um workspace por tag
+> UPDATE public.conversations conv
+> SET workspace_id = w.id
+> FROM public.workspaces w
+> WHERE conv.workspace_id IS NULL
+>   AND w.is_active
+>   AND w.organization_id = conv.organization_id
+>   AND EXISTS (
+>     SELECT 1 FROM public.contact_tags ct
+>     WHERE ct.contact_id = conv.contact_id
+>       AND ct.tag_id = ANY(w.filter_tag_ids)
+>   );
+> ```
+> **Workaround até decidir:** ver essas conversas selecionando **"todos os workspaces"** no dashboard.
+
+---
+
 # FASE 0 — Preparação e baseline
 
 **Objetivo:** criar rede de segurança e medir o "antes" para comprovar ganho.
