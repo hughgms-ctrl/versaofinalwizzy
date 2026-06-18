@@ -41,10 +41,11 @@ export function useTags() {
       }
 
       const { data, error } = await query as { data: Tag[] | null; error: any };
-      
+
       if (error) throw error;
       return (data || []) as Tag[];
     },
+    staleTime: 10 * 60 * 1000, // FASE 4 (4D): config muda raramente
   });
 }
 
@@ -57,10 +58,11 @@ export function useAllTags() {
         .from('tags' as any)
         .select('*')
         .order('name') as { data: Tag[] | null; error: any };
-      
+
       if (error) throw error;
       return (data || []) as Tag[];
     },
+    staleTime: 10 * 60 * 1000, // FASE 4 (4D): config muda raramente
   });
 }
 

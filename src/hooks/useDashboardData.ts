@@ -74,146 +74,30 @@ export function useDashboardMetrics(range?: DateRange) {
   return useQuery({
     queryKey: ['dashboard-metrics', organizationId, selectedWorkspaceId, rangeKey],
     queryFn: async (): Promise<DashboardMetrics> => {
-      if (!organizationId) {
-        return {
-          conversationsToday: 0,
-          resolvedToday: 0,
-          totalMessages: 0,
-          avgResponseTime: 0,
-          aiHandledPercentage: 0,
-          openConversations: 0,
-        };
-      }
-
-      const wsConvIds = await getWorkspaceConversationIds(
-        organizationId,
-        selectedWorkspaceId,
-        workspaces
-      );
-
-      // If workspace filter returned empty, return zeros
-      if (wsConvIds !== null && wsConvIds.length === 0) {
-        return {
-          conversationsToday: 0,
-          resolvedToday: 0,
-          totalMessages: 0,
-          avgResponseTime: 0,
-          aiHandledPercentage: 0,
-          openConversations: 0,
-        };
-      }
-
-      // Build base query helper
-      const buildConvQuery = () => {
-        let q = supabase
-          .from('conversations')
-          .select('*', { count: 'exact', head: true })
-          .eq('organization_id', organizationId);
-        if (wsConvIds) q = q.in('id', wsConvIds);
-        return q;
-      };
-
-      // Conversations with activity in range
-      let conversationsTodayQ = buildConvQuery().gte('last_message_at', sinceISO);
-      if (untilISO) conversationsTodayQ = conversationsTodayQ.lte('last_message_at', untilISO);
-      const { count: conversationsToday } = await conversationsTodayQ;
-
-      // Resolved in range (closed + archived)
-      let closedQ = buildConvQuery().eq('status', 'closed' as any).gte('closed_at', sinceISO);
-      if (untilISO) closedQ = closedQ.lte('closed_at', untilISO);
-      const { count: closedTodayCount } = await closedQ;
-
-      let archivedQ = buildConvQuery().eq('status', 'archived').gte('updated_at', sinceISO);
-      if (untilISO) archivedQ = archivedQ.lte('updated_at', untilISO);
-      const { count: archivedTodayCount } = await archivedQ;
-      const resolvedToday = (closedTodayCount || 0) + (archivedTodayCount || 0);
-
-      // Open conversations (current snapshot — independente do período)
-      // Get conversation IDs for message queries
-      let convIdsForMessages: string[];
-      if (wsConvIds) {
-        convIdsForMessages = wsConvIds;
-      } else {
-        const { data: allConvs } = await supabase
-          .from('conversations')
-          .select('id')
-          .eq('organization_id', organizationId);
-        convIdsForMessages = allConvs?.map(c => c.id) || [];
-      }
-
-      let openConversations = 0;
-      if (convIdsForMessages.length > 0) {
-        let activeConvQ = supabase
-          .from('conversations')
-          .select('id, status, closed_at, last_message_at')
-          .eq('organization_id', organizationId)
-          .neq('status', 'archived')
-          .neq('status', 'closed' as any)
-          .is('closed_at', null)
-          .order('last_message_at', { ascending: false, nullsFirst: false });
-
-        if (wsConvIds) activeConvQ = activeConvQ.in('id', wsConvIds);
-
-        const { data: activeConvs } = await activeConvQ;
-        const activeConvIds = activeConvs?.map(c => c.id) || [];
-
-        if (activeConvIds.length > 0) {
-          const { data: lastMsgs } = await (supabase as any)
-            .from('messages')
-            .select('conversation_id, direction, created_at')
-            .in('conversation_id', activeConvIds)
-            .order('created_at', { ascending: false });
-
-          const lastDirByConv = new Map<string, 'inbound' | 'outbound'>();
-          (lastMsgs || []).forEach((msg: any) => {
-            if (!lastDirByConv.has(msg.conversation_id)) {
-              lastDirByConv.set(msg.conversation_id, msg.direction);
-            }
-          });
-
-          openConversations = activeConvIds.filter(id => lastDirByConv.get(id) === 'inbound').length;
-        }
-      }
-
-      let totalMessages = 0;
-      let aiMessages = 0;
-
-      if (convIdsForMessages.length > 0) {
-        let msgQ = (supabase as any)
-          .from('messages')
-          .select('*', { count: 'exact', head: true })
-          .in('conversation_id', convIdsForMessages)
-          .gte('created_at', sinceISO);
-        if (untilISO) msgQ = msgQ.lte('created_at', untilISO);
-        const { count: msgCount } = await msgQ;
-        totalMessages = msgCount || 0;
-
-        let aiQ = (supabase as any)
-          .from('messages')
-          .select('*', { count: 'exact', head: true })
-          .in('conversation_id', convIdsForMessages)
-          .eq('is_from_bot', true)
-          .gte('created_at', sinceISO);
-        if (untilISO) aiQ = aiQ.lte('created_at', untilISO);
-        const { count: aiCount } = await aiQ;
-        aiMessages = aiCount || 0;
-      }
-
-      const aiHandledPercentage = totalMessages > 0 
-        ? Math.round((aiMessages / totalMessages) * 100) 
-        : 0;
-
-      return {
-        conversationsToday: conversationsToday || 0,
-        resolvedToday: resolvedToday || 0,
-        totalMessages,
+      const zeros: DashboardMetrics = {
+        conversationsToday: 0,
+        resolvedToday: 0,
+        totalMessages: 0,
         avgResponseTime: 0,
-        aiHandledPercentage,
-        openConversations,
+        aiHandledPercentage: 0,
+        openConversations: 0,
       };
+      if (!organizationId) return zeros;
+
+      // FASE 4 (4B): agregação server-side via RPC (substitui ~6 queries + carga
+      // de mensagens em memória). Isolamento e filtro por workspace ficam na RPC.
+      const { data, error } = await (supabase as any).rpc('get_dashboard_metrics', {
+        _org: organizationId,
+        _workspace_id: selectedWorkspaceId ?? null,
+        _since: sinceISO,
+        _until: untilISO,
+      });
+      if (error) throw error;
+      return (data as DashboardMetrics) ?? zeros;
     },
     enabled: !!organizationId,
-    refetchInterval: 30000,
+    refetchInterval: 60000,
+    refetchIntervalInBackground: false,
   });
 }
 
@@ -422,7 +306,9 @@ export function useRecentConversations(limit = 5) {
 
       if (wsConvIds !== null && wsConvIds.length === 0) return [];
 
-      let query = supabase
+      // FASE 4 (4B): última mensagem via join lateral embutido (1 query) em vez de
+      // 1 query por conversa. messages ordenado desc + limit 1 traz só a última.
+      let query = (supabase as any)
         .from('conversations')
         .select(`
           id,
@@ -430,10 +316,13 @@ export function useRecentConversations(limit = 5) {
           unread_count,
           last_message_at,
           closed_at,
-          contact:contacts(name, phone)
+          contact:contacts(name, phone),
+          messages(content, is_from_bot, direction, created_at)
         `)
         .eq('organization_id', organizationId)
         .order('last_message_at', { ascending: false })
+        .order('created_at', { foreignTable: 'messages', ascending: false })
+        .limit(1, { foreignTable: 'messages' })
         .limit(limit);
 
       if (wsConvIds) {
@@ -444,20 +333,11 @@ export function useRecentConversations(limit = 5) {
 
       if (!conversations) return [];
 
-      const result: RecentConversation[] = [];
-      
-      for (const conv of conversations) {
-        const { data: lastMsg } = await (supabase as any)
-          .from('messages')
-          .select('content, is_from_bot, direction')
-          .eq('conversation_id', conv.id)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
+      const result: RecentConversation[] = (conversations as any[]).map((conv: any) => {
+        const lastMsg = conv.messages?.[0] || null;
         const contact = conv.contact as any;
-        
-        result.push({
+
+        return {
           id: conv.id,
           contactName: contact?.name || contact?.phone || 'Contato',
           lastMessage: lastMsg?.content || 'Sem mensagens',
@@ -468,16 +348,17 @@ export function useRecentConversations(limit = 5) {
           isAwaitingResponse:
             conv.status !== 'archived'
             && conv.status !== 'closed'
-            && !(conv as any).closed_at
+            && !conv.closed_at
             && lastMsg?.direction === 'inbound',
           unreadCount: conv.unread_count || 0,
-        });
-      }
+        };
+      });
 
       return result;
     },
     enabled: !!organizationId,
-    refetchInterval: 15000,
+    refetchInterval: 60000,
+    refetchIntervalInBackground: false,
   });
 }
 
@@ -802,48 +683,25 @@ export function useReportsAgentPerformance(period: string) {
         ? startOfDay(new Date()).toISOString()
         : subDays(new Date(), days).toISOString();
 
-      const wsConvIds = await getWorkspaceConversationIds(
-        organizationId,
-        selectedWorkspaceId,
-        workspaces
-      );
+      // FASE 4 (4B): GROUP BY assigned_to na RPC (substitui o loop de 1 count
+      // por membro). Workspace e isolamento ficam na RPC. Já vem ordenado DESC.
+      const { data, error } = await (supabase as any).rpc('get_team_performance', {
+        _org: organizationId,
+        _workspace_id: selectedWorkspaceId ?? null,
+        _since: since,
+        _until: null,
+        _pipeline_id: null,
+      });
+      if (error) throw error;
 
-      const { data: allProfiles } = await supabase
-        .from('profiles')
-        .select('id, user_id, full_name, avatar_url')
-        .eq('organization_id', organizationId);
-
-      if (!allProfiles) return [];
-
-      const result: AgentPerformanceData[] = [];
-
-      for (const member of allProfiles) {
-        let query = supabase
-          .from('conversations')
-          .select('*', { count: 'exact', head: true })
-          .eq('organization_id', organizationId)
-          .eq('assigned_to', member.user_id)
-          .gte('created_at', since);
-
-        if (wsConvIds !== null) {
-          if (wsConvIds.length === 0) continue;
-          query = query.in('id', wsConvIds);
-        }
-
-        const { count } = await query;
-
-        if ((count || 0) > 0) {
-          result.push({
-            name: member.full_name,
-            atendimentos: count || 0,
-            avatarUrl: member.avatar_url,
-          });
-        }
-      }
-
-      return result.sort((a, b) => b.atendimentos - a.atendimentos);
+      return (data ?? []).map((r: any) => ({
+        name: r.name,
+        atendimentos: Number(r.conversationsHandled) || 0,
+        avatarUrl: r.avatar_url,
+      })) as AgentPerformanceData[];
     },
     enabled: !!organizationId,
     refetchInterval: 60000,
+    refetchIntervalInBackground: false,
   });
 }

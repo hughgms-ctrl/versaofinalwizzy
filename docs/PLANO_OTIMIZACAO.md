@@ -31,7 +31,7 @@ valide conforme a seção "Validação" e marque [x] os concluídos. Não avance
 - [x] **Fase 1** — Quick wins: filtros de Realtime + RLS `(select auth.uid())` *(1A frontend ✅; **1B Lote 1 ✅ (12) + Lote 2 ✅ (11) + Lote 3 ✅ (224 políticas / 116 tabelas) — todos aplicados e validados no SQL Editor em 2026-06-15; sweep de `pg_policies` retorna 0 políticas com `auth.uid()` nu**. Pendente só o `EXPLAIN ANALYZE` antes/depois (medição, não bloqueia).)*
 - [x] **Fase 2** — Índices (FK + compostos) *(16 migrations criadas, verificadas na fonte, aplicadas no SQL Editor e confirmadas via `pg_indexes` — 16/16 presentes em 2026-06-15)*
 - [x] **Fase 3** — Edge Functions críticas (OOM / N+1) *(3A,3B,3C,3E,3F validados em 2026-06-16/17; **3D** = código feito, smoke adiado (import é raro). Bônus: corrigido bug pré-existente que **perdia mensagens recebidas** — trigger `auto_assign_workspace` (uuid[]) + ativação do escopo de conversa por instância. Migrations aplicadas: `20260616120000` (3A), `20260616121000` (3B), `20260616122000` (fix trigger), `20260616124000` (escopo por instância).)*
-- [ ] **Fase 4** — Dashboard: RPCs + redução de polling
+- [~] **Fase 4** — Dashboard: RPCs + redução de polling *(4A RPCs aplicadas + isolamento validado; 4B/4C/4D código pronto e `tsc` limpo — aguardando deploy Lovable + validação no dashboard com aba de Rede)*
 - [ ] **Fase 5** — Retenção/limpeza (pg_cron) + busca (FTS)
 - [ ] **Fase 6** — Estrutural: particionamento e denormalização
 
@@ -221,13 +221,19 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_entry_flow_events_name_user ON publi
 
 **Contexto:** `useDashboardData.ts`/`usePipelineStats.ts` fazem N+1 (count por membro, última msg por conversa) com polling de 15–60 s. Cada tick = dezenas de round-trips.
 
-- [ ] **4A — Criar RPCs server-side** (migration com funções SQL `STABLE`):
+- [x] **4A — Criar RPCs server-side** (migration com funções SQL `STABLE`):
   - `get_dashboard_metrics(org uuid, ws uuid, since timestamptz, until timestamptz)` — retorna todos os números num único JSON (substitui `:117-199`).
   - `get_team_performance(org uuid, ...)` — `GROUP BY assigned_to` (substitui o loop `:820` e `usePipelineStats.ts:79`).
   - `get_pipeline_stage_distribution(...)` — `GROUP BY column_id` (substitui `usePipelineStats.ts:30`).
-- [ ] **4B — Trocar os hooks** para chamar `supabase.rpc(...)` em vez das sub-queries; remover o loop de última-mensagem (`:449`) usando join lateral `last_message:messages(...).order().limit(1)`.
-- [ ] **4C — Reduzir polling:** elevar todos os `refetchInterval` para ≥ 60 s (o de 15 s em `:480` é o pior); adicionar pausa por `document.visibilityState`.
-- [ ] **4D — `staleTime`:** dados de config (`usePipelines`, `useTags`, `useConversationStatuses`, `useWorkspaces`) → `staleTime: 10*60*1000`.
+  > ⏳ **Código pronto (2026-06-17) — aguardando aplicação manual no SQL Editor.** Migration **`20260617120000_fase4_dashboard_rpcs.sql`** (transacional, `BEGIN/COMMIT`) com as 3 RPCs. **Isolamento por conta:** todas `SECURITY DEFINER` com guard `user_is_org_member((select auth.uid()), _org)` no topo (mesmo helper multi-org das RLS; `RAISE EXCEPTION 42501` se não for membro) e todas as queries internas filtradas por `organization_id = _org`. A 3ª deriva a org do `pipeline_id` antes de validar. **Identidade de conversa:** todas contam linhas de `conversations` (nunca deduplicam por contato) — 2 números = 2 conversas, idêntico aos hooks. `GRANT EXECUTE ... TO authenticated`.
+  > 🔸 **Ajuste de escopo (fiel às semânticas):** `get_team_performance` cobre os dois loops que são **de fato N+1** — `useReportsAgentPerformance` (:789-849, `assigned_to` + data) e `useTeamPerformanceByPipeline` (`usePipelineStats.ts:52`, `assigned_to` + pipeline), unificados por params opcionais (`_since/_until/_pipeline_id`). A `useTeamPerformance` do dashboard (:484, attribution por `intervened_by`) **não é N+1** (2 queries) e tem semântica distinta → **mantida como está** para não alterar os números do gráfico.
+  > ✅ **Aplicada e validada (2026-06-17).** SQL rodado no SQL Editor. **Isolamento testado:** (a) usuário lendo a própria org → JSON válido (`openConversations: 87`); (b) usuário da org A lendo org B → `ERROR 42501 access denied to organization …` (guard `user_is_org_member` funcionando). Mecanismo idêntico nas 3 RPCs.
+- [x] **4B — Trocar os hooks** para chamar `supabase.rpc(...)` em vez das sub-queries; remover o loop de última-mensagem (`:449`) usando join lateral `last_message:messages(...).order().limit(1)`.
+  > ✅ **Código pronto (2026-06-18) — `tsc --noEmit` limpo. Sobe via Lovable sync.** `useDashboardData.ts`: `useDashboardMetrics` (~6 queries + carga de msgs em memória → 1 `rpc('get_dashboard_metrics')`); `useReportsAgentPerformance` (loop N+1 → `rpc('get_team_performance')`); `useRecentConversations` (1 query/conversa → **join embutido** `messages(...).order(created_at desc).limit(1, {foreignTable})`, 1 query só). `usePipelineStats.ts`: `usePipelineStageDistribution` → `rpc('get_pipeline_stage_distribution')`; `useTeamPerformanceByPipeline` (loop N+1 → `rpc('get_team_performance', {_pipeline_id})`). Tipos via `(supabase as any).rpc` (RPCs novas, fora dos tipos gerados). `useTeamPerformance` (:484) mantida (não-N+1, semântica `intervened_by`).
+- [x] **4C — Reduzir polling:** elevar todos os `refetchInterval` para ≥ 60 s (o de 15 s em `:480` é o pior); adicionar pausa por `document.visibilityState`.
+  > ✅ **Feito junto da 4B.** `useRecentConversations` 15s→60s, `useDashboardMetrics` 30s→60s, `usePipelineStageDistribution` 30s→60s; demais hooks de dashboard/reports já estavam em 60s. **Pausa em background:** `refetchIntervalInBackground: false` explícito nos hooks ajustados (é também o default do TanStack Query — o timer pausa quando a aba perde foco, cobrindo o `visibilityState`).
+- [x] **4D — `staleTime`:** dados de config (`usePipelines`, `useTags`, `useConversationStatuses`, `useWorkspaces`) → `staleTime: 10*60*1000`.
+  > ✅ **Feito (2026-06-18).** `staleTime: 10*60*1000` em: `usePipelines` (`['pipelines']`), `useTags` (`['tags']` + `useAllTags`), `useWorkspaces`/`useAllWorkspaces`/`useVisibleWorkspaces`, `useConversationStatuses` (em `useCrmEntities.ts`).
 
 **Validação:** abrir o dashboard com a aba de rede aberta — nº de requests por minuto deve cair de dezenas para poucos; gráficos idênticos aos de antes.
 

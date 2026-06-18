@@ -112,6 +112,7 @@ export function useWorkspaces(organizationId?: string | null) {
       return (data || []) as unknown as Workspace[];
     },
     enabled: !!session,
+    staleTime: 10 * 60 * 1000, // FASE 4 (4D): config muda raramente
   });
 }
 
@@ -135,6 +136,7 @@ export function useAllWorkspaces(organizationId?: string | null) {
       return (data || []) as unknown as Workspace[];
     },
     enabled: !!session,
+    staleTime: 10 * 60 * 1000, // FASE 4 (4D): config muda raramente
   });
 }
 
@@ -154,6 +156,7 @@ export function useVisibleWorkspaces() {
       return (data || []) as unknown as Workspace[];
     },
     enabled: !!session,
+    staleTime: 10 * 60 * 1000, // FASE 4 (4D): config muda raramente
   });
 }
 

@@ -85,6 +85,7 @@ export function usePipelines() {
       return (data || []) as Pipeline[];
     },
     enabled: !!session,
+    staleTime: 10 * 60 * 1000, // FASE 4 (4D): config muda raramente
   });
 }
 
