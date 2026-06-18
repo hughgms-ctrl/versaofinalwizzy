@@ -275,7 +275,7 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_entry_flow_events_name_user ON publi
 **Contexto:** ~19 tabelas de log crescem sem limite; busca usa `ILIKE '%x%'` (seq scan).
 
 - [x] **5A — Jobs `pg_cron`** (extensão já habilitada). Migration:
-  > **Implementado (2026-06-18) — aguardando aplicação manual + validação:** `supabase/migrations/20260618120000_fase5a_pg_cron_retencao.sql` — 7 jobs. Correções vs. plano: `campaign_queue` usa `status IN ('processed','failed')` (o valor real é `'processed'`, não `'sent'` — `process-campaign-queue/index.ts:61`); `contact_presence` e `signature_otp_codes` purgados por `expires_at` (mais correto que `created_at`). Auditoria legal fora. **Validar** após colar no SQL Editor: `SELECT jobname,schedule,active FROM cron.job` deve listar os 7 jobs ativos.
+  > **Feito e VALIDADO (2026-06-18):** `supabase/migrations/20260618120000_fase5a_pg_cron_retencao.sql` — 7 jobs. Correções vs. plano: `campaign_queue` usa `status IN ('processed','failed')` (o valor real é `'processed'`, não `'sent'` — `process-campaign-queue/index.ts:61`); `contact_presence` e `signature_otp_codes` purgados por `expires_at` (mais correto que `created_at`). Auditoria legal fora. Aplicado manualmente no SQL Editor; `cron.job` confirmou os 7 jobs ativos (somados aos pré-existentes `process-scheduled-messages` e `process-campaign-queue`).
 ```sql
 SELECT cron.schedule('purge-flow-node-logs','0 3 * * *',
   $$DELETE FROM public.flow_node_logs WHERE created_at < now() - interval '90 days';$$);
