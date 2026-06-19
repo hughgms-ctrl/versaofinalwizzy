@@ -311,7 +311,11 @@ CREATE INDEX CONCURRENTLY idx_messages_content_tsv ON public.messages USING gin(
 
 **Contexto:** mudanças pesadas, fazer por último e em horário de baixo uso.
 
-- [ ] **6A — Particionar `messages` por mês** (`RANGE (created_at)`). Requer recriação: nova tabela particionada → cópia dos dados → swap de nomes → criar partições futuras via cron. Permite `DROP PARTITION` instantâneo e índices menores. **Planejar downtime curto.**
+- [~] **6A — Particionar `messages` por mês** (`RANGE (created_at)`). **ADIADA por decisão do dono (2026-06-19) — N/A por ora.** Levantamento na fonte revelou dois bloqueadores:
+  > 1. **Quebra a dedup de recebidas.** A ingestão depende de `UNIQUE (conversation_id, zapi_message_id)` (chave do `ON CONFLICT`). Em tabela particionada por `created_at`, todo UNIQUE precisa incluir a coluna de partição → `(conversation_id, zapi_message_id, created_at)`, que **deixa de impedir** duplicata com timestamp diferente → reintroduz o bug de mensagens duplicadas que a **Fase 3B** resolveu.
+  > 2. **Tamanho não justifica.** `messages` ~9k linhas (EXPLAIN da Fase 1B: em cache, 5,47 ms). Particionar troca ganho ~zero por downtime + risco em **4 FKs** (`media_transcriptions` CASCADE+UNIQUE, `contact_files`, `agent_training_rules`, `conversation_origin_audit`) que quebram quando a PK vira composta `(id, created_at)`.
+  >
+  > **Inventário levantado (para quando reavaliar, > ~5–10M linhas):** triggers a recriar — `trg_reopen_conversation_on_inbound`, `trg_sync_last_message_direction` (3A), `trg_messages_content_tsv` (5B); índices/constraints — PK, UNIQUE `(conversation_id, zapi_message_id)`, `idx_messages_conversation_zapi_message_id`, `(conversation_id, created_at DESC)`, `idx_messages_sent_by`, `idx_messages_content_tsv` (GIN); RLS — 3 políticas (SELECT/INSERT/DELETE); realtime — `messages` em `supabase_realtime` (+ `REPLICA IDENTITY`). O ganho de perf do chat vem da **6D (keyset)** + índices da Fase 2, não do particionamento.
 - [ ] **6B — Denormalizar `workspace_id`/`organization_id`** nas filhas de tasks (`subtasks`, `task_assignees`, `task_processes`, `task_attachments`) e simplificar as políticas RLS para comparação direta (sem `EXISTS`+JOIN). Manter via trigger.
 - [ ] **6C — `useContactPresence`** → canal único de presença por workspace (remove 1 websocket + timer 5 s por contato).
 - [ ] **6D — Paginação real (keyset)** em `useMessages` (`.limit(50)` + cursor `created_at`) e `useContacts` (`.range()` + virtualização). Garantir que o frontend use **cursor**, não OFFSET.
