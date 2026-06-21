@@ -1,5 +1,5 @@
-import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { useQuery, useInfiniteQuery, useQueryClient, useMutation } from '@tanstack/react-query';
+import { useEffect, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './useAuth';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
@@ -171,30 +171,77 @@ export function useConversations(options?: { includeArchived?: boolean; onlyArch
   return query;
 }
 
+const MESSAGES_PAGE_SIZE = 50;
+
 export function useMessages(conversationId: string | null) {
   const { session } = useAuth();
   const queryClient = useQueryClient();
 
-  const query = useQuery({
+  // Paginação keyset por `created_at` (NUNCA offset). A página 0 traz as 50
+  // mensagens mais novas; "carregar mais antigas" busca o lote anterior usando
+  // o `created_at` da mensagem mais antiga já carregada como cursor.
+  const query = useInfiniteQuery({
     queryKey: ['messages', conversationId],
-    queryFn: async (): Promise<DbMessage[]> => {
+    queryFn: async ({ pageParam }): Promise<DbMessage[]> => {
       if (!conversationId) return [];
 
-      const { data, error } = await supabase
+      let q = supabase
         .from('messages')
         .select('*')
         .eq('conversation_id', conversationId)
-        .order('created_at', { ascending: true });
+        .order('created_at', { ascending: false })
+        .limit(MESSAGES_PAGE_SIZE);
 
+      // `.lte` (e não `.lt`) + dedup por id garante que mensagens com o MESMO
+      // created_at (ex.: histórico sincronizado, que arredonda o timestamp para
+      // segundos) não sejam puladas na borda da página.
+      if (pageParam) {
+        q = q.lte('created_at', pageParam);
+      }
+
+      const { data, error } = await q;
       if (error) throw error;
-      return (data || []) as DbMessage[];
+      return (data || []) as DbMessage[]; // página em ordem DESC (mais nova primeiro)
+    },
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage, _allPages, lastPageParam): string | undefined => {
+      // "Próxima página" = mensagens MAIS ANTIGAS no banco.
+      if (lastPage.length < MESSAGES_PAGE_SIZE) return undefined;
+      const oldest = lastPage[lastPage.length - 1].created_at;
+      // Bloco de mesmo timestamp maior que a página: para de paginar para não
+      // entrar em loop (o sync do WhatsApp cobre o histórico além disso).
+      if (oldest === lastPageParam) return undefined;
+      return oldest;
     },
     enabled: !!session && !!conversationId,
     staleTime: 10_000,
     refetchOnWindowFocus: false,
   });
 
-  // Subscribe to realtime updates for messages
+  // Achata as páginas (cada uma DESC) em uma lista ASC dedupada por id.
+  const messages = useMemo<DbMessage[]>(() => {
+    const seen = new Set<string>();
+    const out: DbMessage[] = [];
+    for (const page of query.data?.pages ?? []) {
+      for (const m of page) {
+        if (!seen.has(m.id)) {
+          seen.add(m.id);
+          out.push(m);
+        }
+      }
+    }
+    out.sort((a, b) => {
+      if (a.created_at < b.created_at) return -1;
+      if (a.created_at > b.created_at) return 1;
+      return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+    });
+    return out;
+  }, [query.data]);
+
+  // Realtime: atualiza o cache cirurgicamente (sem re-buscar a página inteira).
+  // INSERT entra no topo da página mais nova; UPDATE corrige a mensagem por id.
+  // DELETE continua via invalidate manual no chamador (o evento de DELETE não
+  // chega pelo filtro sem REPLICA IDENTITY FULL).
   useEffect(() => {
     if (!session || !conversationId) return;
 
@@ -202,14 +249,31 @@ export function useMessages(conversationId: string | null) {
       .channel(`messages-realtime-${conversationId}`)
       .on(
         'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'messages',
-          filter: `conversation_id=eq.${conversationId}`,
-        },
-        () => {
-          queryClient.invalidateQueries({ queryKey: ['messages', conversationId] });
+        { event: 'INSERT', schema: 'public', table: 'messages', filter: `conversation_id=eq.${conversationId}` },
+        (payload) => {
+          const incoming = payload.new as DbMessage;
+          queryClient.setQueryData(['messages', conversationId], (old: any) => {
+            if (!old?.pages?.length) return old; // sem cache ainda: deixa a query buscar
+            const exists = old.pages.some((pg: DbMessage[]) => pg.some((m) => m.id === incoming.id));
+            if (exists) return old;
+            const pages = old.pages.slice();
+            pages[0] = [incoming, ...pages[0]]; // página 0 = mais novas
+            return { ...old, pages };
+          });
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'messages', filter: `conversation_id=eq.${conversationId}` },
+        (payload) => {
+          const incoming = payload.new as DbMessage;
+          queryClient.setQueryData(['messages', conversationId], (old: any) => {
+            if (!old?.pages?.length) return old;
+            const pages = old.pages.map((pg: DbMessage[]) =>
+              pg.map((m) => (m.id === incoming.id ? { ...m, ...incoming } : m))
+            );
+            return { ...old, pages };
+          });
         }
       )
       .subscribe();
@@ -219,7 +283,15 @@ export function useMessages(conversationId: string | null) {
     };
   }, [session, conversationId, queryClient]);
 
-  return query;
+  return {
+    data: messages,
+    isLoading: query.isLoading,
+    isError: query.isError,
+    error: query.error,
+    fetchOlderFromDb: query.fetchNextPage,
+    hasOlderInDb: query.hasNextPage,
+    isFetchingOlderFromDb: query.isFetchingNextPage,
+  };
 }
 
 export function useProfiles() {

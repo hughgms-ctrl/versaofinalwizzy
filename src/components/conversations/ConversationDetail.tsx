@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo, type ReactNode } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, type ReactNode } from 'react';
 import { DbConversation, useMessages, DbMessage } from '@/hooks/useConversations';
 import { useContactPresence } from '@/hooks/useContactPresence';
 import { useSendMessage } from '@/hooks/useSendMessage';
@@ -148,7 +148,13 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
   const queryClient = useQueryClient();
   const { profile } = useAuth();
   const { signatureEnabled, toggleSignature } = useSignatureSettings();
-  const { data: messages, isLoading: loadingMessages } = useMessages(conversation.id);
+  const {
+    data: messages,
+    isLoading: loadingMessages,
+    fetchOlderFromDb,
+    hasOlderInDb,
+    isFetchingOlderFromDb,
+  } = useMessages(conversation.id);
   const contactId = conversation.contact?.id || conversation.contact_id || null;
   const { data: notificationRecipient } = useQuery({
     queryKey: ['conversation-notification-recipient', conversation.id],
@@ -279,14 +285,43 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
       setTimeout(() => {
         scrollToBottom('instant');
       }, 50);
-    } else if (!isLoadingOlder && hasInitialScrolled.current) {
+    } else if (!isLoadingOlder && !isFetchingOlderFromDb && hasInitialScrolled.current) {
       // Subsequent messages: only auto-scroll if user is already near the bottom.
       // If the user scrolled up to read older messages, don't yank them back.
       if (isNearBottomRef.current) {
         scrollToBottom('smooth');
       }
     }
-  }, [messages, isLoadingOlder, loadingMessages, isSyncing, scrollToBottom]);
+  }, [messages, isLoadingOlder, isFetchingOlderFromDb, loadingMessages, isSyncing, scrollToBottom]);
+
+  // Mantém o viewport estável ao prepender mensagens antigas do banco (keyset).
+  // Antes de buscar guardamos a altura/posição; depois compensamos o delta.
+  const olderScrollAnchorRef = useRef<{ height: number; top: number } | null>(null);
+
+  useLayoutEffect(() => {
+    const container = messagesContainerRef.current;
+    const anchor = olderScrollAnchorRef.current;
+    if (container && anchor) {
+      container.scrollTop = container.scrollHeight - anchor.height + anchor.top;
+      olderScrollAnchorRef.current = null;
+    }
+  }, [messages]);
+
+  // "Carregar mais antigas": banco primeiro (keyset, barato); só quando o banco
+  // esgota cai no sync do WhatsApp (zapi-load-older-messages).
+  const handleLoadOlder = useCallback(() => {
+    if (hasOlderInDb && !isFetchingOlderFromDb) {
+      const container = messagesContainerRef.current;
+      if (container) {
+        olderScrollAnchorRef.current = { height: container.scrollHeight, top: container.scrollTop };
+      }
+      fetchOlderFromDb();
+      return;
+    }
+    if (hasMoreMessages && !isLoadingOlder) {
+      loadOlderMessages();
+    }
+  }, [hasOlderInDb, isFetchingOlderFromDb, fetchOlderFromDb, hasMoreMessages, isLoadingOlder, loadOlderMessages]);
 
   // Reset scroll flag when conversation changes
   useEffect(() => {
@@ -303,15 +338,22 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
     const container = e.currentTarget;
 
     // If scrolled near top (first 100px) and we have messages
-    if (container.scrollTop < 100 && !isLoadingOlder && hasMoreMessages && messages && messages.length > 0) {
-      loadOlderMessages();
+    if (
+      container.scrollTop < 100 &&
+      !isLoadingOlder &&
+      !isFetchingOlderFromDb &&
+      (hasOlderInDb || hasMoreMessages) &&
+      messages &&
+      messages.length > 0
+    ) {
+      handleLoadOlder();
     }
 
     // Show scroll button when user is not at the bottom
     const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 150;
     isNearBottomRef.current = isNearBottom;
     setShowScrollButton(!isNearBottom);
-  }, [isLoadingOlder, hasMoreMessages, messages, loadOlderMessages]);
+  }, [isLoadingOlder, isFetchingOlderFromDb, hasOlderInDb, hasMoreMessages, messages, handleLoadOlder]);
 
   // Send typing presence when user types
   const handleInputChange = useCallback((value: string) => {
@@ -809,7 +851,7 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
             )}
 
             {/* Loading older messages indicator */}
-            {isLoadingOlder && (
+            {(isLoadingOlder || isFetchingOlderFromDb) && (
               <div className="flex items-center justify-center py-2">
                 <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                 <span className="ml-2 text-xs text-muted-foreground">Carregando mensagens antigas...</span>
@@ -817,12 +859,12 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
             )}
 
             {/* Load more button when not at end */}
-            {!isLoadingOlder && hasMoreMessages && messages && messages.length > 0 && !showHistoryLimitMessage && (
+            {!isLoadingOlder && !isFetchingOlderFromDb && (hasOlderInDb || hasMoreMessages) && messages && messages.length > 0 && !showHistoryLimitMessage && (
               <div className="flex items-center justify-center py-2">
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => loadOlderMessages()}
+                  onClick={handleLoadOlder}
                   className="text-xs text-muted-foreground"
                 >
                   <ArrowUp className="h-3 w-3 mr-1" />
