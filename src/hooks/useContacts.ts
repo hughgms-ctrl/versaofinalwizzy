@@ -25,6 +25,11 @@ export interface Contact {
   }[];
 }
 
+// Cap server-side: traz os N contatos mais recentes (created_at desc) em vez da
+// tabela inteira. Busca/tag/data continuam client-side dentro desse conjunto, e
+// a lista é virtualizada na UI. Se a contagem bater no cap, a UI avisa.
+export const CONTACTS_CAP = 1000;
+
 export function useContacts() {
   const { session } = useAuth();
   const { selectedWorkspaceId } = useWorkspaceContext();
@@ -41,7 +46,8 @@ export function useContacts() {
             tag:tags(id, name, color)
           )
         `)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(CONTACTS_CAP);
 
       if (selectedWorkspaceId) {
         query = query.eq('workspace_id', selectedWorkspaceId);

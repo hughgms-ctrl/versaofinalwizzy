@@ -1,7 +1,8 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { MainLayout } from '@/components/layout/MainLayout';
-import { useContacts, Contact } from '@/hooks/useContacts';
+import { useContacts, Contact, CONTACTS_CAP } from '@/hooks/useContacts';
 import { useWhatsAppStatus } from '@/hooks/useWhatsAppStatus';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { isWithinInterval, parseISO } from 'date-fns';
@@ -15,7 +16,6 @@ import {
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Dialog,
   DialogContent,
@@ -78,6 +78,19 @@ const ContactsPage = () => {
       return true;
     });
   }, [contacts, searchQuery, filters, selectedWorkspaceId, selectedWorkspace]);
+
+  // Aviso quando a lista atingiu o teto server-side (busca/filtros operam só
+  // sobre os CONTACTS_CAP mais recentes carregados).
+  const capReached = (contacts?.length ?? 0) >= CONTACTS_CAP;
+
+  // Virtualização: só renderiza as linhas visíveis (lista pode ter ~1000 itens).
+  const listParentRef = useRef<HTMLDivElement>(null);
+  const rowVirtualizer = useVirtualizer({
+    count: filteredContacts.length,
+    getScrollElement: () => listParentRef.current,
+    estimateSize: () => 57,
+    overscan: 10,
+  });
 
   // Show disconnected state if WhatsApp is not connected
   if (!whatsappLoading && !whatsappConnected) {
@@ -149,6 +162,13 @@ const ContactsPage = () => {
         />
       </div>
 
+      {/* Cap reached notice */}
+      {capReached && (
+        <div className="mb-2 text-xs text-muted-foreground bg-secondary/40 rounded-md px-3 py-1.5">
+          Mostrando os {CONTACTS_CAP.toLocaleString('pt-BR')} contatos mais recentes. A busca e os filtros operam sobre esse conjunto — contatos mais antigos podem não aparecer.
+        </div>
+      )}
+
       {/* Contacts List */}
       <div className="bg-card border border-border rounded-xl overflow-hidden">
         {isLoading ? (
@@ -174,17 +194,32 @@ const ContactsPage = () => {
             </p>
           </div>
         ) : (
-          <ScrollArea className="h-[calc(100vh-14rem)]">
-            <div className="divide-y divide-border">
-              {filteredContacts.map(contact => (
-                <ContactListItem
-                  key={contact.id}
-                  contact={contact}
-                  onSelect={setSelectedContact}
-                />
-              ))}
+          <div
+            ref={listParentRef}
+            className="h-[calc(100vh-14rem)] overflow-y-auto"
+          >
+            <div
+              style={{ height: `${rowVirtualizer.getTotalSize()}px`, position: 'relative', width: '100%' }}
+            >
+              {rowVirtualizer.getVirtualItems().map(virtualRow => {
+                const contact = filteredContacts[virtualRow.index];
+                return (
+                  <div
+                    key={contact.id}
+                    data-index={virtualRow.index}
+                    ref={rowVirtualizer.measureElement}
+                    className="absolute left-0 top-0 w-full border-b border-border"
+                    style={{ transform: `translateY(${virtualRow.start}px)` }}
+                  >
+                    <ContactListItem
+                      contact={contact}
+                      onSelect={setSelectedContact}
+                    />
+                  </div>
+                );
+              })}
             </div>
-          </ScrollArea>
+          </div>
         )}
       </div>
 
