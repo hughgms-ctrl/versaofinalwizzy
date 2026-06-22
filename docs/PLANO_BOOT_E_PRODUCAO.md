@@ -104,7 +104,12 @@ if (
 - [x] **7.2 — `setTimeout(100)` → `setTimeout(0)` antes do `fetchProfile`** em `useAuth.tsx` · *trivial* — **FEITO (2026-06-22), `tsc` limpo. Sobe via Lovable.**
   > ⚠️ **Correção de premissa:** o plano original mandava remover o `setTimeout` e chamar `fetchProfile` direto. **NÃO** fiz isso — o defer **tem motivo**: chamar métodos do supabase **dentro** do callback de `onAuthStateChange` pode **deadlock** (o callback roda segurando o lock de auth; é padrão conhecido do supabase-js). O `getSession().then()` (l.131) chama direto porque está **fora** do callback. O que atrasava o boot era o `100`, não o defer. **Mudança:** `setTimeout(() => fetchProfile(session.user.id), 100)` → `setTimeout(..., 0)` — libera no próximo tick sem o atraso. Risco ~zero, mantém a proteção anti-deadlock.
 
-- [ ] **7.3 — `manualChunks` no `vite.config.ts`** · *médio-alto impacto, risco só de build*. Adicionar `build.rollupOptions.output.manualChunks` separando vendor cacheável: `react`/`react-dom`/`react-router-dom`, `@tanstack/react-query`, `@supabase/supabase-js`, `recharts`, `reactflow`, `@radix-ui/*`, `date-fns`, etc. Depois: `npm run build`, comparar o tamanho do chunk de entrada (deve cair de ~822 kB), confirmar que o app sobe. Ganho: vendor estável fica cacheado entre deploys → menos "tela preta ao trocar de aba" e boot mais rápido em re-visitas.
+- [x] **7.3 — `manualChunks` no `vite.config.ts`** · *médio-alto impacto, risco só de build* — **FEITO (2026-06-22), `tsc` limpo + `npm run build` OK. Sobe via Lovable.**
+  > **Resultado:** chunk de entrada `index` **822 kB → 127 kB** (256 → **39 kB gzip**, −85%). Boot eager total ~281 kB gzip, dos quais **242 kB são vendor estável/cacheável** entre deploys (deploy de código só re-baixa os 39 kB do entry; antes re-baixava os 256 kB inteiros). `pdfjs` (1 MB) saiu do boot (virou lazy).
+  > ⚠️ **Lição (footgun evitado):** a 1ª tentativa agrupava libs por ecossistema, **incluindo as pesadas por rota** (`vendor-pdf` juntando jszip+jspdf+html2canvas+pdfjs). Como o jszip (pequeno) é alcançável no caminho eager, o chunk **inteiro** (com o pdfjs de 1 MB) era arrastado pro boot (visto no `modulepreload` do `index.html`). **Correção:** nomear **apenas** os vendors que já são eager em toda página e mudam raramente — `vendor-react` (react/-dom/-router/-is/scheduler), `vendor-query` (@tanstack), `vendor-supabase`, `vendor-radix`, `vendor-sentry` (Sentry.init roda eager no `main.tsx`). Todo o resto (recharts, @tiptap, @fullcalendar, @xyflow, pdfjs/jspdf, dnd-kit, lucide…) fica no **split automático do Rollup** de propósito → lib de rota lazy continua lazy.
+  > 🔎 **Verificar no boot:** conferir o `modulepreload` em `dist/index.html` — só devem aparecer os `vendor-*` nomeados + o entry; **nenhum** chunk de rota (pdf/calendar/editor/flow) ali.
+  > 💡 **Futuro (não feito):** Sentry é o maior peso eager (83 kB gzip) por causa do `replayIntegration`; lazy-init de Sentry tiraria do boot, mas é mudança de código com risco de perder erros iniciais — fora do escopo de 7.3.
+  > ⏳ **Validação in-app (dono):** após Lovable sync, abrir o app e navegar entre abas — sem tela preta/quebra; trocar de aba pesada (documentos, flow, calendário, relatórios) deve carregar o chunk daquela rota sob demanda, sem erro de runtime tipo "cannot access before initialization".
 
 - [ ] **7.4 — (ADIADO até medir 7.1–7.3) Não prender o app no spinner por permissão/role** · *alto impacto, médio risco — access-control*. Mesmo tratamento da 7.1 para os elos 6 (`roleLoading`/`permissionsLoading`) e, se necessário, 3 (`workspaceLoading`): renderizar o shell/layout e resolver acesso sem tela branca, com os mesmos guards de redirect (`!loading` antes de barrar) para **não afrouxar** o gate. Só fazer depois de medir quanto 7.1–7.3 já resolveram — pode nem ser necessário.
 
@@ -133,7 +138,7 @@ Criar `docs/PRONTIDAO_PRODUCAO.md` — checklist objetivo pra subir com cliente 
 - [ ] **PARTE A — Boot** (7.1 → 7.2 → 7.3 → [7.4 adiado até medir] · [7.5 opcional pós-7.1])
   - [x] 7.1 — `organization-usage` fora do gate de boot (cirúrgica) + staleTime 5min
   - [x] 7.2 — `setTimeout(100)` → `setTimeout(0)` no profile (mantém defer anti-deadlock)
-  - [ ] 7.3 — `manualChunks` no vite
+  - [x] 7.3 — `manualChunks` no vite (entry 822→127kB; vendor cacheável)
   - [ ] 7.4 — (adiado) não prender no spinner por permissão/role
   - [ ] 7.5 — (opcional) escopar `calculateOrganizationUsage` por org
   - [ ] favicon de 16s (prioridade baixa; asset estático cacheável)
