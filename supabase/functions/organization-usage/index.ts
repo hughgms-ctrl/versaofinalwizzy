@@ -1,5 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { calculateOrganizationUsage, first, toNumber } from '../_shared/usage.ts'
+import { first, toNumber } from '../_shared/usage.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -81,17 +81,15 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Forbidden' }), { status: 403, headers: corsHeaders })
     }
 
-    const usageResult = await calculateOrganizationUsage(adminClient, {
-      organizationIds: [organizationId],
-      persistStorageUsed: true,
-    })
-    const usage = usageResult.organizations[organizationId]
-    if (!usage) {
-      return new Response(JSON.stringify({ error: 'Organization not found' }), { status: 404, headers: corsHeaders })
-    }
-
+    // Fase 7.5: contagens escopadas por org + storage do valor JA PERSISTIDO, em vez da
+    // varredura O(plataforma) do calculateOrganizationUsage (que listava TODO o storage e
+    // lia tabelas de TODAS as orgs -> TTFB ~15s). Estes numeros sao so para DISPLAY: o
+    // enforcement real de workspace/team/whatsapp e por triggers no banco em tempo real
+    // (20260609211500_enforce_plan_resource_limits); nao ha enforcement de storage. O
+    // organizations.storage_used_bytes e atualizado pelo admin-dashboard (recalculo de
+    // todas as orgs, persistStorageUsed) — fonte de verdade do numero exibido aqui.
     const usagePeriod = getCurrentUsagePeriod()
-    const [planRes, orgRes, aiUsageRes, integrationRes] = await Promise.all([
+    const [planRes, orgRes, aiUsageRes, integrationRes, teamCountRes, conversationCountRes, workspacesRes, instancesRes] = await Promise.all([
       adminClient
         .from('organization_plans')
         .select('*, plan:platform_plans(*)')
@@ -99,7 +97,7 @@ Deno.serve(async (req) => {
         .maybeSingle(),
       adminClient
         .from('organizations')
-        .select('id, storage_limit_bytes')
+        .select('id, storage_limit_bytes, storage_used_bytes')
         .eq('id', organizationId)
         .maybeSingle(),
       adminClient
@@ -113,28 +111,50 @@ Deno.serve(async (req) => {
         .select('openai_api_key, ai_provider')
         .eq('organization_id', organizationId)
         .maybeSingle(),
+      adminClient
+        .from('profiles')
+        .select('id', { count: 'exact', head: true })
+        .eq('organization_id', organizationId),
+      adminClient
+        .from('conversations')
+        .select('id', { count: 'exact', head: true })
+        .eq('organization_id', organizationId),
+      adminClient
+        .from('workspaces')
+        .select('id, is_active')
+        .eq('organization_id', organizationId),
+      adminClient
+        .from('whatsapp_instances')
+        .select('id, is_active, status, phone_number, connected_at')
+        .eq('organization_id', organizationId),
     ])
 
+    if (orgRes.error) throw orgRes.error
+    if (!orgRes.data) {
+      return new Response(JSON.stringify({ error: 'Organization not found' }), { status: 404, headers: corsHeaders })
+    }
     if (planRes.error) throw planRes.error
     const plan = first((planRes.data as any)?.plan)
+
+    // Mesma semantica de display do usage.ts: workspace ativo = is_active !== false;
+    // numero whatsapp "em uso" = connected | is_active | connected_at | phone_number.
+    const activeWorkspaces = (workspacesRes.data || []).filter((w: any) => w.is_active !== false).length
+    const activeInstances = (instancesRes.data || []).filter((i: any) =>
+      i.status === 'connected' || i.is_active || i.connected_at || i.phone_number
+    ).length
 
     return new Response(JSON.stringify({
       planRow: planRes.data,
       organization: {
         id: organizationId,
-        storage_used_bytes: usage.storage_used_bytes,
+        storage_used_bytes: toNumber(orgRes.data?.storage_used_bytes),
         storage_limit_bytes: toNumber(plan?.storage_limit_bytes) || toNumber(orgRes.data?.storage_limit_bytes),
       },
-      teamCount: usage.user_count,
-      workspaceCount: usage.active_workspaces,
-      whatsappNumberCount: usage.active_instances,
-      conversationCount: usage.conversation_count,
-      storageByBucket: usage.storage_by_bucket || {},
-      storageAudit: {
-        unattributed_storage_bytes: usageResult.unattributed_storage_bytes,
-        unattributed_storage_by_bucket: usageResult.unattributed_storage_by_bucket,
-        unattributed_storage_sample: usageResult.unattributed_storage_sample,
-      },
+      teamCount: teamCountRes.count || 0,
+      workspaceCount: activeWorkspaces,
+      whatsappNumberCount: activeInstances,
+      conversationCount: conversationCountRes.count || 0,
+      storageByBucket: {},
       usage: aiUsageRes.data,
       integrationConfig: integrationRes.data,
     }), {

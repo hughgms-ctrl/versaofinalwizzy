@@ -113,7 +113,16 @@ if (
 
 - [ ] **7.4 — (ADIADO até medir 7.1–7.3) Não prender o app no spinner por permissão/role** · *alto impacto, médio risco — access-control*. Mesmo tratamento da 7.1 para os elos 6 (`roleLoading`/`permissionsLoading`) e, se necessário, 3 (`workspaceLoading`): renderizar o shell/layout e resolver acesso sem tela branca, com os mesmos guards de redirect (`!loading` antes de barrar) para **não afrouxar** o gate. Só fazer depois de medir quanto 7.1–7.3 já resolveram — pode nem ser necessário.
 
-- [ ] **7.5 — (opcional, mas importante p/ escala) Escopar `calculateOrganizationUsage` por org** · *médio esforço, risco médio — toca billing*. Hoje a função varre **todas as tabelas de todas as orgs** + lista **todo o storage** para calcular o uso de **uma** org (ver "Por que é lenta", acima). Mesmo depois da 7.1 (que tira a função do boot), ela continua O(plataforma) na tela de billing e tende a timeout com o crescimento. Reescrever para filtrar por `organization_id` nas leituras (`.eq('organization_id', org)` / `.in('conversation_id', …)`) e limitar o `list` de storage aos prefixos da org. ⚠️ A atribuição de storage hoje cruza URLs de muitas tabelas (`urlOrgByKey`) — refazer com cuidado para não subcontar; validar o total contra o valor atual numa org de teste. **Edge function = deploy Lovable.** Fazer **depois** de 7.1 (não bloqueia o boot).
+- [x] **7.5 — Tirar a varredura O(plataforma) do caminho quente de `organization-usage`** · *médio esforço* — **FEITO (2026-06-22). Sobe via Lovable + 1 migration no SQL Editor + 1 ajuste de painel.**
+  > **Abordagem (melhor que "escopar por org"):** o gargalo de 15s era a **listagem de todo o storage da plataforma** (`fetchStorageObjects`) — e `calculateOrganizationUsage` lista o storage inteiro independente do `organizationIds` (o filtro só afeta as linhas de org no DB). Escopar a listagem por org seria caro (chat-media é por conversa) e arriscado (subcontar). Em vez disso:
+  > - **`organization-usage/index.ts`**: não chama mais `calculateOrganizationUsage`. As **contagens** (team/workspace/whatsapp/conversas) viraram queries `count`/selects **escopados por org** (ao vivo, sempre frescos). O **storage** passa a **ler o valor persistido** em `organizations.storage_used_bytes`. Resposta agora é instantânea.
+  > - **Seguro:** esses números são só **display**. O enforcement real de workspace/team/whatsapp é por **triggers no banco em tempo real** (`20260609211500_enforce_plan_resource_limits`), independentes desta função; **não há enforcement de storage**. Frontend não usa `storageByBucket`/`storageAudit`/`conversationCount` (verificado: 0 refs em `src`).
+  > - **`admin-dashboard` intacto** — segue chamando `calculateOrganizationUsage` (todas as orgs, real-time). É o que persiste `storage_used_bytes`.
+  > **Freshness do storage (decisão do dono: cron diário):**
+  > - **Nova edge function `recompute-org-usage`**: roda `calculateOrganizationUsage(persistStorageUsed)` p/ todas as orgs; **self-throttle** (tabela `platform_job_runs`, máx. 1×/12h) → endpoint público à prova de abuso sem segredo.
+  > - **Migration `20260622140000_fase7_5_recompute_usage_cron.sql`**: cria `platform_job_runs` (RLS on, sem policies → só service role) + `cron.schedule('recompute-org-usage','0 4 * * *', net.http_post …)`.
+  > ⚠️ **Passos de deploy (3):** (1) Lovable sync (sobe `organization-usage` + `recompute-org-usage`); (2) marcar `recompute-org-usage` como **`verify_jwt=false`** no painel Supabase (igual aos outros crons — senão o cron toma 401); (3) rodar a migration no **SQL Editor**.
+  > ⏳ **Validação (dono):** após deploy, tela de plano/uso abre instantânea; números de team/workspace/whatsapp corretos ao vivo; storage bate com o valor atual (foi recém-persistido). Disparar `recompute-org-usage` manualmente 1×, conferir 200/`ok`, e que 2ª chamada em <12h retorna `skipped:throttled`. `SELECT * FROM cron.job WHERE jobname='recompute-org-usage'` ativo.
 
 **Validação (in-app, por item):** logar com DevTools → Network aberto; medir tempo até a primeira tela renderizar (deve cair sensivelmente após 7.1); trocar de abas sem tela preta longa (após 7.3); `npx tsc --noEmit` limpo. **Sem regressão de gate:** usuário sem plano ainda é barrado/redirecionado corretamente (testar uma conta sem plano ativo e uma com módulo bloqueado).
 
@@ -139,6 +148,7 @@ Criar `docs/PRONTIDAO_PRODUCAO.md` — checklist objetivo pra subir com cliente 
   - [x] 7.1 — `organization-usage` fora do gate de boot (cirúrgica) + staleTime 5min
   - [x] 7.2 — `setTimeout(100)` → `setTimeout(0)` no profile (mantém defer anti-deadlock)
   - [x] 7.3 — `manualChunks` no vite (entry 822→127kB; vendor cacheável)
+  - [x] 7.5 — `organization-usage` sem varredura O(plataforma) + cron diário de recálculo
   - [ ] 7.4 — (adiado) não prender no spinner por permissão/role
   - [ ] 7.5 — (opcional) escopar `calculateOrganizationUsage` por org
   - [ ] favicon de 16s (prioridade baixa; asset estático cacheável)
