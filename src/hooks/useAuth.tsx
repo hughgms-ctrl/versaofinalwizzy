@@ -100,8 +100,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       
       if (session?.user) {
         setProfile((current) => current?.user_id === session.user.id ? current : null);
-        // Fetch profile after auth state change
-        setTimeout(() => fetchProfile(session.user.id), 100);
+        // Fase 7.2: era setTimeout(..., 100). O defer (setTimeout) e necessario — chamar
+        // metodos do supabase DENTRO do callback de onAuthStateChange pode dar deadlock
+        // (o callback roda segurando o lock de auth). Mas 100ms era arbitrario; 0 ja
+        // libera no proximo tick, sem o atraso no caminho critico do boot.
+        setTimeout(() => fetchProfile(session.user.id), 0);
       } else {
         setProfile(null);
         clearWorkspaceSelection();

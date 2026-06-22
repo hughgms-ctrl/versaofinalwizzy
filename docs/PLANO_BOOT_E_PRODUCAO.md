@@ -101,7 +101,8 @@ if (
   - **Não liberar acesso indevido:** o gate de plano/billing é real. Objetivo é **não prender o boot** nele e **não varrer a plataforma** a cada load — não remover o gate.
   </details>
 
-- [ ] **7.2 — Remover o `setTimeout(100)` antes do `fetchProfile`** em `useAuth.tsx:104` · *trivial, ~zero risco*. Trocar `setTimeout(() => fetchProfile(session.user.id), 100)` por `fetchProfile(session.user.id)` direto (igual ao `getSession` da linha 131). Tira 100ms + um tick do caminho crítico do profile.
+- [x] **7.2 — `setTimeout(100)` → `setTimeout(0)` antes do `fetchProfile`** em `useAuth.tsx` · *trivial* — **FEITO (2026-06-22), `tsc` limpo. Sobe via Lovable.**
+  > ⚠️ **Correção de premissa:** o plano original mandava remover o `setTimeout` e chamar `fetchProfile` direto. **NÃO** fiz isso — o defer **tem motivo**: chamar métodos do supabase **dentro** do callback de `onAuthStateChange` pode **deadlock** (o callback roda segurando o lock de auth; é padrão conhecido do supabase-js). O `getSession().then()` (l.131) chama direto porque está **fora** do callback. O que atrasava o boot era o `100`, não o defer. **Mudança:** `setTimeout(() => fetchProfile(session.user.id), 100)` → `setTimeout(..., 0)` — libera no próximo tick sem o atraso. Risco ~zero, mantém a proteção anti-deadlock.
 
 - [ ] **7.3 — `manualChunks` no `vite.config.ts`** · *médio-alto impacto, risco só de build*. Adicionar `build.rollupOptions.output.manualChunks` separando vendor cacheável: `react`/`react-dom`/`react-router-dom`, `@tanstack/react-query`, `@supabase/supabase-js`, `recharts`, `reactflow`, `@radix-ui/*`, `date-fns`, etc. Depois: `npm run build`, comparar o tamanho do chunk de entrada (deve cair de ~822 kB), confirmar que o app sobe. Ganho: vendor estável fica cacheado entre deploys → menos "tela preta ao trocar de aba" e boot mais rápido em re-visitas.
 
@@ -131,7 +132,7 @@ Criar `docs/PRONTIDAO_PRODUCAO.md` — checklist objetivo pra subir com cliente 
 ## Estado
 - [ ] **PARTE A — Boot** (7.1 → 7.2 → 7.3 → [7.4 adiado até medir] · [7.5 opcional pós-7.1])
   - [x] 7.1 — `organization-usage` fora do gate de boot (cirúrgica) + staleTime 5min
-  - [ ] 7.2 — remover `setTimeout(100)` do profile
+  - [x] 7.2 — `setTimeout(100)` → `setTimeout(0)` no profile (mantém defer anti-deadlock)
   - [ ] 7.3 — `manualChunks` no vite
   - [ ] 7.4 — (adiado) não prender no spinner por permissão/role
   - [ ] 7.5 — (opcional) escopar `calculateOrganizationUsage` por org
