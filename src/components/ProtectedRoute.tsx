@@ -128,11 +128,16 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
     }
   }, [onboardingPlan, entryAssignment?.flow_type, paymentStatus]);
 
+  // NOTE (Fase 7.1): `modulePlanLoading` foi REMOVIDO desta condicao de propósito.
+  // Ele vem de useOrganizationPlan -> edge function `organization-usage`, que tem TTFB
+  // de ~15s (varredura O(plataforma)) e prendia o boot inteiro num spinner. O gate de
+  // modulo continua valido — apenas resolve em segundo plano (ver guard `!modulePlanLoading`
+  // no redirect de modulo abaixo). Billing/trial seguem barrando na hora via `onboardingPlan`.
   if (
     loading
     || (!!user && !profile)
     || (!!user && workspaceLoading)
-    || (!!user && !!activeOrganizationId && (planLoading || (!!routePlanModule && modulePlanLoading) || (!!routePermissionModule && (roleLoading || permissionsLoading))))
+    || (!!user && !!activeOrganizationId && (planLoading || (!!routePermissionModule && (roleLoading || permissionsLoading))))
   ) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -182,7 +187,10 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
     return <Navigate to="/plans" replace state={{ from: location, reason: 'trial_expired' }} />;
   }
 
-  if (routePlanModule && !isAllowedOnboardingPath && !canAccessPlanModule(routePlanModule)) {
+  // `!modulePlanLoading` é OBRIGATORIO: enquanto a checagem de plano carrega,
+  // canAccessPlanModule() retorna false (hasActiveAccess ainda false) e redirecionaria
+  // todo mundo pra /plans no flash inicial. So barra depois que o dado chega.
+  if (routePlanModule && !isAllowedOnboardingPath && !modulePlanLoading && !canAccessPlanModule(routePlanModule)) {
     return <Navigate to="/plans" replace state={{ from: location, reason: 'module_locked', module: routePlanModule }} />;
   }
 

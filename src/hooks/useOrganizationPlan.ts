@@ -51,6 +51,10 @@ export function useOrganizationPlan(organizationIdOverride?: string | null) {
       return data;
     },
     enabled: !!organizationId,
+    // Fase 7.1: `organization-usage` é uma varredura O(plataforma) cara (~15s TTFB).
+    // Plano/módulos/uso não mudam dentro de uma sessão — cachear 5min evita refazer
+    // essa chamada a cada navegação (de toda nav -> 1x/5min em segundo plano).
+    staleTime: 5 * 60 * 1000,
   });
 
   const planRow = (orgPlan as any)?.planRow || null;
