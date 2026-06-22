@@ -68,6 +68,33 @@ valide conforme a seção "Validação" e marque [x] os concluídos. Não avance
 
 ---
 
+## ⚠️ PENDÊNCIA DE DADOS — chats duplicados por troca de instância *(descoberto 2026-06-22, na validação da Fase 6)*
+
+> 🔔 **Mesmo contato aparece em 2 chats** quando a org **desconecta uma instância e cria outra**.
+>
+> **Causa raiz (confirmada na fonte):** a migration `20260521211500_whatsapp_provider_routing.sql:9` **removeu o UNIQUE** `whatsapp_instances_organization_id_key` → uma org passou a poder ter **várias instâncias**. Como identidade de conversa = (contato + org + `whatsapp_instance_id`) (decisão da Fase 3), ao recriar a instância nasce um `whatsapp_instance_id` novo e as conversas se dividem entre a instância **antiga (desconectada)** e a **nova** → 2 chats pro mesmo número. **Não é regressão da Fase 6** — é churn de instância, comportamento esperado do escopo-por-instância.
+>
+> **Diagnóstico (rodar no SQL Editor, trocar o telefone):**
+> ```sql
+> SELECT conv.id AS conversation_id, conv.whatsapp_instance_id,
+>        wi.phone_number AS numero_da_instancia, wi.status AS status_instancia,
+>        wi.is_active AS instancia_ativa, wi.created_at AS instancia_criada_em,
+>        conv.status AS status_conversa, conv.workspace_id, conv.last_message_at,
+>        (SELECT count(*) FROM public.messages m WHERE m.conversation_id = conv.id) AS qtd_mensagens
+> FROM public.conversations conv
+> JOIN public.contacts c ON c.id = conv.contact_id
+> LEFT JOIN public.whatsapp_instances wi ON wi.id = conv.whatsapp_instance_id
+> WHERE c.phone = '5511999998888' AND conv.organization_id = c.organization_id
+> ORDER BY conv.last_message_at DESC NULLS LAST;
+> ```
+>
+> **Opções (decisão do dono, a fazer depois):**
+> - **A — Deixar como está** (2 chats).
+> - **B — Mesclar:** mover mensagens do chat da instância antiga para o da instância ativa + remover o chat órfão. Migração de dados cuidadosa (constraint `(conversation_id, zapi_message_id)`, `last_message_at`, tabelas-filhas da conversa: `conversation_pipeline_positions`, `conversation_stage_history`, `conversation_origin_audit`). Aplicar manual (regra de deploy Lovable).
+> - **C — Limpar a instância antiga** após decidir o destino das conversas dela.
+
+---
+
 # FASE 0 — Preparação e baseline
 
 **Objetivo:** criar rede de segurança e medir o "antes" para comprovar ganho.
