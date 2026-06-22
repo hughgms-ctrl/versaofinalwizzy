@@ -84,6 +84,7 @@ export function useAddContactNote() {
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['contact-notes', variables.contactId] });
+      queryClient.invalidateQueries({ queryKey: ['pipeline-contact-note-counts'] });
       toast({
         title: 'Nota adicionada',
         description: 'A nota foi salva com sucesso.',
@@ -129,6 +130,7 @@ export function useUpdateContactNote() {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['contact-notes', data.contactId] });
+      queryClient.invalidateQueries({ queryKey: ['pipeline-contact-note-counts'] });
       toast({
         title: 'Nota atualizada',
         description: 'A nota foi atualizada com sucesso.',
@@ -160,6 +162,7 @@ export function useDeleteContactNote() {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['contact-notes', data.contactId] });
+      queryClient.invalidateQueries({ queryKey: ['pipeline-contact-note-counts'] });
       toast({
         title: 'Nota removida',
         description: 'A nota foi removida com sucesso.',

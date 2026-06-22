@@ -82,6 +82,30 @@ type CardSideTab = 'comments' | 'logs';
 type ChecklistItem = { id: string; text: string; done: boolean };
 type ChecklistTemplate = { id: string; name: string; workspaceId: string | null; items: ChecklistItem[] };
 
+const CONTACT_COUNT_BATCH_SIZE = 75;
+
+async function fetchContactRowCounts(
+  table: 'contact_files' | 'contact_notes',
+  contactIds: string[],
+) {
+  const counts = new Map<string, number>();
+
+  for (let index = 0; index < contactIds.length; index += CONTACT_COUNT_BATCH_SIZE) {
+    const batch = contactIds.slice(index, index + CONTACT_COUNT_BATCH_SIZE);
+    const { data, error } = await supabase
+      .from(table)
+      .select('contact_id')
+      .in('contact_id', batch);
+
+    if (error) throw error;
+    (data || []).forEach((row) => {
+      counts.set(row.contact_id, (counts.get(row.contact_id) || 0) + 1);
+    });
+  }
+
+  return counts;
+}
+
 const BOARD_BACKGROUNDS = [
   '#9b3f6d',
   '#2563eb',
@@ -517,14 +541,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
     queryKey: ['pipeline-contact-file-counts', filteredContactIds],
     queryFn: async () => {
       if (filteredContactIds.length === 0) return new Map<string, number>();
-      const { data, error } = await supabase
-        .from('contact_files')
-        .select('contact_id')
-        .in('contact_id', filteredContactIds);
-      if (error) throw error;
-      const counts = new Map<string, number>();
-      (data || []).forEach(row => counts.set(row.contact_id, (counts.get(row.contact_id) || 0) + 1));
-      return counts;
+      return fetchContactRowCounts('contact_files', filteredContactIds);
     },
     enabled: filteredContactIds.length > 0,
   });
@@ -533,14 +550,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
     queryKey: ['pipeline-contact-note-counts', filteredContactIds],
     queryFn: async () => {
       if (filteredContactIds.length === 0) return new Map<string, number>();
-      const { data, error } = await supabase
-        .from('contact_notes')
-        .select('contact_id')
-        .in('contact_id', filteredContactIds);
-      if (error) throw error;
-      const counts = new Map<string, number>();
-      (data || []).forEach(row => counts.set(row.contact_id, (counts.get(row.contact_id) || 0) + 1));
-      return counts;
+      return fetchContactRowCounts('contact_notes', filteredContactIds);
     },
     enabled: filteredContactIds.length > 0,
   });
@@ -1521,6 +1531,8 @@ function PipelineCardDetailDialog({
 
       if (error) throw error;
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['pipeline-conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['pipeline-contact-note-counts'] });
       toast({ title: 'Dados atualizados' });
       setIsEditingName(false);
     } catch (error: any) {
