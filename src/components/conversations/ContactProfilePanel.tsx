@@ -304,6 +304,8 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
         .eq('id', contactId);
       if (error) throw error;
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['pipeline-conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['pipeline-contact-note-counts'] });
       toast({ title: 'Nota atualizada' });
       setIsEditingNote(false);
     } catch (error: any) {

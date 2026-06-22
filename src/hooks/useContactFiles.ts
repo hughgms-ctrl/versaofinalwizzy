@@ -83,6 +83,7 @@ export function useCreateContactFolder() {
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['contact-folders', variables.contactId] });
+      queryClient.invalidateQueries({ queryKey: ['pipeline-contact-file-counts'] });
       toast({
         title: 'Pasta criada',
         description: 'A pasta foi criada com sucesso.',
@@ -115,6 +116,7 @@ export function useDeleteContactFolder() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['contact-folders', data.contactId] });
       queryClient.invalidateQueries({ queryKey: ['contact-files', data.contactId] });
+      queryClient.invalidateQueries({ queryKey: ['pipeline-contact-file-counts'] });
       toast({
         title: 'Pasta removida',
         description: 'A pasta foi removida com sucesso.',
@@ -211,6 +213,7 @@ export function useAddContactFile() {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['contact-files', data.contactId] });
+      queryClient.invalidateQueries({ queryKey: ['pipeline-contact-file-counts'] });
       toast({
         title: 'Arquivo arquivado',
         description: 'O arquivo foi salvo no perfil do contato.',
@@ -242,6 +245,7 @@ export function useMoveContactFile() {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['contact-files', data.contactId] });
+      queryClient.invalidateQueries({ queryKey: ['pipeline-contact-file-counts'] });
       toast({
         title: 'Arquivo movido',
         description: 'O arquivo foi movido para a pasta.',
@@ -280,6 +284,7 @@ export function useDeleteContactFile() {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['contact-files', data.contactId] });
+      queryClient.invalidateQueries({ queryKey: ['pipeline-contact-file-counts'] });
       toast({
         title: 'Arquivo removido',
         description: 'O arquivo foi removido.',

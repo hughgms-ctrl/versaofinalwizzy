@@ -906,7 +906,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
     const contactTags = tags.filter(t => contactTagIds.includes(t.id));
     const visibleTags = contactTags.slice(0, 5);
     const fileCount = contactId ? contactFileCounts.get(contactId) || 0 : 0;
-    const noteCount = contactId ? contactNoteCounts.get(contactId) || 0 : 0;
+    const noteCount = (contactId ? contactNoteCounts.get(contactId) || 0 : 0) + (note?.trim() ? 1 : 0);
     const checklistItems = (((conversation.metadata as any)?.pipeline_checklist || []) as ChecklistItem[]);
     const taskCount = checklistItems.length;
     const doneTaskCount = checklistItems.filter(item => item.done).length;
@@ -1521,6 +1521,8 @@ function PipelineCardDetailDialog({
 
       if (error) throw error;
       queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['pipeline-conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['pipeline-contact-note-counts'] });
       toast({ title: 'Dados atualizados' });
       setIsEditingName(false);
     } catch (error: any) {
