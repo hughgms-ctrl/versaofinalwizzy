@@ -32,10 +32,13 @@ SELECT cron.schedule(
   'recompute-org-usage',
   '0 4 * * *',
   $$
+  -- timeout 60s: o scan leva ~15-20s; o default do pg_net (5s) registraria a
+  -- resposta como timeout (a function completa mesmo assim, mas fica sem log util).
   SELECT net.http_post(
     url := 'https://zaobtetbjpuzibjymhzw.supabase.co/functions/v1/recompute-org-usage',
     headers := '{"Content-Type": "application/json"}'::jsonb,
-    body := '{}'::jsonb
+    body := '{}'::jsonb,
+    timeout_milliseconds := 60000
   );
   $$
 );
