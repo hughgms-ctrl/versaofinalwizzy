@@ -252,15 +252,49 @@ serve(async (req) => {
       return errorResponse("E-mail nao corresponde ao signatario", 400);
     }
 
+    // Resend throttle (per signature+channel). Without it, an attacker can reset
+    // signature-verify-otp's attempt counter by requesting a fresh code between
+    // guesses, defeating the brute-force cap there.
+    const RESEND_MIN_INTERVAL_MS = 30 * 1000;
+    const RESEND_WINDOW_MS = 5 * 60 * 1000;
+    const MAX_SENDS_PER_WINDOW = 5;
+
+    let recentQuery = supabase
+      .from("signature_otp_codes")
+      .select("created_at")
+      .eq("signature_id", signature.id)
+      .gte("created_at", new Date(Date.now() - RESEND_WINDOW_MS).toISOString())
+      .order("created_at", { ascending: false });
+    recentQuery = targetChannel === "whatsapp"
+      ? recentQuery.not("phone", "is", null)
+      : recentQuery.is("phone", null);
+    const { data: recentSends } = await recentQuery;
+
+    const sends = recentSends || [];
+    if (sends.length > 0 && Date.now() - Date.parse(sends[0].created_at) < RESEND_MIN_INTERVAL_MS) {
+      return errorResponse("Aguarde alguns segundos antes de reenviar o codigo.", 429);
+    }
+    if (sends.length >= MAX_SENDS_PER_WINDOW) {
+      return errorResponse("Muitos reenvios. Aguarde alguns minutos e tente novamente.", 429);
+    }
+
     const code = String(Math.floor(100000 + Math.random() * 900000));
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
 
-    await supabase
+    // Invalidate previous still-active codes for this channel by EXPIRING them
+    // (never verified=true — that counts as a passed channel in signature-complete).
+    // Keeping the rows lets the resend throttle above count them; the purge cron
+    // removes them 1 day after expiry.
+    let invalidateQuery = supabase
       .from("signature_otp_codes")
-      .delete()
+      .update({ expires_at: new Date(Date.now() - 1000).toISOString() })
       .eq("signature_id", signature.id)
-      .eq("email", targetChannel === "email" ? (targetEmail || "") : "")
-      .eq("phone", targetChannel === "whatsapp" ? (targetPhone || null) : null);
+      .eq("verified", false)
+      .gte("expires_at", new Date().toISOString());
+    invalidateQuery = targetChannel === "whatsapp"
+      ? invalidateQuery.not("phone", "is", null)
+      : invalidateQuery.is("phone", null);
+    await invalidateQuery;
 
     const { error: otpError } = await supabase
       .from("signature_otp_codes")

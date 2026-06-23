@@ -33,12 +33,15 @@ serve(async (req) => {
       : [meta.otp_channel || 'email'];
     const targetChannel = channel || configuredChannels[0];
 
-    // Find and validate OTP for the requested channel only
+    // Anti-brute-force: fetch the active OTP for this channel WITHOUT matching the
+    // code, so we can count attempts on the row itself. A 6-digit code has 1M
+    // combinations; with no per-code attempt cap it is brute-forceable online.
+    const MAX_VERIFY_ATTEMPTS = 5;
+
     let query = supabase
       .from("signature_otp_codes")
-      .select("*")
+      .select("id, code, attempts")
       .eq("signature_id", signature.id)
-      .eq("code", code)
       .eq("verified", false)
       .gte("expires_at", new Date().toISOString())
       .order("created_at", { ascending: false })
@@ -54,13 +57,48 @@ serve(async (req) => {
       return errorResponse("Código inválido ou expirado", 400);
     }
 
+    const attempts = otp.attempts ?? 0;
+
+    // Burn the code once the attempt cap is reached. We EXPIRE it (move expires_at
+    // to the past) instead of setting verified=true: in signature-complete a
+    // verified=true row counts as a PASSED channel, so marking a burned code
+    // verified would bypass OTP entirely.
+    if (attempts >= MAX_VERIFY_ATTEMPTS) {
+      await supabase
+        .from("signature_otp_codes")
+        .update({ expires_at: new Date(Date.now() - 1000).toISOString() })
+        .eq("id", otp.id);
+      return errorResponse("Muitas tentativas. Solicite um novo código.", 429);
+    }
+
+    if (otp.code !== code) {
+      const newAttempts = attempts + 1;
+      const update: Record<string, unknown> = { attempts: newAttempts };
+      if (newAttempts >= MAX_VERIFY_ATTEMPTS) {
+        // Last allowed try failed → burn the code (expire, never mark verified).
+        update.expires_at = new Date(Date.now() - 1000).toISOString();
+      }
+      await supabase
+        .from("signature_otp_codes")
+        .update(update)
+        .eq("id", otp.id);
+
+      const remaining = Math.max(0, MAX_VERIFY_ATTEMPTS - newAttempts);
+      return errorResponse(
+        remaining > 0
+          ? `Código inválido. ${remaining} tentativa(s) restante(s).`
+          : "Código inválido. Muitas tentativas — solicite um novo código.",
+        400,
+      );
+    }
+
     await supabase
       .from("signature_otp_codes")
       .update({ verified: true })
       .eq("id", otp.id);
 
-    return jsonResponse({ 
-      success: true, 
+    return jsonResponse({
+      success: true,
       verified: true,
       otpId: otp.id,
       channel: targetChannel,
