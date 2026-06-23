@@ -63,38 +63,47 @@ export function useSendMessage() {
     onMutate: async (newMessage) => {
       await queryClient.cancelQueries({ queryKey: ['messages', newMessage.conversationId] });
 
-      const previousMessages = queryClient.getQueryData<DbMessage[]>(['messages', newMessage.conversationId]);
+      // O cache de ['messages', id] e InfiniteData (paginacao keyset em
+      // useMessages): { pages: DbMessage[][], pageParams }. NUNCA e um array
+      // plano — tratar como array aqui lanca "previousMessages is not iterable".
+      const previousMessages = queryClient.getQueryData(['messages', newMessage.conversationId]);
       const previousConversations = queryClient.getQueriesData({ queryKey: ['conversations'] });
       const now = new Date().toISOString();
 
-      if (previousMessages) {
-        const optimisticMessage: DbMessage = {
-          zapi_message_id: null,
-          id: `temp-${Date.now()}`,
-          conversation_id: newMessage.conversationId,
-          content: newMessage.content,
-          type: newMessage.type || 'text',
-          direction: 'outbound',
-          is_from_bot: false,
-          sent_by: null,
-          created_at: now,
-          read_at: null,
-          delivered_at: null,
-          media_url: newMessage.mediaUrl || null,
-          metadata: newMessage.quotedMessageId ? {
-            quoted_message: {
-              id: newMessage.quotedMessageId,
-              content: newMessage.quotedContent || '',
-              sender: newMessage.quotedSender || '',
-            }
-          } : undefined,
-        };
+      const optimisticMessage: DbMessage = {
+        zapi_message_id: null,
+        id: `temp-${Date.now()}`,
+        conversation_id: newMessage.conversationId,
+        content: newMessage.content,
+        type: newMessage.type || 'text',
+        direction: 'outbound',
+        is_from_bot: false,
+        sent_by: null,
+        created_at: now,
+        read_at: null,
+        delivered_at: null,
+        media_url: newMessage.mediaUrl || null,
+        metadata: newMessage.quotedMessageId ? {
+          quoted_message: {
+            id: newMessage.quotedMessageId,
+            content: newMessage.quotedContent || '',
+            sender: newMessage.quotedSender || '',
+          }
+        } : undefined,
+      };
 
-        queryClient.setQueryData<DbMessage[]>(
-          ['messages', newMessage.conversationId],
-          [...previousMessages, optimisticMessage]
-        );
-      }
+      // Insere o otimista no topo da pagina 0 (a mais nova, em DESC) — igual ao
+      // handler de realtime INSERT em useMessages. O flatten reordena por
+      // created_at, entao a mensagem aparece no fim do chat.
+      queryClient.setQueryData(
+        ['messages', newMessage.conversationId],
+        (old: any) => {
+          if (!old?.pages?.length) return old;
+          const pages = old.pages.slice();
+          pages[0] = [optimisticMessage, ...pages[0]];
+          return { ...old, pages };
+        }
+      );
 
       queryClient.setQueriesData({ queryKey: ['conversations'] }, (old: any) => {
         if (!Array.isArray(old)) return old;
