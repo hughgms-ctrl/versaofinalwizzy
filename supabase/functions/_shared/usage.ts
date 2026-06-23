@@ -325,12 +325,20 @@ export async function calculateOrganizationUsage(
   }
 
   if (options.persistStorageUsed) {
-    await Promise.all(Object.values(usageByOrg).map((usage: any) =>
-      client
-        .from('organizations')
-        .update({ storage_used_bytes: usage.storage_used_bytes })
-        .eq('id', usage.organization_id)
-    ))
+    // Persistir em LOTES pequenos. Um Promise.all sobre TODAS as orgs abre N conexoes
+    // simultaneas ao banco e estoura "Too many connections issued to the database" quando
+    // ha muitas orgs (recompute-org-usage e admin-dashboard chamam com todas as orgs).
+    // Lotes de 5 mantem a concorrencia baixa. Bug pre-existente exposto na Fase 7.5.
+    const usages = Object.values(usageByOrg) as any[]
+    const BATCH_SIZE = 5
+    for (let i = 0; i < usages.length; i += BATCH_SIZE) {
+      await Promise.all(usages.slice(i, i + BATCH_SIZE).map((usage: any) =>
+        client
+          .from('organizations')
+          .update({ storage_used_bytes: usage.storage_used_bytes })
+          .eq('id', usage.organization_id)
+      ))
+    }
   }
 
   return {
