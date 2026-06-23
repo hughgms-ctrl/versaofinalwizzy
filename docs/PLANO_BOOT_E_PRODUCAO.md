@@ -145,7 +145,7 @@ Criar `docs/PRONTIDAO_PRODUCAO.md` — checklist objetivo pra subir com cliente 
 ---
 
 ## Estado
-- [ ] **PARTE A — Boot** (7.1 → 7.2 → 7.3 → [7.4 adiado até medir] · [7.5 opcional pós-7.1])
+- [x] **PARTE A — Boot** — **ENCERRADA e VALIDADA (2026-06-22/23).** 7.1+7.2+7.3+7.5 no ar; boot rápido confirmado pelo dono. 7.4 adiado (desnecessário — boot já rápido). (7.1 → 7.2 → 7.3 → [7.4 adiado até medir] · 7.5 feito)
   - [x] 7.1 — `organization-usage` fora do gate de boot (cirúrgica) + staleTime 5min
   - [x] 7.2 — `setTimeout(100)` → `setTimeout(0)` no profile (mantém defer anti-deadlock)
   - [x] 7.3 — `manualChunks` no vite (entry 822→127kB; vendor cacheável)
@@ -153,4 +153,4 @@ Criar `docs/PRONTIDAO_PRODUCAO.md` — checklist objetivo pra subir com cliente 
   - [ ] 7.4 — (adiado) não prender no spinner por permissão/role
   - [ ] 7.5 — (opcional) escopar `calculateOrganizationUsage` por org
   - [ ] favicon de 16s (prioridade baixa; asset estático cacheável)
-- [ ] **PARTE B — Documento de prontidão para produção** (`docs/PRONTIDAO_PRODUCAO.md`)
+- [x] **PARTE B — Documento de prontidão para produção** — **FEITO (2026-06-23):** `docs/PRONTIDAO_PRODUCAO.md`, auditado na fonte (3 frentes: erro no front, rate limiting/abuso em rotas públicas, segredos/CSP). Maior lacuna: **rate limiting** (OTP de assinatura + rotas públicas). Sem vazamento de segredo. Sentry ativo.
