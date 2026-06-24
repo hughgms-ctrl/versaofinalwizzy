@@ -1507,8 +1507,8 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
         </Popover>
       </div>
 
-      {/* Unassigned column - show permanently when configured OR only when it contains items */}
-      {(pipeline?.show_unassigned || unassignedConversations.length > 0) && (
+      {/* Unassigned column - show when configured */}
+      {pipeline?.show_unassigned && (
         <div
           data-column-id="unassigned"
           className={cn(
