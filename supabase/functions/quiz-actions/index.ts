@@ -16,7 +16,7 @@ Deno.serve(async (req) => {
     const {
       organization_id,
       quiz_id,
-      action, // 'send_whatsapp' | 'crm_action'
+      action, // 'send_whatsapp' | 'crm_action' | 'submit_quiz'
       phone,
       message,
       contact_name,
@@ -26,6 +26,7 @@ Deno.serve(async (req) => {
       workspace_id,
       pipeline_id,
       column_id,
+      variables,
     } = body;
 
     if (!organization_id) {
@@ -59,20 +60,23 @@ Deno.serve(async (req) => {
     const results: Record<string, any> = {};
 
     // --- CRM Actions ---
-    if (action === "crm_action" || tag_ids?.length || workspace_id || pipeline_id) {
+    if (action === "crm_action" || action === "submit_quiz" || tag_ids?.length || workspace_id || pipeline_id) {
       const contactPhone = contact_phone || phone;
       if (contactPhone) {
         // Find or create contact
         const normalizedPhone = String(contactPhone).replace(/\D/g, "");
         let { data: contact } = await supabaseAdmin
           .from("contacts")
-          .select("id")
+          .select("id, metadata")
           .eq("organization_id", organization_id)
           .eq("phone", normalizedPhone)
-          .single();
+          .maybeSingle();
+
+        const noteText = variables ? buildQuizSummary(variables) : null;
 
         if (!contact) {
-          const { data: newContact } = await supabaseAdmin
+          const initialMetadata = noteText ? { note: noteText } : {};
+          const { data: newContact, error: insertError } = await supabaseAdmin
             .from("contacts")
             .insert({
               organization_id,
@@ -80,9 +84,12 @@ Deno.serve(async (req) => {
               name: contact_name || null,
               email: contact_email || null,
               workspace_id: workspace_id || null,
+              metadata: initialMetadata,
             })
-            .select("id")
+            .select("id, metadata")
             .single();
+          
+          if (insertError) throw insertError;
           contact = newContact;
         } else {
           // Update contact info
@@ -90,15 +97,63 @@ Deno.serve(async (req) => {
           if (contact_name) updates.name = contact_name;
           if (contact_email) updates.email = contact_email;
           if (workspace_id) updates.workspace_id = workspace_id;
+          
+          if (noteText) {
+            const currentMetadata = contact.metadata && typeof contact.metadata === 'object' ? contact.metadata : {};
+            updates.metadata = { ...currentMetadata, note: noteText };
+          }
+
           if (Object.keys(updates).length > 0) {
-            await supabaseAdmin
+            const { data: updatedContact, error: updateError } = await supabaseAdmin
               .from("contacts")
               .update(updates)
-              .eq("id", contact.id);
+              .eq("id", contact.id)
+              .select("id, metadata")
+              .single();
+            
+            if (updateError) throw updateError;
+            contact = updatedContact;
           }
         }
 
         if (contact) {
+          // Save note in contact_notes table
+          if (noteText) {
+            await supabaseAdmin.from("contact_notes").insert({
+              contact_id: contact.id,
+              organization_id,
+              content: noteText,
+            });
+          }
+
+          // Save files in contact_files table
+          if (variables) {
+            for (const [key, value] of Object.entries(variables)) {
+              if (value && typeof value === 'object' && (value as any).url) {
+                const fileVal = value as any;
+                // Check if file is already linked to avoid duplicates
+                const { data: existingFile } = await supabaseAdmin
+                  .from("contact_files")
+                  .select("id")
+                  .eq("contact_id", contact.id)
+                  .eq("file_url", fileVal.url)
+                  .maybeSingle();
+
+                if (!existingFile) {
+                  await supabaseAdmin.from("contact_files").insert({
+                    contact_id: contact.id,
+                    organization_id,
+                    name: fileVal.name || key,
+                    file_url: fileVal.url,
+                    file_type: fileVal.type?.startsWith('image/') ? 'image' : 'document',
+                    file_size: fileVal.size || null,
+                    storage_path: fileVal.storagePath || null,
+                  });
+                }
+              }
+            }
+          }
+
           // Apply tags
           if (tag_ids?.length) {
             for (const tagId of tag_ids) {
@@ -122,7 +177,24 @@ Deno.serve(async (req) => {
               .eq("organization_id", organization_id)
               .order("created_at", { ascending: false })
               .limit(1)
-              .single();
+              .maybeSingle();
+
+            if (!conv) {
+              // Create conversation if it doesn't exist so it appears on CRM board
+              const { data: newConv, error: convError } = await supabaseAdmin
+                .from("conversations")
+                .insert({
+                  organization_id,
+                  contact_id: contact.id,
+                  status: "open",
+                })
+                .select("id")
+                .single();
+              
+              if (!convError) {
+                conv = newConv;
+              }
+            }
 
             if (conv) {
               // Upsert pipeline position
@@ -179,3 +251,29 @@ Deno.serve(async (req) => {
     });
   }
 });
+
+function buildQuizSummary(variables: Record<string, any>): string {
+  let summary = `Respostas do Quiz — ${new Date().toLocaleDateString('pt-BR')}\n\n`;
+  const skipKeys = ['nome', 'name', 'phone', 'telefone', 'whatsapp', 'email', 'id', 'quiz_id', 'organization_id'];
+  
+  let hasContent = false;
+  for (const [key, value] of Object.entries(variables || {})) {
+    if (skipKeys.includes(key.toLowerCase())) continue;
+    if (value === undefined || value === null || value === '') continue;
+    
+    hasContent = true;
+    const label = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    
+    if (typeof value === 'object') {
+      if ((value as any).url) {
+        summary += `- ${label}: ${(value as any).name || 'Arquivo'} (${(value as any).url})\n`;
+      } else {
+        summary += `- ${label}: ${JSON.stringify(value)}\n`;
+      }
+    } else {
+      summary += `- ${label}: ${value}\n`;
+    }
+  }
+  
+  return hasContent ? summary : "Nenhum dado adicional respondido.";
+}

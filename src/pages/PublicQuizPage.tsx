@@ -22,6 +22,7 @@ interface QuizData {
   settings: any;
   welcome_screen: any;
   end_screen: any;
+  workspace_id?: string | null;
 }
 
 interface FlowBlock {
@@ -217,6 +218,30 @@ export default function PublicQuizPage({ inlineQuiz, inlineNodes, inlineEdges }:
         metadata: variables,
         completed_at: new Date().toISOString(),
       });
+
+      // Call public quiz-actions edge function to save lead info, description, attachments, and associate to workspace
+      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+      const url = `https://${projectId}.supabase.co/functions/v1/quiz-actions`;
+      
+      const respondentPhone = variables['phone'] || variables['telefone'] || variables['whatsapp'] || '';
+      
+      if (respondentPhone) {
+        await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            organization_id: quiz.organization_id,
+            quiz_id: quiz.id,
+            action: 'submit_quiz',
+            contact_name: variables['nome'] || variables['name'] || '',
+            contact_email: variables['email'] || '',
+            contact_phone: respondentPhone,
+            workspace_id: quiz.workspace_id || '',
+            variables: variables
+          }),
+        }).catch((e) => console.error('Error sending quiz-actions submission:', e));
+      }
+
       setPhase('end');
     } catch (err) {
       console.error(err);
@@ -550,19 +575,21 @@ export default function PublicQuizPage({ inlineQuiz, inlineNodes, inlineEdges }:
         onAnswer={(val, varName) => setBlockAnswer(currentBlock.id, val, varName)}
         onNext={(handle) => goToNextBlock(handle)}
         isLast={false}
+        quiz={quiz}
       />
     </FullScreenStep>
   );
 }
 
 // ---- Block Renderer ----
-function BlockRenderer({ block, answer, variables, onAnswer, onNext, isLast }: {
+function BlockRenderer({ block, answer, variables, onAnswer, onNext, isLast, quiz }: {
   block: FlowBlock;
   answer: any;
   variables: Record<string, any>;
   onAnswer: (val: any, varName?: string) => void;
   onNext: (handle?: string) => void;
   isLast: boolean;
+  quiz: QuizData | null;
 }) {
   const d = block.data || {};
 
@@ -776,21 +803,75 @@ function BlockRenderer({ block, answer, variables, onAnswer, onNext, isLast }: {
   }
 
   if (block.type === 'quiz-input-file') {
+    const [uploading, setUploading] = useState(false);
+    const [uploadError, setUploadError] = useState<string | null>(null);
+
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      setUploading(true);
+      setUploadError(null);
+      try {
+        const safeName = file.name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9._-]/g, '_');
+        const storagePath = `quiz-uploads/${quiz?.id || 'unknown'}/${Date.now()}-${safeName}`;
+        
+        const { error: uploadErr } = await supabase.storage
+          .from('contact-files')
+          .upload(storagePath, file);
+
+        if (uploadErr) throw uploadErr;
+
+        const { data: { publicUrl } } = supabase.storage
+          .from('contact-files')
+          .getPublicUrl(storagePath);
+
+        const fileValue = {
+          name: file.name,
+          url: publicUrl,
+          storagePath: storagePath,
+          size: file.size,
+          type: file.type
+        };
+
+        onAnswer(fileValue, d.variable);
+      } catch (err: any) {
+        console.error('Erro ao enviar arquivo:', err);
+        setUploadError(err.message || 'Erro ao enviar arquivo');
+      } finally {
+        setUploading(false);
+      }
+    };
+
+    const fileAnswer = answer && typeof answer === 'object' ? answer : null;
+
     return (
-      <InputWrapper onNext={onNext}>
+      <InputWrapper onNext={onNext} disabled={uploading}>
         {d.question && <h2 className="text-2xl font-bold">{interpolate(d.question, variables)}</h2>}
-        <label className="flex flex-col items-center justify-center border-2 border-dashed border-border rounded-xl p-8 cursor-pointer hover:bg-accent/50 transition-colors">
-          <Upload className="h-8 w-8 text-muted-foreground mb-2" />
-          <span className="text-sm text-muted-foreground">{answer ? (answer as File)?.name || 'Arquivo selecionado' : 'Clique para enviar arquivo'}</span>
+        <label className={cn(
+          "flex flex-col items-center justify-center border-2 border-dashed border-border rounded-xl p-8 cursor-pointer hover:bg-accent/50 transition-colors",
+          uploading && "opacity-60 cursor-not-allowed pointer-events-none"
+        )}>
+          {uploading ? (
+            <Loader2 className="h-8 w-8 animate-spin text-primary mb-2" />
+          ) : (
+            <Upload className="h-8 w-8 text-muted-foreground mb-2" />
+          )}
+          <span className="text-sm text-muted-foreground">
+            {uploading 
+              ? 'Enviando arquivo...' 
+              : fileAnswer 
+                ? fileAnswer.name || 'Arquivo selecionado' 
+                : 'Clique para enviar arquivo'}
+          </span>
           {d.accept && <span className="text-xs text-muted-foreground/60 mt-1">Formatos: {d.accept}</span>}
+          {uploadError && <span className="text-xs text-destructive mt-2">{uploadError}</span>}
           <input
             type="file"
             accept={d.accept || undefined}
             className="hidden"
-            onChange={e => {
-              const file = e.target.files?.[0];
-              if (file) onAnswer(file.name, d.variable);
-            }}
+            disabled={uploading}
+            onChange={handleFileChange}
           />
         </label>
       </InputWrapper>
@@ -1252,11 +1333,11 @@ function DateBlockRenderer({ block, answer, variables, onAnswer, onNext }: {
   );
 }
 
-function InputWrapper({ children, onNext, placeholder }: { children: React.ReactNode; onNext: (h?: string) => void; placeholder?: string }) {
+function InputWrapper({ children, onNext, placeholder, disabled }: { children: React.ReactNode; onNext: (h?: string) => void; placeholder?: string; disabled?: boolean }) {
   return (
     <div className="space-y-6">
       {children}
-      <Button size="lg" className="w-full h-14 text-lg" onClick={() => onNext()}>
+      <Button size="lg" className="w-full h-14 text-lg" onClick={() => onNext()} disabled={disabled}>
         OK <ArrowRight className="h-5 w-5 ml-2" />
       </Button>
     </div>
