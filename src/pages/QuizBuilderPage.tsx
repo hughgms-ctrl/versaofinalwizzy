@@ -75,6 +75,15 @@ function QuizBuilderInner() {
   const { data: quizzes, updateQuiz } = useQuizzes();
   const quiz = quizzes?.find(q => q.id === quizId);
 
+  const [localQuizName, setLocalQuizName] = useState('');
+  const [isNameFocused, setIsNameFocused] = useState(false);
+
+  useEffect(() => {
+    if (quiz && !isNameFocused) {
+      setLocalQuizName(quiz.name);
+    }
+  }, [quiz?.name, quiz?.id, isNameFocused]);
+
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const [nodes, setNodes, onNodesChangeRaw] = useNodesState<Node>([
     { id: 'start-1', type: 'quiz-start', position: { x: 100, y: 200 }, data: { label: 'Início' } } as Node,
@@ -375,8 +384,20 @@ function QuizBuilderInner() {
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <Input
-            value={quiz.name}
-            onChange={(e) => updateQuiz.mutate({ id: quizId, name: e.target.value })}
+            value={localQuizName}
+            onChange={(e) => setLocalQuizName(e.target.value)}
+            onFocus={() => setIsNameFocused(true)}
+            onBlur={() => {
+              setIsNameFocused(false);
+              if (localQuizName !== quiz.name) {
+                updateQuiz.mutate({ id: quizId, name: localQuizName });
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.currentTarget.blur();
+              }
+            }}
             className="text-lg font-semibold border-none shadow-none h-auto p-0 focus-visible:ring-0 max-w-xs bg-transparent"
           />
           <Badge variant={quiz.is_active ? 'default' : 'secondary'}>
@@ -564,15 +585,71 @@ function QuizSettingsSheet({ open, onClose, quiz, onUpdate }: {
   quiz: Quiz;
   onUpdate: (updates: Partial<Quiz>) => Promise<void>;
 }) {
-  const ws = (quiz.welcome_screen || {}) as Record<string, any>;
-  const es = (quiz.end_screen || {}) as Record<string, any>;
+  const [localWelcome, setLocalWelcome] = useState<Record<string, any>>(() => (quiz.welcome_screen || {}) as Record<string, any>);
+  const [localEnd, setLocalEnd] = useState<Record<string, any>>(() => (quiz.end_screen || {}) as Record<string, any>);
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const ws = localWelcome;
+  const es = localEnd;
+
+  const onUpdateRef = useRef(onUpdate);
+  onUpdateRef.current = onUpdate;
+  const localWelcomeRef = useRef(localWelcome);
+  localWelcomeRef.current = localWelcome;
+  const localEndRef = useRef(localEnd);
+  localEndRef.current = localEnd;
+
+  // Sync state when drawer is opened or quiz ID changes
+  useEffect(() => {
+    if (open) {
+      setLocalWelcome((quiz.welcome_screen || {}) as Record<string, any>);
+      setLocalEnd((quiz.end_screen || {}) as Record<string, any>);
+    }
+  }, [open, quiz.id]);
+
+  const debouncedUpdate = useCallback((welcomePatch?: Record<string, any>, endPatch?: Record<string, any>) => {
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+
+    const nextWelcome = welcomePatch ? { ...localWelcomeRef.current, ...welcomePatch } : localWelcomeRef.current;
+    const nextEnd = endPatch ? { ...localEndRef.current, ...endPatch } : localEndRef.current;
+
+    debounceTimerRef.current = setTimeout(() => {
+      const updates: Partial<Quiz> = {};
+      if (welcomePatch) updates.welcome_screen = nextWelcome;
+      if (endPatch) updates.end_screen = nextEnd;
+      onUpdateRef.current(updates);
+    }, 400);
+  }, []);
+
+  // Flush pending changes on close/unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+        const updates: Partial<Quiz> = {};
+        updates.welcome_screen = localWelcomeRef.current;
+        updates.end_screen = localEndRef.current;
+        onUpdateRef.current(updates);
+      }
+    };
+  }, [open]);
 
   const updateWelcome = (patch: Record<string, any>) => {
-    onUpdate({ welcome_screen: { ...ws, ...patch } } as any);
+    setLocalWelcome(prev => {
+      const merged = { ...prev, ...patch };
+      localWelcomeRef.current = merged;
+      debouncedUpdate(patch, undefined);
+      return merged;
+    });
   };
 
   const updateEnd = (patch: Record<string, any>) => {
-    onUpdate({ end_screen: { ...es, ...patch } } as any);
+    setLocalEnd(prev => {
+      const merged = { ...prev, ...patch };
+      localEndRef.current = merged;
+      debouncedUpdate(undefined, patch);
+      return merged;
+    });
   };
 
   return (
