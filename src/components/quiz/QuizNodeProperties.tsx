@@ -10,7 +10,11 @@ import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Calendar } from '@/components/ui/calendar';
-import { Trash2, Plus, GripVertical, Save, ArrowUp, ArrowDown, Copy } from 'lucide-react';
+import { Trash2, Plus, GripVertical, Save, ArrowUp, ArrowDown, Copy, X } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { useWorkspaces } from '@/hooks/useWorkspaces';
+import { usePipelines, usePipelineColumns } from '@/hooks/usePipelines';
+import { useTags } from '@/hooks/useTags';
 import { getQuizComponentInfo } from './QuizSidebar';
 import { ptBR } from 'date-fns/locale';
 
@@ -500,22 +504,168 @@ const DEFAULT_CONTACT_FIELDS = [
 ];
 
 function CrmFieldsEditor({ data, onUpdate, onUpdateImmediate }: { data: Record<string, any>; onUpdate: (d: Record<string, any>) => void; onUpdateImmediate: (d: Record<string, any>) => void }) {
+  const { data: workspaces = [] } = useWorkspaces();
+  const { data: pipelines = [] } = usePipelines();
+  const { data: columns = [] } = usePipelineColumns(data.pipelineId || null);
+  const { data: tags = [] } = useTags();
+
+  // Filter pipelines by selected workspace ID
+  const filteredPipelines = pipelines.filter(p => {
+    if (!data.workspaceId) return true;
+    return Array.isArray(p.workspace_ids) && p.workspace_ids.includes(data.workspaceId);
+  });
+
+  const currentTagIds = Array.isArray(data.tagIds) ? data.tagIds : [];
+  const availableTags = tags.filter(t => !currentTagIds.includes(t.id));
+
   return (
     <div className="space-y-4">
       <Label className="text-xs font-semibold">Ações CRM</Label>
       <p className="text-[10px] text-muted-foreground">
         Configure tag, workspace, pipeline e coluna para atribuir ao contato quando passar por este nó.
       </p>
-      <div><Label className="text-xs">Tag IDs (separados por vírgula)</Label>
-        <Input value={data.tagIds?.join(', ') || ''} onChange={(e) => onUpdate({ tagIds: e.target.value.split(',').map((s: string) => s.trim()).filter(Boolean) })} placeholder="ID da tag 1, ID da tag 2..." />
-        <p className="text-[10px] text-muted-foreground mt-1">Cole os IDs das tags do sistema.</p>
+
+      {/* Workspace Selection */}
+      <div className="space-y-1">
+        <Label className="text-xs">Workspace</Label>
+        <Select
+          value={data.workspaceId || "none"}
+          onValueChange={(val) => {
+            const nextVal = val === "none" ? null : val;
+            onUpdateImmediate({
+              workspaceId: nextVal,
+              pipelineId: null,
+              columnId: null,
+            });
+          }}
+        >
+          <SelectTrigger className="h-9 text-xs">
+            <SelectValue placeholder="Selecione o workspace..." />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">Nenhum workspace</SelectItem>
+            {workspaces.map((w) => (
+              <SelectItem key={w.id} value={w.id} className="text-xs">
+                {w.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
-      <div><Label className="text-xs">Workspace ID</Label>
-        <Input value={data.workspaceId || ''} onChange={(e) => onUpdate({ workspaceId: e.target.value })} placeholder="ID do workspace" /></div>
-      <div><Label className="text-xs">Pipeline ID</Label>
-        <Input value={data.pipelineId || ''} onChange={(e) => onUpdate({ pipelineId: e.target.value })} placeholder="ID do pipeline" /></div>
-      <div><Label className="text-xs">Coluna (Stage) ID</Label>
-        <Input value={data.columnId || ''} onChange={(e) => onUpdate({ columnId: e.target.value })} placeholder="ID da coluna do pipeline" /></div>
+
+      {/* Pipeline Selection */}
+      <div className="space-y-1">
+        <Label className="text-xs">Pipeline</Label>
+        <Select
+          value={data.pipelineId || "none"}
+          onValueChange={(val) => {
+            const nextVal = val === "none" ? null : val;
+            onUpdateImmediate({
+              pipelineId: nextVal,
+              columnId: null,
+            });
+          }}
+          disabled={!data.workspaceId}
+        >
+          <SelectTrigger className="h-9 text-xs">
+            <SelectValue placeholder={data.workspaceId ? "Selecione o pipeline..." : "Selecione um workspace primeiro"} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">Nenhum pipeline</SelectItem>
+            {filteredPipelines.map((p) => (
+              <SelectItem key={p.id} value={p.id} className="text-xs">
+                {p.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Column/Stage Selection */}
+      <div className="space-y-1">
+        <Label className="text-xs">Coluna (Stage)</Label>
+        <Select
+          value={data.columnId || "none"}
+          onValueChange={(val) => {
+            const nextVal = val === "none" ? null : val;
+            onUpdateImmediate({ columnId: nextVal });
+          }}
+          disabled={!data.pipelineId}
+        >
+          <SelectTrigger className="h-9 text-xs">
+            <SelectValue placeholder={data.pipelineId ? "Selecione a coluna..." : "Selecione um pipeline primeiro"} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">Nenhuma coluna</SelectItem>
+            {columns.map((c) => (
+              <SelectItem key={c.id} value={c.id} className="text-xs">
+                {c.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Tags Selection */}
+      <div className="space-y-2">
+        <Label className="text-xs">Tags do Contato</Label>
+        <div className="flex flex-wrap gap-1">
+          {currentTagIds.map((tagId: string) => {
+            const tag = tags.find((t) => t.id === tagId);
+            return tag ? (
+              <Badge
+                key={tagId}
+                variant="secondary"
+                className="gap-1 pr-1 text-[10px]"
+                style={{ borderLeft: `3px solid ${tag.color}` }}
+              >
+                {tag.name}
+                <button
+                  onClick={() =>
+                    onUpdateImmediate({
+                      tagIds: currentTagIds.filter((id: string) => id !== tagId),
+                    })
+                  }
+                  className="ml-0.5 rounded-full p-0.5 hover:bg-muted"
+                >
+                  <X className="h-2.5 w-2.5" />
+                </button>
+              </Badge>
+            ) : null;
+          })}
+          {currentTagIds.length === 0 && (
+            <span className="text-[10px] text-muted-foreground block w-full py-1">Nenhuma tag selecionada.</span>
+          )}
+        </div>
+        
+        {availableTags.length > 0 && (
+          <Select
+            value=""
+            onValueChange={(v) => {
+              if (v) {
+                onUpdateImmediate({ tagIds: [...currentTagIds, v] });
+              }
+            }}
+          >
+            <SelectTrigger className="h-8 text-xs mt-1">
+              <SelectValue placeholder="Adicionar tag..." />
+            </SelectTrigger>
+            <SelectContent>
+              {availableTags.map((tag) => (
+                <SelectItem key={tag.id} value={tag.id} className="text-xs">
+                  <span className="flex items-center gap-2">
+                    <span
+                      className="w-2 h-2 rounded-full"
+                      style={{ backgroundColor: tag.color }}
+                    />
+                    {tag.name}
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+      </div>
     </div>
   );
 }
