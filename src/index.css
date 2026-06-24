@@ -246,8 +246,9 @@
 
   /* Pipeline Column Styles */
   .pipeline-column {
-    @apply flex-shrink-0 w-[260px] rounded-lg p-2 flex flex-col h-full border border-border;
-    background: hsl(var(--card) / 0.82);
+    @apply flex-shrink-0 w-[260px] rounded-lg p-2 flex flex-col h-full border border-white/5;
+    background: hsl(var(--card) / 0.08);
+    backdrop-filter: blur(8px);
     box-shadow: var(--shadow-sm);
   }
 
