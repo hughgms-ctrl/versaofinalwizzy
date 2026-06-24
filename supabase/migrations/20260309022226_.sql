@@ -1,0 +1,1 @@
+ALTER TABLE document_signatures ADD COLUMN IF NOT EXISTS signature_token TEXT UNIQUE DEFAULT NULL;;

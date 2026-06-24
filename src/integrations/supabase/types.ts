@@ -4636,6 +4636,7 @@ export type Database = {
           next_pipeline_column_id: string | null
           next_pipeline_id: string | null
           organization_id: string
+          show_unassigned: boolean
           updated_at: string
           workspace_ids: string[] | null
         }
@@ -4650,6 +4651,7 @@ export type Database = {
           next_pipeline_column_id?: string | null
           next_pipeline_id?: string | null
           organization_id: string
+          show_unassigned?: boolean
           updated_at?: string
           workspace_ids?: string[] | null
         }
@@ -4664,6 +4666,7 @@ export type Database = {
           next_pipeline_column_id?: string | null
           next_pipeline_id?: string | null
           organization_id?: string
+          show_unassigned?: boolean
           updated_at?: string
           workspace_ids?: string[] | null
         }

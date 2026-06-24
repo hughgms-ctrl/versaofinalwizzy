@@ -59,7 +59,6 @@ BEGIN
       );
   END IF;
 END $$;
-
 DO $$
 BEGIN
   IF to_regclass('public.projects') IS NOT NULL THEN

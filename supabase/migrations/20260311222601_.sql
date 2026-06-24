@@ -1,0 +1,1 @@
+INSERT INTO public.user_roles (user_id, organization_id, role) SELECT 'd816224c-eead-4a6c-91f7-89c5560f8cde', organization_id, 'platform_admin'::app_role FROM public.profiles WHERE user_id = 'd816224c-eead-4a6c-91f7-89c5560f8cde';;

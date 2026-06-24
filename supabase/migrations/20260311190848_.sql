@@ -1,0 +1,1 @@
+ALTER TABLE public.document_packs ADD COLUMN IF NOT EXISTS auto_send_whatsapp boolean DEFAULT false;;

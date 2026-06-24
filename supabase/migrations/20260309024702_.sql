@@ -1,0 +1,1 @@
+ALTER TABLE public.pipelines ADD COLUMN IF NOT EXISTS completion_column_id uuid REFERENCES public.pipeline_columns(id) ON DELETE SET NULL DEFAULT NULL;;

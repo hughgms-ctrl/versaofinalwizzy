@@ -20,7 +20,6 @@ CREATE TABLE IF NOT EXISTS public.projects (
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
-
 CREATE TABLE IF NOT EXISTS public.project_members (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   project_id uuid NOT NULL REFERENCES public.projects(id) ON DELETE CASCADE,
@@ -30,7 +29,6 @@ CREATE TABLE IF NOT EXISTS public.project_members (
   created_at timestamptz DEFAULT now(),
   UNIQUE(project_id, user_id)
 );
-
 CREATE TABLE IF NOT EXISTS public.project_templates (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   workspace_id uuid REFERENCES public.workspaces(id) ON DELETE CASCADE,
@@ -41,7 +39,6 @@ CREATE TABLE IF NOT EXISTS public.project_templates (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
-
 CREATE TABLE IF NOT EXISTS public.positions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   workspace_id uuid REFERENCES public.workspaces(id) ON DELETE CASCADE,
@@ -51,7 +48,6 @@ CREATE TABLE IF NOT EXISTS public.positions (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
-
 CREATE TABLE IF NOT EXISTS public.process_documentation (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   workspace_id uuid REFERENCES public.workspaces(id) ON DELETE CASCADE,
@@ -71,7 +67,6 @@ CREATE TABLE IF NOT EXISTS public.process_documentation (
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
-
 CREATE TABLE IF NOT EXISTS public.routines (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   workspace_id uuid REFERENCES public.workspaces(id) ON DELETE CASCADE,
@@ -85,7 +80,6 @@ CREATE TABLE IF NOT EXISTS public.routines (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
-
 CREATE TABLE IF NOT EXISTS public.recurring_tasks (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   workspace_id uuid REFERENCES public.workspaces(id) ON DELETE CASCADE,
@@ -101,7 +95,6 @@ CREATE TABLE IF NOT EXISTS public.recurring_tasks (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
-
 CREATE TABLE IF NOT EXISTS public.tasks (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   workspace_id uuid REFERENCES public.workspaces(id) ON DELETE CASCADE,
@@ -126,7 +119,6 @@ CREATE TABLE IF NOT EXISTS public.tasks (
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
-
 CREATE TABLE IF NOT EXISTS public.subtasks (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   task_id uuid NOT NULL REFERENCES public.tasks(id) ON DELETE CASCADE,
@@ -136,7 +128,6 @@ CREATE TABLE IF NOT EXISTS public.subtasks (
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
-
 CREATE TABLE IF NOT EXISTS public.task_assignees (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   task_id uuid NOT NULL REFERENCES public.tasks(id) ON DELETE CASCADE,
@@ -145,7 +136,6 @@ CREATE TABLE IF NOT EXISTS public.task_assignees (
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE(task_id, user_id)
 );
-
 CREATE TABLE IF NOT EXISTS public.task_processes (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   task_id uuid NOT NULL REFERENCES public.tasks(id) ON DELETE CASCADE,
@@ -153,7 +143,6 @@ CREATE TABLE IF NOT EXISTS public.task_processes (
   created_at timestamptz DEFAULT now(),
   UNIQUE(task_id, process_id)
 );
-
 CREATE TABLE IF NOT EXISTS public.task_attachments (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   task_id uuid NOT NULL REFERENCES public.tasks(id) ON DELETE CASCADE,
@@ -164,7 +153,6 @@ CREATE TABLE IF NOT EXISTS public.task_attachments (
   uploaded_by uuid,
   created_at timestamptz NOT NULL DEFAULT now()
 );
-
 CREATE TABLE IF NOT EXISTS public.routine_tasks (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   routine_id uuid NOT NULL REFERENCES public.routines(id) ON DELETE CASCADE,
@@ -182,7 +170,6 @@ CREATE TABLE IF NOT EXISTS public.routine_tasks (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
-
 CREATE TABLE IF NOT EXISTS public.routine_task_subtasks (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   routine_task_id uuid NOT NULL REFERENCES public.routine_tasks(id) ON DELETE CASCADE,
@@ -192,7 +179,6 @@ CREATE TABLE IF NOT EXISTS public.routine_task_subtasks (
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
-
 CREATE TABLE IF NOT EXISTS public.template_tasks (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   template_id uuid NOT NULL REFERENCES public.project_templates(id) ON DELETE CASCADE,
@@ -205,7 +191,6 @@ CREATE TABLE IF NOT EXISTS public.template_tasks (
   task_order integer DEFAULT 0,
   created_at timestamptz NOT NULL DEFAULT now()
 );
-
 CREATE TABLE IF NOT EXISTS public.template_subtasks (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   template_task_id uuid NOT NULL REFERENCES public.template_tasks(id) ON DELETE CASCADE,
@@ -213,7 +198,6 @@ CREATE TABLE IF NOT EXISTS public.template_subtasks (
   task_order integer DEFAULT 0,
   created_at timestamptz NOT NULL DEFAULT now()
 );
-
 CREATE TABLE IF NOT EXISTS public.template_task_processes (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   template_task_id uuid NOT NULL REFERENCES public.template_tasks(id) ON DELETE CASCADE,
@@ -221,7 +205,6 @@ CREATE TABLE IF NOT EXISTS public.template_task_processes (
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE(template_task_id, process_id)
 );
-
 CREATE TABLE IF NOT EXISTS public.template_task_assignees (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   template_task_id uuid NOT NULL REFERENCES public.template_tasks(id) ON DELETE CASCADE,
@@ -229,7 +212,6 @@ CREATE TABLE IF NOT EXISTS public.template_task_assignees (
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE(template_task_id, user_id)
 );
-
 CREATE TABLE IF NOT EXISTS public.external_participants (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   workspace_id uuid REFERENCES public.workspaces(id) ON DELETE CASCADE,
@@ -242,7 +224,6 @@ CREATE TABLE IF NOT EXISTS public.external_participants (
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );
-
 CREATE TABLE IF NOT EXISTS public.task_external_assignees (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   task_id uuid NOT NULL REFERENCES public.tasks(id) ON DELETE CASCADE,
@@ -250,7 +231,6 @@ CREATE TABLE IF NOT EXISTS public.task_external_assignees (
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE(task_id, participant_id)
 );
-
 ALTER TABLE public.projects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.project_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.project_templates ENABLE ROW LEVEL SECURITY;
@@ -271,7 +251,6 @@ ALTER TABLE public.template_task_processes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.template_task_assignees ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.external_participants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.task_external_assignees ENABLE ROW LEVEL SECURITY;
-
 DO $$
 DECLARE
   policy_table text;
@@ -298,7 +277,6 @@ BEGIN
     END IF;
   END LOOP;
 END $$;
-
 DROP POLICY IF EXISTS "Wizzy Flow project members access" ON public.project_members;
 CREATE POLICY "Wizzy Flow project members access"
   ON public.project_members
@@ -319,7 +297,6 @@ CREATE POLICY "Wizzy Flow project members access"
         AND public.user_has_workspace_access(auth.uid(), p.workspace_id)
     )
   );
-
 DROP POLICY IF EXISTS "Wizzy Flow tasks access" ON public.tasks;
 CREATE POLICY "Wizzy Flow tasks access"
   ON public.tasks
@@ -342,7 +319,6 @@ CREATE POLICY "Wizzy Flow tasks access"
         AND public.user_has_workspace_access(auth.uid(), p.workspace_id)
     )
   );
-
 DO $$
 DECLARE
   policy_target text[];
@@ -365,7 +341,6 @@ BEGIN
     );
   END LOOP;
 END $$;
-
 DROP POLICY IF EXISTS "Wizzy Flow routine tasks access" ON public.routine_tasks;
 CREATE POLICY "Wizzy Flow routine tasks access"
   ON public.routine_tasks
@@ -386,7 +361,6 @@ CREATE POLICY "Wizzy Flow routine tasks access"
         AND public.user_has_workspace_access(auth.uid(), r.workspace_id)
     )
   );
-
 DROP POLICY IF EXISTS "Wizzy Flow routine subtasks access" ON public.routine_task_subtasks;
 CREATE POLICY "Wizzy Flow routine subtasks access"
   ON public.routine_task_subtasks
@@ -411,7 +385,6 @@ CREATE POLICY "Wizzy Flow routine subtasks access"
         AND public.user_has_workspace_access(auth.uid(), r.workspace_id)
     )
   );
-
 DO $$
 DECLARE
   policy_target text[];
@@ -437,7 +410,6 @@ BEGIN
     END IF;
   END LOOP;
 END $$;
-
 CREATE INDEX IF NOT EXISTS idx_projects_workspace_created ON public.projects(workspace_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tasks_workspace_created ON public.tasks(workspace_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tasks_project_created ON public.tasks(project_id, created_at DESC);

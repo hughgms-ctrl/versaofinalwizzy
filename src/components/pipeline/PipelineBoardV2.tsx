@@ -81,6 +81,7 @@ type CardPanelTab = 'details' | 'files' | 'contracts' | 'notes' | 'activity' | '
 type CardSideTab = 'comments' | 'logs';
 type ChecklistItem = { id: string; text: string; done: boolean };
 type ChecklistTemplate = { id: string; name: string; workspaceId: string | null; items: ChecklistItem[] };
+type CardChecklist = { id: string; templateId: string | null; name: string; items: ChecklistItem[] };
 
 const CONTACT_COUNT_BATCH_SIZE = 75;
 
@@ -237,6 +238,18 @@ function buildChecklistFromTemplate(template: ChecklistTemplate, existing: Check
   });
 }
 
+function getCardChecklists(conversation: DbConversation): CardChecklist[] {
+  const stored = (conversation.metadata as any)?.pipeline_checklists;
+  if (Array.isArray(stored) && stored.length > 0) return stored as CardChecklist[];
+  // Legacy fallback: migrate from single pipeline_checklist
+  const legacyItems = ((conversation.metadata as any)?.pipeline_checklist || []) as ChecklistItem[];
+  const legacyTemplateId = ((conversation.metadata as any)?.pipeline_checklist_template_id as string | null) || null;
+  if (legacyItems.length > 0) {
+    return [{ id: 'legacy', templateId: legacyTemplateId, name: 'Checklist', items: legacyItems }];
+  }
+  return [];
+}
+
 export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversationClick, sharedConversationIds }: PipelineBoardProps) {
   const isMobile = useIsMobile();
   const queryClient = useQueryClient();
@@ -337,41 +350,24 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
     setBoardBackgroundImage(getPipelineBoardBackgroundImage(pipeline, selectedWorkspaceId));
   }, [pipeline?.id, pipeline?.board_background_color, pipeline?.board_background_image, selectedWorkspaceId]);
 
-  // Admin preference to hide unassigned column (localStorage)
-  const [adminHideUnassigned, setAdminHideUnassigned] = useState(() => {
-    if (!pipeline?.id) return false;
-    try {
-      const stored = JSON.parse(localStorage.getItem('admin_hide_unassigned_pipelines') || '[]');
-      return Array.isArray(stored) && stored.includes(pipeline.id);
-    } catch { return false; }
-  });
 
-  useEffect(() => {
-    if (!pipeline?.id) return;
-    try {
-      const stored = JSON.parse(localStorage.getItem('admin_hide_unassigned_pipelines') || '[]');
-      setAdminHideUnassigned(Array.isArray(stored) && stored.includes(pipeline.id));
-    } catch { setAdminHideUnassigned(false); }
-  }, [pipeline?.id]);
-
-  const toggleAdminHideUnassigned = useCallback(() => {
-    if (!pipeline?.id) return;
-    setAdminHideUnassigned(prev => {
-      const newVal = !prev;
-      try {
-        const stored = JSON.parse(localStorage.getItem('admin_hide_unassigned_pipelines') || '[]');
-        const arr = Array.isArray(stored) ? stored : [];
-        const updated = newVal ? [...arr, pipeline.id] : arr.filter((id: string) => id !== pipeline.id);
-        localStorage.setItem('admin_hide_unassigned_pipelines', JSON.stringify(updated));
-      } catch {}
-      return newVal;
-    });
-  }, [pipeline?.id]);
 
   // Ultra-lightweight Trello-style horizontal pan (no React state during pan = zero lag)
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const pan = useRef({ active: false, lastX: 0, vel: 0, lastT: 0, moved: false, acc: 0, pid: -1 });
   const rafId = useRef<number | null>(null);
+  // Pointer-events based card drag (replaces HTML5 drag which conflicts with pan)
+  const cardDrag = useRef<{
+    active: boolean;
+    cardId: string;
+    startX: number;
+    startY: number;
+    moved: boolean;
+    overlayEl: HTMLDivElement | null;
+    pid: number;
+  }>({ active: false, cardId: '', startX: 0, startY: 0, moved: false, overlayEl: null, pid: -1 });
+  // Ref to always-fresh performDrop to avoid stale closures in useCallback
+  const performDropRef = useRef<(movedId: string, colId: string | null, targetCardId?: string | null) => Promise<void>>(async () => {});
 
   const stopRaf = useCallback(() => { if (rafId.current) { cancelAnimationFrame(rafId.current); rafId.current = null; } }, []);
 
@@ -401,7 +397,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
     if (e.pointerType !== 'mouse') return;
     if (e.button !== 0) return;
     // Don't start pan if a card is being dragged
-    if (draggedCard) return;
+    if (draggedCard || cardDrag.current.active) return;
     const t = e.target as HTMLElement;
     if (t.closest('.pipeline-card, button, a, input, textarea, select, [role="button"], [role="menu"], [role="menuitem"]')) return;
     const c = scrollContainerRef.current;
@@ -574,19 +570,187 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
     return filteredConversations.filter(c => !assignedIds.has(c.id));
   }, [filteredConversations, positions]);
 
+  // ─── Pointer-events drag (replaces HTML5 drag to avoid conflicts with pan) ───
+  const startCardDrag = useCallback((e: React.PointerEvent, conversationId: string, cardEl: HTMLElement) => {
+    if (e.button !== 0 || e.pointerType !== 'mouse') return;
+    // Don't drag from interactive children
+    const t = e.target as HTMLElement;
+    if (t.closest('button, a, input, textarea, select, [role="button"], label')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    cardEl.setPointerCapture(e.pointerId);
+    cardDrag.current = {
+      active: true,
+      cardId: conversationId,
+      startX: e.clientX,
+      startY: e.clientY,
+      moved: false,
+      overlayEl: null,
+      pid: e.pointerId,
+    };
+  }, []);
+
+  const onCardPointerMove = useCallback((e: React.PointerEvent) => {
+    const cd = cardDrag.current;
+    if (!cd.active || cd.pid !== e.pointerId) return;
+    const dx = e.clientX - cd.startX;
+    const dy = e.clientY - cd.startY;
+    if (!cd.moved && Math.sqrt(dx * dx + dy * dy) < 5) return;
+    if (!cd.moved) {
+      cd.moved = true;
+      setDraggedCard(cd.cardId);
+      // Create visual overlay clone
+      const srcEl = document.querySelector(`[data-card-id="${cd.cardId}"]`) as HTMLElement | null;
+      const overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed;z-index:9999;pointer-events:none;opacity:0.85;transform:rotate(2deg);transition:none;box-shadow:0 20px 40px rgba(0,0,0,0.5);';
+      if (srcEl) {
+        const rect = srcEl.getBoundingClientRect();
+        overlay.style.width = rect.width + 'px';
+        overlay.style.left = rect.left + 'px';
+        overlay.style.top = rect.top + 'px';
+        overlay.innerHTML = srcEl.outerHTML;
+        // Remove event listeners from clone
+        const clone = overlay.firstElementChild as HTMLElement | null;
+        if (clone) { clone.style.cursor = 'grabbing'; clone.style.margin = '0'; }
+      }
+      document.body.appendChild(overlay);
+      cd.overlayEl = overlay;
+    }
+    if (cd.overlayEl) {
+      const overlay = cd.overlayEl;
+      const srcEl = document.querySelector(`[data-card-id="${cd.cardId}"]`) as HTMLElement | null;
+      if (srcEl) {
+        const rect = srcEl.getBoundingClientRect();
+        overlay.style.left = (e.clientX - rect.width / 2) + 'px';
+        overlay.style.top = (e.clientY - 20) + 'px';
+      } else {
+        overlay.style.left = (e.clientX + 10) + 'px';
+        overlay.style.top = (e.clientY + 10) + 'px';
+      }
+    }
+    // Highlight drop target column by horizontal proximity
+    const container = scrollContainerRef.current;
+    let colId: string | null = null;
+    let hoverCardId: string | null = null;
+
+    if (container) {
+      const containerRect = container.getBoundingClientRect();
+      const isInsideContainer = (
+        e.clientX >= containerRect.left &&
+        e.clientX <= containerRect.right &&
+        e.clientY >= containerRect.top &&
+        e.clientY <= containerRect.bottom
+      );
+
+      if (isInsideContainer) {
+        const columnsEls = container.querySelectorAll('[data-column-id]');
+        let targetColEl: HTMLElement | null = null;
+        let closestDist = Infinity;
+
+        for (let i = 0; i < columnsEls.length; i++) {
+          const colEl = columnsEls[i] as HTMLElement;
+          const rect = colEl.getBoundingClientRect();
+          if (e.clientX >= rect.left && e.clientX <= rect.right) {
+            targetColEl = colEl;
+            break;
+          }
+          const dist = Math.min(Math.abs(e.clientX - rect.left), Math.abs(e.clientX - rect.right));
+          if (dist < closestDist) {
+            closestDist = dist;
+            targetColEl = colEl;
+          }
+        }
+        colId = targetColEl?.dataset.columnId || null;
+
+        const el = document.elementFromPoint(e.clientX, e.clientY);
+        const cardEl = el?.closest('[data-card-id]') as HTMLElement | null;
+        hoverCardId = cardEl?.dataset.cardId || null;
+      }
+    }
+
+    setDragOverColumn(colId);
+    setDragOverCard(hoverCardId !== cd.cardId ? hoverCardId : null);
+  }, []);
+
+  const onCardPointerUp = useCallback(async (e: React.PointerEvent) => {
+    const cd = cardDrag.current;
+    if (!cd.active || cd.pid !== e.pointerId) return;
+    const wasMoved = cd.moved;
+    const cardId = cd.cardId;
+    // Cleanup overlay
+    if (cd.overlayEl && document.body.contains(cd.overlayEl)) document.body.removeChild(cd.overlayEl);
+    cardDrag.current = { active: false, cardId: '', startX: 0, startY: 0, moved: false, overlayEl: null, pid: -1 };
+    if (!wasMoved) {
+      setDraggedCard(null);
+      setDragOverColumn(null);
+      setDragOverCard(null);
+      return;
+    }
+    
+    // Determine drop target column
+    const container = scrollContainerRef.current;
+    let colId: string | null = null;
+    let targetCardId: string | null = null;
+    let shouldPerformDrop = false;
+
+    if (container) {
+      const containerRect = container.getBoundingClientRect();
+      const isInsideContainer = (
+        e.clientX >= containerRect.left &&
+        e.clientX <= containerRect.right &&
+        e.clientY >= containerRect.top &&
+        e.clientY <= containerRect.bottom
+      );
+
+      if (isInsideContainer) {
+        shouldPerformDrop = true;
+        const columnsEls = container.querySelectorAll('[data-column-id]');
+        let targetColEl: HTMLElement | null = null;
+        let closestDist = Infinity;
+
+        for (let i = 0; i < columnsEls.length; i++) {
+          const colEl = columnsEls[i] as HTMLElement;
+          const rect = colEl.getBoundingClientRect();
+          if (e.clientX >= rect.left && e.clientX <= rect.right) {
+            targetColEl = colEl;
+            break;
+          }
+          const dist = Math.min(Math.abs(e.clientX - rect.left), Math.abs(e.clientX - rect.right));
+          if (dist < closestDist) {
+            closestDist = dist;
+            targetColEl = colEl;
+          }
+        }
+        colId = targetColEl?.dataset.columnId || null;
+
+        const el = document.elementFromPoint(e.clientX, e.clientY);
+        const targetCardEl = el?.closest('[data-card-id]') as HTMLElement | null;
+        targetCardId = targetCardEl?.dataset.cardId !== cardId ? (targetCardEl?.dataset.cardId || null) : null;
+      }
+    }
+
+    if (shouldPerformDrop && colId !== null) {
+      const columnId = colId === 'unassigned' ? null : colId;
+      await performDropRef.current(cardId, columnId, targetCardId);
+    } else {
+      // Cancel drop: reset drag states
+      setDraggedCard(null);
+      setDragOverColumn(null);
+      setDragOverCard(null);
+    }
+  }, []);
+
   const handleDragStart = (e: React.DragEvent, conversationId: string) => {
+    // Legacy fallback — not used with pointer drag
     setDraggedCard(conversationId);
     e.dataTransfer.effectAllowed = 'move';
     e.dataTransfer.setData('text/plain', conversationId);
   };
 
-  const saveChecklistForConversation = useCallback(async (conversation: DbConversation, items: ChecklistItem[], templateId?: string | null) => {
+  const saveChecklistsForConversation = useCallback(async (conversation: DbConversation, checklists: CardChecklist[]) => {
     const currentMetadata = (conversation.metadata as Record<string, unknown>) || {};
-    const metadata = { ...currentMetadata, pipeline_checklist: items, pipeline_checklist_template_id: templateId ?? currentMetadata.pipeline_checklist_template_id ?? null };
-    const optimisticConversation = {
-      ...conversation,
-      metadata,
-    } as DbConversation;
+    const metadata = { ...currentMetadata, pipeline_checklists: checklists };
+    const optimisticConversation = { ...conversation, metadata } as DbConversation;
 
     queryClient.setQueriesData({ queryKey: ['conversations'] }, (old: any) => {
       if (!Array.isArray(old)) return old;
@@ -603,22 +767,55 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
     queryClient.invalidateQueries({ queryKey: ['pipeline-conversations'] });
   }, [queryClient]);
 
+  // Backward-compatible single-checklist save (used for mini-card inline toggle)
+  const saveChecklistForConversation = useCallback(async (conversation: DbConversation, items: ChecklistItem[], templateId?: string | null) => {
+    const current = getCardChecklists(conversation);
+    const next: CardChecklist[] = current.length > 0
+      ? current.map((cl, i) => i === 0 ? { ...cl, items } : cl)
+      : [{ id: crypto.randomUUID(), templateId: templateId || null, name: 'Checklist', items }];
+    await saveChecklistsForConversation(conversation, next);
+  }, [saveChecklistsForConversation]);
+
   const applyColumnChecklistTemplate = useCallback(async (conversationId: string, columnId: string) => {
-    const templateId = columnChecklistConfig[columnId];
+    // Always read config fresh from localStorage to avoid stale closures
+    const freshConfig = loadColumnChecklistConfig(selectedWorkspaceId, pipeline?.id);
+    const templateId = freshConfig[columnId];
     if (!templateId) return;
-    const template = checklistTemplates.find(item => item.id === templateId);
+    // Read templates fresh from localStorage too
+    const freshTemplates = loadChecklistTemplates(selectedWorkspaceId);
+    const template = freshTemplates.find(item => item.id === templateId);
     if (!template) return;
-    const conversation = conversations?.find(item => item.id === conversationId);
+    // Get the freshest version of the conversation from React Query cache
+    let conversation: DbConversation | undefined;
+    const allCaches = queryClient.getQueriesData<DbConversation[]>({ queryKey: ['conversations'] });
+    for (const [, data] of allCaches) {
+      if (Array.isArray(data)) {
+        const found = data.find(item => item.id === conversationId);
+        if (found) { conversation = found; break; }
+      }
+    }
+    if (!conversation) {
+      conversation = conversations?.find(item => item.id === conversationId);
+    }
     if (!conversation) return;
-    const existing = (((conversation.metadata as any)?.pipeline_checklist || []) as ChecklistItem[]);
-    const next = buildChecklistFromTemplate(template, existing);
-    await saveChecklistForConversation(conversation, next, template.id);
-  }, [checklistTemplates, columnChecklistConfig, conversations, saveChecklistForConversation]);
+    const currentChecklists = getCardChecklists(conversation);
+    // Don't add if already has a checklist from this template
+    if (currentChecklists.some(cl => cl.templateId === template.id)) return;
+    const newChecklist: CardChecklist = {
+      id: crypto.randomUUID(),
+      templateId: template.id,
+      name: template.name,
+      items: buildChecklistFromTemplate(template, []),
+    };
+    await saveChecklistsForConversation(conversation, [...currentChecklists, newChecklist]);
+  }, [columnChecklistConfig, conversations, queryClient, saveChecklistsForConversation, selectedWorkspaceId, pipeline?.id]);
 
   const handleDragOver = (e: React.DragEvent, columnId: string) => {
     e.preventDefault();
     e.stopPropagation();
     setDragOverColumn(columnId);
+    // Clear card highlight when hovering column area directly
+    setDragOverCard(null);
 
     // Auto-scroll horizontally when dragging near edges
     const container = scrollContainerRef.current;
@@ -683,7 +880,11 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
   const handleDrop = async (e: React.DragEvent, columnId: string | null, targetConversationId?: string | null) => {
     e.preventDefault();
     e.stopPropagation();
-    const movedConversationId = draggedCard;
+    const movedConversationId = draggedCard || e.dataTransfer.getData('text/plain');
+    await performDrop(movedConversationId || '', columnId, targetConversationId);
+  };
+
+  const performDrop = async (movedConversationId: string, columnId: string | null, targetConversationId?: string | null) => {
     const previousPositions = pipeline
       ? queryClient.getQueryData<typeof positions>(['conversation-positions', pipeline.id]) || positions
       : positions;
@@ -768,7 +969,9 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
             skipInvalidate: true,
           });
           await normalizeColumnOrder(columnId, movedConversationId, order);
-          if (result?.changed) {
+          // Apply column checklist template whenever the card lands in a different column
+          const previousColumnId = existing?.column_id;
+          if (!previousColumnId || previousColumnId !== columnId) {
             await applyColumnChecklistTemplate(movedConversationId, columnId);
           }
         }
@@ -788,6 +991,8 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
     setDragOverColumn(null);
     setDragOverCard(null);
   };
+  // Keep ref always pointing to latest performDrop (avoids stale closure in onCardPointerUp useCallback)
+  performDropRef.current = performDrop;
 
   const handleMoveCardFromPanel = useCallback(async (conversation: DbConversation, columnId: string) => {
     if (!pipeline) return;
@@ -917,7 +1122,8 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
     const visibleTags = contactTags.slice(0, 5);
     const fileCount = contactId ? contactFileCounts.get(contactId) || 0 : 0;
     const noteCount = contactId ? contactNoteCounts.get(contactId) || 0 : 0;
-    const checklistItems = (((conversation.metadata as any)?.pipeline_checklist || []) as ChecklistItem[]);
+    const cardChecklists = getCardChecklists(conversation);
+    const checklistItems = cardChecklists.flatMap(cl => cl.items);
     const taskCount = checklistItems.length;
     const doneTaskCount = checklistItems.filter(item => item.done).length;
     const cardPosition = positions.find(position => position.conversation_id === conversation.id);
@@ -926,31 +1132,26 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
     return (
       <div
         key={conversation.id}
-        draggable
-        onDragStart={(e) => handleDragStart(e, conversation.id)}
-        onDragOver={(event) => {
-          if (!draggedCard || draggedCard === conversation.id || !cardPosition?.column_id) return;
-          event.preventDefault();
-          event.stopPropagation();
-          setDragOverColumn(cardPosition.column_id);
-          setDragOverCard(conversation.id);
+        data-card-id={conversation.id}
+        onPointerDown={(e) => {
+          const el = e.currentTarget;
+          startCardDrag(e, conversation.id, el);
         }}
-        onDragLeave={(event) => {
-          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-            setDragOverCard(prev => prev === conversation.id ? null : prev);
-          }
+        onPointerMove={onCardPointerMove}
+        onPointerUp={onCardPointerUp}
+        onPointerCancel={() => {
+          const cd = cardDrag.current;
+          if (cd.overlayEl && document.body.contains(cd.overlayEl)) document.body.removeChild(cd.overlayEl);
+          cardDrag.current = { active: false, cardId: '', startX: 0, startY: 0, moved: false, overlayEl: null, pid: -1 };
+          setDraggedCard(null); setDragOverColumn(null); setDragOverCard(null);
         }}
-        onDrop={(event) => {
-          if (!cardPosition?.column_id) return;
-          handleDrop(event, cardPosition.column_id, conversation.id);
-        }}
-        onDragEnd={handleDragEnd}
-        onClick={() => {
+        onClick={(e) => {
+          if (cardDrag.current.moved) return; // don't open if just dropped
           setSelectedCard(conversation);
           setSelectedCardTab('details');
         }}
         className={cn(
-          "pipeline-card relative",
+          "pipeline-card relative select-auto",
           draggedCard === conversation.id && "dragging",
           hasUnread && "ring-1 ring-primary/40",
           isCardDropTarget && "ring-2 ring-primary/70 before:absolute before:-top-1.5 before:left-2 before:right-2 before:h-0.5 before:rounded before:bg-primary"
@@ -1135,10 +1336,11 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
                           checked={item.done}
                           className="mt-0.5 h-3.5 w-3.5 accent-primary"
                           onChange={async () => {
-                            const next = checklistItems.map(current => (
-                              current.id === item.id ? { ...current, done: !current.done } : current
-                            ));
-                            await saveChecklistForConversation(conversation, next);
+                            const nextChecklists = cardChecklists.map(cl => ({
+                              ...cl,
+                              items: cl.items.map(it => it.id === item.id ? { ...it, done: !it.done } : it)
+                            }));
+                            await saveChecklistsForConversation(conversation, nextChecklists);
                           }}
                         />
                         <span className={cn("min-w-0 flex-1 break-words", item.done && "text-zinc-500 line-through")}>{item.text}</span>
@@ -1170,13 +1372,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
 
   };
 
-  // Check if user should see unassigned column for this pipeline
-  const isAdminOrOwner = userRole === 'owner' || userRole === 'admin';
-  const hideUnassignedIds = (userPermissions as any)?.hide_unassigned_pipeline_ids || [];
 
-  const shouldHideUnassigned = isAdminOrOwner 
-    ? adminHideUnassigned 
-    : (pipeline?.id && hideUnassignedIds.includes(pipeline.id));
 
   // Check if dragging over unassigned column
   const isDragOverUnassigned = dragOverColumn === 'unassigned';
@@ -1185,7 +1381,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
     <div
       ref={scrollContainerRef}
       className={cn(
-        "relative flex items-start gap-5 h-[calc(100vh-140px)] p-4",
+        "relative flex items-stretch gap-5 h-[calc(100vh-140px)] p-4",
         isMobile ? "select-auto overflow-x-auto overflow-y-hidden" : "select-none cursor-grab overflow-x-auto overflow-y-hidden"
       )}
       style={{
@@ -1311,32 +1507,10 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
         </Popover>
       </div>
 
-      {/* Admin toggle to show hidden unassigned column */}
-      {isAdminOrOwner && shouldHideUnassigned && unassignedConversations.length > 0 && (
-        <div className="flex flex-col items-center justify-start pt-4 min-w-[48px]">
-          <TooltipProvider delayDuration={200}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-8 w-8 rounded-full"
-                  onClick={toggleAdminHideUnassigned}
-                >
-                  <Eye className="h-4 w-4 text-muted-foreground" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="right">
-                Mostrar não classificados ({unassignedConversations.length})
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        </div>
-      )}
-
-      {/* Unassigned column - show when allowed and there are items OR when dragging */}
-      {!shouldHideUnassigned && (unassignedConversations.length > 0 || draggedCard) && (
+      {/* Unassigned column - show permanently when configured OR only when it contains items */}
+      {(pipeline?.show_unassigned || unassignedConversations.length > 0) && (
         <div
+          data-column-id="unassigned"
           className={cn(
             "pipeline-column border-dashed transition-all duration-300",
             isDragOverUnassigned && "bg-muted/40 scale-[1.01]"
@@ -1353,25 +1527,8 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
                 {unassignedConversations.length}
               </span>
             </div>
-            {isAdminOrOwner && (
-              <TooltipProvider delayDuration={200}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-6 w-6"
-                      onClick={toggleAdminHideUnassigned}
-                    >
-                      <EyeOff className="h-3.5 w-3.5 text-muted-foreground" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Ocultar não classificados</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            )}
           </div>
-          <div className="space-y-2 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+          <div className="flex-1 min-h-0 space-y-2 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
             {unassignedConversations.map(renderConversationCard)}
           </div>
         </div>
@@ -1385,6 +1542,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
         return (
           <div
             key={column.id}
+            data-column-id={column.id}
             className={cn(
               "pipeline-column transition-all duration-300 border-l-4",
               isDragOver && "scale-[1.01]"
@@ -1394,6 +1552,11 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
               ...(isDragOver ? { boxShadow: `inset 0 0 20px ${column.color}15, 0 0 0 1px ${column.color}40` } : {}),
             }}
             onDragOver={(e) => handleDragOver(e, column.id)}
+            onDragLeave={(e) => {
+              if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+                setDragOverColumn(prev => prev === column.id ? null : prev);
+              }
+            }}
             onDrop={(e) => handleDrop(e, column.id)}
           >
             <div className="flex items-center justify-between mb-2 px-1 py-1">
@@ -1411,7 +1574,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
               </div>
             </div>
 
-            <div className="space-y-2 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+            <div className="flex-1 min-h-0 space-y-2 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
               {columnConversations.map(renderConversationCard)}
             </div>
           </div>
@@ -1464,10 +1627,9 @@ function PipelineCardDetailDialog({
   const [editedName, setEditedName] = useState('');
   const [editedObservation, setEditedObservation] = useState('');
   const [editedDescription, setEditedDescription] = useState('');
-  const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>([]);
-  const [newChecklistItem, setNewChecklistItem] = useState('');
   const [checklistTemplates, setChecklistTemplates] = useState<ChecklistTemplate[]>(() => loadChecklistTemplates(workspaceId));
-  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+  const [cardChecklists, setCardChecklists] = useState<CardChecklist[]>([]);
+  const [newChecklistItemByChecklist, setNewChecklistItemByChecklist] = useState<Record<string, string>>({});
   const [isTemplateTrayOpen, setIsTemplateTrayOpen] = useState(false);
   const [isTemplateEditorOpen, setIsTemplateEditorOpen] = useState(false);
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
@@ -1480,6 +1642,24 @@ function PipelineCardDetailDialog({
   const [dragOverChecklistItemId, setDragOverChecklistItemId] = useState<string | null>(null);
   const [draggedTemplateItemId, setDraggedTemplateItemId] = useState<string | null>(null);
   const [dragOverTemplateItemId, setDragOverTemplateItemId] = useState<string | null>(null);
+  const descriptionTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const observationTextareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    const el = descriptionTextareaRef.current;
+    if (el) {
+      el.style.height = 'auto';
+      el.style.height = el.scrollHeight + 'px';
+    }
+  }, [editedDescription, activeTab]);
+
+  useEffect(() => {
+    const el = observationTextareaRef.current;
+    if (el) {
+      el.style.height = 'auto';
+      el.style.height = el.scrollHeight + 'px';
+    }
+  }, [editedObservation, activeTab]);
 
   useEffect(() => {
     setActiveTab(initialTab === 'activity' ? 'details' : initialTab);
@@ -1488,9 +1668,9 @@ function PipelineCardDetailDialog({
     setEditedName(conversation?.contact?.name || '');
     setEditedObservation((conversation?.contact?.metadata as { note?: string } | null)?.note || '');
     setEditedDescription(((conversation?.contact?.metadata as any)?.description as string) || '');
-    setChecklistItems(((conversation?.metadata as any)?.pipeline_checklist || []) as ChecklistItem[]);
+    setCardChecklists(conversation ? getCardChecklists(conversation) : []);
+    setNewChecklistItemByChecklist({});
     setChecklistTemplates(loadChecklistTemplates(workspaceId));
-    setSelectedTemplateId(((conversation?.metadata as any)?.pipeline_checklist_template_id as string | undefined) || null);
     setIsTemplateTrayOpen(false);
     setIsTemplateEditorOpen(false);
     setEditingTemplateId(null);
@@ -1564,10 +1744,10 @@ function PipelineCardDetailDialog({
     queryClient.invalidateQueries({ queryKey: ['pipeline-conversations'] });
   };
 
-  const saveChecklist = async (items = checklistItems, templateId = selectedTemplateId) => {
+  const saveCardChecklists = async (checklists: CardChecklist[]) => {
     setIsSaving(true);
     try {
-      await updateConversationMetadata({ pipeline_checklist: items, pipeline_checklist_template_id: templateId });
+      await updateConversationMetadata({ pipeline_checklists: checklists });
       toast({ title: 'Checklist salvo' });
     } catch (error: any) {
       toast({ title: 'Erro ao salvar checklist', description: error.message, variant: 'destructive' });
@@ -1576,67 +1756,94 @@ function PipelineCardDetailDialog({
     }
   };
 
-  const addChecklistItem = async () => {
-    if (!newChecklistItem.trim()) return;
-    const next = [...checklistItems, { id: crypto.randomUUID(), text: newChecklistItem.trim(), done: false }];
-    setChecklistItems(next);
-    setNewChecklistItem('');
-    await saveChecklist(next);
+  const addChecklistItem = async (checklistId: string) => {
+    const text = (newChecklistItemByChecklist[checklistId] || '').trim();
+    if (!text) return;
+    const next = cardChecklists.map(cl =>
+      cl.id === checklistId ? { ...cl, items: [...cl.items, { id: crypto.randomUUID(), text, done: false }] } : cl
+    );
+    setCardChecklists(next);
+    setNewChecklistItemByChecklist(prev => ({ ...prev, [checklistId]: '' }));
+    await saveCardChecklists(next);
   };
 
-  const toggleChecklistItem = async (itemId: string) => {
-    const next = checklistItems.map(item => item.id === itemId ? { ...item, done: !item.done } : item);
-    setChecklistItems(next);
-    await saveChecklist(next);
+  const toggleChecklistItem = async (checklistId: string, itemId: string) => {
+    const next = cardChecklists.map(cl =>
+      cl.id === checklistId ? { ...cl, items: cl.items.map(it => it.id === itemId ? { ...it, done: !it.done } : it) } : cl
+    );
+    setCardChecklists(next);
+    await saveCardChecklists(next);
   };
 
-  const removeChecklistItem = async (itemId: string) => {
-    const next = checklistItems.filter(item => item.id !== itemId);
-    setChecklistItems(next);
-    await saveChecklist(next);
+  const removeChecklistItem = async (checklistId: string, itemId: string) => {
+    const next = cardChecklists.map(cl =>
+      cl.id === checklistId ? { ...cl, items: cl.items.filter(it => it.id !== itemId) } : cl
+    );
+    setCardChecklists(next);
+    await saveCardChecklists(next);
   };
 
-  const updateChecklistItemText = async (itemId: string, text: string) => {
-    const next = checklistItems.map(item => item.id === itemId ? { ...item, text } : item);
-    setChecklistItems(next);
-    await saveChecklist(next);
+  const removeChecklist = async (checklistId: string) => {
+    const next = cardChecklists.filter(cl => cl.id !== checklistId);
+    setCardChecklists(next);
+    await saveCardChecklists(next);
   };
 
-  const reorderChecklistItem = async (targetItemId: string) => {
+  const updateChecklistName = async (checklistId: string, name: string) => {
+    const next = cardChecklists.map(cl =>
+      cl.id === checklistId ? { ...cl, name } : cl
+    );
+    setCardChecklists(next);
+    await saveCardChecklists(next);
+  };
+
+  const updateChecklistItemText = async (checklistId: string, itemId: string, text: string) => {
+    const next = cardChecklists.map(cl =>
+      cl.id === checklistId ? { ...cl, items: cl.items.map(it => it.id === itemId ? { ...it, text } : it) } : cl
+    );
+    setCardChecklists(next);
+    await saveCardChecklists(next);
+  };
+
+  const reorderChecklistItem = async (checklistId: string, targetItemId: string) => {
     if (!draggedChecklistItemId || draggedChecklistItemId === targetItemId) {
       setDraggedChecklistItemId(null);
       setDragOverChecklistItemId(null);
       return;
     }
-
-    const fromIndex = checklistItems.findIndex(item => item.id === draggedChecklistItemId);
-    const toIndex = checklistItems.findIndex(item => item.id === targetItemId);
-    if (fromIndex === -1 || toIndex === -1) {
-      setDraggedChecklistItemId(null);
-      setDragOverChecklistItemId(null);
-      return;
-    }
-
-    const next = [...checklistItems];
-    const [moved] = next.splice(fromIndex, 1);
-    next.splice(toIndex, 0, moved);
-    setChecklistItems(next);
+    const checklist = cardChecklists.find(cl => cl.id === checklistId);
+    if (!checklist) return;
+    const fromIndex = checklist.items.findIndex(it => it.id === draggedChecklistItemId);
+    const toIndex = checklist.items.findIndex(it => it.id === targetItemId);
+    if (fromIndex === -1 || toIndex === -1) { setDraggedChecklistItemId(null); setDragOverChecklistItemId(null); return; }
+    const nextItems = [...checklist.items];
+    const [moved] = nextItems.splice(fromIndex, 1);
+    nextItems.splice(toIndex, 0, moved);
+    const next = cardChecklists.map(cl => cl.id === checklistId ? { ...cl, items: nextItems } : cl);
+    setCardChecklists(next);
     setDraggedChecklistItemId(null);
     setDragOverChecklistItemId(null);
-    await saveChecklist(next);
+    await saveCardChecklists(next);
   };
 
   const syncTemplateToCards = async (template: ChecklistTemplate) => {
     const cachedConversations = queryClient
       .getQueriesData<DbConversation[]>({ queryKey: ['conversations'] })
       .flatMap(([, data]) => data || []);
-    const usingTemplate = cachedConversations.filter(item => (item.metadata as any)?.pipeline_checklist_template_id === template.id);
+    const usingTemplate = cachedConversations.filter(item => {
+      const checklists = getCardChecklists(item);
+      return checklists.some(cl => cl.templateId === template.id);
+    });
 
     await Promise.all(usingTemplate.map(async item => {
       const currentMetadata = (item.metadata as Record<string, unknown>) || {};
-      const currentItems = (((item.metadata as any)?.pipeline_checklist || []) as ChecklistItem[]);
-      const nextItems = buildChecklistFromTemplate(template, currentItems);
-      const metadata = { ...currentMetadata, pipeline_checklist: nextItems, pipeline_checklist_template_id: template.id };
+      const checklists = getCardChecklists(item);
+      const updated = checklists.map(cl =>
+        cl.templateId === template.id
+          ? { ...cl, name: template.name, items: buildChecklistFromTemplate(template, cl.items) }
+          : cl
+      );
+      const metadata = { ...currentMetadata, pipeline_checklists: updated };
 
       const { error } = await supabase
         .from('conversations')
@@ -1728,22 +1935,29 @@ function PipelineCardDetailDialog({
     setEditingTemplateId(template.id);
     setIsTemplateEditorOpen(true);
     localStorage.setItem(getChecklistTemplateStorageKey(workspaceId), JSON.stringify(next));
-    if (selectedTemplateId === template.id) {
-      const nextItems = buildChecklistFromTemplate(template, checklistItems);
-      setChecklistItems(nextItems);
-      await saveChecklist(nextItems, template.id);
+    const templateHasBeenApplied = cardChecklists.some(cl => cl.templateId === template.id);
+    if (templateHasBeenApplied) {
+      const updatedChecklists = cardChecklists.map(cl =>
+        cl.templateId === template.id
+          ? { ...cl, name: template.name, items: buildChecklistFromTemplate(template, cl.items) }
+          : cl
+      );
+      setCardChecklists(updatedChecklists);
+      await saveCardChecklists(updatedChecklists);
     }
     if (editingTemplateId) await syncTemplateToCards(template);
     toast({ title: editingTemplateId ? 'Modelo de checklist atualizado' : 'Modelo de checklist criado' });
   };
 
-  const deleteChecklistTemplate = (templateId: string) => {
+  const deleteChecklistTemplate = async (templateId: string) => {
     const next = checklistTemplates.filter(item => item.id !== templateId);
     setChecklistTemplates(next);
     localStorage.setItem(getChecklistTemplateStorageKey(workspaceId), JSON.stringify(next));
-    if (selectedTemplateId === templateId) {
-      setSelectedTemplateId(null);
-    }
+    const nextCardChecklists = cardChecklists.map(cl =>
+      cl.templateId === templateId ? { ...cl, templateId: null } : cl
+    );
+    setCardChecklists(nextCardChecklists);
+    await saveCardChecklists(nextCardChecklists);
     if (editingTemplateId === templateId) {
       startNewChecklistTemplate();
       setIsTemplateEditorOpen(false);
@@ -1767,18 +1981,30 @@ function PipelineCardDetailDialog({
   const applyChecklistTemplate = async (templateId: string) => {
     const template = checklistTemplates.find(item => item.id === templateId);
     if (!template) return;
-    const next = buildChecklistFromTemplate(template, checklistItems);
-    setSelectedTemplateId(template.id);
-    setChecklistItems(next);
-    await saveChecklist(next, template.id);
+    if (cardChecklists.some(cl => cl.templateId === templateId)) {
+      toast({ title: 'Modelo já aplicado', description: 'Este checklist já está presente no card.' });
+      return;
+    }
+    // Add as new checklist below existing ones
+    const newChecklist: CardChecklist = {
+      id: crypto.randomUUID(),
+      templateId: template.id,
+      name: template.name,
+      items: buildChecklistFromTemplate(template, []),
+    };
+    const next = [...cardChecklists, newChecklist];
+    setCardChecklists(next);
+    await saveCardChecklists(next);
   };
 
-  const updateSelectedTemplateFromCard = async () => {
-    const template = checklistTemplates.find(item => item.id === selectedTemplateId);
+  const updateSelectedTemplateFromCard = async (checklistId: string) => {
+    const checklist = cardChecklists.find(cl => cl.id === checklistId);
+    if (!checklist?.templateId) return;
+    const template = checklistTemplates.find(item => item.id === checklist.templateId);
     if (!template) return;
     const nextTemplate: ChecklistTemplate = {
       ...template,
-      items: checklistItems
+      items: checklist.items
         .map(item => ({ id: item.id || crypto.randomUUID(), text: item.text.trim(), done: false }))
         .filter(item => item.text),
     };
@@ -1821,8 +2047,8 @@ function PipelineCardDetailDialog({
     { id: 'contracts' as const, label: 'Contratos', icon: FileSignature },
   ];
   const comments = (((conversation.metadata as any)?.pipeline_comments || []) as Array<{ id: string; text: string; created_at: string; author: string }>);
-  const completedChecklistItems = checklistItems.filter(item => item.done).length;
-  const selectedChecklistTemplate = checklistTemplates.find(item => item.id === selectedTemplateId) || null;
+  const totalItems = cardChecklists.flatMap(cl => cl.items).length;
+  const totalDone = cardChecklists.flatMap(cl => cl.items).filter(it => it.done).length;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1916,7 +2142,7 @@ function PipelineCardDetailDialog({
               })}
             </div>
 
-            <div className="flex-1 overflow-y-auto p-5">
+            <div className="flex-1 min-h-0 overflow-y-auto p-5">
               {activeTab === 'details' && (
                 <div className="max-w-2xl space-y-5">
                   <section className="space-y-2">
@@ -1928,10 +2154,21 @@ function PipelineCardDetailDialog({
                       </Button>
                     </div>
                     <Textarea
+                      ref={observationTextareaRef}
                       value={editedObservation}
-                      onChange={(event) => setEditedObservation(event.target.value)}
+                      onChange={(event) => {
+                        setEditedObservation(event.target.value);
+                        const el = event.target as HTMLTextAreaElement;
+                        el.style.height = 'auto';
+                        el.style.height = el.scrollHeight + 'px';
+                      }}
+                      onFocus={(event) => {
+                        const el = event.target as HTMLTextAreaElement;
+                        el.style.height = 'auto';
+                        el.style.height = el.scrollHeight + 'px';
+                      }}
                       placeholder="Adicionar observacao..."
-                      className="min-h-[44px] resize-none rounded-md border-transparent bg-muted/60 text-sm text-foreground focus-visible:border-border dark:bg-zinc-900/35 dark:text-zinc-100 dark:focus-visible:border-zinc-600"
+                      className="resize-y min-h-[44px] max-h-[200px] overflow-y-auto rounded-md border-transparent bg-muted/60 text-sm text-foreground focus-visible:border-border dark:bg-zinc-900/35 dark:text-zinc-100 dark:focus-visible:border-zinc-600"
                     />
                   </section>
 
@@ -1940,10 +2177,22 @@ function PipelineCardDetailDialog({
                       <h3 className="text-sm font-semibold text-foreground dark:text-zinc-200">Descricao</h3>
                     </div>
                     <Textarea
+                      ref={descriptionTextareaRef}
                       value={editedDescription}
-                      onChange={(event) => setEditedDescription(event.target.value)}
+                      onChange={(event) => {
+                        setEditedDescription(event.target.value);
+                        const el = event.target as HTMLTextAreaElement;
+                        el.style.height = 'auto';
+                        el.style.height = el.scrollHeight + 'px';
+                      }}
+                      onFocus={(event) => {
+                        const el = event.target as HTMLTextAreaElement;
+                        el.style.height = 'auto';
+                        el.style.height = el.scrollHeight + 'px';
+                      }}
                       placeholder="Adicionar descricao do card..."
-                      className="min-h-[74px] resize-none rounded-md border-transparent bg-muted/60 text-sm text-foreground focus-visible:border-border dark:bg-zinc-900/35 dark:text-zinc-100 dark:focus-visible:border-zinc-600"
+                      rows={4}
+                      className="resize-y min-h-[6rem] max-h-[300px] overflow-y-auto rounded-md border-transparent bg-muted/60 text-sm text-foreground focus-visible:border-border dark:bg-zinc-900/35 dark:text-zinc-100 dark:focus-visible:border-zinc-600"
                     />
                   </section>
 
@@ -1989,13 +2238,33 @@ function PipelineCardDetailDialog({
                           </span>
                         </span>
                       </button>
-                      <Button
-                        variant={isTemplateTrayOpen ? 'ghost' : 'outline'}
-                        size="sm"
-                        onClick={() => setIsTemplateTrayOpen(prev => !prev)}
-                      >
-                        {isTemplateTrayOpen ? 'Ocultar' : 'Mostrar'}
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={async () => {
+                            const newChecklist: CardChecklist = {
+                              id: crypto.randomUUID(),
+                              templateId: null,
+                              name: 'Checklist',
+                              items: [],
+                            };
+                            const next = [...cardChecklists, newChecklist];
+                            setCardChecklists(next);
+                            await saveCardChecklists(next);
+                          }}
+                        >
+                          <Plus className="mr-1.5 h-3.5 w-3.5" />
+                          Novo Checklist
+                        </Button>
+                        <Button
+                          variant={isTemplateTrayOpen ? 'ghost' : 'outline'}
+                          size="sm"
+                          onClick={() => setIsTemplateTrayOpen(prev => !prev)}
+                        >
+                          {isTemplateTrayOpen ? 'Ocultar' : 'Mostrar'}
+                        </Button>
+                      </div>
                     </div>
 
                     {isTemplateTrayOpen && (
@@ -2010,49 +2279,53 @@ function PipelineCardDetailDialog({
                         <div className="space-y-2">
                           {checklistTemplates.length === 0 ? (
                             <p className="text-sm text-zinc-500">Nenhum modelo salvo.</p>
-                          ) : checklistTemplates.map(template => (
-                            <div
-                              key={template.id}
-                              className={cn(
-                                "flex w-full flex-wrap items-center justify-between gap-2 rounded-md bg-zinc-950/35 px-3 py-2 text-sm",
-                                selectedTemplateId === template.id && "ring-1 ring-primary/50"
-                              )}
-                            >
-                              <div className="min-w-[160px] flex-1">
-                                <span className="block truncate text-zinc-100">{template.name}</span>
-                                {selectedTemplateId === template.id && (
-                                  <span className="text-xs text-primary">Aplicado neste card</span>
+                          ) : checklistTemplates.map(template => {
+                            const isTemplateApplied = cardChecklists.some(cl => cl.templateId === template.id);
+                            return (
+                              <div
+                                key={template.id}
+                                className={cn(
+                                  "flex w-full flex-wrap items-center justify-between gap-2 rounded-md bg-zinc-950/35 px-3 py-2 text-sm",
+                                  isTemplateApplied && "ring-1 ring-primary/50"
                                 )}
+                              >
+                                <div className="min-w-[160px] flex-1">
+                                  <span className="block truncate text-zinc-100">{template.name}</span>
+                                  {isTemplateApplied && (
+                                    <span className="text-xs text-primary">Aplicado neste card</span>
+                                  )}
+                                </div>
+                                <Badge variant="secondary">{template.items.length} itens</Badge>
+                                <Button
+                                  variant={isTemplateApplied ? 'secondary' : 'outline'}
+                                  size="sm"
+                                  className="h-7"
+                                  onClick={() => applyChecklistTemplate(template.id)}
+                                  disabled={isTemplateApplied}
+                                >
+                                  {isTemplateApplied ? 'Aplicado' : 'Aplicar'}
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7 text-zinc-500 hover:text-zinc-100"
+                                  onClick={() => editChecklistTemplate(template)}
+                                  title="Editar modelo"
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7 text-zinc-500 hover:text-destructive"
+                                  onClick={() => deleteChecklistTemplate(template.id)}
+                                  title="Remover modelo"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
                               </div>
-                              <Badge variant="secondary">{template.items.length} itens</Badge>
-                              <Button
-                                variant={selectedTemplateId === template.id ? 'secondary' : 'outline'}
-                                size="sm"
-                                className="h-7"
-                                onClick={() => applyChecklistTemplate(template.id)}
-                              >
-                                Aplicar
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-7 w-7 text-zinc-500 hover:text-zinc-100"
-                                onClick={() => editChecklistTemplate(template)}
-                                title="Editar modelo"
-                              >
-                                <Pencil className="h-3.5 w-3.5" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-7 w-7 text-zinc-500 hover:text-destructive"
-                                onClick={() => deleteChecklistTemplate(template.id)}
-                                title="Remover modelo"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </Button>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       </>
                     )}
@@ -2164,113 +2437,199 @@ function PipelineCardDetailDialog({
                     )}
                   </div>
 
-                  <div className="rounded-md bg-zinc-900/30 p-4">
-                    <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-                      <div>
-                        <h3 className="text-sm font-semibold text-zinc-100">Checklist deste card</h3>
-                        <p className="text-xs text-zinc-500">
-                          {completedChecklistItems}/{checklistItems.length} concluidos
-                          {selectedChecklistTemplate ? ` · ${selectedChecklistTemplate.name}` : ''}
-                        </p>
-                      </div>
-                      <div className="flex flex-wrap items-center justify-end gap-2">
-                        {selectedChecklistTemplate && (
-                          <Button variant="outline" size="sm" onClick={updateSelectedTemplateFromCard} disabled={isSaving || checklistItems.length === 0}>
-                            Atualizar modelo
-                          </Button>
-                        )}
-                        <Button size="sm" onClick={() => saveChecklist()} disabled={isSaving}>
-                          {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="mr-2 h-3.5 w-3.5" />}
-                          Salvar
-                        </Button>
-                      </div>
+                  {cardChecklists.length === 0 ? (
+                    <div className="rounded-md bg-zinc-900/30 p-6 text-center border border-white/5">
+                      <p className="text-sm text-zinc-500">Nenhum checklist neste card.</p>
+                      <Button
+                        size="sm"
+                        className="mt-3"
+                        onClick={async () => {
+                          const newChecklist: CardChecklist = {
+                            id: crypto.randomUUID(),
+                            templateId: null,
+                            name: 'Checklist',
+                            items: [],
+                          };
+                          const next = [...cardChecklists, newChecklist];
+                          setCardChecklists(next);
+                          await saveCardChecklists(next);
+                        }}
+                      >
+                        <Plus className="mr-2 h-4 w-4" />
+                        Criar Checklist
+                      </Button>
                     </div>
+                  ) : (
+                    <div className="space-y-6">
+                      {cardChecklists.map((checklist) => {
+                        const total = checklist.items.length;
+                        const done = checklist.items.filter(it => it.done).length;
+                        const hasTemplate = !!checklist.templateId;
+                        const templateName = hasTemplate
+                          ? checklistTemplates.find(t => t.id === checklist.templateId)?.name
+                          : null;
 
-                    <div className="space-y-2">
-                      {checklistItems.map(item => (
-                        <div
-                          key={item.id}
-                          className={cn(
-                            "flex items-center gap-2 rounded-md bg-zinc-950/35 p-2 transition-colors",
-                            dragOverChecklistItemId === item.id && draggedChecklistItemId !== item.id && "bg-primary/10 ring-1 ring-primary/40",
-                            draggedChecklistItemId === item.id && "opacity-60"
-                          )}
-                          onDragOver={(event) => {
-                            if (!draggedChecklistItemId || draggedChecklistItemId === item.id) return;
-                            event.preventDefault();
-                            setDragOverChecklistItemId(item.id);
-                          }}
-                          onDragLeave={(event) => {
-                            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-                              setDragOverChecklistItemId(prev => prev === item.id ? null : prev);
-                            }
-                          }}
-                          onDrop={(event) => {
-                            event.preventDefault();
-                            reorderChecklistItem(item.id);
-                          }}
-                        >
-                          <button
-                            type="button"
-                            draggable
-                            onDragStart={(event) => {
-                              setDraggedChecklistItemId(item.id);
-                              event.dataTransfer.effectAllowed = 'move';
-                              event.dataTransfer.setData('text/plain', item.id);
-                            }}
-                            onDragEnd={() => {
-                              setDraggedChecklistItemId(null);
-                              setDragOverChecklistItemId(null);
-                            }}
-                            className="flex h-7 w-5 shrink-0 cursor-grab items-center justify-center rounded text-zinc-500 hover:bg-white/5 hover:text-zinc-200 active:cursor-grabbing"
-                            title="Reordenar tarefa"
-                          >
-                            <GripVertical className="h-4 w-4" />
-                          </button>
-                          <input
-                            type="checkbox"
-                            checked={item.done}
-                            onChange={() => toggleChecklistItem(item.id)}
-                            className="h-4 w-4 accent-primary"
-                          />
-                          <Input
-                            value={item.text}
-                            onChange={(event) => {
-                              const value = event.target.value;
-                              setChecklistItems(prev => prev.map(current => current.id === item.id ? { ...current, text: value } : current));
-                            }}
-                            onBlur={(event) => updateChecklistItemText(item.id, event.target.value.trim())}
-                            onKeyDown={(event) => {
-                              if (event.key === 'Enter') {
-                                event.currentTarget.blur();
-                              }
-                            }}
-                            className={cn(
-                              "h-8 flex-1 border-transparent bg-transparent px-1 text-sm text-zinc-100 focus-visible:border-zinc-700 focus-visible:bg-zinc-900/60",
-                              item.done && "text-zinc-500 line-through"
-                            )}
-                          />
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-zinc-500 hover:text-destructive" onClick={() => removeChecklistItem(item.id)}>
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                      ))}
-                      <div className="flex gap-2">
-                        <Input
-                          value={newChecklistItem}
-                          onChange={(event) => setNewChecklistItem(event.target.value)}
-                          placeholder="Adicionar item..."
-                          className="bg-zinc-900/60 border-zinc-700 text-zinc-100"
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter') addChecklistItem();
-                          }}
-                        />
-                        <Button onClick={addChecklistItem}>
-                          <Plus className="h-4 w-4" />
-                        </Button>
-                      </div>
+                        return (
+                          <div key={checklist.id} className="rounded-md bg-zinc-900/30 p-4 border border-white/5 space-y-3">
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              <div className="flex-1 min-w-[200px]">
+                                <Input
+                                  value={checklist.name}
+                                  onChange={(event) => {
+                                    const value = event.target.value;
+                                    setCardChecklists(prev => prev.map(cl =>
+                                      cl.id === checklist.id ? { ...cl, name: value } : cl
+                                    ));
+                                  }}
+                                  onBlur={(event) => updateChecklistName(checklist.id, event.target.value.trim() || 'Checklist')}
+                                  onKeyDown={(event) => {
+                                    if (event.key === 'Enter') {
+                                      event.currentTarget.blur();
+                                    }
+                                  }}
+                                  className="h-8 border-transparent bg-transparent px-1 text-sm font-semibold text-zinc-100 focus-visible:border-zinc-700 focus-visible:bg-zinc-900/60 w-full"
+                                />
+                                <div className="flex items-center gap-1.5 mt-0.5 px-1 text-xs text-zinc-500">
+                                  <span>{done}/{total} concluídos</span>
+                                  {templateName && (
+                                    <>
+                                      <span>·</span>
+                                      <span className="text-primary/80" title={`Modelo: ${templateName}`}>
+                                        Modelo: {templateName}
+                                      </span>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                {hasTemplate && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="h-8"
+                                    onClick={() => updateSelectedTemplateFromCard(checklist.id)}
+                                    disabled={isSaving || checklist.items.length === 0}
+                                    title="Atualizar o modelo com os itens atuais deste checklist"
+                                  >
+                                    Atualizar modelo
+                                  </Button>
+                                )}
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-zinc-500 hover:text-destructive"
+                                  onClick={() => removeChecklist(checklist.id)}
+                                  title="Excluir checklist"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </div>
+
+                            {/* Checklist Items */}
+                            <div className="space-y-2">
+                              {checklist.items.map(item => (
+                                <div
+                                  key={item.id}
+                                  className={cn(
+                                    "flex items-center gap-2 rounded-md bg-zinc-950/35 p-2 transition-colors",
+                                    dragOverChecklistItemId === item.id && draggedChecklistItemId !== item.id && "bg-primary/10 ring-1 ring-primary/40",
+                                    draggedChecklistItemId === item.id && "opacity-60"
+                                  )}
+                                  onDragOver={(event) => {
+                                    if (!draggedChecklistItemId || draggedChecklistItemId === item.id) return;
+                                    event.preventDefault();
+                                    setDragOverChecklistItemId(item.id);
+                                  }}
+                                  onDragLeave={(event) => {
+                                    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                                      setDragOverChecklistItemId(prev => prev === item.id ? null : prev);
+                                    }
+                                  }}
+                                  onDrop={(event) => {
+                                    event.preventDefault();
+                                    reorderChecklistItem(checklist.id, item.id);
+                                  }}
+                                >
+                                  <button
+                                    type="button"
+                                    draggable
+                                    onDragStart={(event) => {
+                                      setDraggedChecklistItemId(item.id);
+                                      event.dataTransfer.effectAllowed = 'move';
+                                      event.dataTransfer.setData('text/plain', item.id);
+                                    }}
+                                    onDragEnd={() => {
+                                      setDraggedChecklistItemId(null);
+                                      setDragOverChecklistItemId(null);
+                                    }}
+                                    className="flex h-7 w-5 shrink-0 cursor-grab items-center justify-center rounded text-zinc-500 hover:bg-white/5 hover:text-zinc-200 active:cursor-grabbing"
+                                    title="Reordenar tarefa"
+                                  >
+                                    <GripVertical className="h-4 w-4" />
+                                  </button>
+                                  <input
+                                    type="checkbox"
+                                    checked={item.done}
+                                    onChange={() => toggleChecklistItem(checklist.id, item.id)}
+                                    className="h-4 w-4 accent-primary"
+                                  />
+                                  <Input
+                                    value={item.text}
+                                    onChange={(event) => {
+                                      const value = event.target.value;
+                                      setCardChecklists(prev => prev.map(cl =>
+                                        cl.id === checklist.id
+                                          ? { ...cl, items: cl.items.map(it => it.id === item.id ? { ...it, text: value } : it) }
+                                          : cl
+                                      ));
+                                    }}
+                                    onBlur={(event) => updateChecklistItemText(checklist.id, item.id, event.target.value.trim())}
+                                    onKeyDown={(event) => {
+                                      if (event.key === 'Enter') {
+                                        event.currentTarget.blur();
+                                      }
+                                    }}
+                                    className={cn(
+                                      "h-8 flex-1 border-transparent bg-transparent px-1 text-sm text-zinc-100 focus-visible:border-zinc-700 focus-visible:bg-zinc-900/60",
+                                      item.done && "text-zinc-500 line-through"
+                                    )}
+                                  />
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-7 w-7 text-zinc-500 hover:text-destructive"
+                                    onClick={() => removeChecklistItem(checklist.id, item.id)}
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </Button>
+                                </div>
+                              ))}
+
+                              {/* Add checklist item */}
+                              <div className="flex gap-2 pt-1">
+                                <Input
+                                  value={newChecklistItemByChecklist[checklist.id] || ''}
+                                  onChange={(event) => setNewChecklistItemByChecklist(prev => ({
+                                    ...prev,
+                                    [checklist.id]: event.target.value
+                                  }))}
+                                  placeholder="Adicionar tarefa..."
+                                  className="bg-zinc-900/60 border-zinc-700 text-zinc-100 h-8 text-xs"
+                                  onKeyDown={(event) => {
+                                    if (event.key === 'Enter') addChecklistItem(checklist.id);
+                                  }}
+                                />
+                                <Button size="sm" className="h-8 px-3" onClick={() => addChecklistItem(checklist.id)}>
+                                  <Plus className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
-                  </div>
+                  )}
                 </div>
               )}
 

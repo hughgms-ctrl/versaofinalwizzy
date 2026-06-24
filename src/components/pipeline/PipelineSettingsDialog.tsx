@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Trash2, GripVertical, Bell, BellOff, CheckSquare } from 'lucide-react';
+import { Plus, Trash2, GripVertical, Bell, BellOff, CheckSquare, Tag } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -244,9 +244,10 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
   const [completionColumnId, setCompletionColumnId] = useState<string>(pipeline.completion_column_id || 'last');
   const [defaultAssignedTo, setDefaultAssignedTo] = useState<string>(pipeline.default_assigned_to || 'none');
   const [deleteColumnId, setDeleteColumnId] = useState<string | null>(null);
-  const [activeSection, setActiveSection] = useState<'general' | 'checklists' | 'notifications'>('general');
+  const [activeSection, setActiveSection] = useState<'general' | 'checklists' | 'notifications' | 'tags'>('general');
   const [checklistTemplates, setChecklistTemplates] = useState<ChecklistTemplate[]>([]);
   const [columnChecklistConfig, setColumnChecklistConfig] = useState<Record<string, string>>({});
+  const [showUnassigned, setShowUnassigned] = useState(pipeline.show_unassigned || false);
 
   const { data: columns = [] } = usePipelineColumns(pipeline.id);
   const { data: allPipelines = [] } = usePipelines();
@@ -276,6 +277,7 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
     setDefaultAssignedTo(pipeline.default_assigned_to || 'none');
     setChecklistTemplates(loadChecklistTemplates(selectedWorkspaceId));
     setColumnChecklistConfig(loadColumnChecklistConfig(selectedWorkspaceId, pipeline.id));
+    setShowUnassigned(pipeline.show_unassigned || false);
   }, [pipeline, selectedWorkspaceId]);
 
   const saveColumnChecklistConfig = (columnId: string, templateId: string) => {
@@ -301,7 +303,8 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
     const nextColumnChanged = (nextPipelineColumnId === 'first' ? null : nextPipelineColumnId) !== (pipeline.next_pipeline_column_id || null);
     const assignedChanged = (defaultAssignedTo === 'none' ? null : defaultAssignedTo) !== (pipeline.default_assigned_to || null);
     const completionChanged = (completionColumnId === 'last' ? null : completionColumnId) !== (pipeline.completion_column_id || null);
-    return name !== pipeline.name || description !== (pipeline.description || '') || wsChanged || nextPipelineChanged || nextColumnChanged || assignedChanged || completionChanged;
+    const showUnassignedChanged = showUnassigned !== (pipeline.show_unassigned || false);
+    return name !== pipeline.name || description !== (pipeline.description || '') || wsChanged || nextPipelineChanged || nextColumnChanged || assignedChanged || completionChanged || showUnassignedChanged;
   };
 
   const handleSave = async () => {
@@ -315,6 +318,7 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
         next_pipeline_column_id: nextPipelineId === 'none' || nextPipelineColumnId === 'first' ? null : nextPipelineColumnId,
         default_assigned_to: defaultAssignedTo === 'none' ? null : defaultAssignedTo,
         completion_column_id: completionColumnId === 'last' ? null : completionColumnId,
+        show_unassigned: showUnassigned,
       });
     }
     onOpenChange(false);
@@ -436,6 +440,14 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
               <CheckSquare className="h-4 w-4 mr-1" />
               Checklists
             </Button>
+            <Button
+              variant={activeSection === 'tags' ? 'default' : 'ghost'}
+              size="sm"
+              onClick={() => setActiveSection('tags')}
+            >
+              <Tag className="h-4 w-4 mr-1" />
+              Tags
+            </Button>
           </div>
 
           <div className="flex-1 overflow-y-auto space-y-4">
@@ -538,13 +550,19 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
                   </div>
                 </div>
 
-                {/* Tags automáticas por coluna */}
-                <div className="space-y-2">
-                  <Label>Tags ao entrar na coluna:</Label>
-                  <p className="text-xs text-muted-foreground">
-                    Selecione tags que serão adicionadas ao contato automaticamente quando o lead entrar em cada coluna (não remove tags existentes).
-                  </p>
-                  <ColumnAutoTagsEditor columns={columns} pipelineId={pipeline.id} />
+                {/* Exibir Não classificados */}
+                <div className="flex items-center space-x-3 rounded-lg border border-border p-3 bg-muted/10">
+                  <Switch
+                    id="show-unassigned"
+                    checked={showUnassigned}
+                    onCheckedChange={setShowUnassigned}
+                  />
+                  <div className="space-y-0.5">
+                    <Label htmlFor="show-unassigned" className="cursor-pointer">Exibir Não classificados</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Exibe a coluna "Não classificados" de forma permanente no board. Se desmarcado, ela não abre ao mover cards.
+                    </p>
+                  </div>
                 </div>
 
                 {/* Responsável padrão do pipeline */}
@@ -825,6 +843,20 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
                     })}
                   </div>
                 )}
+              </div>
+            )}
+
+            {activeSection === 'tags' && (
+              <div className="space-y-4">
+                <div className="space-y-1">
+                  <h3 className="text-sm font-medium">Tags ao entrar na coluna</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Selecione as tags que serão adicionadas automaticamente ao contato quando o lead entrar em cada estágio (não remove tags existentes).
+                  </p>
+                </div>
+                <div className="rounded-lg border border-border p-4 bg-muted/20">
+                  <ColumnAutoTagsEditor columns={columns} pipelineId={pipeline.id} />
+                </div>
               </div>
             )}
 
