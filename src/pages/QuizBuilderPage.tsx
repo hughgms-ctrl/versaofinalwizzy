@@ -585,71 +585,17 @@ function QuizSettingsSheet({ open, onClose, quiz, onUpdate }: {
   quiz: Quiz;
   onUpdate: (updates: Partial<Quiz>) => Promise<void>;
 }) {
-  const [localWelcome, setLocalWelcome] = useState<Record<string, any>>(() => (quiz.welcome_screen || {}) as Record<string, any>);
-  const [localEnd, setLocalEnd] = useState<Record<string, any>>(() => (quiz.end_screen || {}) as Record<string, any>);
-  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const ws = localWelcome;
-  const es = localEnd;
-
-  const onUpdateRef = useRef(onUpdate);
-  onUpdateRef.current = onUpdate;
-  const localWelcomeRef = useRef(localWelcome);
-  localWelcomeRef.current = localWelcome;
-  const localEndRef = useRef(localEnd);
-  localEndRef.current = localEnd;
-
-  // Sync state when drawer is opened or quiz ID changes
-  useEffect(() => {
-    if (open) {
-      setLocalWelcome((quiz.welcome_screen || {}) as Record<string, any>);
-      setLocalEnd((quiz.end_screen || {}) as Record<string, any>);
-    }
-  }, [open, quiz.id]);
-
-  const debouncedUpdate = useCallback((welcomePatch?: Record<string, any>, endPatch?: Record<string, any>) => {
-    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
-
-    const nextWelcome = welcomePatch ? { ...localWelcomeRef.current, ...welcomePatch } : localWelcomeRef.current;
-    const nextEnd = endPatch ? { ...localEndRef.current, ...endPatch } : localEndRef.current;
-
-    debounceTimerRef.current = setTimeout(() => {
-      const updates: Partial<Quiz> = {};
-      if (welcomePatch) updates.welcome_screen = nextWelcome;
-      if (endPatch) updates.end_screen = nextEnd;
-      onUpdateRef.current(updates);
-    }, 400);
-  }, []);
-
-  // Flush pending changes on close/unmount
-  useEffect(() => {
-    return () => {
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-        const updates: Partial<Quiz> = {};
-        updates.welcome_screen = localWelcomeRef.current;
-        updates.end_screen = localEndRef.current;
-        onUpdateRef.current(updates);
-      }
-    };
-  }, [open]);
+  // Lê direto das props — sem useState/useEffect extras.
+  // key no container força remount (e refresh dos defaultValues) ao abrir o painel.
+  const ws = (quiz.welcome_screen || {}) as Record<string, any>;
+  const es = (quiz.end_screen || {}) as Record<string, any>;
 
   const updateWelcome = (patch: Record<string, any>) => {
-    setLocalWelcome(prev => {
-      const merged = { ...prev, ...patch };
-      localWelcomeRef.current = merged;
-      debouncedUpdate(patch, undefined);
-      return merged;
-    });
+    onUpdate({ welcome_screen: { ...ws, ...patch } } as any);
   };
 
   const updateEnd = (patch: Record<string, any>) => {
-    setLocalEnd(prev => {
-      const merged = { ...prev, ...patch };
-      localEndRef.current = merged;
-      debouncedUpdate(undefined, patch);
-      return merged;
-    });
+    onUpdate({ end_screen: { ...es, ...patch } } as any);
   };
 
   return (
@@ -659,7 +605,8 @@ function QuizSettingsSheet({ open, onClose, quiz, onUpdate }: {
           <SheetTitle className="text-sm">Configurações do Wizzy Quiz</SheetTitle>
         </SheetHeader>
         <ScrollArea className="flex-1">
-          <div className="p-4 space-y-6">
+          {/* key={quiz.id + open} garante que os defaultValues são recriados ao abrir */}
+          <div key={`${quiz.id}-${String(open)}`} className="p-4 space-y-6">
             {/* Welcome screen */}
             <div className="space-y-3">
               <h3 className="text-sm font-semibold">Tela de Boas-vindas</h3>
@@ -669,19 +616,19 @@ function QuizSettingsSheet({ open, onClose, quiz, onUpdate }: {
               </div>
               <div>
                 <Label className="text-xs">Título</Label>
-                <Input value={ws.title || ''} onChange={(e) => updateWelcome({ title: e.target.value })} placeholder={quiz.name} />
+                <Input defaultValue={ws.title || ''} onBlur={(e) => updateWelcome({ title: e.target.value })} placeholder={quiz.name} />
               </div>
               <div>
                 <Label className="text-xs">Descrição</Label>
-                <Textarea value={ws.description || ''} onChange={(e) => updateWelcome({ description: e.target.value })} rows={3} placeholder="Descrição opcional..." />
+                <Textarea defaultValue={ws.description || ''} onBlur={(e) => updateWelcome({ description: e.target.value })} rows={3} placeholder="Descrição opcional..." />
               </div>
               <div>
                 <Label className="text-xs">Texto do botão</Label>
-                <Input value={ws.buttonText || ''} onChange={(e) => updateWelcome({ buttonText: e.target.value })} placeholder="Começar" />
+                <Input defaultValue={ws.buttonText || ''} onBlur={(e) => updateWelcome({ buttonText: e.target.value })} placeholder="Começar" />
               </div>
               <div>
                 <Label className="text-xs">URL de mídia (imagem ou vídeo)</Label>
-                <Input value={ws.mediaUrl || ''} onChange={(e) => updateWelcome({ mediaUrl: e.target.value })} placeholder="https://..." />
+                <Input defaultValue={ws.mediaUrl || ''} onBlur={(e) => updateWelcome({ mediaUrl: e.target.value })} placeholder="https://..." />
               </div>
             </div>
 
@@ -692,20 +639,20 @@ function QuizSettingsSheet({ open, onClose, quiz, onUpdate }: {
               <h3 className="text-sm font-semibold">Tela Final</h3>
               <div>
                 <Label className="text-xs">Título</Label>
-                <Input value={es.title || ''} onChange={(e) => updateEnd({ title: e.target.value })} placeholder="Obrigado!" />
+                <Input defaultValue={es.title || ''} onBlur={(e) => updateEnd({ title: e.target.value })} placeholder="Obrigado!" />
               </div>
               <div>
                 <Label className="text-xs">Descrição</Label>
-                <Textarea value={es.description || ''} onChange={(e) => updateEnd({ description: e.target.value })} rows={3} placeholder="Suas respostas foram enviadas." />
+                <Textarea defaultValue={es.description || ''} onBlur={(e) => updateEnd({ description: e.target.value })} rows={3} placeholder="Suas respostas foram enviadas." />
               </div>
               <div>
                 <Label className="text-xs">URL de redirecionamento</Label>
-                <Input value={es.redirectUrl || ''} onChange={(e) => updateEnd({ redirectUrl: e.target.value })} placeholder="https://..." />
+                <Input defaultValue={es.redirectUrl || ''} onBlur={(e) => updateEnd({ redirectUrl: e.target.value })} placeholder="https://..." />
               </div>
               {es.redirectUrl && (
                 <div>
                   <Label className="text-xs">Texto do botão</Label>
-                  <Input value={es.buttonText || ''} onChange={(e) => updateEnd({ buttonText: e.target.value })} placeholder="Continuar" />
+                  <Input defaultValue={es.buttonText || ''} onBlur={(e) => updateEnd({ buttonText: e.target.value })} placeholder="Continuar" />
                 </div>
               )}
             </div>
