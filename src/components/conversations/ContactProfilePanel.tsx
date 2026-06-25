@@ -840,6 +840,66 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
                   <Button size="icon" variant="ghost" className="h-9 w-9 shrink-0" onClick={() => {
                     setIsEditingNote(false);
                     setEditedNote((contactMetadata as { note?: string } | null)?.note || '');
+                  }}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <span className="text-sm text-foreground flex-1 py-1 px-2 bg-muted/30 rounded-md min-h-[36px] break-all whitespace-pre-wrap">
+                    {(contactMetadata as { note?: string } | null)?.note || 'Sem observação'}
+                  </span>
+                  <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => setIsEditingNote(true)}>
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                </>
+              )}
+            </div>
+          </div>
+
+          <Separator />
+
+          {/* Descrição */}
+          <div className="space-y-2">
+            <Label className="text-xs text-muted-foreground uppercase tracking-wider">
+              Descrição
+            </Label>
+            <div className="flex items-start gap-2">
+              {isEditingDescription ? (
+                <>
+                  <Textarea
+                    value={editedDescription}
+                    onChange={(e) => setEditedDescription(e.target.value)}
+                    placeholder="Adicionar descrição..."
+                    className="text-sm flex-1 min-h-[80px]"
+                    autoFocus
+                  />
+                  <div className="flex flex-col gap-1">
+                    <Button size="icon" className="h-9 w-9 shrink-0" onClick={handleSaveDescription} disabled={isSavingDescription}>
+                      {isSavingDescription ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                    </Button>
+                    <Button size="icon" variant="ghost" className="h-9 w-9 shrink-0" onClick={() => {
+                      setIsEditingDescription(false);
+                      setEditedDescription(((contactMetadata as any)?.description as string) || '');
+                    }}>
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <span className="text-sm text-foreground flex-1 py-1 px-2 bg-muted/30 rounded-md min-h-[36px] break-all whitespace-pre-wrap">
+                    {editedDescription || 'Sem descrição'}
+                  </span>
+                  <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={() => setIsEditingDescription(true)}>
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                </>
+              )}
+            </div>
+          </div>
+
+          <Separator />
 
           {/* Tags */}
           <div className="space-y-3">
