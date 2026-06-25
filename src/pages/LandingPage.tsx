@@ -465,7 +465,7 @@ export default function LandingPage() {
                 IA Jurídica Plug'n'Play - para advogados reais
               </Badge>
               <h1 className="max-w-4xl text-5xl font-black leading-[1.03] tracking-tight text-white sm:text-6xl lg:text-7xl">
-                A IA no seu escritório trabalhando <Em>24/7</Em>, sem você fazer nada técnico.
+                A IA no seu escritório trabalhando <Em>24/7</Em>, e você foca no Direito.
               </h1>
               <p className="mt-7 max-w-2xl text-lg leading-8 text-slate-300">
                 Chega de aprender Claude Code, GPT, Make ou qualquer framework. O Wizzy entrega <strong className="font-semibold text-white">agentes de IA jurídicos prontos</strong> - você ativa, eles trabalham.

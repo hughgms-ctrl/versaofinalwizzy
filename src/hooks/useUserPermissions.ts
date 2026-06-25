@@ -5,7 +5,7 @@ import { toast } from './use-toast';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { isMissingRelationError } from '@/lib/supabaseErrors';
 
-export interface UserPermissions {
+export interface UserPermissions extends Record<string, any> {
   id: string;
   user_id: string;
   organization_id: string;
