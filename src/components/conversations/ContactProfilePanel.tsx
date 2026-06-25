@@ -901,6 +901,14 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
 
           <Separator />
 
+          {/* Atributos da conversa (Workspace, Responsável, Origem, Pipeline) */}
+          <div className="space-y-2">
+            <Label className="text-xs text-muted-foreground uppercase tracking-wider">Atributos</Label>
+            <ConversationAttributesPanel conversation={conversation} compact />
+          </div>
+
+          <Separator />
+
           {/* Tags */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
