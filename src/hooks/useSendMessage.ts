@@ -130,17 +130,18 @@ export function useSendMessage() {
       return { previousMessages, previousConversations };
     },
     onError: (err, newMessage, context) => {
-      if (context?.previousMessages) {
-        queryClient.setQueryData(
-          ['messages', newMessage.conversationId],
-          context.previousMessages
-        );
-      }
-      context?.previousConversations?.forEach(([queryKey, data]) => {
-        queryClient.setQueryData(queryKey, data);
-      });
-
+      // IMPORTANT: Do NOT revert the optimistic state here.
+      // zapi-send-message saves the message to the DB even on provider failure (with failed_at set).
+      // Reverting would make the message disappear from the screen even though it's in the DB.
+      // Instead, invalidate queries so the real DB state is fetched.
       console.error('Send message error:', err);
+
+      // Invalidate to fetch real state from DB (message may have been saved despite error)
+      queryClient.invalidateQueries({ queryKey: ['messages', newMessage.conversationId] });
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      }, 800);
+
       toast({
         title: 'Erro ao enviar mensagem',
         description: err instanceof Error ? err.message : 'Nao foi possivel enviar a mensagem. Tente novamente.',
@@ -148,6 +149,7 @@ export function useSendMessage() {
       });
     },
     onSettled: (data, error, variables) => {
+      // Always refetch to ensure real DB state is shown (catches race conditions and realtime gaps)
       queryClient.invalidateQueries({ queryKey: ['messages', variables.conversationId] });
       setTimeout(() => {
         queryClient.invalidateQueries({ queryKey: ['conversations'] });

@@ -67,6 +67,8 @@ export interface DbMessage {
   delivered_at: string | null;
   media_url: string | null;
   zapi_message_id: string | null;
+  failed_at: string | null;
+  error_message: string | null;
   metadata?: any;
 }
 
@@ -121,7 +123,8 @@ export function useConversations(options?: { includeArchived?: boolean; onlyArch
     },
     enabled: !!session && !!profile?.organization_id,
     staleTime: 15_000,
-    refetchOnWindowFocus: false,
+    refetchOnWindowFocus: true,
+    refetchInterval: 30_000, // Poll every 30s as fallback when realtime fails
   });
 
   // Subscribe to realtime updates for conversations
@@ -218,8 +221,10 @@ export function useMessages(conversationId: string | null) {
       return oldest;
     },
     enabled: !!session && !!conversationId,
-    staleTime: 10_000,
-    refetchOnWindowFocus: false,
+    staleTime: 0, // Always refetch on mount to catch missed realtime events
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true, // Refetch when tab regains focus
+    refetchInterval: 15_000, // Poll every 15s as fallback when realtime fails
   });
 
   // Achata as páginas (cada uma DESC) em uma lista ASC dedupada por id.

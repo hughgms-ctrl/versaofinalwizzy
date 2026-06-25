@@ -1984,11 +1984,14 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
       finalIsFromBot = true;
       console.log(`[WEBHOOK] IA mode outbound not found after wait — saving as bot message.`);
     } else {
-      // Not in IA mode — this echo is from a human-sent message.
+      // Not in IA mode — this echo is from a human-sent message OR a message sent from WhatsApp native app.
       // zapi-send-message saves synchronously, so dedup above should have caught it.
-      // If we reach here, it means the message wasn't found by zapi_message_id dedup.
-      // Check by sent_by as extra safety.
+      // If we reach here, it means the message wasn't found by the initial zapi_message_id dedup.
+      // This can happen if:
+      //   1. zapi-send-message saved with a slightly different msgId format
+      //   2. The message was sent from WhatsApp native app (no sent_by)
       if (msgId) {
+        // Check for human-sent (via Wizzy) messages
         const { data: existingSentByHuman } = await supabase
           .from('messages')
           .select('id, sent_by')
@@ -2006,8 +2009,13 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
           );
           return respond({ success: true, duplicate: true, human_sent: true });
         }
+        // Also check for native-app messages (no sent_by) - these are echoes of messages sent directly from WhatsApp
+        // The initial dedup at line 1927 ALREADY checks ALL messages by zapi_message_id, so if we reach here
+        // it means no match was found at all. This means it's a genuinely new message — save it.
+        console.log(`[WEBHOOK] fromMe non-IA: no existing record for msgId=${msgId} — saving as native-app outbound message.`);
       }
-      // Not found — save as human outbound (is_from_bot=false)
+      // Not found in any dedup check — save as human outbound (is_from_bot=false)
+      // This covers: WhatsApp native app messages, or Wizzy messages where the echo arrived before the save
       finalIsFromBot = false;
     }
   }

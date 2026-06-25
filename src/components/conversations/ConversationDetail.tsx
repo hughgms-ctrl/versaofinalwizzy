@@ -10,7 +10,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useSignatureSettings } from '@/hooks/useSignatureSettings';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { Bot, User, Send, Loader2, MessageCircle, Mic, Check, CheckCheck, ArrowUp, FileText, MapPin, Play, UserCircle, X, Variable, PenLine, Archive, Search, Reply, Clock, Sparkles, Timer, ChevronDown, RefreshCw, Trash2 } from 'lucide-react';
+import { Bot, User, Send, Loader2, MessageCircle, Mic, Check, CheckCheck, ArrowUp, FileText, MapPin, Play, UserCircle, X, Variable, PenLine, Archive, Search, Reply, Clock, Sparkles, Timer, ChevronDown, RefreshCw, Trash2, AlertCircle } from 'lucide-react';
 import { formatWhatsAppMessage, parseMessageVariables, messageVariables } from '@/lib/whatsappFormatter';
 import {
   DropdownMenu,
@@ -1806,6 +1806,20 @@ function MessageBubble({ message, contactAvatar, contactName, contactPhone, cont
               const isPlayed = metadata?.played_at;
               const isRead = !!message.read_at;
               const isDelivered = !!message.delivered_at;
+              const hasFailed = !!(message as any).failed_at;
+
+              if (hasFailed) {
+                return (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <AlertCircle className="h-3 w-3 text-red-400 flex-shrink-0" />
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="text-xs max-w-[200px]">
+                      Falha no envio: {(message as any).error_message || 'Erro ao enviar para o WhatsApp'}
+                    </TooltipContent>
+                  </Tooltip>
+                );
+              }
  
               return <MessageStatusTicks readAt={isRead ? message.read_at : null} deliveredAt={isDelivered ? message.delivered_at : null} playedAt={isPlayed || null} />;
             })()
