@@ -15,6 +15,7 @@ import { Badge } from '@/components/ui/badge';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
 import { usePipelines, usePipelineColumns } from '@/hooks/usePipelines';
 import { useTags } from '@/hooks/useTags';
+import { useFlows } from '@/hooks/useFlows';
 import { getQuizComponentInfo } from './QuizSidebar';
 import { ptBR } from 'date-fns/locale';
 
@@ -120,6 +121,7 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate, userFields 
 }) {
   // Local state for block data to avoid re-rendering entire canvas on every keystroke
   const [localData, setLocalData] = useState<Record<string, any>>(block.data || {});
+  const { data: flows = [] } = useFlows();
   const flushRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const allBlocksRef = useRef(allBlocks);
   allBlocksRef.current = allBlocks;
@@ -435,11 +437,50 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate, userFields 
             <div><Label className="text-xs">Número do WhatsApp</Label>
               <Input value={d.waNumber || ''} onChange={(e) => updateBlockData({ waNumber: e.target.value })} placeholder="5511999999999" /></div>
           )}
-          <div><Label className="text-xs">Mensagem</Label>
-            <Textarea value={d.waMessage || ''} onChange={(e) => updateBlockData({ waMessage: e.target.value })} rows={4}
-              placeholder="Olá {{nome}}, obrigado por responder!" />
-            <p className="text-[10px] text-muted-foreground mt-1">Use {'{{campo}}'} para interpolar campos do contato.</p>
+
+          <div className="space-y-1">
+            <Label className="text-xs">Ação ao disparar</Label>
+            <Select
+              value={d.triggerActionType || 'message'}
+              onValueChange={(val) => updateBlockDataImmediate({ triggerActionType: val })}
+            >
+              <SelectTrigger className="h-9 text-xs">
+                <SelectValue placeholder="Selecione a ação..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="message" className="text-xs">Mensagem de texto</SelectItem>
+                <SelectItem value="flow" className="text-xs">Disparar fluxo (chatbot)</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
+
+          {d.triggerActionType === 'flow' ? (
+            <div className="space-y-1">
+              <Label className="text-xs">Fluxo a disparar</Label>
+              <Select
+                value={d.flowId || 'none'}
+                onValueChange={(val) => updateBlockDataImmediate({ flowId: val === 'none' ? null : val })}
+              >
+                <SelectTrigger className="h-9 text-xs">
+                  <SelectValue placeholder="Selecione o fluxo..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none" className="text-xs">Nenhum fluxo</SelectItem>
+                  {flows.filter(f => f.is_active).map(f => (
+                    <SelectItem key={f.id} value={f.id} className="text-xs">
+                      {f.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : (
+            <div><Label className="text-xs">Mensagem</Label>
+              <Textarea value={d.waMessage || ''} onChange={(e) => updateBlockData({ waMessage: e.target.value })} rows={4}
+                placeholder="Olá {{nome}}, obrigado por responder!" />
+              <p className="text-[10px] text-muted-foreground mt-1">Use {'{{campo}}'} para interpolar campos do contato.</p>
+            </div>
+          )}
           <Separator />
           <CrmFieldsEditor data={d} onUpdate={updateBlockData} onUpdateImmediate={updateBlockDataImmediate} />
         </>

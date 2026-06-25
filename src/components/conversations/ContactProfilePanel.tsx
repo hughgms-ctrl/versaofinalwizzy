@@ -17,24 +17,6 @@ import {
   Check,
   Loader2,
   Save,
-import { cn } from '@/lib/utils';
-import { DbConversation } from '@/hooks/useConversations';
-import { ContactAvatar } from './ContactAvatar';
-import { useTags, useContactTags, useAddTagToContact, useRemoveTagFromContact, useCreateTag, Tag } from '@/hooks/useTags';
-import { supabase } from '@/integrations/supabase/client';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
-import {
-  X,
-  Phone,
-  Mail,
-  Calendar,
-  Plus,
-  Bot,
-  Check,
-  Loader2,
-  Save,
   Pencil,
   Clock,
   Expand,

@@ -1,10 +1,18 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
-import { sendWhatsAppMessage } from "../_shared/whatsappProvider.ts";
+import { sendWhatsAppMessage, resolveWhatsAppInstance } from "../_shared/whatsappProvider.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+
+function normalizePhoneNumber(value: string): string {
+  let clean = String(value || "").replace(/\D/g, "");
+  if (clean.length === 10 || clean.length === 11) {
+    clean = `55${clean}`;
+  }
+  return clean;
+}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -16,9 +24,10 @@ Deno.serve(async (req) => {
     const {
       organization_id,
       quiz_id,
-      action, // 'send_whatsapp' | 'crm_action' | 'submit_quiz'
+      action, // 'send_whatsapp' | 'crm_action' | 'submit_quiz' | 'trigger_flow'
       phone,
       message,
+      flow_id,
       contact_name,
       contact_email,
       contact_phone,
@@ -59,20 +68,23 @@ Deno.serve(async (req) => {
 
     const results: Record<string, any> = {};
 
+    // Normalize phone numbers if present
+    const cleanPhone = phone ? normalizePhoneNumber(phone) : null;
+    const cleanContactPhone = contact_phone ? normalizePhoneNumber(contact_phone) : null;
+
     // --- CRM Actions ---
-    // Always process contact creation/update for crm_action and submit_quiz.
+    // Always process contact creation/update for crm_action, trigger_flow and submit_quiz.
     // Also run if optional CRM fields are provided (tags, workspace, pipeline).
     const hasCrmData = tag_ids?.length || (workspace_id && workspace_id !== '') || (pipeline_id && pipeline_id !== '');
-    if (action === "crm_action" || action === "submit_quiz" || hasCrmData) {
-      const contactPhone = contact_phone || phone;
+    if (action === "crm_action" || action === "submit_quiz" || action === "trigger_flow" || hasCrmData) {
+      const contactPhone = cleanContactPhone || cleanPhone;
       if (contactPhone) {
         // Find or create contact
-        const normalizedPhone = String(contactPhone).replace(/\D/g, "");
         let { data: contact } = await supabaseAdmin
           .from("contacts")
           .select("id, metadata")
           .eq("organization_id", organization_id)
-          .eq("phone", normalizedPhone)
+          .eq("phone", contactPhone)
           .maybeSingle();
 
         const noteText = variables ? buildQuizSummary(variables) : null;
@@ -83,7 +95,7 @@ Deno.serve(async (req) => {
             .from("contacts")
             .insert({
               organization_id,
-              phone: normalizedPhone,
+              phone: contactPhone,
               name: contact_name || null,
               email: contact_email || null,
               workspace_id: workspace_id || null,
@@ -184,6 +196,16 @@ Deno.serve(async (req) => {
 
             if (!conv) {
               // Create conversation if it doesn't exist so it appears on CRM board
+              let activeInstanceId: string | null = null;
+              try {
+                const activeInst = await resolveWhatsAppInstance(supabaseAdmin, organization_id, null);
+                if (activeInst) {
+                  activeInstanceId = activeInst.id;
+                }
+              } catch (err) {
+                console.error("Error resolving active whatsapp instance:", err);
+              }
+
               const { data: newConv, error: convError } = await supabaseAdmin
                 .from("conversations")
                 .insert({
@@ -191,6 +213,7 @@ Deno.serve(async (req) => {
                   contact_id: contact.id,
                   status: "open",
                   workspace_id: workspace_id || null,
+                  whatsapp_instance_id: activeInstanceId,
                 })
                 .select("id")
                 .single();
@@ -198,12 +221,34 @@ Deno.serve(async (req) => {
               if (!convError) {
                 conv = newConv;
               }
-            } else if (workspace_id) {
-              // Update existing conversation to ensure it has the correct workspace association
-              await supabaseAdmin
+            } else {
+              // If conversation exists but has no workspace or active instance, update it
+              const updates: Record<string, any> = {};
+              if (workspace_id) updates.workspace_id = workspace_id;
+
+              const { data: currentConv } = await supabaseAdmin
                 .from("conversations")
-                .update({ workspace_id })
-                .eq("id", conv.id);
+                .select("whatsapp_instance_id")
+                .eq("id", conv.id)
+                .single();
+              
+              if (currentConv && !currentConv.whatsapp_instance_id) {
+                try {
+                  const activeInst = await resolveWhatsAppInstance(supabaseAdmin, organization_id, null);
+                  if (activeInst) {
+                    updates.whatsapp_instance_id = activeInst.id;
+                  }
+                } catch (err) {
+                  console.error("Error resolving active whatsapp instance for update:", err);
+                }
+              }
+
+              if (Object.keys(updates).length > 0) {
+                await supabaseAdmin
+                  .from("conversations")
+                  .update(updates)
+                  .eq("id", conv.id);
+              }
             }
 
             if (conv) {
@@ -228,14 +273,54 @@ Deno.serve(async (req) => {
       }
     }
 
-    // --- Send WhatsApp ---
-    if (action === "send_whatsapp" && phone) {
-      const normalizedPhone = String(phone).replace(/\D/g, "");
+    // --- Trigger Flow ---
+    if (action === "trigger_flow" && flow_id && results.contact_id) {
+      // Find the conversation we just created/matched
+      const { data: conv } = await supabaseAdmin
+        .from("conversations")
+        .select("id")
+        .eq("contact_id", results.contact_id)
+        .eq("organization_id", organization_id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
+      if (conv) {
+        try {
+          const localUrl = `${Deno.env.get("SUPABASE_URL")}/functions/v1/flow-execute`;
+          const resp = await fetch(localUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+            },
+            body: JSON.stringify({
+              flowId: flow_id,
+              conversationId: conv.id,
+              variables: variables || {},
+            }),
+          });
+
+          results.flow_triggered = resp.ok;
+          if (!resp.ok) {
+            results.flow_error = await resp.text();
+          }
+        } catch (triggerError) {
+          results.flow_triggered = false;
+          results.flow_error = String(triggerError);
+        }
+      } else {
+        results.flow_triggered = false;
+        results.flow_error = "Conversation not found/created for contact";
+      }
+    }
+
+    // --- Send WhatsApp ---
+    if (action === "send_whatsapp" && cleanPhone) {
       try {
         const resp = await sendWhatsAppMessage(supabaseAdmin, {
           organizationId: organization_id,
-          phone: normalizedPhone,
+          phone: cleanPhone,
           type: "text",
           text: message || "",
         });
@@ -276,7 +361,7 @@ function buildQuizSummary(variables: Record<string, any>): string {
     
     if (typeof value === 'object') {
       if ((value as any).url) {
-        summary += `- ${label}: ${(value as any).name || 'Arquivo'} (${(value as any).url})\n`;
+        summary += `- ${label}: ${(value as any).name || 'Arquivo'}\n`;
       } else {
         summary += `- ${label}: ${JSON.stringify(value)}\n`;
       }

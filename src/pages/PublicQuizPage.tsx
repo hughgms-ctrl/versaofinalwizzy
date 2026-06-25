@@ -393,13 +393,25 @@ export default function PublicQuizPage({ inlineQuiz, inlineNodes, inlineEdges }:
   }, [goToNextBlock]);
 
   const handleWhatsAppTrigger = useCallback((block: FlowBlock) => {
-    const { waNumber, waMessage, useContactPhone, tagIds, workspaceId, pipelineId, columnId } = block.data;
+    const { waNumber, waMessage, useContactPhone, tagIds, workspaceId, pipelineId, columnId, triggerActionType, flowId } = block.data;
     const targetPhone = useContactPhone ? (variables['phone'] || variables['telefone'] || variables['whatsapp'] || '') : (waNumber || '');
-    const contactPhone = variables['phone'] || variables['telefone'] || variables['whatsapp'] || '';
+    let contactPhone = variables['phone'] || variables['telefone'] || variables['whatsapp'] || '';
     
     if (targetPhone || tagIds?.length || workspaceId || pipelineId) {
-      const message = interpolate(waMessage || '', variables);
-      const phone = String(targetPhone).replace(/\D/g, '');
+      const isFlow = triggerActionType === 'flow';
+      const message = isFlow ? '' : interpolate(waMessage || '', variables);
+      
+      let phone = String(targetPhone).replace(/\D/g, '');
+      if (phone.length === 10 || phone.length === 11) {
+        phone = `55${phone}`;
+      }
+
+      if (contactPhone) {
+        contactPhone = String(contactPhone).replace(/\D/g, '');
+        if (contactPhone.length === 10 || contactPhone.length === 11) {
+          contactPhone = `55${contactPhone}`;
+        }
+      }
       
       // Use public quiz-actions edge function (no auth needed)
       const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
@@ -411,9 +423,10 @@ export default function PublicQuizPage({ inlineQuiz, inlineNodes, inlineEdges }:
         body: JSON.stringify({
           organization_id: quiz?.organization_id,
           quiz_id: quiz?.id,
-          action: phone ? 'send_whatsapp' : 'crm_action',
+          action: phone ? (isFlow ? 'trigger_flow' : 'send_whatsapp') : 'crm_action',
           phone,
           message,
+          flow_id: flowId || '',
           contact_name: variables['nome'] || variables['name'] || '',
           contact_email: variables['email'] || '',
           contact_phone: contactPhone,
@@ -430,10 +443,15 @@ export default function PublicQuizPage({ inlineQuiz, inlineNodes, inlineEdges }:
 
   const handleCrmAction = useCallback((block: FlowBlock) => {
     const { tagIds, workspaceId, pipelineId, columnId } = block.data;
-    const contactPhone = variables['phone'] || variables['telefone'] || variables['whatsapp'] || '';
+    let contactPhone = variables['phone'] || variables['telefone'] || variables['whatsapp'] || '';
     
     // Always create/update contact when we have a phone number — even if no tags/pipeline set
     if (contactPhone) {
+      contactPhone = String(contactPhone).replace(/\D/g, '');
+      if (contactPhone.length === 10 || contactPhone.length === 11) {
+        contactPhone = `55${contactPhone}`;
+      }
+
       const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
       const url = `https://${projectId}.supabase.co/functions/v1/quiz-actions`;
       
