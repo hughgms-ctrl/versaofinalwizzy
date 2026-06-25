@@ -421,6 +421,7 @@ export default function PublicQuizPage({ inlineQuiz, inlineNodes, inlineEdges }:
           workspace_id: workspaceId || '',
           pipeline_id: pipelineId || '',
           column_id: columnId || '',
+          variables: variables
         }),
       }).catch(() => {});
     }
@@ -450,6 +451,7 @@ export default function PublicQuizPage({ inlineQuiz, inlineNodes, inlineEdges }:
           workspace_id: workspaceId || '',
           pipeline_id: pipelineId || '',
           column_id: columnId || '',
+          variables: variables
         }),
       }).catch(() => {});
     }

@@ -78,7 +78,7 @@ Deno.serve(async (req) => {
         const noteText = variables ? buildQuizSummary(variables) : null;
 
         if (!contact) {
-          const initialMetadata = noteText ? { note: noteText } : {};
+          const initialMetadata = noteText ? { description: noteText } : {};
           const { data: newContact, error: insertError } = await supabaseAdmin
             .from("contacts")
             .insert({
@@ -103,7 +103,7 @@ Deno.serve(async (req) => {
           
           if (noteText) {
             const currentMetadata = contact.metadata && typeof contact.metadata === 'object' ? contact.metadata : {};
-            updates.metadata = { ...currentMetadata, note: noteText };
+            updates.metadata = { ...currentMetadata, description: noteText };
           }
 
           if (Object.keys(updates).length > 0) {

@@ -14,7 +14,7 @@ export interface Contact {
   workspace_id?: string | null;
   created_at: string;
   updated_at: string;
-  metadata: { note?: string } | null;
+  metadata: { note?: string; description?: string } | null;
   tags?: {
     id: string;
     tag: {

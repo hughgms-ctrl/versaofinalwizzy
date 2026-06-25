@@ -17,6 +17,24 @@ import {
   Check,
   Loader2,
   Save,
+import { cn } from '@/lib/utils';
+import { DbConversation } from '@/hooks/useConversations';
+import { ContactAvatar } from './ContactAvatar';
+import { useTags, useContactTags, useAddTagToContact, useRemoveTagFromContact, useCreateTag, Tag } from '@/hooks/useTags';
+import { supabase } from '@/integrations/supabase/client';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
+import {
+  X,
+  Phone,
+  Mail,
+  Calendar,
+  Plus,
+  Bot,
+  Check,
+  Loader2,
+  Save,
   Pencil,
   Clock,
   Expand,
@@ -28,6 +46,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
+import { Textarea } from '@/components/ui/textarea';
 
 import {
   Popover,
@@ -152,13 +171,17 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
   const [isEditingNote, setIsEditingNote] = useState(false);
   const [editedNote, setEditedNote] = useState((contactMetadata as { note?: string } | null)?.note || '');
   const [isSavingNote, setIsSavingNote] = useState(false);
+  const [isEditingDescription, setIsEditingDescription] = useState(false);
+  const [editedDescription, setEditedDescription] = useState(((contactMetadata as any)?.description as string) || '');
+  const [isSavingDescription, setIsSavingDescription] = useState(false);
   const [isScheduleOpen, setIsScheduleOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
     setEditedName(displayName || '');
     setEditedNote((contactMetadata as { note?: string } | null)?.note || '');
-  }, [contactId, displayName, contactMetadata?.note]);
+    setEditedDescription(((contactMetadata as any)?.description as string) || '');
+  }, [contactId, displayName, contactMetadata?.note, (contactMetadata as any)?.description]);
 
   // Get conversation stats
   const { data: conversationStats } = useQuery({
@@ -315,6 +338,27 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
     }
   };
 
+  const handleSaveDescription = async () => {
+    if (!contactId) return;
+    setIsSavingDescription(true);
+    try {
+      const { error } = await supabase
+        .from('contacts')
+        .update({ metadata: { ...contactMetadata, description: editedDescription.trim() || null } })
+        .eq('id', contactId);
+      if (error) throw error;
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['pipeline-conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['pipeline-contact-note-counts'] });
+      toast({ title: 'Descrição atualizada' });
+      setIsEditingDescription(false);
+    } catch (error: any) {
+      toast({ title: 'Erro', description: error.message, variant: 'destructive' });
+    } finally {
+      setIsSavingDescription(false);
+    }
+  };
+
   const availableTags = tags?.filter(
     tag => !contactTags?.some(ct => ct.tag_id === tag.id)
   ) || [];
@@ -437,6 +481,31 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
                       <button onClick={() => setIsEditingNote(true)} className="w-full text-left p-2.5 rounded-lg bg-muted/50 hover:bg-muted transition-colors group flex items-center gap-2">
                         {editedNote ? <span className="text-sm text-amber-600 dark:text-amber-400 flex-1">{editedNote}</span> : <span className="text-sm text-muted-foreground flex-1">Adicionar observação...</span>}
                         <Pencil className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Descrição */}
+                <div className="space-y-2">
+                  <Label className="text-xs text-muted-foreground uppercase tracking-wider">Descrição</Label>
+                  <div className="flex items-start gap-2">
+                    {isEditingDescription ? (
+                      <>
+                        <Textarea value={editedDescription} onChange={(e) => setEditedDescription(e.target.value)} placeholder="Adicionar descrição..." className="text-sm flex-1 min-h-[80px]" autoFocus />
+                        <div className="flex flex-col gap-1">
+                          <Button size="icon" className="h-9 w-9 shrink-0" onClick={handleSaveDescription} disabled={isSavingDescription}>
+                            {isSavingDescription ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                          </Button>
+                          <Button size="icon" variant="ghost" className="h-9 w-9 shrink-0" onClick={() => { setIsEditingDescription(false); setEditedDescription(((contactMetadata as any)?.description as string) || ''); }}>
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </>
+                    ) : (
+                      <button onClick={() => setIsEditingDescription(true)} className="w-full text-left p-2.5 rounded-lg bg-muted/50 hover:bg-muted transition-colors group flex items-start gap-2 min-h-[44px]">
+                        {editedDescription ? <span className="text-sm text-foreground flex-1 whitespace-pre-wrap">{editedDescription}</span> : <span className="text-sm text-muted-foreground flex-1">Adicionar descrição...</span>}
+                        <Pencil className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0 mt-1" />
                       </button>
                     )}
                   </div>
@@ -789,32 +858,6 @@ export function ContactProfilePanel({ conversation, onClose, embedded = false }:
                   <Button size="icon" variant="ghost" className="h-9 w-9 shrink-0" onClick={() => {
                     setIsEditingNote(false);
                     setEditedNote((contactMetadata as { note?: string } | null)?.note || '');
-                  }}>
-                    <X className="h-4 w-4" />
-                  </Button>
-                </>
-              ) : (
-                <button
-                  onClick={() => setIsEditingNote(true)}
-                  className="w-full text-left p-2 rounded-lg bg-muted/50 hover:bg-muted transition-colors group flex items-center gap-2"
-                >
-                  {editedNote ? (
-                    <span className="text-sm text-amber-600 dark:text-amber-400 flex-1">{editedNote}</span>
-                  ) : (
-                    <span className="text-sm text-muted-foreground flex-1">Adicionar observação...</span>
-                  )}
-                  <Pencil className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
-                </button>
-              )}
-            </div>
-          </div>
-
-          <Separator />
-
-          {/* Conversation Attributes */}
-          <ConversationAttributesPanel conversation={conversation} compact />
-
-          <Separator />
 
           {/* Tags */}
           <div className="space-y-3">

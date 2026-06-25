@@ -30,7 +30,7 @@ export interface DbConversation {
     email: string | null;
     workspace_id?: string | null;
     created_at: string;
-    metadata: { note?: string } | null;
+    metadata: { note?: string; description?: string } | null;
     contact_presence?: {
       presence_type: string;
       expires_at: string;
