@@ -235,6 +235,10 @@ const FlowsPage = () => {
   // Filter flows and folders by selected workspace (multi-workspace aware)
   const matchesWorkspace = (wsIds?: string[] | null, legacyId?: string | null) => {
     if (!selectedWorkspaceId) return true;
+    if (selectedWorkspaceId === 'unassigned') {
+      const hasWs = (wsIds && wsIds.length > 0) || !!legacyId;
+      return !hasWs;
+    }
     if (wsIds && wsIds.length > 0) return wsIds.includes(selectedWorkspaceId);
     if (!legacyId) return false; // explicit empty = no workspace assigned -> hide when filtering
     return legacyId === selectedWorkspaceId;

@@ -23,8 +23,9 @@ export function WorkspaceSwitcher({ collapsed }: WorkspaceSwitcherProps) {
   } = useWorkspaceContext();
 
   const hasAvailableWorkspaces = availableWorkspaces.length > 0;
+  const { selectedWorkspaceId } = useWorkspaceContext();
   const label = selectedWorkspace?.name
-    || (isAdmin ? 'Todos os Workspaces' : selectedOrganization?.name || 'Sem workspace liberado');
+    || (selectedWorkspaceId === 'unassigned' ? 'Sem Workspace' : (isAdmin ? 'Todos os Workspaces' : selectedOrganization?.name || 'Sem workspace liberado'));
 
   return (
     <div className={cn('px-3 py-2', collapsed && 'px-2')}>
@@ -56,6 +57,10 @@ export function WorkspaceSwitcher({ collapsed }: WorkspaceSwitcherProps) {
               <DropdownMenuItem onClick={() => setWorkspace(null)} className="gap-2">
                 <Globe className="h-4 w-4 text-muted-foreground" />
                 <span>Todos os Workspaces</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setWorkspace('unassigned')} className="gap-2">
+                <Building2 className="h-4 w-4 text-muted-foreground" />
+                <span>Sem Workspace (Não atribuídos)</span>
               </DropdownMenuItem>
               {hasAvailableWorkspaces && <DropdownMenuSeparator />}
             </>

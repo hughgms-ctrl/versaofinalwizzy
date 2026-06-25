@@ -50,7 +50,11 @@ export function useContacts() {
         .limit(CONTACTS_CAP);
 
       if (selectedWorkspaceId) {
-        query = query.eq('workspace_id', selectedWorkspaceId);
+        if (selectedWorkspaceId === 'unassigned') {
+          query = query.is('workspace_id', null);
+        } else {
+          query = query.eq('workspace_id', selectedWorkspaceId);
+        }
       }
 
       const { data, error } = await query;

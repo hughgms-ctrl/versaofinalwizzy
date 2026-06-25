@@ -139,7 +139,13 @@ export default function CnisPage() {
   const [runnerCheckLabel, setRunnerCheckLabel] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
   const visibleSessions = useMemo(
-    () => selectedWorkspaceId ? sessions.filter((session) => !session.workspaceId || session.workspaceId === selectedWorkspaceId) : sessions,
+    () => {
+      if (!selectedWorkspaceId) return sessions;
+      if (selectedWorkspaceId === 'unassigned') {
+        return sessions.filter((session) => !session.workspaceId);
+      }
+      return sessions.filter((session) => !session.workspaceId || session.workspaceId === selectedWorkspaceId);
+    },
     [selectedWorkspaceId, sessions],
   );
   const selected = visibleSessions.find((session) => session.id === selectedId) || null;

@@ -55,6 +55,12 @@ function PipelineSection() {
 
   const pipelines = useMemo(() => {
     if (!selectedWorkspaceId) return allPipelines;
+    if (selectedWorkspaceId === 'unassigned') {
+      return allPipelines.filter((p: any) => {
+        const ws = Array.isArray(p.workspace_ids) ? p.workspace_ids : [];
+        return ws.length === 0;
+      });
+    }
     return allPipelines.filter((p: any) => {
       const ws = Array.isArray(p.workspace_ids) ? p.workspace_ids : [];
       return ws.includes(selectedWorkspaceId);

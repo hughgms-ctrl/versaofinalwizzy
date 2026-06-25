@@ -109,9 +109,13 @@ const ConversationsPage = () => {
       }
 
       // === WORKSPACE FILTER ===
-      if (selectedWorkspaceId && selectedWorkspace) {
-        const hasDirectWorkspace = (conv as any).workspace_id === selectedWorkspaceId;
-        if (!hasDirectWorkspace) return false;
+      if (selectedWorkspaceId) {
+        if (selectedWorkspaceId === 'unassigned') {
+          if ((conv as any).workspace_id) return false;
+        } else if (selectedWorkspace) {
+          const hasDirectWorkspace = (conv as any).workspace_id === selectedWorkspaceId;
+          if (!hasDirectWorkspace) return false;
+        }
       }
 
       // Service mode filter (only when not showing archived)
@@ -208,9 +212,13 @@ const ConversationsPage = () => {
         }
       }
 
-      if (selectedWorkspaceId && selectedWorkspace) {
-        const hasDirectWorkspace = (conv as any).workspace_id === selectedWorkspaceId;
-        if (!hasDirectWorkspace) return false;
+      if (selectedWorkspaceId) {
+        if (selectedWorkspaceId === 'unassigned') {
+          if ((conv as any).workspace_id) return false;
+        } else if (selectedWorkspace) {
+          const hasDirectWorkspace = (conv as any).workspace_id === selectedWorkspaceId;
+          if (!hasDirectWorkspace) return false;
+        }
       }
       return true;
     });

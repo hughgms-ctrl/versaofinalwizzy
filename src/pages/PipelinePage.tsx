@@ -69,9 +69,13 @@ const PipelinePage = () => {
     
     // Workspace filter
     if (selectedWorkspaceId) {
-      filtered = filtered.filter(p =>
-        p.workspace_ids?.includes(selectedWorkspaceId)
-      );
+      if (selectedWorkspaceId === 'unassigned') {
+        filtered = filtered.filter(p => !p.workspace_ids || p.workspace_ids.length === 0);
+      } else {
+        filtered = filtered.filter(p =>
+          p.workspace_ids?.includes(selectedWorkspaceId)
+        );
+      }
     }
     
     // Permission filter: restrict to allowed pipelines + pipelines with shared leads

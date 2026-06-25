@@ -44,8 +44,12 @@ const ContactsPage = () => {
 
     return contacts.filter(contact => {
       // === WORKSPACE FILTER ===
-      if (selectedWorkspaceId && selectedWorkspace) {
-        if ((contact as any).workspace_id !== selectedWorkspaceId) return false;
+      if (selectedWorkspaceId) {
+        if (selectedWorkspaceId === 'unassigned') {
+          if ((contact as any).workspace_id) return false;
+        } else if (selectedWorkspace) {
+          if ((contact as any).workspace_id !== selectedWorkspaceId) return false;
+        }
       }
 
       // Search filter

@@ -103,6 +103,7 @@ export default function WidgetsPage() {
   // Workspace filtering
   const matchesWorkspace = (wsId: string | null | undefined) => {
     if (!selectedWorkspaceId) return true; // "Todos" shows all
+    if (selectedWorkspaceId === 'unassigned') return !wsId;
     return !wsId || wsId === selectedWorkspaceId;
   };
 

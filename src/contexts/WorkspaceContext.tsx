@@ -128,7 +128,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
   // Clear selection if workspace no longer available
   useEffect(() => {
-    if (selectedWorkspaceId && availableWorkspaces.length > 0) {
+    if (selectedWorkspaceId && selectedWorkspaceId !== 'unassigned' && availableWorkspaces.length > 0) {
       const stillAvailable = availableWorkspaces.some(w => w.id === selectedWorkspaceId);
       if (!stillAvailable) {
         const nextWorkspaceId = isAdmin ? null : availableWorkspaces[0]?.id || null;
