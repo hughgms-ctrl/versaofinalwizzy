@@ -60,7 +60,10 @@ Deno.serve(async (req) => {
     const results: Record<string, any> = {};
 
     // --- CRM Actions ---
-    if (action === "crm_action" || action === "submit_quiz" || tag_ids?.length || workspace_id || pipeline_id) {
+    // Always process contact creation/update for crm_action and submit_quiz.
+    // Also run if optional CRM fields are provided (tags, workspace, pipeline).
+    const hasCrmData = tag_ids?.length || (workspace_id && workspace_id !== '') || (pipeline_id && pipeline_id !== '');
+    if (action === "crm_action" || action === "submit_quiz" || hasCrmData) {
       const contactPhone = contact_phone || phone;
       if (contactPhone) {
         // Find or create contact

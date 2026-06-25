@@ -431,7 +431,8 @@ export default function PublicQuizPage({ inlineQuiz, inlineNodes, inlineEdges }:
     const { tagIds, workspaceId, pipelineId, columnId } = block.data;
     const contactPhone = variables['phone'] || variables['telefone'] || variables['whatsapp'] || '';
     
-    if (contactPhone && (tagIds?.length || workspaceId || pipelineId)) {
+    // Always create/update contact when we have a phone number — even if no tags/pipeline set
+    if (contactPhone) {
       const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
       const url = `https://${projectId}.supabase.co/functions/v1/quiz-actions`;
       
@@ -456,6 +457,7 @@ export default function PublicQuizPage({ inlineQuiz, inlineNodes, inlineEdges }:
   }, [goToNextBlock, variables, quiz]);
 
   // Auto-execute logic blocks when they become current
+  // IMPORTANT: include all handlers in deps to avoid stale closures (handlers capture `variables`)
   useEffect(() => {
     if (phase !== 'flow' || !currentBlock) return;
 
@@ -487,7 +489,10 @@ export default function PublicQuizPage({ inlineQuiz, inlineNodes, inlineEdges }:
       }, 50);
       return () => clearTimeout(timer);
     }
-  }, [phase, currentBlock]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, currentBlock, handleConditionBlock, handleABTestBlock, handleRedirectBlock,
+      handleWaitBlock, handlePixelBlock, handleWhatsAppTrigger, handleCrmAction,
+      goToNextBlock, currentNodeId, currentBlockIdx, nodes]);
 
   // ---- Rendering ----
 
@@ -573,6 +578,10 @@ export default function PublicQuizPage({ inlineQuiz, inlineNodes, inlineEdges }:
         answer={answers[currentBlock.id]}
         variables={variables}
         onAnswer={(val, varName) => setBlockAnswer(currentBlock.id, val, varName)}
+        onSetVariables={(vars) => {
+          // Batch-set multiple variables at once (used by contact-info block)
+          Object.entries(vars).forEach(([k, v]) => setVariable(k, v));
+        }}
         onNext={(handle) => goToNextBlock(handle)}
         isLast={false}
         quiz={quiz}
@@ -582,11 +591,12 @@ export default function PublicQuizPage({ inlineQuiz, inlineNodes, inlineEdges }:
 }
 
 // ---- Block Renderer ----
-function BlockRenderer({ block, answer, variables, onAnswer, onNext, isLast, quiz }: {
+function BlockRenderer({ block, answer, variables, onAnswer, onSetVariables, onNext, isLast, quiz }: {
   block: FlowBlock;
   answer: any;
   variables: Record<string, any>;
   onAnswer: (val: any, varName?: string) => void;
+  onSetVariables: (vars: Record<string, any>) => void;
   onNext: (handle?: string) => void;
   isLast: boolean;
   quiz: QuizData | null;
@@ -977,7 +987,7 @@ function BlockRenderer({ block, answer, variables, onAnswer, onNext, isLast, qui
               <Label className="text-sm font-medium">Nome {d.nameRequired !== false && <span className="text-destructive">*</span>}</Label>
               <Input
                 value={contactData.name || ''}
-                onChange={e => onAnswer({ ...contactData, name: e.target.value }, 'nome')}
+                onChange={e => onAnswer({ ...contactData, name: e.target.value }, undefined)}
                 placeholder="Seu nome"
                 className="h-14 text-lg mt-1"
                 autoFocus
@@ -990,7 +1000,7 @@ function BlockRenderer({ block, answer, variables, onAnswer, onNext, isLast, qui
               <Input
                 type="tel"
                 value={contactData.phone || ''}
-                onChange={e => onAnswer({ ...contactData, phone: e.target.value }, 'whatsapp')}
+                onChange={e => onAnswer({ ...contactData, phone: e.target.value }, undefined)}
                 placeholder="(11) 99999-9999"
                 className="h-14 text-lg mt-1"
               />
@@ -1002,7 +1012,7 @@ function BlockRenderer({ block, answer, variables, onAnswer, onNext, isLast, qui
               <Input
                 type="email"
                 value={contactData.email || ''}
-                onChange={e => onAnswer({ ...contactData, email: e.target.value }, 'email')}
+                onChange={e => onAnswer({ ...contactData, email: e.target.value }, undefined)}
                 placeholder="seu@email.com"
                 className="h-14 text-lg mt-1"
               />
@@ -1010,14 +1020,25 @@ function BlockRenderer({ block, answer, variables, onAnswer, onNext, isLast, qui
           )}
         </div>
         <Button size="lg" className="w-full h-14 text-lg" onClick={() => {
-          // Save individual variables
-          if (contactData.name) variables['nome'] = contactData.name;
-          if (contactData.phone) {
-            variables['phone'] = contactData.phone;
-            variables['telefone'] = contactData.phone;
-            variables['whatsapp'] = contactData.phone;
+          // Batch-set all contact variables via the state setter (not direct mutation!)
+          // This ensures CRM/WhatsApp handlers that run AFTER this step see the correct values.
+          const varsToSet: Record<string, any> = {};
+          if (contactData.name) {
+            varsToSet['nome'] = contactData.name;
+            varsToSet['name'] = contactData.name;
           }
-          if (contactData.email) variables['email'] = contactData.email;
+          if (contactData.phone) {
+            // Save under all common phone aliases so any handler finds it
+            varsToSet['phone'] = contactData.phone;
+            varsToSet['telefone'] = contactData.phone;
+            varsToSet['whatsapp'] = contactData.phone;
+          }
+          if (contactData.email) {
+            varsToSet['email'] = contactData.email;
+          }
+          if (Object.keys(varsToSet).length > 0) {
+            onSetVariables(varsToSet);
+          }
           onNext();
         }}>
           Continuar <ArrowRight className="h-5 w-5 ml-2" />
