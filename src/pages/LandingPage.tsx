@@ -465,10 +465,10 @@ export default function LandingPage() {
                 IA Jurídica Plug'n'Play - para advogados reais
               </Badge>
               <h1 className="max-w-4xl text-5xl font-black leading-[1.03] tracking-tight text-white sm:text-6xl lg:text-7xl">
-                A IA no seu escritório trabalhando <Em>24/7</Em>, e você foca no Direito.
+                A IA no seu escritório trabalhando <Em>24/7</Em>, enquanto você foca no que faz de melhor: Direito.
               </h1>
               <p className="mt-7 max-w-2xl text-lg leading-8 text-slate-300">
-                Você é advogado e não precisa aprender sobre prompts, Claude Code, GPT, Make ou qualquer coisa técnica para usar a IA no seu escritório . O Wizzy entrega <strong className="font-semibold text-white">ferramentas de IA jurídicos prontos</strong> - você ativa, eles trabalham.
+                Você é advogado e não precisa se tornar um especialista em IA para automatizar seu escritório. Nós fazemos isso por você. <br/><br/> Chega de aprender sobre prompts, Claude Code, GPT, Make ou qualquer coisa técnica para usar a IA no seu escritório . O Wizzy entrega <strong className="font-semibold text-white">ferramentas de IA jurídicos prontos</strong> - você ativa, eles trabalham.
               </p>
               <div className="mt-9 flex flex-col gap-4 sm:flex-row">
                 <a href="#planos" onClick={() => trackLandingButtonClick(heroCta, "planos")} className="inline-flex h-13 items-center justify-center rounded-xl bg-gradient-to-r from-pink-500 to-orange-500 px-8 py-4 text-base font-bold text-white shadow-xl shadow-pink-500/25 transition hover:-translate-y-0.5 hover:from-pink-600 hover:to-orange-600">
