@@ -190,6 +190,7 @@ Deno.serve(async (req) => {
                   organization_id,
                   contact_id: contact.id,
                   status: "open",
+                  workspace_id: workspace_id || null,
                 })
                 .select("id")
                 .single();
@@ -197,6 +198,12 @@ Deno.serve(async (req) => {
               if (!convError) {
                 conv = newConv;
               }
+            } else if (workspace_id) {
+              // Update existing conversation to ensure it has the correct workspace association
+              await supabaseAdmin
+                .from("conversations")
+                .update({ workspace_id })
+                .eq("id", conv.id);
             }
 
             if (conv) {
