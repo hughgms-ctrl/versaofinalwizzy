@@ -541,7 +541,7 @@ export default function LandingPage() {
           <div className="mx-auto grid max-w-7xl items-start gap-10 lg:grid-cols-[1fr_0.9fr]">
             <Reveal>
               <h2 className="text-4xl font-black leading-tight tracking-tight text-white sm:text-5xl">
-                IA existe para todos. Mas nem todo advogado <Em>tem tempo</Em> para aprender. E está tudo bem!
+                IA existe para todos. Mas nem todo advogado <Em>tem tempo</Em> para aprender. E está tudo bem!
               </h2>
               <p className="mt-6 text-lg leading-8 text-slate-400">
                 ChatGPT, Claude, Make, n8n, Zapier, webhooks, prompts... Você virou advogado para <strong className="text-white">advogar</strong>, não para virar desenvolvedor de automações.
