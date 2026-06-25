@@ -69,6 +69,8 @@ export default function PublicQuizPage({ inlineQuiz, inlineNodes, inlineEdges }:
   const [currentBlockIdx, setCurrentBlockIdx] = useState(0);
   const [answers, setAnswers] = useState<Record<string, any>>({});
   const [variables, setVariables] = useState<Record<string, any>>({});
+  // Always-current ref so async handlers (CRM, WhatsApp) never read stale closure values
+  const variablesRef = useRef<Record<string, any>>({});
   const [contact, setContact] = useState({ name: '', phone: '', email: '' });
   const [submitting, setSubmitting] = useState(false);
   const [animDir, setAnimDir] = useState<'next' | 'prev'>('next');
@@ -184,10 +186,19 @@ export default function PublicQuizPage({ inlineQuiz, inlineNodes, inlineEdges }:
     setPhase('flow');
   }, [history]);
 
+  // Keep variablesRef in sync with state so handlers always have the latest values
+  useEffect(() => {
+    variablesRef.current = variables;
+  }, [variables]);
+
   // Save variable
   const setVariable = useCallback((name: string, value: any) => {
     if (name) {
-      setVariables(prev => ({ ...prev, [name]: value }));
+      setVariables(prev => {
+        const next = { ...prev, [name]: value };
+        variablesRef.current = next;
+        return next;
+      });
     }
   }, []);
 
@@ -202,6 +213,8 @@ export default function PublicQuizPage({ inlineQuiz, inlineNodes, inlineEdges }:
     if (!quiz) return;
     setSubmitting(true);
     try {
+      // Always read from ref to avoid stale closure
+      const currentVars = variablesRef.current;
       const answersArray = Object.entries(answers).map(([blockId, answer]) => ({
         block_id: blockId,
         answer,
@@ -211,11 +224,11 @@ export default function PublicQuizPage({ inlineQuiz, inlineNodes, inlineEdges }:
       await supabase.from('quiz_submissions').insert({
         quiz_id: quiz.id,
         organization_id: quiz.organization_id,
-        respondent_name: variables['nome'] || variables['name'] || null,
-        respondent_phone: variables['phone'] || variables['telefone'] || variables['whatsapp'] || null,
-        respondent_email: variables['email'] || null,
+        respondent_name: currentVars['nome'] || currentVars['name'] || null,
+        respondent_phone: currentVars['phone'] || currentVars['telefone'] || currentVars['whatsapp'] || null,
+        respondent_email: currentVars['email'] || null,
         answers: answersArray,
-        metadata: variables,
+        metadata: currentVars,
         completed_at: new Date().toISOString(),
       });
 
@@ -223,7 +236,7 @@ export default function PublicQuizPage({ inlineQuiz, inlineNodes, inlineEdges }:
       const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
       const url = `https://${projectId}.supabase.co/functions/v1/quiz-actions`;
       
-      const respondentPhone = variables['phone'] || variables['telefone'] || variables['whatsapp'] || '';
+      const respondentPhone = currentVars['phone'] || currentVars['telefone'] || currentVars['whatsapp'] || '';
       
       if (respondentPhone) {
         await fetch(url, {
@@ -233,11 +246,11 @@ export default function PublicQuizPage({ inlineQuiz, inlineNodes, inlineEdges }:
             organization_id: quiz.organization_id,
             quiz_id: quiz.id,
             action: 'submit_quiz',
-            contact_name: variables['nome'] || variables['name'] || '',
-            contact_email: variables['email'] || '',
+            contact_name: currentVars['nome'] || currentVars['name'] || '',
+            contact_email: currentVars['email'] || '',
             contact_phone: respondentPhone,
             workspace_id: quiz.workspace_id || '',
-            variables: variables
+            variables: currentVars
           }),
         }).catch((e) => console.error('Error sending quiz-actions submission:', e));
       }
@@ -394,12 +407,14 @@ export default function PublicQuizPage({ inlineQuiz, inlineNodes, inlineEdges }:
 
   const handleWhatsAppTrigger = useCallback((block: FlowBlock) => {
     const { waNumber, waMessage, useContactPhone, tagIds, workspaceId, pipelineId, columnId, triggerActionType, flowId } = block.data;
-    const targetPhone = useContactPhone ? (variables['phone'] || variables['telefone'] || variables['whatsapp'] || '') : (waNumber || '');
-    let contactPhone = variables['phone'] || variables['telefone'] || variables['whatsapp'] || '';
+    // Always read from ref so we get the latest variables even if state hasn't re-rendered yet
+    const currentVars = variablesRef.current;
+    const targetPhone = useContactPhone ? (currentVars['phone'] || currentVars['telefone'] || currentVars['whatsapp'] || '') : (waNumber || '');
+    let contactPhone = currentVars['phone'] || currentVars['telefone'] || currentVars['whatsapp'] || '';
     
     if (targetPhone || tagIds?.length || workspaceId || pipelineId) {
       const isFlow = triggerActionType === 'flow';
-      const message = isFlow ? '' : interpolate(waMessage || '', variables);
+      const message = isFlow ? '' : interpolate(waMessage || '', currentVars);
       
       let phone = String(targetPhone).replace(/\D/g, '');
       if (phone.length === 10 || phone.length === 11) {
@@ -427,23 +442,25 @@ export default function PublicQuizPage({ inlineQuiz, inlineNodes, inlineEdges }:
           phone,
           message,
           flow_id: flowId || '',
-          contact_name: variables['nome'] || variables['name'] || '',
-          contact_email: variables['email'] || '',
+          contact_name: currentVars['nome'] || currentVars['name'] || '',
+          contact_email: currentVars['email'] || '',
           contact_phone: contactPhone,
           tag_ids: tagIds || [],
           workspace_id: workspaceId || '',
           pipeline_id: pipelineId || '',
           column_id: columnId || '',
-          variables: variables
+          variables: currentVars
         }),
       }).catch(() => {});
     }
     setTimeout(() => goToNextBlock(), 100);
-  }, [goToNextBlock, variables, quiz]);
+  }, [goToNextBlock, quiz]);
 
   const handleCrmAction = useCallback((block: FlowBlock) => {
     const { tagIds, workspaceId, pipelineId, columnId } = block.data;
-    let contactPhone = variables['phone'] || variables['telefone'] || variables['whatsapp'] || '';
+    // Always read from ref so we get the latest variables even if state hasn't re-rendered yet
+    const currentVars = variablesRef.current;
+    let contactPhone = currentVars['phone'] || currentVars['telefone'] || currentVars['whatsapp'] || '';
     
     // Always create/update contact when we have a phone number — even if no tags/pipeline set
     if (contactPhone) {
@@ -462,19 +479,19 @@ export default function PublicQuizPage({ inlineQuiz, inlineNodes, inlineEdges }:
           organization_id: quiz?.organization_id,
           quiz_id: quiz?.id,
           action: 'crm_action',
-          contact_name: variables['nome'] || variables['name'] || '',
-          contact_email: variables['email'] || '',
+          contact_name: currentVars['nome'] || currentVars['name'] || '',
+          contact_email: currentVars['email'] || '',
           contact_phone: contactPhone,
           tag_ids: tagIds || [],
           workspace_id: workspaceId || '',
           pipeline_id: pipelineId || '',
           column_id: columnId || '',
-          variables: variables
+          variables: currentVars
         }),
       }).catch(() => {});
     }
     setTimeout(() => goToNextBlock(), 100);
-  }, [goToNextBlock, variables, quiz]);
+  }, [goToNextBlock, quiz]);
 
   // Auto-execute logic blocks when they become current
   // IMPORTANT: include all handlers in deps to avoid stale closures (handlers capture `variables`)
@@ -599,8 +616,14 @@ export default function PublicQuizPage({ inlineQuiz, inlineNodes, inlineEdges }:
         variables={variables}
         onAnswer={(val, varName) => setBlockAnswer(currentBlock.id, val, varName)}
         onSetVariables={(vars) => {
-          // Batch-set multiple variables at once (used by contact-info block)
-          Object.entries(vars).forEach(([k, v]) => setVariable(k, v));
+          // Atomic batch update: merge all vars in a single setState call
+          // AND update variablesRef synchronously so handlers firing in the
+          // same tick (CRM action, WhatsApp trigger) always see the phone number.
+          setVariables(prev => {
+            const next = { ...prev, ...vars };
+            variablesRef.current = next;
+            return next;
+          });
         }}
         onNext={(handle) => goToNextBlock(handle)}
         isLast={false}
@@ -1040,8 +1063,8 @@ function BlockRenderer({ block, answer, variables, onAnswer, onSetVariables, onN
           )}
         </div>
         <Button size="lg" className="w-full h-14 text-lg" onClick={() => {
-          // Batch-set all contact variables via the state setter (not direct mutation!)
-          // This ensures CRM/WhatsApp handlers that run AFTER this step see the correct values.
+          // Batch-set all contact variables — also write directly into variablesRef so that
+          // CRM/WhatsApp handlers firing synchronously in the same tick see the updated values.
           const varsToSet: Record<string, any> = {};
           if (contactData.name) {
             varsToSet['nome'] = contactData.name;
@@ -1057,6 +1080,8 @@ function BlockRenderer({ block, answer, variables, onAnswer, onSetVariables, onN
             varsToSet['email'] = contactData.email;
           }
           if (Object.keys(varsToSet).length > 0) {
+            // onSetVariables updates variablesRef synchronously inside its setState callback,
+            // so CRM/WhatsApp handlers that fire in the next tick will always see the phone.
             onSetVariables(varsToSet);
           }
           onNext();
