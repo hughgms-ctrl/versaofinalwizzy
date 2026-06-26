@@ -34,6 +34,12 @@ CREATE INDEX IF NOT EXISTS idx_signature_otp_codes_sig_created
 -- As edge functions usam service role (bypassa RLS), entao remover essa policy
 -- NAO quebra o fluxo de assinatura. O cliente nunca precisa ler codigos OTP.
 --
+-- VERIFICADO NA FONTE (2026-06-22): signature-verify-otp/send-otp usam
+-- createServiceClient(); signature-complete usa SUPABASE_SERVICE_ROLE_KEY; e
+-- nenhum codigo em src/ faz from("signature_otp_codes") (so aparece em
+-- types.ts, gerado). Logo a remocao e confirmada segura — nada legitimo le a
+-- tabela via anon key.
+--
 -- RLS e REVERTIDA pelo Lovable a cada sync -> a remocao DURAVEL desta policy
 -- precisa ser feita PELO LOVABLE (nao adianta DROP no SQL Editor). Mudanca alvo:
 --

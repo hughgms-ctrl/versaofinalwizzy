@@ -283,7 +283,16 @@ export function WhatsAppInstancesSettings() {
       });
       if (response.error) throw response.error;
       queryClient.invalidateQueries({ queryKey: ['whatsapp-instances'] });
-      toast({ title: 'Desconectado' });
+      if (response.data?.providerDisconnected === false) {
+        toast({
+          title: 'Desconexão não confirmada',
+          description: response.data?.providerError
+            || 'O provedor não confirmou o logout. A sessão pode ainda estar ativa no WhatsApp.',
+          variant: 'destructive',
+        });
+      } else {
+        toast({ title: 'Desconectado' });
+      }
     } catch (error: any) {
       toast({ title: 'Erro', description: error.message, variant: 'destructive' });
     } finally {

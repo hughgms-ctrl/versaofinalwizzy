@@ -5,9 +5,29 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+function normalizeBaseUrl(value?: string | null): string {
+  return (value || '').trim().replace(/\/$/, '');
+}
+
 function uazapiUrl(baseUrl: string, path: string): string {
-  const base = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
-  return `${base}${path}`;
+  return `${normalizeBaseUrl(baseUrl)}${path}`;
+}
+
+// Load WhatsApp connection settings with the same precedence used across the
+// codebase (platform_settings first, env vars as fallback). Calling the wrong
+// base URL is why a "disconnect" never reached the provider.
+async function loadConnectionSettings(supabase: any) {
+  const { data: row } = await supabase
+    .from('platform_settings')
+    .select('value')
+    .eq('key', 'whatsapp_connection_settings')
+    .maybeSingle();
+  const value = row?.value || {};
+  return {
+    uazapiBaseUrl: normalizeBaseUrl(value.uazapi_base_url || Deno.env.get('UAZAPI_BASE_URL')),
+    evolutionBaseUrl: normalizeBaseUrl(value.evolution_base_url || Deno.env.get('EVOLUTION_BASE_URL')),
+    evolutionApiKey: value.evolution_api_key || Deno.env.get('EVOLUTION_API_KEY') || '',
+  };
 }
 
 Deno.serve(async (req) => {
@@ -26,8 +46,6 @@ Deno.serve(async (req) => {
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const uazapiBaseUrl = Deno.env.get('UAZAPI_BASE_URL')!;
-    const uazapiAdminToken = Deno.env.get('UAZAPI_ADMIN_TOKEN') || '';
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     const token = authHeader.replace(/^Bearer\s+/i, '');
@@ -72,24 +90,61 @@ Deno.serve(async (req) => {
       });
     }
 
-    console.log(`[DEBUG] Disconnecting instance ${instance.id}`);;
+    const provider = (instance.provider || 'uazapi') === 'evolution' ? 'evolution' : 'uazapi';
+    console.log(`[DEBUG] Disconnecting instance ${instance.id} (provider=${provider})`);
 
-    // UAZAPI Disconnect
-    if (instance.zapi_token) {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000);
+    const settings = await loadConnectionSettings(supabase);
+    let providerOk = false;
+    let providerError: string | null = null;
 
-        const disconnectResp = await fetch(uazapiUrl(uazapiBaseUrl, '/instance/disconnect'), {
-          method: 'POST',
-          headers: { 'token': instance.zapi_token },
-          signal: controller.signal
-        });
-
-        clearTimeout(timeoutId);
-        console.log(`[DEBUG] UAZAPI Disconnect Status: ${disconnectResp.status}`);
-      } catch (e) {
-        console.error('UAZAPI disconnect timeout or error (non-blocking):', e);
+    if (provider === 'evolution') {
+      // Evolution: logout the session at DELETE /instance/logout/{instanceName}
+      const instanceName =
+        instance.evolution_instance_name || instance.zapi_instance_id || instance.evolution_instance_id || '';
+      const apiKey = instance.evolution_api_key || settings.evolutionApiKey || instance.zapi_token || '';
+      if (settings.evolutionBaseUrl && apiKey && instanceName) {
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 8000);
+          const resp = await fetch(`${settings.evolutionBaseUrl}/instance/logout/${instanceName}`, {
+            method: 'DELETE',
+            headers: { apikey: apiKey },
+            signal: controller.signal,
+          });
+          clearTimeout(timeoutId);
+          providerOk = resp.ok;
+          if (!resp.ok) providerError = `Evolution logout HTTP ${resp.status}: ${await resp.text()}`;
+          console.log(`[DEBUG] Evolution logout status: ${resp.status}`);
+        } catch (e) {
+          providerError = `Evolution logout error: ${String(e)}`;
+          console.error(providerError);
+        }
+      } else {
+        providerError = 'Evolution config incompleta (baseUrl/apiKey/instanceName)';
+        console.error(providerError);
+      }
+    } else if (instance.zapi_token) {
+      // UAZAPI: disconnect the session at POST /instance/disconnect
+      if (settings.uazapiBaseUrl) {
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 8000);
+          const resp = await fetch(uazapiUrl(settings.uazapiBaseUrl, '/instance/disconnect'), {
+            method: 'POST',
+            headers: { token: instance.zapi_token },
+            signal: controller.signal,
+          });
+          clearTimeout(timeoutId);
+          providerOk = resp.ok;
+          if (!resp.ok) providerError = `UAZAPI disconnect HTTP ${resp.status}: ${await resp.text()}`;
+          console.log(`[DEBUG] UAZAPI disconnect status: ${resp.status}`);
+        } catch (e) {
+          providerError = `UAZAPI disconnect error: ${String(e)}`;
+          console.error(providerError);
+        }
+      } else {
+        providerError = 'UAZAPI base URL nao configurada';
+        console.error(providerError);
       }
     }
 
@@ -102,7 +157,12 @@ Deno.serve(async (req) => {
 
     console.log('[DEBUG] Database updated to disconnected');
 
-    return new Response(JSON.stringify({ success: true }), {
+    return new Response(JSON.stringify({
+      success: true,
+      provider,
+      providerDisconnected: providerOk,
+      providerError,
+    }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 
