@@ -53,7 +53,85 @@ function providerEnabled(provider: Provider, strategy: Awaited<ReturnType<typeof
   return provider === "evolution" ? strategy.evolutionEnabled : strategy.uazapiEnabled;
 }
 
-async function resolveOtpInstance(supabase: any, organizationId: string) {
+// Descobre o número atrelado ao workspace/conversa da assinatura. Esse número é a
+// fonte da verdade: o código OTP DEVE sair pelo mesmo número do workspace, nunca
+// por outro número da organização. Retorna null quando a assinatura não está
+// ligada a nenhuma conversa/workspace (ex.: fluxo público sem conversa).
+async function resolveWorkspaceInstanceId(
+  supabase: any,
+  signature: { id: string; organization_id: string; generated_document_id: string },
+): Promise<string | null> {
+  let conversationId: string | null = null;
+
+  const { data: sigRow } = await supabase
+    .from("document_signatures")
+    .select("conversation_id")
+    .eq("id", signature.id)
+    .maybeSingle();
+  conversationId = sigRow?.conversation_id || null;
+
+  if (!conversationId && signature.generated_document_id) {
+    const { data: docRow } = await supabase
+      .from("generated_documents")
+      .select("conversation_id")
+      .eq("id", signature.generated_document_id)
+      .maybeSingle();
+    conversationId = docRow?.conversation_id || null;
+  }
+
+  if (!conversationId) return null;
+
+  const { data: conversation } = await supabase
+    .from("conversations")
+    .select("workspace_id, whatsapp_instance_id")
+    .eq("id", conversationId)
+    .eq("organization_id", signature.organization_id)
+    .maybeSingle();
+  if (!conversation) return null;
+
+  if (conversation.workspace_id) {
+    const { data: workspace } = await supabase
+      .from("workspaces")
+      .select("whatsapp_instance_id")
+      .eq("id", conversation.workspace_id)
+      .eq("organization_id", signature.organization_id)
+      .maybeSingle();
+    if (workspace?.whatsapp_instance_id) return workspace.whatsapp_instance_id;
+  }
+
+  return conversation.whatsapp_instance_id || null;
+}
+
+async function resolveOtpInstance(
+  supabase: any,
+  organizationId: string,
+  designatedInstanceId?: string | null,
+) {
+  // Quando há um número designado (workspace/conversa), ele é o ÚNICO permitido.
+  // Buscamos diretamente por id, SEM filtrar por status: o número do workspace deve
+  // ser usado mesmo que o status no banco esteja dessincronizado (drift). Jamais
+  // substituímos por outro número — se a instância não existir, falhamos.
+  if (designatedInstanceId) {
+    const { data: designatedInstance } = await supabase
+      .from("whatsapp_instances")
+      .select("*")
+      .eq("organization_id", organizationId)
+      .eq("id", designatedInstanceId)
+      .maybeSingle();
+    if (designatedInstance) {
+      console.log(
+        `[OTP-ROUTING] Using designated workspace instance ${designatedInstance.id} ` +
+        `(${designatedInstance.provider || "uazapi"}, status=${designatedInstance.status}).`,
+      );
+      return designatedInstance;
+    }
+    console.warn(
+      `[OTP-ROUTING] Designated instance ${designatedInstanceId} not found; ` +
+      `refusing to fall back to another number.`,
+    );
+    return null;
+  }
+
   const strategy = await loadProviderStrategy(supabase);
   const preferredProviders: Provider[] = [];
   if (providerEnabled(strategy.primaryProvider, strategy)) preferredProviders.push(strategy.primaryProvider);
@@ -126,13 +204,20 @@ async function sendWhatsappOtp(args: {
   phone: string;
   code: string;
   organizationId: string;
+  designatedInstanceId?: string | null;
   supabase: any;
 }): Promise<ChannelResult> {
   try {
     const connectionSettings = await loadConnectionSettings(args.supabase);
-    const instance = await resolveOtpInstance(args.supabase, args.organizationId);
+    const instance = await resolveOtpInstance(args.supabase, args.organizationId, args.designatedInstanceId);
     if (!instance) {
-      return { channel: "whatsapp", ok: false, error: "Nenhuma instancia WhatsApp ativa" };
+      return {
+        channel: "whatsapp",
+        ok: false,
+        error: args.designatedInstanceId
+          ? "Numero do workspace indisponivel para enviar o codigo. Reconecte a instancia do workspace."
+          : "Nenhuma instancia WhatsApp ativa",
+      };
     }
 
     const cleanPhone = args.phone.replace(/\D/g, "");
@@ -318,6 +403,7 @@ serve(async (req) => {
           phone: targetPhone!,
           code,
           organizationId: signature.organization_id,
+          designatedInstanceId: await resolveWorkspaceInstanceId(supabase, signature),
           supabase,
         });
 

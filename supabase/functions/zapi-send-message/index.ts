@@ -212,6 +212,32 @@ async function resolveSendInstance(
     preferredProviders.push(strategy.backupProvider);
   }
 
+  // Quando há uma instância explicitamente designada (número do workspace ou da
+  // conversa), ela é a ÚNICA permitida. Buscamos diretamente por id, SEM filtrar
+  // por status: o número atrelado ao workspace deve ser usado mesmo que o status
+  // no banco esteja dessincronizado (drift). Jamais substituímos por outro número
+  // — se a instância designada não existe, falhamos em vez de cair no fallback.
+  if (conversationInstanceId) {
+    const { data: designatedInstance } = await supabase
+      .from('whatsapp_instances')
+      .select('*')
+      .eq('organization_id', organizationId)
+      .eq('id', conversationInstanceId)
+      .maybeSingle();
+    if (designatedInstance) {
+      console.log(
+        `[SEND_ROUTING] Using designated instance ${designatedInstance.id} ` +
+        `(${designatedInstance.provider || 'uazapi'}, status=${designatedInstance.status}).`
+      );
+      return designatedInstance;
+    }
+    console.warn(
+      `[SEND_ROUTING] Designated instance ${conversationInstanceId} not found; ` +
+      `refusing to fall back to another number.`
+    );
+    return null;
+  }
+
   const { data: connectedInstances } = await supabase
     .from('whatsapp_instances')
     .select('*')
@@ -220,16 +246,6 @@ async function resolveSendInstance(
     .order('created_at', { ascending: false });
 
   const instances = connectedInstances || [];
-  const conversationInstance = conversationInstanceId
-    ? instances.find((item: any) => item.id === conversationInstanceId)
-    : null;
-  if (conversationInstance) {
-    console.log(
-      `[SEND_ROUTING] Using conversation instance ${conversationInstance.id} ` +
-      `(${conversationInstance.provider || 'uazapi'}).`
-    );
-    return conversationInstance;
-  }
 
   for (const provider of preferredProviders) {
     const providerInstance = instances.find((item: any) => (item.provider || 'uazapi') === provider);
@@ -294,10 +310,25 @@ Deno.serve(async (req) => {
     }
     await assertActiveOrganizationAccess(supabase, user.id, conversation.organization_id, { module: 'conversations' });
 
+    // O número atrelado ao workspace é a fonte da verdade: uma mensagem enviada
+    // dentro de um workspace DEVE sair sempre pelo número desse workspace, nunca
+    // por outro número da organização. Resolvemos a instância do workspace antes
+    // de cair no fallback por organização.
+    let workspaceInstanceId: string | null = null;
+    if (conversation.workspace_id) {
+      const { data: workspace } = await supabase
+        .from('workspaces')
+        .select('whatsapp_instance_id')
+        .eq('id', conversation.workspace_id)
+        .eq('organization_id', conversation.organization_id)
+        .maybeSingle();
+      workspaceInstanceId = workspace?.whatsapp_instance_id || null;
+    }
+
     const instance = await resolveSendInstance(
       supabase,
       conversation.organization_id,
-      conversation.whatsapp_instance_id,
+      workspaceInstanceId || conversation.whatsapp_instance_id,
     );
 
     if (!instance) {
