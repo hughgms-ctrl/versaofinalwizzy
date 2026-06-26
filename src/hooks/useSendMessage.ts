@@ -82,6 +82,8 @@ export function useSendMessage() {
         created_at: now,
         read_at: null,
         delivered_at: null,
+        failed_at: null,
+        error_message: null,
         media_url: newMessage.mediaUrl || null,
         metadata: newMessage.quotedMessageId ? {
           quoted_message: {
