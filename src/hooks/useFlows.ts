@@ -123,7 +123,7 @@ export function useCreateFlow() {
   const { user, profile } = useAuth();
 
   return useMutation({
-    mutationFn: async (data: { name: string; description?: string; workspace_id?: string | null }) => {
+    mutationFn: async (data: { name: string; description?: string; workspace_id?: string | null; workspace_ids?: string[] | null; folder_id?: string | null }) => {
       if (!profile?.organization_id || !user?.id) {
         throw new Error('User not authenticated');
       }
@@ -137,13 +137,19 @@ export function useCreateFlow() {
         },
       ];
 
+      const wsIds = data.workspace_ids && data.workspace_ids.length > 0
+        ? data.workspace_ids
+        : (data.workspace_id ? [data.workspace_id] : []);
+
       const { data: flow, error } = await (supabase
         .from('flows' as 'contacts')
         .insert({
           organization_id: profile.organization_id,
           name: data.name,
           description: data.description || null,
-          workspace_id: data.workspace_id || null,
+          workspace_id: wsIds[0] || null,
+          workspace_ids: wsIds,
+          folder_id: data.folder_id || null,
           nodes: initialNodes,
           edges: [],
           created_by: user.id,

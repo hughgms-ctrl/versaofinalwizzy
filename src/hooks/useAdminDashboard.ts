@@ -313,9 +313,14 @@ export function useUpdateWhatsAppConnectionSettings() {
       evolution_api_key?: string;
       webhook_url?: string;
     }) => adminFetch('update_whatsapp_connection_settings', settings),
-    onSuccess: () => {
+    onSuccess: (result: any) => {
       queryClient.invalidateQueries({ queryKey: ['admin', 'whatsapp-integrations'] });
-      toast.success('Configurações de conexão salvas');
+      const updated = result?.evolution_instances_updated || 0;
+      toast.success(
+        updated > 0
+          ? `Configurações salvas. Key Evolution propagada para ${updated} instância(s).`
+          : 'Configurações de conexão salvas',
+      );
     },
     onError: (err: Error) => toast.error(err.message),
   });

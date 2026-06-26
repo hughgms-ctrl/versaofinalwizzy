@@ -27,9 +27,14 @@ import {
 interface CreateFlowDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** When creating inside a folder, the flow is created directly in it. */
+  folderId?: string | null;
+  folderName?: string | null;
+  /** Workspaces the parent folder belongs to — the new flow inherits them. */
+  folderWorkspaceIds?: string[];
 }
 
-export function CreateFlowDialog({ open, onOpenChange }: CreateFlowDialogProps) {
+export function CreateFlowDialog({ open, onOpenChange, folderId, folderName, folderWorkspaceIds }: CreateFlowDialogProps) {
   const navigate = useNavigate();
   const createFlow = useCreateFlow();
   const { data: existingFlows = [] } = useFlows();
@@ -55,11 +60,16 @@ export function CreateFlowDialog({ open, onOpenChange }: CreateFlowDialogProps) 
     if (!name.trim()) return;
     if (!enforceEntryCreationLimit('max_flows', existingFlows.length, 'fluxos')) return;
 
+    // When creating inside a folder that belongs to workspaces, inherit them.
+    const inheritsWorkspace = !!folderId && !!folderWorkspaceIds && folderWorkspaceIds.length > 0;
+
     try {
       const flow = await createFlow.mutateAsync({
         name: name.trim(),
         description: description.trim() || undefined,
-        workspace_id: workspaceId === 'all' ? null : workspaceId,
+        folder_id: folderId ?? null,
+        workspace_id: inheritsWorkspace ? folderWorkspaceIds![0] : (workspaceId === 'all' ? null : workspaceId),
+        workspace_ids: inheritsWorkspace ? folderWorkspaceIds : undefined,
       });
       
       onOpenChange(false);
@@ -82,7 +92,9 @@ export function CreateFlowDialog({ open, onOpenChange }: CreateFlowDialogProps) 
           <DialogHeader>
             <DialogTitle>Novo Fluxo</DialogTitle>
             <DialogDescription>
-              Crie um novo fluxo de automação para seus atendimentos.
+              {folderId
+                ? <>Será criado dentro da pasta <span className="font-semibold text-foreground">{folderName}</span>.</>
+                : 'Crie um novo fluxo de automação para seus atendimentos.'}
             </DialogDescription>
           </DialogHeader>
           
@@ -109,6 +121,14 @@ export function CreateFlowDialog({ open, onOpenChange }: CreateFlowDialogProps) 
               />
             </div>
 
+            {folderId && folderWorkspaceIds && folderWorkspaceIds.length > 0 ? (
+              <div className="grid gap-2">
+                <Label>Workspace</Label>
+                <div className="flex items-center gap-2 px-3 py-2 rounded-md border border-input bg-muted/50 text-sm text-muted-foreground">
+                  Herdado da pasta
+                </div>
+              </div>
+            ) : (
             <div className="grid gap-2">
               <Label>Workspace</Label>
               {isAdmin ? (
@@ -154,8 +174,9 @@ export function CreateFlowDialog({ open, onOpenChange }: CreateFlowDialogProps) 
                 </div>
               )}
             </div>
+            )}
           </div>
-          
+
           <DialogFooter>
             <Button
               type="button"

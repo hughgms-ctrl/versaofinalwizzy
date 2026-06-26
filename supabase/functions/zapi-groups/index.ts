@@ -218,6 +218,17 @@ Deno.serve(async (req) => {
             }, { onConflict: 'organization_id,group_jid' });
           if (!error) upserted++;
         }
+
+        // Drop groups that belong to a different instance than the active one.
+        // Without this, groups synced from a previously-active (or wrong) number
+        // would linger in the list, since upsert keyed on group_jid never removes
+        // rows that the current number doesn't have.
+        await supabase
+          .from('whatsapp_groups')
+          .delete()
+          .eq('organization_id', organizationId)
+          .neq('whatsapp_instance_id', instance.id);
+
         return json({ ok: true, synced: upserted, total: rows.length });
       }
 

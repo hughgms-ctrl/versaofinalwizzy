@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -17,10 +17,8 @@ import {
   GitBranch,
   Loader2,
   Folder,
-  FolderOpen,
   FolderPlus,
   ChevronRight,
-  ChevronDown,
   FolderInput,
   Pencil,
   MessageSquare,
@@ -113,7 +111,7 @@ const FlowsPage = () => {
   const [showRenameDialog, setShowRenameDialog] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [editingFolder, setEditingFolder] = useState<FlowFolder | null>(null);
-  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
+  const [openFolderId, setOpenFolderId] = useState<string | null>(null);
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [folderWorkspaceId, setFolderWorkspaceId] = useState<string | null>(null);
   const [folderWorkspaceIds, setFolderWorkspaceIds] = useState<string[]>([]);
@@ -197,18 +195,6 @@ const FlowsPage = () => {
     }
   };
 
-  const toggleFolderExpand = (folderId: string) => {
-    setExpandedFolders(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(folderId)) {
-        newSet.delete(folderId);
-      } else {
-        newSet.add(folderId);
-      }
-      return newSet;
-    });
-  };
-
   const handleMoveToFolder = (flowId: string, folderId: string | null) => {
     const folder = folders?.find(f => f.id === folderId);
     moveFlow.mutate({
@@ -260,6 +246,44 @@ const FlowsPage = () => {
   // Get subfolders
   const getSubfolders = (parentId: string) =>
     filteredFolders.filter(f => f.parent_id === parentId);
+
+  // --- Folder navigation (drill-in) ---
+  // Resolve from the full folder list so the breadcrumb keeps working even when
+  // the current workspace filter hides the open folder.
+  const openFolder = openFolderId ? folders?.find(f => f.id === openFolderId) ?? null : null;
+
+  // If the open folder was deleted, fall back to the root.
+  useEffect(() => {
+    if (openFolderId && folders && !folders.some(f => f.id === openFolderId)) {
+      setOpenFolderId(null);
+    }
+  }, [openFolderId, folders]);
+
+  // Breadcrumb chain: root → ... → open folder
+  const breadcrumb: FlowFolder[] = [];
+  {
+    const seen = new Set<string>();
+    let cursor: FlowFolder | null = openFolder;
+    while (cursor && !seen.has(cursor.id)) {
+      seen.add(cursor.id);
+      breadcrumb.unshift(cursor);
+      cursor = folders?.find(f => f.id === cursor!.parent_id) ?? null;
+    }
+  }
+
+  // Items shown at the current level
+  const currentFolders = openFolderId ? getSubfolders(openFolderId) : rootFolders;
+  const currentFlows = openFolderId ? getFlowsInFolder(openFolderId) : rootFlows;
+  const currentItems = [...currentFolders, ...currentFlows].sort(
+    (a, b) => (a as any).position - (b as any).position
+  );
+
+  // Workspaces inherited by flows/folders created inside the open folder
+  const openFolderWorkspaceIds: string[] = openFolder
+    ? ((openFolder as any).workspace_ids?.length
+        ? (openFolder as any).workspace_ids
+        : (openFolder.workspace_id ? [openFolder.workspace_id] : []))
+    : [];
 
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
@@ -570,24 +594,17 @@ const FlowsPage = () => {
     </div>
   );
 
-  const FolderSection = ({ folder, depth = 0, dragHandleProps }: { folder: FlowFolder; depth?: number; dragHandleProps?: any }) => {
-    const isExpanded = expandedFolders.has(folder.id);
+  const FolderRow = ({ folder, dragHandleProps }: { folder: FlowFolder; dragHandleProps?: any }) => {
     const folderFlows = getFlowsInFolder(folder.id);
     const subfolders = getSubfolders(folder.id);
     const itemCount = folderFlows.length + subfolders.length;
 
-    // Combined items for sorting within a folder
-    const innerItems = [...subfolders, ...folderFlows].sort((a, b) => (a.position - b.position));
-
     return (
       <div className="border-b border-border/50 last:border-b-0">
-        {/* Folder Header */}
+        {/* Folder Header — click to enter */}
         <div
-          className={cn(
-            "flex items-center gap-3 px-4 py-4 hover:bg-muted/10 transition-colors cursor-pointer group",
-            depth > 0 && "pl-12"
-          )}
-          onClick={() => toggleFolderExpand(folder.id)}
+          className="flex items-center gap-3 px-4 py-4 hover:bg-muted/10 transition-colors cursor-pointer group"
+          onClick={() => setOpenFolderId(folder.id)}
         >
           {/* Drag Handle */}
           <div
@@ -599,16 +616,7 @@ const FlowsPage = () => {
           </div>
 
           <div className="flex items-center gap-1 flex-1">
-            {isExpanded ? (
-              <ChevronDown className="h-5 w-5 text-muted-foreground mr-2" />
-            ) : (
-              <ChevronRight className="h-5 w-5 text-muted-foreground mr-2" />
-            )}
-
-            <Folder className={cn(
-              "h-5 w-5 mr-3 transition-colors",
-              isExpanded ? "text-muted-foreground" : "text-muted-foreground"
-            )} />
+            <Folder className="h-5 w-5 mr-3 text-muted-foreground" />
 
             <span className="font-semibold text-foreground text-sm">{folder.name}</span>
             {!folder.visible_in_chat && (
@@ -707,25 +715,10 @@ const FlowsPage = () => {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+
+            <ChevronRight className="h-5 w-5 text-muted-foreground/50 group-hover:text-muted-foreground transition-colors" />
           </div>
         </div>
-
-        {/* Folder Contents */}
-        {isExpanded && (
-          <div className="bg-card">
-            <SortableContext items={innerItems.map(i => i.id)} strategy={verticalListSortingStrategy}>
-              {innerItems.map(item => (
-                <SortableRow key={item.id} id={item.id}>
-                  {'is_active' in item ? (
-                    <FlowRow flow={item as Flow} nested={true} />
-                  ) : (
-                    <FolderSection folder={item as FlowFolder} depth={depth + 1} />
-                  )}
-                </SortableRow>
-              ))}
-            </SortableContext>
-          </div>
-        )}
       </div>
     );
   };
@@ -752,6 +745,9 @@ const FlowsPage = () => {
       <CreateFlowDialog
         open={showCreateDialog}
         onOpenChange={setShowCreateDialog}
+        folderId={openFolderId}
+        folderName={openFolder?.name ?? null}
+        folderWorkspaceIds={openFolderWorkspaceIds}
       />
 
       {/* Create Folder Dialog */}
@@ -868,6 +864,33 @@ const FlowsPage = () => {
         </div>
       ) : (
         <div className="space-y-6">
+          {/* Breadcrumb */}
+          <div className="flex items-center gap-1 text-sm text-muted-foreground flex-wrap">
+            <button
+              onClick={() => setOpenFolderId(null)}
+              className={cn(
+                "hover:text-foreground transition-colors font-medium",
+                !openFolderId && "text-foreground"
+              )}
+            >
+              Fluxos
+            </button>
+            {breadcrumb.map((f, i) => (
+              <span key={f.id} className="flex items-center gap-1">
+                <ChevronRight className="h-4 w-4 text-muted-foreground/50" />
+                <button
+                  onClick={() => setOpenFolderId(f.id)}
+                  className={cn(
+                    "hover:text-foreground transition-colors font-medium",
+                    i === breadcrumb.length - 1 && "text-foreground"
+                  )}
+                >
+                  {f.name}
+                </button>
+              </span>
+            ))}
+          </div>
+
           {/* Toolbar */}
           <div className="flex items-center justify-between">
             <Button
@@ -875,9 +898,13 @@ const FlowsPage = () => {
               size="sm"
               className="bg-card border-border hover:bg-muted font-bold text-xs px-4"
               onClick={() => {
-                setCurrentFolderId(null);
-                setFolderWorkspaceId(selectedWorkspaceId);
-                setFolderWorkspaceIds(selectedWorkspaceId ? [selectedWorkspaceId] : []);
+                // Create the folder inside the folder we're currently viewing
+                setCurrentFolderId(openFolderId);
+                const inheritIds = openFolderId
+                  ? openFolderWorkspaceIds
+                  : (selectedWorkspaceId ? [selectedWorkspaceId] : []);
+                setFolderWorkspaceId(inheritIds[0] ?? null);
+                setFolderWorkspaceIds(inheritIds);
                 setShowFolderDialog(true);
               }}
             >
@@ -901,27 +928,39 @@ const FlowsPage = () => {
             </div>
 
             <div className="bg-card">
-              <DndContext
-                sensors={sensors}
-                collisionDetection={closestCenter}
-                onDragEnd={handleDragEnd}
-                modifiers={[restrictToVerticalAxis]}
-              >
-                <SortableContext
-                  items={[...rootFolders, ...rootFlows].map(i => i.id)}
-                  strategy={verticalListSortingStrategy}
+              {currentItems.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 text-center">
+                  <Workflow className="h-10 w-10 text-muted-foreground/30 mb-4" />
+                  <p className="text-sm text-muted-foreground mb-1">
+                    {openFolderId ? 'Esta pasta está vazia' : 'Nenhum item aqui ainda'}
+                  </p>
+                  <p className="text-xs text-muted-foreground/70">
+                    Use "Novo Fluxo" para criar um fluxo {openFolderId ? 'nesta pasta' : 'aqui'}.
+                  </p>
+                </div>
+              ) : (
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={handleDragEnd}
+                  modifiers={[restrictToVerticalAxis]}
                 >
-                  {[...rootFolders, ...rootFlows].sort((a, b) => (a as any).position - (b as any).position).map(item => (
-                    <SortableRow key={item.id} id={item.id}>
-                      {'is_active' in item ? (
-                        <FlowRow flow={item as Flow} />
-                      ) : (
-                        <FolderSection folder={item as FlowFolder} />
-                      )}
-                    </SortableRow>
-                  ))}
-                </SortableContext>
-              </DndContext>
+                  <SortableContext
+                    items={currentItems.map(i => i.id)}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    {currentItems.map(item => (
+                      <SortableRow key={item.id} id={item.id}>
+                        {'is_active' in item ? (
+                          <FlowRow flow={item as Flow} />
+                        ) : (
+                          <FolderRow folder={item as FlowFolder} />
+                        )}
+                      </SortableRow>
+                    ))}
+                  </SortableContext>
+                </DndContext>
+              )}
             </div>
           </div>
         </div>

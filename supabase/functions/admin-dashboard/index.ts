@@ -1017,6 +1017,32 @@ Deno.serve(async (req) => {
 
       if (error) throw error
 
+      // Propaga a Evolution API key nova para TODAS as instâncias Evolution.
+      // A coluna whatsapp_instances.evolution_api_key tem prioridade sobre a key
+      // global (platform_settings) nas funções de envio/webhook, então salvar só
+      // a global não tinha efeito nas instâncias já existentes — elas seguiam com
+      // a cópia antiga carimbada na criação (zapi-create-instance). Só propagamos
+      // quando uma key real foi digitada (não mascarada e não vazia).
+      const providedEvolutionKey = String(body.evolution_api_key || '').trim()
+      const evolutionKeyChanged = !!providedEvolutionKey && !providedEvolutionKey.includes('•')
+      let evolutionInstancesUpdated = 0
+      if (evolutionKeyChanged) {
+        const { data: propagated, error: propagateError } = await adminClient
+          .from('whatsapp_instances')
+          .update({
+            evolution_api_key: connectionSettings.evolution_api_key,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('provider', 'evolution')
+          .select('id')
+        if (propagateError) {
+          console.error('Failed to propagate evolution_api_key to instances:', propagateError)
+        } else {
+          evolutionInstancesUpdated = propagated?.length || 0
+          console.log(`Propagated new Evolution API key to ${evolutionInstancesUpdated} instance(s).`)
+        }
+      }
+
       await adminClient.from('admin_audit_logs').insert({
         action: 'update_whatsapp_connection_settings',
         entity_type: 'platform',
@@ -1025,10 +1051,11 @@ Deno.serve(async (req) => {
           ...connectionSettings,
           uazapi_admin_token: maskSecret(connectionSettings.uazapi_admin_token),
           evolution_api_key: maskSecret(connectionSettings.evolution_api_key),
+          evolution_instances_updated: evolutionInstancesUpdated,
         },
       })
 
-      return new Response(JSON.stringify({ success: true }), {
+      return new Response(JSON.stringify({ success: true, evolution_instances_updated: evolutionInstancesUpdated }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       })
     }

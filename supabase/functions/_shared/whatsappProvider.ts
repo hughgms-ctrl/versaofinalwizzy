@@ -150,6 +150,19 @@ export async function resolveWhatsAppInstance(
     : null;
   if (conversationInstance) return conversationInstance;
 
+  // Prefer the instance the org marked as active (the number actually "in use").
+  // This mirrors how the conversations RLS (get_active_instance_id) and
+  // zapi-sync-chats pick the instance, and stops group/message operations from
+  // hitting an arbitrary connected number when several are linked to the org.
+  for (const provider of preferredProviders) {
+    const active = instances.find(
+      (item: any) => (item.provider || 'uazapi') === provider && item.is_active,
+    );
+    if (active) return active;
+  }
+
+  // Fallback: no active instance for the preferred providers — keep the previous
+  // behavior of returning the first connected instance matching the preference.
   for (const provider of preferredProviders) {
     const instance = instances.find((item: any) => (item.provider || 'uazapi') === provider);
     if (instance) return instance;
