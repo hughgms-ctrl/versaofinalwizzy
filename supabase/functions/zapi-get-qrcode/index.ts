@@ -40,6 +40,35 @@ async function loadConnectionSettings(supabase: any) {
   };
 }
 
+// Reconfigura o webhook da instância no provedor. O logout (zapi-disconnect)
+// derruba a sessão e o webhook configurado se perde; ao reconectar precisamos
+// reaplicá-lo ANTES do pareamento, senão a Evolution não tem para onde enviar
+// MESSAGES_UPSERT/CONNECTION_UPDATE e a instância "conecta" mas não recebe nem
+// confirma envios. Best-effort: nunca bloqueia a geração do QR.
+async function ensureWebhookConfigured(
+  supabaseUrl: string,
+  serviceRoleKey: string,
+  instance: any,
+): Promise<void> {
+  try {
+    const resp = await fetch(`${supabaseUrl}/functions/v1/zapi-configure-webhook`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${serviceRoleKey}`,
+      },
+      body: JSON.stringify({
+        organization_id: instance.organization_id,
+        instanceId: instance.id,
+      }),
+    });
+    const text = await resp.text().catch(() => '');
+    console.log(`[DEBUG] Webhook reconfig (instance ${instance.id}): ${resp.status} ${text.substring(0, 200)}`);
+  } catch (e) {
+    console.error(`[DEBUG] Webhook reconfig failed for instance ${instance.id}:`, e);
+  }
+}
+
 function isPayloadConnected(payload: any): boolean {
   const state = String(
     payload?.state ??
@@ -150,6 +179,11 @@ Deno.serve(async (req) => {
     }
 
     const provider = instance.provider || 'uazapi';
+
+    // Reaplica o webhook ANTES de (re)conectar. Sem isso, após um logout a
+    // instância reconecta mas para de receber mensagens e de confirmar envios
+    // (webhook drift). É idempotente, então rodar sempre é seguro.
+    await ensureWebhookConfigured(supabaseUrl, supabaseKey, instance);
 
     if (provider === 'evolution') {
       const evolutionBaseUrl = connectionSettings.evolutionBaseUrl;
