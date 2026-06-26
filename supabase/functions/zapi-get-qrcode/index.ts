@@ -180,9 +180,30 @@ Deno.serve(async (req) => {
 
     const provider = instance.provider || 'uazapi';
 
+    // Self-heal da API key: a Evolution usa uma key global (do servidor). Cada
+    // instância guarda uma cópia em `evolution_api_key` carimbada na criação. Se
+    // a key global muda, essa cópia fica velha e o ENVIO (zapi-send-message) e a
+    // configuração de webhook (zapi-configure-webhook) — que priorizam a key da
+    // instância — passam a falhar com 401, MESMO o connect/QR funcionando (ele
+    // usa a key global). Ressincronizamos a cópia ANTES de reconfigurar o webhook
+    // para que tudo passe a usar a key correta.
+    if (
+      provider === 'evolution' &&
+      connectionSettings.evolutionApiKey &&
+      instance.evolution_api_key !== connectionSettings.evolutionApiKey
+    ) {
+      await supabase
+        .from('whatsapp_instances')
+        .update({ evolution_api_key: connectionSettings.evolutionApiKey })
+        .eq('id', instance.id);
+      instance.evolution_api_key = connectionSettings.evolutionApiKey;
+      console.log(`[DEBUG] Synced stale evolution_api_key from global settings for instance ${instance.id}`);
+    }
+
     // Reaplica o webhook ANTES de (re)conectar. Sem isso, após um logout a
     // instância reconecta mas para de receber mensagens e de confirmar envios
-    // (webhook drift). É idempotente, então rodar sempre é seguro.
+    // (webhook drift). É idempotente, então rodar sempre é seguro. Roda depois do
+    // self-heal da key para que o configure-webhook use a key correta.
     await ensureWebhookConfigured(supabaseUrl, supabaseKey, instance);
 
     if (provider === 'evolution') {

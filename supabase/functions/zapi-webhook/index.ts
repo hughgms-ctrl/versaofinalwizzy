@@ -1004,12 +1004,56 @@ Deno.serve(async (req) => {
       const syncPromise = fetch(`${baseUrl}/functions/v1/zapi-sync-chats`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           instanceId: instanceId || instanceName,
           instanceName: instanceName
         }),
       });
       runBackground(syncPromise);
+
+      // Reaplica o webhook DEPOIS que a conexão sobe. O re-pareamento da Evolution
+      // derruba a inscrição de MESSAGES_UPSERT (mensagens recebidas): todos os
+      // outros eventos seguem chegando — connection/send/presence/messages.update —
+      // menos o de mensagem recebida. Como connection.update É entregue de forma
+      // confiável a cada reconexão, este é o ponto certo para curar o drift sem
+      // depender do app nem de reconectar manualmente.
+      const reconfigureWebhookPromise = (async () => {
+        try {
+          const reFilters: string[] = [];
+          if (instanceId) reFilters.push(`zapi_instance_id.eq.${instanceId}`);
+          if (instanceName) reFilters.push(`zapi_instance_id.eq.${instanceName}`);
+          if (instanceName) reFilters.push(`evolution_instance_name.eq.${instanceName}`);
+          if (instanceId) reFilters.push(`evolution_instance_id.eq.${instanceId}`);
+          if (payloadTokenConn) reFilters.push(`zapi_token.eq.${payloadTokenConn}`);
+          if (!reFilters.length) {
+            console.warn('[WEBHOOK_REHEAL] No identifiers to resolve instance; skipping reconfigure');
+            return;
+          }
+          const { data: connectedInstance } = await supabase
+            .from('whatsapp_instances')
+            .select('id, organization_id')
+            .or(reFilters.join(','))
+            .limit(1)
+            .maybeSingle();
+          if (!connectedInstance?.id) {
+            console.warn('[WEBHOOK_REHEAL] Could not resolve instance to reconfigure webhook');
+            return;
+          }
+          const resp = await fetch(`${baseUrl}/functions/v1/zapi-configure-webhook`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
+            body: JSON.stringify({
+              organization_id: connectedInstance.organization_id,
+              instanceId: connectedInstance.id,
+            }),
+          });
+          const text = await resp.text().catch(() => '');
+          console.log(`[WEBHOOK_REHEAL] Reconfigured webhook for instance ${connectedInstance.id} after connect: ${resp.status} ${text.substring(0, 200)}`);
+        } catch (e) {
+          console.error('[WEBHOOK_REHEAL] Failed to reconfigure webhook after connect:', e);
+        }
+      })();
+      runBackground(reconfigureWebhookPromise);
 
       return respond({ success: true, message: 'connection_handled' });
     }

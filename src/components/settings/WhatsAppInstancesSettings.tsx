@@ -300,6 +300,33 @@ export function WhatsAppInstancesSettings() {
     }
   };
 
+  // Reaplica o webhook no provedor sem precisar desconectar/reparear. Útil quando
+  // a instância está conectada e enviando, mas parou de RECEBER mensagens — sinal
+  // de que o re-pareamento derrubou a inscrição de MESSAGES_UPSERT no provedor.
+  const handleReconfigureWebhook = async (instanceId: string) => {
+    if (!session?.access_token) return;
+    setIsActionLoading(instanceId);
+    try {
+      const response = await supabase.functions.invoke('zapi-configure-webhook', {
+        body: { instanceId },
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+      if (response.error) throw response.error;
+      const ok = response.data?.success;
+      toast({
+        title: ok ? 'Webhook reconfigurado' : 'Falha ao reconfigurar webhook',
+        description: ok
+          ? 'Recebimento de mensagens deve voltar ao normal. Envie uma mensagem de teste para confirmar.'
+          : (response.data?.results?.[0]?.error || 'O provedor não confirmou a configuração.'),
+        variant: ok ? undefined : 'destructive',
+      });
+    } catch (error: any) {
+      toast({ title: 'Erro', description: error.message, variant: 'destructive' });
+    } finally {
+      setIsActionLoading(null);
+    }
+  };
+
   const handleDelete = async (instanceId: string) => {
     try {
       await deleteInstance.mutateAsync(instanceId);
@@ -530,6 +557,9 @@ export function WhatsAppInstancesSettings() {
                                 <Download className="h-4 w-4" />
                               </Button>
                             )}
+                            <Button variant="ghost" size="sm" onClick={() => handleReconfigureWebhook(instance.id)} disabled={isActionLoading === instance.id} title="Reconfigurar webhook (parou de receber mensagens)">
+                              {isActionLoading === instance.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                            </Button>
                             <Button variant="ghost" size="sm" onClick={() => handleDisconnect(instance.id)} disabled={isActionLoading === instance.id}>
                               {isActionLoading === instance.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
                             </Button>
