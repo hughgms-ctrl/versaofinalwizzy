@@ -49,6 +49,13 @@ import { useAuth } from '@/hooks/useAuth';
 import { useTags } from '@/hooks/useTags';
 import { supabase } from '@/integrations/supabase/client';
 import { useQueryClient } from '@tanstack/react-query';
+import {
+  usePipelineChecklistTemplates,
+  usePipelineColumnChecklists,
+  setColumnChecklistTemplate,
+  columnChecklistsQueryKey,
+} from '@/hooks/usePipelineChecklists';
+import { useToast } from '@/hooks/use-toast';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ChevronDown } from 'lucide-react';
 
@@ -113,46 +120,6 @@ interface PipelineSettingsDialogProps {
 const DEFAULT_COLORS = [
   '#3b82f6', '#f59e0b', '#22c55e', '#8b5cf6', '#ef4444', '#64748b',
 ];
-
-type ChecklistTemplate = {
-  id: string;
-  name: string;
-  workspaceId: string | null;
-  items: Array<{ id: string; text: string; done: boolean }>;
-};
-
-const getChecklistTemplateStorageKey = (workspaceId?: string | null) => `pipeline_checklist_templates:${workspaceId || 'global'}`;
-const getColumnChecklistStorageKey = (workspaceId?: string | null, pipelineId?: string | null) => (
-  `pipeline_column_checklists:${workspaceId || 'global'}:${pipelineId || 'none'}`
-);
-
-function loadChecklistTemplates(workspaceId?: string | null): ChecklistTemplate[] {
-  try {
-    const stored = JSON.parse(localStorage.getItem(getChecklistTemplateStorageKey(workspaceId)) || '[]');
-    if (!Array.isArray(stored)) return [];
-    return stored.map((template: any) => ({
-      ...template,
-      workspaceId: template.workspaceId || workspaceId || null,
-      items: Array.isArray(template.items)
-        ? template.items.map((item: any) => ({
-            id: item.id || crypto.randomUUID(),
-            text: item.text || '',
-            done: !!item.done,
-          }))
-        : [],
-    }));
-  } catch {
-    return [];
-  }
-}
-
-function loadColumnChecklistConfig(workspaceId?: string | null, pipelineId?: string | null): Record<string, string> {
-  try {
-    return JSON.parse(localStorage.getItem(getColumnChecklistStorageKey(workspaceId, pipelineId)) || '{}');
-  } catch {
-    return {};
-  }
-}
 
 function ColumnInput({ 
   column, 
@@ -245,7 +212,6 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
   const [defaultAssignedTo, setDefaultAssignedTo] = useState<string>(pipeline.default_assigned_to || 'none');
   const [deleteColumnId, setDeleteColumnId] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<'general' | 'checklists' | 'notifications' | 'tags'>('general');
-  const [checklistTemplates, setChecklistTemplates] = useState<ChecklistTemplate[]>([]);
   const [columnChecklistConfig, setColumnChecklistConfig] = useState<Record<string, string>>({});
   const [showUnassigned, setShowUnassigned] = useState(pipeline.show_unassigned || false);
 
@@ -261,6 +227,10 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
   const reorderColumns = useReorderColumns();
   const upsertNotification = useUpsertStageNotification();
   const { availableWorkspaces, isAdmin, selectedWorkspaceId } = useWorkspaceContext();
+  const { data: checklistTemplates = [] } = usePipelineChecklistTemplates(selectedWorkspaceId);
+  const { data: columnChecklistConfigData = {} } = usePipelineColumnChecklists(selectedWorkspaceId, pipeline.id);
+  const qc = useQueryClient();
+  const { toast } = useToast();
 
   const otherPipelines = allPipelines.filter(p => (
     p.id !== pipeline.id && (!selectedWorkspaceId || p.workspace_ids?.includes(selectedWorkspaceId))
@@ -275,17 +245,26 @@ export function PipelineSettingsDialog({ open, onOpenChange, pipeline }: Pipelin
     setNextPipelineColumnId(pipeline.next_pipeline_column_id || 'first');
     setCompletionColumnId(pipeline.completion_column_id || 'last');
     setDefaultAssignedTo(pipeline.default_assigned_to || 'none');
-    setChecklistTemplates(loadChecklistTemplates(selectedWorkspaceId));
-    setColumnChecklistConfig(loadColumnChecklistConfig(selectedWorkspaceId, pipeline.id));
     setShowUnassigned(pipeline.show_unassigned || false);
   }, [pipeline, selectedWorkspaceId]);
 
-  const saveColumnChecklistConfig = (columnId: string, templateId: string) => {
+  // Keep the local (optimistic) column config mirrored from the DB query.
+  useEffect(() => {
+    setColumnChecklistConfig(columnChecklistConfigData);
+  }, [columnChecklistConfigData]);
+
+  const saveColumnChecklistConfig = async (columnId: string, templateId: string) => {
     const next = { ...columnChecklistConfig };
     if (templateId) next[columnId] = templateId;
     else delete next[columnId];
     setColumnChecklistConfig(next);
-    localStorage.setItem(getColumnChecklistStorageKey(selectedWorkspaceId, pipeline.id), JSON.stringify(next));
+    try {
+      await setColumnChecklistTemplate(columnId, templateId, selectedWorkspaceId, pipeline.id);
+      qc.invalidateQueries({ queryKey: columnChecklistsQueryKey(selectedWorkspaceId, pipeline.id) });
+    } catch (error: any) {
+      setColumnChecklistConfig(columnChecklistConfig);
+      toast({ title: 'Erro ao salvar checklist da coluna', description: error.message, variant: 'destructive' });
+    }
   };
 
   const [draggedColumnId, setDraggedColumnId] = useState<string | null>(null);

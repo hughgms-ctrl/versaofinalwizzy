@@ -67,6 +67,15 @@ import { ContactNotesSection } from '@/components/conversations/ContactNotesSect
 import { ContactLogsSection } from '@/components/conversations/ContactLogsSection';
 import { ContactAvatar } from '@/components/conversations/ContactAvatar';
 import { useToast } from '@/hooks/use-toast';
+import {
+  usePipelineChecklistTemplates,
+  usePipelineColumnChecklists,
+  fetchChecklistTemplates,
+  fetchColumnChecklistConfig,
+  upsertChecklistTemplate,
+  deleteChecklistTemplate as deleteChecklistTemplateDb,
+  checklistTemplatesQueryKey,
+} from '@/hooks/usePipelineChecklists';
 
 interface PipelineBoardProps {
   pipeline: Pipeline | null;
@@ -180,10 +189,6 @@ function CardMetric({
   );
 }
 
-const getChecklistTemplateStorageKey = (workspaceId?: string | null) => `pipeline_checklist_templates:${workspaceId || 'global'}`;
-const getColumnChecklistStorageKey = (workspaceId?: string | null, pipelineId?: string | null) => (
-  `pipeline_column_checklists:${workspaceId || 'global'}:${pipelineId || 'none'}`
-);
 const getBoardBackgroundStorageKey = (workspaceId?: string | null) => `pipeline_board_background:${workspaceId || 'global'}`;
 const getBoardBackgroundImageStorageKey = (workspaceId?: string | null) => `pipeline_board_background_image:${workspaceId || 'global'}`;
 
@@ -198,34 +203,6 @@ const getPipelineBoardBackgroundImage = (pipeline?: Pipeline | null, workspaceId
   localStorage.getItem(getBoardBackgroundImageStorageKey(workspaceId)) ||
   ''
 );
-
-function loadChecklistTemplates(workspaceId?: string | null): ChecklistTemplate[] {
-  try {
-    const stored = JSON.parse(localStorage.getItem(getChecklistTemplateStorageKey(workspaceId)) || '[]');
-    if (!Array.isArray(stored)) return [];
-    return stored.map((template: any) => ({
-      ...template,
-      workspaceId: template.workspaceId || workspaceId || null,
-      items: Array.isArray(template.items)
-        ? template.items.map((item: any) => ({
-            id: item.id || crypto.randomUUID(),
-            text: item.text || '',
-            done: !!item.done,
-          }))
-        : [],
-    }));
-  } catch {
-    return [];
-  }
-}
-
-function loadColumnChecklistConfig(workspaceId?: string | null, pipelineId?: string | null): Record<string, string> {
-  try {
-    return JSON.parse(localStorage.getItem(getColumnChecklistStorageKey(workspaceId, pipelineId)) || '{}');
-  } catch {
-    return {};
-  }
-}
 
 function buildChecklistFromTemplate(template: ChecklistTemplate, existing: ChecklistItem[] = []) {
   return template.items.map(templateItem => {
@@ -280,10 +257,8 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
   });
   const [boardBackground, setBoardBackground] = useState(() => getPipelineBoardBackground(pipeline, selectedWorkspaceId));
   const [boardBackgroundImage, setBoardBackgroundImage] = useState(() => getPipelineBoardBackgroundImage(pipeline, selectedWorkspaceId));
-  const [checklistTemplates, setChecklistTemplates] = useState<ChecklistTemplate[]>(() => loadChecklistTemplates(selectedWorkspaceId));
-  const [columnChecklistConfig, setColumnChecklistConfig] = useState<Record<string, string>>(() => (
-    loadColumnChecklistConfig(selectedWorkspaceId, pipeline?.id)
-  ));
+  const { data: checklistTemplates = [] } = usePipelineChecklistTemplates(selectedWorkspaceId);
+  const { data: columnChecklistConfig = {} } = usePipelineColumnChecklists(selectedWorkspaceId, pipeline?.id);
 
   const toggleTagDisplayMode = useCallback(() => {
     setTagDisplayMode(prev => {
@@ -339,11 +314,6 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
       board_background_image: url || null,
     });
   }, [boardBackground, persistBoardBackground, selectedWorkspaceId]);
-
-  useEffect(() => {
-    setChecklistTemplates(loadChecklistTemplates(selectedWorkspaceId));
-    setColumnChecklistConfig(loadColumnChecklistConfig(selectedWorkspaceId, pipeline?.id));
-  }, [selectedWorkspaceId, pipeline?.id]);
 
   useEffect(() => {
     setBoardBackground(getPipelineBoardBackground(pipeline, selectedWorkspaceId));
@@ -777,12 +747,12 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
   }, [saveChecklistsForConversation]);
 
   const applyColumnChecklistTemplate = useCallback(async (conversationId: string, columnId: string) => {
-    // Always read config fresh from localStorage to avoid stale closures
-    const freshConfig = loadColumnChecklistConfig(selectedWorkspaceId, pipeline?.id);
+    // Always read config fresh from the DB to avoid stale closures
+    const freshConfig = await fetchColumnChecklistConfig(selectedWorkspaceId, pipeline?.id);
     const templateId = freshConfig[columnId];
     if (!templateId) return;
-    // Read templates fresh from localStorage too
-    const freshTemplates = loadChecklistTemplates(selectedWorkspaceId);
+    // Read templates fresh from the DB too
+    const freshTemplates = await fetchChecklistTemplates(selectedWorkspaceId);
     const template = freshTemplates.find(item => item.id === templateId);
     if (!template) return;
     // Get the freshest version of the conversation from React Query cache
@@ -808,7 +778,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
       items: buildChecklistFromTemplate(template, []),
     };
     await saveChecklistsForConversation(conversation, [...currentChecklists, newChecklist]);
-  }, [columnChecklistConfig, conversations, queryClient, saveChecklistsForConversation, selectedWorkspaceId, pipeline?.id]);
+  }, [conversations, queryClient, saveChecklistsForConversation, selectedWorkspaceId, pipeline?.id]);
 
   const handleDragOver = (e: React.DragEvent, columnId: string) => {
     e.preventDefault();
@@ -1627,7 +1597,8 @@ function PipelineCardDetailDialog({
   const [editedName, setEditedName] = useState('');
   const [editedObservation, setEditedObservation] = useState('');
   const [editedDescription, setEditedDescription] = useState('');
-  const [checklistTemplates, setChecklistTemplates] = useState<ChecklistTemplate[]>(() => loadChecklistTemplates(workspaceId));
+  const { data: checklistTemplates = [] } = usePipelineChecklistTemplates(workspaceId);
+  const invalidateChecklistTemplates = () => queryClient.invalidateQueries({ queryKey: checklistTemplatesQueryKey(workspaceId) });
   const [cardChecklists, setCardChecklists] = useState<CardChecklist[]>([]);
   const [newChecklistItemByChecklist, setNewChecklistItemByChecklist] = useState<Record<string, string>>({});
   const [isTemplateTrayOpen, setIsTemplateTrayOpen] = useState(false);
@@ -1670,7 +1641,6 @@ function PipelineCardDetailDialog({
     setEditedDescription(((conversation?.contact?.metadata as any)?.description as string) || '');
     setCardChecklists(conversation ? getCardChecklists(conversation) : []);
     setNewChecklistItemByChecklist({});
-    setChecklistTemplates(loadChecklistTemplates(workspaceId));
     setIsTemplateTrayOpen(false);
     setIsTemplateEditorOpen(false);
     setEditingTemplateId(null);
@@ -1927,14 +1897,16 @@ function PipelineCardDetailDialog({
       workspaceId: workspaceId || null,
       items: cleanItems,
     };
-    const next = editingTemplateId
-      ? checklistTemplates.map(item => item.id === editingTemplateId ? template : item)
-      : [...checklistTemplates, template];
 
-    setChecklistTemplates(next);
     setEditingTemplateId(template.id);
     setIsTemplateEditorOpen(true);
-    localStorage.setItem(getChecklistTemplateStorageKey(workspaceId), JSON.stringify(next));
+    try {
+      await upsertChecklistTemplate(template, workspaceId);
+    } catch (error: any) {
+      toast({ title: 'Erro ao salvar modelo', description: error.message, variant: 'destructive' });
+      return;
+    }
+    await invalidateChecklistTemplates();
     const templateHasBeenApplied = cardChecklists.some(cl => cl.templateId === template.id);
     if (templateHasBeenApplied) {
       const updatedChecklists = cardChecklists.map(cl =>
@@ -1950,9 +1922,13 @@ function PipelineCardDetailDialog({
   };
 
   const deleteChecklistTemplate = async (templateId: string) => {
-    const next = checklistTemplates.filter(item => item.id !== templateId);
-    setChecklistTemplates(next);
-    localStorage.setItem(getChecklistTemplateStorageKey(workspaceId), JSON.stringify(next));
+    try {
+      await deleteChecklistTemplateDb(templateId, workspaceId);
+    } catch (error: any) {
+      toast({ title: 'Erro ao remover modelo', description: error.message, variant: 'destructive' });
+      return;
+    }
+    await invalidateChecklistTemplates();
     const nextCardChecklists = cardChecklists.map(cl =>
       cl.templateId === templateId ? { ...cl, templateId: null } : cl
     );
@@ -2008,9 +1984,13 @@ function PipelineCardDetailDialog({
         .map(item => ({ id: item.id || crypto.randomUUID(), text: item.text.trim(), done: false }))
         .filter(item => item.text),
     };
-    const next = checklistTemplates.map(item => item.id === nextTemplate.id ? nextTemplate : item);
-    setChecklistTemplates(next);
-    localStorage.setItem(getChecklistTemplateStorageKey(workspaceId), JSON.stringify(next));
+    try {
+      await upsertChecklistTemplate(nextTemplate, workspaceId);
+    } catch (error: any) {
+      toast({ title: 'Erro ao atualizar modelo', description: error.message, variant: 'destructive' });
+      return;
+    }
+    await invalidateChecklistTemplates();
     if (editingTemplateId === nextTemplate.id) {
       setTemplateDraftItems(nextTemplate.items);
     }
