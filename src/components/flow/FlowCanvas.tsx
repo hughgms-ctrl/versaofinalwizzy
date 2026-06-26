@@ -540,6 +540,8 @@ function FlowCanvasInner() {
         organizationId={flow?.organization_id}
         flowId={flowId || undefined}
         workspaceId={flowWorkspaceId}
+        nodes={nodes}
+        edges={edges}
       />
 
       {/* Test Panel */}

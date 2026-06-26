@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { Node } from '@xyflow/react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { Node, Edge } from '@xyflow/react';
 import {
   X, Layers, MousePointerClick, List, Tag, Kanban, UserPlus, Webhook,
   GitBranch, FormInput, Bot, IterationCw, Plus, Trash2, GripVertical,
@@ -31,6 +31,8 @@ import { useWhatsAppGroups } from '@/hooks/useWhatsAppGroups';
 import { TrainingRulesList } from '@/components/agents/TrainingRulesList';
 import { QualificationRulesPanel } from '@/components/agents/QualificationRulesPanel';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import { getAvailableVariables, FlowVariableGroup } from '@/lib/flowVariables';
+import { VariableTextarea } from './VariableInserter';
 
 // Generate simple unique ID
 const generateId = () => Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
@@ -46,6 +48,8 @@ interface NodePropertiesPanelProps {
   organizationId?: string;
   flowId?: string;
   workspaceId?: string | null;
+  nodes?: Node[];
+  edges?: Edge[];
 }
 
 const nodeIcons: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -378,6 +382,7 @@ function ContentItemEditor({
   onMoveDown,
   isFirst,
   isLast,
+  variables,
 }: {
   item: ContentItem;
   index: number;
@@ -387,6 +392,7 @@ function ContentItemEditor({
   onMoveDown: () => void;
   isFirst: boolean;
   isLast: boolean;
+  variables: FlowVariableGroup[];
 }) {
   const ItemIcon = contentItemTypes.find(t => t.type === item.type)?.icon || Type;
 
@@ -440,9 +446,10 @@ function ContentItemEditor({
       </div>
 
       {item.type === 'text' && (
-        <Textarea
+        <VariableTextarea
           value={item.content || ''}
-          onChange={(e) => onUpdate({ ...item, content: e.target.value })}
+          onValueChange={(value) => onUpdate({ ...item, content: value })}
+          variables={variables}
           placeholder="Digite o texto da mensagem..."
           className="min-h-[80px] text-sm"
         />
@@ -493,7 +500,7 @@ function OutcomeColumnSelect({ pipelineId, value, onChange }: { pipelineId: stri
   );
 }
 
-export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave, isSaving, hasUnsavedChanges, organizationId, flowId, workspaceId }: NodePropertiesPanelProps) {
+export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave, isSaving, hasUnsavedChanges, organizationId, flowId, workspaceId, nodes, edges }: NodePropertiesPanelProps) {
   const [localData, setLocalData] = useState<Record<string, unknown>>({});
   const [isGenerating, setIsGenerating] = useState(false);
   const [expandedFlowFolders, setExpandedFlowFolders] = useState<Set<string>>(new Set());
@@ -532,6 +539,12 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
       setLocalData(node.data as Record<string, unknown>);
     }
   }, [node]);
+
+  // Variáveis disponíveis para usar com {{...}} neste nó (calculadas pelos nós anteriores).
+  const availableVariables = useMemo<FlowVariableGroup[]>(
+    () => getAvailableVariables(nodes || [], edges || [], node?.id || ''),
+    [nodes, edges, node?.id],
+  );
 
   if (!node) return null;
 
@@ -1172,6 +1185,7 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
               onMoveDown={() => moveItem(index, index + 1)}
               isFirst={index === 0}
               isLast={index === items.length - 1}
+              variables={availableVariables}
             />
           ))}
         </div>
@@ -1247,6 +1261,7 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
               onMoveDown={() => moveItem(index, index + 1)}
               isFirst={index === 0}
               isLast={index === items.length - 1}
+              variables={availableVariables}
             />
           ))}
         </div>
@@ -1319,10 +1334,11 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
           <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="text">Texto da Mensagem</Label>
-              <Textarea
+              <VariableTextarea
                 id="text"
                 value={(localData.text as string) || ''}
-                onChange={(e) => handleChange('text', e.target.value)}
+                onValueChange={(value) => handleChange('text', value)}
+                variables={availableVariables}
                 placeholder="Escolha uma opção:"
                 className="min-h-[60px]"
               />
@@ -1499,10 +1515,11 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
             </div>
             <div className="space-y-2">
               <Label htmlFor="body">Body (JSON)</Label>
-              <Textarea
+              <VariableTextarea
                 id="body"
                 value={(localData.body as string) || ''}
-                onChange={(e) => handleChange('body', e.target.value)}
+                onValueChange={(value) => handleChange('body', value)}
+                variables={availableVariables}
                 placeholder='{"key": "value"}'
                 className="min-h-[80px] font-mono text-xs"
               />
@@ -2123,6 +2140,26 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
 
       case 'action-document': {
         const docMode = (localData.documentMode as string) || 'ai_agent';
+        // Variáveis específicas geradas pelo próprio nó de documento.
+        const linkVariables: FlowVariableGroup[] = [
+          {
+            label: 'Do documento',
+            variables: [{ name: 'link', description: 'Link do formulário público gerado' }],
+          },
+          ...availableVariables,
+        ];
+        const noteVariables: FlowVariableGroup[] = [
+          {
+            label: 'Do documento',
+            variables: [
+              { name: 'template_name', description: 'Nome do template do documento' },
+              { name: 'contact_name', description: 'Nome do contato' },
+              { name: 'contact_phone', description: 'Telefone do contato' },
+              { name: 'document_name', description: 'Nome do documento gerado' },
+            ],
+          },
+          ...availableVariables,
+        ];
         return (
           <div className="space-y-4">
             <div className="p-3 bg-rose-50 rounded-lg flex items-center gap-3">
@@ -2347,9 +2384,10 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
               <>
                 <div className="space-y-2">
                   <Label>Mensagem de envio do link</Label>
-                  <Textarea
+                  <VariableTextarea
                     value={(localData.publicLinkMessage as string) || ''}
-                    onChange={(e) => handleChange('publicLinkMessage', e.target.value)}
+                    onValueChange={(value) => handleChange('publicLinkMessage', value)}
+                    variables={linkVariables}
                     placeholder="📋 Olá! Para prosseguir, por favor preencha seus dados neste link: {{link}}"
                     className="text-xs min-h-[60px]"
                   />
@@ -2397,9 +2435,10 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
               {(localData.sendInternalNote as boolean) !== false && (
                 <div className="space-y-2">
                   <Label className="text-xs">Mensagem da notificação</Label>
-                  <Textarea
+                  <VariableTextarea
                     value={(localData.internalNoteTemplate as string) || ''}
-                    onChange={(e) => handleChange('internalNoteTemplate', e.target.value)}
+                    onValueChange={(value) => handleChange('internalNoteTemplate', value)}
+                    variables={noteVariables}
                     placeholder="📋 Documento gerado: {{template_name}} para {{contact_name}}"
                     className="text-xs min-h-[50px]"
                   />
@@ -2464,10 +2503,11 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
           <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="listText">Texto da Mensagem</Label>
-              <Textarea
+              <VariableTextarea
                 id="listText"
                 value={(localData.content as string) || ''}
-                onChange={(e) => handleChange('content', e.target.value)}
+                onValueChange={(value) => handleChange('content', value)}
+                variables={availableVariables}
                 placeholder="Selecione uma das opções abaixo:"
                 className="min-h-[60px]"
               />
