@@ -37,7 +37,96 @@ async function loadConnectionSettings(supabase: any) {
     uazapiBaseUrl: normalizeBaseUrl(value.uazapi_base_url || Deno.env.get('UAZAPI_BASE_URL')),
     evolutionBaseUrl: normalizeBaseUrl(value.evolution_base_url || Deno.env.get('EVOLUTION_BASE_URL')),
     evolutionApiKey: value.evolution_api_key || Deno.env.get('EVOLUTION_API_KEY') || '',
+    webhookUrl: String(value.webhook_url || `${Deno.env.get('SUPABASE_URL')}/functions/v1/zapi-webhook`).trim(),
   };
+}
+
+// Mesmas configurações usadas em zapi-create-instance, para recriar a instância
+// idêntica ao re-parear.
+function defaultProviderSettings() {
+  return {
+    rejectCall: true,
+    msgCall: 'No momento não atendemos chamadas por WhatsApp. Envie uma mensagem de texto.',
+    groupsIgnore: true,
+    alwaysOnline: false,
+    readMessages: false,
+    readStatus: false,
+    syncFullHistory: true,
+  };
+}
+
+// Re-pareamento "do zero" de uma instância Evolution: apaga a instância no
+// servidor e recria com o MESMO nome. Necessário porque o ciclo logout→connect
+// deixa a sessão Baileys "open" mas SURDA a mensagens recebidas (não re-registra
+// o listener de messages.upsert) — e nem reconfigurar webhook nem /instance/restart
+// curam isso; só uma criação limpa. Mantém o nome, então o registro no banco, os
+// workspaces e as conversas continuam válidos. Retorna o QR para reparear.
+async function repairEvolutionInstance(
+  evolutionBaseUrl: string,
+  apiKey: string,
+  instanceName: string,
+  webhookUrl: string,
+): Promise<{ qrCode: string | null; instanceApiKey: string | null }> {
+  // 1) Apaga a instância no servidor (best-effort: pode não existir / estar logada).
+  try {
+    const delResp = await fetch(`${evolutionBaseUrl}/instance/delete/${instanceName}`, {
+      method: 'DELETE',
+      headers: { apikey: apiKey },
+    });
+    console.log(`[REPAIR] delete ${instanceName}: ${delResp.status}`);
+  } catch (e) {
+    console.warn(`[REPAIR] delete failed (continuing): ${String(e)}`);
+  }
+
+  // 2) Recria limpa com o mesmo nome (idêntico ao zapi-create-instance).
+  const createBody = {
+    instanceName,
+    integration: 'WHATSAPP-BAILEYS',
+    qrcode: true,
+    ...defaultProviderSettings(),
+    webhook: {
+      url: webhookUrl,
+      byEvents: false,
+      base64: true,
+      webhookByEvents: false,
+      webhookBase64: true,
+      events: ['QRCODE_UPDATED', 'CONNECTION_UPDATE', 'MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'SEND_MESSAGE', 'PRESENCE_UPDATE'],
+    },
+  };
+
+  const createResp = await fetch(`${evolutionBaseUrl}/instance/create`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', apikey: apiKey },
+    body: JSON.stringify(createBody),
+  });
+  const createRaw = await createResp.text();
+  if (!createResp.ok && createResp.status !== 409) {
+    throw new Error(`Evolution create falhou (${createResp.status}): ${createRaw}`);
+  }
+
+  let payload: any = {};
+  try { payload = createRaw ? JSON.parse(createRaw) : {}; } catch (_) {}
+  const hash = payload.hash || payload.data?.hash || {};
+  const instanceApiKey = hash.apikey || payload.instance?.apikey || null;
+  let qrCode = extractQr(payload);
+
+  // 3) Se o create não trouxe QR, busca via connect.
+  if (!qrCode) {
+    try {
+      const connectResp = await fetch(`${evolutionBaseUrl}/instance/connect/${instanceName}`, {
+        method: 'GET',
+        headers: { apikey: apiKey },
+      });
+      if (connectResp.ok) {
+        const connectPayload = await connectResp.json().catch(() => ({}));
+        qrCode = extractQr(connectPayload);
+      }
+    } catch (e) {
+      console.warn(`[REPAIR] connect after create failed: ${String(e)}`);
+    }
+  }
+
+  return { qrCode, instanceApiKey };
 }
 
 // Reconfigura o webhook da instância no provedor. O logout (zapi-disconnect)
@@ -133,12 +222,14 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Get instanceId from query or body
+    // Get instanceId / forceRepair from query or body
     let requestedInstanceId: string | null = new URL(req.url).searchParams.get('instanceId');
-    if (!requestedInstanceId && req.method === 'POST') {
+    let forceRepair = new URL(req.url).searchParams.get('forceRepair') === 'true';
+    if (req.method === 'POST') {
       try {
         const body = await req.json();
-        requestedInstanceId = body.instanceId || null;
+        requestedInstanceId = requestedInstanceId || body.instanceId || null;
+        if (body.forceRepair === true) forceRepair = true;
       } catch { /* no body */ }
     }
 
@@ -216,6 +307,63 @@ Deno.serve(async (req) => {
           status: 400,
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
+      }
+
+      // Re-pareamento "do zero": apaga e recria a instância (mesmo nome). Usado
+      // quando a instância conecta mas ficou SURDA a mensagens recebidas — estado
+      // que o connect/restart não cura. Força um QR novo para reparear limpo.
+      if (forceRepair) {
+        console.log(`[REPAIR] Forcing fresh re-pair for Evolution instance ${instanceName}`);
+        try {
+          const { qrCode, instanceApiKey } = await repairEvolutionInstance(
+            evolutionBaseUrl,
+            evolutionApiKey,
+            instanceName,
+            connectionSettings.webhookUrl,
+          );
+
+          await supabase
+            .from('whatsapp_instances')
+            .update({
+              status: 'connecting',
+              is_active: true,
+              connected_at: null,
+              disconnected_at: null,
+              // Mantém a key da instância sincronizada com a global; só sobrescreve
+              // se a recriação devolveu uma key própria nova.
+              ...(instanceApiKey ? { evolution_api_key: instanceApiKey } : { evolution_api_key: evolutionApiKey }),
+            })
+            .eq('id', instance.id);
+
+          if (!qrCode) {
+            return new Response(JSON.stringify({
+              error: 'No QR code available',
+              note: 'Instância recriada, mas o QR ainda não ficou pronto. Tente novamente em instantes.',
+            }), {
+              status: 400,
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+          }
+
+          return new Response(JSON.stringify({
+            qrCode,
+            connected: false,
+            instanceId: instance.id,
+            provider,
+            repaired: true,
+          }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        } catch (e) {
+          console.error('[REPAIR] Failed:', e);
+          return new Response(JSON.stringify({
+            error: 'Falha ao re-parear a instância Evolution',
+            details: String(e),
+          }), {
+            status: 500,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
       }
 
       console.log(`[DEBUG] Connecting Evolution instance ${instanceName}`);

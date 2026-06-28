@@ -254,8 +254,13 @@ export function WhatsAppInstancesSettings() {
     if (!enforceEntryFeatureAccess('allow_connect_whatsapp_number', 'conectar numero de WhatsApp')) return;
     setIsActionLoading(instanceId);
     try {
+      // Para Evolution, reconectar após um disconnect (logout) sempre exige novo QR
+      // — e o connect simples deixa a sessão "surda" a mensagens recebidas. Então
+      // reconectamos com re-pareamento limpo (delete+create), que evita esse bug.
+      const target = instances.find((i) => i.id === instanceId);
+      const forceRepair = (target?.provider || 'uazapi') === 'evolution';
       const response = await supabase.functions.invoke('zapi-get-qrcode', {
-        body: { instanceId },
+        body: { instanceId, forceRepair },
         headers: { Authorization: `Bearer ${session?.access_token}` }
       });
       if (response.error) throw response.error;
@@ -322,6 +327,41 @@ export function WhatsAppInstancesSettings() {
       });
     } catch (error: any) {
       toast({ title: 'Erro', description: error.message, variant: 'destructive' });
+    } finally {
+      setIsActionLoading(null);
+    }
+  };
+
+  // Re-parear do zero: apaga e recria a instância no provedor (mesmo nome) e
+  // reabre o QR. É o conserto para quando o número conecta e ENVIA, mas parou de
+  // RECEBER mensagens — a sessão ficou surda e nem reconfigurar webhook nem
+  // restart resolvem. Mantém workspaces e conversas (mesmo nome de instância).
+  const handleRepair = async (instanceId: string) => {
+    if (!session?.access_token) return;
+    if (!window.confirm(
+      'Re-parear vai recriar a sessão deste número e exigir ler o QR Code de novo no WhatsApp. ' +
+      'As conversas e configurações são mantidas. Continuar?'
+    )) return;
+    setIsActionLoading(instanceId);
+    try {
+      const response = await supabase.functions.invoke('zapi-get-qrcode', {
+        body: { instanceId, forceRepair: true },
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+      if (response.error) throw response.error;
+      if (response.data?.qrCode) {
+        setConnectingInstanceId(instanceId);
+        setQrCode(response.data.qrCode);
+        toast({ title: 'Escaneie o QR Code', description: 'Abra o WhatsApp > Aparelhos conectados e leia o código.' });
+      } else {
+        toast({
+          title: 'QR ainda não disponível',
+          description: response.data?.note || 'Tente novamente em alguns segundos.',
+          variant: 'destructive',
+        });
+      }
+    } catch (error: any) {
+      toast({ title: 'Erro ao re-parear', description: error.message, variant: 'destructive' });
     } finally {
       setIsActionLoading(null);
     }
@@ -557,9 +597,14 @@ export function WhatsAppInstancesSettings() {
                                 <Download className="h-4 w-4" />
                               </Button>
                             )}
-                            <Button variant="ghost" size="sm" onClick={() => handleReconfigureWebhook(instance.id)} disabled={isActionLoading === instance.id} title="Reconfigurar webhook (parou de receber mensagens)">
+                            <Button variant="ghost" size="sm" onClick={() => handleReconfigureWebhook(instance.id)} disabled={isActionLoading === instance.id} title="Reconfigurar webhook">
                               {isActionLoading === instance.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                             </Button>
+                            {instance.provider === 'evolution' && (
+                              <Button variant="ghost" size="sm" onClick={() => handleRepair(instance.id)} disabled={isActionLoading === instance.id} title="Re-parear (corrige número que conecta mas não recebe mensagens)">
+                                {isActionLoading === instance.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <QrCode className="h-4 w-4" />}
+                              </Button>
+                            )}
                             <Button variant="ghost" size="sm" onClick={() => handleDisconnect(instance.id)} disabled={isActionLoading === instance.id}>
                               {isActionLoading === instance.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
                             </Button>
