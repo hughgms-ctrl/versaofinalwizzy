@@ -45,11 +45,20 @@ export function useDeleteWhatsAppInstance() {
 
   return useMutation({
     mutationFn: async (instanceId: string) => {
-      const { error } = await supabase
+      // .select() faz o delete retornar as linhas afetadas. Sem isso, o Supabase
+      // responde "sucesso" mesmo quando o RLS filtra o DELETE para 0 linhas — e o
+      // usuário via um toast de sucesso enquanto a instância continuava no lugar.
+      const { data, error } = await supabase
         .from('whatsapp_instances')
         .delete()
-        .eq('id', instanceId);
+        .eq('id', instanceId)
+        .select('id');
       if (error) throw error;
+      if (!data || data.length === 0) {
+        throw new Error(
+          'Não foi possível remover a instância. Você precisa ser owner ou admin desta organização para excluí-la.'
+        );
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['whatsapp-instances'] });
