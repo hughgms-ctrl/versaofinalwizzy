@@ -327,6 +327,14 @@ async function checkEvolutionInstance(
       })
       .eq('id', instance.id);
 
+    // Adota conversas órfãs deste número (ex.: instância deletada/reconectada com
+    // novo uuid) para não duplicar chat com o mesmo número. Por source_phone.
+    try {
+      await supabase.rpc('adopt_orphan_conversations_for_instance', { _instance_id: instance.id });
+    } catch (e) {
+      console.error('[ADOPT] Falha ao adotar conversas órfãs (Evolution):', e);
+    }
+
     return {
       status: 'connected',
       connected: true,
@@ -576,6 +584,14 @@ async function checkSingleInstance(
         phone_number: safePhoneNumber,
       })
       .eq('id', instance.id);
+
+    // Adota conversas órfãs deste número (ex.: instância deletada/reconectada com
+    // novo uuid) para não duplicar chat com o mesmo número. Por source_phone.
+    try {
+      await supabase.rpc('adopt_orphan_conversations_for_instance', { _instance_id: instance.id });
+    } catch (e) {
+      console.error('[ADOPT] Falha ao adotar conversas órfãs (UAZAPI):', e);
+    }
 
     fetch(`${supabaseUrl}/functions/v1/zapi-configure-webhook`, {
       method: 'POST',
