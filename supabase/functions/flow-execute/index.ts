@@ -1,5 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { sendWhatsAppMessage } from '../_shared/whatsappProvider.ts';
+import { resolveWorkspaceInstanceBinding, sendWhatsAppMessage } from '../_shared/whatsappProvider.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -222,11 +222,26 @@ Deno.serve(async (req) => {
           return;
         }
 
+        // Regra de negócio: conversa dentro de um workspace só envia pelo número
+        // do workspace. Se o workspace não tem número associado, abortamos — sem
+        // fallback por organização.
+        const workspaceBinding = await resolveWorkspaceInstanceBinding(
+          supabase,
+          flow.organization_id,
+          conversation.workspace_id,
+        );
+        if (workspaceBinding.blocked) {
+          console.error(
+            `[FLOW EXECUTE] Workspace ${conversation.workspace_id} sem número associado; abortando envio.`,
+          );
+          return;
+        }
+
         // 3. Get WhatsApp instance according to the admin provider strategy.
         const { instance, error: instanceError } = await resolveWhatsAppInstance(
           supabase,
           flow.organization_id,
-          conversation.whatsapp_instance_id,
+          workspaceBinding.workspaceInstanceId || conversation.whatsapp_instance_id,
         );
 
         if (instanceError || !instance) {

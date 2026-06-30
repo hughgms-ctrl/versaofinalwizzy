@@ -1,5 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { resolveWhatsAppInstance, sendWhatsAppMessage } from '../_shared/whatsappProvider.ts';
+import { resolveWhatsAppInstance, resolveWorkspaceInstanceBinding, sendWhatsAppMessage } from '../_shared/whatsappProvider.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -32,25 +32,31 @@ interface Contact {
   organization_id: string;
 }
 
-async function resolveScheduledInstance(supabase: any, scheduled: ScheduledMessage) {
-  let workspaceInstanceId: string | null = null;
-
-  if (scheduled.workspace_id) {
-    const { data: workspace } = await supabase
-      .from('workspaces')
-      .select('whatsapp_instance_id')
-      .eq('id', scheduled.workspace_id)
-      .eq('organization_id', scheduled.organization_id)
-      .maybeSingle();
-    workspaceInstanceId = workspace?.whatsapp_instance_id || null;
-  }
-
-  return await resolveWhatsAppInstance(
+async function resolveScheduledInstance(
+  supabase: any,
+  scheduled: ScheduledMessage,
+): Promise<{ instance: any; blocked: boolean }> {
+  const binding = await resolveWorkspaceInstanceBinding(
     supabase,
     scheduled.organization_id,
-    workspaceInstanceId,
+    scheduled.workspace_id,
   );
+
+  // Workspace sem número associado: não enviamos por outro número da org.
+  if (binding.blocked) {
+    return { instance: null, blocked: true };
+  }
+
+  const instance = await resolveWhatsAppInstance(
+    supabase,
+    scheduled.organization_id,
+    binding.workspaceInstanceId,
+  );
+  return { instance, blocked: false };
 }
+
+const WORKSPACE_WITHOUT_NUMBER_ERROR =
+  'Workspace sem número de WhatsApp conectado. Conecte um número ao workspace para enviar mensagens.';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -323,7 +329,11 @@ async function sendMessageToContacts(
   let successCount = 0;
   let failCount = 0;
   let lastError: string | undefined;
-  const scheduledInstance = await resolveScheduledInstance(supabase, scheduled);
+  const { instance: scheduledInstance, blocked: workspaceBlocked } = await resolveScheduledInstance(supabase, scheduled);
+  if (workspaceBlocked) {
+    console.error(`[scheduled ${scheduled.id}] ${WORKSPACE_WITHOUT_NUMBER_ERROR}`);
+    return { successCount: 0, failCount: contacts.length, lastError: WORKSPACE_WITHOUT_NUMBER_ERROR };
+  }
   const scheduledInstanceId = scheduledInstance?.id || null;
 
   const convByContact = await preloadConversations(supabase, scheduled, contacts, scheduledInstanceId, scheduledInstance);
@@ -456,7 +466,11 @@ async function executeFlowForContacts(
   let successCount = 0;
   let failCount = 0;
   let lastError: string | undefined;
-  const scheduledInstance = await resolveScheduledInstance(supabase, scheduled);
+  const { instance: scheduledInstance, blocked: workspaceBlocked } = await resolveScheduledInstance(supabase, scheduled);
+  if (workspaceBlocked) {
+    console.error(`[scheduled ${scheduled.id}] ${WORKSPACE_WITHOUT_NUMBER_ERROR}`);
+    return { successCount: 0, failCount: contacts.length, lastError: WORKSPACE_WITHOUT_NUMBER_ERROR };
+  }
   const scheduledInstanceId = scheduledInstance?.id || null;
 
   // FASE 3C: pré-carrega/cria conversas em lote (mesma estratégia de sendMessageToContacts).

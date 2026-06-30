@@ -171,6 +171,37 @@ export async function resolveWhatsAppInstance(
   return null;
 }
 
+export interface WorkspaceInstanceBinding {
+  // true quando a conversa pertence a um workspace que NÃO tem número associado.
+  // Nesse caso o envio DEVE ser recusado — nunca caímos no fallback por
+  // organização (que pegaria o primeiro número conectado de outro workspace).
+  blocked: boolean;
+  // id da instância designada do workspace, quando o workspace tem um número.
+  workspaceInstanceId: string | null;
+}
+
+// Regra de negócio: uma conversa dentro de um workspace só pode enviar pelo
+// número atrelado a esse workspace. Se o workspace não tem número associado,
+// recusamos o envio (blocked=true). Conversas SEM workspace não bloqueiam e
+// mantêm o comportamento anterior (fallback por organização a cargo do caller).
+export async function resolveWorkspaceInstanceBinding(
+  supabase: any,
+  organizationId: string,
+  workspaceId: string | null | undefined,
+): Promise<WorkspaceInstanceBinding> {
+  if (!workspaceId) return { blocked: false, workspaceInstanceId: null };
+
+  const { data: workspace } = await supabase
+    .from('workspaces')
+    .select('whatsapp_instance_id')
+    .eq('id', workspaceId)
+    .eq('organization_id', organizationId)
+    .maybeSingle();
+
+  const workspaceInstanceId = workspace?.whatsapp_instance_id || null;
+  return { blocked: !workspaceInstanceId, workspaceInstanceId };
+}
+
 // Resolve Evolution API base URL + apikey + instance name for a given instance row,
 // using the same precedence as sendWhatsAppMessage. Used by group management endpoints.
 export async function getEvolutionConfig(

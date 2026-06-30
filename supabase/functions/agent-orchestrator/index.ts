@@ -1,5 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { sendWhatsAppMessage } from '../_shared/whatsappProvider.ts';
+import { resolveWorkspaceInstanceBinding, sendWhatsAppMessage } from '../_shared/whatsappProvider.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -114,6 +114,20 @@ function isWhatsAppProviderEnabled(provider: Provider, strategy: Awaited<ReturnT
 }
 
 async function resolveWhatsAppInstanceForSend(supabase: any, conversation: any) {
+  // Regra de negócio: conversa dentro de um workspace só envia pelo número do
+  // workspace. Sem número associado, recusamos o envio (sem fallback por org).
+  const binding = await resolveWorkspaceInstanceBinding(
+    supabase,
+    conversation.organization_id,
+    conversation.workspace_id,
+  );
+  if (binding.blocked) {
+    console.error(
+      `[ORCHESTRATOR] Workspace ${conversation.workspace_id} sem número associado; recusando envio.`,
+    );
+    return null;
+  }
+
   const strategy = await loadWhatsAppProviderStrategy(supabase);
   const preferredProviders: Provider[] = [];
   if (isWhatsAppProviderEnabled(strategy.primaryProvider, strategy)) preferredProviders.push(strategy.primaryProvider);
@@ -126,6 +140,12 @@ async function resolveWhatsAppInstanceForSend(supabase: any, conversation: any) 
     .order('is_active', { ascending: false })
     .order('created_at', { ascending: false });
   const connectedInstances = connected || [];
+
+  // Quando o workspace tem número, ele é o ÚNICO permitido — nunca substituímos
+  // por outro número da organização.
+  if (binding.workspaceInstanceId) {
+    return connectedInstances.find((item: any) => item.id === binding.workspaceInstanceId) || null;
+  }
 
   const conversationInstance = conversation.whatsapp_instance_id
     ? connectedInstances.find((item: any) => item.id === conversation.whatsapp_instance_id)
@@ -2256,6 +2276,20 @@ async function sendMediaViaZAPI(supabase: any, conversation: any, mediaUrl: stri
   const contactPhone = conversation.contact?.phone;
   if (!contactPhone) return;
 
+  // Regra de negócio: conversa dentro de um workspace só envia pelo número do
+  // workspace. Sem número associado, recusamos o envio (sem fallback por org).
+  const binding = await resolveWorkspaceInstanceBinding(
+    supabase,
+    conversation.organization_id,
+    conversation.workspace_id,
+  );
+  if (binding.blocked) {
+    console.error(
+      `[ORCHESTRATOR] Workspace ${conversation.workspace_id} sem número associado; documento não enviado.`,
+    );
+    return;
+  }
+
   try {
     const sendResult = await sendWhatsAppMessage(supabase, {
       organizationId: conversation.organization_id,
@@ -2263,7 +2297,7 @@ async function sendMediaViaZAPI(supabase: any, conversation: any, mediaUrl: stri
       type: 'document',
       mediaUrl,
       caption,
-      conversationInstanceId: conversation.whatsapp_instance_id,
+      conversationInstanceId: binding.workspaceInstanceId || conversation.whatsapp_instance_id,
     });
 
     await supabase.from('messages').insert({

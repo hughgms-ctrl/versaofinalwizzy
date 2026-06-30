@@ -16,6 +16,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import {
   Select,
   SelectContent,
@@ -47,7 +48,8 @@ import {
   Mic,
   Square,
   Trash2,
-  Phone
+  Phone,
+  AlertTriangle
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
@@ -75,7 +77,12 @@ export function CreateScheduledMessageDialog({
   const { data: flows = [] } = useFlows();
   const { data: whatsappGroups = [] } = useWhatsAppGroups();
   const createMutation = useCreateScheduledMessage();
-  const { selectedWorkspaceId } = useWorkspaceContext();
+  const { selectedWorkspaceId, selectedWorkspace } = useWorkspaceContext();
+
+  // Aviso: a automação herda o workspace selecionado. Se esse workspace não tem
+  // número de WhatsApp associado, o envio será recusado pelo backend. Só avisamos
+  // quando há um workspace real selecionado e ele está sem número.
+  const workspaceHasNoNumber = !!selectedWorkspace && !selectedWorkspace.whatsapp_instance_id;
 
   // Form state
   const [contentType, setContentType] = useState<'message' | 'flow'>('message');
@@ -323,6 +330,17 @@ export function CreateScheduledMessageDialog({
 
         <div className="flex-1 overflow-y-auto pr-2">
           <div className="space-y-6 py-4">
+            {workspaceHasNoNumber && (
+              <Alert variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertTitle>Workspace sem número conectado</AlertTitle>
+                <AlertDescription>
+                  O workspace <strong>{selectedWorkspace?.name}</strong> não tem um número de WhatsApp associado.
+                  As mensagens desta programação não serão enviadas até que você conecte um número a este workspace.
+                </AlertDescription>
+              </Alert>
+            )}
+
             {/* Name (optional) */}
             <div className="space-y-2">
               <Label>Nome da programação (opcional)</Label>

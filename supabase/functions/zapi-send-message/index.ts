@@ -323,6 +323,25 @@ Deno.serve(async (req) => {
         .eq('organization_id', conversation.organization_id)
         .maybeSingle();
       workspaceInstanceId = workspace?.whatsapp_instance_id || null;
+
+      // Regra de negócio: uma conversa dentro de um workspace só pode enviar
+      // pelo número atrelado a esse workspace. Se o workspace não tem número
+      // associado, NÃO caímos no fallback por organização (que pegaria o
+      // primeiro número conectado) — recusamos o envio e pedimos que um número
+      // seja conectado ao workspace.
+      if (!workspaceInstanceId) {
+        console.warn(
+          `[SEND_ROUTING] Workspace ${conversation.workspace_id} sem número associado; ` +
+          `recusando envio (sem fallback por organização).`
+        );
+        return new Response(JSON.stringify({
+          error: 'Este workspace não tem um número de WhatsApp conectado. Conecte um número ao workspace para enviar mensagens.',
+          code: 'WORKSPACE_WITHOUT_NUMBER',
+        }), {
+          status: 409,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
     }
 
     const instance = await resolveSendInstance(

@@ -15,7 +15,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { useCreateFlow, useFlows } from '@/hooks/useFlows';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { enforceEntryCreationLimit } from '@/lib/entryFlow';
-import { Loader2 } from 'lucide-react';
+import { Loader2, AlertTriangle } from 'lucide-react';
 import {
   Select,
   SelectContent,
@@ -23,6 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 
 interface CreateFlowDialogProps {
   open: boolean;
@@ -53,6 +54,19 @@ export function CreateFlowDialog({ open, onOpenChange, folderId, folderName, fol
       }
     }
   }, [open, isAdmin, selectedWorkspaceId]);
+
+  // Aviso: identifica o workspace que o fluxo vai usar (herdado da pasta ou
+  // escolhido no seletor). Se esse workspace não tem número de WhatsApp
+  // associado, o envio será recusado pelo backend. "Todos os Workspaces" (null)
+  // não gera aviso, pois não fixa um número específico.
+  const inheritsWorkspaceForWarning = !!folderId && !!folderWorkspaceIds && folderWorkspaceIds.length > 0;
+  const effectiveWorkspaceId = inheritsWorkspaceForWarning
+    ? folderWorkspaceIds![0]
+    : (workspaceId === 'all' ? null : workspaceId);
+  const effectiveWorkspace = effectiveWorkspaceId
+    ? availableWorkspaces.find(w => w.id === effectiveWorkspaceId)
+    : undefined;
+  const workspaceHasNoNumber = !!effectiveWorkspace && !effectiveWorkspace.whatsapp_instance_id;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -99,6 +113,17 @@ export function CreateFlowDialog({ open, onOpenChange, folderId, folderName, fol
           </DialogHeader>
           
           <div className="grid gap-4 py-4">
+            {workspaceHasNoNumber && (
+              <Alert variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertTitle>Workspace sem número conectado</AlertTitle>
+                <AlertDescription>
+                  O workspace <strong>{effectiveWorkspace?.name}</strong> não tem um número de WhatsApp associado.
+                  As mensagens deste fluxo não serão enviadas até que você conecte um número a este workspace.
+                </AlertDescription>
+              </Alert>
+            )}
+
             <div className="grid gap-2">
               <Label htmlFor="name">Nome do Fluxo</Label>
               <Input
