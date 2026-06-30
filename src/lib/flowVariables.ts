@@ -116,6 +116,8 @@ export function getAvailableVariables(
       { name: 'phone', description: 'Telefone do contato (sempre disponível)' },
       { name: 'name', description: 'Nome do contato (se enviado na campanha)' },
       { name: 'cpf', description: 'CPF (se enviado na campanha)' },
+      { name: 'campaign_name', description: 'Nome da campanha que disparou o fluxo' },
+      { name: 'campaign_id', description: 'ID único da campanha que disparou o fluxo' },
     ],
   });
 

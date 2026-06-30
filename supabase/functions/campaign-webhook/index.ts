@@ -117,7 +117,7 @@ Deno.serve(async (req) => {
         // 2. Busca campanha pelo token
         const { data: campaign } = await supabase
             .from('campaigns')
-            .select('id, organization_id, flow_id, is_active, match_type, start_time, end_time, workspace_id')
+            .select('id, name, organization_id, flow_id, is_active, match_type, start_time, end_time, workspace_id')
             .eq('webhook_token', token)
             .maybeSingle();
 
@@ -274,7 +274,8 @@ Deno.serve(async (req) => {
             }
 
             // Variáveis = todo o payload do item, com o telefone normalizado.
-            const variables: AnyObj = { ...item, phone };
+            // Inclui identificação da campanha que disparou o fluxo (id é único; name é para exibição).
+            const variables: AnyObj = { ...item, phone, campaign_id: campaign.id, campaign_name: campaign.name };
 
             if (window.within) {
                 // Dentro da janela -> dispara o fluxo agora (em background) e conta o gatilho.

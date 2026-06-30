@@ -70,7 +70,7 @@ Deno.serve(async (req) => {
         // 2. Find campaigns matching this tag
         const { data: campaigns, error: campaignsError } = await supabase
             .from('campaigns')
-            .select('id, flow_id, start_time, end_time, workspace_id')
+            .select('id, name, flow_id, start_time, end_time, workspace_id')
             .eq('organization_id', organizationId)
             .eq('is_active', true)
             .eq('match_type', 'tag_added')
@@ -139,10 +139,11 @@ Deno.serve(async (req) => {
                     'Content-Type': 'application/json', 
                     'Authorization': `Bearer ${supabaseKey}` 
                 },
-                body: JSON.stringify({ 
-                    flowId: campaign.flow_id, 
+                body: JSON.stringify({
+                    flowId: campaign.flow_id,
                     conversationId: conversation.id,
-                    organizationId: organizationId 
+                    organizationId: organizationId,
+                    variables: { campaign_id: campaign.id, campaign_name: campaign.name },
                 }),
             });
 
