@@ -38,12 +38,15 @@ interface CampaignDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     campaignToEdit?: Campaign | null;
+    /** Folder the new campaign should be created in (when creating from inside an open folder). */
+    folderId?: string | null;
 }
 
 export function CampaignDialog({
     open,
     onOpenChange,
     campaignToEdit,
+    folderId = null,
 }: CampaignDialogProps) {
     const [name, setName] = useState("");
     const [triggerKeyword, setTriggerKeyword] = useState("");
@@ -135,7 +138,10 @@ export function CampaignDialog({
                 { onSuccess: () => onOpenChange(false) }
             );
         } else {
-            createCampaign.mutate(payload, { onSuccess: () => onOpenChange(false) });
+            createCampaign.mutate(
+                { ...payload, folder_id: folderId },
+                { onSuccess: () => onOpenChange(false) }
+            );
         }
     };
 

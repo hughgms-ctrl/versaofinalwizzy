@@ -18,6 +18,8 @@ export interface Campaign {
     pending_count?: number;
     workspace_id?: string | null;
     webhook_token?: string;
+    folder_id?: string | null;
+    position?: number;
     created_at: string;
     updated_at: string;
     flow?: {
@@ -58,7 +60,9 @@ export function useCampaigns() {
 
             const mappedData = (data || []).map((c: any) => ({
                 ...c,
-                pending_count: c.pending_count?.[0]?.count || 0
+                pending_count: c.pending_count?.[0]?.count || 0,
+                folder_id: c.folder_id ?? null,
+                position: c.position ?? 0,
             }));
 
             return mappedData as unknown as Campaign[];
@@ -145,6 +149,36 @@ export function useDeleteCampaign() {
         onError: (error) => {
             console.error('Error deleting campaign:', error);
             toast.error('Erro ao excluir campanha');
+        },
+    });
+}
+
+export function useUpdateCampaignPositions() {
+    const queryClient = useQueryClient();
+
+    return useMutation({
+        mutationFn: async (updates: { id: string; position: number }[]) => {
+            const promises = updates.map(update =>
+                supabase
+                    .from('campaigns')
+                    .update({ position: update.position } as never)
+                    .eq('id', update.id)
+            );
+
+            const results = await Promise.all(promises);
+            const firstError = results.find(r => r.error)?.error;
+            if (firstError) throw firstError;
+        },
+        onError: (error: any) => {
+            console.error('Error updating campaign positions:', error);
+            if (error?.code === '42703') {
+                toast.error('Coluna "position" não encontrada no banco de dados. A ordem não será persistida.');
+            } else {
+                toast.error('Erro ao atualizar ordem das campanhas');
+            }
+        },
+        onSettled: () => {
+            queryClient.invalidateQueries({ queryKey: ['campaigns'] });
         },
     });
 }
