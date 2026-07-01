@@ -407,6 +407,14 @@ function ScheduledMessageCard({
           {message.error_message}
         </div>
       )}
+
+      {/* Envio parcial: status "enviado" mas com falhas em parte dos contatos. */}
+      {message.status === 'sent' && message.error_message && (
+        <div className="mt-3 p-2 rounded bg-amber-500/10 text-amber-600 text-xs flex items-center gap-2">
+          <AlertCircle className="h-3 w-3 flex-shrink-0" />
+          {message.error_message}
+        </div>
+      )}
     </div>
   );
 }

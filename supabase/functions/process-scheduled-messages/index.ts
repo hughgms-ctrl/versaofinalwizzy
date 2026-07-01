@@ -161,11 +161,18 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        // Update status and handle recurrence
+        // Update status and handle recurrence.
+        // Sucesso parcial (alguns enviaram, outros falharam) NÃO pode ser
+        // escondido: gravamos o resumo em error_message para o usuário ver que
+        // parte não foi entregue e QUAL foi o erro real (antes isso era jogado
+        // fora e o job aparecia como "enviado" mesmo com a maioria falhando).
         const newStatus = calculateNextExecution(scheduled);
+        const partialError = result.failCount > 0
+          ? `${result.successCount} enviada(s), ${result.failCount} falharam. Último erro: ${result.lastError || 'desconhecido'}`
+          : null;
         await supabase
           .from('scheduled_messages')
-          .update(newStatus)
+          .update({ ...newStatus, error_message: partialError })
           .eq('id', scheduled.id);
 
         processed++;
