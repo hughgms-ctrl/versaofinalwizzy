@@ -100,12 +100,13 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Ensure phone has country code (default Brazil 55)
+// Garante o código de país de forma country-aware: números nacionais BR crus
+// ganham 55; números que já trazem código de país (ex.: EUA +1) são preservados.
+// Delega em withCountryCode para não duplicar a heurística.
 function ensureCountryCode(phone: string): string {
   const clean = phone.replace(/\D/g, '');
-  if (clean.length >= 12) return clean;
-  if (clean.length >= 10 && clean.length <= 11) return `55${clean}`;
-  return '';
+  if (clean.length < 10) return '';
+  return withCountryCode(clean);
 }
 
 // List of valid Brazilian DDDs
@@ -128,13 +129,12 @@ function isValidPhoneNumber(phone: string): boolean {
   if (clean.startsWith('55')) {
     if (clean.length < 12 || clean.length > 15) return false;
     const ddd = parseInt(clean.substring(2, 4), 10);
-    if (!VALID_DDDS.has(ddd)) return false;
-  } else {
-    if (clean.length < 10 || clean.length > 13) return false;
-    const ddd = parseInt(clean.substring(0, 2), 10);
-    if (!VALID_DDDS.has(ddd)) return false;
+    return VALID_DDDS.has(ddd);
   }
-  return true;
+
+  // Número com outro código de país (E.164 internacional, ex.: EUA +1).
+  // Não exigimos DDD brasileiro — apenas um comprimento plausível de E.164.
+  return clean.length >= 10 && clean.length <= 15;
 }
 
 function cleanPhone(raw: string): string {
@@ -491,11 +491,21 @@ function extractDownloadedMedia(data: any): { base64: string | null; mimeType: s
   };
 }
 
+// Retorna o número em E.164 completo, de forma country-aware.
+// - Já começa com 55 (Brasil) → mantém.
+// - Número NACIONAL brasileiro cru (10 díg. = DDD+8; ou 11 díg. com o 9º dígito
+//   de celular) com DDD válido → prefixa 55.
+// - Qualquer outro caso é tratado como número internacional que JÁ traz o
+//   código de país (ex.: EUA +1), como vem no JID do WhatsApp → preserva.
+//   ANTES o código forçava 55 em QUALQUER número de 10-11 dígitos, o que
+//   corrompia números estrangeiros (ex.: 18572664160 virava 5518572664160).
 function withCountryCode(phone: string): string {
   const clean = phone.replace(/\D/g, '');
   if (!clean) return '';
   if (clean.startsWith('55')) return clean;
-  if (clean.length >= 10 && clean.length <= 11) return `55${clean}`;
+  const ddd = parseInt(clean.substring(0, 2), 10);
+  if (clean.length === 10 && VALID_DDDS.has(ddd)) return `55${clean}`;
+  if (clean.length === 11 && clean[2] === '9' && VALID_DDDS.has(ddd)) return `55${clean}`;
   return clean;
 }
 

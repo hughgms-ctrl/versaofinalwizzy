@@ -42,12 +42,16 @@ function isGroupChat(chat: UAZAPIChat): boolean {
 // Ensure phone has country code (default Brazil 55)
 function ensureCountryCode(phone: string): string {
   const clean = phone.replace(/\D/g, '');
-  // Already has country code (12+ digits for BR = 55 + DDD(2) + number(8-9))
-  if (clean.length >= 12) return clean;
-  // Has DDD + number (10-11 digits) - add 55
-  if (clean.length >= 10 && clean.length <= 11) return `55${clean}`;
-  // Too short - not a valid phone number
-  return '';
+  if (!clean) return '';
+  if (clean.startsWith('55')) return clean;
+  // Country-aware: só prefixa 55 em número NACIONAL brasileiro cru (DDD válido).
+  // Número que já traz outro código de país (ex.: EUA +1, como no JID do
+  // WhatsApp) é preservado — antes forçava 55 e corrompia o estrangeiro.
+  const ddd = parseInt(clean.substring(0, 2), 10);
+  if (clean.length === 10 && VALID_DDDS.has(ddd)) return `55${clean}`;
+  if (clean.length === 11 && clean[2] === '9' && VALID_DDDS.has(ddd)) return `55${clean}`;
+  if (clean.length < 10) return '';
+  return clean;
 }
 
 function extractPhone(chat: UAZAPIChat): string | null {
@@ -82,14 +86,14 @@ const VALID_DDDS = new Set([
 function isValidPhoneNumber(phone: string): boolean {
   if (!phone) return false;
   const clean = phone.replace(/\D/g, '');
-  if (clean.length < 12 || clean.length > 15) return false;
   if (!/^\d+$/.test(clean)) return false;
-  // Validate Brazilian DDD
   if (clean.startsWith('55')) {
+    if (clean.length < 12 || clean.length > 15) return false;
     const ddd = parseInt(clean.substring(2, 4), 10);
-    if (!VALID_DDDS.has(ddd)) return false;
+    return VALID_DDDS.has(ddd);
   }
-  return true;
+  // Internacional (ex.: EUA +1): comprimento E.164 plausível, sem exigir DDD BR.
+  return clean.length >= 10 && clean.length <= 15;
 }
 
 function cleanOriginPhone(value: unknown): string | null {
