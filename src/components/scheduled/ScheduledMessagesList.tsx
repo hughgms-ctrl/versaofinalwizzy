@@ -25,7 +25,8 @@ import {
   Trash2,
   Ban,
   Pencil,
-  Timer
+  Timer,
+  CalendarPlus
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -50,6 +51,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { EditScheduledMessageDialog } from './EditScheduledMessageDialog';
+import { CreateScheduledMessageDialog } from './CreateScheduledMessageDialog';
 
 const statusConfig = {
   pending: { label: 'Pendente', icon: Clock, color: 'bg-blue-500/10 text-blue-500' },
@@ -139,6 +141,7 @@ export function ScheduledMessagesList() {
   
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [editMessage, setEditMessage] = useState<ScheduledMessage | null>(null);
+  const [rescheduleMessage, setRescheduleMessage] = useState<ScheduledMessage | null>(null);
   const [pageSize, setPageSize] = useState(10);
   const [pendingPage, setPendingPage] = useState(1);
   const [historyPage, setHistoryPage] = useState(1);
@@ -204,12 +207,13 @@ export function ScheduledMessagesList() {
           </h2>
           <div className="space-y-3">
             {visiblePendingMessages.map(message => (
-              <ScheduledMessageCard 
-                key={message.id} 
+              <ScheduledMessageCard
+                key={message.id}
                 message={message}
                 onCancel={handleCancel}
                 onDelete={setDeleteId}
                 onEdit={setEditMessage}
+                onReschedule={setRescheduleMessage}
               />
             ))}
           </div>
@@ -231,12 +235,13 @@ export function ScheduledMessagesList() {
           </h2>
           <div className="space-y-3">
             {visibleCompletedMessages.map(message => (
-              <ScheduledMessageCard 
-                key={message.id} 
+              <ScheduledMessageCard
+                key={message.id}
                 message={message}
                 onCancel={handleCancel}
                 onDelete={setDeleteId}
                 onEdit={setEditMessage}
+                onReschedule={setRescheduleMessage}
               />
             ))}
           </div>
@@ -255,6 +260,13 @@ export function ScheduledMessagesList() {
         open={!!editMessage}
         onOpenChange={(open) => !open && setEditMessage(null)}
         message={editMessage}
+      />
+
+      {/* Reschedule / reuse dialog — cria uma nova programação a partir de uma existente */}
+      <CreateScheduledMessageDialog
+        open={!!rescheduleMessage}
+        onOpenChange={(open) => !open && setRescheduleMessage(null)}
+        initialValues={rescheduleMessage}
       />
 
       {/* Delete confirmation */}
@@ -276,16 +288,18 @@ export function ScheduledMessagesList() {
   );
 }
 
-function ScheduledMessageCard({ 
-  message, 
-  onCancel, 
+function ScheduledMessageCard({
+  message,
+  onCancel,
   onDelete,
-  onEdit
-}: { 
+  onEdit,
+  onReschedule
+}: {
   message: ScheduledMessage;
   onCancel: (id: string) => void;
   onDelete: (id: string) => void;
   onEdit: (message: ScheduledMessage) => void;
+  onReschedule: (message: ScheduledMessage) => void;
 }) {
   const status = statusConfig[message.status];
   const StatusIcon = status.icon;
@@ -389,7 +403,12 @@ function ScheduledMessageCard({
                   <DropdownMenuSeparator />
                 </>
               )}
-              <DropdownMenuItem 
+              <DropdownMenuItem onClick={() => onReschedule(message)}>
+                <CalendarPlus className="h-4 w-4 mr-2" />
+                Reagendar
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
                 className="text-destructive"
                 onClick={() => onDelete(message.id)}
               >

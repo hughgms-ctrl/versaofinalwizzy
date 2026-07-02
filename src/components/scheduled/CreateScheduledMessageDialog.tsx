@@ -28,7 +28,7 @@ import { useConversations } from '@/hooks/useConversations';
 import { useTags } from '@/hooks/useTags';
 import { useFlows } from '@/hooks/useFlows';
 import { useWhatsAppGroups } from '@/hooks/useWhatsAppGroups';
-import { useCreateScheduledMessage } from '@/hooks/useScheduledMessages';
+import { useCreateScheduledMessage, ScheduledMessage } from '@/hooks/useScheduledMessages';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { 
   Calendar, 
@@ -58,6 +58,12 @@ interface CreateScheduledMessageDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   defaultContactId?: string;
+  /**
+   * Quando informado, o formulário abre pré-preenchido com as configurações
+   * de um agendamento existente (reagendar/reaproveitar). Uma NOVA programação
+   * é criada ao salvar — o original permanece intacto no histórico.
+   */
+  initialValues?: ScheduledMessage | null;
 }
 
 const getMediaKind = (type: string) => {
@@ -67,11 +73,13 @@ const getMediaKind = (type: string) => {
   return 'Arquivo';
 };
 
-export function CreateScheduledMessageDialog({ 
-  open, 
+export function CreateScheduledMessageDialog({
+  open,
   onOpenChange,
-  defaultContactId 
+  defaultContactId,
+  initialValues,
 }: CreateScheduledMessageDialogProps) {
+  const isReschedule = !!initialValues;
   const { data: conversations = [] } = useConversations();
   const { data: tags = [] } = useTags();
   const { data: flows = [] } = useFlows();
@@ -107,6 +115,7 @@ export function CreateScheduledMessageDialog({
   const [name, setName] = useState('');
   const [contactSearch, setContactSearch] = useState('');
   const [delayBetweenContacts, setDelayBetweenContacts] = useState<number>(10);
+  const [directContact, setDirectContact] = useState<{ id: string; name: string | null; phone: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -288,6 +297,61 @@ export function CreateScheduledMessageDialog({
     }
   }, [open, defaultContactId]);
 
+  // Reagendar/reaproveitar: pré-preenche o formulário com as configurações de um
+  // agendamento existente. Mantém o horário, mas zera a data (o usuário escolhe
+  // a nova). Uma nova programação é criada ao salvar — o original fica no histórico.
+  useEffect(() => {
+    if (!open || !initialValues) return;
+    const msg = initialValues;
+    const isGroupTarget = msg.target_type === 'group' || msg.target_type === 'groups';
+
+    setContentType(msg.content_type);
+    setTargetType(isGroupTarget ? 'group' : (msg.target_type as 'single' | 'tag' | 'manual'));
+    setMessageContent(msg.message_content || '');
+    setMediaUrl(msg.media_url || '');
+    setMediaType(msg.media_type || '');
+    setMediaName(msg.media_url ? (msg.media_type ? getMediaKind(msg.media_type) : 'Arquivo') : '');
+    setFlowId(msg.flow_id || '');
+    setContactId(msg.contact_id || '');
+    setTagId(msg.tag_id || '');
+    setName(msg.name || '');
+    setRecurrenceType(msg.recurrence_type);
+    setDelayBetweenContacts(msg.delay_between_contacts || 10);
+    setSelectedGroupJids(isGroupTarget && Array.isArray(msg.group_jids) ? msg.group_jids : []);
+
+    // Preserva o horário original, mas força a escolha de uma nova data.
+    const dt = new Date(msg.next_execution_at || msg.scheduled_at);
+    setScheduledDate('');
+    setScheduledTime(format(dt, 'HH:mm'));
+    setRecurrenceEndDate(msg.recurrence_end_at ? format(new Date(msg.recurrence_end_at), 'yyyy-MM-dd') : '');
+
+    // Contatos do tipo "manual" vivem na tabela filha scheduled_message_contacts.
+    if (msg.target_type === 'manual') {
+      supabase
+        .from('scheduled_message_contacts')
+        .select('contact_id')
+        .eq('scheduled_message_id', msg.id)
+        .then(({ data }) => {
+          if (data) setSelectedContactIds(data.map((row: { contact_id: string }) => row.contact_id));
+        });
+    } else {
+      setSelectedContactIds([]);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initialValues?.id]);
+
+  // Garante que o contato escolhido apareça no select mesmo que não esteja na
+  // lista de conversas recentes (ex.: reagendamento de um contato antigo).
+  useEffect(() => {
+    if (contactId && contacts.length > 0 && !contacts.find(c => c.id === contactId)) {
+      supabase.from('contacts').select('id, name, phone').eq('id', contactId).single().then(({ data }) => {
+        if (data) setDirectContact(data);
+      });
+    } else {
+      setDirectContact(null);
+    }
+  }, [contactId, contacts]);
+
   const handleOpenChange = (isOpen: boolean) => {
     if (!isOpen) {
       resetForm();
@@ -325,11 +389,22 @@ export function CreateScheduledMessageDialog({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[600px] max-h-[90vh] flex flex-col">
         <DialogHeader>
-          <DialogTitle>Nova programação</DialogTitle>
+          <DialogTitle>{isReschedule ? 'Reagendar programação' : 'Nova programação'}</DialogTitle>
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto pr-2">
           <div className="space-y-6 py-4">
+            {isReschedule && (
+              <Alert>
+                <Repeat className="h-4 w-4" />
+                <AlertTitle>Reaproveitando uma programação</AlertTitle>
+                <AlertDescription>
+                  As configurações foram copiadas. Ajuste o que quiser e escolha a nova data.
+                  Uma <strong>nova</strong> programação será criada — o original permanece no histórico.
+                </AlertDescription>
+              </Alert>
+            )}
+
             {workspaceHasNoNumber && (
               <Alert variant="destructive">
                 <AlertTriangle className="h-4 w-4" />
@@ -530,6 +605,11 @@ export function CreateScheduledMessageDialog({
                     <SelectValue placeholder="Escolha um contato" />
                   </SelectTrigger>
                   <SelectContent>
+                    {directContact && directContact.id !== defaultContactId && !contacts.find(c => c.id === directContact.id) && (
+                      <SelectItem key={`direct-${directContact.id}`} value={directContact.id}>
+                        {directContact.name || directContact.phone}
+                      </SelectItem>
+                    )}
                     {defaultContactId && (() => {
                       const currentContact = contacts.find(c => c.id === defaultContactId);
                       return currentContact ? (
@@ -802,7 +882,7 @@ export function CreateScheduledMessageDialog({
                 Agendando...
               </>
             ) : (
-              'Agendar'
+              isReschedule ? 'Reagendar' : 'Agendar'
             )}
           </Button>
         </div>
