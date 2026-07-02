@@ -40,6 +40,12 @@ interface ScheduledMessage {
   scheduled_at: string;
   next_execution_at: string | null;
   execution_count: number;
+  // Envio em lotes (opcional). batch_size_max null/0 = desligado.
+  batch_size_max: number | null;
+  batch_pause_minutes: number | null;
+  batch_current_target: number | null;
+  batch_sent_count: number | null;
+  batch_paused_until: string | null;
 }
 
 interface Contact {
@@ -98,7 +104,8 @@ Deno.serve(async (req) => {
       .from('scheduled_messages')
       .select('*')
       .or(
-        `and(status.eq.pending,next_execution_at.lte.${now}),` +
+        // Pendente e vencido, E fora de pausa entre lotes (sem pausa ou já expirada).
+        `and(status.eq.pending,next_execution_at.lte.${now},or(batch_paused_until.is.null,batch_paused_until.lte.${now})),` +
         `and(status.eq.processing,updated_at.lt.${staleBefore})`,
       )
       .order('next_execution_at', { ascending: true })
@@ -493,10 +500,40 @@ async function processContactCampaign(
   const delayMs = ((scheduled as any).delay_between_contacts || 0) * 1000;
   const isFlow = scheduled.content_type === 'flow' && !!scheduled.flow_id;
 
+  // Envio em lotes: se batch_size_max > 0, envia um lote (tamanho sorteado de 1
+  // até o máximo), grava a pausa entre lotes e devolve o job para o cron retomar
+  // após a pausa. batchSent/batchTarget são persistidos para sobreviver ao resume.
+  const batchMax = scheduled.batch_size_max || 0;
+  const batchEnabled = batchMax > 0;
+  const batchPauseMinutes = scheduled.batch_pause_minutes || 0;
+  let batchTarget = scheduled.batch_current_target || 0;
+  let batchSent = scheduled.batch_sent_count || 0;
+
+  if (batchEnabled && batchTarget <= 0) {
+    // Começa um novo lote: sorteia o tamanho (1..batchMax).
+    batchTarget = 1 + Math.floor(Math.random() * batchMax);
+    batchSent = 0;
+    await supabase
+      .from('scheduled_messages')
+      .update({ batch_current_target: batchTarget, batch_sent_count: 0 })
+      .eq('id', scheduled.id);
+  }
+
+  // Grava o progresso do lote antes de sair por orçamento de tempo (para o
+  // próximo run continuar o mesmo lote de onde parou).
+  const saveBatchProgress = async () => {
+    if (batchEnabled) {
+      await supabase
+        .from('scheduled_messages')
+        .update({ batch_sent_count: batchSent, batch_current_target: batchTarget })
+        .eq('id', scheduled.id);
+    }
+  };
+
   let firstSend = true;
 
   while (true) {
-    if (Date.now() - startedAt > MAX_RUN_MS) return { done: false };
+    if (Date.now() - startedAt > MAX_RUN_MS) { await saveBatchProgress(); return { done: false }; }
 
     const page = await fetchPendingContactPage(supabase, scheduled.id, CONTACT_PAGE_SIZE);
     if (page.length === 0) return { done: true };
@@ -504,7 +541,7 @@ async function processContactCampaign(
     const convByContact = await preloadConversations(supabase, scheduled, page, scheduledInstanceId, scheduledInstance);
 
     for (const contact of page) {
-      if (Date.now() - startedAt > MAX_RUN_MS) return { done: false };
+      if (Date.now() - startedAt > MAX_RUN_MS) { await saveBatchProgress(); return { done: false }; }
 
       // Delay antibloqueio entre envios (pula o primeiro para não gastar orçamento).
       if (!firstSend && delayMs > 0) {
@@ -528,6 +565,27 @@ async function processContactCampaign(
       } catch (err: any) {
         console.error(`Error sending to contact ${contact.id}:`, err?.message || err);
         await markContact(supabase, scheduled.id, contact.id, 'failed', err?.message || String(err));
+      }
+
+      // Cada contato processado (sucesso ou falha) consome uma vaga do lote:
+      // o objetivo é limitar a cadência de disparos, não só os que deram certo.
+      if (batchEnabled) {
+        batchSent++;
+        if (batchSent >= batchTarget) {
+          // Lote completo: agenda a pausa e zera o estado para sortear um novo
+          // lote no próximo run. Se ainda houver pendentes, o cron retoma após a
+          // pausa (a query ignora agendamentos com batch_paused_until no futuro).
+          const resumeAt = new Date(Date.now() + batchPauseMinutes * 60_000).toISOString();
+          await supabase
+            .from('scheduled_messages')
+            .update({
+              batch_paused_until: resumeAt,
+              batch_sent_count: 0,
+              batch_current_target: null,
+            })
+            .eq('id', scheduled.id);
+          return { done: false };
+        }
       }
     }
   }
@@ -614,6 +672,12 @@ async function finalizeCampaign(
 // tag: apaga as linhas (re-materializa na próxima execução, pegando a membership atual).
 // single/manual: reseta as linhas existentes para 'pending'.
 async function resetProgressForRecurrence(supabase: any, scheduled: ScheduledMessage): Promise<void> {
+  // Zera o estado de lote para a próxima ocorrência sortear um novo lote do zero.
+  await supabase
+    .from('scheduled_messages')
+    .update({ batch_sent_count: 0, batch_current_target: null, batch_paused_until: null })
+    .eq('id', scheduled.id);
+
   if (scheduled.target_type === 'tag') {
     await supabase
       .from('scheduled_message_contacts')

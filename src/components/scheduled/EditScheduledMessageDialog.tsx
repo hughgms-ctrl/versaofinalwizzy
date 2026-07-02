@@ -96,6 +96,8 @@ export function EditScheduledMessageDialog({
   const [name, setName] = useState('');
   const [contactSearch, setContactSearch] = useState('');
   const [delayBetweenContacts, setDelayBetweenContacts] = useState<number>(10);
+  const [batchSizeMax, setBatchSizeMax] = useState<number>(0);
+  const [batchPauseMinutes, setBatchPauseMinutes] = useState<number>(0);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -116,6 +118,8 @@ export function EditScheduledMessageDialog({
       setName(message.name || '');
       setRecurrenceType(message.recurrence_type);
       setDelayBetweenContacts((message as any).delay_between_contacts || 10);
+      setBatchSizeMax((message as any).batch_size_max || 0);
+      setBatchPauseMinutes((message as any).batch_pause_minutes || 0);
 
       // Load selected contact IDs for manual target type
       if (message.target_type === 'manual' && (message as any).contact_ids) {
@@ -290,6 +294,8 @@ export function EditScheduledMessageDialog({
       group_jids: isGroupTarget ? selectedGroupJids : undefined,
       name: name || null,
       delay_between_contacts: delayBetweenContacts > 0 ? delayBetweenContacts : null,
+      batch_size_max: batchSizeMax > 0 ? batchSizeMax : null,
+      batch_pause_minutes: batchSizeMax > 0 && batchPauseMinutes > 0 ? batchPauseMinutes : null,
     });
 
     onOpenChange(false);
@@ -656,6 +662,46 @@ export function EditScheduledMessageDialog({
                 <p className="text-xs text-muted-foreground">
                   Tempo de espera entre o envio para cada contato. Recomendado: 10-30 segundos para evitar bloqueios.
                 </p>
+              </div>
+            )}
+
+            {/* Envio em lotes */}
+            {(targetType === 'tag' || targetType === 'manual') && (
+              <div className="space-y-3 rounded-md border p-3">
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2">
+                    <Timer className="h-4 w-4" />
+                    Tamanho máximo do lote
+                  </Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={batchSizeMax}
+                    onChange={(e) => setBatchSizeMax(Number(e.target.value))}
+                    placeholder="0 = enviar tudo de uma vez"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    O sistema sorteia de 1 até este número a cada lote. Deixe 0 para desativar (envia todos os contatos sem parar em lotes).
+                  </p>
+                </div>
+                {batchSizeMax > 0 && (
+                  <div className="space-y-2">
+                    <Label className="flex items-center gap-2">
+                      <Clock className="h-4 w-4" />
+                      Pausa entre lotes (minutos)
+                    </Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      value={batchPauseMinutes}
+                      onChange={(e) => setBatchPauseMinutes(Number(e.target.value))}
+                      placeholder="Ex: 5"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Tempo de espera após cada lote antes de começar o próximo.
+                    </p>
+                  </div>
+                )}
               </div>
             )}
 

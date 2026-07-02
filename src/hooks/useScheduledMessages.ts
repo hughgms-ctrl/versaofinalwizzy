@@ -27,6 +27,8 @@ export interface ScheduledMessage {
   name: string | null;
   error_message: string | null;
   delay_between_contacts: number | null;
+  batch_size_max: number | null;
+  batch_pause_minutes: number | null;
   created_at: string;
   updated_at: string;
   // Relations
@@ -54,6 +56,8 @@ export interface CreateScheduledMessageInput {
   name?: string | null;
   workspace_id?: string | null;
   delay_between_contacts?: number | null; // seconds between each contact
+  batch_size_max?: number | null; // max lote size; system draws 1..max per batch (null/0 = off)
+  batch_pause_minutes?: number | null; // pause (minutes) between batches
 }
 
 export interface UpdateScheduledMessageInput {
@@ -73,6 +77,8 @@ export interface UpdateScheduledMessageInput {
   group_jids?: string[]; // For group / mass-group targets
   name?: string | null;
   delay_between_contacts?: number | null;
+  batch_size_max?: number | null;
+  batch_pause_minutes?: number | null;
 }
 
 export function useScheduledMessages() {
