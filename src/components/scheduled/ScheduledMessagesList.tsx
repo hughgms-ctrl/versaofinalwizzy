@@ -182,7 +182,9 @@ export function ScheduledMessagesList() {
     );
   }
 
-  const pendingMessages = filteredMessages.filter(m => m.status === 'pending');
+  // 'processing' = disparo em andamento (lote sendo processado pelo cron). Fica
+  // junto das pendentes para o card NÃO sumir da tela enquanto está enviando.
+  const pendingMessages = filteredMessages.filter(m => ['pending', 'processing'].includes(m.status));
   const completedMessages = filteredMessages.filter(m => ['sent', 'failed', 'cancelled'].includes(m.status));
   const pendingTotalPages = Math.max(1, Math.ceil(pendingMessages.length / pageSize));
   const historyTotalPages = Math.max(1, Math.ceil(completedMessages.length / pageSize));
