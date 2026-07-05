@@ -557,12 +557,7 @@ function PipelineColumnSubmenu({
   onSelectColumn: (columnId: string) => Promise<void>;
 }) {
   const { data: columns } = usePipelineColumns(pipeline.id);
-  
-  const handleColumnSelect = async (columnId: string, e: Event) => {
-    e.preventDefault();
-    await onSelectColumn(columnId);
-  };
-  
+
   return (
     <DropdownMenuSub>
       <DropdownMenuSubTrigger onClick={(e) => e.stopPropagation()}>
@@ -575,7 +570,10 @@ function PipelineColumnSubmenu({
           columns.map(column => (
             <DropdownMenuItem
               key={column.id}
-              onSelect={(e) => handleColumnSelect(column.id, e)}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelectColumn(column.id);
+              }}
             >
               <div
                 className="h-2 w-2 rounded-full mr-2"
