@@ -180,10 +180,8 @@ export function useDeleteTag() {
 
   return useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.functions.invoke('safe-record-actions', {
-        body: { type: 'delete_tag', tagId: id },
-      });
-      
+      const { error } = await supabase.rpc('delete_tag_safely' as any, { _tag_id: id });
+
       if (error) throw error;
     },
     onSuccess: () => {

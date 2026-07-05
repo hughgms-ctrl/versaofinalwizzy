@@ -808,3 +808,134 @@ export function useTransferConversation() {
     },
   });
 }
+
+/**
+ * Transfer a conversation to a pipeline/column that lives in ANOTHER workspace.
+ * Besides repositioning the card, this changes the conversation's (and contact's)
+ * workspace_id so the card leaves the current board and shows up in the target
+ * workspace's board. Restricted by the caller to workspaces the user has access to
+ * inside the same organization.
+ */
+export function useTransferConversationToWorkspace() {
+  const queryClient = useQueryClient();
+  const { profile } = useAuth();
+
+  return useMutation({
+    mutationFn: async ({
+      conversationId,
+      contactId,
+      targetWorkspaceId,
+      targetPipelineId,
+      targetColumnId,
+    }: {
+      conversationId: string;
+      contactId?: string | null;
+      targetWorkspaceId: string;
+      targetPipelineId: string;
+      targetColumnId: string;
+    }) => {
+      if (!profile?.organization_id) throw new Error('No org');
+
+      // Validate the chosen column really belongs to the target pipeline
+      const { data: targetColumn, error: targetColumnError } = await (supabase as any)
+        .from('pipeline_columns')
+        .select('id, pipeline_id')
+        .eq('id', targetColumnId)
+        .single();
+
+      if (targetColumnError) throw targetColumnError;
+      if (!targetColumn || targetColumn.pipeline_id !== targetPipelineId) {
+        throw new Error('A coluna escolhida nao pertence ao pipeline de destino.');
+      }
+
+      // Current position for history. Keep newest if old duplicate rows exist.
+      const { data: currentRows, error: currentRowsError } = await supabase
+        .from('conversation_pipeline_positions')
+        .select('id, pipeline_id, column_id')
+        .eq('conversation_id', conversationId)
+        .order('updated_at', { ascending: false })
+        .limit(10);
+
+      if (currentRowsError) throw currentRowsError;
+      const currentPos = currentRows?.[0] || null;
+
+      if (currentRows && currentRows.length > 1) {
+        const { error: deleteDuplicatesError } = await supabase
+          .from('conversation_pipeline_positions')
+          .delete()
+          .in('id', currentRows.slice(1).map((row) => row.id));
+
+        if (deleteDuplicatesError) throw deleteDuplicatesError;
+      }
+
+      const mutation = currentPos
+        ? supabase
+          .from('conversation_pipeline_positions')
+          .update({
+            pipeline_id: targetPipelineId,
+            column_id: targetColumnId,
+            order: 0,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', currentPos.id)
+        : supabase
+          .from('conversation_pipeline_positions')
+          .insert({
+            conversation_id: conversationId,
+            pipeline_id: targetPipelineId,
+            column_id: targetColumnId,
+            order: 0,
+          });
+
+      const { data: savedPosition, error } = await mutation.select().single();
+
+      if (error) throw error;
+      if (!savedPosition) throw new Error('A transferencia no pipeline nao foi confirmada.');
+
+      await removeStaleConversationPositions(conversationId, savedPosition.id);
+
+      // Move the conversation itself to the target workspace
+      const { error: conversationError } = await (supabase as any)
+        .from('conversations')
+        .update({ workspace_id: targetWorkspaceId })
+        .eq('id', conversationId);
+
+      if (conversationError) throw conversationError;
+
+      // Keep the contact in the same workspace as the conversation
+      if (contactId) {
+        const { error: contactError } = await (supabase as any)
+          .from('contacts')
+          .update({ workspace_id: targetWorkspaceId })
+          .eq('id', contactId);
+
+        if (contactError) throw contactError;
+      }
+
+      // Log transfer in history
+      await (supabase as any)
+        .from('conversation_stage_history')
+        .insert({
+          conversation_id: conversationId,
+          pipeline_id: targetPipelineId,
+          from_column_id: currentPos?.column_id || null,
+          to_column_id: targetColumnId,
+          changed_by_type: 'transfer',
+          changed_by: profile.user_id || null,
+          organization_id: profile.organization_id,
+        });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['conversation-positions'] });
+      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    },
+    onError: (error: any) => {
+      console.error('Error transferring conversation to workspace:', error);
+      toast({
+        title: 'Erro ao transferir conversa',
+        description: error?.message || 'Nao foi possivel transferir a conversa.',
+        variant: 'destructive',
+      });
+    },
+  });
+}
