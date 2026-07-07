@@ -2,6 +2,7 @@ import { Contact } from '@/hooks/useContacts';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -36,6 +37,8 @@ import {
 interface ContactListItemProps {
   contact: Contact;
   onSelect: (contact: Contact) => void;
+  isSelected: boolean;
+  onToggleSelect: (contactId: string) => void;
 }
 
 const getInitials = (name: string | null, phone: string) => {
@@ -56,7 +59,7 @@ const formatPhoneNumber = (phone: string) => {
   return phone;
 };
 
-export function ContactListItem({ contact, onSelect }: ContactListItemProps) {
+export function ContactListItem({ contact, onSelect, isSelected, onToggleSelect }: ContactListItemProps) {
   const hasName = !!contact.name;
   const formattedPhone = formatPhoneNumber(contact.phone);
   const metadata = contact.metadata as { note?: string } | null;
@@ -155,6 +158,14 @@ export function ContactListItem({ contact, onSelect }: ContactListItemProps) {
         onClick={() => onSelect(contact)}
         className="flex items-center gap-2 px-3 py-2 hover:bg-accent cursor-pointer transition-colors group"
       >
+        {/* Selection checkbox */}
+        <Checkbox
+          checked={isSelected}
+          onCheckedChange={() => onToggleSelect(contact.id)}
+          onClick={(e) => e.stopPropagation()}
+          className="flex-shrink-0"
+        />
+
         {/* Avatar - Smaller */}
         <Avatar className="h-9 w-9 flex-shrink-0">
           <AvatarImage src={contact.avatar_url || undefined} />
