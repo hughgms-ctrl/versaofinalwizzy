@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
-import { sendWhatsAppMessage, resolveWhatsAppInstance } from "../_shared/whatsappProvider.ts";
+import { sendWhatsAppMessage, resolveWhatsAppInstance, resolveWorkspaceInstanceBinding } from "../_shared/whatsappProvider.ts";
 import { getClientIp, checkRateLimitDb, safeErrorResponse } from "../_shared/middleware.ts";
 
 const corsHeaders = {
@@ -89,7 +89,7 @@ Deno.serve(async (req) => {
     // Carrega o quiz: organization_id e theme (grafo dos blocos) são a fonte da verdade.
     const { data: quiz } = await supabaseAdmin
       .from("quizzes")
-      .select("id, organization_id, theme")
+      .select("id, organization_id, theme, workspace_id")
       .eq("id", quiz_id)
       .maybeSingle();
     if (!quiz) {
@@ -108,6 +108,16 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    // Regra de negócio: um quiz atrelado a um workspace só pode disparar WhatsApp
+    // pelo número desse workspace. Se o workspace não tem número associado, o envio
+    // é recusado (nunca cai no fallback por organização, que pegaria o número de
+    // outro workspace). Quiz sem workspace mantém o comportamento anterior.
+    const quizWorkspaceBinding = await resolveWorkspaceInstanceBinding(
+      supabaseAdmin,
+      organization_id,
+      (quiz as any).workspace_id,
+    );
 
     // Bloco autoritativo (mensagem/telefone/flow do envio saem daqui, não do body).
     const actionBlock = block_id ? findQuizBlock(quiz.theme, block_id) : null;
@@ -380,20 +390,30 @@ Deno.serve(async (req) => {
         const targetPhone = rawTarget ? normalizePhoneNumber(String(rawTarget)) : "";
 
         if (targetPhone && waMessage) {
-          try {
-            const resp = await sendWhatsAppMessage(supabaseAdmin, {
-              organizationId: organization_id,
-              phone: targetPhone,
-              type: "text",
-              text: waMessage,
-            });
-            results.whatsapp_sent = resp.ok;
-            if (!resp.ok) {
-              results.whatsapp_error = resp.responseText;
-            }
-          } catch (sendError) {
+          if (quizWorkspaceBinding.blocked) {
+            // Workspace do quiz não tem número associado: recusa o envio em vez de
+            // usar o número de outro workspace/organização.
             results.whatsapp_sent = false;
-            results.whatsapp_error = String(sendError);
+            results.whatsapp_error = "workspace_sem_numero";
+          } else {
+            try {
+              const resp = await sendWhatsAppMessage(supabaseAdmin, {
+                organizationId: organization_id,
+                phone: targetPhone,
+                type: "text",
+                text: waMessage,
+                // Quando o quiz tem workspace com número, força o envio por ele.
+                // Null => mantém a resolução por organização (quiz sem workspace).
+                conversationInstanceId: quizWorkspaceBinding.workspaceInstanceId,
+              });
+              results.whatsapp_sent = resp.ok;
+              if (!resp.ok) {
+                results.whatsapp_error = resp.responseText;
+              }
+            } catch (sendError) {
+              results.whatsapp_sent = false;
+              results.whatsapp_error = String(sendError);
+            }
           }
         }
       }

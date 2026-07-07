@@ -10,8 +10,9 @@ import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Calendar } from '@/components/ui/calendar';
-import { Trash2, Plus, GripVertical, Save, ArrowUp, ArrowDown, Copy, X } from 'lucide-react';
+import { Trash2, Plus, GripVertical, Save, ArrowUp, ArrowDown, Copy, X, AlertTriangle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
 import { usePipelines, usePipelineColumns } from '@/hooks/usePipelines';
 import { useTags } from '@/hooks/useTags';
@@ -29,9 +30,10 @@ interface QuizNodePropertiesProps {
   onSave?: () => void;
   isSaving?: boolean;
   allNodes?: Node[];
+  quizWorkspaceId?: string | null;
 }
 
-export function QuizNodeProperties({ node, selectedBlockIdx, onClose, onUpdateNode, onDeleteNode, onDuplicateNode, onSave, isSaving, allNodes }: QuizNodePropertiesProps) {
+export function QuizNodeProperties({ node, selectedBlockIdx, onClose, onUpdateNode, onDeleteNode, onDuplicateNode, onSave, isSaving, allNodes, quizWorkspaceId }: QuizNodePropertiesProps) {
   if (!node) return null;
 
   // Collect all user-defined fields from all blocks across all nodes
@@ -64,6 +66,7 @@ export function QuizNodeProperties({ node, selectedBlockIdx, onClose, onUpdateNo
               nodeId={node.id}
               onUpdate={(updatedBlocks) => onUpdateNode(node.id, { blocks: updatedBlocks })}
               userFields={userFields}
+              quizWorkspaceId={quizWorkspaceId}
             />
           ) : (
             <GroupEditor
@@ -111,17 +114,24 @@ function GroupEditor({ node, onUpdate, onDelete, onDuplicate }: { node: Node; on
   );
 }
 
-function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate, userFields }: {
+function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate, userFields, quizWorkspaceId }: {
   block: any;
   blockIdx: number;
   allBlocks: any[];
   nodeId: string;
   onUpdate: (blocks: any[]) => void;
   userFields: string[];
+  quizWorkspaceId?: string | null;
 }) {
   // Local state for block data to avoid re-rendering entire canvas on every keystroke
   const [localData, setLocalData] = useState<Record<string, any>>(block.data || {});
   const { data: flows = [] } = useFlows();
+  const { data: workspaces = [] } = useWorkspaces();
+
+  // Aviso: um quiz atrelado a um workspace só dispara WhatsApp pelo número desse
+  // workspace. Se o workspace não tem número associado, o backend recusa o envio.
+  const quizWorkspace = quizWorkspaceId ? workspaces.find((w) => w.id === quizWorkspaceId) : null;
+  const workspaceHasNoNumber = !!quizWorkspace && !quizWorkspace.whatsapp_instance_id;
   const flushRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const allBlocksRef = useRef(allBlocks);
   allBlocksRef.current = allBlocks;
@@ -424,6 +434,17 @@ function BlockEditor({ block, blockIdx, allBlocks, nodeId, onUpdate, userFields 
       {/* WhatsApp Trigger */}
       {block.type === 'quiz-event-whatsapp-trigger' && (
         <>
+          {workspaceHasNoNumber && (
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle className="text-xs">Workspace sem número conectado</AlertTitle>
+              <AlertDescription className="text-[11px]">
+                O workspace <strong>{quizWorkspace?.name}</strong> não tem um número de WhatsApp associado.
+                Este disparo não será enviado até que você conecte um número a este workspace
+                (ou mova o quiz para um workspace com número, em Configurações).
+              </AlertDescription>
+            </Alert>
+          )}
           <div className="flex items-center justify-between">
             <Label className="text-xs">Enviar para o número do contato</Label>
             <Switch checked={d.useContactPhone === true} onCheckedChange={(v) => updateBlockDataImmediate({ useContactPhone: v })} />

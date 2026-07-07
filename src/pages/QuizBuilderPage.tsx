@@ -32,10 +32,11 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useQuizzes, Quiz } from '@/hooks/useQuizzes';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
 import { toast } from 'sonner';
-import { ArrowLeft, Save, Play, Copy, Eye, Loader2, ZoomIn, ZoomOut, Minus, Plus, Settings, Undo2, Redo2 } from 'lucide-react';
+import { ArrowLeft, Save, Play, Copy, Eye, Loader2, ZoomIn, ZoomOut, Minus, Plus, Settings, Undo2, Redo2, AlertTriangle } from 'lucide-react';
 import { ReactFlowProvider } from '@xyflow/react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
@@ -504,6 +505,7 @@ function QuizBuilderInner() {
         onSave={handleSave}
         isSaving={isSaving}
         allNodes={nodes}
+        quizWorkspaceId={quiz.workspace_id}
       />
 
       {/* Preview — render inline quiz engine */}
@@ -592,6 +594,8 @@ function QuizSettingsSheet({ open, onClose, quiz, onUpdate }: {
   const ws = (quiz.welcome_screen || {}) as Record<string, any>;
   const es = (quiz.end_screen || {}) as Record<string, any>;
   const { data: workspaces = [] } = useWorkspaces(quiz.organization_id);
+  const selectedQuizWorkspace = quiz.workspace_id ? workspaces.find((w) => w.id === quiz.workspace_id) : null;
+  const selectedWorkspaceHasNoNumber = !!selectedQuizWorkspace && !selectedQuizWorkspace.whatsapp_instance_id;
 
   const updateWelcome = (patch: Record<string, any>) => {
     onUpdate({ welcome_screen: { ...ws, ...patch } } as any);
@@ -689,8 +693,20 @@ function QuizSettingsSheet({ open, onClose, quiz, onUpdate }: {
                   </SelectContent>
                 </Select>
                 <p className="text-[11px] text-muted-foreground">
-                  Define em qual workspace este Wizzy Quiz aparece na listagem.
+                  Define em qual workspace este Wizzy Quiz aparece na listagem e por qual número
+                  o WhatsApp é disparado.
                 </p>
+                {selectedWorkspaceHasNoNumber && (
+                  <Alert variant="destructive">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertTitle className="text-xs">Workspace sem número conectado</AlertTitle>
+                    <AlertDescription className="text-[11px]">
+                      O workspace <strong>{selectedQuizWorkspace?.name}</strong> não tem um número de
+                      WhatsApp associado. Os disparos de WhatsApp deste quiz não serão enviados até
+                      que você conecte um número a este workspace.
+                    </AlertDescription>
+                  </Alert>
+                )}
               </div>
             </div>
           </div>
