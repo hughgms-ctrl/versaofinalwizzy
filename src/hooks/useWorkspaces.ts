@@ -284,6 +284,18 @@ export function useUpdateWorkspace() {
         .single();
 
       if (error) throw error;
+
+      // Fase 3 (visibilidade por número): se este update (re)vinculou o workspace a
+      // uma instância, readota as conversas órfãs (número desconectado) desse
+      // workspace — inclusive legados com source_phone NULL. Gatilho inequívoco
+      // "este workspace = este número". O trigger des-esconde ao carimbar a instância.
+      if (updates.whatsapp_instance_id) {
+        const { error: adoptError } = await supabase.rpc('adopt_orphan_conversations_for_workspace' as any, {
+          _workspace_id: id,
+          _instance_id: updates.whatsapp_instance_id,
+        });
+        if (adoptError) console.error('adopt_orphan_conversations_for_workspace error:', adoptError);
+      }
       return data;
     },
     onSuccess: () => {

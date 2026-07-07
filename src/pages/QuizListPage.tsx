@@ -11,14 +11,30 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { getPublicAppOrigin } from '@/lib/publicOrigin';
 import { enforceEntryCreationLimit } from '@/lib/entryFlow';
+import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 
 export default function QuizListPage() {
   const navigate = useNavigate();
   const { data: quizzes, isLoading, createQuiz, deleteQuiz } = useQuizzes();
+  const { selectedWorkspaceId } = useWorkspaceContext();
+
+  // Mesma regra dos Flows: "Todos" mostra tudo; um workspace específico mostra só
+  // os quiz dele; "unassigned" mostra só os sem workspace.
+  const matchesWorkspace = (workspaceId?: string | null) => {
+    if (!selectedWorkspaceId) return true;
+    if (selectedWorkspaceId === 'unassigned') return !workspaceId;
+    return workspaceId === selectedWorkspaceId;
+  };
+
+  const filteredQuizzes = quizzes?.filter((q) => matchesWorkspace(q.workspace_id)) || [];
 
   const handleCreate = async () => {
+    // Limite de plano é por organização (total), não por workspace.
     if (!enforceEntryCreationLimit('max_quizzes', quizzes?.length || 0, 'quizzes')) return;
-    const result = await createQuiz.mutateAsync({ name: 'Novo Wizzy Quiz' });
+    // Quiz criado dentro de um workspace fica associado a ele automaticamente.
+    const workspace_id =
+      selectedWorkspaceId && selectedWorkspaceId !== 'unassigned' ? selectedWorkspaceId : null;
+    const result = await createQuiz.mutateAsync({ name: 'Novo Wizzy Quiz', workspace_id });
     navigate(`/tools/quiz/builder?id=${result.id}`);
   };
 
@@ -43,9 +59,9 @@ export default function QuizListPage() {
 
         {isLoading ? (
           <div className="text-center py-8 text-muted-foreground">Carregando...</div>
-        ) : quizzes && quizzes.length > 0 ? (
+        ) : filteredQuizzes.length > 0 ? (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {quizzes.map((quiz) => (
+            {filteredQuizzes.map((quiz) => (
               <Card
                 key={quiz.id}
                 className="cursor-pointer hover:border-primary/50 transition-all group"
@@ -110,13 +126,17 @@ export default function QuizListPage() {
             <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 mb-4">
               <HelpCircle className="h-8 w-8 text-primary" />
             </div>
-            <h3 className="text-lg font-semibold">Nenhum Wizzy Quiz criado</h3>
+            <h3 className="text-lg font-semibold">
+              {quizzes && quizzes.length > 0 ? 'Nenhum Wizzy Quiz neste workspace' : 'Nenhum Wizzy Quiz criado'}
+            </h3>
             <p className="text-muted-foreground mt-1 max-w-md">
-              Crie seu primeiro Wizzy Quiz interativo para capturar leads e iniciar atendimentos automáticos via WhatsApp.
+              {quizzes && quizzes.length > 0
+                ? 'Nenhum Wizzy Quiz foi encontrado no workspace selecionado. Crie um novo aqui ou troque de workspace para ver os demais.'
+                : 'Crie seu primeiro Wizzy Quiz interativo para capturar leads e iniciar atendimentos automáticos via WhatsApp.'}
             </p>
             <Button className="mt-4" onClick={handleCreate} disabled={createQuiz.isPending}>
               <Plus className="h-4 w-4 mr-2" />
-              Criar primeiro Wizzy Quiz
+              {quizzes && quizzes.length > 0 ? 'Criar Wizzy Quiz aqui' : 'Criar primeiro Wizzy Quiz'}
             </Button>
           </div>
         )}

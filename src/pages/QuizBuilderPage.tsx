@@ -31,7 +31,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useQuizzes, Quiz } from '@/hooks/useQuizzes';
+import { useWorkspaces } from '@/hooks/useWorkspaces';
 import { toast } from 'sonner';
 import { ArrowLeft, Save, Play, Copy, Eye, Loader2, ZoomIn, ZoomOut, Minus, Plus, Settings, Undo2, Redo2 } from 'lucide-react';
 import { ReactFlowProvider } from '@xyflow/react';
@@ -589,6 +591,7 @@ function QuizSettingsSheet({ open, onClose, quiz, onUpdate }: {
   // key no container força remount (e refresh dos defaultValues) ao abrir o painel.
   const ws = (quiz.welcome_screen || {}) as Record<string, any>;
   const es = (quiz.end_screen || {}) as Record<string, any>;
+  const { data: workspaces = [] } = useWorkspaces(quiz.organization_id);
 
   const updateWelcome = (patch: Record<string, any>) => {
     onUpdate({ welcome_screen: { ...ws, ...patch } } as any);
@@ -668,6 +671,26 @@ function QuizSettingsSheet({ open, onClose, quiz, onUpdate }: {
                   checked={quiz.settings?.showProgressBar !== false}
                   onCheckedChange={(v) => onUpdate({ settings: { ...quiz.settings, showProgressBar: v } } as any)}
                 />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Workspace</Label>
+                <Select
+                  value={quiz.workspace_id || 'none'}
+                  onValueChange={(v) => onUpdate({ workspace_id: v === 'none' ? null : v } as any)}
+                >
+                  <SelectTrigger className="h-9">
+                    <SelectValue placeholder="Selecione o workspace..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Nenhum workspace</SelectItem>
+                    {workspaces.map((w) => (
+                      <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[11px] text-muted-foreground">
+                  Define em qual workspace este Wizzy Quiz aparece na listagem.
+                </p>
               </div>
             </div>
           </div>

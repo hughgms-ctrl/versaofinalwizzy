@@ -69,13 +69,14 @@ export function useQuizzes() {
   });
 
   const createQuiz = useMutation({
-    mutationFn: async (values: { name: string; description?: string }) => {
+    mutationFn: async (values: { name: string; description?: string; workspace_id?: string | null }) => {
       const { data, error } = await supabase
         .from('quizzes')
         .insert({
           name: values.name,
           description: values.description || null,
           organization_id: profile!.organization_id,
+          workspace_id: values.workspace_id || null,
         })
         .select()
         .single();

@@ -700,6 +700,18 @@ function EditInstanceDialog({ open, onOpenChange, instance }: { open: boolean; o
           .update({ whatsapp_instance_id: instance.id } as any)
           .in('id', addedIds);
         if (error) throw error;
+
+        // Fase 3 (visibilidade por número): vincular um workspace a esta instância é
+        // o gatilho "este workspace = este número". Readota as conversas órfãs
+        // (número desconectado) de cada workspace recém-vinculado — inclusive legados
+        // com source_phone NULL. O trigger des-esconde ao carimbar a instância.
+        for (const wsId of addedIds) {
+          const { error: adoptError } = await supabase.rpc('adopt_orphan_conversations_for_workspace' as any, {
+            _workspace_id: wsId,
+            _instance_id: instance.id,
+          });
+          if (adoptError) console.error('adopt_orphan_conversations_for_workspace error:', adoptError);
+        }
       }
 
       queryClient.invalidateQueries({ queryKey: ['whatsapp-instances'] });

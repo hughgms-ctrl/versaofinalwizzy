@@ -146,6 +146,17 @@ Deno.serve(async (req) => {
         .update({ whatsapp_instance_id: targetInstanceId })
         .eq('id', workspaceId)
         .eq('organization_id', profile.organization_id);
+
+      // Fase 3 (visibilidade por número): (re)vincular um workspace a esta instância
+      // é o gatilho inequívoco "este workspace = este número". Readota as conversas
+      // órfãs (número desconectado) desse workspace — inclusive legados com
+      // source_phone NULL, que a readoção por número não alcança. O trigger
+      // sync_conversation_hidden_flag des-esconde ao carimbar a instância.
+      const { error: adoptError } = await supabase.rpc('adopt_orphan_conversations_for_workspace', {
+        _workspace_id: workspaceId,
+        _instance_id: targetInstanceId,
+      });
+      if (adoptError) console.error('adopt_orphan_conversations_for_workspace error:', adoptError);
     }
 
     // Configure webhook on UAZAPI
