@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/fluzz/components/ui/
 import { Button } from "@/fluzz/components/ui/button";
 import { ArrowLeft, Edit, FolderOpen } from "lucide-react";
 import { useWorkspace } from "@/fluzz/contexts/WorkspaceContext";
+import { sanitizeHtmlContent } from "@/lib/sanitize";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
@@ -88,7 +89,7 @@ export default function NoteDetail() {
           <CardContent className="pt-6">
             <div 
               className="prose prose-sm max-w-none dark:prose-invert"
-              dangerouslySetInnerHTML={{ __html: note.content || "<p>Sem conteúdo</p>" }}
+              dangerouslySetInnerHTML={{ __html: sanitizeHtmlContent(note.content || "<p>Sem conteúdo</p>") }}
             />
           </CardContent>
         </Card>

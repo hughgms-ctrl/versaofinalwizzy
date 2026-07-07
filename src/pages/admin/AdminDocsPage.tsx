@@ -207,8 +207,8 @@ export function AdminDocsContent({ showHeader = true }: AdminDocsContentProps) {
                     />
                     <FunctionCategory 
                       title="Documentos"
-                      count={6}
-                      functions={['generate-document-pdf', 'process-document-template', 'capture-signature', 'public-template']}
+                      count={5}
+                      functions={['generate-document-pdf', 'process-document-template', 'public-template']}
                     />
                     <FunctionCategory 
                       title="Automação"

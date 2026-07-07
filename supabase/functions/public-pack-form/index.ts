@@ -5,6 +5,7 @@ const corsHeaders = {
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { sendWhatsAppMessage } from "../_shared/whatsappProvider.ts";
+import { getClientIp, checkRateLimitDb } from "../_shared/middleware.ts";
 
 const PUBLIC_APP_ORIGIN = "https://wizzybr.com";
 
@@ -57,6 +58,15 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // Rate limit por IP (cobre get/submit/send_whatsapp do pack público).
+    const ip = getClientIp(req);
+    if (!(await checkRateLimitDb(supabase, ip, { bucket: "public-pack-form", maxRequests: 30, windowSeconds: 60 }))) {
+      return new Response(JSON.stringify({ error: "Muitas solicitações. Aguarde um momento e tente novamente." }), {
+        status: 429,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     if (!token) {
       return new Response(JSON.stringify({ error: "Token e obrigatorio" }), {
@@ -510,9 +520,9 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
-    console.error("public-pack-form error:", e);
+    console.error("public-pack-form error:", e instanceof Error ? (e.stack || e.message) : e);
     return new Response(
-      JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }),
+      JSON.stringify({ error: "Erro interno. Tente novamente." }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }

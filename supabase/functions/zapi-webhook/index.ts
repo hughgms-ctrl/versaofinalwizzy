@@ -3,6 +3,18 @@ import { decode as decodeBase64 } from 'https://deno.land/std@0.168.0/encoding/b
 
 declare const EdgeRuntime: any;
 
+// Sanitiza identificadores de instância vindos do payload do provedor antes de
+// interpolá-los em filtros PostgREST (.or(`col.eq.${id}`)). Sem isso, um payload
+// com vírgula/ponto (ex.: instanceName "x,zapi_instance_id.neq.__none__") injeta
+// condições OR extras e, com service_role (bypassa RLS), permitiria UPDATE em massa
+// (disconnect global) em todas as orgs. IDs/nomes legítimos são alfanuméricos com
+// hífen/underscore; qualquer outro caractere invalida o identificador (vira ''),
+// o que apenas resulta em "instância não encontrada" — nunca em cross-tenant.
+function sanitizeInstanceIdentifier(value: unknown): string {
+  const v = String(value || '');
+  return /^[A-Za-z0-9_-]+$/.test(v) ? v : '';
+}
+
 function runBackground(promise: Promise<any>) {
   if (typeof EdgeRuntime !== 'undefined' && typeof EdgeRuntime.waitUntil === 'function') {
     EdgeRuntime.waitUntil(promise);
@@ -904,8 +916,8 @@ Deno.serve(async (req) => {
     console.log('UAZAPI Full Payload:', JSON.stringify(payload, null, 2));
 
     const eventType = (payload.EventType || payload.eventType || payload.type || payload.event || '').toLowerCase();
-    const instanceId = payload.instanceId || '';
-    const instanceName = payload.instanceName || payload.userID || payload.instance || '';
+    const instanceId = sanitizeInstanceIdentifier(payload.instanceId);
+    const instanceName = sanitizeInstanceIdentifier(payload.instanceName || payload.userID || payload.instance);
     const lookupIdentifier = instanceId || instanceName;
 
     console.log('=== UAZAPI WEBHOOK ===');
@@ -2739,8 +2751,8 @@ async function handleReadReceipt(supabase: any, payload: any) {
   const data = payload.data || {};
   const key = data.key || payload.key || {};
   const msg = payload.message || data.message || {};
-  const instanceId = payload.instanceId || data.instanceId || '';
-  const instanceName = payload.instanceName || payload.userID || payload.instance || data.instance || '';
+  const instanceId = sanitizeInstanceIdentifier(payload.instanceId || data.instanceId);
+  const instanceName = sanitizeInstanceIdentifier(payload.instanceName || payload.userID || payload.instance || data.instance);
 
   const msgId =
     msg.msgid ||

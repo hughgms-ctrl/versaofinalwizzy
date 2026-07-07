@@ -131,9 +131,6 @@ verify_jwt = false
 [functions.campaign-webhook]
 verify_jwt = false
 
-[functions.capture-signature]
-verify_jwt = false
-
 [functions.process-document-template]
 verify_jwt = false
 

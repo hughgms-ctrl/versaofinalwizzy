@@ -24,6 +24,37 @@ export async function getRequestUser(req: Request) {
   return user;
 }
 
+// Retorna todas as organization_id de que o usuário é membro (via organization_members,
+// com fallback legado para profiles.organization_id). Usado para escopar queries em
+// funções que recebem um instanceId/conversationId/contactId do cliente: em vez de
+// confiar no id enviado, restringimos com .in('organization_id', orgIds) para impedir
+// acesso cross-tenant (IDOR). Retorna [] se o usuário não pertence a nenhuma org.
+export async function getUserOrganizationIds(adminClient: any, userId: string): Promise<string[]> {
+  const { data: memberships, error } = await adminClient
+    .from('organization_members')
+    .select('organization_id')
+    .eq('user_id', userId);
+
+  if (error && !isMissingRelationError(error)) throw error;
+
+  const ids = new Set<string>();
+  for (const row of memberships || []) {
+    if (row?.organization_id) ids.add(row.organization_id);
+  }
+
+  // Fallback legado (orgs antigas sem organization_members): usa o profile.
+  if (ids.size === 0) {
+    const { data: profile } = await adminClient
+      .from('profiles')
+      .select('organization_id')
+      .eq('user_id', userId)
+      .maybeSingle();
+    if (profile?.organization_id) ids.add(profile.organization_id);
+  }
+
+  return Array.from(ids);
+}
+
 export function hasValidOrganizationPlan(planRow: any) {
   if (!planRow) return false;
   const paymentStatus = String(planRow.payment_status || planRow.status || '').toLowerCase();

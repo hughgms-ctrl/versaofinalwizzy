@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { corsHeaders, jsonResponse, errorResponse, createServiceClient, parseJsonBody } from "../_shared/middleware.ts";
+import { corsHeaders, jsonResponse, errorResponse, createServiceClient, parseJsonBody, checkRateLimitDb, safeErrorResponse } from "../_shared/middleware.ts";
 import { resolveSignatureByToken, markSignerSigned } from "../_shared/signerBridge.ts";
 
 function getClientIp(req: Request): string {
@@ -133,6 +133,11 @@ serve(async (req) => {
     const signerIp = getClientIp(req);
     const signerUserAgent = signerDevice || req.headers.get("user-agent") || "unknown";
     const uaInfo = parseUserAgent(signerUserAgent);
+
+    // Rate limit por IP (impede finalização em massa / varredura de tokens).
+    if (!(await checkRateLimitDb(supabase, signerIp, { bucket: "signature-complete", maxRequests: 20, windowSeconds: 60 }))) {
+      return errorResponse("Muitas solicitações. Aguarde um momento e tente novamente.", 429);
+    }
 
     const resolved = await resolveSignatureByToken(supabase, signatureToken);
     if (!resolved) {
@@ -623,8 +628,7 @@ serve(async (req) => {
       allSigned: !pendingSigners || pendingSigners === 0,
       packSignedDocuments,
     });
-  } catch (error: any) {
-    console.error("Error in signature-complete:", error);
-    return errorResponse(error?.message || "Erro interno", 500);
+  } catch (error) {
+    return safeErrorResponse(error, "signature-complete");
   }
 });

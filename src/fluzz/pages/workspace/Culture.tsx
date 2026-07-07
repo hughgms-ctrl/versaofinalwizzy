@@ -8,6 +8,7 @@ import { Button } from "@/fluzz/components/ui/button";
 import { toast } from "sonner";
 import { Edit, Trash2 } from "lucide-react";
 import { useWorkspace } from "@/fluzz/contexts/WorkspaceContext";
+import { sanitizeHtmlContent } from "@/lib/sanitize";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -122,7 +123,7 @@ export default function Culture() {
             <CardContent>
               <div 
                 className="prose prose-sm max-w-none dark:prose-invert"
-                dangerouslySetInnerHTML={{ __html: cultureData.content || "" }}
+                dangerouslySetInnerHTML={{ __html: sanitizeHtmlContent(cultureData.content || "") }}
               />
             </CardContent>
           </Card>

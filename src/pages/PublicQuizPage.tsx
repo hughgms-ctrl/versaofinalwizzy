@@ -10,6 +10,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Star, ArrowRight, ArrowLeft, Check, Loader2, Upload, Send, CalendarIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { sanitizeHtmlContent } from '@/lib/sanitize';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -373,30 +374,52 @@ export default function PublicQuizPage({ inlineQuiz, inlineNodes, inlineEdges }:
     firedPixels.current.add(key);
 
     if (platform === 'facebook' && pixelId) {
-      // Fire Facebook Pixel
+      // Fire Facebook Pixel.
+      // The fbq stub is defined in JS (not an inline <script>) so this works
+      // under a CSP without 'unsafe-inline'; only the external fbevents.js is
+      // injected via script.src (allowed by connect.facebook.net).
       try {
-        if ((window as any).fbq) {
-          (window as any).fbq('trackSingle', pixelId, eventName || 'PageView');
+        const w = window as any;
+        if (!w.fbq) {
+          const fbq: any = function (...args: any[]) {
+            fbq.callMethod ? fbq.callMethod.apply(fbq, args) : fbq.queue.push(args);
+          };
+          fbq.push = fbq;
+          fbq.loaded = true;
+          fbq.version = '2.0';
+          fbq.queue = [];
+          w.fbq = fbq;
+          if (!w._fbq) w._fbq = fbq;
+
+          const t = document.createElement('script');
+          t.async = true;
+          t.src = 'https://connect.facebook.net/en_US/fbevents.js';
+          document.head.appendChild(t);
+
+          w.fbq('init', pixelId);
+          w.fbq('track', eventName || 'PageView');
         } else {
-          // Load pixel script dynamically
-          const script = document.createElement('script');
-          script.innerHTML = `!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');fbq('init','${pixelId}');fbq('track','${eventName || 'PageView'}');`;
-          document.head.appendChild(script);
+          w.fbq('trackSingle', pixelId, eventName || 'PageView');
         }
       } catch {}
     } else if (platform === 'google' && pixelId) {
-      // Fire Google Tag
+      // Fire Google Tag. Same approach: the gtag stub is defined in JS and only
+      // the external gtag/js is injected via script.src (no inline <script>).
       try {
-        if ((window as any).gtag) {
-          (window as any).gtag('event', eventName || 'page_view', { send_to: pixelId });
+        const w = window as any;
+        if (!w.gtag) {
+          const s = document.createElement('script');
+          s.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(pixelId)}`;
+          s.async = true;
+          document.head.appendChild(s);
+
+          w.dataLayer = w.dataLayer || [];
+          w.gtag = function () { w.dataLayer.push(arguments); };
+          w.gtag('js', new Date());
+          w.gtag('config', pixelId);
+          w.gtag('event', eventName || 'page_view');
         } else {
-          const script = document.createElement('script');
-          script.src = `https://www.googletagmanager.com/gtag/js?id=${pixelId}`;
-          script.async = true;
-          document.head.appendChild(script);
-          const script2 = document.createElement('script');
-          script2.innerHTML = `window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','${pixelId}');gtag('event','${eventName || 'page_view'}');`;
-          document.head.appendChild(script2);
+          w.gtag('event', eventName || 'page_view', { send_to: pixelId });
         }
       } catch {}
     }
@@ -438,6 +461,7 @@ export default function PublicQuizPage({ inlineQuiz, inlineNodes, inlineEdges }:
         body: JSON.stringify({
           organization_id: quiz?.organization_id,
           quiz_id: quiz?.id,
+          block_id: block.id,
           action: phone ? (isFlow ? 'trigger_flow' : 'send_whatsapp') : 'crm_action',
           phone,
           message,
@@ -737,7 +761,7 @@ function BlockRenderer({ block, answer, variables, onAnswer, onSetVariables, onN
       <div className="space-y-6">
         {d.url && (
           d.url.startsWith('<') ? (
-            <div className="rounded-2xl overflow-hidden" dangerouslySetInnerHTML={{ __html: d.url }} />
+            <div className="rounded-2xl overflow-hidden" dangerouslySetInnerHTML={{ __html: sanitizeHtmlContent(d.url) }} />
           ) : (
             <iframe src={d.url} className="w-full aspect-video rounded-2xl" allowFullScreen />
           )

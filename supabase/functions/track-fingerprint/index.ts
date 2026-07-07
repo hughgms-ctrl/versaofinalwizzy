@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { getClientIp, checkRateLimitDb } from '../_shared/middleware.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -14,6 +15,15 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
+
+    // Rate limit por IP (endpoint de analytics público, maior tolerância).
+    const clientIp = getClientIp(req)
+    if (!(await checkRateLimitDb(supabase, clientIp, { bucket: 'track-fingerprint', maxRequests: 60, windowSeconds: 60 }))) {
+      return new Response(JSON.stringify({ error: 'Muitas solicitações.' }), {
+        status: 429,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
 
     // Get auth user from headers if available
     const authHeader = req.headers.get('Authorization')
@@ -60,8 +70,8 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   } catch (err) {
-    console.error('Track fingerprint error:', err)
-    return new Response(JSON.stringify({ error: err.message }), {
+    console.error('Track fingerprint error:', err instanceof Error ? (err.stack || err.message) : err)
+    return new Response(JSON.stringify({ error: 'Erro interno.' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })

@@ -177,7 +177,9 @@ Deno.serve(async (req) => {
 
         let phone = rawPhone;
         if (contactId && !phone) {
-            const { data: contact } = await supabase.from('contacts').select('phone').eq('id', contactId).single();
+            // Escopa por org do caller: sem isso, um contactId de outra org vazava telefone.
+            const { data: contact } = await supabase.from('contacts').select('phone').eq('id', contactId).eq('organization_id', profile.organization_id).maybeSingle();
+            if (!contact) throw new Error('Contact not found');
             phone = contact?.phone;
         }
 
@@ -229,7 +231,8 @@ Deno.serve(async (req) => {
             const updateData: any = {};
             if (name) updateData.name = name;
             if (finalAvatarUrl) updateData.avatar_url = finalAvatarUrl;
-            await supabase.from('contacts').update(updateData).eq('id', contactId);
+            // Escopa por org: sem isso, dava para sobrescrever nome/avatar de contato de outra org.
+            await supabase.from('contacts').update(updateData).eq('id', contactId).eq('organization_id', profile.organization_id);
         }
 
         return new Response(JSON.stringify({ success: true, name, avatarUrl: finalAvatarUrl, raw: profileData }), {

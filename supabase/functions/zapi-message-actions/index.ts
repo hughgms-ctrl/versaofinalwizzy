@@ -1,5 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { decode as decodeBase64 } from 'https://deno.land/std@0.168.0/encoding/base64.ts';
+import { getUserOrganizationIds } from '../_shared/access.ts';
 
 const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
@@ -483,12 +484,21 @@ Deno.serve(async (req) => {
             });
         }
 
+        // IDOR guard: só instâncias das orgs de que o caller é membro. Sem isso, os
+        // caminhos read/react/edit/find operavam na instância WhatsApp de outra org.
+        const orgIds = await getUserOrganizationIds(supabase, user.id);
+        if (orgIds.length === 0) {
+            return new Response(JSON.stringify({ error: 'Forbidden' }), {
+                status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+        }
+
         let instance;
         if (instanceId) {
-            const { data } = await supabase.from('whatsapp_instances').select('*').eq('id', instanceId).single();
+            const { data } = await supabase.from('whatsapp_instances').select('*').eq('id', instanceId).in('organization_id', orgIds).maybeSingle();
             instance = data;
         } else {
-            const { data: instances } = await supabase.from('whatsapp_instances').select('*').eq('status', 'connected').limit(1);
+            const { data: instances } = await supabase.from('whatsapp_instances').select('*').eq('status', 'connected').in('organization_id', orgIds).limit(1);
             instance = instances?.[0];
         }
 

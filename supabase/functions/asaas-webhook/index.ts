@@ -5,6 +5,16 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, asaas-access-token',
 }
 
+// Comparação constant-time para não vazar o token por timing.
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false
+  let mismatch = 0
+  for (let i = 0; i < a.length; i++) {
+    mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i)
+  }
+  return mismatch === 0
+}
+
 function parseReference(payload: any) {
   const reference = payload?.payment?.externalReference || payload?.subscription?.externalReference || payload?.customer?.externalReference || null
   const [organizationId, planId, billingCycle] = String(reference || '').split('|')
@@ -72,6 +82,27 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
+
+    // ==================== Verificação do token (OBRIGATÓRIA) ====================
+    // O Asaas envia um token estático (configurado no painel Asaas) no header
+    // asaas-access-token. Sem conferir, qualquer um ativa/cancela plano de qualquer org.
+    // Falha FECHADA: se o secret não estiver configurado ou o token não bater, rejeita.
+    const expectedToken = Deno.env.get('ASAAS_WEBHOOK_TOKEN')
+    if (!expectedToken) {
+      console.error('[asaas-webhook] ASAAS_WEBHOOK_TOKEN não configurado — rejeitando')
+      return new Response(JSON.stringify({ error: 'Webhook not configured' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+    const receivedToken = req.headers.get('asaas-access-token') || ''
+    if (!receivedToken || !timingSafeEqual(receivedToken, expectedToken)) {
+      console.error('[asaas-webhook] token inválido')
+      return new Response(JSON.stringify({ error: 'Invalid token' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
 
     const payload = await req.json().catch(() => ({}))
     const { organizationId, planId, billingCycle } = parseReference(payload)

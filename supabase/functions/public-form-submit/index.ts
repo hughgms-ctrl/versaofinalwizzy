@@ -5,6 +5,7 @@ const corsHeaders = {
 
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { sendWhatsAppMessage } from "../_shared/whatsappProvider.ts";
+import { getClientIp, checkRateLimitDb } from "../_shared/middleware.ts";
 
 const normalizeKey = (value: string) =>
   String(value || "")
@@ -42,6 +43,15 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // Rate limit por IP (anti-spam de submissões públicas de formulário).
+    const ip = getClientIp(req);
+    if (!(await checkRateLimitDb(supabase, ip, { bucket: "public-form-submit", maxRequests: 20, windowSeconds: 60 }))) {
+      return new Response(JSON.stringify({ error: "Muitas solicitações. Aguarde um momento e tente novamente." }), {
+        status: 429,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     const { data: template, error: tErr } = await supabase
       .from("document_templates")
@@ -318,9 +328,9 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
-    console.error("public-form-submit error:", e);
+    console.error("public-form-submit error:", e instanceof Error ? (e.stack || e.message) : e);
     return new Response(
-      JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }),
+      JSON.stringify({ error: "Erro interno. Tente novamente." }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }

@@ -50,7 +50,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useToast } from '@/hooks/use-toast';
-import { 
+import { escapeHtml } from '@/lib/sanitize';
+import {
   useContactFolders,
   useCreateContactFolder,
   useDeleteContactFolder,
@@ -361,7 +362,7 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
           printWindow.document.write(`
             <!DOCTYPE html>
             <html>
-            <head><title>${file.name}</title>
+            <head><title>${escapeHtml(file.name)}</title>
             <style>
               @page { size: auto; margin: 10mm; }
               body { margin: 0; display: flex; justify-content: center; align-items: flex-start; }

@@ -12,6 +12,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { DocumentTemplate } from '@/hooks/useDocumentTemplates';
 import { useQueryClient } from '@tanstack/react-query';
 import { fillTemplate } from '@/lib/documentFormatters';
+import { sanitizeHtmlContent } from '@/lib/sanitize';
 import { FillModeStep, FillMode } from './FillModeStep';
 import { SignersManager } from './SignersManager';
 import { SignerLinksList } from './SignerLinksList';
@@ -361,7 +362,7 @@ export function TemplateFillForm({ template, onBack, onGeneratedForSignature }: 
                   <img src={template.logo_url} alt="Logo" className="h-10 w-auto object-contain" />
                 </div>
               )}
-              <div className="max-h-[50vh] overflow-y-auto bg-white text-black p-6 rounded-lg leading-relaxed prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: filledContent }} />
+              <div className="max-h-[50vh] overflow-y-auto bg-white text-black p-6 rounded-lg leading-relaxed prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: sanitizeHtmlContent(filledContent) }} />
             </CardContent>
           </Card>
         )}

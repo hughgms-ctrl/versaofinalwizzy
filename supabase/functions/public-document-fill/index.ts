@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { corsHeaders, jsonResponse, errorResponse, createServiceClient, parseJsonBody } from "../_shared/middleware.ts";
+import { corsHeaders, jsonResponse, errorResponse, createServiceClient, parseJsonBody, getClientIp, checkRateLimitDb, safeErrorResponse } from "../_shared/middleware.ts";
 
 const normalizeKey = (value: string) =>
   String(value || "")
@@ -91,6 +91,12 @@ serve(async (req) => {
   try {
     const url = new URL(req.url);
     const supabase = createServiceClient();
+
+    // Rate limit por IP (cobre load público + submissão do formulário).
+    const ip = getClientIp(req);
+    if (!(await checkRateLimitDb(supabase, ip, { bucket: "public-document-fill", maxRequests: 30, windowSeconds: 60 }))) {
+      return errorResponse("Muitas solicitações. Aguarde um momento e tente novamente.", 429);
+    }
 
     // GET /public-document-fill?token=xxx → load doc + template fields
     if (req.method === "GET") {
@@ -313,8 +319,7 @@ serve(async (req) => {
     }
 
     return errorResponse("Method not allowed", 405);
-  } catch (e: any) {
-    console.error("public-document-fill error", e);
-    return errorResponse(e.message || "Internal error", 500);
+  } catch (e) {
+    return safeErrorResponse(e, "public-document-fill");
   }
 });

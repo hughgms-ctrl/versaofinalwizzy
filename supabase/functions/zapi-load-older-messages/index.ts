@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { getUserOrganizationIds } from '../_shared/access.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -84,10 +85,20 @@ Deno.serve(async (req) => {
       });
     }
 
+    // IDOR guard: só conversas das orgs de que o caller é membro. Sem isso, qualquer
+    // usuário autenticado passava um conversationId de outra org e puxava o histórico dela.
+    const orgIds = await getUserOrganizationIds(supabase, user.id);
+    if (orgIds.length === 0) {
+      return new Response(JSON.stringify({ error: 'Forbidden' }), {
+        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     const { data: conversation, error: convError } = await supabase
       .from('conversations')
       .select('*, contact:contacts(phone), whatsapp_instance:whatsapp_instances(*)')
       .eq('id', conversationId)
+      .in('organization_id', orgIds)
       .single();
 
     if (convError || !conversation) {

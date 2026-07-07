@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { corsHeaders, jsonResponse, errorResponse, createServiceClient, parseJsonBody } from "../_shared/middleware.ts";
+import { corsHeaders, jsonResponse, errorResponse, createServiceClient, parseJsonBody, getClientIp, checkRateLimitDb, safeErrorResponse } from "../_shared/middleware.ts";
 import { resolveSignatureByToken } from "../_shared/signerBridge.ts";
 
 serve(async (req) => {
@@ -15,6 +15,13 @@ serve(async (req) => {
     }
 
     const supabase = createServiceClient();
+
+    // Rate limit por IP: além do cap de 5 tentativas por código (abaixo), impede
+    // enumeração de muitos tokens diferentes a partir do mesmo IP.
+    const ip = getClientIp(req);
+    if (!(await checkRateLimitDb(supabase, ip, { bucket: "signature-verify-otp", maxRequests: 30, windowSeconds: 60 }))) {
+      return errorResponse("Muitas tentativas. Aguarde um momento e tente novamente.", 429);
+    }
 
     // Find signature (supports legacy + new signers table)
     const signature = await resolveSignatureByToken(supabase, signatureToken);
@@ -104,7 +111,6 @@ serve(async (req) => {
       channel: targetChannel,
     });
   } catch (error) {
-    console.error("Error in signature-verify-otp:", error);
-    return errorResponse(error.message || "Erro interno", 500);
+    return safeErrorResponse(error, "signature-verify-otp");
   }
 });

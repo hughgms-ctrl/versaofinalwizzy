@@ -12,6 +12,7 @@ import { ScrollArea } from "@/fluzz/components/ui/scroll-area";
 import { Separator } from "@/fluzz/components/ui/separator";
 import { toast } from "sonner";
 import { Plus, FileText, Trash2, ChevronRight, Pencil, Target, Users, Package, ListOrdered, Clock, AlertCircle } from "lucide-react";
+import { sanitizeHtmlContent } from "@/lib/sanitize";
 
 interface Process {
   id: string;
@@ -328,7 +329,7 @@ export default function Processes() {
                             {mediaContent && (
                               <div 
                                 className="prose prose-sm max-w-none"
-                                dangerouslySetInnerHTML={{ __html: mediaContent }}
+                                dangerouslySetInnerHTML={{ __html: sanitizeHtmlContent(mediaContent) }}
                               />
                             )}
                           </div>
@@ -377,7 +378,7 @@ export default function Processes() {
                selectedProcess?.content && (
                 <article
                   className="prose prose-sm md:prose max-w-none dark:prose-invert break-words"
-                  dangerouslySetInnerHTML={{ __html: selectedProcess.content }}
+                  dangerouslySetInnerHTML={{ __html: sanitizeHtmlContent(selectedProcess.content) }}
                 />
               )}
             </div>

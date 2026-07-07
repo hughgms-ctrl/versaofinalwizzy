@@ -31,6 +31,37 @@ export function errorResponse(message: string, status = 400) {
   return jsonResponse({ error: message }, status);
 }
 
+/**
+ * Resposta de erro que NÃO vaza detalhes internos ao cliente.
+ * Loga o erro completo (message + stack) no server, mas devolve apenas uma
+ * mensagem genérica e segura. Use nos catch-all dos endpoints públicos em vez de
+ * `errorResponse(error.message, 500)` — expor error.message/stack a um chamador
+ * não autenticado revela nomes de tabela, SQL, caminhos e versões de lib.
+ */
+export function safeErrorResponse(
+  error: unknown,
+  context: string,
+  publicMessage = 'Erro interno. Tente novamente.',
+  status = 500,
+) {
+  console.error(`[${context}]`, error instanceof Error ? (error.stack || error.message) : error);
+  return jsonResponse({ error: publicMessage }, status);
+}
+
+// ==================== Client IP ====================
+/**
+ * Extrai o IP do chamador a partir dos headers de proxy do Supabase/Cloudflare.
+ * x-forwarded-for pode ser uma lista ("client, proxy1, proxy2"); o primeiro é o
+ * cliente original. Usado como identificador do rate limit.
+ */
+export function getClientIp(req: Request): string {
+  const xff = req.headers.get('x-forwarded-for');
+  if (xff) return xff.split(',')[0].trim();
+  return req.headers.get('cf-connecting-ip')
+    || req.headers.get('x-real-ip')
+    || 'unknown';
+}
+
 // ==================== Auth ====================
 export interface AuthContext {
   userId: string;
@@ -119,6 +150,54 @@ setInterval(() => {
     }
   }
 }, 60_000);
+
+// ==================== Rate Limiting (DB-backed, shared across isolates) ====================
+export interface DbRateLimitConfig {
+  /** Nome lógico do endpoint/ação (ex.: 'signature-send-otp'). */
+  bucket: string;
+  maxRequests: number;
+  windowSeconds: number;
+}
+
+/**
+ * Rate limit compartilhado entre todos os isolates via RPC atômica no Postgres
+ * (tabela rate_limits + função check_rate_limit — migration 20260705130000).
+ *
+ * Retorna `true` se a requisição é PERMITIDA, `false` se estourou o limite.
+ *
+ * FAIL-OPEN: se a RPC não existir ainda (migration não aplicada) ou o banco
+ * falhar, permite a requisição. Assim o deploy das edge functions não quebra
+ * produção antes do sync da migration pelo Lovable — o limite passa a valer
+ * assim que a RPC existir. O rate limiter in-memory (checkRateLimit) continua
+ * ativo como 1ª camada nesse meio-tempo.
+ *
+ * @param client um Supabase client com service_role (createServiceClient()).
+ *   Tipado de forma estrutural (só precisa de `.rpc`) para aceitar clients
+ *   criados por qualquer import specifier (npm: / esm.sh).
+ */
+export async function checkRateLimitDb(
+  client: { rpc: (fn: string, params: Record<string, unknown>) => Promise<{ data: unknown; error: { message?: string } | null }> },
+  identifier: string,
+  config: DbRateLimitConfig,
+): Promise<boolean> {
+  if (!identifier || identifier === 'unknown') return true; // sem IP confiável → não bloqueia
+  try {
+    const { data, error } = await client.rpc('check_rate_limit', {
+      p_bucket: config.bucket,
+      p_identifier: identifier,
+      p_max_requests: config.maxRequests,
+      p_window_seconds: config.windowSeconds,
+    });
+    if (error) {
+      console.error(`[RATE-LIMIT] RPC error (fail-open) bucket=${config.bucket}:`, error.message);
+      return true;
+    }
+    return data !== false; // RPC devolve boolean; qualquer coisa != false = permite
+  } catch (e) {
+    console.error(`[RATE-LIMIT] Exception (fail-open) bucket=${config.bucket}:`, e);
+    return true;
+  }
+}
 
 // ==================== Webhook Auth ====================
 export function validateWebhookToken(req: Request): boolean {

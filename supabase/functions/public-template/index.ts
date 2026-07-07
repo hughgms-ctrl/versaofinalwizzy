@@ -4,6 +4,7 @@ const corsHeaders = {
 };
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { getClientIp, checkRateLimitDb } from "../_shared/middleware.ts";
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -30,6 +31,15 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // Rate limit por IP (leitura pública de template).
+    const ip = getClientIp(req);
+    if (!(await checkRateLimitDb(supabase, ip, { bucket: "public-template", maxRequests: 60, windowSeconds: 60 }))) {
+      return new Response(JSON.stringify({ error: "Muitas solicitações." }), {
+        status: 429,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     const { data, error } = await supabase
       .from("document_templates")
@@ -67,9 +77,9 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
-    console.error("public-template error:", e);
+    console.error("public-template error:", e instanceof Error ? (e.stack || e.message) : e);
     return new Response(
-      JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }),
+      JSON.stringify({ error: "Erro interno. Tente novamente." }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }

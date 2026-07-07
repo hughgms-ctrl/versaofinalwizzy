@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { corsHeaders, jsonResponse, errorResponse, createServiceClient, parseJsonBody } from "../_shared/middleware.ts";
+import { corsHeaders, jsonResponse, errorResponse, createServiceClient, parseJsonBody, getClientIp, checkRateLimitDb, safeErrorResponse } from "../_shared/middleware.ts";
 
 const GATEWAY_URL = "https://connector-gateway.lovable.dev/resend";
 
@@ -11,6 +11,12 @@ serve(async (req) => {
     if (!body.signer_id) return errorResponse("signer_id is required", 400);
 
     const supabase = createServiceClient();
+
+    // Rate limit por IP (endpoint de envio de e-mail — evita bombardeio).
+    const ip = getClientIp(req);
+    if (!(await checkRateLimitDb(supabase, ip, { bucket: "send-signer-link", maxRequests: 15, windowSeconds: 60 }))) {
+      return errorResponse("Muitas solicitações. Aguarde um momento e tente novamente.", 429);
+    }
 
     const { data: signer, error } = await (supabase as any)
       .from("document_signers")
@@ -74,7 +80,7 @@ serve(async (req) => {
     const respJson = await resp.json();
     if (!resp.ok) {
       console.error("Resend error", respJson);
-      return errorResponse(respJson?.message || "Falha ao enviar e-mail", 500);
+      return errorResponse("Falha ao enviar e-mail", 500);
     }
 
     await (supabase as any)
@@ -83,8 +89,7 @@ serve(async (req) => {
       .eq("id", signer.id);
 
     return jsonResponse({ success: true, message_id: respJson.id });
-  } catch (e: any) {
-    console.error("send-signer-link error", e);
-    return errorResponse(e.message || "Internal error", 500);
+  } catch (e) {
+    return safeErrorResponse(e, "send-signer-link");
   }
 });

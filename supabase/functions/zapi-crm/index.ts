@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { getUserOrganizationIds } from '../_shared/access.ts';
 
 const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
@@ -33,16 +34,41 @@ Deno.serve(async (req) => {
 
         // action: 'save' | 'find' | 'sync_from_uazapi'
 
+        // IDOR guard: só permite operar em instâncias das orgs de que o caller é membro.
+        // Sem isso, um usuário da org A podia passar o instanceId da org B e usar o token
+        // WhatsApp dela (ler/gravar CRM cross-tenant).
+        const orgIds = await getUserOrganizationIds(supabase, user.id);
+        if (orgIds.length === 0) {
+            return new Response(JSON.stringify({ error: 'Forbidden' }), {
+                status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+        }
+
         let instance;
         if (instanceId) {
-            const { data: inst } = await supabase.from('whatsapp_instances').select('*').eq('id', instanceId).single();
+            const { data: inst } = await supabase.from('whatsapp_instances').select('*').eq('id', instanceId).in('organization_id', orgIds).maybeSingle();
             instance = inst;
         } else {
-            const { data: instances } = await supabase.from('whatsapp_instances').select('*').eq('status', 'connected').limit(1);
+            const { data: instances } = await supabase.from('whatsapp_instances').select('*').eq('status', 'connected').in('organization_id', orgIds).limit(1);
             instance = instances?.[0];
         }
 
-        if (!instance) throw new Error('No instance');
+        if (!instance) {
+            return new Response(JSON.stringify({ error: 'Instance not found' }), {
+                status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+        }
+
+        // contactId também precisa pertencer à org da instância (evita gravar/ler CRM
+        // de um contato de outra org).
+        if (contactId) {
+            const { data: contactRow } = await supabase.from('contacts').select('id').eq('id', contactId).eq('organization_id', instance.organization_id).maybeSingle();
+            if (!contactRow) {
+                return new Response(JSON.stringify({ error: 'Contact not found' }), {
+                    status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+                });
+            }
+        }
 
         if (action === 'save') {
             // Save to Supabase

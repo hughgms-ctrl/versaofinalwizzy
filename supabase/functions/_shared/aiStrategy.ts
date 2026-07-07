@@ -84,11 +84,38 @@ export async function getPlatformOpenAIKey(supabase: any) {
 }
 
 export async function getOrganizationIdFromRequest(supabase: any, req: Request, explicitOrgId?: string | null) {
-  if (explicitOrgId) return explicitOrgId;
-
   const authHeader = req.headers.get('Authorization') || '';
   const token = authHeader.replace('Bearer ', '').trim();
-  if (!token) return null;
+  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
+  const isServiceRole = !!serviceRoleKey && token === serviceRoleKey;
+
+  // explicitOrgId (vindo do body) só é confiável de chamador interno (service role).
+  // Antes era retornado sem qualquer verificação, então uma função verify_jwt=false
+  // podia receber a org da vítima no body e queimar a chave de IA dela sem autenticar.
+  if (explicitOrgId) {
+    if (isServiceRole) return explicitOrgId;
+    if (!token) return null;
+    const { data: userData } = await supabase.auth.getUser(token);
+    const userId = userData?.user?.id;
+    if (!userId) return null;
+    // Só retorna a org pedida se o usuário for membro dela.
+    const { data: membership } = await supabase
+      .from('organization_members')
+      .select('organization_id')
+      .eq('user_id', userId)
+      .eq('organization_id', explicitOrgId)
+      .maybeSingle();
+    if (membership) return explicitOrgId;
+    // Fallback legado (orgs sem organization_members): valida via profile.
+    const { data: legacyProfile } = await supabase
+      .from('profiles')
+      .select('organization_id')
+      .eq('user_id', userId)
+      .maybeSingle();
+    return legacyProfile?.organization_id === explicitOrgId ? explicitOrgId : null;
+  }
+
+  if (isServiceRole || !token) return null;
 
   const { data: userData } = await supabase.auth.getUser(token);
   const userId = userData?.user?.id;

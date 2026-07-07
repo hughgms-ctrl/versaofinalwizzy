@@ -1,9 +1,53 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { getUserOrganizationIds } from '../_shared/access.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+// Guard anti-SSRF: mediaUrl vem do body do cliente e é passado a fetch(). Sem validar,
+// um atacante aponta para http://169.254.169.254 (metadados do cloud) ou serviços
+// internos. Exigimos http(s) e bloqueamos hosts internos/privados e literais de IP
+// em faixas privadas. Lança em URL inválida/insegura.
+function assertSafeMediaUrl(rawUrl: string): void {
+  let u: URL;
+  try {
+    u = new URL(rawUrl);
+  } catch {
+    throw new Error('Invalid media URL');
+  }
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') {
+    throw new Error('Unsupported media URL protocol');
+  }
+  const host = u.hostname.toLowerCase();
+
+  // Hosts internos conhecidos / metadados de cloud.
+  const blockedHosts = new Set([
+    'localhost', '127.0.0.1', '0.0.0.0', '::1',
+    'metadata.google.internal', '169.254.169.254',
+  ]);
+  if (blockedHosts.has(host)) throw new Error('Blocked media URL host');
+
+  // Literais de IPv4 em faixas privadas/link-local/loopback.
+  const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (ipv4) {
+    const [a, b] = [Number(ipv4[1]), Number(ipv4[2])];
+    const isPrivate =
+      a === 10 ||
+      a === 127 ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      a === 0;
+    if (isPrivate) throw new Error('Blocked private media URL');
+  }
+
+  // IPv6 privado/local (unique-local fc00::/7, link-local fe80::/10).
+  if (host.includes(':') && /^(f[cd]|fe8|fe9|fea|feb)/.test(host.replace(/^\[/, ''))) {
+    throw new Error('Blocked private IPv6 media URL');
+  }
+}
 
 interface AIConfigResult {
   endpoint: string;
@@ -344,10 +388,35 @@ Deno.serve(async (req) => {
     }
 
     const token = authHeader.replace(/^Bearer\s+/i, '');
+    const isServiceRole = token === supabaseKey;
+
+    // Valida o JWT quando não é chamada interna (service role). Antes, o header era
+    // aceito sem validação e o bodyOrgId permitia pular o getUser — qualquer token
+    // servia. Agora: não-service precisa de JWT válido e não pode escolher a org.
+    let authUserId: string | null = null;
+    if (!isServiceRole) {
+      const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+      if (authError || !user) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      authUserId = user.id;
+    }
+
     const { messageId, mediaUrl, mediaType, force, organizationId: bodyOrgId } = await req.json();
 
     if (!messageId || !mediaUrl || !mediaType) {
       return new Response(JSON.stringify({ error: 'messageId, mediaUrl, and mediaType are required' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Bloqueia SSRF antes de qualquer uso de mediaUrl (fetch para vision/whisper).
+    try {
+      assertSafeMediaUrl(mediaUrl);
+    } catch (e) {
+      return new Response(JSON.stringify({ error: String((e as Error).message || e) }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -392,27 +461,36 @@ Deno.serve(async (req) => {
       await supabase.from('media_transcriptions').delete().eq('message_id', messageId);
     }
 
-    // Resolve organization ID
-    let resolvedOrgId = bodyOrgId || null;
-    if (!resolvedOrgId) {
-      const { data: { user }, error: authError } = await supabase.auth.getUser(token);
-      if (!authError && user) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('organization_id')
-          .eq('user_id', user.id)
-          .maybeSingle();
-        resolvedOrgId = profile?.organization_id;
-      }
+    // Resolve organization ID a partir da mensagem (fonte de verdade), não do body.
+    // O bodyOrgId só é aceito de chamador interno (service role); um usuário não pode
+    // escolher a org (senão queima a chave de IA de outra org).
+    const { data: messageOrg } = await supabase
+      .from('messages')
+      .select('conversation:conversations(organization_id)')
+      .eq('id', messageId)
+      .maybeSingle();
+    const messageOrgId = (messageOrg as any)?.conversation?.organization_id || null;
+
+    let resolvedOrgId: string | null = messageOrgId;
+    if (isServiceRole && !resolvedOrgId) {
+      // Chamada interna (flows) pode passar a org explicitamente quando a mensagem
+      // ainda não tem conversa vinculada.
+      resolvedOrgId = bodyOrgId || null;
     }
 
-    if (!resolvedOrgId) {
-      const { data: messageOrg } = await supabase
-        .from('messages')
-        .select('conversation:conversations(organization_id)')
-        .eq('id', messageId)
-        .maybeSingle();
-      resolvedOrgId = (messageOrg as any)?.conversation?.organization_id;
+    // IDOR guard: usuário só transcreve mídia de mensagens de orgs de que é membro.
+    if (!isServiceRole) {
+      if (!messageOrgId) {
+        return new Response(JSON.stringify({ error: 'Message not found' }), {
+          status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      const orgIds = await getUserOrganizationIds(supabase, authUserId!);
+      if (!orgIds.includes(messageOrgId)) {
+        return new Response(JSON.stringify({ error: 'Forbidden' }), {
+          status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
     }
 
     if (!resolvedOrgId) {

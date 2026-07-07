@@ -1,5 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { sendWhatsAppMessage } from '../_shared/whatsappProvider.ts';
+import { getClientIp, checkRateLimitDb } from '../_shared/middleware.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -29,6 +30,15 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     );
+
+    // Rate limit por IP (anti-spam de submissões de widget).
+    const clientIp = getClientIp(req);
+    if (!(await checkRateLimitDb(supabase, clientIp, { bucket: 'widget-submit', maxRequests: 20, windowSeconds: 60 }))) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Muitas solicitações. Aguarde um momento e tente novamente.' }),
+        { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     const body: WidgetSubmission = await req.json();
     console.log('[widget-submit] Received submission:', body);

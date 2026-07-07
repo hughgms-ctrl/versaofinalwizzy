@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { corsHeaders, jsonResponse, errorResponse, createServiceClient, parseJsonBody } from "../_shared/middleware.ts";
+import { corsHeaders, jsonResponse, errorResponse, createServiceClient, parseJsonBody, getClientIp, checkRateLimitDb, safeErrorResponse } from "../_shared/middleware.ts";
 import { resolveSignatureByToken } from "../_shared/signerBridge.ts";
 
 type Provider = "evolution" | "uazapi";
@@ -196,7 +196,7 @@ async function sendEmailOtp(args: { email: string; code: string }): Promise<Chan
     return { channel: "email", ok: true, message: `E-mail enviado para ${masked}` };
   } catch (e: any) {
     console.error("[OTP-EMAIL] Exception:", e);
-    return { channel: "email", ok: false, error: e?.message || "Erro inesperado ao enviar e-mail" };
+    return { channel: "email", ok: false, error: "Erro inesperado ao enviar e-mail" };
   }
 }
 
@@ -283,7 +283,7 @@ async function sendWhatsappOtp(args: {
     return { channel: "whatsapp", ok: true, message: `WhatsApp enviado para ${masked}` };
   } catch (e: any) {
     console.error("[OTP-WHATSAPP] Exception:", e);
-    return { channel: "whatsapp", ok: false, error: e?.message || "Erro inesperado ao enviar WhatsApp" };
+    return { channel: "whatsapp", ok: false, error: "Erro inesperado ao enviar WhatsApp" };
   }
 }
 
@@ -304,6 +304,15 @@ serve(async (req) => {
     }
 
     const supabase = createServiceClient();
+
+    // Rate limit por IP (defesa contra bombardeio de OTP através de muitos
+    // tokens/assinaturas diferentes — o throttle por-assinatura abaixo não pega
+    // isso). Compartilhado entre isolates via RPC no Postgres.
+    const ip = getClientIp(req);
+    if (!(await checkRateLimitDb(supabase, ip, { bucket: "signature-send-otp", maxRequests: 15, windowSeconds: 60 }))) {
+      return errorResponse("Muitas solicitações. Aguarde um momento e tente novamente.", 429);
+    }
+
     const signature = await resolveSignatureByToken(supabase, signatureToken);
 
     if (!signature) {
@@ -363,7 +372,9 @@ serve(async (req) => {
       return errorResponse("Muitos reenvios. Aguarde alguns minutos e tente novamente.", 429);
     }
 
-    const code = String(Math.floor(100000 + Math.random() * 900000));
+    // CSPRNG: Math.random() é previsível e não deve gerar código de assinatura legal.
+    // crypto.getRandomValues garante 6 dígitos imprevisíveis (igual ao signature-complete).
+    const code = String(100000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 900000));
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
 
     // Invalidate previous still-active codes for this channel by EXPIRING them
@@ -423,8 +434,7 @@ serve(async (req) => {
       channel: dispatch.channel,
       message: dispatch.message || "Codigo enviado",
     });
-  } catch (error: any) {
-    console.error("Error in signature-send-otp:", error);
-    return errorResponse(error?.message || "Erro interno", 500);
+  } catch (error) {
+    return safeErrorResponse(error, "signature-send-otp");
   }
 });

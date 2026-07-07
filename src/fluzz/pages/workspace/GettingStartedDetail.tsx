@@ -6,6 +6,7 @@ import { Button } from "@/fluzz/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/fluzz/components/ui/card";
 import { ArrowLeft, Edit } from "lucide-react";
 import { useWorkspace } from "@/fluzz/contexts/WorkspaceContext";
+import { sanitizeHtmlContent } from "@/lib/sanitize";
 import { Skeleton } from "@/fluzz/components/ui/skeleton";
 
 export default function GettingStartedDetail() {
@@ -83,7 +84,7 @@ export default function GettingStartedDetail() {
           <CardContent className="pt-6">
             <div 
               className="prose prose-sm max-w-none dark:prose-invert"
-              dangerouslySetInnerHTML={{ __html: section.content || "" }}
+              dangerouslySetInnerHTML={{ __html: sanitizeHtmlContent(section.content || "") }}
             />
           </CardContent>
         </Card>

@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { corsHeaders, jsonResponse, errorResponse, createServiceClient } from "../_shared/middleware.ts";
+import { corsHeaders, jsonResponse, errorResponse, createServiceClient, getClientIp, checkRateLimitDb, safeErrorResponse } from "../_shared/middleware.ts";
 
 function maskIp(ip: string | null | undefined): string {
   if (!ip) return "N/A";
@@ -45,6 +45,13 @@ serve(async (req) => {
     }
 
     const supabase = createServiceClient();
+
+    // Rate limit por IP (impede enumeração de códigos/hashes de verificação).
+    const ip = getClientIp(req);
+    if (!(await checkRateLimitDb(supabase, ip, { bucket: "signature-verify-public", maxRequests: 40, windowSeconds: 60 }))) {
+      return errorResponse("Muitas solicitações. Aguarde um momento e tente novamente.", 429);
+    }
+
     const trimmed = code.trim();
 
     // Try to find by verification_code first, then by document_hash
@@ -102,8 +109,7 @@ serve(async (req) => {
         law_reference: meta.law_reference || "Lei 14.063/2020 + MP 2.200-2/2001",
       },
     });
-  } catch (error: any) {
-    console.error("signature-verify-public error:", error);
-    return errorResponse(error?.message || "Erro interno", 500);
+  } catch (error) {
+    return safeErrorResponse(error, "signature-verify-public");
   }
 });

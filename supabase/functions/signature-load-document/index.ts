@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { corsHeaders, jsonResponse, errorResponse, createServiceClient, parseJsonBody } from "../_shared/middleware.ts";
+import { corsHeaders, jsonResponse, errorResponse, createServiceClient, parseJsonBody, getClientIp, checkRateLimitDb, safeErrorResponse } from "../_shared/middleware.ts";
 import { resolveSignatureByToken } from "../_shared/signerBridge.ts";
 
 serve(async (req) => {
@@ -15,6 +15,12 @@ serve(async (req) => {
     }
 
     const supabase = createServiceClient();
+
+    // Rate limit por IP (impede varredura de tokens de assinatura).
+    const ip = getClientIp(req);
+    if (!(await checkRateLimitDb(supabase, ip, { bucket: "signature-load-document", maxRequests: 40, windowSeconds: 60 }))) {
+      return errorResponse("Muitas solicitações. Aguarde um momento e tente novamente.", 429);
+    }
 
     const resolved = await resolveSignatureByToken(supabase, signatureToken);
     if (!resolved) {
@@ -96,7 +102,6 @@ serve(async (req) => {
 
     return jsonResponse({ success: true, signature });
   } catch (error) {
-    console.error("Error in signature-load-document:", error);
-    return errorResponse(error.message || "Erro interno", 500);
+    return safeErrorResponse(error, "signature-load-document");
   }
 });

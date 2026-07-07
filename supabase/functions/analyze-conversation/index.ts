@@ -1,5 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { resolveOpenAIConfig } from "../_shared/aiStrategy.ts";
+import { getUserOrganizationIds } from "../_shared/access.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -264,6 +265,23 @@ Deno.serve(async (req) => {
 
     const { data: messages, error: messagesError } = messagesResult;
     const { data: conversation } = conversationResult;
+
+    // IDOR guard: quando a chamada vem de um usuário (não service role), ele só pode
+    // analisar conversas de orgs de que é membro. Sem isso, passava um conversationId
+    // de outra org e recebia o resumo (+ notas privadas) e queimava a chave de IA dela.
+    if (!isServiceRole) {
+      if (!conversation) {
+        return new Response(JSON.stringify({ error: 'Conversation not found' }), {
+          status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+      const orgIds = await getUserOrganizationIds(supabase, user!.id);
+      if (!conversation.organization_id || !orgIds.includes(conversation.organization_id)) {
+        return new Response(JSON.stringify({ error: 'Forbidden' }), {
+          status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
 
     // Resolve AI config for conversation_summary feature
     const aiConfig = await resolveOpenAIConfig(supabase, conversation?.organization_id, 'conversation_summary');

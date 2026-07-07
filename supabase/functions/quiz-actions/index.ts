@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 import { sendWhatsAppMessage, resolveWhatsAppInstance } from "../_shared/whatsappProvider.ts";
+import { getClientIp, checkRateLimitDb, safeErrorResponse } from "../_shared/middleware.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -14,6 +15,30 @@ function normalizePhoneNumber(value: string): string {
   return clean;
 }
 
+// Substitui {{variavel}} pelos valores da submissão (igual ao interpolate do
+// PublicQuizPage). Usado para montar a mensagem de WhatsApp server-side.
+function interpolate(text: string, variables: Record<string, any>): string {
+  return String(text || "").replace(/\{\{(\w+)\}\}/g, (_, key) => {
+    const v = variables?.[key];
+    return v === undefined || v === null ? `{{${key}}}` : String(v);
+  });
+}
+
+// Procura um bloco pelo id dentro do grafo do quiz (theme.nodes[].data.blocks[]).
+// A definição do quiz é a fonte da verdade: a mensagem/telefone/flow do envio de
+// WhatsApp saem DAQUI, nunca do body — senão um chamador anônimo faria o número da
+// empresa disparar texto arbitrário para qualquer telefone.
+function findQuizBlock(theme: any, blockId: string): any | null {
+  const nodes = Array.isArray(theme?.nodes) ? theme.nodes : [];
+  for (const node of nodes) {
+    const blocks = Array.isArray(node?.data?.blocks) ? node.data.blocks : [];
+    for (const block of blocks) {
+      if (block?.id === blockId) return block;
+    }
+  }
+  return null;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -22,12 +47,12 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json();
     const {
-      organization_id,
+      organization_id: bodyOrgId,
       quiz_id,
       action, // 'send_whatsapp' | 'crm_action' | 'submit_quiz' | 'trigger_flow'
       phone,
-      message,
-      flow_id,
+      block_id,
+      flow_id: bodyFlowId,
       contact_name,
       contact_email,
       contact_phone,
@@ -38,8 +63,10 @@ Deno.serve(async (req) => {
       variables,
     } = body;
 
-    if (!organization_id) {
-      return new Response(JSON.stringify({ error: "organization_id required" }), {
+    // quiz_id é obrigatório: a org e a definição do quiz são resolvidas a partir
+    // dele (fonte da verdade), nunca confiando no organization_id/message do body.
+    if (!quiz_id) {
+      return new Response(JSON.stringify({ error: "quiz_id required" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -50,21 +77,41 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
-    // Verify quiz belongs to org
-    if (quiz_id) {
-      const { data: quiz } = await supabaseAdmin
-        .from("quizzes")
-        .select("id")
-        .eq("id", quiz_id)
-        .eq("organization_id", organization_id)
-        .single();
-      if (!quiz) {
-        return new Response(JSON.stringify({ error: "Quiz not found for org" }), {
-          status: 403,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
+    // Rate limit por IP (endpoint público, anti-abuso).
+    const ip = getClientIp(req);
+    if (!(await checkRateLimitDb(supabaseAdmin, ip, { bucket: "quiz-actions", maxRequests: 30, windowSeconds: 60 }))) {
+      return new Response(JSON.stringify({ error: "Muitas solicitações. Aguarde um momento e tente novamente." }), {
+        status: 429,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
+
+    // Carrega o quiz: organization_id e theme (grafo dos blocos) são a fonte da verdade.
+    const { data: quiz } = await supabaseAdmin
+      .from("quizzes")
+      .select("id, organization_id, theme")
+      .eq("id", quiz_id)
+      .maybeSingle();
+    if (!quiz) {
+      return new Response(JSON.stringify({ error: "Quiz not found" }), {
+        status: 404,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Org autoritativa vem do quiz. Se o body mandou uma org divergente, rejeita
+    // (defesa em profundidade contra spoofing de organization_id).
+    const organization_id = quiz.organization_id;
+    if (bodyOrgId && bodyOrgId !== organization_id) {
+      return new Response(JSON.stringify({ error: "organization mismatch" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Bloco autoritativo (mensagem/telefone/flow do envio saem daqui, não do body).
+    const actionBlock = block_id ? findQuizBlock(quiz.theme, block_id) : null;
+    const flow_id = actionBlock?.data?.flowId || bodyFlowId;
 
     const results: Record<string, any> = {};
 
@@ -316,22 +363,39 @@ Deno.serve(async (req) => {
     }
 
     // --- Send WhatsApp ---
-    if (action === "send_whatsapp" && cleanPhone) {
-      try {
-        const resp = await sendWhatsAppMessage(supabaseAdmin, {
-          organizationId: organization_id,
-          phone: cleanPhone,
-          type: "text",
-          text: message || "",
-        });
-
-        results.whatsapp_sent = resp.ok;
-        if (!resp.ok) {
-          results.whatsapp_error = resp.responseText;
-        }
-      } catch (sendError) {
+    // Mensagem e destino saem do bloco configurado no quiz (server-authoritative),
+    // não do body. Isso impede um chamador anônimo de disparar texto arbitrário
+    // pelo número da empresa. useContactPhone => telefone do respondente (variables);
+    // caso contrário => número fixo configurado no bloco (waNumber).
+    if (action === "send_whatsapp") {
+      if (!actionBlock) {
         results.whatsapp_sent = false;
-        results.whatsapp_error = String(sendError);
+        results.whatsapp_error = "block_id inválido ou ausente";
+      } else {
+        const bd = actionBlock.data || {};
+        const waMessage = interpolate(String(bd.waMessage || ""), variables || {});
+        const rawTarget = bd.useContactPhone
+          ? (variables?.["phone"] || variables?.["telefone"] || variables?.["whatsapp"] || "")
+          : (bd.waNumber || "");
+        const targetPhone = rawTarget ? normalizePhoneNumber(String(rawTarget)) : "";
+
+        if (targetPhone && waMessage) {
+          try {
+            const resp = await sendWhatsAppMessage(supabaseAdmin, {
+              organizationId: organization_id,
+              phone: targetPhone,
+              type: "text",
+              text: waMessage,
+            });
+            results.whatsapp_sent = resp.ok;
+            if (!resp.ok) {
+              results.whatsapp_error = resp.responseText;
+            }
+          } catch (sendError) {
+            results.whatsapp_sent = false;
+            results.whatsapp_error = String(sendError);
+          }
+        }
       }
     }
 
@@ -339,11 +403,7 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
-    console.error("quiz-actions error:", err);
-    return new Response(JSON.stringify({ error: err.message }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return safeErrorResponse(err, "quiz-actions");
   }
 });
 

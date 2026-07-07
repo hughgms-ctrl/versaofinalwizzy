@@ -1,8 +1,30 @@
 /**
  * HTML Sanitization Utility
  * Prevents XSS attacks by stripping dangerous HTML tags and attributes.
- * Lightweight alternative to DOMPurify for our use case.
  */
+
+import DOMPurify from 'dompurify';
+
+/**
+ * Sanitize rich HTML content authored inside the app (Fluzz docs, document
+ * templates, quiz embeds) before rendering with dangerouslySetInnerHTML.
+ *
+ * Allows rich-text formatting plus safe media embeds (img, iframe for video),
+ * while stripping <script>, event handlers (onerror, onclick, ...) and
+ * javascript:/data: URIs. Use this for ANY dangerouslySetInnerHTML whose
+ * content can contain markup (not just the WhatsApp formatter, which already
+ * escapes its own input).
+ */
+export function sanitizeHtmlContent(html: string): string {
+  if (!html) return '';
+
+  return DOMPurify.sanitize(html, {
+    ADD_TAGS: ['iframe'],
+    ADD_ATTR: ['allow', 'allowfullscreen', 'frameborder', 'scrolling', 'target'],
+    // DOMPurify keeps its default URI allow-list, so javascript:/data: srcs on
+    // iframes/links are dropped even though iframe is permitted.
+  });
+}
 
 // Allowed tags for WhatsApp-style formatting
 const ALLOWED_TAGS = new Set([
