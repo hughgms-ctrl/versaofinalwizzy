@@ -11,7 +11,16 @@ import {
   useBulkAddToCampaign,
 } from '@/hooks/useContactBulkActions';
 import { Button } from '@/components/ui/button';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,7 +31,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Tag, FolderInput, Trash2, Download, Send, X, Loader2 } from 'lucide-react';
+import { Tag, FolderInput, Trash2, Download, Send, X, Loader2, SlidersHorizontal } from 'lucide-react';
 
 interface ContactBulkActionsBarProps {
   selectedContacts: Contact[];
@@ -60,9 +69,6 @@ export function ContactBulkActionsBar({ selectedContacts, onClearSelection }: Co
   const { data: campaigns } = useCampaigns();
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [tagPopoverOpen, setTagPopoverOpen] = useState<'add' | 'remove' | null>(null);
-  const [workspacePopoverOpen, setWorkspacePopoverOpen] = useState(false);
-  const [campaignPopoverOpen, setCampaignPopoverOpen] = useState(false);
 
   const bulkAddTag = useBulkAddTag();
   const bulkRemoveTag = useBulkRemoveTag();
@@ -72,21 +78,13 @@ export function ContactBulkActionsBar({ selectedContacts, onClearSelection }: Co
 
   const contactIds = selectedContacts.map(c => c.id);
   const isBusy = bulkAddTag.isPending || bulkRemoveTag.isPending || bulkMoveWorkspace.isPending || bulkDelete.isPending || bulkAddToCampaign.isPending;
+  const activeCampaigns = campaigns?.filter(c => c.is_active);
 
-  const handleAddTag = (tagId: string) => {
-    bulkAddTag.mutate({ contactIds, tagId });
-    setTagPopoverOpen(null);
-  };
-
-  const handleRemoveTag = (tagId: string) => {
-    bulkRemoveTag.mutate({ contactIds, tagId });
-    setTagPopoverOpen(null);
-  };
-
-  const handleMoveWorkspace = (workspaceId: string | null) => {
-    bulkMoveWorkspace.mutate({ contactIds, workspaceId });
-    setWorkspacePopoverOpen(false);
-  };
+  const handleAddTag = (tagId: string) => bulkAddTag.mutate({ contactIds, tagId });
+  const handleRemoveTag = (tagId: string) => bulkRemoveTag.mutate({ contactIds, tagId });
+  const handleMoveWorkspace = (workspaceId: string | null) => bulkMoveWorkspace.mutate({ contactIds, workspaceId });
+  const handleAddToCampaign = (campaignId: string) =>
+    bulkAddToCampaign.mutate({ contactIds: contactIds.slice(0, MAX_CAMPAIGN_BATCH), campaignId });
 
   const handleDelete = () => {
     bulkDelete.mutate(contactIds);
@@ -94,14 +92,9 @@ export function ContactBulkActionsBar({ selectedContacts, onClearSelection }: Co
     onClearSelection();
   };
 
-  const handleAddToCampaign = (campaignId: string) => {
-    bulkAddToCampaign.mutate({ contactIds: contactIds.slice(0, MAX_CAMPAIGN_BATCH), campaignId });
-    setCampaignPopoverOpen(false);
-  };
-
   return (
     <>
-      <div className="sticky bottom-0 left-0 right-0 mt-2 flex items-center gap-2 flex-wrap rounded-xl border border-border bg-card px-3 py-2 shadow-lg z-30">
+      <div className="flex items-center gap-2 flex-wrap rounded-xl border border-border bg-card px-3 py-2 mb-3">
         <span className="text-sm font-medium">{selectedContacts.length} selecionado(s)</span>
         <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={onClearSelection}>
           <X className="h-3.5 w-3.5 mr-1" />
@@ -110,145 +103,98 @@ export function ContactBulkActionsBar({ selectedContacts, onClearSelection }: Co
 
         <div className="h-5 w-px bg-border mx-1" />
 
-        {/* Add tag */}
-        <Popover open={tagPopoverOpen === 'add'} onOpenChange={(open) => setTagPopoverOpen(open ? 'add' : null)}>
-          <PopoverTrigger asChild>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
             <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5" disabled={isBusy}>
-              <Tag className="h-3.5 w-3.5" />
-              Adicionar tag
+              <SlidersHorizontal className="h-3.5 w-3.5" />
+              Ações
             </Button>
-          </PopoverTrigger>
-          <PopoverContent align="start" className="w-64 p-2">
-            <p className="text-xs font-semibold text-muted-foreground mb-2 px-1">Escolha a tag</p>
-            <div className="flex flex-col gap-1 max-h-64 overflow-y-auto">
-              {tags?.map(tag => (
-                <button
-                  key={tag.id}
-                  onClick={() => handleAddTag(tag.id)}
-                  className="flex items-center gap-2 px-2 py-1.5 text-sm rounded-md hover:bg-accent text-left"
-                >
-                  <div className="h-2.5 w-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: tag.color }} />
-                  {tag.name}
-                </button>
-              ))}
-              {!tags?.length && <p className="text-xs text-muted-foreground px-2 py-1">Nenhuma tag criada.</p>}
-            </div>
-          </PopoverContent>
-        </Popover>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-56 z-50 bg-popover">
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <Tag className="h-3.5 w-3.5 mr-2" />
+                Adicionar tag
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="max-h-64 overflow-y-auto z-50 bg-popover">
+                {tags?.map(tag => (
+                  <DropdownMenuItem key={tag.id} onSelect={() => handleAddTag(tag.id)}>
+                    <div className="h-2.5 w-2.5 rounded-full flex-shrink-0 mr-2" style={{ backgroundColor: tag.color }} />
+                    {tag.name}
+                  </DropdownMenuItem>
+                ))}
+                {!tags?.length && <DropdownMenuItem disabled>Nenhuma tag criada</DropdownMenuItem>}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
 
-        {/* Remove tag */}
-        <Popover open={tagPopoverOpen === 'remove'} onOpenChange={(open) => setTagPopoverOpen(open ? 'remove' : null)}>
-          <PopoverTrigger asChild>
-            <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5" disabled={isBusy}>
-              <Tag className="h-3.5 w-3.5" />
-              Remover tag
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent align="start" className="w-64 p-2">
-            <p className="text-xs font-semibold text-muted-foreground mb-2 px-1">Escolha a tag para remover</p>
-            <div className="flex flex-col gap-1 max-h-64 overflow-y-auto">
-              {tags?.map(tag => (
-                <button
-                  key={tag.id}
-                  onClick={() => handleRemoveTag(tag.id)}
-                  className="flex items-center gap-2 px-2 py-1.5 text-sm rounded-md hover:bg-accent text-left"
-                >
-                  <div className="h-2.5 w-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: tag.color }} />
-                  {tag.name}
-                </button>
-              ))}
-              {!tags?.length && <p className="text-xs text-muted-foreground px-2 py-1">Nenhuma tag criada.</p>}
-            </div>
-          </PopoverContent>
-        </Popover>
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <Tag className="h-3.5 w-3.5 mr-2" />
+                Remover tag
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="max-h-64 overflow-y-auto z-50 bg-popover">
+                {tags?.map(tag => (
+                  <DropdownMenuItem key={tag.id} onSelect={() => handleRemoveTag(tag.id)}>
+                    <div className="h-2.5 w-2.5 rounded-full flex-shrink-0 mr-2" style={{ backgroundColor: tag.color }} />
+                    {tag.name}
+                  </DropdownMenuItem>
+                ))}
+                {!tags?.length && <DropdownMenuItem disabled>Nenhuma tag criada</DropdownMenuItem>}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
 
-        {/* Move workspace */}
-        <Popover open={workspacePopoverOpen} onOpenChange={setWorkspacePopoverOpen}>
-          <PopoverTrigger asChild>
-            <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5" disabled={isBusy}>
-              <FolderInput className="h-3.5 w-3.5" />
-              Mover de workspace
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent align="start" className="w-64 p-2">
-            <p className="text-xs font-semibold text-muted-foreground mb-2 px-1">Escolha o workspace de destino</p>
-            <div className="flex flex-col gap-1 max-h-64 overflow-y-auto">
-              <button
-                onClick={() => handleMoveWorkspace(null)}
-                className="px-2 py-1.5 text-sm rounded-md hover:bg-accent text-left text-muted-foreground"
-              >
-                Sem workspace
-              </button>
-              {workspaces?.map(workspace => (
-                <button
-                  key={workspace.id}
-                  onClick={() => handleMoveWorkspace(workspace.id)}
-                  className="flex items-center gap-2 px-2 py-1.5 text-sm rounded-md hover:bg-accent text-left"
-                >
-                  <div className="h-2.5 w-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: workspace.color }} />
-                  {workspace.name}
-                </button>
-              ))}
-            </div>
-          </PopoverContent>
-        </Popover>
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <FolderInput className="h-3.5 w-3.5 mr-2" />
+                Mover de workspace
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="max-h-64 overflow-y-auto z-50 bg-popover">
+                <DropdownMenuItem onSelect={() => handleMoveWorkspace(null)}>Sem workspace</DropdownMenuItem>
+                {workspaces?.map(workspace => (
+                  <DropdownMenuItem key={workspace.id} onSelect={() => handleMoveWorkspace(workspace.id)}>
+                    <div className="h-2.5 w-2.5 rounded-full flex-shrink-0 mr-2" style={{ backgroundColor: workspace.color }} />
+                    {workspace.name}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
 
-        {/* Add to campaign */}
-        <Popover open={campaignPopoverOpen} onOpenChange={setCampaignPopoverOpen}>
-          <PopoverTrigger asChild>
-            <Button variant="outline" size="sm" className="h-7 text-xs gap-1.5" disabled={isBusy}>
-              <Send className="h-3.5 w-3.5" />
-              Adicionar à campanha
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent align="start" className="w-72 p-2">
-            <p className="text-xs font-semibold text-muted-foreground mb-2 px-1">Escolha a campanha</p>
-            {contactIds.length > MAX_CAMPAIGN_BATCH && (
-              <p className="text-[10px] text-amber-600 dark:text-amber-400 px-1 mb-1.5">
-                Apenas os primeiros {MAX_CAMPAIGN_BATCH} contatos selecionados serão adicionados por chamada.
-              </p>
-            )}
-            <div className="flex flex-col gap-1 max-h-64 overflow-y-auto">
-              {campaigns?.filter(c => c.is_active).map(campaign => (
-                <button
-                  key={campaign.id}
-                  onClick={() => handleAddToCampaign(campaign.id)}
-                  className="px-2 py-1.5 text-sm rounded-md hover:bg-accent text-left"
-                >
-                  {campaign.name}
-                </button>
-              ))}
-              {!campaigns?.filter(c => c.is_active).length && (
-                <p className="text-xs text-muted-foreground px-2 py-1">Nenhuma campanha ativa.</p>
-              )}
-            </div>
-          </PopoverContent>
-        </Popover>
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <Send className="h-3.5 w-3.5 mr-2" />
+                Adicionar à campanha
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="max-h-64 overflow-y-auto z-50 bg-popover">
+                {contactIds.length > MAX_CAMPAIGN_BATCH && (
+                  <p className="text-[10px] text-amber-600 dark:text-amber-400 px-2 py-1 max-w-[220px]">
+                    Apenas os primeiros {MAX_CAMPAIGN_BATCH} contatos selecionados serão adicionados.
+                  </p>
+                )}
+                {activeCampaigns?.map(campaign => (
+                  <DropdownMenuItem key={campaign.id} onSelect={() => handleAddToCampaign(campaign.id)}>
+                    {campaign.name}
+                  </DropdownMenuItem>
+                ))}
+                {!activeCampaigns?.length && <DropdownMenuItem disabled>Nenhuma campanha ativa</DropdownMenuItem>}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
 
-        {/* Export CSV */}
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-7 text-xs gap-1.5"
-          onClick={() => downloadCsv(selectedContacts)}
-        >
-          <Download className="h-3.5 w-3.5" />
-          Exportar CSV
-        </Button>
+            <DropdownMenuSeparator />
 
-        <div className="h-5 w-px bg-border mx-1" />
+            <DropdownMenuItem onSelect={() => downloadCsv(selectedContacts)}>
+              <Download className="h-3.5 w-3.5 mr-2" />
+              Exportar CSV
+            </DropdownMenuItem>
 
-        {/* Delete */}
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-7 text-xs gap-1.5 text-red-600 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/50"
-          disabled={isBusy}
-          onClick={() => setShowDeleteConfirm(true)}
-        >
-          <Trash2 className="h-3.5 w-3.5" />
-          Excluir
-        </Button>
+            <DropdownMenuItem
+              onSelect={() => setShowDeleteConfirm(true)}
+              className="text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-950/50"
+            >
+              <Trash2 className="h-3.5 w-3.5 mr-2" />
+              Excluir
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
 
         {isBusy && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground ml-1" />}
       </div>
