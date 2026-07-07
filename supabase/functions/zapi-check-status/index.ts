@@ -71,18 +71,19 @@ Deno.serve(async (req) => {
     const url = new URL(req.url);
     const requestedInstanceId = url.searchParams.get('instanceId');
 
+    // Country-aware: só prefixa 55 quando o número parece um NACIONAL brasileiro
+    // (10 díg. com DDD válido, ou 11 díg. com DDD válido + 9º dígito de celular).
+    // Números que já trazem código de país estrangeiro (ex.: EUA +1 → 16892997422)
+    // são preservados. ANTES: prefixava 55 em QUALQUER 10-11 dígitos, corrompendo
+    // estrangeiros (16892997422 virava 5516892997422). Mesma lógica do zapi-webhook.
     const ensureCountryCode = (phone: string): string => {
       let cleaned = phone.replace(/\D/g, '');
       if (cleaned.length === 0) return '';
-
-      // WhatsApp standard (55 + DDD + 9? + number)
       if (cleaned.startsWith('0')) cleaned = cleaned.substring(1);
-
-      // If it has 10-11 digits and doesn't start with 55, add 55 (Brazil)
-      if (cleaned.length >= 10 && cleaned.length <= 11 && !cleaned.startsWith('55')) {
-        cleaned = '55' + cleaned;
-      }
-
+      if (cleaned.startsWith('55')) return cleaned;
+      const ddd = parseInt(cleaned.substring(0, 2), 10);
+      if (cleaned.length === 10 && VALID_DDDS.has(ddd)) return `55${cleaned}`;
+      if (cleaned.length === 11 && cleaned[2] === '9' && VALID_DDDS.has(ddd)) return `55${cleaned}`;
       return cleaned;
     };
 
@@ -219,6 +220,20 @@ async function bootstrapConnectedInstance(
 function digitsOnly(value: unknown): string {
   return typeof value === 'string' ? value.replace(/\D/g, '') : '';
 }
+
+// DDDs brasileiros válidos — usado para decidir, de forma country-aware, se um
+// número cru é um nacional BR (que ganha 55) ou já é internacional (ex.: EUA +1).
+const VALID_DDDS = new Set([
+  11, 12, 13, 14, 15, 16, 17, 18, 19,
+  21, 22, 24, 27, 28,
+  31, 32, 33, 34, 35, 37, 38,
+  41, 42, 43, 44, 45, 46, 47, 48, 49,
+  51, 53, 54, 55,
+  61, 62, 63, 64, 65, 66, 67, 68, 69,
+  71, 73, 74, 75, 77, 79,
+  81, 82, 83, 84, 85, 86, 87, 88, 89,
+  91, 92, 93, 94, 95, 96, 97, 98, 99,
+]);
 
 function isShortenedPhoneIdentity(previous: unknown, next: unknown): boolean {
   const oldDigits = digitsOnly(previous);
