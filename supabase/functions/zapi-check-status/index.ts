@@ -305,14 +305,43 @@ async function checkEvolutionInstance(
     ''
   ).toLowerCase();
   const connected = ['open', 'connected', 'online'].includes(state) || matched?.connected === true;
-  const jid =
-    matched?.instance?.ownerJid ||
-    matched?.instance?.profileName ||
-    matched?.ownerJid ||
-    matched?.jid ||
-    matched?.number ||
+
+  // Extrai o JID do DONO da instância (o número da empresa). NUNCA usar profileName
+  // aqui — é um nome de exibição, não dígitos, e envenenaria o phone_number.
+  const extractOwnerJid = (entry: any): string =>
+    entry?.instance?.ownerJid ||
+    entry?.ownerJid ||
+    entry?.instance?.owner ||
+    entry?.owner ||
+    entry?.jid ||
+    entry?.instance?.number ||
+    entry?.number ||
     '';
-  const connectedPhone = typeof jid === 'string' ? sanitizePhone(jid.split('@')[0]) : null;
+
+  let jid = extractOwnerJid(matched);
+  let connectedPhone = typeof jid === 'string' ? sanitizePhone(jid.split('@')[0]) : null;
+
+  // FIX (Fase 0 — captura de número): o endpoint connectionState responde primeiro
+  // (curto-circuito no `||` do statusData) mas NÃO traz o dono do número, então o
+  // phone_number ficava eternamente NULL. Quando está conectado e ainda não temos o
+  // número, buscamos fetchInstances (que carrega ownerJid) para capturá-lo. Sem isso
+  // a readoção de conversas por número (adopt_orphan_...) fica cega → chats duplicados.
+  if (connected && !connectedPhone) {
+    const fetchList = await readEvolution(`/instance/fetchInstances`);
+    const matchedFromList = Array.isArray(fetchList)
+      ? fetchList.find((item: any) =>
+          item?.name === instanceName ||
+          item?.instance?.instanceName === instanceName ||
+          item?.instance?.name === instanceName)
+      : fetchList;
+    const jid2 = extractOwnerJid(matchedFromList);
+    const phone2 = typeof jid2 === 'string' ? sanitizePhone(jid2.split('@')[0]) : null;
+    if (phone2) {
+      connectedPhone = phone2;
+      jid = jid2;
+    }
+  }
+
   const safePhoneNumber = preservePhoneNumber(instance.phone_number, connectedPhone);
 
   if (connected) {
