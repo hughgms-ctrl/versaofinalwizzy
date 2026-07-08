@@ -30,11 +30,15 @@ export interface FilterCondition {
   value: string;
 }
 
+export type FilterMatchMode = 'all' | 'any';
+
 export interface ContactFiltersState {
   conditions: FilterCondition[];
+  // 'all' = precisa bater em todas as condições (E). 'any' = basta bater em uma (OU).
+  matchMode: FilterMatchMode;
 }
 
-export const defaultContactFilters: ContactFiltersState = { conditions: [] };
+export const defaultContactFilters: ContactFiltersState = { conditions: [], matchMode: 'all' };
 
 const FIELD_LABELS: Record<FilterField, string> = {
   tag: 'Tag',
@@ -102,16 +106,20 @@ export function ContactFilters({
       operator: builderOperator,
       value,
     };
-    onFiltersChange({ conditions: [...filters.conditions, condition] });
+    onFiltersChange({ ...filters, conditions: [...filters.conditions, condition] });
     resetBuilder();
   };
 
   const removeCondition = (id: string) => {
-    onFiltersChange({ conditions: filters.conditions.filter((c) => c.id !== id) });
+    onFiltersChange({ ...filters, conditions: filters.conditions.filter((c) => c.id !== id) });
+  };
+
+  const setMatchMode = (matchMode: FilterMatchMode) => {
+    onFiltersChange({ ...filters, matchMode });
   };
 
   const clearAllFilters = () => {
-    onFiltersChange({ conditions: [] });
+    onFiltersChange({ ...defaultContactFilters });
     resetBuilder();
   };
 
@@ -165,25 +173,53 @@ export function ContactFilters({
                 {filters.conditions.length}
               </Badge>
             )}
+            {filters.conditions.length >= 2 && filters.matchMode === 'any' && (
+              <Badge variant="outline" className="px-1.5 py-0 text-[10px]">
+                OU
+              </Badge>
+            )}
             <ChevronDown className="h-3 w-3" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-[560px] max-w-[92vw] p-3 max-h-[75vh] overflow-y-auto z-50 bg-popover">
           {/* Condições ativas (chips removíveis) */}
           {filters.conditions.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mb-3">
-              {filters.conditions.map((condition) => (
-                <Badge key={condition.id} variant="secondary" className="gap-1 pr-1 text-[11px] font-normal">
-                  {describeCondition(condition)}
-                  <button
-                    type="button"
-                    onClick={() => removeCondition(condition.id)}
-                    className="ml-0.5 rounded-full hover:bg-foreground/10 p-0.5"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </Badge>
-              ))}
+            <div className="mb-3">
+              {filters.conditions.length >= 2 && (
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-[11px] text-muted-foreground">Corresponder a</span>
+                  <div className="flex items-center rounded-md border border-border overflow-hidden text-[11px]">
+                    <button
+                      type="button"
+                      onClick={() => setMatchMode('all')}
+                      className={`px-2 py-1 ${filters.matchMode === 'all' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent'}`}
+                    >
+                      Todas as condições
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMatchMode('any')}
+                      className={`px-2 py-1 border-l border-border ${filters.matchMode === 'any' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent'}`}
+                    >
+                      Qualquer uma
+                    </button>
+                  </div>
+                </div>
+              )}
+              <div className="flex flex-wrap gap-1.5">
+                {filters.conditions.map((condition) => (
+                  <Badge key={condition.id} variant="secondary" className="gap-1 pr-1 text-[11px] font-normal">
+                    {describeCondition(condition)}
+                    <button
+                      type="button"
+                      onClick={() => removeCondition(condition.id)}
+                      className="ml-0.5 rounded-full hover:bg-foreground/10 p-0.5"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </Badge>
+                ))}
+              </div>
             </div>
           )}
 

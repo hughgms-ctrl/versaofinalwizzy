@@ -109,9 +109,13 @@ const ContactsPage = () => {
         }
       }
 
-      // Condições do filtro avançado (tag/workspace/pipeline/data/responsável) — todas em AND
-      for (const condition of filters.conditions) {
-        if (!matchesCondition(contact, condition, filterJoins)) return false;
+      // Condições do filtro avançado (tag/workspace/pipeline/data/responsável).
+      // matchMode 'all' = precisa bater em todas (E); 'any' = basta bater em uma (OU).
+      if (filters.conditions.length > 0) {
+        const matches = filters.matchMode === 'any'
+          ? filters.conditions.some(condition => matchesCondition(contact, condition, filterJoins))
+          : filters.conditions.every(condition => matchesCondition(contact, condition, filterJoins));
+        if (!matches) return false;
       }
 
       return true;
