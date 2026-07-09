@@ -136,15 +136,23 @@ export function InstagramAccountsSettings() {
                     {index > 0 && <Separator className="mb-3" />}
                     <div className="flex items-center justify-between gap-3 flex-wrap">
                       <div className="flex items-center gap-3">
-                        <div className="p-2 rounded-lg bg-pink-500/10">
-                          <Instagram className="h-4 w-4 text-pink-500" />
-                        </div>
+                        {account.ig_profile_pic_url ? (
+                          <img
+                            src={account.ig_profile_pic_url}
+                            alt={account.ig_username || 'Instagram'}
+                            className="h-10 w-10 rounded-full object-cover"
+                          />
+                        ) : (
+                          <div className="p-2 rounded-lg bg-pink-500/10">
+                            <Instagram className="h-4 w-4 text-pink-500" />
+                          </div>
+                        )}
                         <div>
                           <p className="font-medium text-foreground">
-                            {account.ig_username ? `@${account.ig_username}` : account.label || 'Conta Instagram'}
+                            {account.ig_name || (account.ig_username ? `@${account.ig_username}` : account.label || 'Conta Instagram')}
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            Página do Facebook: {account.facebook_page_id || '—'}
+                            {account.ig_username ? `@${account.ig_username}` : 'Conta Instagram'}
                           </p>
                         </div>
                       </div>

@@ -52,7 +52,7 @@ Deno.serve(async (req) => {
 
     const { data: accounts, error } = await supabase
       .from('instagram_accounts')
-      .select('id, ig_business_account_id, ig_username, facebook_page_id, page_access_token, status, label, is_active, workspace_id, token_expires_at, connected_at, disconnected_at, scopes')
+      .select('id, ig_business_account_id, ig_username, ig_name, ig_profile_pic_url, facebook_page_id, page_access_token, status, label, is_active, workspace_id, token_expires_at, connected_at, disconnected_at, scopes')
       .eq('organization_id', organizationId)
       .order('created_at', { ascending: false });
 

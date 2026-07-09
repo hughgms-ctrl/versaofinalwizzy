@@ -106,6 +106,8 @@ Deno.serve(async (req) => {
       workspace_id: statePayload.workspaceId,
       ig_business_account_id: resolvedIgUserId,
       ig_username: profile.username || null,
+      ig_name: profile.name || null,
+      ig_profile_pic_url: profile.profilePicUrl || null,
       facebook_page_id: null,
       page_access_token: longLivedToken,
       long_lived_user_token: longLivedToken,

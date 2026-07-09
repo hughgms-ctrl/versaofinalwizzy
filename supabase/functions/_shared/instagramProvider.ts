@@ -306,12 +306,18 @@ export async function exchangeForLongLivedToken(appSecret: string, shortLivedTok
 
 export async function fetchInstagramProfile(accessToken: string) {
   const url = new URL(`${GRAPH_API_BASE}/me`);
-  url.searchParams.set('fields', 'user_id,username,account_type');
+  url.searchParams.set('fields', 'user_id,username,account_type,profile_picture_url,name,followers_count');
   url.searchParams.set('access_token', accessToken);
   const response = await fetch(url.toString());
   const json = await response.json();
   if (!response.ok) throw new Error(`Falha ao buscar perfil do Instagram: ${JSON.stringify(json)}`);
-  return { igUserId: String(json.user_id || json.id), username: json.username as string | undefined };
+  return {
+    igUserId: String(json.user_id || json.id),
+    username: json.username as string | undefined,
+    name: json.name as string | undefined,
+    profilePicUrl: json.profile_picture_url as string | undefined,
+    followersCount: typeof json.followers_count === 'number' ? json.followers_count : undefined,
+  };
 }
 
 // Webhook delivery is per-authorized-account, not automatic once the app-level

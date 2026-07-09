@@ -8,6 +8,8 @@ export interface InstagramAccount {
   workspace_id: string | null;
   ig_business_account_id: string | null;
   ig_username: string | null;
+  ig_name: string | null;
+  ig_profile_pic_url: string | null;
   facebook_page_id: string | null;
   status: 'pending' | 'connected' | 'disconnected' | 'error';
   scopes: string[];
