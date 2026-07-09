@@ -147,6 +147,17 @@ Deno.serve(async (req) => {
     const signatureValid = await verifyWebhookSignature(req, rawBody, appConfig.appSecret);
     if (!signatureValid) {
       console.error('[instagram-webhook] invalid signature');
+      // Log even on rejection — otherwise a signing-secret mismatch looks
+      // identical to "Meta never called us at all" when debugging, since
+      // nothing lands in instagram_webhook_events either way.
+      let rawForLog: any = null;
+      try { rawForLog = JSON.parse(rawBody || '{}'); } catch { rawForLog = { _unparsed: rawBody?.slice(0, 2000) }; }
+      await supabase.from('instagram_webhook_events').insert({
+        event_type: 'signature_rejected',
+        raw_payload: rawForLog,
+        processed: false,
+        error: 'invalid_signature',
+      });
       return jsonResponse({ error: 'invalid signature' }, 401);
     }
 
