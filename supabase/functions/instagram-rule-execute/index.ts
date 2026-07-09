@@ -4,8 +4,11 @@ import {
   ensureInstagramConversation,
   likeComment,
   replyToComment,
+  sendInstagramButtonMessage,
   sendInstagramMessage,
 } from '../_shared/instagramProvider.ts';
+
+const WAIT_UNIT_MS: Record<string, number> = { minutes: 60_000, hours: 3_600_000, days: 86_400_000 };
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -121,9 +124,31 @@ Deno.serve(async (req) => {
           if (!result.ok) hadError = true;
         } else if (action.type === 'send_dm') {
           const message = interpolate(action.text, vars);
-          const result = await sendInstagramMessage(account, event.fromIgsid, message);
+          let trackedLinkId: string | null = null;
+
+          let result;
+          if (action.button?.url) {
+            const { data: trackedLink } = await supabase
+              .from('instagram_tracked_links')
+              .insert({
+                organization_id: account.organization_id,
+                rule_id: ruleId,
+                contact_id: contact.id,
+                destination_url: action.button.url,
+              })
+              .select('id')
+              .single();
+            trackedLinkId = trackedLink?.id || null;
+            const redirectUrl = `${supabaseUrl}/functions/v1/instagram-link-redirect?id=${trackedLinkId}`;
+            result = await sendInstagramButtonMessage(account, event.fromIgsid, message, action.button.label || 'Ver mais', redirectUrl);
+          } else {
+            result = await sendInstagramMessage(account, event.fromIgsid, message);
+          }
+
+          let conversationId: string | null = null;
           if (result.ok) {
             const conversation = await ensureInstagramConversation(supabase, account, contact);
+            conversationId = conversation.id;
             await supabase.from('instagram_messages').insert({
               conversation_id: conversation.id,
               direction: 'outbound',
@@ -137,6 +162,24 @@ Deno.serve(async (req) => {
               last_message_at: new Date().toISOString(),
               last_message_direction: 'outbound',
             }).eq('id', conversation.id);
+
+            // Schedule the delayed follow-up (picked up every minute by
+            // instagram-process-followups) — only once the DM itself sent ok.
+            if (action.followup?.waitValue && action.followup?.waitUnit) {
+              const waitMs = Number(action.followup.waitValue) * (WAIT_UNIT_MS[action.followup.waitUnit] || WAIT_UNIT_MS.minutes);
+              await supabase.from('instagram_pending_followups').insert({
+                organization_id: account.organization_id,
+                rule_id: ruleId,
+                contact_id: contact.id,
+                conversation_id: conversationId,
+                tracked_link_id: trackedLinkId,
+                resume_at: new Date(Date.now() + waitMs).toISOString(),
+                followup_config: {
+                  clicked_text: interpolate(action.followup.clickedText || '', vars),
+                  not_clicked_text: interpolate(action.followup.notClickedText || '', vars),
+                },
+              });
+            }
           }
           steps.push({ type: 'send_dm', status: result.ok ? 'success' : 'error' });
           if (!result.ok) hadError = true;

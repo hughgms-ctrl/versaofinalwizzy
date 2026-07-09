@@ -229,3 +229,9 @@ verify_jwt = false
 
 [functions.instagram-rule-execute]
 verify_jwt = false
+
+[functions.instagram-link-redirect]
+verify_jwt = false
+
+[functions.instagram-process-followups]
+verify_jwt = false

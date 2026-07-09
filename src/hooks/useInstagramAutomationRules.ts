@@ -14,6 +14,17 @@ export interface InstagramRuleAction {
   type: InstagramRuleActionType;
   text?: string;
   tag?: string;
+  // send_dm only: adds a link button to the DM (tracked via a Wizzy
+  // short-link redirect, so click-through can be detected).
+  button?: { label: string; url: string };
+  // send_dm only: schedules a delayed follow-up message after waitValue
+  // waitUnit(s), branching on whether the button link was clicked.
+  followup?: {
+    waitValue: number;
+    waitUnit: 'minutes' | 'hours' | 'days';
+    clickedText: string;
+    notClickedText: string;
+  };
 }
 
 export interface InstagramAutomationRule {

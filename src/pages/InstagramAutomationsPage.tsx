@@ -52,6 +52,14 @@ interface RuleFormState {
   replyText: string;
   dmText: string;
   tagName: string;
+  buttonEnabled: boolean;
+  buttonLabel: string;
+  buttonUrl: string;
+  followupEnabled: boolean;
+  followupWaitValue: string;
+  followupWaitUnit: 'minutes' | 'hours' | 'days';
+  followupClickedText: string;
+  followupNotClickedText: string;
 }
 
 function emptyForm(defaultAccountId?: string): RuleFormState {
@@ -72,6 +80,14 @@ function emptyForm(defaultAccountId?: string): RuleFormState {
     replyText: 'Obrigado pelo comentário! Te chamei no direct 😉',
     dmText: 'Oi! Vi que você comentou no nosso post. Quer receber mais informações?',
     tagName: '',
+    buttonEnabled: false,
+    buttonLabel: 'Ver mais',
+    buttonUrl: '',
+    followupEnabled: false,
+    followupWaitValue: '60',
+    followupWaitUnit: 'minutes',
+    followupClickedText: 'Vi que você acessou o link! Ficou alguma dúvida?',
+    followupNotClickedText: 'Ainda dá tempo de conferir o que te enviei 😉',
   };
 }
 
@@ -96,6 +112,14 @@ function ruleToForm(rule: InstagramAutomationRule): RuleFormState {
     replyText: find('reply_comment_public')?.text || '',
     dmText: find('send_dm')?.text || '',
     tagName: find('add_tag')?.tag || '',
+    buttonEnabled: !!find('send_dm')?.button,
+    buttonLabel: find('send_dm')?.button?.label || 'Ver mais',
+    buttonUrl: find('send_dm')?.button?.url || '',
+    followupEnabled: !!find('send_dm')?.followup,
+    followupWaitValue: String(find('send_dm')?.followup?.waitValue || 60),
+    followupWaitUnit: find('send_dm')?.followup?.waitUnit || 'minutes',
+    followupClickedText: find('send_dm')?.followup?.clickedText || 'Vi que você acessou o link! Ficou alguma dúvida?',
+    followupNotClickedText: find('send_dm')?.followup?.notClickedText || 'Ainda dá tempo de conferir o que te enviei 😉',
   };
 }
 
@@ -103,7 +127,23 @@ function formToPayload(form: RuleFormState) {
   const actions: InstagramRuleAction[] = [];
   if (form.enabledActions.like_comment) actions.push({ type: 'like_comment' });
   if (form.enabledActions.reply_comment_public) actions.push({ type: 'reply_comment_public', text: form.replyText });
-  if (form.enabledActions.send_dm) actions.push({ type: 'send_dm', text: form.dmText });
+  if (form.enabledActions.send_dm) {
+    actions.push({
+      type: 'send_dm',
+      text: form.dmText,
+      button: form.buttonEnabled && form.buttonUrl.trim()
+        ? { label: form.buttonLabel.trim() || 'Ver mais', url: form.buttonUrl.trim() }
+        : undefined,
+      followup: form.followupEnabled
+        ? {
+            waitValue: Number(form.followupWaitValue) || 60,
+            waitUnit: form.followupWaitUnit,
+            clickedText: form.followupClickedText,
+            notClickedText: form.followupNotClickedText,
+          }
+        : undefined,
+    });
+  }
   if (form.enabledActions.add_tag && form.tagName) actions.push({ type: 'add_tag', tag: form.tagName });
   if (form.enabledActions.notify_assignee) actions.push({ type: 'notify_assignee' });
 
@@ -402,12 +442,84 @@ export default function InstagramAutomationsPage() {
                   <Label className="font-normal text-sm">Enviar DM privada</Label>
                 </div>
                 {form.enabledActions.send_dm && (
-                  <Textarea
-                    value={form.dmText}
-                    onChange={(e) => setForm({ ...form, dmText: e.target.value })}
-                    placeholder="Use {{username}} para citar o autor"
-                    rows={2}
-                  />
+                  <>
+                    <Textarea
+                      value={form.dmText}
+                      onChange={(e) => setForm({ ...form, dmText: e.target.value })}
+                      placeholder="Use {{username}} para citar o autor"
+                      rows={2}
+                    />
+
+                    <div className="ml-6 space-y-2 border-l-2 border-muted pl-4">
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          checked={form.buttonEnabled}
+                          onCheckedChange={(c) => setForm({ ...form, buttonEnabled: !!c })}
+                        />
+                        <Label className="font-normal text-sm">Adicionar botão de link na DM</Label>
+                      </div>
+                      {form.buttonEnabled && (
+                        <div className="grid grid-cols-2 gap-2">
+                          <Input
+                            value={form.buttonLabel}
+                            onChange={(e) => setForm({ ...form, buttonLabel: e.target.value })}
+                            placeholder="Texto do botão"
+                          />
+                          <Input
+                            value={form.buttonUrl}
+                            onChange={(e) => setForm({ ...form, buttonUrl: e.target.value })}
+                            placeholder="https://..."
+                          />
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-2 pt-1">
+                        <Checkbox
+                          checked={form.followupEnabled}
+                          onCheckedChange={(c) => setForm({ ...form, followupEnabled: !!c })}
+                        />
+                        <Label className="font-normal text-sm">Enviar mensagem de acompanhamento depois</Label>
+                      </div>
+                      {form.followupEnabled && (
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            <Label className="text-xs text-muted-foreground whitespace-nowrap">Esperar</Label>
+                            <Input
+                              type="number"
+                              min={1}
+                              className="w-20"
+                              value={form.followupWaitValue}
+                              onChange={(e) => setForm({ ...form, followupWaitValue: e.target.value })}
+                            />
+                            <Select value={form.followupWaitUnit} onValueChange={(v: 'minutes' | 'hours' | 'days') => setForm({ ...form, followupWaitUnit: v })}>
+                              <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="minutes">Minutos</SelectItem>
+                                <SelectItem value="hours">Horas</SelectItem>
+                                <SelectItem value="days">Dias</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs text-muted-foreground">Se a pessoa clicou no link</Label>
+                            <Textarea
+                              value={form.followupClickedText}
+                              onChange={(e) => setForm({ ...form, followupClickedText: e.target.value })}
+                              rows={2}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs text-muted-foreground">Se a pessoa não clicou</Label>
+                            <Textarea
+                              value={form.followupNotClickedText}
+                              onChange={(e) => setForm({ ...form, followupNotClickedText: e.target.value })}
+                              rows={2}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </>
                 )}
               </div>
 

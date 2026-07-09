@@ -173,6 +173,51 @@ export async function sendInstagramMessage(
   };
 }
 
+// Sends a message with a single URL button, using Instagram's "generic
+// template" attachment (the same structure Messenger Platform uses).
+// `buttonUrl` should already be a Wizzy tracked-link redirect URL, not the
+// final destination, so click-through can be detected for follow-ups.
+export async function sendInstagramButtonMessage(
+  account: any,
+  igsid: string,
+  text: string,
+  buttonLabel: string,
+  buttonUrl: string,
+): Promise<InstagramSendResult> {
+  const endpoint = `${GRAPH_API_BASE}/${account.ig_business_account_id}/messages`;
+  const response = await fetch(`${endpoint}?access_token=${encodeURIComponent(account.page_access_token)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      recipient: { id: igsid },
+      message: {
+        attachment: {
+          type: 'template',
+          payload: {
+            template_type: 'generic',
+            elements: [
+              {
+                title: text.slice(0, 80),
+                subtitle: text.length > 80 ? text.slice(80, 160) : undefined,
+                buttons: [{ type: 'web_url', url: buttonUrl, title: buttonLabel.slice(0, 20) }],
+              },
+            ],
+          },
+        },
+      },
+    }),
+  });
+  const responseText = await response.text();
+  const responseJson = parseJson(responseText);
+  return {
+    ok: response.ok,
+    status: response.status,
+    igMessageId: responseJson?.message_id || null,
+    responseText,
+    responseJson,
+  };
+}
+
 export async function replyToComment(account: any, commentId: string, message: string): Promise<InstagramActionResult> {
   try {
     const endpoint = `${GRAPH_API_BASE}/${commentId}/replies`;
