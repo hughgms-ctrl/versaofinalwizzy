@@ -21,6 +21,11 @@ import { useAuth } from '@/hooks/useAuth';
 import { useConversationShares } from '@/hooks/useConversationShares';
 import { useMessageSearch } from '@/hooks/useMessageSearch';
 import { getDerivedStatus } from '@/lib/conversationStatus';
+import { useInstagramAccounts } from '@/hooks/useInstagramAccounts';
+import { useInstagramConversations, InstagramConversationRow } from '@/hooks/useInstagramConversations';
+import { InstagramConversationList } from '@/components/conversations/InstagramConversationList';
+import { InstagramConversationDetail } from '@/components/conversations/InstagramConversationDetail';
+import { Instagram } from 'lucide-react';
 
 const ConversationsPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -32,6 +37,11 @@ const ConversationsPage = () => {
   const showOnlyClosed = filters.statusFilter === 'encerrada';
   const [isSpyMode, setIsSpyMode] = useState(false);
   const [showNewConversationDialog, setShowNewConversationDialog] = useState(false);
+  const [activeChannel, setActiveChannel] = useState<'whatsapp' | 'instagram'>('whatsapp');
+  const [selectedInstagramConversation, setSelectedInstagramConversation] = useState<InstagramConversationRow | null>(null);
+  const { data: instagramAccounts = [], isLoading: instagramAccountsLoading } = useInstagramAccounts();
+  const { data: instagramConversations = [], isLoading: instagramConversationsLoading } = useInstagramConversations();
+  const hasConnectedInstagram = instagramAccounts.some((a) => a.status === 'connected');
   const { data: conversations, isLoading, error, refetch } = useConversations({
     onlyArchived: showArchived,
     // Quando o usuário filtra por "Encerradas", buscamos só essas;
@@ -175,6 +185,16 @@ const ConversationsPage = () => {
     });
   }, [conversations, searchQuery, filters, allContactTags, serviceMode, showArchived, selectedWorkspaceId, selectedWorkspace, userRole, userPermissions, user?.id, pipelinePositions, hasPipelineRestriction, myShares, messageSearchResult]);
 
+  const filteredInstagramConversations = useMemo(() => {
+    if (!searchQuery.trim()) return instagramConversations;
+    const query = searchQuery.toLowerCase().trim();
+    return instagramConversations.filter((conv) => {
+      const name = conv.contact?.name?.toLowerCase() || '';
+      const username = conv.contact?.username?.toLowerCase() || '';
+      return name.includes(query) || username.includes(query);
+    });
+  }, [instagramConversations, searchQuery]);
+
   // Count conversations by service mode (filtered by workspace + permissions)
   const serviceModeCounts = useMemo(() => {
     if (!conversations) return { ia: 0, ativo: 0, pendente: 0 };
@@ -289,8 +309,10 @@ const ConversationsPage = () => {
     }
   }, [conversations, selectedConversation]);
 
-  // Show disconnected state if WhatsApp is not connected
-  if (!whatsappLoading && !whatsappConnected) {
+  // Show disconnected state only if NEITHER channel is connected — an org
+  // running Instagram-only shouldn't be blocked from its inbox just because
+  // it never connected a WhatsApp number.
+  if (!whatsappLoading && !whatsappConnected && !instagramAccountsLoading && !hasConnectedInstagram) {
     return (
       <MainLayout
         title="Conversas"
@@ -303,9 +325,9 @@ const ConversationsPage = () => {
             <div className="h-20 w-20 rounded-2xl bg-yellow-500/10 flex items-center justify-center mx-auto mb-6">
               <Smartphone className="h-10 w-10 text-yellow-500" />
             </div>
-            <h2 className="text-xl font-semibold text-foreground mb-2">Conecte seu WhatsApp</h2>
+            <h2 className="text-xl font-semibold text-foreground mb-2">Conecte um canal</h2>
             <p className="text-muted-foreground mb-6">
-              Para visualizar e gerenciar suas conversas, você precisa conectar seu WhatsApp nas configurações.
+              Para visualizar e gerenciar suas conversas, conecte um número de WhatsApp ou uma conta do Instagram nas configurações.
             </p>
             <Button asChild>
               <Link to="/settings">
@@ -369,10 +391,34 @@ const ConversationsPage = () => {
           <div className={cn(
             "border-r border-border bg-card flex-shrink-0 overflow-hidden flex flex-col",
             "w-full md:w-80 lg:w-96 md:min-w-[320px] md:max-w-96",
-            selectedConversation && "hidden md:flex"
+            (activeChannel === 'instagram' ? selectedInstagramConversation : selectedConversation) && "hidden md:flex"
           )}>
             {/* Search Bar (mobile only) + Filters (always visible) */}
             <div className="p-2 border-b border-border flex flex-col gap-2">
+              {instagramAccounts.length > 0 && (
+                <div className="flex gap-1 bg-muted rounded-lg p-1">
+                  <button
+                    onClick={() => setActiveChannel('whatsapp')}
+                    className={cn(
+                      'flex-1 flex items-center justify-center gap-1.5 text-xs font-medium rounded-md py-1.5 transition-colors',
+                      activeChannel === 'whatsapp' ? 'bg-background shadow-sm' : 'text-muted-foreground',
+                    )}
+                  >
+                    <MessageSquare className="h-3.5 w-3.5" />
+                    WhatsApp
+                  </button>
+                  <button
+                    onClick={() => setActiveChannel('instagram')}
+                    className={cn(
+                      'flex-1 flex items-center justify-center gap-1.5 text-xs font-medium rounded-md py-1.5 transition-colors',
+                      activeChannel === 'instagram' ? 'bg-background shadow-sm' : 'text-muted-foreground',
+                    )}
+                  >
+                    <Instagram className="h-3.5 w-3.5" />
+                    Instagram
+                  </button>
+                </div>
+              )}
               <div className="flex gap-2 md:hidden">
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -402,20 +448,42 @@ const ConversationsPage = () => {
                   <MessageSquarePlus className="h-4 w-4" />
                 </Button>
               </div>
-              <div className="overflow-x-auto scrollbar-hide">
-                <ConversationFilters
-                  conversations={conversations || []}
-                  filters={filters}
-                  onFiltersChange={setFilters}
-                  showCount={false}
-                  serviceModeCounts={serviceModeCounts}
-                />
-              </div>
+              {activeChannel === 'whatsapp' && (
+                <div className="overflow-x-auto scrollbar-hide">
+                  <ConversationFilters
+                    conversations={conversations || []}
+                    filters={filters}
+                    onFiltersChange={setFilters}
+                    showCount={false}
+                    serviceModeCounts={serviceModeCounts}
+                  />
+                </div>
+              )}
             </div>
 
             {/* List Content */}
             <div className="flex-1 overflow-y-auto overflow-x-hidden">
-              {isLoading ? (
+              {activeChannel === 'instagram' ? (
+                instagramConversationsLoading ? (
+                  <div className="flex items-center justify-center h-full">
+                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                  </div>
+                ) : filteredInstagramConversations.length > 0 ? (
+                  <InstagramConversationList
+                    conversations={filteredInstagramConversations}
+                    selectedId={selectedInstagramConversation?.id}
+                    onSelect={setSelectedInstagramConversation}
+                  />
+                ) : (
+                  <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-8">
+                    <Instagram className="h-16 w-16 mb-4 opacity-30" />
+                    <p className="text-lg font-medium text-center">Nenhuma conversa ainda</p>
+                    <p className="text-sm text-center mt-2">
+                      As conversas aparecerão aqui quando alguém te enviar uma DM ou responder a uma automação.
+                    </p>
+                  </div>
+                )
+              ) : isLoading ? (
                 <div className="flex items-center justify-center h-full">
                   <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                 </div>
@@ -455,9 +523,32 @@ const ConversationsPage = () => {
           {/* Conversation Detail - Full width on mobile when selected */}
           <div className={cn(
             "flex-1 min-w-0 overflow-hidden flex flex-col",
-            !selectedConversation && "hidden md:flex"
+            !(activeChannel === 'instagram' ? selectedInstagramConversation : selectedConversation) && "hidden md:flex"
           )}>
-            {selectedConversation ? (
+            {activeChannel === 'instagram' ? (
+              selectedInstagramConversation ? (
+                <div className="h-full flex flex-col">
+                  <div className="md:hidden flex items-center gap-2 p-2 border-b border-border bg-card">
+                    <Button variant="ghost" size="sm" onClick={() => setSelectedInstagramConversation(null)}>
+                      <ArrowLeft className="h-4 w-4 mr-1" />
+                      Voltar
+                    </Button>
+                    <span className="text-sm font-medium truncate">
+                      {selectedInstagramConversation.contact?.name || selectedInstagramConversation.contact?.username}
+                    </span>
+                  </div>
+                  <div className="flex-1 overflow-hidden">
+                    <InstagramConversationDetail conversation={selectedInstagramConversation} />
+                  </div>
+                </div>
+              ) : (
+                <div className="hidden md:flex flex-col items-center justify-center h-full text-muted-foreground">
+                  <Instagram className="h-16 w-16 mb-4 opacity-30" />
+                  <p className="text-lg font-medium">Selecione uma conversa</p>
+                  <p className="text-sm">Escolha uma conversa da lista para visualizar</p>
+                </div>
+              )
+            ) : selectedConversation ? (
               <div className="h-full flex flex-col">
                 {/* Spy mode banner */}
                 {isSpyMode && (

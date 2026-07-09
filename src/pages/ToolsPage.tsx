@@ -1,7 +1,7 @@
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { MousePointerClick, FileText, HelpCircle, GitBranch, LayoutTemplate, Scale, SearchCheck, Images } from 'lucide-react';
+import { MousePointerClick, FileText, HelpCircle, GitBranch, LayoutTemplate, Scale, SearchCheck, Images, Instagram } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useOrganizationPlan } from '@/hooks/useOrganizationPlan';
 import { Lock } from 'lucide-react';
@@ -72,6 +72,14 @@ const tools = [
     href: '/tools/cnis',
     planModule: 'cnis',
     permissionKey: 'can_access_tool_cnis',
+  },
+  {
+    name: 'Wizzy Engage',
+    description: 'Automações estilo ManyChat para o Instagram — comentário com palavra-chave, curtida, resposta pública e DM automática.',
+    icon: Instagram,
+    href: '/tools/wizzy-engage',
+    planModule: 'integrations',
+    permissionKey: 'can_access_tool_wizzy_engage',
   },
 ];
 

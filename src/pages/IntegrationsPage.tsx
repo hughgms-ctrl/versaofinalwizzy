@@ -4,7 +4,8 @@ import { AITab } from '@/components/integrations/AITab';
 import { CalendarTab } from '@/components/integrations/CalendarTab';
 import { DriveTab } from '@/components/integrations/DriveTab';
 import { WhatsAppTab } from '@/components/integrations/WhatsAppTab';
-import { Brain, Calendar, HardDrive, MessageSquare } from 'lucide-react';
+import { InstagramTab } from '@/components/integrations/InstagramTab';
+import { Brain, Calendar, HardDrive, Instagram, MessageSquare } from 'lucide-react';
 
 export default function IntegrationsPage() {
   return (
@@ -27,6 +28,10 @@ export default function IntegrationsPage() {
             <MessageSquare className="h-4 w-4" />
             WhatsApp
           </TabsTrigger>
+          <TabsTrigger value="instagram" className="gap-2 data-[state=active]:bg-background">
+            <Instagram className="h-4 w-4" />
+            Instagram
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="ai">
@@ -40,6 +45,9 @@ export default function IntegrationsPage() {
         </TabsContent>
         <TabsContent value="whatsapp">
           <WhatsAppTab />
+        </TabsContent>
+        <TabsContent value="instagram">
+          <InstagramTab />
         </TabsContent>
       </Tabs>
     </MainLayout>

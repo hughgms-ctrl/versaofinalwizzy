@@ -43,6 +43,7 @@ const QuizListPage = lazy(() => import("./pages/QuizListPage"));
 const QuizBuilderPage = lazy(() => import("./pages/QuizBuilderPage"));
 const PublicQuizPage = lazy(() => import("./pages/PublicQuizPage"));
 const IntegrationsPage = lazy(() => import("./pages/IntegrationsPage"));
+const InstagramAutomationsPage = lazy(() => import("./pages/InstagramAutomationsPage"));
 const PublicFormPage = lazy(() => import("./pages/PublicFormPage"));
 const PublicPackFormPage = lazy(() => import("./pages/PublicPackFormPage"));
 const SignaturePage = lazy(() => import("./pages/SignaturePage"));
@@ -131,6 +132,7 @@ const App = () => (
                       <Route path="/widgets/:widgetId" element={<ProtectedRoute><WidgetEditorPage /></ProtectedRoute>} />
                       <Route path="/documents" element={<ProtectedRoute><DocumentsPage /></ProtectedRoute>} />
                       <Route path="/integrations" element={<ProtectedRoute><IntegrationsPage /></ProtectedRoute>} />
+                      <Route path="/tools/wizzy-engage" element={<ProtectedRoute><InstagramAutomationsPage /></ProtectedRoute>} />
                       <Route path="/form" element={<PublicFormPage />} />
                       <Route path="/pack-form" element={<PublicPackFormPage />} />
                       <Route path="/q/:token" element={<PublicQuizPage />} />
