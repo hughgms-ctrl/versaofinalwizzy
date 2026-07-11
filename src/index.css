@@ -49,14 +49,14 @@
     /* Radius */
     --radius: 0.75rem;
 
-    /* Sidebar - clara no modo claro, com acento magenta da marca */
-    --sidebar-background: 0 0% 100%;
-    --sidebar-foreground: 240 10% 18%;
+    /* Sidebar - azul-marinho escuro fixo, igual em claro e escuro (não varia por tema) */
+    --sidebar-background: 222 47% 11%;
+    --sidebar-foreground: 215 20% 88%;
     --sidebar-primary: 340 82% 58%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 340 82% 96%;
-    --sidebar-accent-foreground: 340 82% 45%;
-    --sidebar-border: 0 0% 88%;
+    --sidebar-accent: 217 33% 18%;
+    --sidebar-accent-foreground: 340 82% 72%;
+    --sidebar-border: 217 33% 20%;
     --sidebar-ring: 340 82% 58%;
 
     /* Status Colors */
@@ -120,14 +120,14 @@
     --input: 240 12% 16%;
     --ring: 340 82% 58%;
 
-    /* Sidebar - levemente mais escura que o background, com toque magenta */
-    --sidebar-background: 240 14% 6%;
-    --sidebar-foreground: 230 18% 88%;
+    /* Sidebar - azul-marinho escuro fixo, igual em claro e escuro (não varia por tema) */
+    --sidebar-background: 222 47% 11%;
+    --sidebar-foreground: 215 20% 88%;
     --sidebar-primary: 340 82% 58%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 340 40% 14%;
+    --sidebar-accent: 217 33% 18%;
     --sidebar-accent-foreground: 340 82% 72%;
-    --sidebar-border: 240 12% 14%;
+    --sidebar-border: 217 33% 20%;
     --sidebar-ring: 340 82% 58%;
 
     /* Dark mode gradients - magenta to coral (mantém identidade) */

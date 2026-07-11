@@ -2028,6 +2028,60 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
+    if (action === 'tool_flags') {
+      const [{ data: flagsRow }, { data: internalRow }, { data: orgs }] = await Promise.all([
+        adminClient.from('platform_settings').select('value').eq('key', 'tool_release_flags').maybeSingle(),
+        adminClient.from('platform_settings').select('value').eq('key', 'internal_test_organization_ids').maybeSingle(),
+        adminClient.from('organizations').select('id, name').order('name'),
+      ])
+
+      return new Response(JSON.stringify({
+        flags: flagsRow?.value || {},
+        internal_org_ids: internalRow?.value || [],
+        organizations: orgs || [],
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    if (action === 'update_tool_flags') {
+      const body = await req.json()
+      const flags = body.flags && typeof body.flags === 'object' ? body.flags : {}
+
+      const { error } = await adminClient
+        .from('platform_settings')
+        .upsert({ key: 'tool_release_flags', value: flags, updated_at: new Date().toISOString(), updated_by: user.id }, { onConflict: 'key' })
+
+      if (error) throw error
+
+      await adminClient.from('admin_audit_logs').insert({
+        action: 'update_tool_flags',
+        entity_type: 'platform',
+        performed_by: user.id,
+        details: { flags },
+      })
+
+      return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
+    if (action === 'update_internal_test_orgs') {
+      const body = await req.json()
+      const organizationIds = Array.isArray(body.organization_ids) ? body.organization_ids.filter((id: unknown) => typeof id === 'string') : []
+
+      const { error } = await adminClient
+        .from('platform_settings')
+        .upsert({ key: 'internal_test_organization_ids', value: organizationIds, updated_at: new Date().toISOString(), updated_by: user.id }, { onConflict: 'key' })
+
+      if (error) throw error
+
+      await adminClient.from('admin_audit_logs').insert({
+        action: 'update_internal_test_orgs',
+        entity_type: 'platform',
+        performed_by: user.id,
+        details: { organization_ids: organizationIds },
+      })
+
+      return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
+
     if (action === 'security_alerts') {
       const { data: alerts, error } = await adminClient.rpc('check_suspicious_activity')
       if (error) throw error

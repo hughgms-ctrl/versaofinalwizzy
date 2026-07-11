@@ -367,6 +367,40 @@ export function useToggleClientPlansMenu() {
   });
 }
 
+export function useAdminToolFlags() {
+  return useQuery({
+    queryKey: ['admin', 'tool-flags'],
+    queryFn: () => adminFetch('tool_flags'),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useUpdateToolFlags() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (flags: Record<string, boolean>) => adminFetch('update_tool_flags', { flags }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'tool-flags'] });
+      queryClient.invalidateQueries({ queryKey: ['platform-setting', 'tool_release_flags'] });
+      toast.success('Liberação de ferramentas atualizada');
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+}
+
+export function useUpdateInternalTestOrgs() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (organizationIds: string[]) => adminFetch('update_internal_test_orgs', { organization_ids: organizationIds }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'tool-flags'] });
+      queryClient.invalidateQueries({ queryKey: ['platform-setting', 'internal_test_organization_ids'] });
+      toast.success('Contas de teste atualizadas');
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+}
+
 export function useAssignPlan() {
   const queryClient = useQueryClient();
   return useMutation({

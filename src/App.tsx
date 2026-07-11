@@ -70,6 +70,7 @@ const AdminPaymentGatewaysPage = lazy(() => import("./pages/admin/AdminPaymentGa
 const AdminGrowthPage = lazy(() => import("./pages/admin/AdminGrowthPage"));
 const AdminAIPage = lazy(() => import("./pages/admin/AdminAIPage"));
 const AdminOperationsPage = lazy(() => import("./pages/admin/AdminOperationsPage"));
+const AdminFeatureFlagsPage = lazy(() => import("./pages/admin/AdminFeatureFlagsPage"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -159,6 +160,7 @@ const App = () => (
                       <Route path="/admin/plans" element={<AdminProtectedRoute><AdminPlansPage /></AdminProtectedRoute>} />
                       <Route path="/admin/payment-gateways" element={<AdminProtectedRoute><AdminPaymentGatewaysPage /></AdminProtectedRoute>} />
                       <Route path="/admin/growth" element={<AdminProtectedRoute><AdminGrowthPage /></AdminProtectedRoute>} />
+                      <Route path="/admin/feature-flags" element={<AdminProtectedRoute><AdminFeatureFlagsPage /></AdminProtectedRoute>} />
                       <Route path="/admin/ai" element={<AdminProtectedRoute><AdminAIPage /></AdminProtectedRoute>} />
                       <Route path="/admin/ai/usage" element={<AdminProtectedRoute><AdminAIPage /></AdminProtectedRoute>} />
                       <Route path="/admin/ai/models" element={<AdminProtectedRoute><AdminAIPage /></AdminProtectedRoute>} />

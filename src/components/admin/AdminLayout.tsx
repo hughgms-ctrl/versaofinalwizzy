@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { WhatsAppDisconnectedBanner } from '@/components/layout/WhatsAppDisconnectedBanner';
 import {
   LayoutDashboard, Building2, CreditCard, Key,
-  ScrollText, LogOut, ChevronLeft, ChevronRight, MessageCircle, WalletCards, FlaskConical
+  ScrollText, LogOut, ChevronLeft, ChevronRight, MessageCircle, WalletCards, FlaskConical, ToggleLeft
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
@@ -27,6 +27,7 @@ const adminNav = [
   { name: 'IA & Custos', href: '/admin/ai/usage', icon: Key },
   { name: 'WhatsApp APIs', href: '/admin/whatsapp-apis', icon: MessageCircle },
   { name: 'Operações', href: '/admin/operations/governance', icon: ScrollText },
+  { name: 'Funcionalidades', href: '/admin/feature-flags', icon: ToggleLeft },
 ];
 
 export function AdminLayout({ children }: AdminLayoutProps) {
