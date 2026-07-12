@@ -836,10 +836,10 @@ export default function LandingPage() {
             <span className="text-lg font-bold text-white">Wizzy</span>
           </a>
           <div className="flex flex-wrap gap-5">
-            <a href="#" className="hover:text-white">Política de Privacidade</a>
-            <a href="#" className="hover:text-white">Termos de Uso</a>
-            <a href="#" className="hover:text-white">LGPD</a>
-            <a href="#" className="hover:text-white">Contato</a>
+            <a href="/privacidade" className="hover:text-white">Política de Privacidade</a>
+            <a href="/termos" className="hover:text-white">Termos de Uso</a>
+            <a href="/exclusao-de-dados" className="hover:text-white">Exclusão de Dados</a>
+            <a href="mailto:contato@wizzy.app" className="hover:text-white">Contato</a>
           </div>
           <p>© 2026 Wizzy. Todos os direitos reservados.</p>
         </div>

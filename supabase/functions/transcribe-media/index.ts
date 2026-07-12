@@ -290,7 +290,8 @@ async function applyAdminAIStrategy(supabase: any, organizationId: string, integ
   const model = strategy.features?.[feature] || (feature === 'transcription' ? fallbackModel : strategy.default_model) || fallbackModel;
   const platformKey = Deno.env.get('WIZZY_OPENAI_API_KEY') || Deno.env.get('OPENAI_API_KEY') || aiConnectionRow?.value?.openai_api_key || '';
   const usePlatformKey = usesPlatformAI((planRow as any)?.plan);
-  return { ...(integrationConfig || {}), ai_provider: 'openai', default_model: model, [`${feature}_provider`]: 'openai', [`${feature}_model`]: model, openai_api_key: usePlatformKey ? platformKey : (integrationConfig?.openai_api_key || platformKey) };
+  // Planos own_api nunca podem usar a key da plataforma: sem key própria configurada, a IA fica indisponível.
+  return { ...(integrationConfig || {}), ai_provider: 'openai', default_model: model, [`${feature}_provider`]: 'openai', [`${feature}_model`]: model, openai_api_key: usePlatformKey ? platformKey : integrationConfig?.openai_api_key };
 }
 
 async function analyzeMedia(

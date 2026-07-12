@@ -205,3 +205,33 @@ verify_jwt = false
 
 [functions.carousel-trending]
 verify_jwt = false
+
+[functions.instagram-oauth-start]
+verify_jwt = false
+
+[functions.instagram-oauth-callback]
+verify_jwt = false
+
+[functions.instagram-webhook]
+verify_jwt = false
+
+[functions.instagram-send-message]
+verify_jwt = false
+
+[functions.instagram-comment-actions]
+verify_jwt = false
+
+[functions.instagram-check-status]
+verify_jwt = false
+
+[functions.instagram-disconnect]
+verify_jwt = false
+
+[functions.instagram-rule-execute]
+verify_jwt = false
+
+[functions.instagram-link-redirect]
+verify_jwt = false
+
+[functions.instagram-process-followups]
+verify_jwt = false

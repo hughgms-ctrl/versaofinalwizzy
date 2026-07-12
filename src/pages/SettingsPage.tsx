@@ -18,6 +18,7 @@ import { ImportHistorySettings } from '@/components/settings/ImportHistorySettin
 import { CrmEntitiesSettings } from '@/components/settings/CrmEntitiesSettings';
 import { WorkspacesSettings } from '@/components/settings/WorkspacesSettings';
 import { WhatsAppInstancesSettings } from '@/components/settings/WhatsAppInstancesSettings';
+import { InstagramAccountsSettings } from '@/components/settings/InstagramAccountsSettings';
 import {
   Select,
   SelectContent,
@@ -46,7 +47,8 @@ import {
   VolumeX,
   PenLine,
   ListChecks,
-  Building2
+  Building2,
+  Instagram
 } from 'lucide-react';
 
 interface WhatsAppStatus {
@@ -456,6 +458,10 @@ export default function SettingsPage() {
             <MessageSquare className="h-3.5 w-3.5 md:h-4 md:w-4" />
             <span className="hidden xs:inline">WhatsApp</span>
           </TabsTrigger>
+          <TabsTrigger value="instagram" className="flex items-center gap-1.5 text-xs md:text-sm px-2 md:px-3">
+            <Instagram className="h-3.5 w-3.5 md:h-4 md:w-4" />
+            <span className="hidden xs:inline">Instagram</span>
+          </TabsTrigger>
           <TabsTrigger value="import" className="flex items-center gap-1.5 text-xs md:text-sm px-2 md:px-3">
             <Upload className="h-3.5 w-3.5 md:h-4 md:w-4" />
             <span className="hidden xs:inline">Importar</span>
@@ -489,6 +495,11 @@ export default function SettingsPage() {
         {/* WhatsApp Settings */}
         <TabsContent value="whatsapp" className="space-y-6">
           <WhatsAppInstancesSettings />
+        </TabsContent>
+
+        {/* Instagram Settings */}
+        <TabsContent value="instagram" className="space-y-6">
+          <InstagramAccountsSettings />
         </TabsContent>
 
         {/* Import History Settings */}

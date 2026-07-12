@@ -111,6 +111,45 @@ export function usePipelineColumns(pipelineId: string | null) {
   });
 }
 
+export interface PipelineWithColumns {
+  pipeline: Pipeline;
+  columns: PipelineColumn[];
+}
+
+// Usado pelo filtro de contatos: precisa das colunas de TODOS os pipelines de uma vez,
+// diferente de usePipelineColumns() que busca só um pipeline por vez.
+export function useAllPipelineColumns() {
+  const { session } = useAuth();
+
+  return useQuery({
+    queryKey: ['pipeline-columns', 'all'],
+    queryFn: async (): Promise<PipelineWithColumns[]> => {
+      const { data: pipelines, error: pipelinesError } = await (supabase as any)
+        .from('pipelines')
+        .select('*')
+        .order('created_at', { ascending: true });
+      if (pipelinesError) throw pipelinesError;
+
+      const pipelineIds = (pipelines || []).map((p: Pipeline) => p.id);
+      if (pipelineIds.length === 0) return [];
+
+      const { data: columns, error: columnsError } = await (supabase as any)
+        .from('pipeline_columns')
+        .select('*')
+        .in('pipeline_id', pipelineIds)
+        .order('order', { ascending: true });
+      if (columnsError) throw columnsError;
+
+      return (pipelines as Pipeline[]).map((pipeline) => ({
+        pipeline,
+        columns: (columns || []).filter((c: PipelineColumn) => c.pipeline_id === pipeline.id),
+      }));
+    },
+    enabled: !!session,
+    staleTime: 10 * 60 * 1000,
+  });
+}
+
 export function useConversationPositions(pipelineId: string | null) {
   const { session } = useAuth();
 

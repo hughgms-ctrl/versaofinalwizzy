@@ -1,7 +1,7 @@
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { MousePointerClick, FileText, HelpCircle, GitBranch, LayoutTemplate, Scale, SearchCheck, Images } from 'lucide-react';
+import { MousePointerClick, FileText, HelpCircle, GitBranch, LayoutTemplate, Scale, SearchCheck, Images, Instagram } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useOrganizationPlan } from '@/hooks/useOrganizationPlan';
 import { Lock } from 'lucide-react';
@@ -11,6 +11,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { useCurrentUserRole, useUserPermissions } from '@/hooks/useUserPermissions';
 import { isManagerRole } from '@/lib/defaultAppRoute';
+import { usePlatformSetting } from '@/hooks/usePlatformSettings';
 
 const tools = [
   {
@@ -52,6 +53,7 @@ const tools = [
     href: '/tools/carousel',
     planModule: 'carousel',
     permissionKey: 'can_access_tool_carousel',
+    releaseFlagKey: 'wizzy_carrossel',
   },
   {
     name: 'Wizzy Pages',
@@ -72,6 +74,16 @@ const tools = [
     href: '/tools/cnis',
     planModule: 'cnis',
     permissionKey: 'can_access_tool_cnis',
+    releaseFlagKey: 'wizzy_prev',
+  },
+  {
+    name: 'Wizzy Engage',
+    description: 'Automações estilo ManyChat para o Instagram — comentário com palavra-chave, curtida, resposta pública e DM automática.',
+    icon: Instagram,
+    href: '/tools/wizzy-engage',
+    planModule: 'integrations',
+    permissionKey: 'can_access_tool_wizzy_engage',
+    releaseFlagKey: 'wizzy_engage',
   },
 ];
 
@@ -87,7 +99,17 @@ export default function ToolsPage() {
   const [blockedModule, setBlockedModule] = useState<string | undefined>();
   const isManager = isManagerRole(userRole);
 
+  const { data: toolReleaseFlags } = usePlatformSetting<Record<string, boolean>>('tool_release_flags', {});
+  const { data: internalTestOrgIds } = usePlatformSetting<string[]>('internal_test_organization_ids', []);
+  const isInternalTestOrg = Boolean(activeOrganizationId && internalTestOrgIds?.includes(activeOrganizationId));
+
+  // Ferramentas ainda em desenvolvimento: liberadas em produção só via flag do admin,
+  // ou sempre visíveis para orgs marcadas como teste interno.
+  const isInDevelopment = (tool: typeof tools[0]) =>
+    Boolean(tool.releaseFlagKey) && toolReleaseFlags?.[tool.releaseFlagKey!] !== true && !isInternalTestOrg;
+
   const canAccessTool = (tool: typeof tools[0]) => {
+    if (isInDevelopment(tool)) return isManager;
     if (isManager) return true;
     if (!tool.permissionKey) return false;
     return Boolean((permissions as any)?.can_access_tools && (permissions as any)?.[tool.permissionKey]);
@@ -96,7 +118,7 @@ export default function ToolsPage() {
   const visibleTools = tools.filter((tool) => canAccessTool(tool));
 
   const handleClick = (tool: typeof tools[0]) => {
-    if (tool.comingSoon) return;
+    if (tool.comingSoon || isInDevelopment(tool)) return;
     if (!canAccessTool(tool)) return;
     if (tool.planModule && !canAccessModule(tool.planModule)) {
       setBlockedModule(tool.name);
@@ -117,7 +139,7 @@ export default function ToolsPage() {
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {visibleTools.map((tool) => {
             const isLocked = tool.planModule ? !canAccessModule(tool.planModule) : false;
-            const isComingSoon = Boolean(tool.comingSoon);
+            const isComingSoon = Boolean(tool.comingSoon) || isInDevelopment(tool);
             return (
               <Card
                 key={tool.name}

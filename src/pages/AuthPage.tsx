@@ -563,7 +563,15 @@ export default function AuthPage() {
         </Card>
 
         <p className="text-center text-sm text-muted-foreground mt-6">
-          Ao continuar, voce concorda com nossos Termos de Uso e Politica de Privacidade.
+          Ao continuar, voce concorda com nossos{' '}
+          <a href="/termos" target="_blank" rel="noreferrer" className="underline hover:text-foreground">
+            Termos de Uso
+          </a>{' '}
+          e{' '}
+          <a href="/privacidade" target="_blank" rel="noreferrer" className="underline hover:text-foreground">
+            Politica de Privacidade
+          </a>
+          .
         </p>
       </div>
     </div>

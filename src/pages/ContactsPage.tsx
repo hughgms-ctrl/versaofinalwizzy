@@ -5,7 +5,8 @@ import { MainLayout } from '@/components/layout/MainLayout';
 import { useContacts, Contact, CONTACTS_CAP } from '@/hooks/useContacts';
 import { useWhatsAppStatus } from '@/hooks/useWhatsAppStatus';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
-import { isWithinInterval, parseISO } from 'date-fns';
+import { useContactFilterJoins, ContactFilterJoins } from '@/hooks/useContactFilterJoins';
+import { parseISO, isBefore, isAfter, isSameDay } from 'date-fns';
 import {
   Search,
   X,
@@ -24,19 +25,64 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { ContactProfilePanel } from '@/components/conversations/ContactProfilePanel';
-import { ContactFilters, ContactFiltersState, defaultContactFilters } from '@/components/contacts/ContactFilters';
+import { ContactFilters, ContactFiltersState, FilterCondition, defaultContactFilters } from '@/components/contacts/ContactFilters';
 import { ContactListItem } from '@/components/contacts/ContactListItem';
+import { ContactBulkActionsBar } from '@/components/contacts/ContactBulkActionsBar';
 import { NewContactDialog } from '@/components/contacts/NewContactDialog';
+import { Checkbox } from '@/components/ui/checkbox';
+
+function matchesCondition(contact: Contact, condition: FilterCondition, joins?: ContactFilterJoins): boolean {
+  if (condition.field === 'created_at') {
+    let targetDate: Date;
+    let contactDate: Date;
+    try {
+      targetDate = new Date(condition.value);
+      contactDate = parseISO(contact.created_at);
+    } catch {
+      return true;
+    }
+    if (condition.operator === 'before') return isBefore(contactDate, targetDate);
+    if (condition.operator === 'after') return isAfter(contactDate, targetDate);
+    return isSameDay(contactDate, targetDate);
+  }
+
+  const wantMatch = condition.operator !== 'is_not';
+
+  if (condition.field === 'tag') {
+    const has = !!contact.tags?.some(t => t.tag.id === condition.value);
+    return has === wantMatch;
+  }
+
+  if (condition.field === 'workspace') {
+    const contactWorkspaceId = (contact as any).workspace_id ?? null;
+    const matches = condition.value === 'unassigned' ? !contactWorkspaceId : contactWorkspaceId === condition.value;
+    return matches === wantMatch;
+  }
+
+  if (condition.field === 'pipeline') {
+    const matches = !!joins?.pipelineColumnsByContact.get(contact.id)?.has(condition.value);
+    return matches === wantMatch;
+  }
+
+  if (condition.field === 'assigned_to') {
+    const matches = !!joins?.assignedToByContact.get(contact.id)?.has(condition.value);
+    return matches === wantMatch;
+  }
+
+  return true;
+}
 
 const ContactsPage = () => {
   const { data: contacts, isLoading } = useContacts();
   const { connected: whatsappConnected, isLoading: whatsappLoading } = useWhatsAppStatus();
   const { selectedWorkspace, selectedWorkspaceId } = useWorkspaceContext();
+  const { data: filterJoins } = useContactFilterJoins();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [filters, setFilters] = useState<ContactFiltersState>(defaultContactFilters);
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [showNewContactDialog, setShowNewContactDialog] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   // Filter contacts
   const filteredContacts = useMemo(() => {
@@ -63,25 +109,50 @@ const ContactsPage = () => {
         }
       }
 
-      // Tag filter
-      if (filters.tagFilter !== 'all') {
-        const hasTag = contact.tags?.some(t => t.tag.id === filters.tagFilter);
-        if (!hasTag) return false;
-      }
-
-      // Date filter
-      if (filters.dateRange.from) {
-        const contactDate = parseISO(contact.created_at);
-        const from = filters.dateRange.from;
-        const to = filters.dateRange.to || filters.dateRange.from;
-        if (!isWithinInterval(contactDate, { start: from, end: to })) {
-          return false;
-        }
+      // Condições do filtro avançado (tag/workspace/pipeline/data/responsável).
+      // matchMode 'all' = precisa bater em todas (E); 'any' = basta bater em uma (OU).
+      if (filters.conditions.length > 0) {
+        const matches = filters.matchMode === 'any'
+          ? filters.conditions.some(condition => matchesCondition(contact, condition, filterJoins))
+          : filters.conditions.every(condition => matchesCondition(contact, condition, filterJoins));
+        if (!matches) return false;
       }
 
       return true;
     });
-  }, [contacts, searchQuery, filters, selectedWorkspaceId, selectedWorkspace]);
+  }, [contacts, searchQuery, filters, selectedWorkspaceId, selectedWorkspace, filterJoins]);
+
+  // Seleção múltipla para ações em massa
+  const selectedContacts = useMemo(
+    () => (contacts ?? []).filter(c => selectedIds.has(c.id)),
+    [contacts, selectedIds]
+  );
+  const allFilteredSelected = filteredContacts.length > 0 && filteredContacts.every(c => selectedIds.has(c.id));
+  const someFilteredSelected = filteredContacts.some(c => selectedIds.has(c.id));
+
+  const toggleSelectContact = (contactId: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(contactId)) next.delete(contactId);
+      else next.add(contactId);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    setSelectedIds(prev => {
+      if (allFilteredSelected) {
+        const next = new Set(prev);
+        filteredContacts.forEach(c => next.delete(c.id));
+        return next;
+      }
+      const next = new Set(prev);
+      filteredContacts.forEach(c => next.add(c.id));
+      return next;
+    });
+  };
+
+  const clearSelection = () => setSelectedIds(new Set());
 
   // Aviso quando a lista atingiu o teto server-side (busca/filtros operam só
   // sobre os CONTACTS_CAP mais recentes carregados).
@@ -166,6 +237,14 @@ const ContactsPage = () => {
         />
       </div>
 
+      {/* Bulk actions bar */}
+      {selectedContacts.length > 0 && (
+        <ContactBulkActionsBar
+          selectedContacts={selectedContacts}
+          onClearSelection={clearSelection}
+        />
+      )}
+
       {/* Cap reached notice */}
       {capReached && (
         <div className="mb-2 text-xs text-muted-foreground bg-secondary/40 rounded-md px-3 py-1.5">
@@ -192,38 +271,52 @@ const ContactsPage = () => {
             <Users className="h-16 w-16 mb-4 opacity-30" />
             <p className="text-lg font-medium">Nenhum contato encontrado</p>
             <p className="text-sm text-center mt-2 max-w-md">
-              {searchQuery || filters.tagFilter !== 'all' || filters.datePreset !== 'all'
+              {searchQuery || filters.conditions.length > 0
                 ? 'Tente ajustar os filtros para encontrar o que procura.'
                 : 'Os contatos aparecerão aqui quando você receber mensagens.'}
             </p>
           </div>
         ) : (
-          <div
-            ref={listParentRef}
-            className="h-[calc(100vh-14rem)] overflow-y-auto"
-          >
-            <div
-              style={{ height: `${rowVirtualizer.getTotalSize()}px`, position: 'relative', width: '100%' }}
-            >
-              {rowVirtualizer.getVirtualItems().map(virtualRow => {
-                const contact = filteredContacts[virtualRow.index];
-                return (
-                  <div
-                    key={contact.id}
-                    data-index={virtualRow.index}
-                    ref={rowVirtualizer.measureElement}
-                    className="absolute left-0 top-0 w-full border-b border-border"
-                    style={{ transform: `translateY(${virtualRow.start}px)` }}
-                  >
-                    <ContactListItem
-                      contact={contact}
-                      onSelect={setSelectedContact}
-                    />
-                  </div>
-                );
-              })}
+          <>
+            {/* Select-all header */}
+            <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-secondary/30">
+              <Checkbox
+                checked={allFilteredSelected ? true : someFilteredSelected ? 'indeterminate' : false}
+                onCheckedChange={toggleSelectAll}
+              />
+              <span className="text-xs text-muted-foreground">
+                {someFilteredSelected ? `${selectedIds.size} selecionado(s)` : 'Selecionar todos'}
+              </span>
             </div>
-          </div>
+            <div
+              ref={listParentRef}
+              className="h-[calc(100vh-16rem)] overflow-y-auto"
+            >
+              <div
+                style={{ height: `${rowVirtualizer.getTotalSize()}px`, position: 'relative', width: '100%' }}
+              >
+                {rowVirtualizer.getVirtualItems().map(virtualRow => {
+                  const contact = filteredContacts[virtualRow.index];
+                  return (
+                    <div
+                      key={contact.id}
+                      data-index={virtualRow.index}
+                      ref={rowVirtualizer.measureElement}
+                      className="absolute left-0 top-0 w-full border-b border-border"
+                      style={{ transform: `translateY(${virtualRow.start}px)` }}
+                    >
+                      <ContactListItem
+                        contact={contact}
+                        onSelect={setSelectedContact}
+                        isSelected={selectedIds.has(contact.id)}
+                        onToggleSelect={toggleSelectContact}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </>
         )}
       </div>
 

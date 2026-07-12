@@ -43,6 +43,10 @@ const QuizListPage = lazy(() => import("./pages/QuizListPage"));
 const QuizBuilderPage = lazy(() => import("./pages/QuizBuilderPage"));
 const PublicQuizPage = lazy(() => import("./pages/PublicQuizPage"));
 const IntegrationsPage = lazy(() => import("./pages/IntegrationsPage"));
+const InstagramAutomationsPage = lazy(() => import("./pages/InstagramAutomationsPage"));
+const PrivacyPolicyPage = lazy(() => import("./pages/PrivacyPolicyPage"));
+const TermsOfServicePage = lazy(() => import("./pages/TermsOfServicePage"));
+const DataDeletionPage = lazy(() => import("./pages/DataDeletionPage"));
 const PublicFormPage = lazy(() => import("./pages/PublicFormPage"));
 const PublicPackFormPage = lazy(() => import("./pages/PublicPackFormPage"));
 const SignaturePage = lazy(() => import("./pages/SignaturePage"));
@@ -66,6 +70,7 @@ const AdminPaymentGatewaysPage = lazy(() => import("./pages/admin/AdminPaymentGa
 const AdminGrowthPage = lazy(() => import("./pages/admin/AdminGrowthPage"));
 const AdminAIPage = lazy(() => import("./pages/admin/AdminAIPage"));
 const AdminOperationsPage = lazy(() => import("./pages/admin/AdminOperationsPage"));
+const AdminFeatureFlagsPage = lazy(() => import("./pages/admin/AdminFeatureFlagsPage"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -131,6 +136,10 @@ const App = () => (
                       <Route path="/widgets/:widgetId" element={<ProtectedRoute><WidgetEditorPage /></ProtectedRoute>} />
                       <Route path="/documents" element={<ProtectedRoute><DocumentsPage /></ProtectedRoute>} />
                       <Route path="/integrations" element={<ProtectedRoute><IntegrationsPage /></ProtectedRoute>} />
+                      <Route path="/tools/wizzy-engage" element={<ProtectedRoute><InstagramAutomationsPage /></ProtectedRoute>} />
+                      <Route path="/privacidade" element={<PrivacyPolicyPage />} />
+                      <Route path="/termos" element={<TermsOfServicePage />} />
+                      <Route path="/exclusao-de-dados" element={<DataDeletionPage />} />
                       <Route path="/form" element={<PublicFormPage />} />
                       <Route path="/pack-form" element={<PublicPackFormPage />} />
                       <Route path="/q/:token" element={<PublicQuizPage />} />
@@ -151,6 +160,7 @@ const App = () => (
                       <Route path="/admin/plans" element={<AdminProtectedRoute><AdminPlansPage /></AdminProtectedRoute>} />
                       <Route path="/admin/payment-gateways" element={<AdminProtectedRoute><AdminPaymentGatewaysPage /></AdminProtectedRoute>} />
                       <Route path="/admin/growth" element={<AdminProtectedRoute><AdminGrowthPage /></AdminProtectedRoute>} />
+                      <Route path="/admin/feature-flags" element={<AdminProtectedRoute><AdminFeatureFlagsPage /></AdminProtectedRoute>} />
                       <Route path="/admin/ai" element={<AdminProtectedRoute><AdminAIPage /></AdminProtectedRoute>} />
                       <Route path="/admin/ai/usage" element={<AdminProtectedRoute><AdminAIPage /></AdminProtectedRoute>} />
                       <Route path="/admin/ai/models" element={<AdminProtectedRoute><AdminAIPage /></AdminProtectedRoute>} />

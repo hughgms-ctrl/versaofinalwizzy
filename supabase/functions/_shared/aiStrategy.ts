@@ -154,9 +154,8 @@ export async function resolveOpenAIConfig(supabase: any, organizationId: string 
   ]);
 
   const aiMode = resolvePlanAIMode(planRow?.plan);
-  const apiKey = aiMode === 'platform_api'
-    ? platformKey
-    : (integrationConfig?.openai_api_key || platformKey);
+  // Planos own_api nunca podem usar a key da plataforma: sem key própria configurada, a IA fica indisponível.
+  const apiKey = aiMode === 'platform_api' ? platformKey : integrationConfig?.openai_api_key;
 
   if (!apiKey) return null;
   return { endpoint: OPENAI_CHAT_ENDPOINT, apiKey, model, source: aiMode === 'platform_api' ? 'platform' : 'customer' };
