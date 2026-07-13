@@ -26,6 +26,7 @@ import { useInstagramConversations, InstagramConversationRow } from '@/hooks/use
 import { InstagramConversationList } from '@/components/conversations/InstagramConversationList';
 import { InstagramConversationDetail } from '@/components/conversations/InstagramConversationDetail';
 import { Instagram } from 'lucide-react';
+import { usePlatformSetting } from '@/hooks/usePlatformSettings';
 
 const ConversationsPage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -42,6 +43,11 @@ const ConversationsPage = () => {
   const { data: instagramAccounts = [], isLoading: instagramAccountsLoading } = useInstagramAccounts();
   const { data: instagramConversations = [], isLoading: instagramConversationsLoading } = useInstagramConversations();
   const hasConnectedInstagram = instagramAccounts.some((a) => a.status === 'connected');
+  const { data: toolReleaseFlags } = usePlatformSetting<Record<string, boolean>>('tool_release_flags', {});
+  const { data: internalTestOrgIds } = usePlatformSetting<string[]>('internal_test_organization_ids', []);
+  const { selectedWorkspace, selectedWorkspaceId, selectedOrganizationId: conversationsOrgId } = useWorkspaceContext();
+  const isWizzyEngageReleased = toolReleaseFlags?.wizzy_engage === true
+    || Boolean(conversationsOrgId && internalTestOrgIds?.includes(conversationsOrgId));
   const { data: conversations, isLoading, error, refetch } = useConversations({
     onlyArchived: showArchived,
     // Quando o usuário filtra por "Encerradas", buscamos só essas;
@@ -49,7 +55,6 @@ const ConversationsPage = () => {
     onlyClosed: showOnlyClosed && !showArchived,
   });
   const { connected: whatsappConnected, isLoading: whatsappLoading } = useWhatsAppStatus();
-  const { selectedWorkspace, selectedWorkspaceId } = useWorkspaceContext();
   const { user } = useAuth();
   const { data: userPermissions } = useUserPermissions();
   const { data: userRole } = useCurrentUserRole();
@@ -474,6 +479,11 @@ const ConversationsPage = () => {
                     selectedId={selectedInstagramConversation?.id}
                     onSelect={setSelectedInstagramConversation}
                   />
+                ) : !isWizzyEngageReleased ? (
+                  <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-8">
+                    <Instagram className="h-16 w-16 mb-4 opacity-30" />
+                    <p className="text-lg font-medium text-center">Em breve</p>
+                  </div>
                 ) : (
                   <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-8">
                     <Instagram className="h-16 w-16 mb-4 opacity-30" />
@@ -540,6 +550,11 @@ const ConversationsPage = () => {
                   <div className="flex-1 overflow-hidden">
                     <InstagramConversationDetail conversation={selectedInstagramConversation} />
                   </div>
+                </div>
+              ) : !isWizzyEngageReleased ? (
+                <div className="hidden md:flex flex-col items-center justify-center h-full text-muted-foreground">
+                  <Instagram className="h-16 w-16 mb-4 opacity-30" />
+                  <p className="text-lg font-medium">Em breve</p>
                 </div>
               ) : (
                 <div className="hidden md:flex flex-col items-center justify-center h-full text-muted-foreground">
