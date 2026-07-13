@@ -12,6 +12,7 @@ import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { useCurrentUserRole, useUserPermissions } from '@/hooks/useUserPermissions';
 import { isManagerRole } from '@/lib/defaultAppRoute';
 import { usePlatformSetting } from '@/hooks/usePlatformSettings';
+import { useToast } from '@/hooks/use-toast';
 
 const tools = [
   {
@@ -45,6 +46,7 @@ const tools = [
     href: '/tools/wizzy-flow',
     planModule: 'wizzy_flow',
     permissionKey: 'can_access_tool_wizzy_flow',
+    requiresWorkspace: true,
   },
   {
     name: 'Wizzy Carrossel',
@@ -89,8 +91,9 @@ const tools = [
 
 export default function ToolsPage() {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const { profile } = useAuth();
-  const { selectedWorkspace } = useWorkspaceContext();
+  const { selectedWorkspace, availableWorkspaces, loading: workspaceLoading } = useWorkspaceContext();
   const activeOrganizationId = selectedWorkspace?.organization_id || profile?.organization_id || null;
   const { canAccessModule } = useOrganizationPlan(activeOrganizationId);
   const { data: userRole } = useCurrentUserRole(activeOrganizationId);
@@ -117,12 +120,35 @@ export default function ToolsPage() {
 
   const visibleTools = tools.filter((tool) => canAccessTool(tool));
 
+  // Wizzy Flow (e ferramentas que operam dentro de um workspace) exige um workspace
+  // selecionado — sem isso, criar projeto/tarefa viola a RLS por workspace. Bloqueia
+  // a entrada já no card, em vez de deixar quebrar lá dentro.
+  const hasNoWorkspaces = !workspaceLoading && availableWorkspaces.length === 0;
+  const needsWorkspaceSelection = (tool: typeof tools[0]) =>
+    Boolean(tool.requiresWorkspace) && !workspaceLoading && !selectedWorkspace;
+
   const handleClick = (tool: typeof tools[0]) => {
     if (tool.comingSoon || isInDevelopment(tool)) return;
     if (!canAccessTool(tool)) return;
     if (tool.planModule && !canAccessModule(tool.planModule)) {
       setBlockedModule(tool.name);
       setUpgradeOpen(true);
+      return;
+    }
+    if (needsWorkspaceSelection(tool)) {
+      toast(
+        hasNoWorkspaces
+          ? {
+              title: 'Nenhum workspace disponível',
+              description:
+                'Você não faz parte de nenhum workspace. Peça a um administrador para adicionar você a um workspace.',
+              variant: 'destructive',
+            }
+          : {
+              title: 'Selecione um workspace',
+              description: 'Escolha um workspace no seletor no topo para usar o Wizzy Flow.',
+            }
+      );
       return;
     }
     navigate(tool.href);
@@ -140,10 +166,11 @@ export default function ToolsPage() {
           {visibleTools.map((tool) => {
             const isLocked = tool.planModule ? !canAccessModule(tool.planModule) : false;
             const isComingSoon = Boolean(tool.comingSoon) || isInDevelopment(tool);
+            const workspaceMissing = needsWorkspaceSelection(tool);
             return (
               <Card
                 key={tool.name}
-                className={`transition-all hover:shadow-md ${isComingSoon ? 'cursor-default opacity-75' : 'cursor-pointer'} ${isLocked ? 'opacity-50' : !isComingSoon ? 'hover:border-primary/50' : ''}`}
+                className={`transition-all hover:shadow-md ${isComingSoon ? 'cursor-default opacity-75' : 'cursor-pointer'} ${isLocked ? 'opacity-50' : !isComingSoon ? 'hover:border-primary/50' : ''} ${workspaceMissing ? 'opacity-75' : ''}`}
                 onClick={() => handleClick(tool)}
               >
                 <CardHeader className="flex flex-row items-center gap-4 pb-2">
@@ -155,11 +182,21 @@ export default function ToolsPage() {
                       {tool.name}
                       {isLocked && <Lock className="h-4 w-4 text-muted-foreground" />}
                       {isComingSoon && <Badge variant="secondary">Em breve</Badge>}
+                      {workspaceMissing && !isComingSoon && (
+                        <Badge variant="outline">Workspace necessário</Badge>
+                      )}
                     </CardTitle>
                   </div>
                 </CardHeader>
                 <CardContent>
                   <CardDescription className="text-sm">{tool.description}</CardDescription>
+                  {workspaceMissing && !isComingSoon && (
+                    <p className="mt-2 text-xs font-medium text-amber-600 dark:text-amber-500">
+                      {hasNoWorkspaces
+                        ? 'Você não faz parte de nenhum workspace. Peça a um administrador para adicionar você.'
+                        : 'Selecione um workspace no seletor no topo para usar.'}
+                    </p>
+                  )}
                 </CardContent>
               </Card>
             );
