@@ -483,9 +483,6 @@ const ConversationsPage = () => {
                   <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-8">
                     <Instagram className="h-16 w-16 mb-4 opacity-30" />
                     <p className="text-lg font-medium text-center">Em breve</p>
-                    <p className="text-sm text-center mt-2">
-                      As conversas do Instagram vão aparecer aqui assim que o Wizzy Engage for lançado.
-                    </p>
                   </div>
                 ) : (
                   <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-8">
@@ -558,7 +555,6 @@ const ConversationsPage = () => {
                 <div className="hidden md:flex flex-col items-center justify-center h-full text-muted-foreground">
                   <Instagram className="h-16 w-16 mb-4 opacity-30" />
                   <p className="text-lg font-medium">Em breve</p>
-                  <p className="text-sm">O Wizzy Engage ainda está em desenvolvimento</p>
                 </div>
               ) : (
                 <div className="hidden md:flex flex-col items-center justify-center h-full text-muted-foreground">
