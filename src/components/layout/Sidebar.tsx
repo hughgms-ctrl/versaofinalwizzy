@@ -152,7 +152,7 @@ export function Sidebar() {
         <WorkspaceSwitcher collapsed={collapsed} />
 
         {/* Navigation */}
-        <nav className="flex-1 space-y-1 px-3 py-4 overflow-y-auto">
+        <nav className="flex-1 space-y-1 px-3 py-4 overflow-y-auto [&::-webkit-scrollbar-thumb]:bg-sidebar-border [&::-webkit-scrollbar-track]:bg-transparent" style={{ scrollbarColor: 'hsl(var(--sidebar-border)) transparent' }}>
           {visibleNavigation.map((item) => {
             const isActive = item.href === '/' ? location.pathname === '/' : location.pathname.startsWith(item.href);
             const isLocked = !planLoading && item.planModule ? !canAccessPlanModule(item.planModule) : false;
