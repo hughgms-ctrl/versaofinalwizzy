@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/fluzz/integrations/supabase/client";
+import { resolveAttachmentUrls } from "@/fluzz/lib/taskFiles";
 import { Button } from "@/fluzz/components/ui/button";
 import { Input } from "@/fluzz/components/ui/input";
 import { Label } from "@/fluzz/components/ui/label";
@@ -90,9 +91,10 @@ export function TaskAttachments({ taskId, isEditing = false }: TaskAttachmentsPr
         .select("*")
         .eq("task_id", taskId)
         .order("created_at", { ascending: false });
-      
+
       if (error) throw error;
-      return data;
+      // Bucket privado: gera signed URLs (displayUrl) pros arquivos; links passam direto.
+      return resolveAttachmentUrls(data ?? []);
     },
   });
 
@@ -112,16 +114,14 @@ export function TaskAttachments({ taskId, isEditing = false }: TaskAttachmentsPr
       
       if (uploadError) throw uploadError;
 
-      const { data: urlData } = supabase.storage
-        .from("task-files")
-        .getPublicUrl(fileName);
-
+      // Bucket privado: guardamos o path de storage (não URL pública). A leitura
+      // gera signed URL a partir dele (ver resolveAttachmentUrls / taskFiles.ts).
       const { error: insertError } = await supabase
         .from("task_attachments")
         .insert({
           task_id: taskId,
           name: file.name,
-          file_url: urlData.publicUrl,
+          file_url: fileName,
           file_type: file.type,
           file_size: file.size,
           uploaded_by: user?.id,
@@ -288,11 +288,11 @@ export function TaskAttachments({ taskId, isEditing = false }: TaskAttachmentsPr
               {/* Image Preview Thumbnail */}
               {isImageFile(attachment.file_type) ? (
                 <button
-                  onClick={() => setPreviewImage({ url: attachment.file_url, name: attachment.name })}
+                  onClick={() => setPreviewImage({ url: attachment.displayUrl, name: attachment.name })}
                   className="flex-shrink-0 w-10 h-10 rounded overflow-hidden border border-border hover:border-primary transition-colors cursor-pointer"
                 >
-                  <img 
-                    src={attachment.file_url} 
+                  <img
+                    src={attachment.displayUrl}
                     alt={attachment.name}
                     className="w-full h-full object-cover"
                   />
@@ -322,7 +322,7 @@ export function TaskAttachments({ taskId, isEditing = false }: TaskAttachmentsPr
                     variant="ghost"
                     size="icon"
                     className="h-8 w-8"
-                    onClick={() => setPreviewImage({ url: attachment.file_url, name: attachment.name })}
+                    onClick={() => setPreviewImage({ url: attachment.displayUrl, name: attachment.name })}
                   >
                     <ZoomIn size={14} />
                   </Button>
@@ -334,7 +334,7 @@ export function TaskAttachments({ taskId, isEditing = false }: TaskAttachmentsPr
                   asChild
                 >
                   <a
-                    href={attachment.file_url}
+                    href={attachment.displayUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     download={attachment.file_type !== "link"}

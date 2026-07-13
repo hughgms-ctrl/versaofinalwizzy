@@ -7,6 +7,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/fluzz/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { renderDocumentation } from "@/fluzz/lib/linkify";
+import { resolveAttachmentUrl } from "@/fluzz/lib/taskFiles";
 import { formatDateBR } from "@/fluzz/lib/utils";
 import { useMemo } from "react";
 
@@ -242,9 +243,13 @@ export function ProjectNotes({ projectId, tasks }: ProjectNotesProps) {
                             variant="outline"
                             size="sm"
                             className="gap-2 text-xs"
-                            onClick={(e) => {
+                            onClick={async (e) => {
                               e.stopPropagation();
-                              window.open(attachment.file_url, "_blank");
+                              // Bucket privado: abre a janela já (evita bloqueio de
+                              // popup) e resolve a signed URL antes de navegar.
+                              const win = window.open("", "_blank");
+                              const url = await resolveAttachmentUrl(attachment);
+                              if (win) win.location.href = url;
                             }}
                           >
                             {attachment.file_type === "link" ? (

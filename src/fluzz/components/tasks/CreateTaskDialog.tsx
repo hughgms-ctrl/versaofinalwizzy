@@ -310,12 +310,11 @@ export const CreateTaskDialog = ({ open, onOpenChange, projectId }: CreateTaskDi
 
         if (uploadError) throw uploadError;
 
-        const { data: urlData } = supabase.storage.from("task-files").getPublicUrl(storagePath);
-
+        // Bucket privado: guarda o path de storage; a leitura gera signed URL.
         const { error: insertError } = await supabase.from("task_attachments").insert({
           task_id: newTask.id,
           name: file.name,
-          file_url: urlData.publicUrl,
+          file_url: storagePath,
           file_type: file.type,
           file_size: file.size,
           uploaded_by: user.id,

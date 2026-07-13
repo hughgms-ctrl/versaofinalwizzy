@@ -2314,7 +2314,17 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
         await supabase.from('conversations').update({ service_mode: 'ia' }).eq('id', conversation.id);
 
         // Apply campaign workspace if configured
-        const { data: campaignFull } = await supabase.from('campaigns').select('workspace_id, start_time, end_time').eq('id', campaignId).single();
+        const { data: campaignFull } = await supabase.from('campaigns').select('name, workspace_id, start_time, end_time').eq('id', campaignId).single();
+
+        // Seed flow variables from the trigger/campaign context so keyword-triggered
+        // flows can use {{phone}}, {{name}}, {{campaign_id}}, {{campaign_name}} —
+        // matching what campaign-webhook already passes and what the UI advertises.
+        const campaignVariables = {
+          phone,
+          name: contact.name || '',
+          campaign_id: campaignId,
+          campaign_name: campaignFull?.name || '',
+        };
         if (campaignFull?.workspace_id) {
           console.log(`[CAMPAIGN] Assigning workspace ${campaignFull.workspace_id} from campaign`);
           await supabase.from('contacts').update({ workspace_id: campaignFull.workspace_id }).eq('id', contact.id);
@@ -2376,6 +2386,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
             conversation_id: conversation.id,
             contact_id: contact.id,
             message_content: triggerText,
+            variables: campaignVariables,
             scheduled_for: scheduledUTC.toISOString(),
             status: 'pending'
           });
@@ -2389,10 +2400,11 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
             const resp = await fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/flow-execute`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
-              body: JSON.stringify({ 
-                flowId: campaignFlowId, 
+              body: JSON.stringify({
+                flowId: campaignFlowId,
                 conversationId: conversation.id,
-                triggerMessage: triggerText || '[mídia]'
+                triggerMessage: triggerText || '[mídia]',
+                variables: campaignVariables
               }),
             });
             if (!resp.ok) {

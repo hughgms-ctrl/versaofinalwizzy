@@ -26,7 +26,12 @@ DROP POLICY IF EXISTS "Public can insert OTP verifications" ON public.signature_
 ALTER TABLE public.signature_otp_codes ENABLE ROW LEVEL SECURITY;
 
 -- ---------------------------------------------------------------------------
--- A8 — Restringir a policy FOR ALL de flow_node_logs a service_role.
+-- A8 — Fechar o cross-tenant de flow_node_logs SEM cegar o app.
+-- Antes: FOR ALL USING(true) → qualquer autenticado lia/escrevia logs de TODAS
+-- as orgs. Agora: escrita só service_role (edge functions), e LEITURA escopada
+-- por org — membros continuam vendo os logs de fluxo da PRÓPRIA org no
+-- ContactLogsSection. Espelha o padrão de flow_executions
+-- (get_user_org_id((select auth.uid()))).
 -- ---------------------------------------------------------------------------
 DROP POLICY IF EXISTS "Service role can manage flow node logs" ON public.flow_node_logs;
 
@@ -35,5 +40,12 @@ CREATE POLICY "Service role can manage flow node logs"
   FOR ALL
   USING (auth.role() = 'service_role')
   WITH CHECK (auth.role() = 'service_role');
+
+DROP POLICY IF EXISTS "Users can view flow node logs in their organization" ON public.flow_node_logs;
+
+CREATE POLICY "Users can view flow node logs in their organization"
+  ON public.flow_node_logs
+  FOR SELECT
+  USING (organization_id = get_user_org_id((select auth.uid())));
 
 ALTER TABLE public.flow_node_logs ENABLE ROW LEVEL SECURITY;
