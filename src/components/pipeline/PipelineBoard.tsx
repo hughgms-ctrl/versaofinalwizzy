@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
+import { ContactAvatar } from '@/components/conversations/ContactAvatar';
 
 interface PipelineColumn {
   id: 'open' | 'pending' | 'resolved' | 'archived';
@@ -190,19 +191,14 @@ export function PipelineBoard({ onConversationClick }: PipelineBoardProps) {
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-2">
-                          <div className="h-8 w-8 rounded-full bg-gradient-to-br from-primary/20 to-purple-500/20 flex items-center justify-center">
-                            {conversation.contact?.avatar_url ? (
-                              <img
-                                src={conversation.contact.avatar_url}
-                                alt={getDisplayName(conversation)}
-                                className="h-8 w-8 rounded-full object-cover"
-                              />
-                            ) : (
-                              <span className="text-xs font-semibold text-primary">
-                                {getInitials(conversation)}
-                              </span>
-                            )}
-                          </div>
+                          <ContactAvatar
+                            src={conversation.contact?.avatar_url}
+                            name={getDisplayName(conversation)}
+                            phone={conversation.contact?.phone}
+                            contactId={conversation.contact?.id}
+                            instanceId={(conversation as any).whatsapp_instance_id}
+                            size={32}
+                          />
                           <div className="flex-1 min-w-0">
                             {(() => {
                               const metadata = conversation.contact?.metadata as { note?: string } | null;

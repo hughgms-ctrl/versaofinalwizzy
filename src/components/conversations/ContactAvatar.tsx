@@ -3,6 +3,7 @@ import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/hooks/useAuth';
+import { useSignedContactAvatar } from './contactAvatars';
 
 interface ContactAvatarProps {
   src?: string | null;
@@ -104,7 +105,10 @@ export function ContactAvatar({
     return () => clearTimeout(t);
   }, [src, contactId, instanceId, autoRefetch, session?.access_token, queryClient]);
 
-  const showImage = !!src && !errored && !failedUrls.has(src);
+  // Bucket privado: assina a URL do nosso storage sob demanda. URLs cruas do WhatsApp
+  // (coluna mista) passam direto. A lógica de erro/refetch continua na `src` original.
+  const resolvedSrc = useSignedContactAvatar(src);
+  const showImage = !!resolvedSrc && !errored && !(src && failedUrls.has(src));
   const initials = getInitials(name, phone);
 
   const triggerRefetch = () => {
@@ -161,7 +165,7 @@ export function ContactAvatar({
       </span>
       {showImage && (
         <img
-          src={src!}
+          src={resolvedSrc!}
           alt=""
           loading="lazy"
           referrerPolicy="no-referrer"

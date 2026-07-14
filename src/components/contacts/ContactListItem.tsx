@@ -23,6 +23,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/useAuth';
+import { useSignedContactAvatar } from '@/components/conversations/contactAvatars';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -61,6 +62,7 @@ const formatPhoneNumber = (phone: string) => {
 
 export function ContactListItem({ contact, onSelect, isSelected, onToggleSelect }: ContactListItemProps) {
   const hasName = !!contact.name;
+  const avatarSrc = useSignedContactAvatar(contact.avatar_url); // bucket privado: assina on-read
   const formattedPhone = formatPhoneNumber(contact.phone);
   const metadata = contact.metadata as { note?: string } | null;
   const note = metadata?.note;
@@ -168,7 +170,7 @@ export function ContactListItem({ contact, onSelect, isSelected, onToggleSelect 
 
         {/* Avatar - Smaller */}
         <Avatar className="h-9 w-9 flex-shrink-0">
-          <AvatarImage src={contact.avatar_url || undefined} />
+          <AvatarImage src={avatarSrc || undefined} />
           <AvatarFallback className="bg-gradient-to-br from-primary/20 to-purple-500/20 text-primary text-xs font-semibold">
             {getInitials(contact.name, contact.phone)}
           </AvatarFallback>

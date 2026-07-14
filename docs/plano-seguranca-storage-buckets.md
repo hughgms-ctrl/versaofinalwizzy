@@ -133,3 +133,8 @@ carousel-images / flow-media: decidir se precisam mesmo de leitura pública (com
 
 ## Ordem de execução (escopo seguro)
 1. carousel-images (mais contido) → 2. contact-avatars → 3. chat-media + flow-media (write scope). Cada bucket: migration (Lovable) + front juntos, depois VALIDAR em runtime. Parar e pedir teste ao usuário antes de marcar "pronto" em cada um.
+
+## Progresso
+- ✅ **carousel-images FEITO** (2026-07-14). Migration `20260713130000_storage_carousel_images_private.sql`: `public=false`, SELECT/INSERT/UPDATE org-scoped via JOIN `carousels` (folder[1]=carousel_id → org). Front: helper `src/components/carousel/carouselImages.ts` (espelha taskFiles) + hook `useSignedCarouselImage`; assinatura na camada de exibição (`SlideCard.tsx` `<img>` e `renderSlide.ts` canvas), cobre load inicial + realtime + regenerate. Sem migração de arquivos (path inalterado). Verificado que NÃO há fetch externo (instagram_media_id nunca é lido/escrito). Testado em runtime pelo usuário (preview legado, gerar novo, regenerar imagem, download .zip com canvas/CORS, isolamento cross-org) — tudo verde.
+- ⏳ contact-avatars — próximo.
+- ⏳ chat-media + flow-media (write scope).
