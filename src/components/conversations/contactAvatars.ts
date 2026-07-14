@@ -10,6 +10,11 @@ import { supabase } from "@/integrations/supabase/client";
 // zapi-sync-chats. Só as URLs do NOSSO bucket precisam (e podem) ser assinadas — as
 // cruas do WhatsApp passam intactas. Por isso o helper só age quando o valor contém
 // o marcador `/contact-avatars/`; qualquer outra coisa (URL externa) passa direto.
+//
+// PERF (listas): a assinatura é COALESCADA. Várias montagens de <ContactAvatar> no
+// mesmo tick enfileiram seus paths e compartilham UMA chamada createSignedUrls, em vez
+// de N createSignedUrl individuais. O `src` passado pelo componente é sempre o valor
+// CRU de contacts.avatar_url (nunca a URL já assinada), então não há dupla-assinatura.
 
 const BUCKET = "contact-avatars";
 const SIGNED_URL_TTL_SECONDS = 60 * 60; // 1h — suficiente pra uma sessão de navegação
@@ -29,22 +34,72 @@ export function toContactAvatarStoragePath(value?: string | null): string | null
 const cache = new Map<string, { url: string; expiresAt: number }>();
 const CACHE_SAFETY_MS = 5 * 60 * 1000;
 
+// ---------------------------------------------------------------------------
+// Coalescing de assinatura em lote.
+// ---------------------------------------------------------------------------
+let signQueue = new Map<string, Array<(url: string | null) => void>>();
+let flushScheduled = false;
+const BATCH_CHUNK = 100; // createSignedUrls num único payload
+
+function scheduleFlush() {
+  if (flushScheduled) return;
+  flushScheduled = true;
+  // microtask: agrupa todas as montagens do mesmo flush de effects do React.
+  queueMicrotask(flushSignQueue);
+}
+
+async function flushSignQueue() {
+  flushScheduled = false;
+  const batch = signQueue;
+  signQueue = new Map();
+  const paths = Array.from(batch.keys());
+  if (paths.length === 0) return;
+
+  for (let i = 0; i < paths.length; i += BATCH_CHUNK) {
+    const slice = paths.slice(i, i + BATCH_CHUNK);
+    let byPath = new Map<string, string>();
+    try {
+      const { data } = await supabase.storage.from(BUCKET).createSignedUrls(slice, SIGNED_URL_TTL_SECONDS);
+      data?.forEach((d) => {
+        // itens com erro (objeto ausente) vêm com signedUrl null — ignora.
+        if (d.signedUrl && d.path) byPath.set(d.path, d.signedUrl);
+      });
+    } catch {
+      byPath = new Map(); // falha do lote: todos caem no fallback (null)
+    }
+    for (const path of slice) {
+      const signed = byPath.get(path) ?? null;
+      if (signed) {
+        cache.set(path, {
+          url: signed,
+          expiresAt: Date.now() + SIGNED_URL_TTL_SECONDS * 1000 - CACHE_SAFETY_MS,
+        });
+      }
+      batch.get(path)?.forEach((resolve) => resolve(signed));
+    }
+  }
+}
+
+// Assina um path (checa cache primeiro; senão enfileira no lote). Devolve null em falha.
+function signPathBatched(path: string): Promise<string | null> {
+  const cached = cache.get(path);
+  if (cached && cached.expiresAt > Date.now()) return Promise.resolve(cached.url);
+  return new Promise((resolve) => {
+    const arr = signQueue.get(path) ?? [];
+    arr.push(resolve);
+    signQueue.set(path, arr);
+    scheduleFlush();
+  });
+}
+
+// Resolve um avatar_url para uma URL utilizável em <img>. URLs cruas do WhatsApp passam
+// direto; falha de assinatura devolve o valor original (não piora o que já quebrou).
 export async function resolveContactAvatarUrl(value?: string | null): Promise<string | null> {
   if (!value) return null;
   const path = toContactAvatarStoragePath(value);
-  if (!path) return value; // URL crua do WhatsApp / externa — passa direto
-
-  const cached = cache.get(path);
-  if (cached && cached.expiresAt > Date.now()) return cached.url;
-
-  const { data } = await supabase.storage.from(BUCKET).createSignedUrl(path, SIGNED_URL_TTL_SECONDS);
-  const signed = data?.signedUrl;
-  if (!signed) return value; // falha de assinatura: não piora o que já quebrou
-  cache.set(path, {
-    url: signed,
-    expiresAt: Date.now() + SIGNED_URL_TTL_SECONDS * 1000 - CACHE_SAFETY_MS,
-  });
-  return signed;
+  if (!path) return value;
+  const signed = await signPathBatched(path);
+  return signed ?? value;
 }
 
 // Hook de exibição: resolve o signed URL de um avatar. Para URLs que NÃO são do nosso
