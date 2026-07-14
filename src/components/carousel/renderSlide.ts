@@ -4,6 +4,7 @@
 import JSZip from "jszip";
 import type { Carousel, Slide, TextAlign } from "./types";
 import { ensureCarouselFonts, FONT_OPTIONS } from "./constants";
+import { resolveCarouselImageUrl } from "./carouselImages";
 
 const SIZE = 1080;
 const PADDING = 90;
@@ -148,7 +149,9 @@ export async function renderSlideToBlob(slide: Slide, total: number): Promise<Bl
   // fundo
   if (hasImage) {
     try {
-      const img = await loadImage(slide.imageUrl!);
+      // Bucket privado: assina o image_url (path/URL legada) antes de carregar no canvas.
+      const signed = await resolveCarouselImageUrl(slide.imageUrl);
+      const img = await loadImage(signed!);
       drawCover(ctx, img);
     } catch {
       ctx.fillStyle = slide.bgColor ?? "#0a0a0a";

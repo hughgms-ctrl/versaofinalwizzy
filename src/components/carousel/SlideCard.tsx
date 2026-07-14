@@ -1,4 +1,5 @@
 import type { Slide, TextAlign } from "./types";
+import { useSignedCarouselImage } from "./carouselImages";
 
 interface Props {
   slide: Slide;
@@ -38,7 +39,9 @@ function overlayGradient(position: string, a: number): string {
  * Usado nas miniaturas e no preview principal.
  */
 export default function SlideCard({ slide, total, size = 400, className = "" }: Props) {
-  const hasImg = slide.hasImage && slide.imageUrl;
+  const hasImg = slide.hasImage && !!slide.imageUrl;
+  // Bucket privado: image_url é path/URL legada; assinamos sob demanda (createSignedUrl).
+  const displayUrl = useSignedCarouselImage(slide.imageUrl);
   const scale = size / 1080;
   const position = slide.overlayPosition ?? "bottom";
   const intensity = slide.overlayIntensity ?? 0.85;
@@ -61,10 +64,10 @@ export default function SlideCard({ slide, total, size = 400, className = "" }: 
         background: hasImg ? "#000" : slide.bgColor ?? "#0a0a0a",
       }}
     >
-      {hasImg && (
+      {hasImg && displayUrl && (
         <>
           <img
-            src={slide.imageUrl!}
+            src={displayUrl}
             alt=""
             crossOrigin="anonymous"
             className="absolute inset-0 h-full w-full object-cover"
