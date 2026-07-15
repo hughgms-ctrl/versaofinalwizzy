@@ -26,6 +26,7 @@ import { useDocumentPacks } from '@/hooks/useDocumentPacks';
 import { usePipelines, usePipelineColumns } from '@/hooks/usePipelines';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { useAuth } from '@/hooks/useAuth';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
 import { useWhatsAppGroups } from '@/hooks/useWhatsAppGroups';
 import { TrainingRulesList } from '@/components/agents/TrainingRulesList';
@@ -116,6 +117,7 @@ function MediaUploadField({
 }) {
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { profile } = useAuth();
 
   const getAcceptTypes = () => {
     switch (item.type) {
@@ -131,11 +133,18 @@ function MediaUploadField({
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // flow-media com WRITE escopado por org (migration 20260714130000): path começa com orgId.
+    const orgId = profile?.organization_id;
+    if (!orgId) {
+      toast.error('Sessão sem organização. Recarregue a página e tente novamente.');
+      return;
+    }
+
     setIsUploading(true);
     try {
       const fileExt = file.name.split('.').pop();
       const fileName = `${generateId()}.${fileExt}`;
-      const filePath = `${item.type}s/${fileName}`;
+      const filePath = `${orgId}/${item.type}s/${fileName}`;
 
       const { error: uploadError } = await supabase.storage
         .from('flow-media')

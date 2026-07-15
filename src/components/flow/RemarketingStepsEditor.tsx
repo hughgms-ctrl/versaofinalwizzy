@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { useAuth } from '@/hooks/useAuth';
 
 const generateId = () => Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 
@@ -20,6 +21,7 @@ export function RemarketingStepsEditor({ localData, handleChange }: RemarketingS
   const [isGenerating, setIsGenerating] = useState(false);
   const [uploadingStepId, setUploadingStepId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { profile } = useAuth();
   const activeStepRef = useRef<string | null>(null);
   const steps = (localData.remarketingSteps as any[]) || [];
 
@@ -28,12 +30,18 @@ export function RemarketingStepsEditor({ localData, handleChange }: RemarketingS
   const quietEnd = (localData.remarketingQuietEnd as string) || '08:00';
 
   const handleMediaUpload = async (stepId: string, file: File) => {
+    // flow-media com WRITE escopado por org (migration 20260714130000): path começa com orgId.
+    const orgId = profile?.organization_id;
+    if (!orgId) {
+      toast.error('Sessão sem organização. Recarregue a página e tente novamente.');
+      return;
+    }
     setUploadingStepId(stepId);
     try {
       const ext = file.name.split('.').pop() || 'bin';
       const timestamp = Date.now();
       const randomId = Math.random().toString(36).substring(2, 8);
-      const fileName = `followup-media/${timestamp}-${randomId}.${ext}`;
+      const fileName = `${orgId}/followup-media/${timestamp}-${randomId}.${ext}`;
 
       const { data, error } = await supabase.storage
         .from('flow-media')

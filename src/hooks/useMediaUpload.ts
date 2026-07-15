@@ -12,16 +12,27 @@ export function useMediaUpload() {
 
   const uploadFile = useCallback(async (
     file: File,
-    conversationId: string
+    conversationId: string,
+    organizationId: string | null | undefined
   ): Promise<UploadResult | null> => {
+    // Bucket público mas com WRITE escopado por org (migration 20260714130000): o
+    // path tem de começar com o orgId do usuário, senão a policy rejeita o upload.
+    if (!organizationId) {
+      toast({
+        title: 'Erro no upload',
+        description: 'Sessão sem organização. Recarregue a página e tente novamente.',
+        variant: 'destructive',
+      });
+      return null;
+    }
     setIsUploading(true);
-    
+
     try {
       // Generate unique filename
       const ext = file.name.split('.').pop() || 'bin';
       const timestamp = Date.now();
       const randomId = Math.random().toString(36).substring(2, 8);
-      const fileName = `${conversationId}/${timestamp}-${randomId}.${ext}`;
+      const fileName = `${organizationId}/${conversationId}/${timestamp}-${randomId}.${ext}`;
       
       // Upload to storage
       const { data, error } = await supabase.storage
@@ -74,7 +85,8 @@ export function useMediaUpload() {
 
   const uploadAudioBlob = useCallback(async (
     blob: Blob,
-    conversationId: string
+    conversationId: string,
+    organizationId: string | null | undefined
   ): Promise<UploadResult | null> => {
     const mimeType = (blob.type || 'audio/webm').split(';')[0].trim();
     const ext = mimeType.includes('ogg')
@@ -85,7 +97,7 @@ export function useMediaUpload() {
           ? 'm4a'
           : 'webm';
     const file = new File([blob], `audio.${ext}`, { type: mimeType });
-    return uploadFile(file, conversationId);
+    return uploadFile(file, conversationId, organizationId);
   }, [uploadFile]);
 
   return {

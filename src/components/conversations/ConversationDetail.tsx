@@ -409,7 +409,7 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
     if (attachedMedia) {
       setIsSendingMedia(true);
       try {
-        const result = await uploadFile(attachedMedia.file, conversation.id);
+        const result = await uploadFile(attachedMedia.file, conversation.id, profile?.organization_id);
         if (!result) {
           setIsSendingMedia(false);
           return;
@@ -615,7 +615,7 @@ export function ConversationDetail({ conversation, headerActions }: Conversation
   // Handle audio recording complete
   const handleAudioRecordComplete = async (audioBlob: Blob) => {
     try {
-      const result = await uploadAudioBlob(audioBlob, conversation.id);
+      const result = await uploadAudioBlob(audioBlob, conversation.id, profile?.organization_id);
       if (!result) {
         throw new Error('Falha ao enviar o audio para o armazenamento.');
       }

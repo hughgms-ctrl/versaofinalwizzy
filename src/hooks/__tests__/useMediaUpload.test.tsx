@@ -38,6 +38,7 @@ describe('useMediaUpload', () => {
     const uploaded = await result.current.uploadAudioBlob(
       new Blob(['audio'], { type: 'audio/webm' }),
       'conversation-1',
+      'org-1',
     );
 
     expect(uploaded).toEqual({
@@ -45,7 +46,9 @@ describe('useMediaUpload', () => {
       path: 'conversation-1/audio.webm',
     });
 
-    const [, file] = uploadMock.mock.calls[0];
+    const [path, file] = uploadMock.mock.calls[0];
+    // WRITE escopado por org: o path enviado ao storage começa com o orgId.
+    expect(path).toMatch(/^org-1\/conversation-1\//);
     expect(file).toBeInstanceOf(File);
     expect(file.name).toBe('audio.webm');
     expect(file.type).toBe('audio/webm');
@@ -57,6 +60,7 @@ describe('useMediaUpload', () => {
     await result.current.uploadAudioBlob(
       new Blob(['audio'], { type: 'audio/ogg;codecs=opus' }),
       'conversation-1',
+      'org-1',
     );
 
     const [, file] = uploadMock.mock.calls[0];
@@ -70,6 +74,7 @@ describe('useMediaUpload', () => {
     await result.current.uploadAudioBlob(
       new Blob(['audio'], { type: 'audio/mp4' }),
       'conversation-1',
+      'org-1',
     );
 
     const [, file] = uploadMock.mock.calls[0];
@@ -80,7 +85,7 @@ describe('useMediaUpload', () => {
   it('falls back to webm when the browser does not provide a mime type', async () => {
     const { result } = renderHook(() => useMediaUpload());
 
-    await result.current.uploadAudioBlob(new Blob(['audio']), 'conversation-1');
+    await result.current.uploadAudioBlob(new Blob(['audio']), 'conversation-1', 'org-1');
 
     await waitFor(() => expect(uploadMock).toHaveBeenCalled());
     const [, file] = uploadMock.mock.calls[0];

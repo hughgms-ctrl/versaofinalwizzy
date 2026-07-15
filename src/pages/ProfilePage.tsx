@@ -152,7 +152,8 @@ export default function ProfilePage() {
     setIsUploadingPhoto(true);
     try {
       const fileExt = file.name.split('.').pop();
-      const filePath = `avatars/${profile.id}.${fileExt}`;
+      // chat-media com WRITE escopado por org (migration 20260714130000): path começa com orgId.
+      const filePath = `${profile.organization_id}/avatars/${profile.id}.${fileExt}`;
 
       // Upload to storage
       const { error: uploadError } = await supabase.storage

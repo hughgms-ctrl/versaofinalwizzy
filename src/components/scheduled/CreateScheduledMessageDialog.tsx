@@ -30,6 +30,7 @@ import { useFlows } from '@/hooks/useFlows';
 import { useWhatsAppGroups } from '@/hooks/useWhatsAppGroups';
 import { useCreateScheduledMessage, ScheduledMessage } from '@/hooks/useScheduledMessages';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
+import { useAuth } from '@/hooks/useAuth';
 import { 
   Calendar, 
   Clock, 
@@ -86,6 +87,7 @@ export function CreateScheduledMessageDialog({
   const { data: whatsappGroups = [] } = useWhatsAppGroups();
   const createMutation = useCreateScheduledMessage();
   const { selectedWorkspaceId, selectedWorkspace } = useWorkspaceContext();
+  const { profile } = useAuth();
 
   // Aviso: a automação herda o workspace selecionado. Se esse workspace não tem
   // número de WhatsApp associado, o envio será recusado pelo backend. Só avisamos
@@ -149,6 +151,16 @@ export function CreateScheduledMessageDialog({
   }, [flows]);
 
   const uploadScheduledMedia = async (file: File) => {
+    // chat-media com WRITE escopado por org (migration 20260714130000): path começa com orgId.
+    const orgId = profile?.organization_id;
+    if (!orgId) {
+      toast({
+        title: 'Erro no upload',
+        description: 'Sessão sem organização. Recarregue a página e tente novamente.',
+        variant: 'destructive',
+      });
+      return;
+    }
     setIsUploadingMedia(true);
     try {
       const ext = file.name.split('.').pop() || 'bin';
@@ -156,7 +168,7 @@ export function CreateScheduledMessageDialog({
       const fileName = `${safeWorkspace}/${Date.now()}-${crypto.randomUUID()}.${ext}`;
       const { data, error } = await supabase.storage
         .from('chat-media')
-        .upload(`scheduled/${fileName}`, file, {
+        .upload(`${orgId}/scheduled/${fileName}`, file, {
           cacheControl: '3600',
           upsert: false,
           contentType: file.type || undefined,

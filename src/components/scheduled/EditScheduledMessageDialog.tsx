@@ -28,6 +28,7 @@ import { useFlows } from '@/hooks/useFlows';
 import { useWhatsAppGroups } from '@/hooks/useWhatsAppGroups';
 import { useUpdateScheduledMessage, ScheduledMessage } from '@/hooks/useScheduledMessages';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
+import { useAuth } from '@/hooks/useAuth';
 import {
   Calendar,
   Clock,
@@ -74,6 +75,7 @@ export function EditScheduledMessageDialog({
   const { data: whatsappGroups = [] } = useWhatsAppGroups();
   const updateMutation = useUpdateScheduledMessage();
   const { selectedWorkspaceId } = useWorkspaceContext();
+  const { profile } = useAuth();
 
   // Form state
   const [contentType, setContentType] = useState<'message' | 'flow'>('message');
@@ -182,6 +184,16 @@ export function EditScheduledMessageDialog({
   const activeFlows = useMemo(() => flows.filter((f: any) => f.is_active), [flows]);
 
   const uploadScheduledMedia = async (file: File) => {
+    // chat-media com WRITE escopado por org (migration 20260714130000): path começa com orgId.
+    const orgId = profile?.organization_id;
+    if (!orgId) {
+      toast({
+        title: 'Erro no upload',
+        description: 'Sessão sem organização. Recarregue a página e tente novamente.',
+        variant: 'destructive',
+      });
+      return;
+    }
     setIsUploadingMedia(true);
     try {
       const ext = file.name.split('.').pop() || 'bin';
@@ -189,7 +201,7 @@ export function EditScheduledMessageDialog({
       const fileName = `${safeWorkspace}/${Date.now()}-${crypto.randomUUID()}.${ext}`;
       const { data, error } = await supabase.storage
         .from('chat-media')
-        .upload(`scheduled/${fileName}`, file, {
+        .upload(`${orgId}/scheduled/${fileName}`, file, {
           cacheControl: '3600',
           upsert: false,
           contentType: file.type || undefined,
