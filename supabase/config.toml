@@ -239,3 +239,12 @@ verify_jwt = false
 
 [functions.instagram-process-followups]
 verify_jwt = false
+
+# Webhook do Asaas (gateway de pagamento): chamado pelos servidores do Asaas, que
+# NÃO enviam JWT do Supabase — só o header `asaas-access-token`. Com verify_jwt=true
+# (padrão) o gateway do Supabase rejeitava a chamada com 401 ANTES de chegar no código.
+# A autenticação real é feita dentro da função (compara `asaas-access-token` com o
+# secret ASAAS_WEBHOOK_TOKEN, timing-safe e fail-closed), igual aos demais webhooks
+# externos (zapi-webhook, campaign-webhook, instagram-webhook).
+[functions.asaas-webhook]
+verify_jwt = false
