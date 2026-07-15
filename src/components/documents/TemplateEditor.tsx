@@ -14,6 +14,7 @@ import { SignerInput } from '@/hooks/useDocumentSigners';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
+import { useSignedContactFileUrl } from './templateAssets';
 
 interface TemplateEditorProps {
   template: DocumentTemplate | null;
@@ -70,6 +71,9 @@ export function TemplateEditor({ template, onBack }: TemplateEditorProps) {
   const [contentHtml, setContentHtml] = useState<string>(initialHtml);
   const [logoUrl, setLogoUrl] = useState<string | null>(template?.logo_url || null);
   const [orgLogoUrl, setOrgLogoUrl] = useState<string | null>(null);
+  // Exibição do logo: contact-files é privado (Fase B) → assinar on-read. logoUrl
+  // continua CRU (usado no save e passado ao RichTextEditor).
+  const displayLogoUrl = useSignedContactFileUrl(logoUrl);
   const [fields, setFields] = useState<Array<{ name: string; label: string; type: string; required: boolean; hint?: string }>>(
     template?.fields || [],
   );
@@ -245,7 +249,7 @@ export function TemplateEditor({ template, onBack }: TemplateEditorProps) {
             <h3 className="font-medium text-sm mb-3">Logo do template</h3>
             {logoUrl ? (
               <div className="flex items-center gap-3 p-3 border rounded-lg bg-white">
-                <img src={logoUrl} alt="Logo" className="h-12 w-auto max-w-[160px] object-contain" />
+                <img src={displayLogoUrl || logoUrl} alt="Logo" className="h-12 w-auto max-w-[160px] object-contain" />
                 <Button variant="ghost" size="icon" onClick={() => setLogoUrl(null)}>
                   <X className="h-4 w-4" />
                 </Button>

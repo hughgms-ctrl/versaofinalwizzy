@@ -48,6 +48,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { signContactFilesUrls, signHtmlImages, stripSignedImages } from "./templateAssets";
 
 interface RichTextEditorProps {
   value: string;
@@ -98,9 +99,13 @@ export function RichTextEditor({ value, onChange, fields = [], organizationLogoU
       TableHeader,
       TableCell,
     ],
-    content: value || "<p></p>",
+    // O bucket contact-files é privado (Fase B): as <img> embutidas usam signed URLs
+    // SÓ para exibição. O doc começa vazio e é populado assinado pelo effect abaixo;
+    // no onUpdate normalizamos signed → público antes de emitir, para o estado do pai
+    // (e o banco) guardarem sempre a URL CRUA.
+    content: "<p></p>",
     onUpdate: ({ editor }) => {
-      onChange(editor.getHTML());
+      onChange(stripSignedImages(editor.getHTML()));
     },
     editorProps: {
       attributes: {
@@ -110,13 +115,24 @@ export function RichTextEditor({ value, onChange, fields = [], organizationLogoU
     },
   });
 
-  // Sync external value into editor (e.g. when switching templates)
+  // Sincroniza o value externo (raw) no editor (ex.: troca de template / load inicial),
+  // ASSINANDO as <img> do contact-files para exibição. Compara em formato CRU
+  // (strip do getHTML) para não sobrescrever durante a digitação — evita reset de cursor.
   useEffect(() => {
     if (!editor) return;
-    const current = editor.getHTML();
-    if (value && value !== current) {
-      editor.commands.setContent(value, false);
-    }
+    const editorRaw = stripSignedImages(editor.getHTML());
+    if ((value || "") === editorRaw) return; // já em sincronia → não mexe
+    let active = true;
+    (async () => {
+      const signed = await signHtmlImages(value || "<p></p>");
+      if (!active || editor.isDestroyed) return;
+      // re-checa: se durante o await o editor já bateu com o value, não sobrescreve
+      if (stripSignedImages(editor.getHTML()) === (value || "")) return;
+      editor.commands.setContent(signed || "<p></p>", false);
+    })();
+    return () => {
+      active = false;
+    };
   }, [value, editor]);
 
   if (!editor) {
@@ -135,7 +151,11 @@ export function RichTextEditor({ value, onChange, fields = [], organizationLogoU
       const { error } = await supabase.storage.from("contact-files").upload(path, file);
       if (error) throw error;
       const { data: urlData } = supabase.storage.from("contact-files").getPublicUrl(path);
-      editor.chain().focus().setImage({ src: urlData.publicUrl }).run();
+      // Insere a src ASSINADA para exibição; o onUpdate normaliza de volta p/ a URL
+      // crua no estado/banco (bucket privado — a pública não resolve mais).
+      const map = await signContactFilesUrls([urlData.publicUrl]);
+      const displaySrc = map.get(urlData.publicUrl) ?? urlData.publicUrl;
+      editor.chain().focus().setImage({ src: displaySrc }).run();
     } catch (e: any) {
       toast.error("Erro ao enviar imagem: " + e.message);
     }
@@ -145,12 +165,16 @@ export function RichTextEditor({ value, onChange, fields = [], organizationLogoU
     editor.chain().focus().insertContent(`{{${name}}}`).run();
   };
 
-  const insertOrgLogo = () => {
+  const insertOrgLogo = async () => {
     if (!organizationLogoUrl) {
       toast.error("Sua organização não tem logo configurada.");
       return;
     }
-    editor.chain().focus().setImage({ src: organizationLogoUrl }).run();
+    // Logo de template mora no contact-files (privado) → assinar p/ exibição; logo
+    // externa/legada passa direto. onUpdate normaliza p/ cru ao salvar.
+    const map = await signContactFilesUrls([organizationLogoUrl]);
+    const displaySrc = map.get(organizationLogoUrl) ?? organizationLogoUrl;
+    editor.chain().focus().setImage({ src: displaySrc }).run();
   };
 
   return (

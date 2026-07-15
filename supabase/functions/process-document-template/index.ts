@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import mammoth from "npm:mammoth@1.8.0";
 import { getOrganizationIdFromRequest, resolveOpenAIConfig } from "../_shared/aiStrategy.ts";
+import { fetchBytesOrDownload } from "../_shared/storageDownload.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -55,25 +56,25 @@ serve(async (req) => {
     const aiConfig = await resolveOpenAIConfig(adminClient, organizationId, "document_processing");
     if (!aiConfig) throw new Error("OpenAI não configurada para processar documentos");
 
-    // Fetch file content
-    const fileResp = await fetch(file_url);
-    if (!fileResp.ok) throw new Error("Failed to fetch file");
+    // Fetch file content. O bucket contact-files está privado (Fase B): o upload
+    // veio pra `<org_id>/templates/...`, então baixamos por path via service_role
+    // (fetchBytesOrDownload cai no fetch da URL para qualquer origem de terceiros).
+    const fileBytes = await fetchBytesOrDownload(file_url, adminClient);
+    if (!fileBytes) throw new Error("Failed to fetch file");
 
     const fileName = (file_name || '').toLowerCase();
     let fileContent = '';
 
     if (fileName.endsWith('.docx')) {
       // Parse DOCX properly using mammoth to extract clean text
-      const arrayBuffer = await fileResp.arrayBuffer();
-      const buffer = new Uint8Array(arrayBuffer);
-      const result = await mammoth.extractRawText({ buffer });
+      const result = await mammoth.extractRawText({ buffer: fileBytes });
       fileContent = result.value;
       console.log(`DOCX extracted: ${fileContent.length} chars of clean text`);
     } else if (fileName.endsWith('.txt') || fileName.endsWith('.md')) {
-      fileContent = await fileResp.text();
+      fileContent = new TextDecoder().decode(fileBytes);
     } else {
       // For PDF and other formats, try reading as text
-      fileContent = await fileResp.text().catch(() => '');
+      try { fileContent = new TextDecoder().decode(fileBytes); } catch { fileContent = ''; }
     }
 
     if (!fileContent || fileContent.trim().length === 0) {

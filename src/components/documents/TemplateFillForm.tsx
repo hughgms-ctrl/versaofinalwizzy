@@ -13,6 +13,7 @@ import { DocumentTemplate } from '@/hooks/useDocumentTemplates';
 import { useQueryClient } from '@tanstack/react-query';
 import { fillTemplate } from '@/lib/documentFormatters';
 import { sanitizeHtmlContent } from '@/lib/sanitize';
+import { useSignedContactFileUrl, useSignedHtml } from './templateAssets';
 import { FillModeStep, FillMode } from './FillModeStep';
 import { SignersManager } from './SignersManager';
 import { SignerLinksList } from './SignerLinksList';
@@ -203,6 +204,11 @@ export function TemplateFillForm({ template, onBack, onGeneratedForSignature }: 
     return fillTemplate(sourceHtml, formData, fields);
   }, [template, formData, fields]);
 
+  // contact-files é privado (Fase B): assinar on-read a logo e as <img> embutidas do
+  // preview (display-only; o content_html no banco segue com URL crua).
+  const signedLogoUrl = useSignedContactFileUrl(template.logo_url);
+  const signedContent = useSignedHtml(filledContent);
+
   const getInputType = (fieldType: string) => {
     switch (fieldType) {
       case 'email': return 'email';
@@ -359,10 +365,10 @@ export function TemplateFillForm({ template, onBack, onGeneratedForSignature }: 
             <CardContent>
               {template.logo_url && (
                 <div className="mb-4 pb-3 border-b bg-white p-2 rounded">
-                  <img src={template.logo_url} alt="Logo" className="h-10 w-auto object-contain" />
+                  <img src={signedLogoUrl || template.logo_url} alt="Logo" className="h-10 w-auto object-contain" />
                 </div>
               )}
-              <div className="max-h-[50vh] overflow-y-auto bg-white text-black p-6 rounded-lg leading-relaxed prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: sanitizeHtmlContent(filledContent) }} />
+              <div className="max-h-[50vh] overflow-y-auto bg-white text-black p-6 rounded-lg leading-relaxed prose prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: sanitizeHtmlContent(signedContent) }} />
             </CardContent>
           </Card>
         )}

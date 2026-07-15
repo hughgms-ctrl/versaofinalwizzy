@@ -6,6 +6,7 @@ const corsHeaders = {
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { sendWhatsAppMessage } from "../_shared/whatsappProvider.ts";
 import { getClientIp, checkRateLimitDb } from "../_shared/middleware.ts";
+import { signContactFileUrl } from "../_shared/storageDownload.ts";
 
 const normalizeKey = (value: string) =>
   String(value || "")
@@ -138,6 +139,13 @@ Deno.serve(async (req) => {
     }
 
     const documentId = createdDoc.id;
+
+    // O bucket contact-files está privado (Fase B): a URL pública crua de
+    // pdfData.pdf_url (`generated/...`) não resolve mais. Assinamos (via service_role,
+    // TTL 3h) para: (1) o <a href> anon do PublicFormPage baixar; (2) o provedor de
+    // WhatsApp buscar a mídia. A linha em generated_documents fica com a URL CRUA
+    // (leitores autenticados re-assinam via documentFiles.ts / sign-document-file).
+    const signedPdfUrl = (await signContactFileUrl(pdfData.pdf_url, supabase)) || pdfData.pdf_url;
 
     // 2) Load fixed signers from template
     const { data: fixedSigners } = await supabase
@@ -302,7 +310,7 @@ Deno.serve(async (req) => {
           organizationId: template.organization_id,
           phone: normalizedPhone,
           type: "document",
-          mediaUrl: pdfData.pdf_url,
+          mediaUrl: signedPdfUrl,
           caption: `Documento - ${document_name || template.name}\n\nSegue seu documento:`,
         });
         whatsappSent = sendResult.ok;
@@ -319,7 +327,7 @@ Deno.serve(async (req) => {
     const signatureUrl = signatureToken ? `${PUBLIC_APP_ORIGIN}/sign/${signatureToken}` : null;
 
     return new Response(JSON.stringify({
-      pdf_url: pdfData.pdf_url,
+      pdf_url: signedPdfUrl,
       whatsapp_sent: whatsappSent,
       document_id: documentId,
       signature_url: signatureUrl,
