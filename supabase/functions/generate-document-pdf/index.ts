@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { PDFDocument, rgb, StandardFonts, PDFFont, PDFPage } from "https://esm.sh/pdf-lib@1.17.1";
+import { fetchBytesOrDownload } from "../_shared/storageDownload.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -614,13 +615,17 @@ serve(async (req) => {
     let logoHeight = 0;
     if (logo_url) {
       try {
-        const resp = await fetch(logo_url);
-        if (resp.ok) {
-          const bytes = new Uint8Array(await resp.arrayBuffer());
-          const ct = resp.headers.get("content-type") || "";
-          logoImage = ct.includes("png")
-            ? await pdfDoc.embedPng(bytes)
-            : await pdfDoc.embedJpg(bytes);
+        // Logo pode ser um objeto do contact-files (template-logos/...) que, após a
+        // privatização do bucket, não resolve mais por fetch(publicUrl). O helper baixa
+        // via service_role pelo path quando for do nosso bucket; senão faz fetch.
+        const bytes = await fetchBytesOrDownload(logo_url, supabase);
+        if (bytes) {
+          // Sem content-type do download: tenta PNG e cai pra JPG.
+          try {
+            logoImage = await pdfDoc.embedPng(bytes);
+          } catch {
+            logoImage = await pdfDoc.embedJpg(bytes);
+          }
           const maxLogoHeight = 40;
           const maxLogoWidth = 200;
           const scale = Math.min(maxLogoWidth / logoImage.width, maxLogoHeight / logoImage.height, 1);

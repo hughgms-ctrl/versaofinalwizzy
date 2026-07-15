@@ -64,6 +64,11 @@ import {
   ContactFolder,
   ContactFile,
 } from '@/hooks/useContactFiles';
+import {
+  useSignedContactFileUrl,
+  resolveContactFileUrl,
+  downloadContactFileBlob,
+} from '@/components/conversations/contactFiles';
 
 pdfjsLib.GlobalWorkerOptions.workerPort = new PdfWorker();
 
@@ -83,6 +88,39 @@ const FileIcon = ({ type }: { type: string }) => {
       return <FileText className="h-4 w-4 text-orange-500" />;
   }
 };
+
+// Thumbnail da lista: assina a URL do contact-files on-read (bucket em privatização).
+// Fica em componente próprio para poder usar o hook de assinatura dentro do .map.
+function ContactFileThumb({ file }: { file: ContactFile }) {
+  const src = useSignedContactFileUrl(file);
+  if (!src) {
+    return <div className="h-8 w-8 flex-shrink-0 rounded bg-muted" />;
+  }
+  return (
+    <img
+      src={src}
+      alt={file.name}
+      className="h-8 w-8 flex-shrink-0 rounded object-cover"
+    />
+  );
+}
+
+// Abre um contact_file em nova aba usando signed URL. Abre a janela ANTES do await
+// (síncrono, dentro do gesto de clique) para não ser bloqueada por popup blocker,
+// e só então aponta a location para a URL assinada.
+async function openContactFileInNewTab(file: ContactFile) {
+  const win = window.open('', '_blank', 'noopener,noreferrer');
+  const url = await resolveContactFileUrl(file);
+  if (!url) {
+    win?.close();
+    return;
+  }
+  if (win) {
+    win.location.href = url;
+  } else {
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
+}
 
 function PdfPreviewPages({ pdfDocument, pageCount }: { pdfDocument: any; pageCount: number }) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -334,6 +372,7 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
 
   const handleSaveAsPdf = async (file: ContactFile) => {
     try {
+      const signedUrl = await resolveContactFileUrl(file);
       const img = new window.Image();
       img.crossOrigin = 'anonymous';
       img.onload = () => {
@@ -387,7 +426,7 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
           variant: 'destructive',
         });
       };
-      img.src = file.file_url;
+      img.src = signedUrl || file.file_url;
     } catch (error) {
       toast({
         title: 'Erro',
@@ -479,7 +518,8 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
       console.error('Contact PDF storage download failed:', error);
     }
 
-    const response = await fetch(file.file_url, {
+    const signedUrl = (await resolveContactFileUrl(file)) || file.file_url;
+    const response = await fetch(signedUrl, {
       mode: 'cors',
       cache: 'no-store',
     });
@@ -504,9 +544,8 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
 
   const handleDownloadFile = async (file: ContactFile) => {
     try {
-      const response = await fetch(file.file_url);
-      if (!response.ok) throw new Error('fetch failed');
-      const blob = await response.blob();
+      const blob = await downloadContactFileBlob(file);
+      if (!blob) throw new Error('download failed');
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -526,6 +565,8 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
 
   const totalFiles = files?.length || 0;
   const isPdfPreview = isPdfFile(previewFile);
+  // Signed URL do arquivo aberto no preview (img/video/audio). null enquanto assina.
+  const previewSignedUrl = useSignedContactFileUrl(previewFile);
 
   useEffect(() => {
     let cancelled = false;
@@ -800,11 +841,7 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
                     onClick={() => handleFileClick(file)}
                   >
                     {file.file_type === 'image' ? (
-                      <img
-                        src={file.file_url}
-                        alt={file.name}
-                        className="h-8 w-8 flex-shrink-0 rounded object-cover"
-                      />
+                      <ContactFileThumb file={file} />
                     ) : (
                       <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded bg-muted">
                         <FileIcon type={file.file_type} />
@@ -836,11 +873,9 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
                         <ExternalLink className="h-3.5 w-3.5 mr-2" />
                         Visualizar
                       </DropdownMenuItem>
-                      <DropdownMenuItem asChild>
-                        <a href={file.file_url} target="_blank" rel="noopener noreferrer">
-                          <ExternalLink className="h-3.5 w-3.5 mr-2" />
-                          Abrir em nova aba
-                        </a>
+                      <DropdownMenuItem onClick={() => openContactFileInNewTab(file)}>
+                        <ExternalLink className="h-3.5 w-3.5 mr-2" />
+                        Abrir em nova aba
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => handleDownloadFile(file)}>
                         <Download className="h-3.5 w-3.5 mr-2" />
@@ -1084,11 +1119,13 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
                     variant="ghost"
                     size="icon"
                     className="h-8 w-8"
-                    asChild
+                    title="Abrir em nova aba"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      openContactFileInNewTab(previewFile);
+                    }}
                   >
-                    <a href={previewFile.file_url} target="_blank" rel="noopener noreferrer" title="Abrir em nova aba">
-                      <ExternalLink className="h-4 w-4" />
-                    </a>
+                    <ExternalLink className="h-4 w-4" />
                   </Button>
                   <Button
                     variant="ghost"
@@ -1119,30 +1156,42 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
                 onWheel={previewFile.file_type === 'image' ? handleImageWheel : undefined}
               >
                 {previewFile.file_type === 'image' ? (
-                  <div
-                    className={imageZoom > 1 ? 'min-w-full p-4' : 'flex h-full w-full items-center justify-center'}
-                  >
-                    <img
-                      src={previewFile.file_url}
-                      alt={previewFile.name}
-                      draggable={false}
-                      onDragStart={(event) => event.preventDefault()}
-                      className="pointer-events-none block select-none rounded object-contain"
-                      style={{
-                        maxWidth: imageZoom === 1 ? '100%' : 'none',
-                        maxHeight: imageZoom === 1 ? '70vh' : 'none',
-                        width: imageZoom === 1 ? 'auto' : `${imageZoom * 100}%`,
-                      }}
-                    />
-                  </div>
+                  previewSignedUrl ? (
+                    <div
+                      className={imageZoom > 1 ? 'min-w-full p-4' : 'flex h-full w-full items-center justify-center'}
+                    >
+                      <img
+                        src={previewSignedUrl}
+                        alt={previewFile.name}
+                        draggable={false}
+                        onDragStart={(event) => event.preventDefault()}
+                        className="pointer-events-none block select-none rounded object-contain"
+                        style={{
+                          maxWidth: imageZoom === 1 ? '100%' : 'none',
+                          maxHeight: imageZoom === 1 ? '70vh' : 'none',
+                          width: imageZoom === 1 ? 'auto' : `${imageZoom * 100}%`,
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  )
                 ) : previewFile.file_type === 'video' ? (
-                  <video 
-                    src={previewFile.file_url} 
-                    controls 
-                    className="max-w-full max-h-[70vh] rounded"
-                  />
+                  previewSignedUrl ? (
+                    <video
+                      src={previewSignedUrl}
+                      controls
+                      className="max-w-full max-h-[70vh] rounded"
+                    />
+                  ) : (
+                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  )
                 ) : previewFile.file_type === 'audio' ? (
-                  <audio src={previewFile.file_url} controls className="w-full max-w-md" />
+                  previewSignedUrl ? (
+                    <audio src={previewSignedUrl} controls className="w-full max-w-md" />
+                  ) : (
+                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  )
                 ) : isPdfPreview ? (
                   pdfPreviewLoading ? (
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">

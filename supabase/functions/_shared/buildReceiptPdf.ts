@@ -1,5 +1,6 @@
 import { PDFDocument, StandardFonts, rgb, PDFFont, PDFImage, PDFPage } from "https://esm.sh/pdf-lib@1.17.1";
 import QRCode from "https://esm.sh/qrcode@1.5.3";
+import { fetchBytesOrDownload } from "./storageDownload.ts";
 
 const PUBLIC_ORIGIN = "https://wizzybr.com";
 const LOGO_URLS = [
@@ -92,7 +93,7 @@ export interface BuildReceiptInput {
   geolocation?: { lat?: number; lng?: number } | null;
 }
 
-export async function buildReceiptPdf(input: any): Promise<Uint8Array> {
+export async function buildReceiptPdf(input: any, supabaseAdmin?: any): Promise<Uint8Array> {
   // Normalize: if no signers array passed, treat the legacy fields as a single signer
   let signers: SignerEntry[] = Array.isArray(input.signers) && input.signers.length > 0
     ? input.signers
@@ -302,7 +303,7 @@ export async function buildReceiptPdf(input: any): Promise<Uint8Array> {
     page.drawText(sigLabel, { x: rightColCenterX - sigLabelW / 2, y: y - 22, size: 9, font: helv, color: muted });
 
     if (isSigned && s.signatureUrl) {
-      const sigBytes = await fetchAsBytes(s.signatureUrl);
+      const sigBytes = await fetchBytesOrDownload(s.signatureUrl, supabaseAdmin);
       const sigImg = await embedImage(pdfDoc, sigBytes);
       if (sigImg) {
         const maxW = rightColW - 16, maxH = 50;
@@ -323,7 +324,7 @@ export async function buildReceiptPdf(input: any): Promise<Uint8Array> {
     }
 
     if (isSigned && s.selfieUrl) {
-      const selfieBytes = await fetchAsBytes(s.selfieUrl);
+      const selfieBytes = await fetchBytesOrDownload(s.selfieUrl, supabaseAdmin);
       const selfieImg = await embedImage(pdfDoc, selfieBytes);
       if (selfieImg) {
         const targetSize = 60;

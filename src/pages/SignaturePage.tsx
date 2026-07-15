@@ -5,6 +5,7 @@ import { FileSignature, CheckCircle2, FileText, ExternalLink, Loader2, ShieldChe
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { useSignedDocFileUrl } from '@/components/documents/documentFiles';
 
 interface SignatureData {
   id: string;
@@ -24,6 +25,14 @@ export default function SignaturePage() {
   const [signature, setSignature] = useState<SignatureData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [step, setStep] = useState<'view' | 'signing' | 'done'>('view');
+
+  // Assina o PDF (contact-files, privatizável) por org. Hook no topo (antes dos early
+  // returns) para respeitar as regras de hooks; ref null enquanto não há assinatura.
+  const signedPdfUrl = useSignedDocFileUrl(
+    signature?.generated_document
+      ? { table: 'generated_documents', id: signature.generated_document.id, field: 'pdf_url', rawUrl: signature.generated_document.pdf_url }
+      : null,
+  );
 
   useEffect(() => {
     loadSignature();
@@ -155,16 +164,24 @@ export default function SignaturePage() {
 
           {signature.generated_document.pdf_url && (
             <div className="mt-4">
-              <iframe
-                src={signature.generated_document.pdf_url}
-                className="w-full h-[500px] border rounded-lg"
-                title="Documento para assinatura"
-              />
-              <Button variant="outline" className="mt-3 gap-2" asChild>
-                <a href={signature.generated_document.pdf_url} target="_blank" rel="noopener noreferrer">
-                  <ExternalLink className="h-4 w-4" /> Abrir em nova aba
-                </a>
-              </Button>
+              {signedPdfUrl ? (
+                <>
+                  <iframe
+                    src={signedPdfUrl}
+                    className="w-full h-[500px] border rounded-lg"
+                    title="Documento para assinatura"
+                  />
+                  <Button variant="outline" className="mt-3 gap-2" asChild>
+                    <a href={signedPdfUrl} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="h-4 w-4" /> Abrir em nova aba
+                    </a>
+                  </Button>
+                </>
+              ) : (
+                <div className="flex h-[500px] items-center justify-center rounded-lg border">
+                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                </div>
+              )}
             </div>
           )}
         </Card>

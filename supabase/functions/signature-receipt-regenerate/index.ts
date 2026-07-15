@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, jsonResponse, errorResponse, createServiceClient, parseJsonBody } from "../_shared/middleware.ts";
+import { signContactFileUrl } from "../_shared/storageDownload.ts";
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -37,7 +38,9 @@ serve(async (req) => {
 
     const result = await r.json();
     if (!r.ok) return errorResponse(result?.error || "Falha ao regerar relatório", 500);
-    return jsonResponse({ success: true, receiptUrl: result.signedPdfUrl });
+    // Assina a URL (contact-files privatizável) antes de devolver p/ abrir no front.
+    const receiptUrl = await signContactFileUrl(result.signedPdfUrl, supabase);
+    return jsonResponse({ success: true, receiptUrl });
   } catch (e: any) {
     console.error("signature-receipt-regenerate error:", e);
     return errorResponse(e?.message || "Erro interno", 500);

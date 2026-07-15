@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useDocumentSignatures, useUpdateSignatureStatus, useArchiveSignature, useDeleteSignature } from '@/hooks/useDocumentSignatures';
 import { useGeneratedDocuments } from '@/hooks/useGeneratedDocuments';
+import { openDocFileInNewTab, resolveDocFileUrls } from './documentFiles';
 import { CreateSignatureDialog } from './CreateSignatureDialog';
 import { SignerLinksList } from './SignerLinksList';
 import { EditFilledDataDialog } from './EditFilledDataDialog';
@@ -162,7 +163,8 @@ export function SignaturesList() {
       if (error) throw error;
       if (data?.receiptUrl) {
         toast({ title: 'Recibo regerado', description: 'Abrindo nova versão...' });
-        window.open(data.receiptUrl + '?t=' + Date.now(), '_blank');
+        // receiptUrl já vem como signed URL do edge; NÃO anexar query (quebraria o token).
+        window.open(data.receiptUrl, '_blank');
       } else {
         toast({ title: 'Recibo regerado' });
       }
@@ -311,16 +313,23 @@ export function SignaturesList() {
     });
 
     const downloadPackZip = async () => {
-      if (downloadablePackGroups.length === 0) {
+      const signedDocs = selectedGroup.documents.filter((d) => !!d.signedUrl);
+      if (signedDocs.length === 0) {
         toast({ title: 'Nenhum PDF assinado disponível', variant: 'destructive' });
         return;
       }
       try {
         const zip = new JSZip();
-        for (const group of downloadablePackGroups) {
-          const res = await fetch(group.signedPdfUrl!);
+        // Assina todos os PDFs assinados (contact-files) por org num único batch.
+        const signedMap = await resolveDocFileUrls(
+          signedDocs.map((d) => ({ table: 'generated_documents' as const, id: d.id, field: 'signed_pdf_url', rawUrl: d.signedUrl })),
+        );
+        for (const d of signedDocs) {
+          const signed = signedMap.get(`generated_documents:${d.id}:signed_pdf_url`) || d.signedUrl;
+          if (!signed) continue;
+          const res = await fetch(signed);
           const blob = await res.blob();
-          const safeName = group.docName.replace(/[\\/:*?"<>|]+/g, '-').slice(0, 120) || group.docId;
+          const safeName = (d.name || d.id).replace(/[\\/:*?"<>|]+/g, '-').slice(0, 120) || d.id;
           zip.file(`${safeName}.pdf`, blob);
         }
         const content = await zip.generateAsync({ type: 'blob' });
@@ -381,17 +390,13 @@ export function SignaturesList() {
                     {index > 0 && <DropdownMenuSeparator />}
                     <div className="px-2 py-1.5 text-[11px] font-medium text-muted-foreground truncate">{doc.name}</div>
                     {doc.originalUrl && (
-                      <DropdownMenuItem asChild>
-                        <a href={doc.originalUrl} target="_blank" rel="noopener noreferrer">
-                          <Download className="h-3.5 w-3.5 mr-2" /> Original
-                        </a>
+                      <DropdownMenuItem onClick={() => openDocFileInNewTab({ table: 'generated_documents', id: doc.id, field: 'pdf_url', rawUrl: doc.originalUrl })}>
+                        <Download className="h-3.5 w-3.5 mr-2" /> Original
                       </DropdownMenuItem>
                     )}
                     {doc.signedUrl ? (
-                      <DropdownMenuItem asChild>
-                        <a href={doc.signedUrl} target="_blank" rel="noopener noreferrer">
-                          <ShieldCheck className="h-3.5 w-3.5 mr-2" /> Assinado
-                        </a>
+                      <DropdownMenuItem onClick={() => openDocFileInNewTab({ table: 'generated_documents', id: doc.id, field: 'signed_pdf_url', rawUrl: doc.signedUrl })}>
+                        <ShieldCheck className="h-3.5 w-3.5 mr-2" /> Assinado
                       </DropdownMenuItem>
                     ) : (
                       <DropdownMenuItem disabled>
@@ -724,10 +729,14 @@ export function SignaturesList() {
                     )}
 
                     {group.signedPdfUrl && (
-                      <Button variant="ghost" size="icon" className="h-8 w-8" asChild title="Baixar PDF assinado consolidado">
-                        <a href={group.signedPdfUrl} target="_blank" rel="noopener noreferrer">
-                          <Download className="h-4 w-4" />
-                        </a>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        title="Baixar PDF assinado consolidado"
+                        onClick={() => openDocFileInNewTab({ table: 'generated_documents', id: group.docId, field: 'signed_pdf_url', rawUrl: group.signedPdfUrl })}
+                      >
+                        <Download className="h-4 w-4" />
                       </Button>
                     )}
                     {signedSigners > 0 && (

@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useGeneratedDocuments, useDeleteGeneratedDocument, useRegenerateDocumentPdf } from '@/hooks/useGeneratedDocuments';
+import { resolveDocFileUrl, resolveDocFileUrls } from './documentFiles';
 import { EditFilledDataDialog } from './EditFilledDataDialog';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -214,8 +215,11 @@ export function GeneratedDocumentsList() {
 
   const handleDownload = async (doc: any) => {
     if (!doc.pdf_url) return;
+    // Bucket contact-files privatizável: assina a URL por org antes de baixar.
+    const signedUrl = await resolveDocFileUrl({ table: 'generated_documents', id: doc.id, field: 'pdf_url', rawUrl: doc.pdf_url });
+    if (!signedUrl) return;
     try {
-      const response = await fetch(doc.pdf_url);
+      const response = await fetch(signedUrl);
       if (!response.ok) throw new Error('Falha ao baixar arquivo');
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
@@ -227,7 +231,7 @@ export function GeneratedDocumentsList() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch {
-      window.open(doc.pdf_url, '_blank', 'noopener,noreferrer');
+      window.open(signedUrl, '_blank', 'noopener,noreferrer');
     }
   };
 
@@ -393,8 +397,14 @@ export function GeneratedDocumentsList() {
                       try {
                         toast.info('Preparando ZIP...');
                         const zip = new JSZip();
+                        // Assina todas as URLs (contact-files) por org num único batch.
+                        const signedMap = await resolveDocFileUrls(
+                          downloadable.map((d: any) => ({ table: 'generated_documents', id: d.id, field: 'pdf_url', rawUrl: d.pdf_url })),
+                        );
                         await Promise.all(downloadable.map(async (d: any) => {
-                          const r = await fetch(d.pdf_url);
+                          const signed = signedMap.get(`generated_documents:${d.id}:pdf_url`) || d.pdf_url;
+                          if (!signed) return;
+                          const r = await fetch(signed);
                           if (!r.ok) return;
                           const blob = await r.blob();
                           const safeName = (d.name || 'documento').replace(/[^\w\-. ]/g, '_');

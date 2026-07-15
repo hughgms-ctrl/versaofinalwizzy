@@ -32,6 +32,7 @@ import { useGeneratedDocuments, type GeneratedDocument } from '@/hooks/useGenera
 import { useCreateSignatureRequest, useDocumentSignatures, type DocumentSignature } from '@/hooks/useDocumentSignatures';
 import { useSendMessage } from '@/hooks/useSendMessage';
 import { useAddContactFile, useCreateContactFolder } from '@/hooks/useContactFiles';
+import { openDocFileInNewTab } from '@/components/documents/documentFiles';
 
 interface ContactContractsSectionProps {
   contactId: string;
@@ -798,9 +799,11 @@ export function ContactContractsSection({
             const progress = getGroupProgress(group);
             const signerLinks = getSignerLinkItems(group);
             const busy = busyId === group.id || sendMessage.isPending;
-            const signedUrls = group.docs
-              .map((doc) => getDocSignedUrl(doc, signaturesByDoc.get(doc.id) || []))
-              .filter(Boolean);
+            // {docId, url} para poder assinar por org na hora de abrir (bucket privatizável).
+            const signedEntries = group.docs
+              .map((doc) => ({ id: doc.id, url: getDocSignedUrl(doc, signaturesByDoc.get(doc.id) || []) }))
+              .filter((entry) => !!entry.url) as Array<{ id: string; url: string }>;
+            const firstSigned = signedEntries[0] || null;
 
             return (
               <Card key={group.id} className="space-y-3 p-3">
@@ -825,11 +828,15 @@ export function ContactContractsSection({
                       </span>
                     </div>
                   </div>
-                  {!group.isPack && signedUrls[0] && (
-                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" asChild title="Abrir PDF">
-                      <a href={signedUrls[0] as string} target="_blank" rel="noopener noreferrer">
-                        <ExternalLink className="h-4 w-4" />
-                      </a>
+                  {!group.isPack && firstSigned && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 shrink-0"
+                      title="Abrir PDF"
+                      onClick={() => openDocFileInNewTab({ table: 'generated_documents', id: firstSigned.id, field: 'signed_pdf_url', rawUrl: firstSigned.url })}
+                    >
+                      <ExternalLink className="h-4 w-4" />
                     </Button>
                   )}
                 </div>
@@ -843,8 +850,13 @@ export function ContactContractsSection({
                           <div key={doc.id} className="flex items-center justify-between gap-2 text-xs">
                             <span className="min-w-0 truncate text-muted-foreground">{doc.name}</span>
                             {signedUrl ? (
-                              <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]" asChild>
-                                <a href={signedUrl} target="_blank" rel="noopener noreferrer">Ver assinado</a>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 px-2 text-[10px]"
+                                onClick={() => openDocFileInNewTab({ table: 'generated_documents', id: doc.id, field: 'signed_pdf_url', rawUrl: signedUrl })}
+                              >
+                                Ver assinado
                               </Button>
                             ) : (
                               <span className="shrink-0 text-[10px] text-muted-foreground">Aguardando</span>
@@ -897,13 +909,16 @@ export function ContactContractsSection({
                       Excluir envio
                     </Button>
                   )}
-                  {signedUrls.length > 0 && (
+                  {signedEntries.length > 0 && (
                     <>
-                      <Button variant="outline" size="sm" className="gap-1.5" asChild>
-                        <a href={signedUrls[0] as string} target="_blank" rel="noopener noreferrer">
-                          <FileCheck className="h-3.5 w-3.5" />
-                          {group.isPack ? 'Ver assinado' : 'Ver assinado'}
-                        </a>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5"
+                        onClick={() => firstSigned && openDocFileInNewTab({ table: 'generated_documents', id: firstSigned.id, field: 'signed_pdf_url', rawUrl: firstSigned.url })}
+                      >
+                        <FileCheck className="h-3.5 w-3.5" />
+                        {group.isPack ? 'Ver assinado' : 'Ver assinado'}
                       </Button>
                       <Button
                         variant="outline"

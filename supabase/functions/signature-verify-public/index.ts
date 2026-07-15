@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, jsonResponse, errorResponse, createServiceClient, getClientIp, checkRateLimitDb, safeErrorResponse } from "../_shared/middleware.ts";
+import { signContactFileUrl } from "../_shared/storageDownload.ts";
 
 function maskIp(ip: string | null | undefined): string {
   if (!ip) return "N/A";
@@ -79,6 +80,12 @@ serve(async (req) => {
     const sig = (evidence as any).signature;
     const meta = (evidence as any).metadata || {};
 
+    // Assina os PDFs (contact-files, prefixo signatures/...) antes de devolver à página
+    // pública de verificação, que os abre por <a href> sem login. Mantém o bucket
+    // privatizável sem quebrar o download do PDF assinado / comprovante.
+    const signedPdfUrl = await signContactFileUrl(sig?.signed_pdf_url || null, supabase);
+    const receiptPdfUrl = await signContactFileUrl((evidence as any).receipt_pdf_url || null, supabase);
+
     return jsonResponse({
       found: true,
       verification_code: (evidence as any).verification_code,
@@ -86,8 +93,8 @@ serve(async (req) => {
         name: sig?.generated_document?.name || "Documento",
         hash: (evidence as any).document_hash,
         signed_at: sig?.signed_at || (evidence as any).signed_at,
-        signed_pdf_url: sig?.signed_pdf_url || null,
-        receipt_pdf_url: (evidence as any).receipt_pdf_url || null,
+        signed_pdf_url: signedPdfUrl,
+        receipt_pdf_url: receiptPdfUrl,
       },
       signer: {
         name: sig?.signer_name || "N/A",

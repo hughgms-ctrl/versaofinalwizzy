@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, jsonResponse, errorResponse, createServiceClient, parseJsonBody, checkRateLimitDb, safeErrorResponse } from "../_shared/middleware.ts";
 import { resolveSignatureByToken, markSignerSigned } from "../_shared/signerBridge.ts";
+import { fetchBytesOrDownload } from "../_shared/storageDownload.ts";
 
 function getClientIp(req: Request): string {
   const forwarded = req.headers.get("x-forwarded-for");
@@ -78,15 +79,16 @@ function decodeDataUrlImage(dataUrl: string): { buffer: Uint8Array; contentType:
   }
 }
 
-async function computeDocumentHash(pdfUrl: string | null, fallbackData: any): Promise<string> {
+async function computeDocumentHash(pdfUrl: string | null, fallbackData: any, supabaseAdmin?: any): Promise<string> {
   if (pdfUrl) {
     try {
-      const pdfResponse = await fetch(pdfUrl);
-      const pdfBuffer = await pdfResponse.arrayBuffer();
-      const hashBuffer = await crypto.subtle.digest("SHA-256", pdfBuffer);
-      return Array.from(new Uint8Array(hashBuffer))
-        .map(b => b.toString(16).padStart(2, "0"))
-        .join("");
+      const pdfBuffer = await fetchBytesOrDownload(pdfUrl, supabaseAdmin);
+      if (pdfBuffer) {
+        const hashBuffer = await crypto.subtle.digest("SHA-256", pdfBuffer);
+        return Array.from(new Uint8Array(hashBuffer))
+          .map(b => b.toString(16).padStart(2, "0"))
+          .join("");
+      }
     } catch (e) {
       console.error("Error hashing PDF:", e);
     }
@@ -184,7 +186,7 @@ serve(async (req) => {
     }
 
     const originalPdfUrl: string | null = signature.generated_document?.pdf_url || null;
-    const documentHash = await computeDocumentHash(originalPdfUrl, signature.generated_document?.filled_data || {});
+    const documentHash = await computeDocumentHash(originalPdfUrl, signature.generated_document?.filled_data || {}, supabase);
 
     // Selfie upload
     let selfieUrl: string | null = null;
@@ -355,6 +357,7 @@ serve(async (req) => {
           const siblingDocumentHash = await computeDocumentHash(
             siblingOriginalPdfUrl,
             siblingSignature.generated_document?.filled_data || {},
+            supabase,
           );
           const siblingVerificationCode = generateVerificationCode();
 

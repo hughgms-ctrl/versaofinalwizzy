@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { PDFDocument, StandardFonts, rgb } from "https://esm.sh/pdf-lib@1.17.1";
 import { corsHeaders, jsonResponse, errorResponse, createServiceClient, parseJsonBody } from "../_shared/middleware.ts";
 import { buildReceiptPdf, SignerEntry } from "../_shared/buildReceiptPdf.ts";
+import { fetchBytesOrDownload } from "../_shared/storageDownload.ts";
 
 const PUBLIC_ORIGIN = "https://wizzybr.com";
 
@@ -11,18 +12,6 @@ function safe(str: string | null | undefined): string {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^\x20-\x7E]/g, "?");
-}
-
-async function fetchAsBytes(url: string | null | undefined): Promise<Uint8Array | null> {
-  if (!url) return null;
-  try {
-    const r = await fetch(url);
-    if (!r.ok) return null;
-    return new Uint8Array(await r.arrayBuffer());
-  } catch (e) {
-    console.error("fetchAsBytes error:", e);
-    return null;
-  }
 }
 
 serve(async (req) => {
@@ -84,10 +73,11 @@ serve(async (req) => {
     // 2) Compute hash from the ORIGINAL PDF (so it's stable across re-stamps)
     if (!documentHash) {
       try {
-        const r = await fetch(originalPdfUrl);
-        const buf = await r.arrayBuffer();
-        const hashBuf = await crypto.subtle.digest("SHA-256", buf);
-        documentHash = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, "0")).join("");
+        const buf = await fetchBytesOrDownload(originalPdfUrl, supabase);
+        if (buf) {
+          const hashBuf = await crypto.subtle.digest("SHA-256", buf);
+          documentHash = Array.from(new Uint8Array(hashBuf)).map(b => b.toString(16).padStart(2, "0")).join("");
+        }
       } catch (e) {
         console.error("hash error", e);
       }
@@ -172,7 +162,7 @@ serve(async (req) => {
     }
 
     // 4) Always start from ORIGINAL PDF (avoid stacking footers)
-    const originalBytes = await fetchAsBytes(originalPdfUrl);
+    const originalBytes = await fetchBytesOrDownload(originalPdfUrl, supabase);
     if (!originalBytes) return errorResponse("Could not load original PDF", 500);
 
     const pdfDoc = await PDFDocument.load(originalBytes);
@@ -214,7 +204,7 @@ serve(async (req) => {
         verificationCode,
         createdAt,
         signers,
-      });
+      }, supabase);
       const receiptDoc = await PDFDocument.load(receiptBytes);
       const copied = await pdfDoc.copyPages(receiptDoc, receiptDoc.getPageIndices());
       copied.forEach((p) => pdfDoc.addPage(p));

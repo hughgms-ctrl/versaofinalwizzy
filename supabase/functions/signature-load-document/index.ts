@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, jsonResponse, errorResponse, createServiceClient, parseJsonBody, getClientIp, checkRateLimitDb, safeErrorResponse } from "../_shared/middleware.ts";
 import { resolveSignatureByToken } from "../_shared/signerBridge.ts";
+import { signContactFileUrl } from "../_shared/storageDownload.ts";
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -85,6 +86,16 @@ serve(async (req) => {
       packDocuments = ensured.filter((d: any) => !!d.pdf_url);
     }
 
+    // Assina os PDFs (contact-files, prefixo generated/...) antes de devolver ao fluxo
+    // PÚBLICO de assinatura, que não tem login. Mantém o bucket privatizável sem
+    // quebrar o preview/download da página de assinatura. URLs de terceiros passam intactas.
+    const docSigned = doc
+      ? { ...doc, pdf_url: await signContactFileUrl(doc.pdf_url, supabase) }
+      : null;
+    packDocuments = await Promise.all(
+      packDocuments.map(async (d: any) => ({ ...d, pdf_url: await signContactFileUrl(d.pdf_url, supabase) })),
+    );
+
     const signature = {
       id: resolved.id,
       status: resolved.status,
@@ -94,7 +105,7 @@ serve(async (req) => {
       signer_phone: resolved.signer_phone,
       metadata: resolved.metadata,
       expires_at: resolved.expires_at,
-      generated_document: doc || null,
+      generated_document: docSigned,
       pack: doc?.pack_id
         ? { id: doc.pack_id, name: packName, documents: packDocuments }
         : null,

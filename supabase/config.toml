@@ -173,6 +173,10 @@ verify_jwt = false
 [functions.signature-verify-public]
 verify_jwt = false
 
+# Autenticado: assina PDFs de documentos (contact-files) por org via RLS. Exige JWT.
+[functions.sign-document-file]
+verify_jwt = true
+
 [functions.track-fingerprint]
 verify_jwt = false
 

@@ -25,7 +25,7 @@ serve(async (req) => {
         body.signedAt;
     }
 
-    const pdfBytes = await buildReceiptPdf(body);
+    const pdfBytes = await buildReceiptPdf(body, supabase);
 
     const receiptFileName = `signatures/${body.signatureId}/receipt_${Date.now()}.pdf`;
     const { error: uploadError } = await supabase.storage
