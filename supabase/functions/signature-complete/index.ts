@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, jsonResponse, errorResponse, createServiceClient, parseJsonBody, checkRateLimitDb, safeErrorResponse } from "../_shared/middleware.ts";
 import { resolveSignatureByToken, markSignerSigned } from "../_shared/signerBridge.ts";
-import { fetchBytesOrDownload } from "../_shared/storageDownload.ts";
+import { fetchBytesOrDownload, signContactFileUrl } from "../_shared/storageDownload.ts";
 
 function getClientIp(req: Request): string {
   const forwarded = req.headers.get("x-forwarded-for");
@@ -617,19 +617,35 @@ serve(async (req) => {
       }
     }
 
+    // Bucket contact-files privado (Fase B): a tela de conclusão do fluxo PÚBLICO
+    // faz fetch()/<a href> direto nessas URLs. A pública não resolve mais → assinar
+    // (via service_role, TTL 3h) antes de devolver. As colunas no banco seguem CRUAS
+    // (readers autenticados re-assinam via A.4).
+    const [signedPdfUrlOut, receiptPdfUrlOut, packSignedDocumentsOut] = await Promise.all([
+      signContactFileUrl(signedPdfUrl, supabase),
+      signContactFileUrl(receiptPdfUrl, supabase),
+      Promise.all(
+        packSignedDocuments.map(async (doc: any) => ({
+          ...doc,
+          signedPdfUrl: await signContactFileUrl(doc.signedPdfUrl, supabase),
+          receiptPdfUrl: await signContactFileUrl(doc.receiptPdfUrl, supabase),
+        })),
+      ),
+    ]);
+
     return jsonResponse({
       success: true,
       signatureUrl,
       selfieUrl,
       documentHash,
-      signedPdfUrl,
-      receiptPdfUrl,
+      signedPdfUrl: signedPdfUrlOut,
+      receiptPdfUrl: receiptPdfUrlOut,
       verificationCode,
       verificationUrl: `https://wizzybr.com/verificar/${verificationCode}`,
       signedAt,
       pendingSigners: pendingSigners ?? 0,
       allSigned: !pendingSigners || pendingSigners === 0,
-      packSignedDocuments,
+      packSignedDocuments: packSignedDocumentsOut,
     });
   } catch (error) {
     return safeErrorResponse(error, "signature-complete");
