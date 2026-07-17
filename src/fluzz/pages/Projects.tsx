@@ -55,7 +55,7 @@ export default function Projects() {
     queryFn: async () => {
       if (!workspace?.id || !user?.id) return null;
       const { data, error } = await supabase
-        .from("user_permissions")
+        .from("wizzy_flow_user_permissions")
         .select("projects_only_assigned")
         .eq("workspace_id", workspace.id)
         .eq("user_id", user.id)

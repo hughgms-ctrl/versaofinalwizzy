@@ -47,8 +47,8 @@ export const MemberDrawer = ({ value, onValueChange, children, positionId }: Mem
         if (!user?.id) return [];
         const { data: profile } = await supabase
           .from("profiles")
-          .select("id, full_name, avatar_url")
-          .eq("id", user.id)
+          .select("id, user_id, full_name, avatar_url")
+          .eq("user_id", user.id)
           .maybeSingle();
 
         return [{
@@ -93,9 +93,9 @@ export const MemberDrawer = ({ value, onValueChange, children, positionId }: Mem
       // Fetch profiles for filtered users
       const { data: profiles, error: profilesError } = await supabase
         .from("profiles")
-        .select("id, full_name, avatar_url")
-        .in("id", userIds);
-      
+        .select("id, user_id, full_name, avatar_url")
+        .in("user_id", userIds);
+
       if (profilesError) {
         console.warn("Erro ao buscar perfis dos membros:", profilesError);
         return fallbackCurrentUser();
@@ -107,7 +107,7 @@ export const MemberDrawer = ({ value, onValueChange, children, positionId }: Mem
         .map(member => ({
           user_id: member.user_id,
           role: member.role,
-          profile: profiles?.find(p => p.id === member.user_id)
+          profile: profiles?.find(p => p.user_id === member.user_id)
         }));
     },
     enabled: !!workspace?.id,

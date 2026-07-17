@@ -93,7 +93,7 @@ export const NotificationList = ({
       // Set permissions if not admin
       if (inviteData.role !== "admin" && inviteData.permissions) {
         const { error: permError } = await supabase
-          .from("user_permissions")
+          .from("wizzy_flow_user_permissions")
           .insert({
             workspace_id: inviteData.workspace_id,
             user_id: user.id,

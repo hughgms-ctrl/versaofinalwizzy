@@ -50,18 +50,26 @@ export const CreateStandaloneTaskForMember = ({
     queryKey: ["workspace-members", workspace?.id],
     queryFn: async () => {
       if (!workspace) return [];
-      const { data, error } = await supabase
+      const { data: members, error } = await supabase
         .from("workspace_members")
-        .select(`
-          *,
-          profiles:user_id (
-            id,
-            full_name
-          )
-        `)
+        .select("*")
         .eq("workspace_id", workspace.id);
       if (error) throw error;
-      return data;
+      if (!members || members.length === 0) return [];
+
+      // profiles.id é a chave própria da tabela; o vínculo com o usuário
+      // autenticado (e com workspace_members.user_id) é profiles.user_id.
+      const userIds = members.map((m) => m.user_id);
+      const { data: profiles, error: profilesError } = await supabase
+        .from("profiles")
+        .select("id, user_id, full_name")
+        .in("user_id", userIds);
+      if (profilesError) throw profilesError;
+
+      return members.map((member) => ({
+        ...member,
+        profiles: profiles?.find((p) => p.user_id === member.user_id) || null,
+      }));
     },
     enabled: !!workspace,
   });

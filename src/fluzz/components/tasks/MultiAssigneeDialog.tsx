@@ -101,8 +101,8 @@ export function MultiAssigneeDialog({
       const userIds = members.map(m => m.user_id);
       const { data: profiles, error: profilesError } = await supabase
         .from("profiles")
-        .select("id, full_name, avatar_url")
-        .in("id", userIds);
+        .select("id, user_id, full_name, avatar_url")
+        .in("user_id", userIds);
       if (profilesError) throw profilesError;
 
       const { data: userPositions, error: positionsError } = await supabase
@@ -113,7 +113,7 @@ export function MultiAssigneeDialog({
 
       return members.map(member => ({
         ...member,
-        profiles: profiles?.find(p => p.id === member.user_id) || null,
+        profiles: profiles?.find(p => p.user_id === member.user_id) || null,
         positionIds: userPositions
           ?.filter(up => up.user_id === member.user_id)
           .map(up => up.position_id) || [],

@@ -3,11 +3,14 @@ import { format, addDays, differenceInDays, isToday, startOfDay, parse } from "d
 import { ptBR } from "date-fns/locale";
 import { ArrowDownAZ, GripVertical, GripHorizontal, User } from "lucide-react";
 import { Button } from "@/fluzz/components/ui/button";
+import { Input } from "@/fluzz/components/ui/input";
 import { cn } from "@/fluzz/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/fluzz/components/ui/avatar";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/fluzz/integrations/supabase/client";
+import { useMultipleTasksAssignees } from "@/fluzz/hooks/useTaskAssignees";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import { ScrollArea, ScrollBar } from "@/fluzz/components/ui/scroll-area";
 import { useIsMobile } from "@/fluzz/hooks/use-mobile";
 import { 
@@ -47,6 +50,7 @@ interface TimelineViewProps {
   sortMode?: "az" | "manual";
   onSortModeChange?: (mode: "az" | "manual") => void;
   setorNames?: Record<string, string>;
+  projectId?: string;
 }
 
 type DragMode = 'move' | 'resize-start' | 'resize-end' | null;
@@ -88,9 +92,51 @@ function SortableTaskNameRow({
   };
 
   const setorName = task.setor ? (setorNames[task.setor] || task.setor) : null;
+  const queryClient = useQueryClient();
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedTitle, setEditedTitle] = useState(task.title);
+  const clickTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (!isEditing) setEditedTitle(task.title);
+  }, [task.title, isEditing]);
+
+  const handleTitleSave = async () => {
+    setIsEditing(false);
+    const trimmed = editedTitle.trim();
+    if (!trimmed || trimmed === task.title) {
+      setEditedTitle(task.title);
+      return;
+    }
+    const { error } = await supabase
+      .from("tasks")
+      .update({ title: trimmed })
+      .eq("id", task.id);
+    if (error) {
+      toast.error("Erro ao atualizar título");
+      setEditedTitle(task.title);
+      return;
+    }
+    toast.success("Título atualizado!");
+    queryClient.invalidateQueries({ queryKey: ["tasks"] });
+  };
+
+  const handleTitleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (clickTimeoutRef.current) {
+      clearTimeout(clickTimeoutRef.current);
+      clickTimeoutRef.current = null;
+      setIsEditing(true);
+    } else {
+      clickTimeoutRef.current = setTimeout(() => {
+        clickTimeoutRef.current = null;
+        onClick();
+      }, 250);
+    }
+  };
 
   return (
-    <div 
+    <div
       ref={setNodeRef}
       style={style}
       className={cn(
@@ -99,7 +145,7 @@ function SortableTaskNameRow({
       )}
     >
       {sortMode === "manual" && (
-        <div 
+        <div
           {...attributes}
           {...listeners}
           className="cursor-grab hover:text-primary flex-shrink-0"
@@ -107,17 +153,38 @@ function SortableTaskNameRow({
           <GripHorizontal size={14} className="text-muted-foreground" />
         </div>
       )}
-      <div 
-        className="flex-1 min-w-0 cursor-pointer hover:text-primary"
-        onClick={onClick}
-      >
-        <span className="text-sm truncate block">
-          {task.title}
-        </span>
-        {setorName && (
-          <span className="text-[10px] text-muted-foreground/60 truncate block">
-            {setorName}
-          </span>
+      <div className="flex-1 min-w-0">
+        {isEditing ? (
+          <Input
+            value={editedTitle}
+            onChange={(e) => setEditedTitle(e.target.value)}
+            onBlur={handleTitleSave}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleTitleSave();
+              if (e.key === "Escape") {
+                setEditedTitle(task.title);
+                setIsEditing(false);
+              }
+            }}
+            onClick={(e) => e.stopPropagation()}
+            autoFocus
+            className="h-7 text-sm"
+          />
+        ) : (
+          <div
+            className="cursor-pointer hover:text-primary"
+            onClick={handleTitleClick}
+            title="Clique duplo para editar"
+          >
+            <span className="text-sm truncate block">
+              {task.title}
+            </span>
+            {setorName && (
+              <span className="text-[10px] text-muted-foreground/60 truncate block">
+                {setorName}
+              </span>
+            )}
+          </div>
         )}
       </div>
     </div>
@@ -132,28 +199,40 @@ const parseTaskDate = (value: string) => {
 
 const formatTaskDate = (date: Date) => format(startOfDay(date), "yyyy-MM-dd");
 
-export const TimelineView = ({ 
-  tasks, 
+export const TimelineView = ({
+  tasks,
   onUpdateTaskDates,
   onUpdateOrder,
   sortMode = "az",
   onSortModeChange,
-  setorNames = {}
+  setorNames = {},
+  projectId
 }: TimelineViewProps) => {
   const navigate = useNavigate();
   const [verticalDraggedTask, setVerticalDraggedTask] = useState<Task | null>(null);
   const today = startOfDay(new Date());
   
-  // Collect all user IDs from tasks (assigned_to + approval_reviewer_id)
+  // Responsáveis reais de cada tarefa vêm de task_assignees (mesma fonte usada em
+  // Lista/Kanban); assigned_to/approval_reviewer_id na própria task podem estar
+  // desatualizados em relação ao que foi definido em "Gerenciar Responsáveis".
+  const taskIds = useMemo(() => tasks.map(t => t.id), [tasks]);
+  const { data: taskAssigneesMap } = useMultipleTasksAssignees(taskIds, tasks);
+
+  // Collect all user IDs from tasks (assigned_to + approval_reviewer_id + task_assignees)
   const allUserIds = useMemo(() => {
     const ids = new Set<string>();
     tasks.forEach(task => {
       if (task.assigned_to) ids.add(task.assigned_to);
       if (task.approval_reviewer_id) ids.add(task.approval_reviewer_id);
     });
+    if (taskAssigneesMap) {
+      Object.values(taskAssigneesMap).forEach(entries => {
+        entries.forEach(a => ids.add(a.user_id));
+      });
+    }
     return Array.from(ids);
-  }, [tasks]);
-  
+  }, [tasks, taskAssigneesMap]);
+
   // Fetch profiles for all assignees
   const { data: profiles } = useQuery({
     queryKey: ["timeline-profiles", allUserIds],
@@ -161,8 +240,8 @@ export const TimelineView = ({
       if (allUserIds.length === 0) return [];
       const { data, error } = await supabase
         .from("profiles")
-        .select("id, full_name, avatar_url")
-        .in("id", allUserIds);
+        .select("id, user_id, full_name, avatar_url")
+        .in("user_id", allUserIds);
       if (error) throw error;
       return data || [];
     },
@@ -439,16 +518,27 @@ export const TimelineView = ({
 
   const isMobile = useIsMobile();
 
-  // Resizable column state - smaller default on mobile
-  const [taskColumnWidth, setTaskColumnWidth] = useState(() => isMobile ? 100 : 192);
+  // Resizable column state - persistido por projeto, para não precisar reajustar
+  // toda vez que a página é recarregada. Cai no padrão (menor no mobile) só quando
+  // ainda não há uma largura salva para este projeto.
+  const columnWidthStorageKey = projectId ? `timeline-column-width-${projectId}` : null;
+  const [taskColumnWidth, setTaskColumnWidth] = useState(() => {
+    if (columnWidthStorageKey) {
+      const saved = parseInt(localStorage.getItem(columnWidthStorageKey) || "", 10);
+      if (!Number.isNaN(saved)) return saved;
+    }
+    return isMobile ? 100 : 192;
+  });
   const [isResizing, setIsResizing] = useState(false);
   const resizeStartX = useRef(0);
   const resizeStartWidth = useRef(0);
 
-  // Update column width when mobile state changes
+  // Persiste a largura escolhida para este projeto.
   useEffect(() => {
-    setTaskColumnWidth(isMobile ? 100 : 192);
-  }, [isMobile]);
+    if (columnWidthStorageKey) {
+      localStorage.setItem(columnWidthStorageKey, String(taskColumnWidth));
+    }
+  }, [taskColumnWidth, columnWidthStorageKey]);
 
   const handleResizeStart = (e: React.MouseEvent | React.TouchEvent) => {
     e.preventDefault();
@@ -740,16 +830,20 @@ export const TimelineView = ({
                           >
                             {/* Assignee avatars */}
                             {(() => {
-                              const assignees: { id: string; full_name: string | null; avatar_url: string | null }[] = [];
-                              if (task.assigned_to) {
-                                const user = profiles?.find(p => p.id === task.assigned_to);
-                                if (user) assignees.push(user);
-                              }
-                              if (task.approval_reviewer_id && task.approval_reviewer_id !== task.assigned_to) {
-                                const reviewer = profiles?.find(p => p.id === task.approval_reviewer_id);
-                                if (reviewer) assignees.push(reviewer);
-                              }
-                              
+                              const assigneeEntries = taskAssigneesMap?.[task.id];
+                              const rawEntries = assigneeEntries && assigneeEntries.length > 0
+                                ? assigneeEntries
+                                : [
+                                    ...(task.assigned_to ? [{ user_id: task.assigned_to }] : []),
+                                    ...(task.approval_reviewer_id && task.approval_reviewer_id !== task.assigned_to
+                                      ? [{ user_id: task.approval_reviewer_id }]
+                                      : []),
+                                  ];
+
+                              const assignees = rawEntries
+                                .map(entry => profiles?.find(p => p.user_id === entry.user_id))
+                                .filter((p): p is NonNullable<typeof p> => Boolean(p));
+
                               if (assignees.length === 0) return null;
                               
                               return (

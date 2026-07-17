@@ -75,7 +75,7 @@ export default function Auth() {
       if (inviteData.role !== "admin" && inviteData.permissions) {
         const {
           error: permError
-        } = await supabase.from("user_permissions").insert({
+        } = await supabase.from("wizzy_flow_user_permissions").insert({
           workspace_id: inviteData.workspace_id,
           user_id: currentUser.id,
           ...inviteData.permissions

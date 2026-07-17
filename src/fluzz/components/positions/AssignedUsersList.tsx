@@ -44,14 +44,14 @@ export function AssignedUsersList({ positionId }: AssignedUsersListProps) {
 
       const { data: profiles, error: profilesError } = await supabase
         .from("profiles")
-        .select("id, full_name")
-        .in("id", userIds);
+        .select("id, user_id, full_name")
+        .in("user_id", userIds);
 
       if (profilesError) throw profilesError;
 
       return assignments.map((assignment) => ({
         ...assignment,
-        profile: profiles?.find((profile) => profile.id === assignment.user_id) || null,
+        profile: profiles?.find((profile) => profile.user_id === assignment.user_id) || null,
       }));
     },
   });

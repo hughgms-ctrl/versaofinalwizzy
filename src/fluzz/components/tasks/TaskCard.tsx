@@ -16,6 +16,8 @@ import {
 } from "@/fluzz/components/ui/dropdown-menu";
 import { formatDateBR, isTaskOverdue, isTaskDueSoon } from "@/fluzz/lib/utils";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMultipleTasksAssignees } from "@/fluzz/hooks/useTaskAssignees";
+import { MultiAssigneeAvatars } from "./MultiAssigneeAvatars";
 
 interface TaskCardProps {
   task: any;
@@ -78,6 +80,9 @@ export const TaskCard = ({ task, onDelete, isDraggable = false }: TaskCardProps)
   const totalSubtasks = subtasks?.length || 0;
   const completedSubtasks = subtasks?.filter((s) => s.completed).length || 0;
   const subtaskProgress = totalSubtasks > 0 ? (completedSubtasks / totalSubtasks) * 100 : 0;
+
+  const { data: taskAssigneesMap } = useMultipleTasksAssignees([task.id], [task]);
+  const assignees = taskAssigneesMap?.[task.id] || [];
 
   const priorityColors = {
     high: "destructive",
@@ -380,6 +385,12 @@ export const TaskCard = ({ task, onDelete, isDraggable = false }: TaskCardProps)
             </Badge>
           )}
         </div>
+
+        {assignees.length > 0 && (
+          <div className="flex justify-end mt-2" onClick={(e) => e.stopPropagation()}>
+            <MultiAssigneeAvatars taskId={task.id} assignees={assignees} size="sm" maxDisplay={3} />
+          </div>
+        )}
 
         {totalSubtasks > 0 && (
           <div className="flex items-center gap-2 mt-2">

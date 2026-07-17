@@ -631,15 +631,15 @@ export default function TaskDetail() {
       const userIds = members.map(m => m.user_id);
       const { data: profiles, error: profilesError } = await supabase
         .from("profiles")
-        .select("id, full_name")
-        .in("id", userIds);
-      
+        .select("id, user_id, full_name")
+        .in("user_id", userIds);
+
       if (profilesError) throw profilesError;
 
       return members.map(member => ({
         user_id: member.user_id,
         role: member.role,
-        profiles: profiles?.find(p => p.id === member.user_id)
+        profiles: profiles?.find(p => p.user_id === member.user_id)
       }));
     },
     enabled: !!workspace,

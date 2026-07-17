@@ -28,6 +28,40 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/fluzz/com
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { cn, parseDateOnly, isTaskOverdue } from "@/fluzz/lib/utils";
+
+// task_order é uma ordenação global única por projeto. Para reordenar dentro de um
+// subconjunto (ex: uma coluna do Kanban, ou a lista filtrada), a tarefa arrastada é
+// reposicionada dentro da lista completa usando os vizinhos do subconjunto como
+// âncoras, e a lista inteira é renumerada sequencialmente. Isso mantém a ordem
+// consistente entre as visualizações de lista, kanban e cronograma, que compartilham
+// a mesma coluna task_order.
+function reorderWithinSubset(
+  allTasks: any[],
+  taskId: string,
+  newIndexInSubset: number,
+  isInSubset: (task: any) => boolean
+): any[] | null {
+  const sorted = [...allTasks].sort((a, b) => (a.task_order || 0) - (b.task_order || 0));
+  const fromIndex = sorted.findIndex((t) => t.id === taskId);
+  if (fromIndex === -1) return null;
+
+  const [movedTask] = sorted.splice(fromIndex, 1);
+  const subsetIds = sorted.filter(isInSubset).map((t) => t.id);
+  const anchorId = subsetIds[newIndexInSubset];
+
+  let insertAt: number;
+  if (anchorId) {
+    insertAt = sorted.findIndex((t) => t.id === anchorId);
+  } else if (subsetIds.length > 0) {
+    insertAt = sorted.findIndex((t) => t.id === subsetIds[subsetIds.length - 1]) + 1;
+  } else {
+    insertAt = sorted.length;
+  }
+
+  sorted.splice(insertAt, 0, movedTask);
+  return sorted;
+}
+
 export default function ProjectDetail() {
   const { id } = useParams();
   const { user } = useAuth();
@@ -51,10 +85,10 @@ export default function ProjectDetail() {
   const [isFiltersOpen, setIsFiltersOpen] = useState(false);
   
   
-  // Load sort mode from localStorage for this project - default to A-Z
+  // Load sort mode from localStorage for this project - default to Manual (drag-and-drop)
   const [sortMode, setSortMode] = useState<"manual" | "az">(() => {
     const saved = localStorage.getItem(`project-sort-mode-${id}`);
-    return (saved === "az" || saved === "manual") ? saved : "az";
+    return (saved === "az" || saved === "manual") ? saved : "manual";
   });
 
   // Persist sort mode changes to localStorage
@@ -159,20 +193,22 @@ export default function ProjectDetail() {
         },
       }));
 
+      // Notificar responsáveis é best-effort: uma falha aqui (ex: RLS na tabela
+      // notifications) não pode impedir a publicação do projeto.
       if (notifications.length > 0) {
         const { error: notifError } = await supabase
           .from("notifications")
           .insert(notifications);
-        
-        if (notifError) throw notifError;
+
+        if (notifError) console.error("Erro ao notificar responsáveis:", notifError);
       }
 
       // Marcar projeto como publicado (is_draft = false, pending_notifications = false)
       const { error: updateError } = await supabase
         .from("projects")
-        .update({ 
+        .update({
           pending_notifications: false,
-          is_draft: false 
+          is_draft: false
         })
         .eq("id", id);
 
@@ -311,68 +347,40 @@ export default function ProjectDetail() {
     },
   });
 
-  const updateTaskOrderMutation = useMutation({
-    mutationFn: async ({ taskId, newOrder, status }: { taskId: string; newOrder: number; status: string }) => {
-      // Get all tasks with same status and update their orders
-      const tasksToUpdate = tasks?.filter(t => t.status === status) || [];
-      const oldIndex = tasksToUpdate.findIndex(t => t.id === taskId);
-      
-      if (oldIndex === -1) return;
-      
-      // Reorder tasks
-      const reordered = [...tasksToUpdate].sort((a, b) => (a.task_order || 0) - (b.task_order || 0));
-      const movedTask = reordered.find(t => t.id === taskId);
-      if (!movedTask) return;
-      
-      const movedIndex = reordered.indexOf(movedTask);
-      reordered.splice(movedIndex, 1);
-      reordered.splice(newOrder, 0, movedTask);
-      
-      // Update all task orders
-      for (let i = 0; i < reordered.length; i++) {
-        const { error } = await supabase
-          .from("tasks")
-          .update({ task_order: i })
-          .eq("id", reordered[i].id);
-        if (error) throw error;
-      }
+  // Reordenação (Kanban, Lista, Cronograma): o subconjunto (coluna do Kanban ou
+  // lista filtrada) é decidido no local da chamada; aqui só persistimos a ordem
+  // global já recalculada. Atualização otimista (onMutate) resolve o "salto" visual
+  // (a tarefa voltar para o lugar original antes de ir pro destino) instantaneamente;
+  // os updates em paralelo (em vez de N chamadas sequenciais aguardadas uma a uma)
+  // reduzem a demora até a confirmação do servidor.
+  const reorderTasksMutation = useMutation({
+    mutationFn: async ({ reordered }: { reordered: any[] }) => {
+      const results = await Promise.all(
+        reordered
+          .map((t, i) => ({ id: t.id, task_order: i }))
+          .filter((t, i) => (reordered[i].task_order || 0) !== t.task_order)
+          .map((t) =>
+            supabase.from("tasks").update({ task_order: t.task_order }).eq("id", t.id)
+          )
+      );
+      const failed = results.find((r) => r.error);
+      if (failed?.error) throw failed.error;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["tasks", id] });
+    onMutate: async ({ reordered }) => {
+      await queryClient.cancelQueries({ queryKey: ["tasks", id] });
+      const previous = queryClient.getQueryData<any[]>(["tasks", id]);
+      queryClient.setQueryData(
+        ["tasks", id],
+        reordered.map((t, i) => ({ ...t, task_order: i }))
+      );
+      return { previous };
     },
-    onError: () => {
+    onError: (_err, _vars, context) => {
+      if (context?.previous) queryClient.setQueryData(["tasks", id], context.previous);
       toast.error("Erro ao reordenar tarefa");
     },
-  });
-
-  // Mutation for simple order updates (TaskList and TimelineView - all tasks, no status filter)
-  const updateSimpleOrderMutation = useMutation({
-    mutationFn: async ({ taskId, newOrder }: { taskId: string; newOrder: number }) => {
-      // Get all filtered tasks and sort by current order
-      const allTasks = filteredTasks || tasks || [];
-      const sortedTasks = [...allTasks].sort((a, b) => (a.task_order || 0) - (b.task_order || 0));
-      
-      const oldIndex = sortedTasks.findIndex(t => t.id === taskId);
-      if (oldIndex === -1) return;
-      
-      const movedTask = sortedTasks[oldIndex];
-      sortedTasks.splice(oldIndex, 1);
-      sortedTasks.splice(newOrder, 0, movedTask);
-      
-      // Update all task orders
-      for (let i = 0; i < sortedTasks.length; i++) {
-        const { error } = await supabase
-          .from("tasks")
-          .update({ task_order: i })
-          .eq("id", sortedTasks[i].id);
-        if (error) throw error;
-      }
-    },
-    onSuccess: () => {
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["tasks", id] });
-    },
-    onError: () => {
-      toast.error("Erro ao reordenar tarefa");
     },
   });
 
@@ -412,6 +420,19 @@ export default function ProjectDetail() {
 
     return matchesSearch && matchesPriority && matchesStatus && matchesDueDate && matchesSetor;
   }) || [];
+
+  // Reordenar dentro de uma coluna do Kanban (subconjunto = mesmo status).
+  const handleColumnReorder = (taskId: string, newOrder: number, status: string) => {
+    const reordered = reorderWithinSubset(tasks || [], taskId, newOrder, (t) => t.status === status);
+    if (reordered) reorderTasksMutation.mutate({ reordered });
+  };
+
+  // Reordenar na Lista/Cronograma (subconjunto = tarefas atualmente visíveis com os filtros ativos).
+  const handleListReorder = (taskId: string, newOrder: number) => {
+    const visibleIds = new Set(filteredTasks.map((t) => t.id));
+    const reordered = reorderWithinSubset(tasks || [], taskId, newOrder, (t) => visibleIds.has(t.id));
+    if (reordered) reorderTasksMutation.mutate({ reordered });
+  };
 
   // Fetch positions to get sector names
   const { data: positions } = useQuery({
@@ -859,6 +880,7 @@ export default function ProjectDetail() {
               <>
                 {view === "timeline" ? (
                   <TimelineView
+                    projectId={id}
                     tasks={filteredTasks || []}
                     onUpdateTaskDates={async (taskId, startDate, dueDate) => {
                       const { error } = await supabase
@@ -872,9 +894,7 @@ export default function ProjectDetail() {
                         queryClient.invalidateQueries({ queryKey: ["task", taskId] });
                       }
                     }}
-                    onUpdateOrder={(taskId, newOrder) =>
-                      updateSimpleOrderMutation.mutate({ taskId, newOrder })
-                    }
+                    onUpdateOrder={handleListReorder}
                     sortMode={sortMode}
                     onSortModeChange={handleSortModeChange}
                     setorNames={positions?.reduce((acc, p) => ({ ...acc, [p.id]: p.name }), {}) || {}}
@@ -887,9 +907,7 @@ export default function ProjectDetail() {
                       onUpdateStatus={(taskId, status) =>
                         updateTaskStatusMutation.mutate({ taskId, status })
                       }
-                      onUpdateOrder={(taskId, newOrder, status) =>
-                        updateTaskOrderMutation.mutate({ taskId, newOrder, status })
-                      }
+                      onUpdateOrder={handleColumnReorder}
                       sortMode={sortMode}
                       onSortModeChange={handleSortModeChange}
                     />
@@ -900,9 +918,7 @@ export default function ProjectDetail() {
                       onUpdateStatus={(taskId, status) =>
                         updateTaskStatusMutation.mutate({ taskId, status })
                       }
-                      onUpdateOrder={(taskId, newOrder, status) =>
-                        updateTaskOrderMutation.mutate({ taskId, newOrder, status })
-                      }
+                      onUpdateOrder={handleColumnReorder}
                       sortMode={sortMode}
                       onSortModeChange={handleSortModeChange}
                     />
@@ -911,9 +927,7 @@ export default function ProjectDetail() {
                   <TaskTableView
                     tasks={filteredTasks || []}
                     onDeleteTask={(taskId) => deleteTaskMutation.mutate(taskId)}
-                    onUpdateOrder={(taskId, newOrder) =>
-                      updateSimpleOrderMutation.mutate({ taskId, newOrder })
-                    }
+                    onUpdateOrder={handleListReorder}
                     sortMode={sortMode}
                     onSortModeChange={handleSortModeChange}
                   />

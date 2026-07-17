@@ -42,9 +42,9 @@ export function AssignUserDialog({ positionId, open, onOpenChange }: AssignUserD
       const userIds = members.map(m => m.user_id);
       const { data: profiles, error: profilesError } = await supabase
         .from("profiles")
-        .select("id, full_name")
-        .in("id", userIds);
-      
+        .select("id, user_id, full_name")
+        .in("user_id", userIds);
+
       if (profilesError) {
         console.error("Error fetching profiles:", profilesError);
         throw profilesError;
@@ -54,7 +54,7 @@ export function AssignUserDialog({ positionId, open, onOpenChange }: AssignUserD
       const combined = members.map(member => ({
         user_id: member.user_id,
         role: member.role,
-        profiles: profiles?.find(p => p.id === member.user_id)
+        profiles: profiles?.find(p => p.user_id === member.user_id)
       }));
 
       console.log("Workspace members loaded:", combined);

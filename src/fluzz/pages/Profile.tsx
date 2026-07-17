@@ -43,7 +43,7 @@ export default function Profile() {
       const { data, error } = await supabase
         .from("profiles")
         .select("*")
-        .eq("id", user.id)
+        .eq("user_id", user.id)
         .maybeSingle();
 
       if (error) throw error;
@@ -53,7 +53,7 @@ export default function Profile() {
         const { data: inserted, error: insertError } = await supabase
           .from("profiles")
           .insert({
-            id: user.id,
+            user_id: user.id,
             full_name: (user.user_metadata as any)?.full_name || "",
           })
           .select("*")
@@ -98,7 +98,7 @@ export default function Profile() {
           full_name: fullName,
           avatar_url: avatarUrl,
         })
-        .eq("id", user!.id);
+        .eq("user_id", user!.id);
 
       if (error) throw error;
     },

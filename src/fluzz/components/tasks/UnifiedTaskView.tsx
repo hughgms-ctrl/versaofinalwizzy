@@ -229,11 +229,11 @@ function TaskTableRow({
   // Add approval_reviewer_id if present and not already in list
   const allAssigneesIds = new Set(taskAssignees.map((ta: any) => ta.user_id));
   const approverProfile = task.approval_reviewer_id && !allAssigneesIds.has(task.approval_reviewer_id)
-    ? profiles?.find(p => p.id === task.approval_reviewer_id)
+    ? profiles?.find(p => p.user_id === task.approval_reviewer_id)
     : null;
-  
+
   const assigneeProfiles = taskAssignees
-    .map((ta: any) => ({ ...profiles?.find(p => p.id === ta.user_id), is_reviewer: false }))
+    .map((ta: any) => ({ ...profiles?.find(p => p.user_id === ta.user_id), is_reviewer: false }))
     .filter((p: any) => p && p.id);
   
   // Add approver with is_reviewer flag
@@ -661,7 +661,7 @@ export function UnifiedTaskView({
     queryFn: async () => {
       const { data, error } = await supabase
         .from("profiles")
-        .select("id, full_name, avatar_url");
+        .select("id, user_id, full_name, avatar_url");
       if (error) throw error;
       return data || [];
     },

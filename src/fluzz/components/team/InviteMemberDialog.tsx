@@ -90,7 +90,7 @@ export const InviteMemberDialog = ({
             if (memberData) {
               // User is already a member - fetch their permissions
               const { data: permData } = await supabase
-                .from("user_permissions")
+                .from("wizzy_flow_user_permissions")
                 .select("*")
                 .eq("workspace_id", workspace.id)
                 .eq("user_id", user.user_id)
@@ -163,7 +163,7 @@ export const InviteMemberDialog = ({
         // Update or create permissions if not admin
         if (role !== "admin") {
           const { error: permError } = await supabase
-            .from("user_permissions")
+            .from("wizzy_flow_user_permissions")
             .upsert({
               user_id: existingUser.user_id,
               workspace_id: workspace.id,
@@ -195,7 +195,7 @@ export const InviteMemberDialog = ({
         // Set permissions if not admin
         if (role !== "admin") {
           const { error: permError } = await supabase
-            .from("user_permissions")
+            .from("wizzy_flow_user_permissions")
             .insert({
               user_id: existingUser.user_id,
               workspace_id: workspace.id,

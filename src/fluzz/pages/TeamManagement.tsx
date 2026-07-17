@@ -45,15 +45,17 @@ export default function TeamManagement() {
       if (membersError) throw membersError;
 
       // Fetch profiles for members
+      // profiles.id é a chave própria da tabela; o vínculo com o usuário autenticado
+      // é profiles.user_id, então o filtro/match precisa usar essa coluna.
       const userIds = membersData?.map(m => m.user_id) || [];
       const { data: profilesData } = await supabase
         .from("profiles")
-        .select("id, full_name, avatar_url")
-        .in("id", userIds);
+        .select("id, user_id, full_name, avatar_url")
+        .in("user_id", userIds);
 
       // For users without profiles, try to get their email from invites
       const usersWithoutProfiles = userIds.filter(
-        userId => !profilesData?.find(p => p.id === userId)?.full_name
+        userId => !profilesData?.find(p => p.user_id === userId)?.full_name
       );
 
       // Get emails from workspace_invites for users without profiles
@@ -77,17 +79,17 @@ export default function TeamManagement() {
               const userId = userData[0].user_id;
               if (usersWithoutProfiles.includes(userId)) {
                 emailMap[userId] = invite.email;
-                
+
                 // Try to create a profile for this user if missing
-                const existingProfile = profilesData?.find(p => p.id === userId);
+                const existingProfile = profilesData?.find(p => p.user_id === userId);
                 if (!existingProfile) {
                   // Create profile with email as fallback name
                   await supabase
                     .from("profiles")
                     .upsert({
-                      id: userId,
+                      user_id: userId,
                       full_name: invite.email.split('@')[0], // Use email prefix as fallback
-                    }, { onConflict: 'id' });
+                    }, { onConflict: 'user_id' });
                 }
               }
             }
@@ -99,24 +101,24 @@ export default function TeamManagement() {
       const inviterIds = membersData?.map(m => m.invited_by).filter(Boolean) || [];
       const { data: inviterProfilesData } = await supabase
         .from("profiles")
-        .select("id, full_name")
-        .in("id", inviterIds);
+        .select("user_id, full_name")
+        .in("user_id", inviterIds);
 
       // Re-fetch profiles after potential upserts
       const { data: updatedProfilesData } = await supabase
         .from("profiles")
-        .select("id, full_name, avatar_url")
-        .in("id", userIds);
+        .select("id, user_id, full_name, avatar_url")
+        .in("user_id", userIds);
 
       // Merge data
       const result = membersData?.map(member => {
-        const profile = updatedProfilesData?.find(p => p.id === member.user_id);
+        const profile = updatedProfilesData?.find(p => p.user_id === member.user_id);
         return {
           ...member,
           profiles: profile || null,
           email: emailMap[member.user_id] || null,
-          inviter_profile: member.invited_by 
-            ? inviterProfilesData?.find(p => p.id === member.invited_by) || null
+          inviter_profile: member.invited_by
+            ? inviterProfilesData?.find(p => p.user_id === member.invited_by) || null
             : null
         };
       }) || [];
@@ -144,13 +146,13 @@ export default function TeamManagement() {
       const inviterIds = data?.map(i => i.invited_by).filter(Boolean) || [];
       const { data: inviterProfiles } = await supabase
         .from("profiles")
-        .select("id, full_name")
-        .in("id", inviterIds);
+        .select("user_id, full_name")
+        .in("user_id", inviterIds);
 
       return data?.map(invite => ({
         ...invite,
-        inviter_profile: invite.invited_by 
-          ? inviterProfiles?.find(p => p.id === invite.invited_by) || null
+        inviter_profile: invite.invited_by
+          ? inviterProfiles?.find(p => p.user_id === invite.invited_by) || null
           : null
       })) || [];
     },

@@ -59,8 +59,8 @@ export function MultiAssigneeAvatars({
       if (userIds.length === 0) return [];
       const { data, error } = await supabase
         .from("profiles")
-        .select("id, full_name, avatar_url")
-        .in("id", userIds);
+        .select("id, user_id, full_name, avatar_url")
+        .in("user_id", userIds);
       if (error) throw error;
       return data;
     },
@@ -89,7 +89,7 @@ export function MultiAssigneeAvatars({
   const displayedTotal = displayedAssignees.length + displayedExternals.length;
   const remainingCount = totalCount - displayedTotal;
 
-  const getProfile = (userId: string) => profiles?.find(p => p.id === userId);
+  const getProfile = (userId: string) => profiles?.find(p => p.user_id === userId);
   const getInitials = (name: string | null) => name ? name.charAt(0).toUpperCase() : null;
 
   if (totalCount === 0 && !showAddButton) {

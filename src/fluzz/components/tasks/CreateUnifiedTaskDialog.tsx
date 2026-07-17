@@ -116,15 +116,15 @@ export const CreateUnifiedTaskDialog = ({
       const userIds = members.map(m => m.user_id);
       const { data: profiles, error: profilesError } = await supabase
         .from("profiles")
-        .select("id, full_name")
-        .in("id", userIds);
-      
+        .select("id, user_id, full_name")
+        .in("user_id", userIds);
+
       if (profilesError) throw profilesError;
 
       return members.map(member => ({
         user_id: member.user_id,
         role: member.role,
-        full_name: profiles?.find(p => p.id === member.user_id)?.full_name || "Sem nome"
+        full_name: profiles?.find(p => p.user_id === member.user_id)?.full_name || "Sem nome"
       }));
     },
     enabled: !!workspace,

@@ -90,8 +90,8 @@ export default function WorkloadOverview() {
       
       const { data: profiles } = await supabase
         .from("profiles")
-        .select("id, full_name")
-        .in("id", workspaceMembers.map(m => m.user_id));
+        .select("id, user_id, full_name")
+        .in("user_id", workspaceMembers.map(m => m.user_id));
       
       return profiles || [];
     },
@@ -165,7 +165,7 @@ export default function WorkloadOverview() {
     const OVERLOAD_THRESHOLD = 4; // >4 tasks = overload
     
     return members.map(member => {
-      const memberTasks = allTasks.filter(t => t.assigned_to === member.id);
+      const memberTasks = allTasks.filter(t => t.assigned_to === member.user_id);
       const pendingTasks = memberTasks.filter(t => t.status !== "completed");
       const completedTasks = memberTasks.filter(t => t.status === "completed");
       const overdueTasks = memberTasks.filter(t => isTaskOverdue(t.due_date, t.status));
@@ -187,7 +187,7 @@ export default function WorkloadOverview() {
       });
       
       return {
-        userId: member.id,
+        userId: member.user_id,
         name: formatUserName(member.full_name) || "Usuário",
         fullName: member.full_name || "Usuário",
         totalTasks: memberTasks.length,
@@ -262,7 +262,7 @@ export default function WorkloadOverview() {
 
   const getMemberName = (userId: string | null) => {
     if (!userId) return "Não atribuído";
-    const member = members?.find(m => m.id === userId);
+    const member = members?.find(m => m.user_id === userId);
     return formatUserName(member?.full_name) || "Usuário";
   };
 
@@ -285,7 +285,7 @@ export default function WorkloadOverview() {
             <SelectContent>
               <SelectItem value="all">Todos os membros</SelectItem>
               {members?.map(member => (
-                <SelectItem key={member.id} value={member.id}>
+                <SelectItem key={member.user_id} value={member.user_id}>
                   {formatUserName(member.full_name) || "Usuário"}
                 </SelectItem>
               ))}

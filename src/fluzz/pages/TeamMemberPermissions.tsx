@@ -118,9 +118,9 @@ export default function TeamMemberPermissions() {
 
       const { data: profileData } = await supabase
         .from("profiles")
-        .select("id, full_name")
-        .eq("id", userId)
-        .single();
+        .select("id, user_id, full_name")
+        .eq("user_id", userId)
+        .maybeSingle();
 
       return {
         ...membersData,
@@ -153,7 +153,7 @@ export default function TeamMemberPermissions() {
       if (!workspace?.id || !userId) return null;
       
       const { data, error } = await supabase
-        .from("user_permissions")
+        .from("wizzy_flow_user_permissions")
         .select("*")
         .eq("workspace_id", workspace.id)
         .eq("user_id", userId)
@@ -173,11 +173,15 @@ export default function TeamMemberPermissions() {
       permission: PermissionKey;
       value: boolean;
     }) => {
+      // Upsert em vez de update: se o membro nunca teve uma linha de permissões
+      // (ex: admins adicionados via backfill, não pelo fluxo de convite), um update
+      // simples não afetaria nenhuma linha e a mudança pareceria salva sem persistir.
       const { error } = await supabase
-        .from("user_permissions")
-        .update({ [permission]: value })
-        .eq("user_id", userId!)
-        .eq("workspace_id", workspace!.id);
+        .from("wizzy_flow_user_permissions")
+        .upsert(
+          { user_id: userId!, workspace_id: workspace!.id, [permission]: value },
+          { onConflict: "workspace_id,user_id" }
+        );
 
       if (error) throw error;
     },
@@ -235,10 +239,11 @@ export default function TeamMemberPermissions() {
         };
 
         await supabase
-          .from("user_permissions")
-          .update(allPermissionsTrue)
-          .eq("user_id", userId!)
-          .eq("workspace_id", workspace!.id);
+          .from("wizzy_flow_user_permissions")
+          .upsert(
+            { user_id: userId!, workspace_id: workspace!.id, ...allPermissionsTrue },
+            { onConflict: "workspace_id,user_id" }
+          );
       }
     },
     onSuccess: () => {
@@ -258,7 +263,7 @@ export default function TeamMemberPermissions() {
         throw new Error("O criador do workspace não pode ser removido");
       }
       await supabase
-        .from("user_permissions")
+        .from("wizzy_flow_user_permissions")
         .delete()
         .eq("user_id", userId!)
         .eq("workspace_id", workspace!.id);
