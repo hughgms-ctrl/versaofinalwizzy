@@ -107,8 +107,13 @@ export async function resolveDocFileUrl(ref: DocFileRef): Promise<string | null>
 
 // Abre um PDF de documento em nova aba com signed URL. Abre a janela ANTES do await
 // (dentro do gesto de clique) para não ser bloqueada por popup blocker.
+//
+// NÃO usar 'noopener' no window.open inicial: com noopener o retorno é null (por
+// spec), a referência da janela se perde e o `win.location.href` pós-await nunca
+// roda → a aba fica EM BRANCO. Severamos o opener na mão (win.opener = null).
 export async function openDocFileInNewTab(ref: DocFileRef): Promise<void> {
-  const win = window.open("", "_blank", "noopener,noreferrer");
+  const win = window.open("", "_blank");
+  if (win) win.opener = null;
   const url = await resolveDocFileUrl(ref);
   if (!url) {
     win?.close();
