@@ -184,8 +184,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    }
-
     let instanceQuery = supabase
       .from('whatsapp_instances')
       .select('*')
