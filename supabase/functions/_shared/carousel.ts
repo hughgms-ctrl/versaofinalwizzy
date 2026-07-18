@@ -36,7 +36,7 @@ const OBJECTIVE_LABEL: Record<string, string> = {
 const OBJECTIVE_STRATEGY: Record<string, string> = {
   educate: [
     "OBJETIVO = EDUCAR (ensinar de verdade).",
-    "- Capa: promessa clara e específica do que a pessoa vai aprender + gancho de curiosidade.",
+    "- Capa: um gancho que desperta curiosidade sobre o que será ensinado (pergunta instigante, número surpreendente ou promessa específica com lacuna de curiosidade) — nunca um título genérico/enciclopédico do assunto.",
     "- Meio: uma mini-aula — cada slide ensina um passo, conceito ou técnica concreta (prefira método numerado / passo a passo). Traga o como, o porquê, exemplos e números.",
     "- Final: CTA para salvar o carrossel e seguir para mais conteúdo assim.",
     "Meta: a pessoa termina sabendo APLICAR o que aprendeu.",
@@ -171,6 +171,20 @@ export interface GenerateTextsParams {
   objective: string;
   tone: string;
   audience: string;
+  /** Ideia de CTA do usuário (opcional, pode vir crua) para o último slide. */
+  ctaIdea?: string | null;
+}
+
+// Instrução compartilhada para o CTA quando o usuário forneceu uma ideia.
+// Preserva a intenção e QUALQUER palavra-chave/gatilho exatamente como escrito
+// (ex.: integrações tipo ManyChat que disparam por palavra-chave no comentário).
+function ctaIdeaInstruction(ctaIdea: string): string {
+  return (
+    `Ideia de CTA do usuário para o ÚLTIMO slide: "${ctaIdea}". ` +
+    "Ela pode estar crua ou mal escrita — transforme-a num CTA claro e persuasivo, corrigindo a redação e o português, " +
+    "MAS preserve a intenção e QUALQUER palavra-chave/gatilho EXATAMENTE como o usuário escreveu (ex.: 'comente ORCAMENTO', 'mande a palavra X no direct'). " +
+    "Nunca invente uma palavra-chave que o usuário não citou."
+  );
 }
 
 export async function generateSlideTexts(
@@ -184,7 +198,9 @@ export async function generateSlideTexts(
     "2) Seja ESPECÍFICO: use passos, números, exemplos práticos, nomes de técnicas/ferramentas, dados reais. PROIBIDO clichê ('seja consistente', 'acredite em você', 'foco e disciplina', 'saia da zona de conforto' e afins).\n" +
     "3) Teste da obviedade: se a audiência já sabe o que o slide diz, refaça com mais profundidade e informação nova.\n" +
     "4) Os slides formam uma SEQUÊNCIA: cada um constrói sobre o anterior e avança o raciocínio ou a emoção.\n" +
-    "5) O body é autoexplicativo: sozinho já entrega valor.\n\n" +
+    "5) O body é autoexplicativo: sozinho já entrega valor.\n" +
+    "6) CAPA (slide 1): é SEMPRE um gancho que abre curiosidade — pergunta instigante, número/dado chocante, afirmação forte/contraintuitiva ou promessa específica. NUNCA um título genérico ou enciclopédico (PROIBIDO 'História dos X', 'Guia sobre Y', 'Tudo sobre Z'). Varie o tipo de gancho; a pergunta é uma ótima primeira opção quando encaixa no tema.\n" +
+    "7) ÚLTIMO slide: é SEMPRE um CTA — chamada de ação clara (salvar, seguir, comentar, compartilhar ou chamar no direct) conectada ao valor entregue. NUNCA use o último slide para apresentar conteúdo novo.\n\n" +
     "ESTRATÉGIA PARA ESTE CARROSSEL:\n" + strategy + "\n\n" +
     "FORMATO DE CADA SLIDE:\n" +
     "- title: gancho curto e impactante do slide (máx 6 palavras).\n" +
@@ -201,7 +217,8 @@ export async function generateSlideTexts(
     `Número de slides: ${p.slideCount}`,
     `Gere exatamente ${p.slideCount} slides numerados de 1 a ${p.slideCount}.`,
     "Siga a estratégia do objetivo e priorize substância real em cada slide — nada de frases bonitas e vazias.",
-  ].join("\n");
+    p.ctaIdea?.trim() ? ctaIdeaInstruction(p.ctaIdea.trim()) : "",
+  ].filter(Boolean).join("\n");
 
   const raw = await chatCompletion(p.apiKey, system, user, 0.8);
   const parsed = parseJsonObject<SlideText[] | { slides?: SlideText[] }>(raw);
@@ -238,6 +255,8 @@ export interface RegenerateTextParams {
   currentTitle?: string | null;
   currentBody?: string | null;
   instruction?: string;
+  /** Ideia de CTA do usuário (opcional) — usada ao regenerar o último slide. */
+  ctaIdea?: string | null;
 }
 
 export async function regenerateSlideText(
@@ -246,12 +265,20 @@ export async function regenerateSlideText(
   const strategy = p.objective
     ? OBJECTIVE_STRATEGY[p.objective] ?? OBJECTIVE_STRATEGY.educate
     : OBJECTIVE_STRATEGY.educate;
+  // Papel do slide na sequência: capa (gancho) ou último (CTA) têm regras próprias.
+  const isLast = p.slideOrder === p.slideCount;
+  const roleHint = p.slideOrder === 1
+    ? "\n\nESTE É O SLIDE 1 (CAPA): faça um gancho que abre curiosidade (pergunta instigante, número/dado chocante, afirmação forte ou promessa específica). NUNCA um título genérico ou enciclopédico."
+    : isLast
+    ? "\n\nESTE É O ÚLTIMO SLIDE (CTA): faça uma chamada de ação clara (salvar, seguir, comentar, compartilhar ou chamar no direct) conectada ao valor do carrossel. Não apresente conteúdo novo." +
+      (p.ctaIdea?.trim() ? "\n" + ctaIdeaInstruction(p.ctaIdea.trim()) : "")
+    : "";
   const system =
     "Você é um copywriter sênior de carrosséis para Instagram que produz conteúdo com substância real. " +
     "Regenere o texto de um único slide para que ele cumpra o objetivo do carrossel com um ponto concreto e específico — nada de frases genéricas, óbvias, clichês ou motivacionais vazias. " +
     "Seja ESPECÍFICO: use passos, números, exemplos práticos, o 'como' e o 'porquê'. Se a audiência já sabe o que o slide diz, refaça com mais profundidade e informação nova. " +
     "Mantenha coerência com o propósito do slide dentro da sequência do carrossel.\n\n" +
-    "ESTRATÉGIA DO CARROSSEL:\n" + strategy + "\n\n" +
+    "ESTRATÉGIA DO CARROSSEL:\n" + strategy + roleHint + "\n\n" +
     "title: gancho curto e impactante (máx 6 palavras). body: o conteúdo do slide — concreto, específico e autoexplicativo (máx 30 palavras). " +
     "Responda SOMENTE com JSON puro e válido { title, body }, sem markdown e sem nenhum texto fora do JSON.";
 

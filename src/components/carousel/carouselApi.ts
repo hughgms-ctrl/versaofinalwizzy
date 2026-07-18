@@ -133,6 +133,8 @@ export interface GeneratePayload {
   slideCount: 5 | 7 | 10;
   imageStyle: VisualStyle;
   slides: { order: number; hasImage: boolean }[];
+  /** Ideia de CTA opcional para o último slide (crua; a IA melhora). */
+  ctaIdea?: string;
 }
 
 export async function generateCarousel(
