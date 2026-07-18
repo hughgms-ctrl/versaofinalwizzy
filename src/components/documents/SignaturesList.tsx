@@ -9,6 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useDocumentSignatures, useUpdateSignatureStatus, useArchiveSignature, useDeleteSignature } from '@/hooks/useDocumentSignatures';
 import { useGeneratedDocuments } from '@/hooks/useGeneratedDocuments';
 import { openDocFileInNewTab, resolveDocFileUrls } from './documentFiles';
+import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
+import { getGeneratedDocumentWorkspaceId } from '@/lib/workspaceMatch';
 import { CreateSignatureDialog } from './CreateSignatureDialog';
 import { SignerLinksList } from './SignerLinksList';
 import { EditFilledDataDialog } from './EditFilledDataDialog';
@@ -139,6 +141,7 @@ export function SignaturesList() {
   const [showArchived, setShowArchived] = useState(false);
   const { data: signatures, isLoading } = useDocumentSignatures(showArchived);
   const { data: documents } = useGeneratedDocuments();
+  const { selectedWorkspaceId } = useWorkspaceContext();
   const updateStatus = useUpdateSignatureStatus();
   const archiveMut = useArchiveSignature();
   const deleteMut = useDeleteSignature();
@@ -194,6 +197,7 @@ export function SignaturesList() {
   };
 
   const filtered = signatures?.filter(s => {
+    if (selectedWorkspaceId && getGeneratedDocumentWorkspaceId(s.generated_document as any) !== selectedWorkspaceId) return false;
     const docName = s.generated_document?.name || '';
     const signerName = s.signer_name || '';
     const q = search.toLowerCase();

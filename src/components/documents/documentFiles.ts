@@ -31,6 +31,21 @@ export function isContactFilesPublicUrl(url?: string | null): boolean {
   return !!url && url.includes(PUBLIC_MARKER);
 }
 
+// Extrai o path relativo dentro do bucket contact-files a partir de uma URL no formato
+// público — usado ao SALVAR (ex.: copiar um PDF assinado do Wizzy Sign pra "Anexos" do
+// contato), pra popular contact_files.storage_path corretamente em vez de null.
+export function contactFilesPathFromUrl(url?: string | null): string | null {
+  if (!url) return null;
+  const idx = url.indexOf(PUBLIC_MARKER);
+  if (idx < 0) return null;
+  const raw = url.slice(idx + PUBLIC_MARKER.length).split("?")[0].split("#")[0];
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+
 function refKey(ref: DocFileRef): string {
   return `${ref.table}:${ref.id}:${ref.field}`;
 }

@@ -30,3 +30,15 @@ export function effectiveWorkspaceIds(
   if (workspace_id) set.add(workspace_id);
   return Array.from(set);
 }
+
+/**
+ * generated_documents/document_signatures have no workspace_id of their own —
+ * resolve it transitively through the pack/template they were generated from
+ * (both of which do carry workspace_id).
+ */
+export function getGeneratedDocumentWorkspaceId(doc?: {
+  document_packs?: { workspace_id?: string | null } | null;
+  document_templates?: { workspace_id?: string | null } | null;
+} | null): string | null {
+  return doc?.document_packs?.workspace_id ?? doc?.document_templates?.workspace_id ?? null;
+}

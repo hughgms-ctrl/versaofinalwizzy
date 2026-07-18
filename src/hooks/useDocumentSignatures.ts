@@ -35,7 +35,10 @@ export interface DocumentSignature {
     submitted_by?: Record<string, any> | null;
     status: string;
     pack_id?: string | null;
+    template_id?: string | null;
     submission_group?: string | null;
+    document_packs?: { workspace_id: string | null } | null;
+    document_templates?: { workspace_id: string | null } | null;
   };
 }
 
@@ -48,7 +51,7 @@ export function useDocumentSignatures(includeArchived = false) {
     queryFn: async () => {
       let q = (supabase as any)
         .from('document_signatures')
-        .select('*, generated_document:generated_documents(id, name, pdf_url, signed_pdf_url, status, submitted_by, pack_id, submission_group), archived_at')
+        .select('*, generated_document:generated_documents(id, name, pdf_url, signed_pdf_url, status, submitted_by, pack_id, template_id, submission_group, document_packs(workspace_id), document_templates(workspace_id)), archived_at')
         .eq('organization_id', orgId)
         .order('created_at', { ascending: false })
         .limit(500);

@@ -3,6 +3,7 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import * as pdfjsLib from 'pdfjs-dist';
 import PdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?worker';
+import jsPDF from 'jspdf';
 import { supabase } from '@/integrations/supabase/client';
 import { 
   Plus, 
@@ -27,6 +28,7 @@ import {
   ZoomOut,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -50,7 +52,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useToast } from '@/hooks/use-toast';
-import { escapeHtml } from '@/lib/sanitize';
 import {
   useContactFolders,
   useCreateContactFolder,
@@ -371,68 +372,55 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
   };
 
   const handleSaveAsPdf = async (file: ContactFile) => {
+    // Baixa via SDK (blob local, sem CORS) em vez de <img crossOrigin> numa signed URL —
+    // o bucket privado quebrava o load da imagem antes de chegar a gerar qualquer coisa.
+    // Gera um PDF de verdade com jsPDF (já é dependência do projeto), no lugar do hack de
+    // abrir janela em branco + window.print() (que não baixa nada, só abre a imagem).
+    let objectUrl: string | null = null;
     try {
-      const signedUrl = await resolveContactFileUrl(file);
-      const img = new window.Image();
-      img.crossOrigin = 'anonymous';
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = img.naturalWidth;
-        canvas.height = img.naturalHeight;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-        ctx.drawImage(img, 0, 0);
+      const blob = await downloadContactFileBlob(file);
+      if (!blob) throw new Error('download failed');
+      objectUrl = URL.createObjectURL(blob);
+      const url = objectUrl;
 
-        // Create PDF with image dimensions
-        const pdfWidth = img.naturalWidth;
-        const pdfHeight = img.naturalHeight;
-        const A4_W = 595.28;
-        const A4_H = 841.89;
-        const scale = Math.min(A4_W / pdfWidth, A4_H / pdfHeight, 1);
-        const scaledW = pdfWidth * scale;
-        const scaledH = pdfHeight * scale;
+      await new Promise<void>((resolve, reject) => {
+        const img = new window.Image();
+        img.onload = () => {
+          try {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.naturalWidth;
+            canvas.height = img.naturalHeight;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) throw new Error('canvas context indisponível');
+            ctx.drawImage(img, 0, 0);
+            const imgData = canvas.toDataURL('image/jpeg', 0.95);
 
-        // Simple PDF generation
-        const imgData = canvas.toDataURL('image/jpeg', 0.95);
-        
-        // Use a simple approach: open in new tab for print/save as PDF
-        const printWindow = window.open('', '_blank');
-        if (printWindow) {
-          printWindow.document.write(`
-            <!DOCTYPE html>
-            <html>
-            <head><title>${escapeHtml(file.name)}</title>
-            <style>
-              @page { size: auto; margin: 10mm; }
-              body { margin: 0; display: flex; justify-content: center; align-items: flex-start; }
-              img { max-width: 100%; height: auto; }
-            </style>
-            </head>
-            <body>
-              <img src="${imgData}" />
-              <script>
-                setTimeout(function() { window.print(); }, 500);
-              </script>
-            </body>
-            </html>
-          `);
-          printWindow.document.close();
-        }
-      };
-      img.onerror = () => {
-        toast({
-          title: 'Erro',
-          description: 'Não foi possível carregar a imagem para gerar o PDF.',
-          variant: 'destructive',
-        });
-      };
-      img.src = signedUrl || file.file_url;
+            const pxToMm = 25.4 / 96;
+            const widthMm = img.naturalWidth * pxToMm;
+            const heightMm = img.naturalHeight * pxToMm;
+            const pdf = new jsPDF({
+              orientation: widthMm > heightMm ? 'landscape' : 'portrait',
+              unit: 'mm',
+              format: [widthMm, heightMm],
+            });
+            pdf.addImage(imgData, 'JPEG', 0, 0, widthMm, heightMm);
+            pdf.save(`${file.name.replace(/\.[^./]+$/, '')}.pdf`);
+            resolve();
+          } catch (e) {
+            reject(e);
+          }
+        };
+        img.onerror = () => reject(new Error('Falha ao carregar a imagem'));
+        img.src = url;
+      });
     } catch (error) {
       toast({
         title: 'Erro',
-        description: 'Erro ao gerar PDF.',
+        description: 'Não foi possível gerar o PDF a partir da imagem.',
         variant: 'destructive',
       });
+    } finally {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
     }
   };
 
@@ -996,9 +984,16 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
       </AlertDialog>
 
       {/* File Preview Overlay */}
+      {/* Um <div fixed> portalizado pra <body> ficava "por baixo" de cliques: o Dialog
+          do pipeline (Radix, modal=true) trata qualquer nó fora da árvore do seu próprio
+          Content como "fora do modal" e intercepta/perde o pointerdown antes do nosso
+          onClick disparar. Usar outro <Dialog> (Radix já sabe empilhar diálogos
+          aninhados corretamente) resolve isso e ainda corrige o bug antigo de
+          `position:fixed` virar relativo ao ancestral com transform+overflow-hidden. */}
       {previewFile && (
-        <div
-          className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/80 p-4"
+      <Dialog open onOpenChange={(open) => { if (!open) closePreview(); }}>
+        <DialogContent
+          className="left-0 top-0 h-screen w-screen max-w-none translate-x-0 translate-y-0 flex items-center justify-center gap-0 rounded-none border-0 bg-black/80 p-4 [&>button.absolute]:hidden"
           onPointerDown={(event) => event.stopPropagation()}
           onClick={closePreview}
         >
@@ -1222,7 +1217,8 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
                 )}
               </div>
           </div>
-        </div>
+        </DialogContent>
+      </Dialog>
       )}
     </div>
   );

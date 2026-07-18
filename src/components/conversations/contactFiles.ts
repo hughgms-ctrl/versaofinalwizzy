@@ -142,8 +142,9 @@ export async function downloadContactFileBlob(file?: SignableContactFile | null)
 // resolvido, se estiver no cache) até a assinatura chegar.
 export function useSignedContactFileUrl(file?: SignableContactFile | null): string | null {
   const key = contactFileStoragePath(file);
+  const fileUrl = file?.file_url ?? null;
   const initial = (): string | null => {
-    if (!key) return file?.file_url ?? null;
+    if (!key) return fileUrl;
     const cached = cache.get(key);
     return cached && cached.expiresAt > Date.now() ? cached.url : null;
   };
@@ -152,7 +153,7 @@ export function useSignedContactFileUrl(file?: SignableContactFile | null): stri
   useEffect(() => {
     let active = true;
     if (!key) {
-      setResolved(file?.file_url ?? null);
+      setResolved(fileUrl);
       return;
     }
     const cached = cache.get(key);
@@ -167,8 +168,12 @@ export function useSignedContactFileUrl(file?: SignableContactFile | null): stri
     return () => {
       active = false;
     };
+    // Objetos fora do bucket contact-files (ex.: mídia do WhatsApp em chat-media) sempre
+    // resolvem key=null — sem `fileUrl` na dependência, trocar de arquivo (ex.: no modal
+    // de prévia, que reusa a mesma instância do hook) nunca dispara o efeito de novo, e
+    // o estado fica travado no valor do PRIMEIRO arquivo (ou null) pra sempre.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
+  }, [key, fileUrl]);
 
   return resolved;
 }

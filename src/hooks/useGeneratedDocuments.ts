@@ -19,6 +19,9 @@ export interface GeneratedDocument {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+  // joined (used to resolve which workspace this doc belongs to)
+  document_packs?: { name: string; workspace_id: string | null } | null;
+  document_templates?: { workspace_id: string | null } | null;
 }
 
 export function useGeneratedDocuments() {
@@ -30,7 +33,7 @@ export function useGeneratedDocuments() {
     queryFn: async () => {
       const { data, error } = await (supabase as any)
         .from('generated_documents')
-        .select('*, document_packs(name)')
+        .select('*, document_packs(name, workspace_id), document_templates(workspace_id)')
         .eq('organization_id', orgId)
         .order('created_at', { ascending: false })
         .limit(500);

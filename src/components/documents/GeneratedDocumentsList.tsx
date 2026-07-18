@@ -8,6 +8,8 @@ import { Card } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useGeneratedDocuments, useDeleteGeneratedDocument, useRegenerateDocumentPdf } from '@/hooks/useGeneratedDocuments';
 import { resolveDocFileUrl, resolveDocFileUrls } from './documentFiles';
+import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
+import { getGeneratedDocumentWorkspaceId } from '@/lib/workspaceMatch';
 import { EditFilledDataDialog } from './EditFilledDataDialog';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -197,6 +199,7 @@ function DocCard({ doc, onDelete, onRegenerate, onDownload, onEdit, isRegenerati
 
 export function GeneratedDocumentsList() {
   const { data: documents, isLoading } = useGeneratedDocuments();
+  const { selectedWorkspaceId } = useWorkspaceContext();
   const deleteDocument = useDeleteGeneratedDocument();
   const regeneratePdf = useRegenerateDocumentPdf();
   const [search, setSearch] = useState('');
@@ -245,10 +248,12 @@ export function GeneratedDocumentsList() {
   };
 
   const allItems = useMemo(() => {
-    const filtered = documents?.filter(d =>
-      d.name.toLowerCase().includes(search.toLowerCase()) ||
-      (d as any).submitted_by?.name?.toLowerCase().includes(search.toLowerCase())
-    ) || [];
+    const filtered = documents?.filter(d => {
+      const matchesWorkspace = !selectedWorkspaceId || getGeneratedDocumentWorkspaceId(d as any) === selectedWorkspaceId;
+      if (!matchesWorkspace) return false;
+      return d.name.toLowerCase().includes(search.toLowerCase()) ||
+        (d as any).submitted_by?.name?.toLowerCase().includes(search.toLowerCase());
+    }) || [];
 
     const groups = new Map<string, any[]>();
     const singles: any[] = [];
@@ -271,7 +276,7 @@ export function GeneratedDocumentsList() {
       const itemDocs = item.type === 'group' ? item.docs : [item.doc];
       return getDocumentItemStatus(itemDocs) === statusFilter;
     });
-  }, [documents, search, statusFilter]);
+  }, [documents, search, statusFilter, selectedWorkspaceId]);
 
   const totalPages = Math.max(1, Math.ceil(allItems.length / pageSize));
   const safePage = Math.min(page, totalPages);

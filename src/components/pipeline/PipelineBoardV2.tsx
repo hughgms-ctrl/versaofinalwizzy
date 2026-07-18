@@ -2627,6 +2627,7 @@ function PipelineCardDetailDialog({
                     contactName={contact?.name}
                     contactPhone={contact?.phone}
                     contactEmail={contact?.email}
+                    workspaceId={workspaceId}
                   />
                 </div>
               )}

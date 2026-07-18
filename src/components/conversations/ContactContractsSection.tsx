@@ -14,6 +14,7 @@ import {
   Loader2,
   Paperclip,
   Plus,
+  Search,
   Send,
   Trash2,
 } from 'lucide-react';
@@ -32,7 +33,8 @@ import { useGeneratedDocuments, type GeneratedDocument } from '@/hooks/useGenera
 import { useCreateSignatureRequest, useDocumentSignatures, type DocumentSignature } from '@/hooks/useDocumentSignatures';
 import { useSendMessage } from '@/hooks/useSendMessage';
 import { useAddContactFile, useCreateContactFolder } from '@/hooks/useContactFiles';
-import { openDocFileInNewTab } from '@/components/documents/documentFiles';
+import { openDocFileInNewTab, contactFilesPathFromUrl, type DocFileRef } from '@/components/documents/documentFiles';
+import { getGeneratedDocumentWorkspaceId } from '@/lib/workspaceMatch';
 
 interface ContactContractsSectionProps {
   contactId: string;
@@ -40,6 +42,7 @@ interface ContactContractsSectionProps {
   contactName?: string | null;
   contactPhone?: string | null;
   contactEmail?: string | null;
+  workspaceId?: string | null;
 }
 
 interface DocumentSignerRow {
@@ -134,11 +137,26 @@ function buildFilledData(fields: any[], contactName?: string | null, contactPhon
   return data;
 }
 
-function getDocSignedUrl(doc: GeneratedDocument, signatures: DocumentSignature[]) {
-  return (doc as any).signed_pdf_url
-    || signatures.find((signature) => signature.generated_document?.signed_pdf_url)?.generated_document?.signed_pdf_url
-    || signatures.find((signature) => signature.signed_pdf_url)?.signed_pdf_url
-    || null;
+// Resolve não só a URL do PDF assinado, mas de QUAL linha/tabela ela veio — o
+// sign-document-file (edge) busca o valor pelo {table,id,field} enviado, não pela
+// rawUrl. Se a URL na verdade mora em document_signatures (3º branch) mas mandarmos
+// {table:'generated_documents', id: doc.id}, o campo lá está NULL, o edge devolve
+// null e o cliente cai pra rawUrl crua — que já não resolve com o bucket privado.
+function getDocSignedFileRef(doc: GeneratedDocument, signatures: DocumentSignature[]): DocFileRef | null {
+  const docUrl = (doc as any).signed_pdf_url;
+  if (docUrl) return { table: 'generated_documents', id: doc.id, field: 'signed_pdf_url', rawUrl: docUrl };
+
+  const viaJoinedDoc = signatures.find((signature) => signature.generated_document?.signed_pdf_url);
+  if (viaJoinedDoc) {
+    return { table: 'generated_documents', id: doc.id, field: 'signed_pdf_url', rawUrl: viaJoinedDoc.generated_document!.signed_pdf_url! };
+  }
+
+  const viaSignature = signatures.find((signature) => signature.signed_pdf_url);
+  if (viaSignature) {
+    return { table: 'document_signatures', id: viaSignature.id, field: 'signed_pdf_url', rawUrl: viaSignature.signed_pdf_url! };
+  }
+
+  return null;
 }
 
 function getGroupStatus(group: ContractGroup) {
@@ -261,6 +279,7 @@ export function ContactContractsSection({
   contactName,
   contactPhone,
   contactEmail,
+  workspaceId,
 }: ContactContractsSectionProps) {
   const { toast } = useToast();
   const { profile } = useAuth();
@@ -277,6 +296,16 @@ export function ContactContractsSection({
   const [selectedGeneratedGroupId, setSelectedGeneratedGroupId] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [linkSearch, setLinkSearch] = useState('');
+
+  // Templates/packs carregam workspace_id; só o do workspace atual deve aparecer para
+  // gerar novo envio (evita puxar contrato de outro workspace do mesmo org).
+  const visibleTemplates = useMemo(() => (
+    workspaceId ? templates.filter((template) => template.workspace_id === workspaceId) : templates
+  ), [templates, workspaceId]);
+  const visiblePacks = useMemo(() => (
+    workspaceId ? packs.filter((pack) => pack.workspace_id === workspaceId) : packs
+  ), [packs, workspaceId]);
 
   const signaturesByDoc = useMemo(() => {
     const map = new Map<string, DocumentSignature[]>();
@@ -354,6 +383,7 @@ export function ContactContractsSection({
     const map = new Map<string, GeneratedContractGroup>();
     for (const doc of documents) {
       if (linked.has(doc.id)) continue;
+      if (workspaceId && getGeneratedDocumentWorkspaceId(doc as any) !== workspaceId) continue;
       const docSignatures = signaturesByDoc.get(doc.id) || [];
       const docSigners = signersByDoc.get(doc.id) || [];
       const hasSignatureLink = docSignatures.some((signature) => !!getSignatureLink(signature))
@@ -376,7 +406,33 @@ export function ContactContractsSection({
       map.set(groupId, group);
     }
     return Array.from(map.values()).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-  }, [contactDocuments, documents, signaturesByDoc, signersByDoc]);
+  }, [contactDocuments, documents, signaturesByDoc, signersByDoc, workspaceId]);
+
+  // Texto buscável por grupo (nome, email, telefone, CPF dos signatários) pra filtrar
+  // "vincular assinatura existente" sem precisar rolar a lista inteira.
+  const getGroupSearchText = (group: GeneratedContractGroup) => {
+    const signers = group.docs.flatMap((doc) => signersByDoc.get(doc.id) || []);
+    const signatures = group.docs.flatMap((doc) => signaturesByDoc.get(doc.id) || []);
+    const parts = [
+      group.name,
+      ...signers.flatMap((signer) => [signer.signer_name, signer.signer_email, signer.signer_phone, signer.signer_cpf]),
+      ...signatures.flatMap((signature) => [signature.signer_name, signature.signer_email, signature.signer_phone, signature.signer_cpf]),
+    ].filter(Boolean) as string[];
+    return normalizeText(parts.join(' '));
+  };
+
+  const filteredGeneratedGroups = useMemo(() => {
+    const query = normalizeText(linkSearch.trim());
+    if (!query) return availableGeneratedGroups;
+    const queryDigits = linkSearch.replace(/\D/g, '');
+    return availableGeneratedGroups.filter((group) => {
+      const text = getGroupSearchText(group);
+      if (text.includes(query)) return true;
+      if (queryDigits && text.replace(/\D/g, '').includes(queryDigits)) return true;
+      return false;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [availableGeneratedGroups, linkSearch, signersByDoc, signaturesByDoc]);
 
   const linkGeneratedGroup = useMutation({
     mutationFn: async (groupId: string) => {
@@ -615,9 +671,9 @@ export function ContactContractsSection({
     const signedDocs = group.docs
       .map((doc) => ({
         doc,
-        signedUrl: getDocSignedUrl(doc, signaturesByDoc.get(doc.id) || []),
+        ref: getDocSignedFileRef(doc, signaturesByDoc.get(doc.id) || []),
       }))
-      .filter((item) => !!item.signedUrl);
+      .filter((item) => !!item.ref);
 
     if (signedDocs.length === 0) return;
     const folder = group.isPack
@@ -629,10 +685,13 @@ export function ContactContractsSection({
         contactId,
         folderId: folder?.id || null,
         name: `${item.doc.name} - assinado.pdf`,
-        fileUrl: item.signedUrl!,
+        fileUrl: item.ref!.rawUrl!,
         fileType: 'document',
         fileSize: null,
-        storagePath: null,
+        // Esses PDFs moram em signatures/... ou generated/... no bucket — gravar o path
+        // aqui é o que permite à policy de storage (via contact_files) autorizar o
+        // createSignedUrl direto na hora de abrir/baixar.
+        storagePath: contactFilesPathFromUrl(item.ref!.rawUrl),
       });
     }
   };
@@ -708,9 +767,9 @@ export function ContactContractsSection({
           >
             <option value="">Escolher documento ou pack...</option>
             <optgroup label="Packs">
-              {packs.length > 0 && (
+              {visiblePacks.length > 0 && (
                 <>
-                  {packs.map((pack) => (
+                  {visiblePacks.map((pack) => (
                     <option key={`pack:${pack.id}`} value={`pack:${pack.id}`}>
                       Pack: {pack.name}
                     </option>
@@ -719,7 +778,7 @@ export function ContactContractsSection({
               )}
             </optgroup>
             <optgroup label="Documentos">
-              {templates.map((template) => (
+              {visibleTemplates.map((template) => (
                 <option key={`template:${template.id}`} value={`template:${template.id}`}>
                   Documento: {template.name}
                 </option>
@@ -740,14 +799,64 @@ export function ContactContractsSection({
 
       <div className="space-y-2 rounded-lg border border-dashed border-border p-3">
         <Label className="text-xs text-muted-foreground">Vincular assinatura existente</Label>
+
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={linkSearch}
+            onChange={(event) => setLinkSearch(event.target.value)}
+            placeholder="Buscar por nome, telefone, email ou CPF..."
+            className="h-8 pl-8 text-xs"
+          />
+        </div>
+        {(contactPhone || contactEmail) && (
+          <div className="flex flex-wrap gap-1.5">
+            {contactPhone && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-6 px-2 text-[10px]"
+                onClick={() => setLinkSearch(contactPhone)}
+              >
+                Tel. do contato
+              </Button>
+            )}
+            {contactEmail && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-6 px-2 text-[10px]"
+                onClick={() => setLinkSearch(contactEmail)}
+              >
+                Email do contato
+              </Button>
+            )}
+            {linkSearch && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-[10px] text-muted-foreground"
+                onClick={() => setLinkSearch('')}
+              >
+                Limpar
+              </Button>
+            )}
+          </div>
+        )}
+
         <div className="flex gap-2">
           <select
             value={selectedGeneratedGroupId}
             onChange={(event) => setSelectedGeneratedGroupId(event.target.value)}
             className="h-9 min-w-0 flex-1 rounded-md border border-input bg-background px-3 py-1 text-sm outline-none ring-offset-background focus:ring-2 focus:ring-ring focus:ring-offset-2"
           >
-            <option value="">Buscar assinatura ou pack na aba Assinaturas...</option>
-              {availableGeneratedGroups.map((group) => (
+            <option value="">
+              {filteredGeneratedGroups.length === 0 ? 'Nenhum resultado...' : 'Buscar assinatura ou pack na aba Assinaturas...'}
+            </option>
+              {filteredGeneratedGroups.map((group) => (
                 (() => {
                   const progress = getGeneratedGroupProgress(group, signaturesByDoc, signersByDoc);
                   const progressLabel = progress.total > 0 ? `Signatários ${progress.signed}/${progress.total}` : 'Sem assinatura';
@@ -799,10 +908,10 @@ export function ContactContractsSection({
             const progress = getGroupProgress(group);
             const signerLinks = getSignerLinkItems(group);
             const busy = busyId === group.id || sendMessage.isPending;
-            // {docId, url} para poder assinar por org na hora de abrir (bucket privatizável).
+            // ref (table/id/field certos) pra poder assinar por org na hora de abrir (bucket privatizável).
             const signedEntries = group.docs
-              .map((doc) => ({ id: doc.id, url: getDocSignedUrl(doc, signaturesByDoc.get(doc.id) || []) }))
-              .filter((entry) => !!entry.url) as Array<{ id: string; url: string }>;
+              .map((doc) => getDocSignedFileRef(doc, signaturesByDoc.get(doc.id) || []))
+              .filter((ref): ref is DocFileRef => !!ref);
             const firstSigned = signedEntries[0] || null;
 
             return (
@@ -834,7 +943,7 @@ export function ContactContractsSection({
                       size="icon"
                       className="h-8 w-8 shrink-0"
                       title="Abrir PDF"
-                      onClick={() => openDocFileInNewTab({ table: 'generated_documents', id: firstSigned.id, field: 'signed_pdf_url', rawUrl: firstSigned.url })}
+                      onClick={() => openDocFileInNewTab(firstSigned)}
                     >
                       <ExternalLink className="h-4 w-4" />
                     </Button>
@@ -845,16 +954,16 @@ export function ContactContractsSection({
                   <div className="rounded-md border border-border/70 bg-background/50 p-2">
                     <div className="space-y-1">
                       {group.docs.map((doc) => {
-                        const signedUrl = getDocSignedUrl(doc, signaturesByDoc.get(doc.id) || []);
+                        const signedRef = getDocSignedFileRef(doc, signaturesByDoc.get(doc.id) || []);
                         return (
                           <div key={doc.id} className="flex items-center justify-between gap-2 text-xs">
                             <span className="min-w-0 truncate text-muted-foreground">{doc.name}</span>
-                            {signedUrl ? (
+                            {signedRef ? (
                               <Button
                                 variant="ghost"
                                 size="sm"
                                 className="h-6 px-2 text-[10px]"
-                                onClick={() => openDocFileInNewTab({ table: 'generated_documents', id: doc.id, field: 'signed_pdf_url', rawUrl: signedUrl })}
+                                onClick={() => openDocFileInNewTab(signedRef)}
                               >
                                 Ver assinado
                               </Button>
@@ -915,7 +1024,7 @@ export function ContactContractsSection({
                         variant="outline"
                         size="sm"
                         className="gap-1.5"
-                        onClick={() => firstSigned && openDocFileInNewTab({ table: 'generated_documents', id: firstSigned.id, field: 'signed_pdf_url', rawUrl: firstSigned.url })}
+                        onClick={() => firstSigned && openDocFileInNewTab(firstSigned)}
                       >
                         <FileCheck className="h-3.5 w-3.5" />
                         {group.isPack ? 'Ver assinado' : 'Ver assinado'}

@@ -176,6 +176,7 @@ export function ContactProfileTabs({ conversation, contactId }: ContactProfileTa
                 contactName={conversation.contact?.name}
                 contactPhone={conversation.contact?.phone}
                 contactEmail={conversation.contact?.email}
+                workspaceId={conversation.workspace_id}
               />
             )}
 
