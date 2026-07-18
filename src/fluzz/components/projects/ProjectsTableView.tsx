@@ -1,10 +1,9 @@
 import { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/fluzz/components/ui/input";
 import { supabase } from "@/fluzz/integrations/supabase/client";
 import { useWorkspace } from "@/fluzz/contexts/WorkspaceContext";
-import { Avatar, AvatarFallback, AvatarImage } from "@/fluzz/components/ui/avatar";
 import { Button } from "@/fluzz/components/ui/button";
 import { Badge } from "@/fluzz/components/ui/badge";
 import { ScrollArea, ScrollBar } from "@/fluzz/components/ui/scroll-area";
@@ -38,23 +37,40 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/fluzz/components/ui/alert-dialog";
-import { 
-  ChevronRight, 
-  ChevronDown, 
-  User, 
-  MoreVertical, 
-  Copy, 
-  Archive, 
-  ArchiveRestore, 
-  Trash2, 
+import {
+  ChevronRight,
+  ChevronDown,
+  MoreVertical,
+  Copy,
+  Archive,
+  ArchiveRestore,
+  Trash2,
   Bookmark,
   FileEdit,
   Folder,
-  CheckCircle2,
+  GripVertical,
 } from "lucide-react";
 import { formatDateBR, formatDateShort, isTaskOverdue, isTaskDueSoon } from "@/fluzz/lib/utils";
 import { toast } from "sonner";
 import { useProjectActions } from "@/fluzz/hooks/useProjectActions";
+import { MultiAssigneeAvatars } from "@/fluzz/components/tasks/MultiAssigneeAvatars";
+import { MultiAssigneeDialog } from "@/fluzz/components/tasks/MultiAssigneeDialog";
+import {
+  DndContext,
+  DragEndEvent,
+  PointerSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  closestCenter,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 interface ProjectsTableViewProps {
   projects: any[];
   onDelete: (id: string) => void;
@@ -194,36 +210,44 @@ function ProgressSummary({ tasks }: { tasks: any[] }) {
   );
 }
 
-function TaskTableRow({ 
-  task, 
-  profiles,
+function TaskTableRow({
+  task,
   showActions,
-}: { 
+}: {
   task: any;
-  profiles: any[];
   showActions?: boolean;
 }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [isEditing, setIsEditing] = useState(false);
   const [editedTitle, setEditedTitle] = useState(task.title);
+  const [assigneeDialogOpen, setAssigneeDialogOpen] = useState(false);
   const clickTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  
-  // Get all assignees (assigned_to + approval_reviewer_id) with is_reviewer flag
-  const getAssignees = () => {
-    const assignees: any[] = [];
-    if (task.assigned_to) {
-      const user = profiles?.find(p => p.id === task.assigned_to);
-      if (user) assignees.push({ ...user, is_reviewer: false });
-    }
-    if (task.approval_reviewer_id && task.approval_reviewer_id !== task.assigned_to) {
-      const reviewer = profiles?.find(p => p.id === task.approval_reviewer_id);
-      if (reviewer) assignees.push({ ...reviewer, is_reviewer: true });
-    }
-    return assignees;
+
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: task.id });
+
+  const rowStyle: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : 1,
   };
-  
-  const taskAssignees = getAssignees();
+
+  // Assignees from the task_assignees join table + the approval reviewer, if any
+  const rawAssignees = task.task_assignees || [];
+  const assigneeIds = new Set(rawAssignees.map((ta: any) => ta.user_id));
+  const taskAssignees: { user_id: string; is_reviewer?: boolean }[] = [
+    ...rawAssignees.map((ta: any) => ({ user_id: ta.user_id, is_reviewer: false })),
+    ...(task.approval_reviewer_id && !assigneeIds.has(task.approval_reviewer_id)
+      ? [{ user_id: task.approval_reviewer_id, is_reviewer: true }]
+      : []),
+  ];
 
   const status = statusConfig[task.status as keyof typeof statusConfig] || statusConfig.todo;
   const priority = priorityConfig[task.priority as keyof typeof priorityConfig] || priorityConfig.medium;
@@ -303,8 +327,16 @@ function TaskTableRow({
   };
 
   return (
-    <TableRow className="hover:bg-muted/30 bg-background/50">
-      <TableCell className="w-8 px-2"></TableCell>
+    <TableRow
+      ref={setNodeRef}
+      style={rowStyle}
+      className="group hover:bg-muted/30 bg-background/50 cursor-grab active:cursor-grabbing"
+      {...attributes}
+      {...listeners}
+    >
+      <TableCell className="px-2">
+        <GripVertical className="h-4 w-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+      </TableCell>
       <TableCell className="font-medium pl-8">
         {isEditing ? (
           <Input
@@ -331,55 +363,28 @@ function TaskTableRow({
           </span>
         )}
       </TableCell>
-      <TableCell className="w-[100px]">
-        <div className="flex justify-center items-center">
-          {taskAssignees.length > 0 ? (
-            <TooltipProvider>
-              <div className="flex items-center">
-                {taskAssignees.slice(0, 3).map((user, index) => (
-                  <Tooltip key={user.id}>
-                    <TooltipTrigger asChild>
-                      <div className="relative">
-                        <Avatar 
-                          className={`h-6 w-6 border-2 ${user.is_reviewer ? 'border-amber-400' : 'border-background'} ${index > 0 ? '-ml-2' : ''}`}
-                        >
-                          <AvatarImage src={user.avatar_url} />
-                          <AvatarFallback className={`text-xs ${user.is_reviewer ? 'bg-amber-500/20 text-amber-600' : 'bg-primary/10 text-primary'}`}>
-                            {user.full_name?.charAt(0)?.toUpperCase() || <User className="h-3 w-3" />}
-                          </AvatarFallback>
-                        </Avatar>
-                        {user.is_reviewer && (
-                          <div className="absolute -bottom-0.5 -right-0.5 bg-amber-500 rounded-full p-0.5">
-                            <CheckCircle2 className="h-2 w-2 text-white" />
-                          </div>
-                        )}
-                      </div>
-                    </TooltipTrigger>
-                    <TooltipContent side="top">
-                      <p>{user.full_name || "Usuário"}{user.is_reviewer ? ' (Aprovador)' : ''}</p>
-                    </TooltipContent>
-                  </Tooltip>
-                ))}
-                {taskAssignees.length > 3 && (
-                  <span className="text-xs text-muted-foreground ml-1">
-                    +{taskAssignees.length - 3}
-                  </span>
-                )}
-              </div>
-            </TooltipProvider>
-          ) : (
-            <Avatar className="h-6 w-6">
-              <AvatarFallback className="text-xs bg-muted">
-                <User className="h-3 w-3 text-muted-foreground" />
-              </AvatarFallback>
-            </Avatar>
-          )}
+      <TableCell>
+        <div className="flex justify-center" onClick={(e) => e.stopPropagation()}>
+          <MultiAssigneeAvatars
+            taskId={task.id}
+            assignees={taskAssignees}
+            size="sm"
+            maxDisplay={2}
+            showAddButton
+            onAddClick={() => setAssigneeDialogOpen(true)}
+          />
         </div>
+        <MultiAssigneeDialog
+          open={assigneeDialogOpen}
+          onOpenChange={setAssigneeDialogOpen}
+          taskId={task.id}
+          currentAssignees={taskAssignees}
+        />
       </TableCell>
-      <TableCell className="w-[120px]">
+      <TableCell>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button 
+            <button
               className="w-full px-2 py-1 text-xs font-medium rounded-sm text-center transition-all text-white"
               style={{ backgroundColor: status.color }}
               onClick={(e) => e.stopPropagation()}
@@ -405,7 +410,7 @@ function TaskTableRow({
           </DropdownMenuContent>
         </DropdownMenu>
       </TableCell>
-      <TableCell className="w-[90px] text-center">
+      <TableCell className="text-center">
         {task.due_date ? (
           <span className={`text-xs ${
             isOverdue 
@@ -420,10 +425,10 @@ function TaskTableRow({
           <span className="text-muted-foreground/50">-</span>
         )}
       </TableCell>
-      <TableCell className="w-[100px]">
+      <TableCell>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button 
+            <button
               className="w-full px-2 py-1 text-xs font-medium rounded-sm text-center transition-all text-white"
               style={{ backgroundColor: priority.color }}
               onClick={(e) => e.stopPropagation()}
@@ -449,25 +454,24 @@ function TaskTableRow({
           </DropdownMenuContent>
         </DropdownMenu>
       </TableCell>
+      <TableCell></TableCell>
       {showActions && <TableCell className="w-10"></TableCell>}
     </TableRow>
   );
 }
 
-function ProjectRow({ 
-  project, 
-  onDelete, 
-  onArchive, 
+function ProjectRow({
+  project,
+  onDelete,
+  onArchive,
   isArchived,
   isStandaloneFolder,
-  profiles,
-}: { 
+}: {
   project: any;
   onDelete: (id: string) => void;
   onArchive: (id: string) => void;
   isArchived?: boolean;
   isStandaloneFolder?: boolean;
-  profiles: any[];
 }) {
   const projectColor = getProjectColor(project.id, project.color);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -481,7 +485,35 @@ function ProjectRow({
   const { duplicateProject, saveAsTemplate } = useProjectActions();
   const tasks = project.tasks || [];
   const taskCount = tasks.length;
-  
+
+  const dndSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } })
+  );
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = tasks.findIndex((t: any) => t.id === active.id);
+    const newIndex = tasks.findIndex((t: any) => t.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+
+    const reordered = arrayMove(tasks, oldIndex, newIndex);
+    try {
+      const results = await Promise.all(
+        reordered.map((t: any, i: number) =>
+          supabase.from("tasks").update({ task_order: i }).eq("id", t.id)
+        )
+      );
+      const failed = results.find((r) => r.error);
+      if (failed?.error) throw failed.error;
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
+    } catch (err) {
+      toast.error("Erro ao reordenar tarefas");
+    }
+  };
+
   // Date range
   const formatEventDates = () => {
     if (!project.start_date && !project.end_date) return null;
@@ -496,7 +528,7 @@ function ProjectRow({
 
   const eventDates = formatEventDates();
 
-  const totalColumns = (isAdmin || isGestor) ? 6 : 5;
+  const totalColumns = (isAdmin || isGestor) ? 8 : 7;
 
   const handleNameSave = async () => {
     if (editedName.trim() && editedName !== project.name) {
@@ -601,6 +633,8 @@ function ProjectRow({
           </p>
         </TableCell>
 
+        <TableCell className="align-middle"></TableCell>
+
         <TableCell className="align-middle">
           <StatusSummaryBar tasks={tasks} />
         </TableCell>
@@ -614,6 +648,8 @@ function ProjectRow({
             <span className="text-muted-foreground/50">-</span>
           )}
         </TableCell>
+
+        <TableCell className="align-middle"></TableCell>
 
         <TableCell className="align-middle">
           <ProgressSummary tasks={tasks} />
@@ -677,40 +713,61 @@ function ProjectRow({
         <TableRow className="bg-background">
           <TableCell colSpan={totalColumns} className="p-0">
             <div className="border-t border-border bg-muted/10">
-              <Table className="w-full">
-                <TableHeader>
-                  <TableRow className="bg-muted/30 hover:bg-muted/30 text-xs">
-                    <TableHead className="w-10 px-2"></TableHead>
-                    <TableHead className="font-medium text-muted-foreground pl-8">Tarefa</TableHead>
-                    <TableHead className="w-[80px] text-center font-medium text-muted-foreground">Pessoa</TableHead>
-                    <TableHead className="w-[120px] text-center font-medium text-muted-foreground">Status</TableHead>
-                    <TableHead className="w-[90px] text-center font-medium text-muted-foreground">Data</TableHead>
-                    <TableHead className="w-[100px] text-center font-medium text-muted-foreground">Prioridade</TableHead>
-                    {(isAdmin || isGestor) && <TableHead className="w-10"></TableHead>}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {tasks.length > 0 ? (
-                    tasks.map((task: any) => (
-                      <TaskTableRow
-                        key={task.id}
-                        task={task}
-                        profiles={profiles}
-                        showActions={isAdmin || isGestor}
-                      />
-                    ))
-                  ) : (
-                    <TableRow>
-                      <TableCell
-                        colSpan={(isAdmin || isGestor) ? 7 : 6}
-                        className="text-center py-4 text-muted-foreground text-sm"
-                      >
-                        Nenhuma tarefa neste projeto
-                      </TableCell>
+              <DndContext
+                sensors={dndSensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleDragEnd}
+              >
+                <Table className="w-full">
+                  <colgroup>
+                    <col className="w-[50px]" />
+                    <col className="w-[300px]" />
+                    <col className="w-[90px]" />
+                    <col className="w-[140px]" />
+                    <col className="w-[110px]" />
+                    <col className="w-[110px]" />
+                    <col className="w-[170px]" />
+                    {(isAdmin || isGestor) && <col className="w-[50px]" />}
+                  </colgroup>
+                  <TableHeader>
+                    <TableRow className="bg-muted/30 hover:bg-muted/30 text-xs">
+                      <TableHead className="px-2"></TableHead>
+                      <TableHead className="font-medium text-muted-foreground pl-8">Tarefa</TableHead>
+                      <TableHead className="text-center font-medium text-muted-foreground">Pessoa</TableHead>
+                      <TableHead className="text-center font-medium text-muted-foreground">Status</TableHead>
+                      <TableHead className="text-center font-medium text-muted-foreground">Data</TableHead>
+                      <TableHead className="text-center font-medium text-muted-foreground">Prioridade</TableHead>
+                      <TableHead className="text-center font-medium text-muted-foreground"></TableHead>
+                      {(isAdmin || isGestor) && <TableHead></TableHead>}
                     </TableRow>
-                  )}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    <SortableContext
+                      items={tasks.map((t: any) => t.id)}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      {tasks.length > 0 ? (
+                        tasks.map((task: any) => (
+                          <TaskTableRow
+                            key={task.id}
+                            task={task}
+                            showActions={isAdmin || isGestor}
+                          />
+                        ))
+                      ) : (
+                        <TableRow>
+                          <TableCell
+                            colSpan={(isAdmin || isGestor) ? 8 : 7}
+                            className="text-center py-4 text-muted-foreground text-sm"
+                          >
+                            Nenhuma tarefa neste projeto
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </SortableContext>
+                  </TableBody>
+                </Table>
+              </DndContext>
             </div>
           </TableCell>
         </TableRow>
@@ -751,18 +808,6 @@ export function ProjectsTableView({
 }: ProjectsTableViewProps) {
   const { isAdmin, isGestor } = useWorkspace();
 
-  // Fetch all profiles
-  const { data: profiles } = useQuery({
-    queryKey: ["profiles"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("id, full_name, avatar_url");
-      if (error) throw error;
-      return data || [];
-    },
-  });
-
   if (projects.length === 0) {
     return (
       <div className="text-center py-16">
@@ -781,22 +826,26 @@ export function ProjectsTableView({
   return (
     <div className="rounded-lg border border-border overflow-hidden bg-card">
       <ScrollArea className="w-full" type="scroll">
-        <div className="min-w-[900px]">
+        <div className="min-w-[1020px]">
           <Table className="w-full">
             <colgroup>
               <col className="w-[50px]" />
-              <col className="w-[320px]" />
-              <col className="w-[160px]" />
+              <col className="w-[300px]" />
+              <col className="w-[90px]" />
               <col className="w-[140px]" />
-              <col className="w-[180px]" />
+              <col className="w-[110px]" />
+              <col className="w-[110px]" />
+              <col className="w-[170px]" />
               {(isAdmin || isGestor) && <col className="w-[50px]" />}
             </colgroup>
             <TableHeader>
               <TableRow className="bg-muted/50 hover:bg-muted/50">
                 <TableHead className="px-2"></TableHead>
                 <TableHead>Projeto</TableHead>
+                <TableHead className="text-center"></TableHead>
                 <TableHead className="text-center">Status</TableHead>
                 <TableHead className="text-center">Data</TableHead>
+                <TableHead className="text-center"></TableHead>
                 <TableHead className="text-center">Acompanhamento</TableHead>
                 {(isAdmin || isGestor) && <TableHead></TableHead>}
               </TableRow>
@@ -810,7 +859,6 @@ export function ProjectsTableView({
                   onArchive={onArchive}
                   isArchived={isArchived}
                   isStandaloneFolder={isStandaloneFolder}
-                  profiles={profiles || []}
                 />
               ))}
             </TableBody>

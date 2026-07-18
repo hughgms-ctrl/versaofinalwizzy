@@ -65,6 +65,14 @@
     --status-closed: 240 5% 45%;
     --status-urgent: 0 84% 60%;
 
+    /* Task status colors - Monday-style (Wizzy Flow) */
+    --status-todo: 0 68% 72%;
+    --status-todo-foreground: 0 0% 100%;
+    --status-in-progress: 30 100% 65%;
+    --status-in-progress-foreground: 0 0% 100%;
+    --status-completed: 152 69% 53%;
+    --status-completed-foreground: 0 0% 100%;
+
     /* AI Agent Colors - alinhado à identidade magenta */
     --agent-ai: 340 82% 55%;
     --agent-human: 142 71% 45%;
@@ -149,6 +157,14 @@
     --status-urgent: 0 84% 62%;
     --agent-ai: 340 82% 58%;
     --agent-human: 152 85% 50%;
+
+    /* Task status colors - Monday-style (Wizzy Flow) */
+    --status-todo: 0 68% 60%;
+    --status-todo-foreground: 0 0% 100%;
+    --status-in-progress: 30 100% 55%;
+    --status-in-progress-foreground: 0 0% 100%;
+    --status-completed: 142 70% 50%;
+    --status-completed-foreground: 0 0% 100%;
   }
 }
 

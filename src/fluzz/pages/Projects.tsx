@@ -88,9 +88,10 @@ export default function Projects() {
       
       const { data, error } = await supabase
         .from("projects")
-        .select("*, tasks(id, title, status, priority, assigned_to, due_date, start_date), start_date, end_date")
+        .select("*, tasks(id, title, status, priority, assigned_to, approval_reviewer_id, due_date, start_date, task_order, task_assignees(user_id)), start_date, end_date")
         .eq("workspace_id", workspace.id)
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: false })
+        .order("task_order", { foreignTable: "tasks", ascending: true });
       if (error) throw error;
       return data;
     },

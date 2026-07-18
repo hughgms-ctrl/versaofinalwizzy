@@ -65,6 +65,18 @@ export default {
           pending: "hsl(var(--status-pending))",
           closed: "hsl(var(--status-closed))",
           urgent: "hsl(var(--status-urgent))",
+          todo: {
+            DEFAULT: "hsl(var(--status-todo))",
+            foreground: "hsl(var(--status-todo-foreground))",
+          },
+          "in-progress": {
+            DEFAULT: "hsl(var(--status-in-progress))",
+            foreground: "hsl(var(--status-in-progress-foreground))",
+          },
+          completed: {
+            DEFAULT: "hsl(var(--status-completed))",
+            foreground: "hsl(var(--status-completed-foreground))",
+          },
         },
         agent: {
           ai: "hsl(var(--agent-ai))",

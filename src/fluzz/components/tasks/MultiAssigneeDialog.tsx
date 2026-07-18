@@ -222,6 +222,7 @@ export function MultiAssigneeDialog({
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
       queryClient.invalidateQueries({ queryKey: ["my-tasks"] });
       queryClient.invalidateQueries({ queryKey: ["task"] });
+      queryClient.invalidateQueries({ queryKey: ["projects"] });
       onOpenChange(false);
     },
     onError: () => {

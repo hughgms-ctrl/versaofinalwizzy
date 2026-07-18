@@ -320,7 +320,7 @@ function TaskTableRow({
 
   return (
     <TableRow className="hover:bg-muted/30 bg-background/50">
-      <TableCell className="w-8 px-2"></TableCell>
+      <TableCell className="px-2"></TableCell>
       <TableCell className="font-medium pl-8">
         {isEditing ? (
           <Input
@@ -347,7 +347,7 @@ function TaskTableRow({
           </span>
         )}
       </TableCell>
-      <TableCell className="w-[100px]">
+      <TableCell>
         <div className="flex justify-center items-center" onClick={(e) => e.stopPropagation()}>
           {assigneeProfiles.length > 0 ? (
             <TooltipProvider>
@@ -401,10 +401,10 @@ function TaskTableRow({
           currentAssignees={taskAssignees.map((ta: any) => ({ user_id: ta.user_id }))}
         />
       </TableCell>
-      <TableCell className="w-[120px]">
+      <TableCell>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button 
+            <button
               className="w-full px-2 py-1 text-xs font-medium rounded-sm text-center transition-all text-white"
               style={{ backgroundColor: status.color }}
               onClick={(e) => e.stopPropagation()}
@@ -430,7 +430,7 @@ function TaskTableRow({
           </DropdownMenuContent>
         </DropdownMenu>
       </TableCell>
-      <TableCell className="w-[90px] text-center">
+      <TableCell className="text-center">
         {task.due_date ? (
           <span className={`text-xs ${
             isOverdue 
@@ -445,10 +445,10 @@ function TaskTableRow({
           <span className="text-muted-foreground/50">-</span>
         )}
       </TableCell>
-      <TableCell className="w-[100px]">
+      <TableCell>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <button 
+            <button
               className="w-full px-2 py-1 text-xs font-medium rounded-sm text-center transition-all text-white"
               style={{ backgroundColor: priority.color }}
               onClick={(e) => e.stopPropagation()}
@@ -458,12 +458,12 @@ function TaskTableRow({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="center" className="min-w-[80px]">
             {Object.entries(priorityConfig).map(([key, config]) => (
-              <DropdownMenuItem 
-                key={key} 
+              <DropdownMenuItem
+                key={key}
                 onSelect={() => handlePriorityChange(key)}
                 className="justify-center"
               >
-                <span 
+                <span
                   className="px-2 py-0.5 rounded-sm text-xs font-medium text-white"
                   style={{ backgroundColor: config.color }}
                 >
@@ -474,6 +474,8 @@ function TaskTableRow({
           </DropdownMenuContent>
         </DropdownMenu>
       </TableCell>
+      <TableCell></TableCell>
+      <TableCell></TableCell>
     </TableRow>
   );
 }
@@ -574,6 +576,8 @@ function GroupRow({
           </p>
         </TableCell>
 
+        <TableCell className="align-middle"></TableCell>
+
         <TableCell className="align-middle">
           <StatusSummaryBar tasks={tasks} />
         </TableCell>
@@ -588,6 +592,8 @@ function GroupRow({
           )}
         </TableCell>
 
+        <TableCell className="align-middle"></TableCell>
+
         <TableCell className="align-middle">
           <ProgressSummary tasks={tasks} />
         </TableCell>
@@ -600,17 +606,29 @@ function GroupRow({
       {/* Expanded content (nested table) */}
       {isExpanded && (
         <TableRow className="bg-background">
-          <TableCell colSpan={6} className="p-0">
+          <TableCell colSpan={8} className="p-0">
             <div className="border-t border-border bg-muted/10">
               <Table className="w-full">
+                <colgroup>
+                  <col className="w-[50px]" />
+                  <col className="w-[300px]" />
+                  <col className="w-[90px]" />
+                  <col className="w-[140px]" />
+                  <col className="w-[110px]" />
+                  <col className="w-[110px]" />
+                  <col className="w-[170px]" />
+                  <col className="w-[50px]" />
+                </colgroup>
                 <TableHeader>
                   <TableRow className="bg-muted/30 hover:bg-muted/30 text-xs">
-                    <TableHead className="w-10 px-2"></TableHead>
+                    <TableHead className="px-2"></TableHead>
                     <TableHead className="font-medium text-muted-foreground pl-8">Tarefa</TableHead>
-                    <TableHead className="w-[80px] text-center font-medium text-muted-foreground">Pessoa</TableHead>
-                    <TableHead className="w-[120px] text-center font-medium text-muted-foreground">Status</TableHead>
-                    <TableHead className="w-[90px] text-center font-medium text-muted-foreground">Data</TableHead>
-                    <TableHead className="w-[100px] text-center font-medium text-muted-foreground">Prioridade</TableHead>
+                    <TableHead className="text-center font-medium text-muted-foreground">Pessoa</TableHead>
+                    <TableHead className="text-center font-medium text-muted-foreground">Status</TableHead>
+                    <TableHead className="text-center font-medium text-muted-foreground">Data</TableHead>
+                    <TableHead className="text-center font-medium text-muted-foreground">Prioridade</TableHead>
+                    <TableHead className="text-center font-medium text-muted-foreground"></TableHead>
+                    <TableHead></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -626,7 +644,7 @@ function GroupRow({
                   ) : (
                     <TableRow>
                       <TableCell
-                        colSpan={6}
+                        colSpan={8}
                         className="text-center py-4 text-muted-foreground text-sm"
                       >
                         Nenhuma tarefa neste grupo
@@ -721,22 +739,26 @@ export function UnifiedTaskView({
   return (
     <div className="rounded-lg border border-border overflow-hidden bg-card">
       <ScrollArea className="w-full" type="scroll">
-        <div className="min-w-[900px]">
+        <div className="min-w-[1020px]">
           <Table className="w-full">
             <colgroup>
               <col className="w-[50px]" />
-              <col className="w-[320px]" />
-              <col className="w-[160px]" />
+              <col className="w-[300px]" />
+              <col className="w-[90px]" />
               <col className="w-[140px]" />
-              <col className="w-[180px]" />
+              <col className="w-[110px]" />
+              <col className="w-[110px]" />
+              <col className="w-[170px]" />
               <col className="w-[50px]" />
             </colgroup>
             <TableHeader>
               <TableRow className="bg-muted/50 hover:bg-muted/50">
                 <TableHead className="px-2"></TableHead>
                 <TableHead>Grupo</TableHead>
+                <TableHead className="text-center"></TableHead>
                 <TableHead className="text-center">Status</TableHead>
                 <TableHead className="text-center">Data</TableHead>
+                <TableHead className="text-center"></TableHead>
                 <TableHead className="text-center">Acompanhamento</TableHead>
                 <TableHead></TableHead>
               </TableRow>
