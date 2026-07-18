@@ -42,6 +42,20 @@ Deno.serve(async (req) => {
 
     console.log(`[TRAIN-AI] mode=${mode}, target=${target}, orgId=${organizationId}, msgId=${messageId}`);
 
+    // AUTH: exige token de usuário (ou service role). Antes qualquer um podia
+    // gerar rascunhos (queimando IA) ou inserir regras cross-tenant.
+    let caller: Awaited<ReturnType<typeof resolveCaller>>;
+    try {
+      caller = await resolveCaller(req);
+    } catch (e) {
+      const status = e instanceof AccessError ? e.status : 401;
+      return new Response(JSON.stringify({ success: false, error: e instanceof Error ? e.message : 'Unauthorized' }), {
+        status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+
+
     // ========== DRAFT MODE ==========
     if (mode === 'draft') {
       if (!feedback) return fail('O campo de feedback é obrigatório para gerar a regra');
