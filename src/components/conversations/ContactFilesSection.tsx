@@ -997,6 +997,11 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
           onPointerDown={(event) => event.stopPropagation()}
           onClick={closePreview}
         >
+          {/* display:contents: mantém os botões abaixo como "diretos" pro layout flex/
+              posicionamento absoluto, mas fora do seletor [&>button.absolute] acima
+              (que só deveria esconder o X padrão do Radix) — sem isso, as setas de
+              anterior/próximo (também button+absolute) somem junto. */}
+          <div className="contents">
           {canNavigatePreview && (
             <>
               <Button
@@ -1216,6 +1221,7 @@ export function ContactFilesSection({ contactId }: ContactFilesSectionProps) {
                   </div>
                 )}
               </div>
+          </div>
           </div>
         </DialogContent>
       </Dialog>
