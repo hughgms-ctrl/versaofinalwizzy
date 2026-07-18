@@ -147,37 +147,43 @@ Deno.serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
     const connectionSettings = await loadConnectionSettings(supabase, supabaseUrl);
 
-    let organizationId: string | null = null;
+    // AUTH: exige token de usuário (membro da org) OU service_role. Antes,
+    // um POST anônimo com {organization_id} reconfigurava o webhook do
+    // WhatsApp da org — abuso trivial.
+    let caller: Awaited<ReturnType<typeof resolveCaller>>;
+    try {
+      caller = await resolveCaller(req);
+    } catch (e) {
+      const status = e instanceof AccessError ? e.status : 401;
+      return new Response(JSON.stringify({ error: e instanceof Error ? e.message : 'Unauthorized' }), {
+        status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
-    // Try to parse body for organization_id (service-role call)
     let bodyData: any = {};
     try { bodyData = await req.json(); } catch { /* empty body is ok */ }
 
-    const authHeader = req.headers.get('Authorization');
-
-    if (bodyData.organization_id) {
-      // Direct call with org id (service role)
-      organizationId = bodyData.organization_id;
-    } else if (authHeader) {
-      const token = authHeader.replace(/^Bearer\s+/i, '');
-      const { data: { user }, error: userError } = await supabase.auth.getUser(token);
-      if (userError || !user) {
-        return new Response(JSON.stringify({ error: 'Invalid token' }), {
-          status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
+    let organizationId: string | null = null;
+    if (caller.mode === 'service') {
+      organizationId = bodyData.organization_id ?? null;
+    } else {
       const { data: profile } = await supabase
-        .from('profiles').select('organization_id').eq('user_id', user.id).single();
+        .from('profiles').select('organization_id').eq('user_id', caller.userId).single();
       if (!profile) {
         return new Response(JSON.stringify({ error: 'Profile not found' }), {
           status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
       organizationId = profile.organization_id;
-    } else {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    }
+
+    try { await assertCallerCanAccessOrg(supabase, caller, organizationId); } catch (e) {
+      const status = e instanceof AccessError ? e.status : 403;
+      return new Response(JSON.stringify({ error: e instanceof Error ? e.message : 'Forbidden' }), {
+        status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
+    }
+
     }
 
     let instanceQuery = supabase
