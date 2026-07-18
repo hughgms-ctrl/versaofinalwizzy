@@ -61,8 +61,12 @@ Deno.serve(async (req) => {
       if (!feedback) return fail('O campo de feedback é obrigatório para gerar a regra');
       
       const resolvedOrgId = await getOrganizationIdFromRequest(supabase, req, organizationId);
+      try { await assertCallerCanAccessOrg(supabase, caller, resolvedOrgId); } catch (e) {
+        return fail(e instanceof Error ? e.message : 'Forbidden');
+      }
       const aiConfig = await resolveOpenAIConfig(supabase, resolvedOrgId, 'training_rules');
       if (!aiConfig) return fail('OpenAI não configurada para gerar regras de treinamento');
+
 
       // Fetch conversation context
       let conversationContext = '';
