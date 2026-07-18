@@ -278,6 +278,64 @@ export async function regenerateSlideText(
 }
 
 // ---------------------------------------------------------------------
+// "Melhorar com IA" — enriquece o Nicho ou a Audiência que o usuário
+// digitou no formulário de modelo, deixando-o mais específico e melhor
+// para a geração dos carrosséis. Retorna uma linha curta (é um input).
+// ---------------------------------------------------------------------
+export type EnhanceField = "niche" | "audience";
+
+export interface EnhanceContext {
+  niche?: string | null;
+  objective?: string | null;
+  tone?: string | null;
+}
+
+const ENHANCE_GUIDE: Record<EnhanceField, { role: string; task: string; example: string }> = {
+  niche: {
+    role: "Você refina o NICHO de um perfil/marca para a geração de carrosséis no Instagram.",
+    task:
+      "Transforme o texto do usuário em um nicho ESPECÍFICO e bem definido (um subnicho claro), corrigindo erros de português. " +
+      "Deixe claro o tema central e, quando fizer sentido, o recorte (segmento, abordagem ou público). " +
+      "Seja conciso: no máximo ~12 palavras, sem ponto final, sem aspas e sem explicação — apenas o nicho refinado.",
+    example:
+      'Ex: "carro esportivo" → "Carros esportivos e superesportivos: cultura, performance e lifestyle".',
+  },
+  audience: {
+    role: "Você refina a AUDIÊNCIA-ALVO de um perfil/marca para a geração de carrosséis no Instagram.",
+    task:
+      "Transforme o texto do usuário em uma descrição de audiência ESPECÍFICA e vívida, corrigindo erros de português. " +
+      "Inclua, quando possível, o perfil (faixa etária, momento de vida) e o principal desejo ou dor. " +
+      "Seja conciso: no máximo ~18 palavras, sem ponto final, sem aspas e sem explicação — apenas a audiência refinada.",
+    example:
+      'Ex: "pessoas que se interessam por carros" → "Entusiastas de carros esportivos, 25-45 anos, que sonham em ter um superesportivo".',
+  },
+};
+
+export async function enhanceModelField(
+  apiKey: string,
+  field: EnhanceField,
+  value: string,
+  ctx: EnhanceContext = {},
+): Promise<string> {
+  const g = ENHANCE_GUIDE[field];
+  const system = g.role + " " + g.task + " " + g.example +
+    " Responda APENAS com o texto refinado, em português (mesma língua do usuário), sem nenhum comentário extra.";
+
+  const user = [
+    `Texto do usuário: ${value}`,
+    field === "audience" && ctx.niche ? `Nicho do perfil: ${ctx.niche}` : "",
+    ctx.objective
+      ? `Objetivo dos carrosséis: ${OBJECTIVE_LABEL[ctx.objective] ?? ctx.objective}`
+      : "",
+    ctx.tone ? `Tom: ${TONE_LABEL[ctx.tone] ?? ctx.tone}` : "",
+  ].filter(Boolean).join("\n");
+
+  const raw = await chatCompletion(apiKey, system, user, 0.7);
+  // O modelo às vezes devolve com aspas ou quebras — normaliza para uma linha.
+  return raw.trim().replace(/^["'`]+|["'`]+$/g, "").replace(/\s+/g, " ").trim();
+}
+
+// ---------------------------------------------------------------------
 // Prompt e geração de imagem (gpt-image-1).
 // ---------------------------------------------------------------------
 export interface BuildImagePromptParams {

@@ -168,6 +168,18 @@ export async function regenerateImage(
   return rowToSlide(data);
 }
 
+export async function enhanceModelField(
+  field: "niche" | "audience",
+  value: string,
+  context?: { niche?: string; objective?: string; tone?: string },
+): Promise<string> {
+  const { data, error } = await supabase.functions.invoke("carousel-enhance-field", {
+    body: { field, value, ...context },
+  });
+  if (error) throw error;
+  return (data as { value: string }).value ?? value;
+}
+
 export async function fetchTrending(niche: string): Promise<TrendingIdea[]> {
   const { data, error } = await supabase.functions.invoke("carousel-trending", {
     body: { niche },
