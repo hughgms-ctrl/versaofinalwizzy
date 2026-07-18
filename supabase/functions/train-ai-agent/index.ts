@@ -173,6 +173,11 @@ Responda APENAS com o JSON, sem markdown ou comentários.`;
       return fail('organizationId é obrigatório');
     }
 
+    try { await assertCallerCanAccessOrg(supabase, caller, organizationId); } catch (e) {
+      return fail(e instanceof Error ? e.message : 'Forbidden');
+    }
+
+
     if (!target) {
       return fail('Selecione onde aplicar a regra (target)');
     }
