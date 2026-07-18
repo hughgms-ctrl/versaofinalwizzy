@@ -1,9 +1,16 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { signState, verifyState, getStateSecret } from '../_shared/oauthState.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+interface CalendarStatePayload {
+  organization_id: string;
+  user_id: string;
+  exp?: number;
+}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -12,8 +19,13 @@ Deno.serve(async (req) => {
 
   try {
     const url = new URL(req.url);
-    const action = url.searchParams.get('action');
     const code = url.searchParams.get('code');
+    // `action` pode vir na query (compat) ou no corpo (supabase.functions.invoke).
+    let action = url.searchParams.get('action');
+    if (!action && !code && req.method === 'POST') {
+      const body = await req.json().catch(() => ({}));
+      action = body?.action ?? null;
+    }
 
     const clientId = Deno.env.get('GOOGLE_CLIENT_ID');
     const clientSecret = Deno.env.get('GOOGLE_CLIENT_SECRET');
@@ -27,25 +39,86 @@ Deno.serve(async (req) => {
 
     const redirectUri = `${Deno.env.get('SUPABASE_URL')}/functions/v1/google-calendar-auth`;
 
-    // Step 1: Redirect to Google OAuth
+    // ==================================================================
+    // Step 1: Iniciar login. Chamado via supabase.functions.invoke pelo
+    // front (com JWT no header). Derivamos org/user do TOKEN, nunca do
+    // cliente, e devolvemos a authUrl com um `state` ASSINADO. O front então
+    // redireciona o browser para essa URL.
+    // ==================================================================
     if (action === 'login') {
-      const state = url.searchParams.get('state') || '';
-      const scope = 'https://www.googleapis.com/auth/calendar openid email profile';
-      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scope)}&access_type=offline&prompt=consent&state=${state}`;
+      const authHeader = req.headers.get('Authorization');
+      if (!authHeader) {
+        return new Response(JSON.stringify({ error: 'Missing Authorization header' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
 
-      return new Response(null, {
-        status: 302,
-        headers: { ...corsHeaders, Location: authUrl },
+      // Client no contexto do usuário (respeita RLS) só para resolver identidade.
+      const userClient = createClient(
+        Deno.env.get('SUPABASE_URL')!,
+        Deno.env.get('SUPABASE_ANON_KEY')!,
+        { global: { headers: { Authorization: authHeader } } },
+      );
+      const { data: { user }, error: userErr } = await userClient.auth.getUser();
+      if (userErr || !user) {
+        return new Response(JSON.stringify({ error: 'Invalid or expired token' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const { data: profile } = await userClient
+        .from('profiles')
+        .select('organization_id')
+        .eq('user_id', user.id)
+        .single();
+
+      if (!profile?.organization_id) {
+        return new Response(JSON.stringify({ error: 'User has no organization' }), {
+          status: 403,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const state = await signState(
+        { organization_id: profile.organization_id, user_id: user.id },
+        getStateSecret(),
+      );
+      const scope = 'https://www.googleapis.com/auth/calendar openid email profile';
+      const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scope)}&access_type=offline&prompt=consent&state=${encodeURIComponent(state)}`;
+
+      return new Response(JSON.stringify({ authUrl }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // Step 2: Handle callback
+    // ==================================================================
+    // Step 2: Callback do Google (redirect com ?code&state).
+    // ==================================================================
     if (!code) {
       return new Response(JSON.stringify({ error: 'No authorization code' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+
+    const rawState = url.searchParams.get('state');
+    if (!rawState) throw new Error('Missing state');
+
+    // Rejeita state adulterado/expirado ANTES de trocar o code.
+    let statePayload: CalendarStatePayload;
+    try {
+      statePayload = await verifyState<CalendarStatePayload>(rawState, getStateSecret());
+    } catch (e) {
+      console.error('Calendar auth: invalid state', e);
+      const appUrl = Deno.env.get('APP_URL') || 'https://wizzyai.lovable.app';
+      return new Response(null, {
+        status: 302,
+        headers: { Location: `${appUrl}/integrations?tab=calendar&error=invalid_state` },
+      });
+    }
+    const { organization_id, user_id } = statePayload;
 
     const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
       method: 'POST',
@@ -66,11 +139,6 @@ Deno.serve(async (req) => {
       headers: { Authorization: `Bearer ${tokens.access_token}` },
     });
     const userInfo = await userInfoRes.json();
-
-    const state = url.searchParams.get('state');
-    if (!state) throw new Error('Missing state');
-
-    const { organization_id, user_id } = JSON.parse(atob(state));
 
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,

@@ -6,7 +6,8 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useDriveConfig, useUpsertDriveConfig, useDriveBackupLogs, useTriggerDriveBackup } from '@/hooks/useDriveConfig';
-import { useAuth } from '@/hooks/useAuth';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from '@/hooks/use-toast';
 import {
   HardDrive,
   CheckCircle,
@@ -38,7 +39,6 @@ export function DriveTab() {
   const upsertConfig = useUpsertDriveConfig();
   const { data: backupLogs, isLoading: logsLoading } = useDriveBackupLogs();
   const triggerBackup = useTriggerDriveBackup();
-  const { profile } = useAuth();
 
   const [frequency, setFrequency] = useState('manual');
   const [includes, setIncludes] = useState<Record<string, boolean>>({
@@ -56,14 +56,17 @@ export function DriveTab() {
 
   const isConnected = config?.is_connected ?? false;
 
-  const handleSignInWithGoogle = () => {
-    const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID || 'zaobtetbjpuzibjymhzw';
-    const redirectUri = `https://${projectId}.supabase.co/functions/v1/google-drive-auth`;
-    const state = btoa(JSON.stringify({ organization_id: profile?.organization_id }));
-    const scope = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile';
-
-    // The GOOGLE_CLIENT_ID is fetched from the edge function which will redirect to Google
-    window.location.href = `https://${projectId}.supabase.co/functions/v1/google-drive-auth?action=login&state=${state}`;
+  const handleSignInWithGoogle = async () => {
+    // O `state` do OAuth é montado e assinado no servidor a partir do JWT
+    // (invoke anexa o header de auth). O front nunca escolhe organization_id.
+    const { data, error } = await supabase.functions.invoke('google-drive-auth', {
+      body: { action: 'login' },
+    });
+    if (error || !data?.authUrl) {
+      toast({ title: 'Erro ao conectar Google Drive', description: error?.message, variant: 'destructive' });
+      return;
+    }
+    window.location.href = data.authUrl;
   };
 
   const handleSaveConfig = () => {

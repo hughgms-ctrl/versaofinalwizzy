@@ -21,6 +21,16 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // Ferramenta de manutenção que roda com service_role (bypassa RLS) sobre
+  // flow_executions de TODAS as orgs. Fica desligada por padrão; habilite o
+  // secret ENABLE_DEBUG_FUNCTIONS=true só durante a operação de recuperação.
+  if (Deno.env.get('ENABLE_DEBUG_FUNCTIONS') !== 'true') {
+    return new Response(JSON.stringify({ error: 'Not found' }), {
+      status: 404,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!

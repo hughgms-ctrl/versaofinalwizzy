@@ -10,6 +10,7 @@ import { Switch } from '@/components/ui/switch';
 import { Calendar, CheckCircle, Clock, Link2, LogOut, Loader2, Users, Video, Trash2, Copy, ExternalLink } from 'lucide-react';
 import { useCalendarConfig, useAllCalendarConfigs, useCalendarBookings, useUpsertCalendarConfig, useDisconnectCalendar, CalendarConfig } from '@/hooks/useCalendarConfig';
 import { useAuth } from '@/hooks/useAuth';
+import { supabase } from '@/integrations/supabase/client';
 import { format, parseISO, startOfMonth, endOfMonth, eachDayOfInterval, isSameDay, isToday, isSameMonth } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from '@/hooks/use-toast';
@@ -28,7 +29,7 @@ const DAYS_OF_WEEK = [
 export function CalendarTab() {
   const { data: myConfig, isLoading } = useCalendarConfig();
   const { data: allConfigs = [] } = useAllCalendarConfigs();
-  const { profile, session } = useAuth();
+  const { profile } = useAuth();
   const upsertConfig = useUpsertCalendarConfig();
   const disconnectCalendar = useDisconnectCalendar();
 
@@ -39,15 +40,19 @@ export function CalendarTab() {
     selectedMember === 'all' ? null : selectedMember
   );
 
-  const handleSignInWithGoogle = () => {
+  const handleSignInWithGoogle = async () => {
     if (!enforceEntryFeatureAccess('allow_connect_google_calendar', 'conectar Google Agenda')) return;
     if (!enforceEntryCreationLimit('max_google_calendars', allConfigs.length, 'agendas Google')) return;
-    const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID || 'zaobtetbjpuzibjymhzw';
-    const state = btoa(JSON.stringify({
-      organization_id: profile?.organization_id,
-      user_id: session?.user.id,
-    }));
-    window.location.href = `https://${projectId}.supabase.co/functions/v1/google-calendar-auth?action=login&state=${state}`;
+    // O `state` do OAuth é montado e assinado no servidor a partir do JWT
+    // (invoke anexa o header de auth). O front nunca escolhe organization_id.
+    const { data, error } = await supabase.functions.invoke('google-calendar-auth', {
+      body: { action: 'login' },
+    });
+    if (error || !data?.authUrl) {
+      toast({ title: 'Erro ao conectar Google Agenda', description: error?.message, variant: 'destructive' });
+      return;
+    }
+    window.location.href = data.authUrl;
   };
 
   const handleCopyLink = () => {
