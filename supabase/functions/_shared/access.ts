@@ -24,6 +24,52 @@ export async function getRequestUser(req: Request) {
   return user;
 }
 
+/**
+ * Portão de acesso para FUNÇÕES DE MANUTENÇÃO/DEBUG que rodam com service_role
+ * (bypassam RLS) e podem afetar dados de QUALQUER org — ex.: zapi-cleanup,
+ * zapi-fix-contacts, fix-remarketing. Essas funções não têm chamador no
+ * frontend; só devem ser acionadas server-to-server (cron/edge com a
+ * service_role key) ou manualmente por um platform_admin.
+ *
+ * Aceita a requisição só se:
+ *   - o Bearer for exatamente a SUPABASE_SERVICE_ROLE_KEY (chamada interna), OU
+ *   - o token for de um usuário válido COM role platform_admin.
+ *
+ * Rejeita (lança AccessError) qualquer outro caso — incluindo tokens válidos de
+ * usuários comuns. Nunca use header mágico/segredo hardcoded como bypass.
+ */
+export async function assertServiceRoleOrPlatformAdmin(
+  req: Request,
+  adminClient: any,
+): Promise<{ mode: 'service' | 'platform_admin'; userId?: string }> {
+  const authHeader = req.headers.get('Authorization') || '';
+  const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+  if (!token) throw new AccessError('Missing auth', 401);
+
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  if (serviceKey && token === serviceKey) {
+    return { mode: 'service' };
+  }
+
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+  const userClient = createClient(supabaseUrl, anonKey, {
+    global: { headers: { Authorization: authHeader } },
+  });
+  const { data: { user }, error } = await userClient.auth.getUser();
+  if (error || !user) throw new AccessError('Unauthorized', 401);
+
+  const { data: platformRole } = await adminClient
+    .from('user_roles')
+    .select('id')
+    .eq('user_id', user.id)
+    .eq('role', 'platform_admin')
+    .maybeSingle();
+
+  if (!platformRole) throw new AccessError('Forbidden: platform admin required', 403);
+  return { mode: 'platform_admin', userId: user.id };
+}
+
 // Retorna todas as organization_id de que o usuário é membro (via organization_members,
 // com fallback legado para profiles.organization_id). Usado para escopar queries em
 // funções que recebem um instanceId/conversationId/contactId do cliente: em vez de
