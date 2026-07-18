@@ -143,12 +143,23 @@ export async function generateSlideTexts(
   p: GenerateTextsParams,
 ): Promise<SlideText[]> {
   const system =
-    "Você é especialista em carrosséis virais para Instagram. " +
-    "Dado um tema, nicho, objetivo, tom e audiência, gere conteúdo para cada slide. " +
-    "Cada slide deve ter: title (máx 4 palavras, impactante), body (máx 15 palavras, complementa o título), " +
-    "imageTheme (conceito visual que REFORÇA o texto — ex: se title='Acorde Mais Cedo', imageTheme='amanhecer dourado dramático com luz entrando pela janela'). " +
-    "O slide 1 é a capa (gancho forte). O último slide é o CTA. " +
-    'Retorne APENAS JSON array: [{ order, title, body, imageTheme }]';
+    "Você é um especialista em conteúdo educativo e copywriter de carrosséis para Instagram que ENSINAM de verdade — nunca conteúdo raso, genérico ou motivacional vazio. " +
+    "O objetivo é que a pessoa termine o carrossel tendo aprendido algo concreto e sabendo aplicar na prática.\n\n" +
+    "REGRAS DE CONTEÚDO (as mais importantes):\n" +
+    "1) Cada slide do meio ENSINA uma ideia concreta e acionável — entregue o 'como' e o 'porquê', não apenas o 'o quê'.\n" +
+    "2) Seja ESPECÍFICO: use passos, números, exemplos práticos, nomes de técnicas/ferramentas, dados reais. Nada de frases genéricas ou clichês (PROIBIDO: 'seja consistente', 'acredite em você', 'foco e disciplina', 'saia da zona de conforto' e afins).\n" +
+    "3) Teste da obviedade: se a audiência já sabe o que o slide diz, o slide falhou. Traga profundidade e informação nova, não superfície.\n" +
+    "4) Os slides formam uma SEQUÊNCIA LÓGICA, como uma mini-aula: cada um constrói sobre o anterior e avança o raciocínio.\n" +
+    "5) O body deve ser autoexplicativo: sozinho ele já entrega valor e faz a pessoa aprender algo.\n\n" +
+    "ESTRUTURA:\n" +
+    "- Slide 1 = CAPA: gancho forte + promessa clara e específica do que a pessoa vai aprender (desperta curiosidade sem entregar tudo).\n" +
+    "- Slides do meio = A AULA: cada um entrega um ponto concreto. Prefira formato de passos ou método numerado quando fizer sentido.\n" +
+    "- Último slide = CTA: chamada clara (salvar, seguir, comentar, compartilhar) conectada ao valor entregue.\n\n" +
+    "FORMATO DE CADA SLIDE:\n" +
+    "- title: gancho curto e impactante do slide (máx 6 palavras).\n" +
+    "- body: o ensino em si — concreto, específico e autoexplicativo, com o como/porquê (máx 30 palavras; use as palavras para agregar substância, não enrolação).\n" +
+    "- imageTheme: conceito visual que REFORÇA o texto (ex: title='Acorde Mais Cedo' → imageTheme='amanhecer dourado dramático com luz entrando pela janela').\n\n" +
+    "Retorne APENAS um JSON array: [{ order, title, body, imageTheme }]";
 
   const user = [
     `Tema: ${p.prompt}`,
@@ -158,6 +169,7 @@ export async function generateSlideTexts(
     `Audiência: ${p.audience}`,
     `Número de slides: ${p.slideCount}`,
     `Gere exatamente ${p.slideCount} slides numerados de 1 a ${p.slideCount}.`,
+    "Priorize profundidade e valor prático real em cada slide — a pessoa precisa aprender de fato, não apenas ler frases bonitas.",
   ].join("\n");
 
   const raw = await chatCompletion(p.apiKey, system, user, 0.8);
@@ -201,8 +213,11 @@ export async function regenerateSlideText(
   p: RegenerateTextParams,
 ): Promise<{ title: string; body: string }> {
   const system =
-    "Você é especialista em carrosséis virais para Instagram. Regenere o texto de um único slide. " +
-    "title: máx 4 palavras, impactante. body: máx 15 palavras, complementa o título. " +
+    "Você é um especialista em conteúdo educativo e copywriter de carrosséis para Instagram que ENSINAM de verdade. " +
+    "Regenere o texto de um único slide para que ele ensine algo concreto e acionável — nada de frases genéricas, óbvias, clichês ou motivacionais vazias. " +
+    "Seja ESPECÍFICO: use passos, números, exemplos práticos, o 'como' e o 'porquê'. Se a audiência já sabe o que o slide diz, refaça com mais profundidade e informação nova. " +
+    "Mantenha coerência com o propósito do slide dentro da sequência do carrossel. " +
+    "title: gancho curto e impactante (máx 6 palavras). body: o ensino em si — concreto, específico e autoexplicativo (máx 30 palavras). " +
     "Responda SOMENTE com JSON puro e válido { title, body }, sem markdown e sem nenhum texto fora do JSON.";
 
   const user = [
