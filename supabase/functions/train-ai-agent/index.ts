@@ -1,5 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { getOrganizationIdFromRequest, resolveOpenAIConfig } from "../_shared/aiStrategy.ts";
+import { resolveCaller, assertCallerCanAccessOrg, AccessError } from "../_shared/access.ts";
+
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
