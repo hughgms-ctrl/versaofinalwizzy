@@ -101,6 +101,56 @@ export async function getUserOrganizationIds(adminClient: any, userId: string): 
   return Array.from(ids);
 }
 
+export type CallerAuth = { mode: 'service' } | { mode: 'user'; userId: string };
+
+/**
+ * Identifica o chamador de uma edge function que roda com service_role (bypassa
+ * RLS) e é `verify_jwt=false` — ex.: agent-orchestrator, flow-execute. Distingue:
+ *   - 'service': Bearer == SUPABASE_SERVICE_ROLE_KEY → chamada interna
+ *     (server-to-server: zapi-webhook, flow-execute, crons). Acesso total.
+ *   - 'user': token de um usuário autenticado real → precisa passar por
+ *     assertCallerCanAccessOrg antes de tocar dados de uma org.
+ *
+ * Rejeita (AccessError 401) requisição sem token, com anon key, ou com token
+ * inválido. NUNCA aceita segredo hardcoded/header mágico como bypass.
+ */
+export async function resolveCaller(req: Request): Promise<CallerAuth> {
+  const authHeader = req.headers.get('Authorization') || '';
+  const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+  if (!token) throw new AccessError('Missing auth', 401);
+
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  if (serviceKey && token === serviceKey) return { mode: 'service' };
+
+  const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
+  // anon key é um JWT válido mas NÃO é um usuário → tratar como não autenticado.
+  if (anonKey && token === anonKey) throw new AccessError('Unauthorized', 401);
+
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  const userClient = createClient(supabaseUrl, anonKey || '', {
+    global: { headers: { Authorization: authHeader } },
+  });
+  const { data: { user }, error } = await userClient.auth.getUser();
+  if (error || !user) throw new AccessError('Unauthorized', 401);
+  return { mode: 'user', userId: user.id };
+}
+
+/**
+ * Autoriza o chamador para uma org específica. 'service' passa sempre; 'user'
+ * precisa ser MEMBRO da org (getUserOrganizationIds). Impede que um usuário de
+ * outra org dispare IA/fluxo sobre dados/conversas que não são dele.
+ */
+export async function assertCallerCanAccessOrg(
+  adminClient: any,
+  caller: CallerAuth,
+  organizationId: string | null | undefined,
+): Promise<void> {
+  if (caller.mode === 'service') return;
+  if (!organizationId) throw new AccessError('Organization is required', 400);
+  const orgIds = await getUserOrganizationIds(adminClient, caller.userId);
+  if (!orgIds.includes(organizationId)) throw new AccessError('Forbidden', 403);
+}
+
 export function hasValidOrganizationPlan(planRow: any) {
   if (!planRow) return false;
   const paymentStatus = String(planRow.payment_status || planRow.status || '').toLowerCase();
