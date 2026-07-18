@@ -198,10 +198,39 @@ Deno.serve(async (req) => {
             });
           }
 
-          // Save files in contact_files table
+          // Save files in contact_files table, dentro de uma pasta "Quiz" dedicada
+          // (separada de outras pastas de anexos do contato, como contratos).
           if (variables) {
-            for (const [key, value] of Object.entries(variables)) {
-              if (value && typeof value === 'object' && (value as any).url) {
+            const fileEntries = Object.entries(variables).filter(
+              ([, value]) => value && typeof value === 'object' && (value as any).url
+            );
+
+            if (fileEntries.length > 0) {
+              const QUIZ_FOLDER_NAME = "Quiz";
+              let { data: quizFolder } = await supabaseAdmin
+                .from("contact_folders")
+                .select("id")
+                .eq("contact_id", contact.id)
+                .eq("organization_id", organization_id)
+                .eq("name", QUIZ_FOLDER_NAME)
+                .maybeSingle();
+
+              if (!quizFolder) {
+                const { data: newFolder, error: folderError } = await supabaseAdmin
+                  .from("contact_folders")
+                  .insert({
+                    contact_id: contact.id,
+                    organization_id,
+                    name: QUIZ_FOLDER_NAME,
+                  })
+                  .select("id")
+                  .single();
+
+                if (folderError) throw folderError;
+                quizFolder = newFolder;
+              }
+
+              for (const [key, value] of fileEntries) {
                 const fileVal = value as any;
                 // Check if file is already linked to avoid duplicates
                 const { data: existingFile } = await supabaseAdmin
@@ -214,6 +243,7 @@ Deno.serve(async (req) => {
                 if (!existingFile) {
                   await supabaseAdmin.from("contact_files").insert({
                     contact_id: contact.id,
+                    folder_id: quizFolder?.id || null,
                     organization_id,
                     name: fileVal.name || key,
                     file_url: fileVal.url,
