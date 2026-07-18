@@ -30,6 +30,40 @@ const OBJECTIVE_LABEL: Record<string, string> = {
   inspire: "inspirar (motivar e emocionar)",
 };
 
+// Playbook de copywriting por objetivo — muda o ARCO e a META do carrossel.
+// Injetado no system prompt para que a estratégia (não só a palavra do objetivo)
+// realmente mude conforme o que o usuário escolheu.
+const OBJECTIVE_STRATEGY: Record<string, string> = {
+  educate: [
+    "OBJETIVO = EDUCAR (ensinar de verdade).",
+    "- Capa: promessa clara e específica do que a pessoa vai aprender + gancho de curiosidade.",
+    "- Meio: uma mini-aula — cada slide ensina um passo, conceito ou técnica concreta (prefira método numerado / passo a passo). Traga o como, o porquê, exemplos e números.",
+    "- Final: CTA para salvar o carrossel e seguir para mais conteúdo assim.",
+    "Meta: a pessoa termina sabendo APLICAR o que aprendeu.",
+  ].join("\n"),
+  sell: [
+    "OBJETIVO = VENDER (despertar desejo e converter).",
+    "- Capa: fisgue com a dor mais aguda ou o desejo mais forte da audiência.",
+    "- Meio: agite o problema (o que dói em não resolver), apresente a transformação/solução e sustente com benefícios concretos, prova e a quebra da principal objeção. Fale de RESULTADO e transformação, não de características técnicas.",
+    "- Final: CTA de ação direta (chamar no direct, clicar no link, comprar) com um empurrão de urgência ou valor.",
+    "Meta: criar desejo e levar à ação — NÃO dar aula.",
+  ].join("\n"),
+  engage: [
+    "OBJETIVO = ENGAJAR (gerar comentários, salvamentos e interação).",
+    "- Capa: uma provocação — pergunta instigante, opinião contra o senso comum ou um mito que você vai derrubar.",
+    "- Meio: apresente posições, contrastes (mito x verdade, erro x acerto) e ganchos que fazem a pessoa se posicionar ou se identificar. Cada slide deve dar vontade de comentar ou marcar alguém.",
+    "- Final: CTA para comentar, marcar um amigo ou dar a opinião.",
+    "Meta: gerar conversa e compartilhamento.",
+  ].join("\n"),
+  inspire: [
+    "OBJETIVO = INSPIRAR (motivar e emocionar).",
+    "- Capa: crie tensão emocional ou a promessa de uma virada.",
+    "- Meio: use narrativa e contraste (antes x depois, obstáculo x superação), com detalhes concretos e reais que geram identificação — nada de frase de efeito vazia. Cada slide avança a jornada emocional.",
+    "- Final: CTA para compartilhar com quem precisa ouvir isso ou seguir.",
+    "Meta: emocionar e mover à ação com verdade e concretude — não com clichê.",
+  ].join("\n"),
+};
+
 const TONE_LABEL: Record<string, string> = {
   professional: "profissional e autoritário",
   casual: "descontraído e próximo",
@@ -142,22 +176,19 @@ export interface GenerateTextsParams {
 export async function generateSlideTexts(
   p: GenerateTextsParams,
 ): Promise<SlideText[]> {
+  const strategy = OBJECTIVE_STRATEGY[p.objective] ?? OBJECTIVE_STRATEGY.educate;
   const system =
-    "Você é um especialista em conteúdo educativo e copywriter de carrosséis para Instagram que ENSINAM de verdade — nunca conteúdo raso, genérico ou motivacional vazio. " +
-    "O objetivo é que a pessoa termine o carrossel tendo aprendido algo concreto e sabendo aplicar na prática.\n\n" +
-    "REGRAS DE CONTEÚDO (as mais importantes):\n" +
-    "1) Cada slide do meio ENSINA uma ideia concreta e acionável — entregue o 'como' e o 'porquê', não apenas o 'o quê'.\n" +
-    "2) Seja ESPECÍFICO: use passos, números, exemplos práticos, nomes de técnicas/ferramentas, dados reais. Nada de frases genéricas ou clichês (PROIBIDO: 'seja consistente', 'acredite em você', 'foco e disciplina', 'saia da zona de conforto' e afins).\n" +
-    "3) Teste da obviedade: se a audiência já sabe o que o slide diz, o slide falhou. Traga profundidade e informação nova, não superfície.\n" +
-    "4) Os slides formam uma SEQUÊNCIA LÓGICA, como uma mini-aula: cada um constrói sobre o anterior e avança o raciocínio.\n" +
-    "5) O body deve ser autoexplicativo: sozinho ele já entrega valor e faz a pessoa aprender algo.\n\n" +
-    "ESTRUTURA:\n" +
-    "- Slide 1 = CAPA: gancho forte + promessa clara e específica do que a pessoa vai aprender (desperta curiosidade sem entregar tudo).\n" +
-    "- Slides do meio = A AULA: cada um entrega um ponto concreto. Prefira formato de passos ou método numerado quando fizer sentido.\n" +
-    "- Último slide = CTA: chamada clara (salvar, seguir, comentar, compartilhar) conectada ao valor entregue.\n\n" +
+    "Você é um copywriter sênior de carrosséis para Instagram que produz conteúdo com substância real — nunca raso, genérico ou motivacional vazio.\n\n" +
+    "REGRAS UNIVERSAIS (valem sempre):\n" +
+    "1) Cada slide do meio entrega UM ponto concreto e específico que cumpre o objetivo do carrossel — nunca uma frase óbvia ou de encher linguiça.\n" +
+    "2) Seja ESPECÍFICO: use passos, números, exemplos práticos, nomes de técnicas/ferramentas, dados reais. PROIBIDO clichê ('seja consistente', 'acredite em você', 'foco e disciplina', 'saia da zona de conforto' e afins).\n" +
+    "3) Teste da obviedade: se a audiência já sabe o que o slide diz, refaça com mais profundidade e informação nova.\n" +
+    "4) Os slides formam uma SEQUÊNCIA: cada um constrói sobre o anterior e avança o raciocínio ou a emoção.\n" +
+    "5) O body é autoexplicativo: sozinho já entrega valor.\n\n" +
+    "ESTRATÉGIA PARA ESTE CARROSSEL:\n" + strategy + "\n\n" +
     "FORMATO DE CADA SLIDE:\n" +
     "- title: gancho curto e impactante do slide (máx 6 palavras).\n" +
-    "- body: o ensino em si — concreto, específico e autoexplicativo, com o como/porquê (máx 30 palavras; use as palavras para agregar substância, não enrolação).\n" +
+    "- body: o conteúdo do slide — concreto, específico e autoexplicativo (máx 30 palavras; use-as para agregar substância, não enrolação).\n" +
     "- imageTheme: conceito visual que REFORÇA o texto (ex: title='Acorde Mais Cedo' → imageTheme='amanhecer dourado dramático com luz entrando pela janela').\n\n" +
     "Retorne APENAS um JSON array: [{ order, title, body, imageTheme }]";
 
@@ -169,7 +200,7 @@ export async function generateSlideTexts(
     `Audiência: ${p.audience}`,
     `Número de slides: ${p.slideCount}`,
     `Gere exatamente ${p.slideCount} slides numerados de 1 a ${p.slideCount}.`,
-    "Priorize profundidade e valor prático real em cada slide — a pessoa precisa aprender de fato, não apenas ler frases bonitas.",
+    "Siga a estratégia do objetivo e priorize substância real em cada slide — nada de frases bonitas e vazias.",
   ].join("\n");
 
   const raw = await chatCompletion(p.apiKey, system, user, 0.8);
@@ -212,12 +243,16 @@ export interface RegenerateTextParams {
 export async function regenerateSlideText(
   p: RegenerateTextParams,
 ): Promise<{ title: string; body: string }> {
+  const strategy = p.objective
+    ? OBJECTIVE_STRATEGY[p.objective] ?? OBJECTIVE_STRATEGY.educate
+    : OBJECTIVE_STRATEGY.educate;
   const system =
-    "Você é um especialista em conteúdo educativo e copywriter de carrosséis para Instagram que ENSINAM de verdade. " +
-    "Regenere o texto de um único slide para que ele ensine algo concreto e acionável — nada de frases genéricas, óbvias, clichês ou motivacionais vazias. " +
+    "Você é um copywriter sênior de carrosséis para Instagram que produz conteúdo com substância real. " +
+    "Regenere o texto de um único slide para que ele cumpra o objetivo do carrossel com um ponto concreto e específico — nada de frases genéricas, óbvias, clichês ou motivacionais vazias. " +
     "Seja ESPECÍFICO: use passos, números, exemplos práticos, o 'como' e o 'porquê'. Se a audiência já sabe o que o slide diz, refaça com mais profundidade e informação nova. " +
-    "Mantenha coerência com o propósito do slide dentro da sequência do carrossel. " +
-    "title: gancho curto e impactante (máx 6 palavras). body: o ensino em si — concreto, específico e autoexplicativo (máx 30 palavras). " +
+    "Mantenha coerência com o propósito do slide dentro da sequência do carrossel.\n\n" +
+    "ESTRATÉGIA DO CARROSSEL:\n" + strategy + "\n\n" +
+    "title: gancho curto e impactante (máx 6 palavras). body: o conteúdo do slide — concreto, específico e autoexplicativo (máx 30 palavras). " +
     "Responda SOMENTE com JSON puro e válido { title, body }, sem markdown e sem nenhum texto fora do JSON.";
 
   const user = [
