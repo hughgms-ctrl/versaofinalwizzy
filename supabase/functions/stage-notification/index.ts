@@ -1,4 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { assertServiceRoleOrPlatformAdmin, AccessError } from "../_shared/access.ts";
+
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -294,6 +296,22 @@ Deno.serve(async (req) => {
   }
 
   try {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(supabaseUrl, serviceRoleKey);
+
+    // AUTH: acionado apenas por chamadas internas (triggers/edge functions
+    // usando service_role) ou por platform_admin. Antes qualquer um podia
+    // disparar notificações de estágio via WhatsApp com um conversationId.
+    try {
+      await assertServiceRoleOrPlatformAdmin(req, supabase);
+    } catch (authErr) {
+      const status = authErr instanceof AccessError ? authErr.status : 401;
+      return new Response(JSON.stringify({ error: authErr instanceof Error ? authErr.message : 'Unauthorized' }), {
+        status, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const { conversationId, pipelineId, columnId, organizationId, workspaceId: explicitWorkspaceId } = await req.json();
 
     if (!conversationId || !columnId || !organizationId) {
@@ -303,11 +321,9 @@ Deno.serve(async (req) => {
       );
     }
 
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, serviceRoleKey);
     const connectionSettings = await loadConnectionSettings(supabase);
     const providerStrategy = await loadProviderStrategy(supabase);
+
 
     const { data: currentPosition } = await supabase
       .from("conversation_pipeline_positions")

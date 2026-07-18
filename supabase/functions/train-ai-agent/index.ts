@@ -1,5 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { getOrganizationIdFromRequest, resolveOpenAIConfig } from "../_shared/aiStrategy.ts";
+import { resolveCaller, assertCallerCanAccessOrg, AccessError } from "../_shared/access.ts";
+
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -40,13 +42,31 @@ Deno.serve(async (req) => {
 
     console.log(`[TRAIN-AI] mode=${mode}, target=${target}, orgId=${organizationId}, msgId=${messageId}`);
 
+    // AUTH: exige token de usuário (ou service role). Antes qualquer um podia
+    // gerar rascunhos (queimando IA) ou inserir regras cross-tenant.
+    let caller: Awaited<ReturnType<typeof resolveCaller>>;
+    try {
+      caller = await resolveCaller(req);
+    } catch (e) {
+      const status = e instanceof AccessError ? e.status : 401;
+      return new Response(JSON.stringify({ success: false, error: e instanceof Error ? e.message : 'Unauthorized' }), {
+        status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+
+
     // ========== DRAFT MODE ==========
     if (mode === 'draft') {
       if (!feedback) return fail('O campo de feedback é obrigatório para gerar a regra');
       
       const resolvedOrgId = await getOrganizationIdFromRequest(supabase, req, organizationId);
+      try { await assertCallerCanAccessOrg(supabase, caller, resolvedOrgId); } catch (e) {
+        return fail(e instanceof Error ? e.message : 'Forbidden');
+      }
       const aiConfig = await resolveOpenAIConfig(supabase, resolvedOrgId, 'training_rules');
       if (!aiConfig) return fail('OpenAI não configurada para gerar regras de treinamento');
+
 
       // Fetch conversation context
       let conversationContext = '';
@@ -152,6 +172,11 @@ Responda APENAS com o JSON, sem markdown ou comentários.`;
     if (!organizationId) {
       return fail('organizationId é obrigatório');
     }
+
+    try { await assertCallerCanAccessOrg(supabase, caller, organizationId); } catch (e) {
+      return fail(e instanceof Error ? e.message : 'Forbidden');
+    }
+
 
     if (!target) {
       return fail('Selecione onde aplicar a regra (target)');
