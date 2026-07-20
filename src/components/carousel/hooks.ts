@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { createRealtimeChannel } from "@/lib/realtimeChannel";
 import { useAuth } from "@/hooks/useAuth";
 import * as api from "./carouselApi";
 import { rowToSlide } from "./mappers";
@@ -119,8 +120,7 @@ export function useCarousel(carouselId: string | undefined) {
   // Realtime: status do carrossel + atualizações de cada slide.
   useEffect(() => {
     if (!carouselId) return;
-    const channel = supabase
-      .channel(`carousel:${carouselId}`)
+    const channel = createRealtimeChannel(`carousel:${carouselId}`)
       .on(
         "postgres_changes",
         {

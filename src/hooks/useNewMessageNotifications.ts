@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { createRealtimeChannel } from '@/lib/realtimeChannel';
 import { useAuth } from '@/hooks/useAuth';
 import { useNotificationSettings } from '@/hooks/useNotificationSettings';
 import { toast } from '@/hooks/use-toast';
@@ -170,8 +171,7 @@ export function useNewMessageNotifications() {
     // é garantido por (1) nome de canal único por org — recria a inscrição ao trocar de
     // org — e (2) validação explícita de `organization_id` no callback antes de notificar.
     // TODO(perf/fase6): adicionar `organization_id` em `messages` para filtrar no DB.
-    const channel = supabase
-      .channel(`new-messages-notification:${selectedOrganizationId}`)
+    const channel = createRealtimeChannel(`new-messages-notification:${selectedOrganizationId}`)
       .on(
         'postgres_changes',
         {
