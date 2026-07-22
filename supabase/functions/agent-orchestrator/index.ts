@@ -1,5 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { resolveWorkspaceInstanceBinding, sendWhatsAppMessage } from '../_shared/whatsappProvider.ts';
+import { resolveCaller, assertCallerCanAccessOrg, AccessError, type CallerAuth } from '../_shared/access.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -167,24 +168,7 @@ Deno.serve(async (req) => {
 
   try {
     const payload = await req.json();
-    console.log(`[ORCHESTRATOR] Received request: ${req.method} debugRules=${!!payload.debugRules}`);
-    
-    // ===== DEBUG RULES MODE =====
-    if (payload.debugRules) {
-      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-      const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-      const supabase = createClient(supabaseUrl, supabaseKey);
-      
-      console.log(`[DEBUG-RULES] Manual listing for ALL orgs`);
-      const { data: rules } = await supabase.from('agent_training_rules')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(20);
-      
-      return new Response(JSON.stringify({ rules: rules || [] }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
+    console.log(`[ORCHESTRATOR] Received request: ${req.method}`);
 
     const startTime = Date.now();
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -192,6 +176,21 @@ Deno.serve(async (req) => {
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     const PLATFORM_OPENAI_API_KEY = Deno.env.get('WIZZY_OPENAI_API_KEY') || Deno.env.get('OPENAI_API_KEY') || '';
     const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // SEGURANÇA: esta função roda com service_role e dispara IA + envio de
+    // WhatsApp. Com verify_jwt=false, qualquer um podia acioná-la (spam + abuso de
+    // custo de IA) — e o antigo modo `debugRules` (REMOVIDO) vazava regras de
+    // treino de TODAS as orgs sem auth. Só aceitamos chamadas internas
+    // (service_role) ou de um usuário autenticado, e escopamos por org logo abaixo.
+    let caller: CallerAuth;
+    try {
+      caller = await resolveCaller(req);
+    } catch (authErr) {
+      const status = authErr instanceof AccessError ? authErr.status : 401;
+      return new Response(JSON.stringify({ error: authErr instanceof Error ? authErr.message : 'Unauthorized' }), {
+        status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     const { 
       conversationId, 
@@ -237,22 +236,18 @@ Deno.serve(async (req) => {
       }
     }
 
-    // ===== DEBUG RULES MODE =====
-    if (payload.debugRules) {
-      console.log(`[DEBUG-RULES] Manual listing for ALL orgs`);
-      const { data: rules } = await supabase.from('agent_training_rules')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(20);
-      
-      return new Response(JSON.stringify({ rules: rules || [] }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
     // ===== SIMULATION MODE =====
     if (payload.simulationMode) {
       console.log('[ORCHESTRATOR] Entering SIMULATION mode');
+      // Escopo por org: usuário só simula na própria org (service_role passa).
+      try {
+        await assertCallerCanAccessOrg(supabase, caller, payload.organizationId);
+      } catch (authErr) {
+        const status = authErr instanceof AccessError ? authErr.status : 403;
+        return new Response(JSON.stringify({ error: authErr instanceof Error ? authErr.message : 'Forbidden' }), {
+          status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
       const simResult = await handleSimulation(supabase, payload, LOVABLE_API_KEY || '');
       return new Response(JSON.stringify(simResult), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -288,6 +283,18 @@ Deno.serve(async (req) => {
 
     const organizationId = conversation.organization_id;
     const contactId = conversation.contact_id;
+
+    // Escopo por org: um usuário autenticado só aciona o orquestrador sobre
+    // conversas da própria org (service_role passa direto). Feito ANTES de
+    // qualquer trabalho pesado de IA/envio para não gastar custo indevido.
+    try {
+      await assertCallerCanAccessOrg(supabase, caller, organizationId);
+    } catch (authErr) {
+      const status = authErr instanceof AccessError ? authErr.status : 403;
+      return new Response(JSON.stringify({ error: authErr instanceof Error ? authErr.message : 'Forbidden' }), {
+        status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     // 2. Resolve the active master prompt
     let masterPrompt = null;
@@ -643,7 +650,7 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
 
   // 3.6. ANÁLISE HOLÍSTICA + CHECKLIST DE QUALIFICAÇÃO
   systemPrompt += buildHolisticAnalysisBlock();
-  systemPrompt += buildQualificationChecklistBlock(qualificationRules, agent?.id, flowId, agentNode?.id);
+  systemPrompt += buildQualificationChecklistBlock(qualificationRules, agent?.id, flowId, nodeId);
 
   // 4. REGRAS APRENDIDAS (TREINAMENTO)
   const rulesSection = buildTrainingRulesSection(trainingRules, {

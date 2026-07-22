@@ -1,4 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { resolveCaller, assertCallerCanAccessOrg, AccessError } from '../_shared/access.ts';
+
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -58,24 +60,31 @@ Deno.serve(async (req) => {
   );
 
   try {
-    // Get auth context to find org
-    const authHeader = req.headers.get('Authorization');
-    let organizationId: string | null = null;
-
-    if (authHeader) {
-      const token = authHeader.replace('Bearer ', '');
-      const { data: userData } = await supabase.auth.getUser(token);
-      if (userData?.user) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('organization_id')
-          .eq('user_id', userData.user.id)
-          .single();
-        organizationId = profile?.organization_id;
-      }
+    // AUTH: exige token de usuário autenticado ou service_role (cron interno).
+    // Antes, um POST anônimo com {organization_id} bastava para disparar um
+    // export de todos os dados da org para o Drive do dono (DoS + custo).
+    let caller: Awaited<ReturnType<typeof resolveCaller>>;
+    try {
+      caller = await resolveCaller(req);
+    } catch (e) {
+      const status = e instanceof AccessError ? e.status : 401;
+      return new Response(JSON.stringify({ error: e instanceof Error ? e.message : 'Unauthorized' }), {
+        status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
     }
 
-    // Also accept from body (for cron)
+    let organizationId: string | null = null;
+
+    if (caller.mode === 'user') {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('organization_id')
+        .eq('user_id', caller.userId)
+        .single();
+      organizationId = profile?.organization_id ?? null;
+    }
+
+    // service_role (cron) pode informar organization_id no corpo.
     if (!organizationId && req.method === 'POST') {
       const body = await req.json().catch(() => ({}));
       organizationId = body.organization_id;
@@ -87,6 +96,14 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+
+    try { await assertCallerCanAccessOrg(supabase, caller, organizationId); } catch (e) {
+      const status = e instanceof AccessError ? e.status : 403;
+      return new Response(JSON.stringify({ error: e instanceof Error ? e.message : 'Forbidden' }), {
+        status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
 
     // Get drive config
     const { data: driveConfig } = await supabase
@@ -206,7 +223,7 @@ Deno.serve(async (req) => {
     });
   } catch (error) {
     console.error('Backup error:', error);
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: error instanceof Error ? error.message : 'Internal server error' }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

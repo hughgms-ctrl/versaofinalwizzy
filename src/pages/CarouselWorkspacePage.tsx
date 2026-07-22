@@ -37,6 +37,7 @@ export default function CarouselWorkspacePage() {
   const [modelId, setModelId] = useState("");
   const [ideaSource, setIdeaSource] = useState<IdeaSource>("idea");
   const [prompt, setPrompt] = useState("");
+  const [ctaIdea, setCtaIdea] = useState("");
   const [imageStyle, setImageStyle] = useState<VisualStyle>("cinematic");
   const [slideCount, setSlideCount] = useState<5 | 7 | 10>(5);
   const [withImage, setWithImage] = useState<Set<number>>(new Set([1]));
@@ -112,6 +113,7 @@ export default function CarouselWorkspacePage() {
         slideCount,
         imageStyle,
         slides: slidesCfg,
+        ctaIdea: ctaIdea.trim() || undefined,
       });
       navigate(`/tools/carousel/${carouselId}`);
     } catch (e) {
@@ -253,6 +255,22 @@ export default function CarouselWorkspacePage() {
                   )}
                 </div>
               )}
+            </div>
+
+            {/* ideia de CTA (opcional) */}
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">
+                Ideia do CTA <span className="text-muted-foreground/70">(opcional)</span>
+              </Label>
+              <Textarea
+                value={ctaIdea}
+                onChange={(e) => setCtaIdea(e.target.value)}
+                rows={2}
+                placeholder="Ex: comente ORCAMENTO que eu mando os detalhes no direct"
+              />
+              <p className="text-[11px] text-muted-foreground">
+                A IA melhora sua ideia e mantém a palavra-chave. Se deixar em branco, ela cria o CTA sozinha.
+              </p>
             </div>
 
             {/* estilo de imagem */}

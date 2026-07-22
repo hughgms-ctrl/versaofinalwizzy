@@ -48,6 +48,7 @@ Deno.serve(async (req) => {
       currentTitle: slide.title,
       currentBody: slide.body,
       instruction,
+      ctaIdea: carousel.cta_idea,
     });
 
     const { data: updated } = await supabase

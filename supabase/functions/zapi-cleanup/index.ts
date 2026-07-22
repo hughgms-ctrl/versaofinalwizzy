@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { assertServiceRoleOrPlatformAdmin, AccessError } from '../_shared/access.ts';
 
 const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
@@ -443,56 +444,37 @@ Deno.serve(async (req) => {
     }
 
     try {
-        const authHeader = req.headers.get('Authorization');
-        const forceCleanup = req.headers.get('X-Force-Cleanup') === 'wizzy-emergency-clean-v3';
-
-        if (!authHeader && !forceCleanup) {
-            return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-                status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            });
-        }
-
         const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
         const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
         const supabase = createClient(supabaseUrl, supabaseKey);
 
-        let organizationId: string | null = null;
-        let organizationIds: string[] = [];
-
-        if (forceCleanup) {
-            const url = new URL(req.url);
-            const requestedOrgId = url.searchParams.get('organizationId');
-            // FASE 3B: o modo emergência NUNCA roda cross-org síncrono. Exige um
-            // organizationId explícito; uma org por vez.
-            if (!requestedOrgId) {
-                return new Response(JSON.stringify({ error: 'forceCleanup requires an explicit organizationId (cross-org cleanup is disabled).' }), {
-                    status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-                });
-            }
-            const { data: orgs } = await supabase.from('organizations').select('id').eq('id', requestedOrgId).limit(1);
-            organizationIds = (orgs || []).map((org: any) => org.id);
-            organizationId = organizationIds[0] || null;
-            console.log(`EMERGENCY CLEANUP (single org) - Organizations: ${organizationIds.join(', ')}`);
-        } else if (authHeader) {
-            const token = authHeader.replace(/^Bearer\s+/i, '');
-            if (token === supabaseKey) {
-                const url = new URL(req.url);
-                organizationId = url.searchParams.get('organizationId');
-            } else {
-                const { data: { user }, error: userError } = await supabase.auth.getUser(token);
-                if (!userError && user) {
-                    const { data: profile } = await supabase.from('profiles').select('organization_id').eq('user_id', user.id).single();
-                    organizationId = profile?.organization_id || null;
-                    organizationIds = organizationId ? [organizationId] : [];
-                }
-            }
+        // SEGURANÇA: função de manutenção que roda com service_role (bypassa RLS) e
+        // pode deletar/mesclar dados de qualquer org. Só service_role (cron/edge) ou
+        // platform_admin. O antigo bypass por header mágico (X-Force-Cleanup) foi
+        // REMOVIDO — era um segredo hardcoded que permitia acesso não autenticado.
+        try {
+            await assertServiceRoleOrPlatformAdmin(req, supabase);
+        } catch (authErr) {
+            const status = authErr instanceof AccessError ? authErr.status : 401;
+            return new Response(JSON.stringify({ error: authErr instanceof Error ? authErr.message : 'Unauthorized' }), {
+                status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
         }
 
-        if (!organizationIds.length && organizationId) organizationIds = [organizationId];
+        // Uma org por vez, sempre explícita — nunca varredura cross-org síncrona.
+        const url = new URL(req.url);
+        const requestedOrgId = url.searchParams.get('organizationId');
+        if (!requestedOrgId) {
+            return new Response(JSON.stringify({ error: 'organizationId is required (cross-org cleanup is disabled).' }), {
+                status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+        }
+        const { data: orgs } = await supabase.from('organizations').select('id').eq('id', requestedOrgId).limit(1);
+        const organizationIds: string[] = (orgs || []).map((org: any) => org.id);
 
         if (!organizationIds.length) {
-            return new Response(JSON.stringify({ error: 'Could not determine organization' }), {
-                status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            return new Response(JSON.stringify({ error: 'Organization not found' }), {
+                status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
             });
         }
 
@@ -501,7 +483,6 @@ Deno.serve(async (req) => {
         let totalMergedContacts = 0;
 
         for (const currentOrganizationId of organizationIds) {
-        const url = new URL(req.url);
         const action = url.searchParams.get('action') || 'cleanup';
         if (action === 'diagnose') {
             const queryText = url.searchParams.get('queryText');

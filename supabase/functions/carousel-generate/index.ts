@@ -25,6 +25,8 @@ interface GenerateBody {
   slideCount: number;
   imageStyle?: string;
   slides: SlideFlag[];
+  // ideia de CTA opcional (pode vir crua; a IA melhora e preserva a palavra-chave)
+  ctaIdea?: string | null;
   // briefing direto (quando não há modelId)
   niche?: string;
   objective?: string;
@@ -99,6 +101,7 @@ Deno.serve(async (req) => {
         audience: briefing.audience,
         brand_color: briefing.brandColor,
         people_in_images: briefing.peopleInImages,
+        cta_idea: body.ctaIdea?.trim() || null,
       })
       .select()
       .single();
@@ -169,6 +172,7 @@ async function runGeneration(
       objective: briefing.objective,
       tone: briefing.tone,
       audience: briefing.audience,
+      ctaIdea: body.ctaIdea,
     });
 
     for (const slide of slides ?? []) {

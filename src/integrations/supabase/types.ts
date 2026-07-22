@@ -517,6 +517,42 @@ export type Database = {
           },
         ]
       }
+      blocked_auth_identifiers: {
+        Row: {
+          blocked_at: string | null
+          blocked_by: string | null
+          created_at: string
+          email: string | null
+          id: string
+          phone: string | null
+          reason: string | null
+          source_organization_id: string | null
+          source_user_id: string | null
+        }
+        Insert: {
+          blocked_at?: string | null
+          blocked_by?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          phone?: string | null
+          reason?: string | null
+          source_organization_id?: string | null
+          source_user_id?: string | null
+        }
+        Update: {
+          blocked_at?: string | null
+          blocked_by?: string | null
+          created_at?: string
+          email?: string | null
+          id?: string
+          phone?: string | null
+          reason?: string | null
+          source_organization_id?: string | null
+          source_user_id?: string | null
+        }
+        Relationships: []
+      }
       blocked_fingerprints: {
         Row: {
           blocked_at: string | null
@@ -682,6 +718,64 @@ export type Database = {
           },
         ]
       }
+      campaign_folders: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          organization_id: string
+          parent_id: string | null
+          position: number
+          updated_at: string
+          workspace_id: string | null
+          workspace_ids: string[]
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          organization_id: string
+          parent_id?: string | null
+          position?: number
+          updated_at?: string
+          workspace_id?: string | null
+          workspace_ids?: string[]
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          organization_id?: string
+          parent_id?: string | null
+          position?: number
+          updated_at?: string
+          workspace_id?: string | null
+          workspace_ids?: string[]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "campaign_folders_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_folders_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "campaign_folders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaign_folders_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       campaign_queue: {
         Row: {
           campaign_id: string | null
@@ -806,11 +900,13 @@ export type Database = {
           created_at: string
           end_time: string | null
           flow_id: string
+          folder_id: string | null
           id: string
           is_active: boolean | null
           match_type: string
           name: string
           organization_id: string
+          position: number
           start_time: string | null
           trigger_count: number
           trigger_keyword: string
@@ -822,11 +918,13 @@ export type Database = {
           created_at?: string
           end_time?: string | null
           flow_id: string
+          folder_id?: string | null
           id?: string
           is_active?: boolean | null
           match_type?: string
           name: string
           organization_id: string
+          position?: number
           start_time?: string | null
           trigger_count?: number
           trigger_keyword: string
@@ -838,11 +936,13 @@ export type Database = {
           created_at?: string
           end_time?: string | null
           flow_id?: string
+          folder_id?: string | null
           id?: string
           is_active?: boolean | null
           match_type?: string
           name?: string
           organization_id?: string
+          position?: number
           start_time?: string | null
           trigger_count?: number
           trigger_keyword?: string
@@ -856,6 +956,13 @@ export type Database = {
             columns: ["flow_id"]
             isOneToOne: false
             referencedRelation: "flows"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "campaigns_folder_id_fkey"
+            columns: ["folder_id"]
+            isOneToOne: false
+            referencedRelation: "campaign_folders"
             referencedColumns: ["id"]
           },
           {
@@ -2114,6 +2221,45 @@ export type Database = {
           },
         ]
       }
+      contacts_backup_20260701: {
+        Row: {
+          avatar_url: string | null
+          created_at: string | null
+          email: string | null
+          id: string | null
+          metadata: Json | null
+          name: string | null
+          organization_id: string | null
+          phone: string | null
+          updated_at: string | null
+          workspace_id: string | null
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string | null
+          email?: string | null
+          id?: string | null
+          metadata?: Json | null
+          name?: string | null
+          organization_id?: string | null
+          phone?: string | null
+          updated_at?: string | null
+          workspace_id?: string | null
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string | null
+          email?: string | null
+          id?: string | null
+          metadata?: Json | null
+          name?: string | null
+          organization_id?: string | null
+          phone?: string | null
+          updated_at?: string | null
+          workspace_id?: string | null
+        }
+        Relationships: []
+      }
       conversation_origin_audit: {
         Row: {
           captured_at: string
@@ -2410,6 +2556,7 @@ export type Database = {
           conversation_status_id: string | null
           created_at: string
           department_id: string | null
+          hidden_by_disconnect: boolean
           id: string
           intervened_at: string | null
           intervened_by: string | null
@@ -2436,6 +2583,7 @@ export type Database = {
           conversation_status_id?: string | null
           created_at?: string
           department_id?: string | null
+          hidden_by_disconnect?: boolean
           id?: string
           intervened_at?: string | null
           intervened_by?: string | null
@@ -2462,6 +2610,7 @@ export type Database = {
           conversation_status_id?: string | null
           created_at?: string
           department_id?: string | null
+          hidden_by_disconnect?: boolean
           id?: string
           intervened_at?: string | null
           intervened_by?: string | null
@@ -4141,6 +4290,694 @@ export type Database = {
         }
         Relationships: []
       }
+      instagram_accounts: {
+        Row: {
+          connected_at: string | null
+          created_at: string
+          default_assignee_id: string | null
+          default_conversation_status_id: string | null
+          default_department_id: string | null
+          disconnected_at: string | null
+          facebook_page_id: string | null
+          id: string
+          ig_business_account_id: string | null
+          ig_name: string | null
+          ig_profile_pic_url: string | null
+          ig_username: string | null
+          is_active: boolean
+          label: string | null
+          long_lived_user_token: string | null
+          organization_id: string
+          page_access_token: string | null
+          scopes: string[]
+          status: Database["public"]["Enums"]["instagram_account_status"]
+          token_expires_at: string | null
+          updated_at: string
+          workspace_id: string | null
+        }
+        Insert: {
+          connected_at?: string | null
+          created_at?: string
+          default_assignee_id?: string | null
+          default_conversation_status_id?: string | null
+          default_department_id?: string | null
+          disconnected_at?: string | null
+          facebook_page_id?: string | null
+          id?: string
+          ig_business_account_id?: string | null
+          ig_name?: string | null
+          ig_profile_pic_url?: string | null
+          ig_username?: string | null
+          is_active?: boolean
+          label?: string | null
+          long_lived_user_token?: string | null
+          organization_id: string
+          page_access_token?: string | null
+          scopes?: string[]
+          status?: Database["public"]["Enums"]["instagram_account_status"]
+          token_expires_at?: string | null
+          updated_at?: string
+          workspace_id?: string | null
+        }
+        Update: {
+          connected_at?: string | null
+          created_at?: string
+          default_assignee_id?: string | null
+          default_conversation_status_id?: string | null
+          default_department_id?: string | null
+          disconnected_at?: string | null
+          facebook_page_id?: string | null
+          id?: string
+          ig_business_account_id?: string | null
+          ig_name?: string | null
+          ig_profile_pic_url?: string | null
+          ig_username?: string | null
+          is_active?: boolean
+          label?: string | null
+          long_lived_user_token?: string | null
+          organization_id?: string
+          page_access_token?: string | null
+          scopes?: string[]
+          status?: Database["public"]["Enums"]["instagram_account_status"]
+          token_expires_at?: string | null
+          updated_at?: string
+          workspace_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "instagram_accounts_default_conversation_status_id_fkey"
+            columns: ["default_conversation_status_id"]
+            isOneToOne: false
+            referencedRelation: "conversation_statuses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instagram_accounts_default_department_id_fkey"
+            columns: ["default_department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instagram_accounts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instagram_accounts_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      instagram_automation_rules: {
+        Row: {
+          actions: Json
+          created_at: string
+          id: string
+          instagram_account_id: string
+          is_active: boolean
+          name: string
+          organization_id: string
+          rate_limit: Json
+          trigger_config: Json
+          trigger_type: string
+          updated_at: string
+          workspace_id: string | null
+        }
+        Insert: {
+          actions?: Json
+          created_at?: string
+          id?: string
+          instagram_account_id: string
+          is_active?: boolean
+          name: string
+          organization_id: string
+          rate_limit?: Json
+          trigger_config?: Json
+          trigger_type?: string
+          updated_at?: string
+          workspace_id?: string | null
+        }
+        Update: {
+          actions?: Json
+          created_at?: string
+          id?: string
+          instagram_account_id?: string
+          is_active?: boolean
+          name?: string
+          organization_id?: string
+          rate_limit?: Json
+          trigger_config?: Json
+          trigger_type?: string
+          updated_at?: string
+          workspace_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "instagram_automation_rules_instagram_account_id_fkey"
+            columns: ["instagram_account_id"]
+            isOneToOne: false
+            referencedRelation: "instagram_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instagram_automation_rules_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instagram_automation_rules_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      instagram_contact_tags: {
+        Row: {
+          added_by: string | null
+          added_by_type: string
+          created_at: string
+          id: string
+          instagram_contact_id: string
+          tag_id: string
+        }
+        Insert: {
+          added_by?: string | null
+          added_by_type?: string
+          created_at?: string
+          id?: string
+          instagram_contact_id: string
+          tag_id: string
+        }
+        Update: {
+          added_by?: string | null
+          added_by_type?: string
+          created_at?: string
+          id?: string
+          instagram_contact_id?: string
+          tag_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "instagram_contact_tags_instagram_contact_id_fkey"
+            columns: ["instagram_contact_id"]
+            isOneToOne: false
+            referencedRelation: "instagram_contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instagram_contact_tags_tag_id_fkey"
+            columns: ["tag_id"]
+            isOneToOne: false
+            referencedRelation: "tags"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      instagram_contacts: {
+        Row: {
+          created_at: string
+          id: string
+          igsid: string
+          instagram_account_id: string
+          metadata: Json
+          name: string | null
+          organization_id: string
+          profile_pic_url: string | null
+          updated_at: string
+          username: string | null
+          workspace_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          igsid: string
+          instagram_account_id: string
+          metadata?: Json
+          name?: string | null
+          organization_id: string
+          profile_pic_url?: string | null
+          updated_at?: string
+          username?: string | null
+          workspace_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          igsid?: string
+          instagram_account_id?: string
+          metadata?: Json
+          name?: string | null
+          organization_id?: string
+          profile_pic_url?: string | null
+          updated_at?: string
+          username?: string | null
+          workspace_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "instagram_contacts_instagram_account_id_fkey"
+            columns: ["instagram_account_id"]
+            isOneToOne: false
+            referencedRelation: "instagram_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instagram_contacts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instagram_contacts_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      instagram_conversations: {
+        Row: {
+          ai_agent_id: string | null
+          assigned_to: string | null
+          contact_id: string
+          conversation_status_id: string | null
+          created_at: string
+          department_id: string | null
+          id: string
+          instagram_account_id: string
+          last_message_at: string | null
+          last_message_direction:
+            | Database["public"]["Enums"]["message_direction"]
+            | null
+          metadata: Json
+          organization_id: string
+          status: Database["public"]["Enums"]["conversation_status"]
+          unread_count: number
+          updated_at: string
+          workspace_id: string | null
+        }
+        Insert: {
+          ai_agent_id?: string | null
+          assigned_to?: string | null
+          contact_id: string
+          conversation_status_id?: string | null
+          created_at?: string
+          department_id?: string | null
+          id?: string
+          instagram_account_id: string
+          last_message_at?: string | null
+          last_message_direction?:
+            | Database["public"]["Enums"]["message_direction"]
+            | null
+          metadata?: Json
+          organization_id: string
+          status?: Database["public"]["Enums"]["conversation_status"]
+          unread_count?: number
+          updated_at?: string
+          workspace_id?: string | null
+        }
+        Update: {
+          ai_agent_id?: string | null
+          assigned_to?: string | null
+          contact_id?: string
+          conversation_status_id?: string | null
+          created_at?: string
+          department_id?: string | null
+          id?: string
+          instagram_account_id?: string
+          last_message_at?: string | null
+          last_message_direction?:
+            | Database["public"]["Enums"]["message_direction"]
+            | null
+          metadata?: Json
+          organization_id?: string
+          status?: Database["public"]["Enums"]["conversation_status"]
+          unread_count?: number
+          updated_at?: string
+          workspace_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "instagram_conversations_ai_agent_id_fkey"
+            columns: ["ai_agent_id"]
+            isOneToOne: false
+            referencedRelation: "ai_agents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instagram_conversations_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "instagram_contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instagram_conversations_conversation_status_id_fkey"
+            columns: ["conversation_status_id"]
+            isOneToOne: false
+            referencedRelation: "conversation_statuses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instagram_conversations_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instagram_conversations_instagram_account_id_fkey"
+            columns: ["instagram_account_id"]
+            isOneToOne: false
+            referencedRelation: "instagram_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instagram_conversations_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instagram_conversations_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      instagram_messages: {
+        Row: {
+          content: string | null
+          conversation_id: string
+          created_at: string
+          delivered_at: string | null
+          direction: Database["public"]["Enums"]["message_direction"]
+          error_message: string | null
+          failed_at: string | null
+          id: string
+          ig_message_id: string | null
+          is_from_bot: boolean
+          media_url: string | null
+          metadata: Json
+          read_at: string | null
+          sent_by: string | null
+          type: Database["public"]["Enums"]["instagram_message_type"]
+        }
+        Insert: {
+          content?: string | null
+          conversation_id: string
+          created_at?: string
+          delivered_at?: string | null
+          direction: Database["public"]["Enums"]["message_direction"]
+          error_message?: string | null
+          failed_at?: string | null
+          id?: string
+          ig_message_id?: string | null
+          is_from_bot?: boolean
+          media_url?: string | null
+          metadata?: Json
+          read_at?: string | null
+          sent_by?: string | null
+          type?: Database["public"]["Enums"]["instagram_message_type"]
+        }
+        Update: {
+          content?: string | null
+          conversation_id?: string
+          created_at?: string
+          delivered_at?: string | null
+          direction?: Database["public"]["Enums"]["message_direction"]
+          error_message?: string | null
+          failed_at?: string | null
+          id?: string
+          ig_message_id?: string | null
+          is_from_bot?: boolean
+          media_url?: string | null
+          metadata?: Json
+          read_at?: string | null
+          sent_by?: string | null
+          type?: Database["public"]["Enums"]["instagram_message_type"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "instagram_messages_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "instagram_conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      instagram_pending_followups: {
+        Row: {
+          contact_id: string
+          conversation_id: string | null
+          created_at: string
+          error: string | null
+          followup_config: Json
+          id: string
+          organization_id: string
+          processed_at: string | null
+          resume_at: string
+          rule_id: string
+          status: string
+          tracked_link_id: string | null
+        }
+        Insert: {
+          contact_id: string
+          conversation_id?: string | null
+          created_at?: string
+          error?: string | null
+          followup_config?: Json
+          id?: string
+          organization_id: string
+          processed_at?: string | null
+          resume_at: string
+          rule_id: string
+          status?: string
+          tracked_link_id?: string | null
+        }
+        Update: {
+          contact_id?: string
+          conversation_id?: string | null
+          created_at?: string
+          error?: string | null
+          followup_config?: Json
+          id?: string
+          organization_id?: string
+          processed_at?: string | null
+          resume_at?: string
+          rule_id?: string
+          status?: string
+          tracked_link_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "instagram_pending_followups_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "instagram_contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instagram_pending_followups_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "instagram_conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instagram_pending_followups_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instagram_pending_followups_rule_id_fkey"
+            columns: ["rule_id"]
+            isOneToOne: false
+            referencedRelation: "instagram_automation_rules"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instagram_pending_followups_tracked_link_id_fkey"
+            columns: ["tracked_link_id"]
+            isOneToOne: false
+            referencedRelation: "instagram_tracked_links"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      instagram_rule_executions: {
+        Row: {
+          contact_id: string | null
+          created_at: string
+          error: string | null
+          id: string
+          rule_id: string
+          status: Database["public"]["Enums"]["instagram_execution_status"]
+          steps: Json
+          webhook_event_id: string | null
+        }
+        Insert: {
+          contact_id?: string | null
+          created_at?: string
+          error?: string | null
+          id?: string
+          rule_id: string
+          status: Database["public"]["Enums"]["instagram_execution_status"]
+          steps?: Json
+          webhook_event_id?: string | null
+        }
+        Update: {
+          contact_id?: string | null
+          created_at?: string
+          error?: string | null
+          id?: string
+          rule_id?: string
+          status?: Database["public"]["Enums"]["instagram_execution_status"]
+          steps?: Json
+          webhook_event_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "instagram_rule_executions_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "instagram_contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instagram_rule_executions_rule_id_fkey"
+            columns: ["rule_id"]
+            isOneToOne: false
+            referencedRelation: "instagram_automation_rules"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instagram_rule_executions_webhook_event_id_fkey"
+            columns: ["webhook_event_id"]
+            isOneToOne: false
+            referencedRelation: "instagram_webhook_events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      instagram_tracked_links: {
+        Row: {
+          clicked_at: string | null
+          contact_id: string | null
+          created_at: string
+          destination_url: string
+          id: string
+          organization_id: string
+          rule_id: string | null
+        }
+        Insert: {
+          clicked_at?: string | null
+          contact_id?: string | null
+          created_at?: string
+          destination_url: string
+          id?: string
+          organization_id: string
+          rule_id?: string | null
+        }
+        Update: {
+          clicked_at?: string | null
+          contact_id?: string | null
+          created_at?: string
+          destination_url?: string
+          id?: string
+          organization_id?: string
+          rule_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "instagram_tracked_links_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "instagram_contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instagram_tracked_links_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instagram_tracked_links_rule_id_fkey"
+            columns: ["rule_id"]
+            isOneToOne: false
+            referencedRelation: "instagram_automation_rules"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      instagram_webhook_events: {
+        Row: {
+          created_at: string
+          error: string | null
+          event_type: string
+          id: string
+          instagram_account_id: string | null
+          organization_id: string | null
+          processed: boolean
+          raw_payload: Json
+        }
+        Insert: {
+          created_at?: string
+          error?: string | null
+          event_type: string
+          id?: string
+          instagram_account_id?: string | null
+          organization_id?: string | null
+          processed?: boolean
+          raw_payload: Json
+        }
+        Update: {
+          created_at?: string
+          error?: string | null
+          event_type?: string
+          id?: string
+          instagram_account_id?: string | null
+          organization_id?: string | null
+          processed?: boolean
+          raw_payload?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "instagram_webhook_events_instagram_account_id_fkey"
+            columns: ["instagram_account_id"]
+            isOneToOne: false
+            referencedRelation: "instagram_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instagram_webhook_events_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       integration_configs: {
         Row: {
           agents_model: string | null
@@ -4747,6 +5584,103 @@ export type Database = {
             columns: ["pack_id"]
             isOneToOne: false
             referencedRelation: "document_packs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pipeline_checklist_templates: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          items: Json
+          name: string
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          items?: Json
+          name: string
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          items?: Json
+          name?: string
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pipeline_checklist_templates_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pipeline_column_checklists: {
+        Row: {
+          column_id: string
+          created_at: string
+          id: string
+          pipeline_id: string
+          template_id: string
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          column_id: string
+          created_at?: string
+          id?: string
+          pipeline_id: string
+          template_id: string
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          column_id?: string
+          created_at?: string
+          id?: string
+          pipeline_id?: string
+          template_id?: string
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pipeline_column_checklists_column_id_fkey"
+            columns: ["column_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_columns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pipeline_column_checklists_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "pipelines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pipeline_column_checklists_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_checklist_templates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pipeline_column_checklists_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
             referencedColumns: ["id"]
           },
         ]
@@ -5549,6 +6483,27 @@ export type Database = {
           },
         ]
       }
+      rate_limits: {
+        Row: {
+          bucket: string
+          count: number
+          identifier: string
+          window_start: string
+        }
+        Insert: {
+          bucket: string
+          count?: number
+          identifier: string
+          window_start: string
+        }
+        Update: {
+          bucket?: string
+          count?: number
+          identifier?: string
+          window_start?: string
+        }
+        Relationships: []
+      }
       recurring_tasks: {
         Row: {
           created_at: string
@@ -5844,6 +6799,11 @@ export type Database = {
       }
       scheduled_messages: {
         Row: {
+          batch_current_target: number | null
+          batch_pause_minutes: number | null
+          batch_paused_until: string | null
+          batch_sent_count: number | null
+          batch_size_max: number | null
           contact_id: string | null
           content_type: string
           created_at: string
@@ -5871,6 +6831,11 @@ export type Database = {
           workspace_id: string | null
         }
         Insert: {
+          batch_current_target?: number | null
+          batch_pause_minutes?: number | null
+          batch_paused_until?: string | null
+          batch_sent_count?: number | null
+          batch_size_max?: number | null
           contact_id?: string | null
           content_type: string
           created_at?: string
@@ -5898,6 +6863,11 @@ export type Database = {
           workspace_id?: string | null
         }
         Update: {
+          batch_current_target?: number | null
+          batch_pause_minutes?: number | null
+          batch_paused_until?: string | null
+          batch_sent_count?: number | null
+          batch_size_max?: number | null
           contact_id?: string | null
           content_type?: string
           created_at?: string
@@ -6828,6 +7798,38 @@ export type Database = {
         }
         Relationships: []
       }
+      user_positions: {
+        Row: {
+          assigned_at: string
+          assigned_by: string | null
+          id: string
+          position_id: string
+          user_id: string
+        }
+        Insert: {
+          assigned_at?: string
+          assigned_by?: string | null
+          id?: string
+          position_id: string
+          user_id: string
+        }
+        Update: {
+          assigned_at?: string
+          assigned_by?: string | null
+          id?: string
+          position_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_positions_position_id_fkey"
+            columns: ["position_id"]
+            isOneToOne: false
+            referencedRelation: "positions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           created_at: string
@@ -7437,6 +8439,113 @@ export type Database = {
           },
         ]
       }
+      wizzy_flow_user_permissions: {
+        Row: {
+          can_edit_analytics: boolean
+          can_edit_briefings: boolean
+          can_edit_culture: boolean
+          can_edit_flows: boolean
+          can_edit_inventory: boolean
+          can_edit_notes: boolean
+          can_edit_positions: boolean
+          can_edit_processes: boolean
+          can_edit_projects: boolean
+          can_edit_tasks: boolean
+          can_edit_vision: boolean
+          can_view_ai: boolean
+          can_view_analytics: boolean
+          can_view_briefings: boolean
+          can_view_culture: boolean
+          can_view_flows: boolean
+          can_view_inventory: boolean
+          can_view_notes: boolean
+          can_view_positions: boolean
+          can_view_processes: boolean
+          can_view_projects: boolean
+          can_view_tasks: boolean
+          can_view_vision: boolean
+          can_view_workload: boolean
+          created_at: string
+          id: string
+          projects_only_assigned: boolean
+          updated_at: string
+          user_id: string
+          workspace_id: string
+        }
+        Insert: {
+          can_edit_analytics?: boolean
+          can_edit_briefings?: boolean
+          can_edit_culture?: boolean
+          can_edit_flows?: boolean
+          can_edit_inventory?: boolean
+          can_edit_notes?: boolean
+          can_edit_positions?: boolean
+          can_edit_processes?: boolean
+          can_edit_projects?: boolean
+          can_edit_tasks?: boolean
+          can_edit_vision?: boolean
+          can_view_ai?: boolean
+          can_view_analytics?: boolean
+          can_view_briefings?: boolean
+          can_view_culture?: boolean
+          can_view_flows?: boolean
+          can_view_inventory?: boolean
+          can_view_notes?: boolean
+          can_view_positions?: boolean
+          can_view_processes?: boolean
+          can_view_projects?: boolean
+          can_view_tasks?: boolean
+          can_view_vision?: boolean
+          can_view_workload?: boolean
+          created_at?: string
+          id?: string
+          projects_only_assigned?: boolean
+          updated_at?: string
+          user_id: string
+          workspace_id: string
+        }
+        Update: {
+          can_edit_analytics?: boolean
+          can_edit_briefings?: boolean
+          can_edit_culture?: boolean
+          can_edit_flows?: boolean
+          can_edit_inventory?: boolean
+          can_edit_notes?: boolean
+          can_edit_positions?: boolean
+          can_edit_processes?: boolean
+          can_edit_projects?: boolean
+          can_edit_tasks?: boolean
+          can_edit_vision?: boolean
+          can_view_ai?: boolean
+          can_view_analytics?: boolean
+          can_view_briefings?: boolean
+          can_view_culture?: boolean
+          can_view_flows?: boolean
+          can_view_inventory?: boolean
+          can_view_notes?: boolean
+          can_view_positions?: boolean
+          can_view_processes?: boolean
+          can_view_projects?: boolean
+          can_view_tasks?: boolean
+          can_view_vision?: boolean
+          can_view_workload?: boolean
+          created_at?: string
+          id?: string
+          projects_only_assigned?: boolean
+          updated_at?: string
+          user_id?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wizzy_flow_user_permissions_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       workspace_agent_configs: {
         Row: {
           agent_ids: string[] | null
@@ -7561,18 +8670,24 @@ export type Database = {
         Row: {
           created_at: string
           id: string
+          invited_by: string | null
+          role: string
           user_id: string
           workspace_id: string
         }
         Insert: {
           created_at?: string
           id?: string
+          invited_by?: string | null
+          role?: string
           user_id: string
           workspace_id: string
         }
         Update: {
           created_at?: string
           id?: string
+          invited_by?: string | null
+          role?: string
           user_id?: string
           workspace_id?: string
         }
@@ -7737,6 +8852,31 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      _wz_merge_conversation_pair: {
+        Args: { _dst: string; _src: string }
+        Returns: undefined
+      }
+      adopt_orphan_conversations_for_instance: {
+        Args: { _instance_id: string }
+        Returns: number
+      }
+      adopt_orphan_conversations_for_workspace: {
+        Args: {
+          _dry_run?: boolean
+          _instance_id: string
+          _workspace_id: string
+        }
+        Returns: number
+      }
+      check_rate_limit: {
+        Args: {
+          p_bucket: string
+          p_identifier: string
+          p_max_requests: number
+          p_window_seconds: number
+        }
+        Returns: boolean
+      }
       check_suspicious_activity: {
         Args: never
         Returns: {
@@ -7840,6 +8980,39 @@ export type Database = {
         Returns: undefined
       }
       is_platform_admin: { Args: { _user_id: string }; Returns: boolean }
+      merge_duplicate_contacts_safe: {
+        Args: { _dry_run?: boolean }
+        Returns: {
+          contacts_removed: number
+          conversations_merged: number
+          groups_merged: number
+          rows_repointed: number
+        }[]
+      }
+      merge_duplicate_conversations: {
+        Args: { _dry_run?: boolean }
+        Returns: {
+          conversations_removed: number
+          groups_merged: number
+          rows_repointed: number
+        }[]
+      }
+      merge_orphans_into_number: {
+        Args: { _dry_run?: boolean }
+        Returns: {
+          contacts_affected: number
+          contacts_skipped_multi: number
+          orphans_merged: number
+        }[]
+      }
+      readopt_orphan_conversations: {
+        Args: { _dry_run?: boolean }
+        Returns: {
+          merged: number
+          readopted: number
+          still_hidden: number
+        }[]
+      }
       record_conversation_origin_audit: {
         Args: {
           _captured_from?: string
@@ -7892,6 +9065,7 @@ export type Database = {
         Args: { _org_id: string; _user_id: string }
         Returns: Database["public"]["Enums"]["app_role"]
       }
+      whatsapp_phone_match_key: { Args: { raw_phone: string }; Returns: string }
     }
     Enums: {
       app_role: "owner" | "admin" | "supervisor" | "agent" | "platform_admin"
@@ -7901,6 +9075,20 @@ export type Database = {
         | "resolved"
         | "archived"
         | "closed"
+      instagram_account_status:
+        | "pending"
+        | "connected"
+        | "disconnected"
+        | "error"
+      instagram_execution_status: "success" | "error" | "skipped"
+      instagram_message_type:
+        | "text"
+        | "image"
+        | "video"
+        | "audio"
+        | "comment_reply"
+        | "story_reply"
+        | "story_mention"
       message_direction: "inbound" | "outbound"
       message_type:
         | "text"
@@ -8050,6 +9238,22 @@ export const Constants = {
         "resolved",
         "archived",
         "closed",
+      ],
+      instagram_account_status: [
+        "pending",
+        "connected",
+        "disconnected",
+        "error",
+      ],
+      instagram_execution_status: ["success", "error", "skipped"],
+      instagram_message_type: [
+        "text",
+        "image",
+        "video",
+        "audio",
+        "comment_reply",
+        "story_reply",
+        "story_mention",
       ],
       message_direction: ["inbound", "outbound"],
       message_type: [

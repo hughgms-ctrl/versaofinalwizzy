@@ -1,5 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { resolveWorkspaceInstanceBinding, sendWhatsAppMessage } from '../_shared/whatsappProvider.ts';
+import { resolveCaller, assertCallerCanAccessOrg, AccessError, type CallerAuth } from '../_shared/access.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -193,6 +194,39 @@ Deno.serve(async (req) => {
         JSON.stringify({ error: 'flowId and conversationId are required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
+    }
+
+    // SEGURANÇA: flow-execute roda com service_role e envia WhatsApp/dispara IA.
+    // Com verify_jwt=false, qualquer um podia disparar fluxos (spam + custo).
+    // Chamadas internas (service_role) passam; um usuário autenticado só dispara
+    // fluxo da própria org, e o fluxo e a conversa têm de ser da MESMA org (impede
+    // rodar o fluxo da org do atacante sobre a conversa de outra org).
+    let caller: CallerAuth;
+    try {
+      caller = await resolveCaller(req);
+    } catch (authErr) {
+      const status = authErr instanceof AccessError ? authErr.status : 401;
+      return new Response(JSON.stringify({ error: authErr instanceof Error ? authErr.message : 'Unauthorized' }), {
+        status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (caller.mode !== 'service') {
+      try {
+        const [{ data: flowOrg }, { data: convOrg }] = await Promise.all([
+          supabase.from('flows').select('organization_id').eq('id', flowId).maybeSingle(),
+          supabase.from('conversations').select('organization_id').eq('id', conversationId).maybeSingle(),
+        ]);
+        await assertCallerCanAccessOrg(supabase, caller, flowOrg?.organization_id);
+        if (convOrg?.organization_id && convOrg.organization_id !== flowOrg?.organization_id) {
+          throw new AccessError('Forbidden', 403);
+        }
+      } catch (authErr) {
+        const status = authErr instanceof AccessError ? authErr.status : 403;
+        return new Response(JSON.stringify({ error: authErr instanceof Error ? authErr.message : 'Forbidden' }), {
+          status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
     }
 
     // Start background execution

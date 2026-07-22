@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { getUserOrganizationIds } from '../_shared/access.ts';
 
 const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
@@ -58,6 +59,22 @@ Deno.serve(async (req) => {
         }
 
         const { organizationId } = await req.json();
+
+        if (!organizationId) {
+            return new Response(JSON.stringify({ error: 'organizationId is required' }), {
+                status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+        }
+
+        // SEGURANÇA (IDOR): confirmar que o usuário autenticado é MEMBRO da org do
+        // body antes de reescrever os contatos dela. Sem isto, qualquer JWT válido
+        // (de qualquer org) podia alterar os contatos de QUALQUER organização.
+        const memberOrgIds = await getUserOrganizationIds(supabase, user.id);
+        if (!memberOrgIds.includes(organizationId)) {
+            return new Response(JSON.stringify({ error: 'Forbidden' }), {
+                status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+        }
 
         // 1. Get all contacts for org
         const { data: contacts } = await supabase

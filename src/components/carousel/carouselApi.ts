@@ -133,6 +133,8 @@ export interface GeneratePayload {
   slideCount: 5 | 7 | 10;
   imageStyle: VisualStyle;
   slides: { order: number; hasImage: boolean }[];
+  /** Ideia de CTA opcional para o último slide (crua; a IA melhora). */
+  ctaIdea?: string;
 }
 
 export async function generateCarousel(
@@ -166,6 +168,18 @@ export async function regenerateImage(
   });
   if (error) throw error;
   return rowToSlide(data);
+}
+
+export async function enhanceModelField(
+  field: "niche" | "audience",
+  value: string,
+  context?: { niche?: string; objective?: string; tone?: string },
+): Promise<string> {
+  const { data, error } = await supabase.functions.invoke("carousel-enhance-field", {
+    body: { field, value, ...context },
+  });
+  if (error) throw error;
+  return (data as { value: string }).value ?? value;
 }
 
 export async function fetchTrending(niche: string): Promise<TrendingIdea[]> {

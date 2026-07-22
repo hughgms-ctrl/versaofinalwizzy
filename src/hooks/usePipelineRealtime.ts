@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { createRealtimeChannel } from '@/lib/realtimeChannel';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 
 /**
@@ -36,8 +37,7 @@ export function usePipelineRealtime(pipelineId: string | null) {
       queryClient.refetchQueries({ queryKey: ['contact-tags'], type: 'active' });
     };
 
-    const channel = supabase
-      .channel(`pipeline-rt-${pipelineId}`)
+    const channel = createRealtimeChannel(`pipeline-rt-${pipelineId}`)
       // Card movements (filtered by pipeline)
       .on(
         'postgres_changes',

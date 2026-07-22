@@ -911,7 +911,11 @@ function BlockRenderer({ block, answer, variables, onAnswer, onSetVariables, onN
           type: file.type
         };
 
-        onAnswer(fileValue, d.variable);
+        // Garante que o arquivo entre em `variables` mesmo quando o bloco não tem
+        // uma variável configurada — senão o quiz-actions (que linka anexos varrendo
+        // `variables` por `.url`) nunca o vê e ele fica órfão no storage. A chave
+        // sintética inclui o id do bloco para ser única entre múltiplos uploads.
+        onAnswer(fileValue, d.variable || `__file_${block.id}`);
       } catch (err: any) {
         console.error('Erro ao enviar arquivo:', err);
         setUploadError(err.message || 'Erro ao enviar arquivo');

@@ -1,6 +1,7 @@
 import { useQuery, useInfiniteQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { useEffect, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { createRealtimeChannel } from '@/lib/realtimeChannel';
 import { useAuth } from './useAuth';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 
@@ -141,8 +142,7 @@ export function useConversations(options?: { includeArchived?: boolean; onlyArch
       }, 1500);
     };
 
-    const channel = supabase
-      .channel(`conversations-realtime-${profile.organization_id}`)
+    const channel = createRealtimeChannel(`conversations-realtime-${profile.organization_id}`)
       .on(
         'postgres_changes',
         {
@@ -254,8 +254,7 @@ export function useMessages(conversationId: string | null) {
   useEffect(() => {
     if (!session || !conversationId) return;
 
-    const channel = supabase
-      .channel(`messages-realtime-${conversationId}`)
+    const channel = createRealtimeChannel(`messages-realtime-${conversationId}`)
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'messages', filter: `conversation_id=eq.${conversationId}` },

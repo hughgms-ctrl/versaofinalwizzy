@@ -109,8 +109,14 @@ function ContactFileThumb({ file }: { file: ContactFile }) {
 // Abre um contact_file em nova aba usando signed URL. Abre a janela ANTES do await
 // (síncrono, dentro do gesto de clique) para não ser bloqueada por popup blocker,
 // e só então aponta a location para a URL assinada.
+//
+// NÃO usar 'noopener' no window.open inicial: com noopener o retorno é null (por
+// spec), perdemos a referência da janela e o `win.location.href` pós-await nunca
+// roda → a aba fica EM BRANCO. Severamos o opener manualmente (win.opener = null)
+// para manter a proteção contra reverse tabnabbing sem perder a referência.
 async function openContactFileInNewTab(file: ContactFile) {
-  const win = window.open('', '_blank', 'noopener,noreferrer');
+  const win = window.open('', '_blank');
+  if (win) win.opener = null;
   const url = await resolveContactFileUrl(file);
   if (!url) {
     win?.close();

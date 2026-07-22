@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { assertServiceRoleOrPlatformAdmin, AccessError } from '../_shared/access.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -21,10 +22,31 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  // Ferramenta de manutenção que roda com service_role (bypassa RLS) sobre
+  // flow_executions de TODAS as orgs. Fica desligada por padrão; habilite o
+  // secret ENABLE_DEBUG_FUNCTIONS=true só durante a operação de recuperação.
+  if (Deno.env.get('ENABLE_DEBUG_FUNCTIONS') !== 'true') {
+    return new Response(JSON.stringify({ error: 'Not found' }), {
+      status: 404,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
   );
+
+  // SEGURANÇA: mesmo com o gate ENABLE_DEBUG_FUNCTIONS, exige service_role ou
+  // platform_admin — a função lê/reativa flow_executions de TODAS as orgs.
+  try {
+    await assertServiceRoleOrPlatformAdmin(req, supabase);
+  } catch (authErr) {
+    const status = authErr instanceof AccessError ? authErr.status : 401;
+    return new Response(JSON.stringify({ error: authErr instanceof Error ? authErr.message : 'Unauthorized' }), {
+      status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
 
   const body = await req.json().catch(() => ({}));
   const action = body.action || 'status';

@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { createRealtimeChannel } from '@/lib/realtimeChannel';
 import { useAuth } from './useAuth';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 
@@ -15,8 +16,7 @@ export function useFollowUpStatus() {
   useEffect(() => {
     if (!selectedOrganizationId) return;
 
-    const channel = supabase
-      .channel(`follow-up-status:${selectedOrganizationId}`)
+    const channel = createRealtimeChannel(`follow-up-status:${selectedOrganizationId}`)
       .on('postgres_changes', {
         event: '*',
         schema: 'public',

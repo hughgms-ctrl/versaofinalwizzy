@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { createRealtimeChannel } from '@/lib/realtimeChannel';
 import { useAuth } from './useAuth';
 
 export interface ContactPresence {
@@ -53,8 +54,7 @@ class PresenceStore {
         }
       });
 
-    this.channel = supabase
-      .channel(`contact-presence:${this.orgId}`)
+    this.channel = createRealtimeChannel(`contact-presence:${this.orgId}`)
       .on(
         'postgres_changes',
         {

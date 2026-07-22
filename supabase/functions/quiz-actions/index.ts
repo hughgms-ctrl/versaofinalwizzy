@@ -467,7 +467,11 @@ function buildQuizSummary(variables: Record<string, any>): string {
     if (value === undefined || value === null || value === '') continue;
     
     hasContent = true;
-    const label = key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    // Chave sintética de arquivo sem variável (`__file_<blockId>`, ver PublicQuizPage):
+    // rótulo genérico "Arquivo" em vez do id cru do bloco.
+    const label = key.startsWith('__file_')
+      ? 'Arquivo'
+      : key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
     
     if (typeof value === 'object') {
       if ((value as any).url) {
