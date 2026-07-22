@@ -53,8 +53,11 @@ serve(async (req) => {
     if (!serviceKey) throw new Error("SUPABASE_SERVICE_ROLE_KEY is not configured");
     const adminClient = createClient(supabaseUrl, serviceKey);
     const organizationId = await getOrganizationIdFromRequest(adminClient, req);
-    const aiConfig = await resolveOpenAIConfig(adminClient, organizationId, "document_processing");
-    if (!aiConfig) throw new Error("OpenAI não configurada para processar documentos");
+    // A extração de texto do documento não depende de IA — resolvemos a config
+    // de IA de forma best-effort e só a usamos como reforço opcional (marcação
+    // automática de campos). Sem IA configurada/disponível, o usuário ainda
+    // recebe o texto extraído para marcar os campos manualmente no editor.
+    const aiConfig = await resolveOpenAIConfig(adminClient, organizationId, "document_processing").catch(() => null);
 
     // Fetch file content. O bucket contact-files está privado (Fase B): o upload
     // veio pra `<org_id>/templates/...`, então baixamos por path via service_role
@@ -91,6 +94,14 @@ serve(async (req) => {
       fileContent = fileContent.slice(0, MAX_CHARS);
     }
 
+    // Sem IA disponível (não configurada, sem créditos, org sem key própria etc):
+    // devolve o texto extraído puro, sem campos sugeridos, para marcação manual.
+    if (!aiConfig) {
+      return new Response(JSON.stringify({ content: fileContent, fields: [], ai_used: false }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const systemPrompt = `Você é um assistente jurídico especializado em análise de documentos e contratos brasileiros.
 
 Sua tarefa é analisar o conteúdo de um documento modelo e:
@@ -112,61 +123,58 @@ Retorne OBRIGATORIAMENTE um JSON com esta estrutura:
 
 Os types possíveis para campos são: text, cpf, date, email, phone, number, address, select`;
 
-    const response = await fetch(aiConfig.endpoint, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${aiConfig.apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: aiConfig.model,
-        messages: [
-          { role: "system", content: systemPrompt },
-          {
-            role: "user",
-            content: `Analise este documento modelo e extraia os campos variáveis. IMPORTANTE: retorne o documento COMPLETO, sem omitir nenhuma parte.\n\nNome do arquivo: ${file_name || 'documento'}\n\nConteúdo:\n${fileContent}`,
-          },
-        ],
-      }),
-    });
-
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error("AI error:", response.status, errText);
-      if (response.status === 429) {
-        return new Response(JSON.stringify({ error: "Rate limit exceeded. Tente novamente em alguns segundos." }), {
-          status: 429,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      if (response.status === 402) {
-        return new Response(JSON.stringify({ error: "Créditos de IA esgotados. Adicione créditos no workspace." }), {
-          status: 402,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      throw new Error("AI processing failed");
-    }
-
-    const aiData = await response.json();
-    const aiContent = aiData.choices?.[0]?.message?.content || '';
-
-    // Parse the JSON from AI response
-    let parsed;
+    // A partir daqui a IA é um reforço opcional: qualquer falha (rede, rate limit,
+    // créditos, resposta inválida) cai no fallback de texto puro em vez de bloquear
+    // o usuário — ele extraiu o documento, só não teve os campos sugeridos.
     try {
-      const jsonMatch = aiContent.match(/```(?:json)?\s*([\s\S]*?)```/);
-      const jsonStr = jsonMatch ? jsonMatch[1].trim() : aiContent.trim();
-      parsed = JSON.parse(jsonStr);
-    } catch {
-      parsed = {
-        content: aiContent,
-        fields: [],
-      };
-    }
+      const response = await fetch(aiConfig.endpoint, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${aiConfig.apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: aiConfig.model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            {
+              role: "user",
+              content: `Analise este documento modelo e extraia os campos variáveis. IMPORTANTE: retorne o documento COMPLETO, sem omitir nenhuma parte.\n\nNome do arquivo: ${file_name || 'documento'}\n\nConteúdo:\n${fileContent}`,
+            },
+          ],
+        }),
+      });
 
-    return new Response(JSON.stringify(parsed), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+      if (!response.ok) {
+        const errText = await response.text();
+        console.error("AI error:", response.status, errText);
+        return new Response(JSON.stringify({ content: fileContent, fields: [], ai_used: false }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const aiData = await response.json();
+      const aiContent = aiData.choices?.[0]?.message?.content || '';
+
+      // Parse the JSON from AI response
+      let parsed;
+      try {
+        const jsonMatch = aiContent.match(/```(?:json)?\s*([\s\S]*?)```/);
+        const jsonStr = jsonMatch ? jsonMatch[1].trim() : aiContent.trim();
+        parsed = JSON.parse(jsonStr);
+      } catch {
+        parsed = { content: aiContent || fileContent, fields: [] };
+      }
+
+      return new Response(JSON.stringify({ ai_used: true, ...parsed }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    } catch (aiError) {
+      console.error("AI request failed:", aiError);
+      return new Response(JSON.stringify({ content: fileContent, fields: [], ai_used: false }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
   } catch (e) {
     console.error("process-document-template error:", e);
     return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }), {

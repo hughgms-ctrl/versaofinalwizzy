@@ -19,6 +19,8 @@ import { useSignedContactFileUrl } from './templateAssets';
 interface TemplateEditorProps {
   template: DocumentTemplate | null;
   onBack: () => void;
+  /** Rascunho vindo do Upload de Modelo (com ou sem sugestão de IA) para um template novo. */
+  initialDraft?: { name: string; content: string; fields: any[] };
 }
 
 const CATEGORIES = ['contrato', 'procuração', 'declaração', 'petição', 'requerimento', 'outro'];
@@ -53,7 +55,7 @@ function plainTextToHtml(text: string): string {
     .join('');
 }
 
-export function TemplateEditor({ template, onBack }: TemplateEditorProps) {
+export function TemplateEditor({ template, onBack, initialDraft }: TemplateEditorProps) {
   const { profile } = useAuth();
   const createTemplate = useCreateDocumentTemplate();
   const updateTemplate = useUpdateDocumentTemplate();
@@ -62,10 +64,11 @@ export function TemplateEditor({ template, onBack }: TemplateEditorProps) {
   const initialHtml = useMemo(() => {
     if (template?.content_html) return template.content_html;
     if (template?.content) return plainTextToHtml(template.content);
+    if (initialDraft?.content) return plainTextToHtml(initialDraft.content);
     return '<p></p>';
-  }, [template]);
+  }, [template, initialDraft]);
 
-  const [name, setName] = useState(template?.name || '');
+  const [name, setName] = useState(template?.name || initialDraft?.name || '');
   const [description, setDescription] = useState(template?.description || '');
   const [category, setCategory] = useState(template?.category || '');
   const [contentHtml, setContentHtml] = useState<string>(initialHtml);
@@ -75,7 +78,7 @@ export function TemplateEditor({ template, onBack }: TemplateEditorProps) {
   // continua CRU (usado no save e passado ao RichTextEditor).
   const displayLogoUrl = useSignedContactFileUrl(logoUrl);
   const [fields, setFields] = useState<Array<{ name: string; label: string; type: string; required: boolean; hint?: string }>>(
-    template?.fields || [],
+    template?.fields || initialDraft?.fields || [],
   );
   const [autoSendWhatsApp, setAutoSendWhatsApp] = useState(template?.auto_send_whatsapp || false);
   const [defaultSigners, setDefaultSigners] = useState<SignerInput[]>(

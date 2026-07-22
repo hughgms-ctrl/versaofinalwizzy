@@ -66,6 +66,7 @@ export function TemplatesList({ onGeneratedForSignature }: { onGeneratedForSigna
   const [editingTemplate, setEditingTemplate] = useState<DocumentTemplate | null>(null);
   const [fillingTemplate, setFillingTemplate] = useState<DocumentTemplate | null>(null);
   const [showNewEditor, setShowNewEditor] = useState(false);
+  const [newEditorDraft, setNewEditorDraft] = useState<{ name: string; content: string; fields: any[] } | null>(null);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [showFolderDialog, setShowFolderDialog] = useState(false);
   const [showRenameDialog, setShowRenameDialog] = useState(false);
@@ -157,7 +158,13 @@ export function TemplatesList({ onGeneratedForSignature }: { onGeneratedForSigna
 
   if (editingTemplate) return <TemplateEditor template={editingTemplate} onBack={() => setEditingTemplate(null)} />;
   if (fillingTemplate) return <TemplateFillForm template={fillingTemplate} onBack={() => setFillingTemplate(null)} onGeneratedForSignature={onGeneratedForSignature} />;
-  if (showNewEditor) return <TemplateEditor template={null} onBack={() => setShowNewEditor(false)} />;
+  if (showNewEditor) return (
+    <TemplateEditor
+      template={null}
+      initialDraft={newEditorDraft || undefined}
+      onBack={() => { setShowNewEditor(false); setNewEditorDraft(null); }}
+    />
+  );
 
   const TemplateRow = ({ template, nested = false }: { template: DocumentTemplate; nested?: boolean }) => (
     <div className={cn(
@@ -369,7 +376,11 @@ export function TemplatesList({ onGeneratedForSignature }: { onGeneratedForSigna
         </div>
       )}
 
-      <UploadTemplateDialog open={showUpload} onOpenChange={setShowUpload} />
+      <UploadTemplateDialog
+        open={showUpload}
+        onOpenChange={setShowUpload}
+        onEditManually={(draft) => { setNewEditorDraft(draft); setShowNewEditor(true); }}
+      />
 
       {/* Create Folder Dialog */}
       <Dialog open={showFolderDialog} onOpenChange={setShowFolderDialog}>

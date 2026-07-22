@@ -7,21 +7,21 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
-import { useCreateDocumentTemplate } from '@/hooks/useDocumentTemplates';
 
 interface UploadTemplateDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Fecha o dialog e abre o editor manual pré-preenchido com o conteúdo extraído. */
+  onEditManually: (draft: { name: string; content: string; fields: any[] }) => void;
 }
 
-export function UploadTemplateDialog({ open, onOpenChange }: UploadTemplateDialogProps) {
+export function UploadTemplateDialog({ open, onOpenChange, onEditManually }: UploadTemplateDialogProps) {
   const { profile } = useAuth();
   const { toast } = useToast();
-  const createTemplate = useCreateDocumentTemplate();
   const [file, setFile] = useState<File | null>(null);
   const [name, setName] = useState('');
   const [processing, setProcessing] = useState(false);
-  const [result, setResult] = useState<{ content: string; fields: any[] } | null>(null);
+  const [result, setResult] = useState<{ content: string; fields: any[]; aiUsed: boolean } | null>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files?.[0];
@@ -59,14 +59,15 @@ export function UploadTemplateDialog({ open, onOpenChange }: UploadTemplateDialo
         console.error('Edge function error:', error);
         throw new Error(typeof error === 'object' && error.message ? error.message : 'Erro ao processar documento com IA');
       }
-      if (!data || !data.content) {
+      if (!data || typeof data.content !== 'string') {
         console.error('Invalid response:', data);
-        throw new Error('Resposta inválida da IA. Tente novamente.');
+        throw new Error('Resposta inválida ao processar o documento. Tente novamente.');
       }
 
       setResult({
         content: data.content,
-        fields: data.fields,
+        fields: data.fields || [],
+        aiUsed: data.ai_used !== false,
       });
     } catch (error: any) {
       toast({ title: 'Erro ao processar documento', description: error.message, variant: 'destructive' });
@@ -75,20 +76,13 @@ export function UploadTemplateDialog({ open, onOpenChange }: UploadTemplateDialo
     }
   };
 
-  const handleSave = () => {
+  const handleEditManually = () => {
     if (!result || !name.trim()) return;
-    createTemplate.mutate({
-      name,
-      content: result.content,
-      fields: result.fields,
-    }, {
-      onSuccess: () => {
-        onOpenChange(false);
-        setFile(null);
-        setName('');
-        setResult(null);
-      },
-    });
+    onEditManually({ name, content: result.content, fields: result.fields });
+    onOpenChange(false);
+    setFile(null);
+    setName('');
+    setResult(null);
   };
 
   const handleClose = (open: boolean) => {
@@ -107,7 +101,8 @@ export function UploadTemplateDialog({ open, onOpenChange }: UploadTemplateDialo
         <DialogHeader>
           <DialogTitle>Upload de Modelo</DialogTitle>
           <DialogDescription>
-            Envie um PDF ou DOCX e a IA irá identificar os campos variáveis automaticamente.
+            Envie um PDF ou DOCX. Se a IA estiver disponível, os campos variáveis são sugeridos
+            automaticamente; caso contrário, você marca os campos manualmente no editor a seguir.
           </DialogDescription>
         </DialogHeader>
 
@@ -150,7 +145,7 @@ export function UploadTemplateDialog({ open, onOpenChange }: UploadTemplateDialo
                 {processing ? (
                   <>
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Analisando com IA...
+                    Extraindo conteúdo...
                   </>
                 ) : (
                   <>
@@ -162,28 +157,42 @@ export function UploadTemplateDialog({ open, onOpenChange }: UploadTemplateDialo
             </>
           ) : (
             <>
-              <div className="flex items-center gap-2 p-3 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200 dark:border-green-800">
-                <CheckCircle className="h-5 w-5 text-green-600" />
+              {result.aiUsed ? (
+                <div className="flex items-center gap-2 p-3 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200 dark:border-green-800">
+                  <CheckCircle className="h-5 w-5 text-green-600" />
+                  <div>
+                    <p className="text-sm font-medium text-green-800 dark:text-green-200">Documento analisado pela IA!</p>
+                    <p className="text-xs text-green-600 dark:text-green-400">
+                      {result.fields.length} campos variáveis sugeridos — revise no editor.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 p-3 bg-muted rounded-lg border border-border">
+                  <FileText className="h-5 w-5 text-muted-foreground" />
+                  <div>
+                    <p className="text-sm font-medium">Conteúdo extraído do documento</p>
+                    <p className="text-xs text-muted-foreground">
+                      IA indisponível no momento — marque os campos variáveis manualmente no editor.
+                    </p>
+                  </div>
+                </div>
+              )}
+              {result.fields.length > 0 && (
                 <div>
-                  <p className="text-sm font-medium text-green-800 dark:text-green-200">Documento analisado!</p>
-                  <p className="text-xs text-green-600 dark:text-green-400">
-                    {result.fields.length} campos variáveis encontrados
-                  </p>
+                  <Label>Campos detectados</Label>
+                  <div className="flex flex-wrap gap-1.5 mt-1">
+                    {result.fields.map((field: any) => (
+                      <span
+                        key={field.name}
+                        className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-primary/10 text-primary"
+                      >
+                        {`{{${field.name}}}`}
+                      </span>
+                    ))}
+                  </div>
                 </div>
-              </div>
-              <div>
-                <Label>Campos detectados</Label>
-                <div className="flex flex-wrap gap-1.5 mt-1">
-                  {result.fields.map((field: any) => (
-                    <span
-                      key={field.name}
-                      className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-primary/10 text-primary"
-                    >
-                      {`{{${field.name}}}`}
-                    </span>
-                  ))}
-                </div>
-              </div>
+              )}
               <div>
                 <Label>Preview do conteúdo</Label>
                 <div className="mt-1 max-h-48 overflow-y-auto text-xs font-mono p-3 bg-muted rounded-lg whitespace-pre-wrap">
@@ -194,8 +203,8 @@ export function UploadTemplateDialog({ open, onOpenChange }: UploadTemplateDialo
                 <Button variant="outline" className="flex-1" onClick={() => setResult(null)}>
                   Reprocessar
                 </Button>
-                <Button className="flex-1" onClick={handleSave} disabled={createTemplate.isPending}>
-                  Salvar template
+                <Button className="flex-1" onClick={handleEditManually}>
+                  Editar manualmente
                 </Button>
               </div>
             </>
