@@ -161,10 +161,11 @@ export function TemplateEditor({ template, onBack, initialDraft }: TemplateEdito
     }
   };
 
-  // Detect placeholders used in content
+  // Detect placeholders used in content (um mesmo campo pode aparecer várias vezes no texto)
   const extractedFields = useMemo(() => {
     const matches = contentHtml.match(/\{\{\s*([^}\s]+)\s*\}\}/g) || [];
-    return matches.map((m) => m.replace(/[{}\s]/g, ''));
+    const unique = new Set(matches.map((m) => m.replace(/[{}\s]/g, '')));
+    return Array.from(unique);
   }, [contentHtml]);
   const missingFields = extractedFields.filter((f) => !fields.some((field) => field.name === f));
 
