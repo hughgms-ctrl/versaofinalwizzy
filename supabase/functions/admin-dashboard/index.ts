@@ -1151,6 +1151,8 @@ Deno.serve(async (req) => {
           remarketing: 'gpt-4.1-mini',
           qualification_rules: 'gpt-4.1-mini',
           flow_ai: 'gpt-4.1-mini',
+          agent_tester_persona: 'gpt-4o-mini',
+          agent_tester_evaluator: 'gpt-4.1-mini',
         },
       }
 
@@ -1205,6 +1207,8 @@ Deno.serve(async (req) => {
         'remarketing',
         'qualification_rules',
         'flow_ai',
+        'agent_tester_persona',
+        'agent_tester_evaluator',
       ]
       const defaultModel = String(body.default_model || 'gpt-4o-mini').trim()
       if (!textModels.includes(defaultModel)) throw new Error('Modelo padrão inválido')

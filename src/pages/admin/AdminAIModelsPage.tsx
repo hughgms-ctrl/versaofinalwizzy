@@ -38,6 +38,8 @@ const FEATURES: { value: AIModelFeature; label: string; description: string; sec
   { value: 'remarketing', label: 'Remarketing', description: 'Geração de mensagens automáticas de follow-up.' },
   { value: 'qualification_rules', label: 'Regras de qualificação', description: 'Extração de critérios objetivos a partir do prompt do agente.' },
   { value: 'transcription', label: 'Transcrição', description: 'Áudios e mídia convertidos para texto.' },
+  { value: 'agent_tester_persona', label: 'Testador — Persona', description: 'Simula o cliente numa conversa de teste com o agente.', section: 'Testador de Agentes' },
+  { value: 'agent_tester_evaluator', label: 'Testador — Avaliador', description: 'Analisa a transcrição simulada e sugere ajustes no agente.', section: 'Testador de Agentes' },
 ];
 
 const DEFAULT_STRATEGY: AdminAIModelStrategy = {
@@ -54,6 +56,8 @@ const DEFAULT_STRATEGY: AdminAIModelStrategy = {
     qualification_rules: 'gpt-4.1-mini',
     flow_ai: 'gpt-4.1-mini',
     transcription: 'gpt-4o-mini-transcribe',
+    agent_tester_persona: 'gpt-4o-mini',
+    agent_tester_evaluator: 'gpt-4.1-mini',
   },
 };
 
@@ -107,6 +111,8 @@ export function AdminAIModelsContent({ showHeader = true }: { showHeader?: boole
       qualification_rules: safeFeatureModel('qualification_rules'),
       flow_ai: safeFeatureModel('flow_ai'),
       transcription: safeFeatureModel('transcription'),
+      agent_tester_persona: safeFeatureModel('agent_tester_persona'),
+      agent_tester_evaluator: safeFeatureModel('agent_tester_evaluator'),
     },
   });
 

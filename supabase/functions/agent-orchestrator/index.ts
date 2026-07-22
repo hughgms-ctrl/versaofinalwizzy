@@ -2937,28 +2937,36 @@ function buildQualificationChecklistBlock(
 ): string {
   if (!qualificationRules || qualificationRules.length === 0) return '';
 
-  // Regras específicas do nó atual no fluxo (mais específicas, prioritárias)
+  // Regras específicas do nó atual no fluxo (o trabalho específico desta etapa)
   const flowNodeRules = (flowId && nodeId)
     ? qualificationRules.filter((r) => r.flow_id === flowId && r.node_id === nodeId && r.is_active)
     : [];
 
-  // Regras gerais do agente (fallback / regras globais do agente base)
+  // Regras gerais do agente (valem em qualquer orquestração que use este agente)
   const agentRules = agentId
     ? qualificationRules.filter((r) => r.agent_id === agentId && !r.flow_id && r.is_active)
     : [];
 
-  // Prioriza regras do fluxo. Se não houver, usa as do agente.
-  const filtered = flowNodeRules.length > 0 ? flowNodeRules : agentRules;
-  if (filtered.length === 0) return '';
+  if (flowNodeRules.length === 0 && agentRules.length === 0) return '';
 
-  const sorted = [...filtered].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-  const scopeLabel = flowNodeRules.length > 0 ? 'DESTE NÓ DO FLUXO' : 'DO AGENTE';
-  let block = `# ✅ CHECKLIST DE QUALIFICAÇÃO ${scopeLabel} (OBRIGATÓRIO):\n`;
-  block += `Antes de qualificar, rejeitar ou avançar, valide CADA item abaixo. Se faltar dado para qualquer um, PERGUNTE — nunca rejeite por omissão.\n\n`;
-  sorted.forEach((r, i) => {
-    block += `${i + 1}. **${r.label}**: ${r.criteria}\n`;
-  });
-  block += `\nREGRAS DE USO:\n`;
+  // Somam -- regra do agente NÃO some quando o nó do fluxo também tem regras
+  // próprias (comportamento antigo substituía uma pela outra; ver conversa com
+  // o usuário: prompt já soma camadas, regras deviam seguir o mesmo padrão).
+  const renderChecklist = (rules: any[], label: string): string => {
+    const sorted = [...rules].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    let block = `# ✅ CHECKLIST DE QUALIFICAÇÃO ${label} (OBRIGATÓRIO):\n`;
+    sorted.forEach((r, i) => {
+      block += `${i + 1}. **${r.label}**: ${r.criteria}\n`;
+    });
+    return block + '\n';
+  };
+
+  let block = '';
+  if (agentRules.length > 0) block += renderChecklist(agentRules, 'DO AGENTE (GERAL)');
+  if (flowNodeRules.length > 0) block += renderChecklist(flowNodeRules, 'DESTE NÓ DO FLUXO (ESPECÍFICO)');
+
+  block += `REGRAS DE USO (aplicam-se a TODOS os itens acima, dos dois checklists):\n`;
+  block += `- Antes de qualificar, rejeitar ou avançar, valide CADA item. Se faltar dado para qualquer um, PERGUNTE — nunca rejeite por omissão.\n`;
   block += `- Marque mentalmente cada item como ✓ atendido, ✗ não atendido ou ? desconhecido com base no histórico.\n`;
   block += `- Para itens "?", a próxima ação OBRIGATÓRIA é fazer uma pergunta ao cliente para descobrir.\n`;
   block += `- Só conclua "qualificado" se TODOS estiverem ✓.\n`;

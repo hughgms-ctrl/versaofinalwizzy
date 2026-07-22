@@ -107,10 +107,35 @@ export function useUpdateAIAgent() {
         .single();
 
       if (error) throw error;
+
+      // Agentes criados pelo wizard de criação/template (ver apply-agent-template)
+      // têm um fluxo+campanha já linkados via agent_instances -- sem isso, o
+      // toggle aqui só desativava o agente, sem parar de fato os disparos da
+      // campanha correspondente.
+      if (typeof dbUpdates.is_active === 'boolean') {
+        const { data: instances } = await (supabase as any)
+          .from('agent_instances')
+          .select('id, flow_id, campaign_id')
+          .eq('ai_agent_id', id);
+        for (const instance of (instances as any[]) || []) {
+          // flows.is_active é um campo separado de campaigns.is_active -- sem
+          // isso, desativar a orquestração aqui parava a campanha mas deixava
+          // o fluxo "ativo" (ver conversa com o usuário).
+          if (instance.flow_id) {
+            await supabase.from('flows').update({ is_active: dbUpdates.is_active }).eq('id', instance.flow_id);
+          }
+          if (!instance.campaign_id) continue;
+          await supabase.from('campaigns').update({ is_active: dbUpdates.is_active }).eq('id', instance.campaign_id);
+          await (supabase as any).from('agent_instances').update({ status: dbUpdates.is_active ? 'active' : 'paused' }).eq('id', instance.id);
+        }
+      }
+
       return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ai-agents'] });
+      queryClient.invalidateQueries({ queryKey: ['campaigns'] });
+      queryClient.invalidateQueries({ queryKey: ['flows'] });
       toast({ title: 'Agente atualizado com sucesso' });
     },
     onError: (error) => {

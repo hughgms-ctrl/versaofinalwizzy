@@ -1,10 +1,13 @@
 import { useState } from 'react';
-import { useAIAgents, useCreateAIAgent, useUpdateAIAgent } from '@/hooks/useAIAgents';
-import { useAgentFunctionRoles, useCreateAgentFunctionRole, useDeleteAgentFunctionRole } from '@/hooks/useAgentFunctionRoles';
+import { useQueryClient } from '@tanstack/react-query';
+import { useAIAgents, useCreateAIAgent, useUpdateAIAgent, AGENT_FUNCTION_ROLES } from '@/hooks/useAIAgents';
+import { useAgentInstances } from '@/hooks/useAgentInstances';
 import { useAgentFolders, useCreateAgentFolder, useDeleteAgentFolder, useRenameAgentFolder, useMoveAgentToFolder } from '@/hooks/useAgentFolders';
 import { AgentListItem } from './AgentListItem';
+import { ApplyTemplateWizard } from './ApplyTemplateWizard';
+import { ImportFlowDialog } from './ImportFlowDialog';
 import { Button } from '@/components/ui/button';
-import { Plus, Settings2, X, FolderPlus, Folder, ChevronDown, ChevronRight, MoreHorizontal, Trash2, Pencil, MapPinned } from 'lucide-react';
+import { Plus, FolderPlus, Folder, ChevronDown, ChevronRight, MoreHorizontal, Trash2, Pencil, MapPinned, Bot, Workflow, Import } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -16,13 +19,13 @@ import { AgentFolder } from '@/hooks/useAgentFolders';
 import { enforceEntryCreationLimit } from '@/lib/entryFlow';
 
 export function AgentsTab() {
+  const queryClient = useQueryClient();
   const { data: agents = [], isLoading } = useAIAgents();
-  const { data: roles = [] } = useAgentFunctionRoles();
   const { data: folders = [] } = useAgentFolders();
+  const { data: agentInstances = [] } = useAgentInstances();
+  const instanceIdByAgentId = new Map(agentInstances.map((i) => [i.ai_agent_id, i.id]));
   const createAgent = useCreateAIAgent();
   const updateAgent = useUpdateAIAgent();
-  const createRole = useCreateAgentFunctionRole();
-  const deleteRole = useDeleteAgentFunctionRole();
   const createFolder = useCreateAgentFolder();
   const deleteFolder = useDeleteAgentFolder();
   const renameFolder = useRenameAgentFolder();
@@ -30,10 +33,10 @@ export function AgentsTab() {
   const { selectedWorkspaceId, availableWorkspaces, isAdmin } = useWorkspaceContext();
 
   const [open, setOpen] = useState(false);
-  const [rolesOpen, setRolesOpen] = useState(false);
+  const [orchestrationWizardOpen, setOrchestrationWizardOpen] = useState(false);
+  const [importFlowOpen, setImportFlowOpen] = useState(false);
   const [newName, setNewName] = useState('');
-  const [newRole, setNewRole] = useState('recepcao');
-  const [newRoleLabel, setNewRoleLabel] = useState('');
+  const [newRole, setNewRole] = useState(AGENT_FUNCTION_ROLES[0]?.value || 'recepcao');
   const [newFolderName, setNewFolderName] = useState('');
   const [folderDialogOpen, setFolderDialogOpen] = useState(false);
   const [folderWorkspaceId, setFolderWorkspaceId] = useState<string | null>(null);
@@ -42,6 +45,13 @@ export function AgentsTab() {
   // Rename/edit folder dialog
   const [editingFolder, setEditingFolder] = useState<AgentFolder | null>(null);
   const [showRenameDialog, setShowRenameDialog] = useState(false);
+  const [editingInstanceId, setEditingInstanceId] = useState<string | null>(null);
+  // Separar "Agentes" (só prompt/persona, sem fluxo próprio) de "Orquestrações"
+  // (têm agent_instances -- fluxo+campanha por trás) -- ver conversa com o
+  // usuário. Em abas, não pastas: é uma distinção automática/estrutural (dá
+  // pra saber sozinho pelo instanceId), pastas continuam livres pro usuário
+  // organizar do jeito que quiser DENTRO de cada aba.
+  const [kindFilter, setKindFilter] = useState<'all' | 'agent' | 'orchestration'>('all');
 
   const handleCreate = () => {
     if (!newName.trim()) return;
@@ -65,12 +75,6 @@ export function AgentsTab() {
         setSelectedFolder(null);
       },
     });
-  };
-
-  const handleAddRole = () => {
-    if (!newRoleLabel.trim()) return;
-    const value = newRoleLabel.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
-    createRole.mutate({ label: newRoleLabel.trim(), value }, { onSuccess: () => setNewRoleLabel('') });
   };
 
   const handleCreateFolder = () => {
@@ -124,8 +128,13 @@ export function AgentsTab() {
     return !f.workspace_id || f.workspace_id === selectedWorkspaceId;
   });
 
-  const agentsInFolder = (folderId: string) => agents.filter(a => (a as any).folder_id === folderId);
-  const agentsWithoutFolder = agents.filter(a => {
+  const kindFilteredAgents = agents.filter((a) => {
+    if (kindFilter === 'all') return true;
+    const isOrchestration = instanceIdByAgentId.has(a.id);
+    return kindFilter === 'orchestration' ? isOrchestration : !isOrchestration;
+  });
+  const agentsInFolder = (folderId: string) => kindFilteredAgents.filter(a => (a as any).folder_id === folderId);
+  const agentsWithoutFolder = kindFilteredAgents.filter(a => {
     const folderId = (a as any).folder_id;
     if (folderId) return false;
     if (!selectedWorkspaceId) return true;
@@ -193,56 +202,32 @@ export function AgentsTab() {
             </DialogContent>
           </Dialog>
 
-          {/* Departments button */}
-          <Dialog open={rolesOpen} onOpenChange={setRolesOpen}>
-            <DialogTrigger asChild>
-              <Button variant="outline" size="sm" className="gap-1">
-                <Settings2 className="h-4 w-4" /> Departamentos
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader><DialogTitle>Departamentos</DialogTitle></DialogHeader>
-              <div className="space-y-3 mt-2">
-                <div className="flex gap-2">
-                  <Input
-                    value={newRoleLabel}
-                    onChange={e => setNewRoleLabel(e.target.value)}
-                    placeholder="Novo departamento (ex.: Recepção)"
-                    onKeyDown={e => { if (e.key === 'Enter') handleAddRole(); }}
-                  />
-                  <Button size="sm" disabled={!newRoleLabel.trim() || createRole.isPending} onClick={handleAddRole}>
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                </div>
-                <div className="space-y-1 max-h-60 overflow-y-auto">
-                  {roles.map(r => (
-                    <div key={r.id} className="flex items-center justify-between px-3 py-2 rounded-md bg-muted/50">
-                      <span className="text-sm">{r.label}</span>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6 text-destructive hover:text-destructive"
-                        onClick={() => deleteRole.mutate(r.id)}
-                      >
-                        <X className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
-
-          {/* New Agent button with gradient */}
-          <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
+          {/* New Agent: escolher entre agente simples (só prompt/persona) ou
+              orquestração (fluxo+campanha) -- unifica os dois pontos de entrada
+              que antes viviam em abas separadas (ver conversa com o usuário). */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
               <Button size="sm" className="bg-gradient-primary hover:opacity-90 text-white border-0">
                 <Plus className="h-4 w-4 mr-1" /> Novo Agente
               </Button>
-            </DialogTrigger>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setOpen(true)}>
+                <Bot className="h-3.5 w-3.5 mr-2" /> Agente simples
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setOrchestrationWizardOpen(true)}>
+                <Workflow className="h-3.5 w-3.5 mr-2" /> Orquestração
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setImportFlowOpen(true)}>
+                <Import className="h-3.5 w-3.5 mr-2" /> Importar fluxo existente
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <Dialog open={open} onOpenChange={setOpen}>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>Criar Novo Agente</DialogTitle>
+                <DialogTitle>Criar Agente Simples</DialogTitle>
               </DialogHeader>
               <div className="space-y-4 mt-2">
                 <div>
@@ -250,13 +235,13 @@ export function AgentsTab() {
                   <Input value={newName} onChange={e => setNewName(e.target.value)} placeholder="Ex.: Maria" />
                 </div>
                 <div>
-                  <label className="text-sm font-medium mb-1 block">Departamento</label>
+                  <label className="text-sm font-medium mb-1 block">Função</label>
                   <Select value={newRole} onValueChange={setNewRole}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {roles.map(r => (
+                      {AGENT_FUNCTION_ROLES.map(r => (
                         <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
                       ))}
                     </SelectContent>
@@ -288,6 +273,25 @@ export function AgentsTab() {
             </DialogContent>
           </Dialog>
         </div>
+      </div>
+
+      <div className="flex gap-1.5 mb-4">
+        {([
+          { value: 'all', label: 'Todos' },
+          { value: 'agent', label: 'Agentes' },
+          { value: 'orchestration', label: 'Orquestrações' },
+        ] as const).map((opt) => (
+          <button
+            key={opt.value}
+            onClick={() => setKindFilter(opt.value)}
+            className={cn(
+              'text-xs px-3 py-1 rounded-md transition-colors',
+              kindFilter === opt.value ? 'bg-primary/10 text-primary font-medium' : 'bg-muted text-muted-foreground hover:bg-muted/80'
+            )}
+          >
+            {opt.label}
+          </button>
+        ))}
       </div>
 
       {/* Rename folder dialog */}
@@ -383,7 +387,7 @@ export function AgentsTab() {
             {isExpanded && (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3 pl-6">
                 {folderAgents.map(agent => (
-                  <AgentListItem key={agent.id} agent={agent} folders={folders} onMoveToFolder={handleMoveAgentToFolder} />
+                  <AgentListItem key={agent.id} agent={agent} folders={folders} onMoveToFolder={handleMoveAgentToFolder} instanceId={instanceIdByAgentId.get(agent.id)} onEdit={setEditingInstanceId} />
                 ))}
                 {folderAgents.length === 0 && (
                   <p className="text-xs text-muted-foreground col-span-full py-2">Nenhum agente nesta pasta</p>
@@ -398,10 +402,32 @@ export function AgentsTab() {
       {agentsWithoutFolder.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
           {agentsWithoutFolder.map(agent => (
-            <AgentListItem key={agent.id} agent={agent} folders={folders} onMoveToFolder={handleMoveAgentToFolder} />
+            <AgentListItem key={agent.id} agent={agent} folders={folders} onMoveToFolder={handleMoveAgentToFolder} instanceId={instanceIdByAgentId.get(agent.id)} onEdit={setEditingInstanceId} />
           ))}
         </div>
       )}
+
+      <ApplyTemplateWizard
+        open={!!editingInstanceId || orchestrationWizardOpen}
+        onOpenChange={(isOpen) => { if (!isOpen) { setEditingInstanceId(null); setOrchestrationWizardOpen(false); } }}
+        template={null}
+        editInstanceId={editingInstanceId}
+        onApplied={() => {
+          queryClient.invalidateQueries({ queryKey: ['ai-agents'] });
+          queryClient.invalidateQueries({ queryKey: ['agent-instances'] });
+          queryClient.invalidateQueries({ queryKey: ['campaigns'] });
+          setOrchestrationWizardOpen(false);
+        }}
+      />
+
+      <ImportFlowDialog
+        open={importFlowOpen}
+        onOpenChange={setImportFlowOpen}
+        onImported={() => {
+          queryClient.invalidateQueries({ queryKey: ['ai-agents'] });
+          queryClient.invalidateQueries({ queryKey: ['agent-instances'] });
+        }}
+      />
     </div>
   );
 }

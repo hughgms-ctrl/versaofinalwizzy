@@ -2302,128 +2302,12 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
     console.log(`Checking triggers for message: "${triggerText}" type=${messageType} in org: ${organizationId}`);
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
-    // 1. Check for Campaign Triggers (highest priority) - only for text messages with content
-    if (triggerText) {
-      const campaignTrigger = await checkCampaignTriggers(supabase, organizationId, triggerText);
-
-      if (campaignTrigger) {
-        console.log('Campaign trigger matched:', JSON.stringify(campaignTrigger));
-        const { flowId: campaignFlowId, campaignId } = campaignTrigger;
-        console.log(`[CAMPAIGN TRIGGERED] Starting flow ${campaignFlowId} for conversation ${conversation.id}`);
-        // Mark as IA mode
-        await supabase.from('conversations').update({ service_mode: 'ia' }).eq('id', conversation.id);
-
-        // Apply campaign workspace if configured
-        const { data: campaignFull } = await supabase.from('campaigns').select('name, workspace_id, start_time, end_time').eq('id', campaignId).single();
-
-        // Seed flow variables from the trigger/campaign context so keyword-triggered
-        // flows can use {{phone}}, {{name}}, {{campaign_id}}, {{campaign_name}} —
-        // matching what campaign-webhook already passes and what the UI advertises.
-        const campaignVariables = {
-          phone,
-          name: contact.name || '',
-          campaign_id: campaignId,
-          campaign_name: campaignFull?.name || '',
-        };
-        if (campaignFull?.workspace_id) {
-          console.log(`[CAMPAIGN] Assigning workspace ${campaignFull.workspace_id} from campaign`);
-          await supabase.from('contacts').update({ workspace_id: campaignFull.workspace_id }).eq('id', contact.id);
-          await supabase.from('conversations').update({ workspace_id: campaignFull.workspace_id }).eq('id', conversation.id);
-        }
-
-        // Increment campaign counter
-        await supabase.rpc('increment_campaign_count', { campaign_id: campaignId });
-
-        // Get organization timezone
-        const { data: orgData } = await supabase.from('organizations').select('timezone').eq('id', organizationId).single();
-        const orgTimezone = orgData?.timezone || 'America/Sao_Paulo';
-
-        // Check if within business hours using org timezone
-        const now = new Date();
-        const bzTimeStr = new Intl.DateTimeFormat('pt-BR', {
-            timeZone: orgTimezone,
-            hour: '2-digit', minute: '2-digit', hour12: false
-        }).format(now);
-
-        const startT = campaignFull?.start_time || "00:00";
-        const endT = campaignFull?.end_time || "23:59";
-
-        let isOutsideHours = false;
-        if (startT <= endT) {
-            isOutsideHours = bzTimeStr < startT || bzTimeStr > endT;
-        } else {
-            // Crosses midnight
-            isOutsideHours = bzTimeStr < startT && bzTimeStr > endT;
-        }
-
-        if (isOutsideHours) {
-          console.log(`[CAMPAIGN QUEUED] Outside hours (${bzTimeStr} vs ${startT}-${endT}). Adding to queue.`);
-          
-          // Calculate when the queue should run (next start time) in UTC
-          const [sHour, sMin] = startT.split(':').map(Number);
-          const [cHour] = bzTimeStr.split(':').map(Number);
-          
-          // Get org timezone offset by comparing UTC and local representations
-          const localNow = new Date(now.toLocaleString("en-US", { timeZone: orgTimezone }));
-          const offsetMs = localNow.getTime() - now.getTime();
-          
-          // Build the target date in org local time, then convert to UTC
-          const localDate = new Date(localNow);
-          if (cHour >= sHour) {
-              // It's after start hour but outside hours (means it's after end time), schedule for tomorrow
-              localDate.setDate(localDate.getDate() + 1);
-          }
-          localDate.setHours(sHour, sMin, 0, 0);
-          
-          // Convert local time back to real UTC by subtracting the offset
-          const scheduledUTC = new Date(localDate.getTime() - offsetMs);
-          
-          console.log(`[CAMPAIGN QUEUED] Scheduled for ${scheduledUTC.toISOString()} (${startT} ${orgTimezone})`);
-
-          await supabase.from('campaign_queue').insert({
-            organization_id: organizationId,
-            campaign_id: campaignId,
-            conversation_id: conversation.id,
-            contact_id: contact.id,
-            message_content: triggerText,
-            variables: campaignVariables,
-            scheduled_for: scheduledUTC.toISOString(),
-            status: 'pending'
-          });
-          return respond({ success: true, messageId: savedMessage.id, queued: true });
-        }
-
-        console.log(`[WEBHOOK] Invoking flow-execute for campaign ${campaignId}, flow ${campaignFlowId}`);
-        // Call flow execution engine — await to ensure it starts (don't fire-and-forget)
-        const flowExecPromise = (async () => {
-          try {
-            const resp = await fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/flow-execute`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
-              body: JSON.stringify({
-                flowId: campaignFlowId,
-                conversationId: conversation.id,
-                triggerMessage: triggerText || '[mídia]',
-                variables: campaignVariables
-              }),
-            });
-            if (!resp.ok) {
-              const errText = await resp.text();
-              console.error(`[WEBHOOK] flow-execute failed for campaign ${campaignId}: ${resp.status} ${errText}`);
-            } else {
-              console.log(`[WEBHOOK] flow-execute started successfully for campaign ${campaignId}`);
-            }
-          } catch (err) {
-            console.error(`[WEBHOOK] flow-execute fetch error for campaign ${campaignId}:`, err);
-          }
-        })();
-        runBackground(flowExecPromise);
-
-        return respond({ success: true, messageId: savedMessage.id, triggeredCampaign: true });
-      }
-    }
-
-    // 2. Check for active flow execution
+    // 1. Check for active flow execution FIRST. A conversation with a flow already
+    // running/waiting_input must keep that flow — Campaign Trigger matching used to run
+    // before this check (and unconditionally on every message), so a reply that happened
+    // to match another campaign's keyword could silently hijack an in-progress
+    // conversation into a different flow. Campaign Triggers now only apply when there is
+    // no active flow execution (see the `else` branch below).
     const { data: activeFlowExec } = await supabase
       .from('flow_executions')
       .select('id, status, current_node_id, flow_id, variables, flow:flows(nodes, edges, master_prompt, is_master_active, name)')
@@ -2711,7 +2595,129 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
         console.log(`[WEBHOOK] Flow is running — skipping independent agent trigger`);
       }
     } else {
-      // 3. No active flow — Check for Master Prompt / AI routing
+      // 2. No active flow — check Campaign Triggers (keyword/webhook match starts a new flow).
+      // Only reached when there's no flow already running for this conversation.
+      if (triggerText) {
+        const campaignTrigger = await checkCampaignTriggers(supabase, organizationId, triggerText);
+
+        if (campaignTrigger) {
+          console.log('Campaign trigger matched:', JSON.stringify(campaignTrigger));
+          const { flowId: campaignFlowId, campaignId } = campaignTrigger;
+          console.log(`[CAMPAIGN TRIGGERED] Starting flow ${campaignFlowId} for conversation ${conversation.id}`);
+          // Mark as IA mode
+          await supabase.from('conversations').update({ service_mode: 'ia' }).eq('id', conversation.id);
+
+          // Apply campaign workspace if configured
+          const { data: campaignFull } = await supabase.from('campaigns').select('name, workspace_id, start_time, end_time').eq('id', campaignId).single();
+
+          // Seed flow variables from the trigger/campaign context so keyword-triggered
+          // flows can use {{phone}}, {{name}}, {{campaign_id}}, {{campaign_name}} —
+          // matching what campaign-webhook already passes and what the UI advertises.
+          const campaignVariables = {
+            phone,
+            name: contact.name || '',
+            campaign_id: campaignId,
+            campaign_name: campaignFull?.name || '',
+          };
+          if (campaignFull?.workspace_id) {
+            console.log(`[CAMPAIGN] Assigning workspace ${campaignFull.workspace_id} from campaign`);
+            await supabase.from('contacts').update({ workspace_id: campaignFull.workspace_id }).eq('id', contact.id);
+            await supabase.from('conversations').update({ workspace_id: campaignFull.workspace_id }).eq('id', conversation.id);
+          }
+
+          // Increment campaign counter
+          await supabase.rpc('increment_campaign_count', { campaign_id: campaignId });
+
+          // Get organization timezone
+          const { data: orgData } = await supabase.from('organizations').select('timezone').eq('id', organizationId).single();
+          const orgTimezone = orgData?.timezone || 'America/Sao_Paulo';
+
+          // Check if within business hours using org timezone
+          const now = new Date();
+          const bzTimeStr = new Intl.DateTimeFormat('pt-BR', {
+              timeZone: orgTimezone,
+              hour: '2-digit', minute: '2-digit', hour12: false
+          }).format(now);
+
+          const startT = campaignFull?.start_time || "00:00";
+          const endT = campaignFull?.end_time || "23:59";
+
+          let isOutsideHours = false;
+          if (startT <= endT) {
+              isOutsideHours = bzTimeStr < startT || bzTimeStr > endT;
+          } else {
+              // Crosses midnight
+              isOutsideHours = bzTimeStr < startT && bzTimeStr > endT;
+          }
+
+          if (isOutsideHours) {
+            console.log(`[CAMPAIGN QUEUED] Outside hours (${bzTimeStr} vs ${startT}-${endT}). Adding to queue.`);
+
+            // Calculate when the queue should run (next start time) in UTC
+            const [sHour, sMin] = startT.split(':').map(Number);
+            const [cHour] = bzTimeStr.split(':').map(Number);
+
+            // Get org timezone offset by comparing UTC and local representations
+            const localNow = new Date(now.toLocaleString("en-US", { timeZone: orgTimezone }));
+            const offsetMs = localNow.getTime() - now.getTime();
+
+            // Build the target date in org local time, then convert to UTC
+            const localDate = new Date(localNow);
+            if (cHour >= sHour) {
+                // It's after start hour but outside hours (means it's after end time), schedule for tomorrow
+                localDate.setDate(localDate.getDate() + 1);
+            }
+            localDate.setHours(sHour, sMin, 0, 0);
+
+            // Convert local time back to real UTC by subtracting the offset
+            const scheduledUTC = new Date(localDate.getTime() - offsetMs);
+
+            console.log(`[CAMPAIGN QUEUED] Scheduled for ${scheduledUTC.toISOString()} (${startT} ${orgTimezone})`);
+
+            await supabase.from('campaign_queue').insert({
+              organization_id: organizationId,
+              campaign_id: campaignId,
+              conversation_id: conversation.id,
+              contact_id: contact.id,
+              message_content: triggerText,
+              variables: campaignVariables,
+              scheduled_for: scheduledUTC.toISOString(),
+              status: 'pending'
+            });
+            return respond({ success: true, messageId: savedMessage.id, queued: true });
+          }
+
+          console.log(`[WEBHOOK] Invoking flow-execute for campaign ${campaignId}, flow ${campaignFlowId}`);
+          // Call flow execution engine — await to ensure it starts (don't fire-and-forget)
+          const flowExecPromise = (async () => {
+            try {
+              const resp = await fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/flow-execute`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
+                body: JSON.stringify({
+                  flowId: campaignFlowId,
+                  conversationId: conversation.id,
+                  triggerMessage: triggerText || '[mídia]',
+                  variables: campaignVariables
+                }),
+              });
+              if (!resp.ok) {
+                const errText = await resp.text();
+                console.error(`[WEBHOOK] flow-execute failed for campaign ${campaignId}: ${resp.status} ${errText}`);
+              } else {
+                console.log(`[WEBHOOK] flow-execute started successfully for campaign ${campaignId}`);
+              }
+            } catch (err) {
+              console.error(`[WEBHOOK] flow-execute fetch error for campaign ${campaignId}:`, err);
+            }
+          })();
+          runBackground(flowExecPromise);
+
+          return respond({ success: true, messageId: savedMessage.id, triggeredCampaign: true });
+        }
+      }
+
+      // 3. No campaign match either — Check for Master Prompt / AI routing
       // Also check if service_mode is 'ia' but flow just ended — if so, the service_mode
       // might be stale from a previous flow that didn't clean up properly
       let shouldTrigger = false;

@@ -181,7 +181,9 @@ export type AIModelFeature =
   | 'training_rules'
   | 'remarketing'
   | 'qualification_rules'
-  | 'flow_ai';
+  | 'flow_ai'
+  | 'agent_tester_persona'
+  | 'agent_tester_evaluator';
 
 export interface AdminAIModelStrategy {
   default_model: string;

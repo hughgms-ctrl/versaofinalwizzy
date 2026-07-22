@@ -15,6 +15,8 @@ export const DEFAULT_AI_MODEL_STRATEGY = {
     remarketing: 'gpt-4.1-mini',
     qualification_rules: 'gpt-4.1-mini',
     flow_ai: 'gpt-4.1-mini',
+    agent_tester_persona: 'gpt-4o-mini',
+    agent_tester_evaluator: 'gpt-4.1-mini',
   },
 };
 
