@@ -71,6 +71,18 @@ interface OutcomeRouting {
   continue?: boolean; // default true -- se false, esse resultado encerra a cadeia ali
   tag?: TagRef;
   pipeline?: PipelineRef;
+  // Pula pra um "final compartilhado" (ver SharedEndingInput) em vez de
+  // continuar nesta MESMA lista -- pra quando dois pontos diferentes (ex.:
+  // dois "não respondeu" de Iniciar Fluxo distintos) precisam levar pro
+  // MESMO próximo passo (ver conversa com o usuário: "Agente Master - AR").
+  // Quando setado, tem prioridade sobre continue/tag/pipeline.
+  jumpToEndingKey?: string;
+}
+
+interface SharedEndingInput {
+  key: string;
+  name?: string;
+  steps: StepInput[];
 }
 interface RemarketingStepInput { message: string; delayMinutes: number; }
 
@@ -164,6 +176,7 @@ interface ApplyBody {
   triggerKeyword?: string;
   instanceId?: string; // pra action:'activate'/'check_keyword'/'save_as_template'/'update_orchestration'/'set_goal_tag'
   steps?: StepInput[]; // orquestração do zero (sem templateId), ou reconstruída pra 'update_orchestration'
+  sharedEndings?: SharedEndingInput[]; // finais nomeados que qualquer resultado (de qualquer profundidade) pode "pular pra"
   // 'save_as_template' (só admin de plataforma, sempre vai pra galeria global)
   description?: string;
   category?: string;
@@ -214,6 +227,11 @@ function hasAgentStepDeep(steps: StepInput[]): boolean {
   return steps.some((s) => s.type === "agent" || (s.type === "condition" && (hasAgentStepDeep(s.trueSteps || []) || hasAgentStepDeep(s.falseSteps || []))));
 }
 
+// Um agente pode, em tese, morar só dentro de um final compartilhado -- checa os dois.
+function hasAgentAnywhere(steps: StepInput[], sharedEndings: SharedEndingInput[]): boolean {
+  return hasAgentStepDeep(steps) || sharedEndings.some((e) => hasAgentStepDeep(e.steps || []));
+}
+
 // Fallback pra template sem flow_snapshot desenhado (caso do único template
 // semeado até agora): um único nó de agente, sem passos antes/depois.
 function buildSingleAgentGraph(agentId: string, agentName: string) {
@@ -248,6 +266,7 @@ async function buildStepsGraph(
   organizationId: string,
   workspaceId: string | null,
   steps: StepInput[],
+  sharedEndings: SharedEndingInput[] = [],
 ): Promise<{ nodes: any[]; edges: any[]; primaryAgentId: string | null; createdAgentIds: string[] }> {
   const nodes: any[] = [{ id: "start-1", type: "start", position: { x: 50, y: 200 }, data: { label: "Início" } }];
   const edges: any[] = [];
@@ -257,6 +276,10 @@ async function buildStepsGraph(
   // aninhados de 'condition' incluídos) -- garante ids únicos mesmo quando o
   // mesmo tipo de etapa aparece dentro de ramos diferentes.
   let globalCounter = 0;
+  // key do final compartilhado -> id do PRIMEIRO node da cadeia dele -- é pra
+  // onde qualquer "pular pra" (jumpToEndingKey) aponta (ver conversa com o
+  // usuário: "Agente Master - AR").
+  const endingFirstNodeId = new Map<string, string>();
 
   type Pending = { source: string; sourceHandle?: string };
   const connectPending = (pending: Pending[], targetId: string) => {
@@ -271,15 +294,20 @@ async function buildStepsGraph(
   };
 
   // Processa uma lista de etapas encadeadas a partir de `initialPending`,
-  // devolvendo os pontos "em aberto" pro que vier depois. Recursiva: uma
-  // 'condition' chama processSteps de novo pra cada ramo (Sim/Não), escrevendo
-  // direto nos nodes/edges compartilhados -- e devolve pending VAZIO (a
-  // condição encerra a cadeia ali; cada ramo segue pro seu canto, sem
-  // reconvergência -- ver conversa com o usuário: "para fins dessa
-  // orquestração ok seguir independente").
-  async function processSteps(stepList: StepInput[], initialPending: Pending[], xBase: number, yBase: number): Promise<Pending[]> {
+  // devolvendo os pontos "em aberto" pro que vier depois (e o id do PRIMEIRO
+  // node criado nessa chamada, usado quando ela monta um final compartilhado
+  // -- é pra ele que quem "pula" vai apontar). Recursiva: uma 'condition'
+  // chama processSteps de novo pra cada ramo (Sim/Não), escrevendo direto nos
+  // nodes/edges compartilhados -- e devolve pending VAZIO (a condição encerra
+  // a cadeia ali; cada ramo segue pro seu canto, sem reconvergência -- ver
+  // conversa com o usuário: "para fins dessa orquestração ok seguir
+  // independente" -- reconvergência de verdade agora passa por um final
+  // compartilhado em vez disso).
+  async function processSteps(stepList: StepInput[], initialPending: Pending[], xBase: number, yBase: number): Promise<{ pending: Pending[]; firstNodeId: string | null }> {
     let pending = initialPending;
     let x = xBase;
+    let firstNodeId: string | null = null;
+    const noteFirst = (id: string) => { if (firstNodeId === null) firstNodeId = id; };
 
     for (const step of stepList) {
       globalCounter++;
@@ -287,12 +315,14 @@ async function buildStepsGraph(
 
       if (step.type === "tag") {
         const id = `tag-${counter}`;
+        noteFirst(id);
         nodes.push({ id, type: "action-tag", position: { x, y: yBase }, data: { label: "Adicionar tag", action: "add", tagId: step.tag.id, tagName: step.tag.name } });
         connectPending(pending, id);
         pending = [{ source: id }];
         x += 280;
       } else if (step.type === "pipeline") {
         const id = `pipeline-${counter}`;
+        noteFirst(id);
         nodes.push({
           id, type: "action-pipeline", position: { x, y: yBase },
           data: { label: "Mover pipeline", pipelineId: step.pipeline.id, pipelineColumnId: step.pipeline.columnId, pipelineName: step.pipeline.name, pipelineColumnName: step.pipeline.columnName },
@@ -302,18 +332,21 @@ async function buildStepsGraph(
         x += 280;
       } else if (step.type === "transfer") {
         const id = `transfer-${counter}`;
+        noteFirst(id);
         nodes.push({ id, type: "action-transfer", position: { x, y: yBase }, data: { label: "Transferir para atendimento humano" } });
         connectPending(pending, id);
         pending = [{ source: id }];
         x += 280;
       } else if (step.type === "delay") {
         const id = `delay-${counter}`;
+        noteFirst(id);
         nodes.push({ id, type: "action-delay", position: { x, y: yBase }, data: { label: "Aguardar", delaySeconds: step.delaySeconds || 60 } });
         connectPending(pending, id);
         pending = [{ source: id }];
         x += 280;
       } else if (step.type === "condition") {
         const id = `condition-${counter}`;
+        noteFirst(id);
         nodes.push({
           id, type: "condition", position: { x, y: yBase },
           data: {
@@ -330,6 +363,7 @@ async function buildStepsGraph(
         x += 280;
       } else if (step.type === "flow") {
         const id = `flow-${counter}`;
+        noteFirst(id);
         nodes.push({
           id, type: "action-flow", position: { x, y: yBase },
           data: {
@@ -360,6 +394,11 @@ async function buildStepsGraph(
           const nextPending: Pending[] = [];
           (["responded", "timeout"] as const).forEach((branch, i) => {
             const routing = step.routing?.[branch];
+            if (routing?.jumpToEndingKey) {
+              const targetId = endingFirstNodeId.get(routing.jumpToEndingKey);
+              if (targetId) edges.push({ id: `e-${id}-${targetId}-${branch}`, source: id, target: targetId, sourceHandle: branch });
+              return; // já foi ligado direto no final compartilhado -- não continua esta cadeia
+            }
             const shouldContinue = routing?.continue !== false;
             let fromSource = id;
             let fromHandle: string | undefined = branch;
@@ -416,6 +455,7 @@ async function buildStepsGraph(
         const outcomes = (step.outcomes || []).map((o) => o.trim()).filter(Boolean);
 
         const id = `agent-${counter}`;
+        noteFirst(id);
         nodes.push({
           id, type: "ai-handoff", position: { x, y: yBase },
           data: {
@@ -436,6 +476,11 @@ async function buildStepsGraph(
           const nextPending: Pending[] = [];
           outcomes.forEach((o, i) => {
             const routing = step.outcomeRouting?.[o];
+            if (routing?.jumpToEndingKey) {
+              const targetId = endingFirstNodeId.get(routing.jumpToEndingKey);
+              if (targetId) edges.push({ id: `e-${id}-${targetId}-outcome-${o}`, source: id, target: targetId, sourceHandle: `outcome-${o}` });
+              return; // já foi ligado direto no final compartilhado -- não continua esta cadeia
+            }
             const shouldContinue = routing?.continue !== false;
             let fromSource = id;
             let fromHandle: string | undefined = `outcome-${o}`;
@@ -476,7 +521,18 @@ async function buildStepsGraph(
       }
     }
 
-    return pending;
+    return { pending, firstNodeId };
+  }
+
+  // Constrói cada final compartilhado ANTES da árvore principal -- sem
+  // pending nenhum (edges de entrada vêm depois, de quem "pular pra" ele),
+  // só pra já ter o id do primeiro node de cada um na hora de montar a
+  // árvore principal (ver conversa com o usuário: "Agente Master - AR").
+  let sharedEndingX = 330;
+  for (const ending of sharedEndings) {
+    const built = await processSteps(ending.steps || [], [], sharedEndingX, 700);
+    if (built.firstNodeId) endingFirstNodeId.set(ending.key, built.firstNodeId);
+    sharedEndingX += 400;
   }
 
   await processSteps(steps, [{ source: "start-1" }], 330, 200);
@@ -545,7 +601,7 @@ serve(async (req) => {
 
     if (body.action === "update_orchestration") {
       if (!body.instanceId) return errorResponse("instanceId é obrigatório", 400);
-      if (!hasAgentStepDeep(body.steps || [])) {
+      if (!hasAgentAnywhere(body.steps || [], body.sharedEndings || [])) {
         return errorResponse("A orquestração precisa de ao menos uma etapa de agente", 400);
       }
 
@@ -570,7 +626,7 @@ serve(async (req) => {
       let primaryAgentId: string | null;
       let createdAgentIds: string[];
       try {
-        const built = await buildStepsGraph(service, organizationId, workspaceId, body.steps || []);
+        const built = await buildStepsGraph(service, organizationId, workspaceId, body.steps || [], body.sharedEndings || []);
         builtNodes = built.nodes;
         builtEdges = built.edges;
         primaryAgentId = built.primaryAgentId;
@@ -714,7 +770,7 @@ serve(async (req) => {
       template = data;
     } else if (!body.name?.trim()) {
       return errorResponse("name é obrigatório quando não há templateId", 400);
-    } else if (!hasAgentStepDeep(body.steps || [])) {
+    } else if (!hasAgentAnywhere(body.steps || [], body.sharedEndings || [])) {
       return errorResponse("A orquestração precisa de ao menos uma etapa de agente", 400);
     }
 
@@ -764,7 +820,7 @@ serve(async (req) => {
       // From-scratch: monta o grafo real a partir da lista de etapas, criando
       // (ou reaproveitando) os agentes de cada etapa 'agent' ao longo do caminho.
       try {
-        const built = await buildStepsGraph(service, organizationId, workspaceId, body.steps || []);
+        const built = await buildStepsGraph(service, organizationId, workspaceId, body.steps || [], body.sharedEndings || []);
         builtNodes = built.nodes;
         builtEdges = built.edges;
         primaryAgentId = built.primaryAgentId;

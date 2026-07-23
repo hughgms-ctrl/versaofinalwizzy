@@ -231,7 +231,14 @@ const FlowsPage = () => {
   };
 
   const filteredFlows = (flows as Flow[] | undefined)?.filter(f => matchesWorkspace((f as any).workspace_ids, (f as any).workspace_id) && (f as any).trigger_type !== 'chat_follow_up') || [];
-  const filteredFolders = folders?.filter(f => matchesWorkspace((f as any).workspace_ids, f.workspace_id)) || [];
+  // Pastas sem workspace nenhum são globais (ex.: "Criados por Agentes", criada
+  // pela orquestração de agentes) -- sempre visíveis, diferente de um FLUXO sem
+  // workspace (que fica escondido de propósito ao filtrar, ver matchesWorkspace acima).
+  const filteredFolders = folders?.filter(f => {
+    const wsIds = (f as any).workspace_ids as string[] | undefined;
+    if ((!wsIds || wsIds.length === 0) && !f.workspace_id) return true;
+    return matchesWorkspace(wsIds, f.workspace_id);
+  }) || [];
 
   // Get flows without folder (root level)
   const rootFlows = filteredFlows.filter(f => !f.folder_id);
@@ -398,15 +405,47 @@ const FlowsPage = () => {
         <p className="text-[11px] text-muted-foreground">
           {flow.description || 'Sem descrição'}
         </p>
+        {/* Workspace Tags -- dentro do bloco Nome (não é mais irmã de Stats/Status/
+            Ações): largura variável (nome do workspace) competindo por espaço no
+            MESMO flex row jogava Stats/Status/Ações pra esquerda, desalinhando do
+            cabeçalho, que não tem coluna equivalente pra essa tag. */}
+        {(() => {
+          const ids: string[] = (flow as any).workspace_ids?.length
+            ? (flow as any).workspace_ids
+            : ((flow as any).workspace_id ? [(flow as any).workspace_id] : []);
+          if (ids.length === 0) return null;
+          return (
+            <div className="hidden md:flex items-center gap-1 mt-1 flex-wrap">
+              {ids.slice(0, 2).map(id => {
+                const ws = availableWorkspaces.find(w => w.id === id);
+                if (!ws) return null;
+                return (
+                  <div
+                    key={ws.id}
+                    className="px-2 py-0.5 rounded-[4px] border shrink-0"
+                    style={{ backgroundColor: `${ws.color}15`, borderColor: `${ws.color}30` }}
+                  >
+                    <span className="text-[10px] font-medium" style={{ color: ws.color }}>
+                      {ws.name}
+                    </span>
+                  </div>
+                );
+              })}
+              {ids.length > 2 && (
+                <span className="text-[10px] text-muted-foreground">+{ids.length - 2}</span>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       {/* Stats */}
-      <div className="hidden md:flex items-center gap-10 text-muted-foreground">
-        <div className="flex items-center gap-1.5 w-10">
+      <div className="hidden md:flex items-center gap-10 text-muted-foreground shrink-0">
+        <div className="flex items-center justify-center gap-1.5 w-10">
           <Zap className="h-4 w-4" />
           <span className="text-sm">{flow.triggers_count}</span>
         </div>
-        <div className="flex items-center gap-1.5 w-10">
+        <div className="flex items-center justify-center gap-1.5 w-10">
           <GitBranch className="h-4 w-4" />
           <span className="text-sm">{(flow.nodes as unknown[])?.length || 0}</span>
         </div>
@@ -416,38 +455,8 @@ const FlowsPage = () => {
         </div>
       </div>
 
-      {/* Workspace Tags (for flows) */}
-      {(() => {
-        const ids: string[] = (flow as any).workspace_ids?.length
-          ? (flow as any).workspace_ids
-          : ((flow as any).workspace_id ? [(flow as any).workspace_id] : []);
-        if (ids.length === 0) return null;
-        return (
-          <div className="hidden md:flex items-center gap-1 shrink-0 max-w-[180px] overflow-hidden">
-            {ids.slice(0, 2).map(id => {
-              const ws = availableWorkspaces.find(w => w.id === id);
-              if (!ws) return null;
-              return (
-                <div
-                  key={ws.id}
-                  className="px-2 py-0.5 rounded-[4px] border shrink-0"
-                  style={{ backgroundColor: `${ws.color}15`, borderColor: `${ws.color}30` }}
-                >
-                  <span className="text-[10px] font-medium" style={{ color: ws.color }}>
-                    {ws.name}
-                  </span>
-                </div>
-              );
-            })}
-            {ids.length > 2 && (
-              <span className="text-[10px] text-muted-foreground">+{ids.length - 2}</span>
-            )}
-          </div>
-        );
-      })()}
-
       {/* Status Toggle */}
-      <div className="flex items-center gap-3 w-40 justify-center">
+      <div className="flex items-center gap-3 w-40 justify-center shrink-0">
         <Switch
           checked={flow.is_active}
           onCheckedChange={(checked) => handleToggleActive(flow.id, checked)}
@@ -916,15 +925,16 @@ const FlowsPage = () => {
           <div className="bg-card rounded-xl border border-border overflow-hidden shadow-2xl">
             {/* Header */}
             <div className="flex items-center gap-4 px-4 py-3 bg-muted border-b border-border text-[10px] font-bold text-muted-foreground uppercase tracking-[0.1em]">
-              <div className="w-9" /> {/* Icon space */}
+              <div className="p-1 -ml-2 opacity-0 shrink-0" aria-hidden="true"><GripVertical className="h-4 w-4" /></div> {/* Drag handle space */}
+              <div className="w-9 shrink-0" /> {/* Icon space */}
               <div className="flex-1">Nome</div>
-              <div className="hidden md:flex items-center gap-12 text-center">
-                <div className="w-12">Disparos</div>
-                <div className="w-12">Blocos</div>
-                <div className="w-32 text-right">Atualizado</div>
+              <div className="hidden md:flex items-center gap-10 text-center shrink-0">
+                <div className="w-10">Disparos</div>
+                <div className="w-10">Blocos</div>
+                <div className="w-36">Atualizado</div>
               </div>
-              <div className="w-32 text-center">Status</div>
-              <div className="w-28 text-right pr-2">Ações</div>
+              <div className="w-40 text-center shrink-0">Status</div>
+              <div className="w-36 text-right pr-2 shrink-0">Ações</div>
             </div>
 
             <div className="bg-card">

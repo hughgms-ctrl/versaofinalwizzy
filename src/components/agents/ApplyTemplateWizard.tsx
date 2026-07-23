@@ -88,9 +88,30 @@ interface OutcomeRoutingDraft {
   continueFlag: boolean; // default true -- false = encerra a cadeia ali
   pipeline: PipelineTarget;
   tagId: string;
+  // Pula pra um "final compartilhado" (ver SharedEndingDraft) em vez de
+  // continuar nesta MESMA lista -- pra quando dois pontos diferentes (ex.:
+  // dois "não respondeu" de Iniciar Fluxo distintos) precisam levar pro
+  // MESMO próximo passo (ver conversa com o usuário: "Agente Master - AR").
+  // Quando setado, tem prioridade sobre continueFlag/pipeline/tagId.
+  jumpToEndingKey?: string;
 }
 
 interface RemarketingStepDraft { key: string; message: string; delayMinutes: number; }
+
+// Um "final compartilhado" é uma pequena lista de etapas nomeada, fora da
+// árvore principal, que QUALQUER resultado/ramo (de qualquer profundidade)
+// pode escolher como destino em vez de continuar inline ou encerrar ali --
+// é como o fluxo reproduz "duas saídas diferentes convergindo pro mesmo
+// próximo passo" sem precisar virar um editor de grafo genérico.
+interface SharedEndingDraft {
+  key: string;
+  name: string;
+  steps: StepDraft[];
+}
+
+function newSharedEndingKey(): string {
+  return `ending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
 
 function emptyRouting(): OutcomeRoutingDraft {
   return { continueFlag: true, pipeline: { pipelineId: '', columnId: '' }, tagId: '' };
@@ -239,14 +260,14 @@ function newDraftKey(): string {
 //
 // 'condition' (Sim/Não) é o único node com DOIS caminhos de verdade -- cada
 // ramo vira sua PRÓPRIA sub-lista, reconstruída recursivamente (parseChain
-// chamando a si mesmo). Os ramos NÃO reconvergem (ver conversa com o
-// usuário: "para fins dessa orquestração ok seguir independente") -- se o
-// fluxo real reconverge os dois lados de volta num nó compartilhado, o
-// `visited` (compartilhado por toda a árvore, não só dentro de um ramo)
-// pega isso e devolve null, caindo pro mesmo fallback "unsupported" de
-// sempre em vez de reconstruir errado ("mostrar um aviso e dizer que só
-// pode ser editado no Flow Builder").
-function parseFlowToSteps(nodes: any[], edges: any[]): StepDraft[] | null {
+// chamando a si mesmo). Os ramos em geral NÃO reconvergem (ver conversa com
+// o usuário: "para fins dessa orquestração ok seguir independente") -- MAS
+// quando dois pontos DIFERENTES da árvore (steps/ramos diferentes) resolvem
+// pro MESMO próximo nó, isso agora vira um "final compartilhado" nomeado
+// (SharedEndingDraft) em vez de cair direto no fallback "unsupported" (ver
+// conversa com o usuário: "Agente Master - AR" -- dois "não respondeu" de
+// Iniciar Fluxo diferentes indo pro mesmo Mover Pipeline → Perdido).
+function parseFlowToSteps(nodes: any[], edges: any[]): { steps: StepDraft[]; sharedEndings: SharedEndingDraft[] } | null {
   const nodeById = new Map(nodes.map((n: any) => [n.id, n]));
   const edgesFrom = (id: string) => edges.filter((e: any) => e.source === id);
   const edgeFrom = (id: string, handle?: string) =>
@@ -255,9 +276,36 @@ function parseFlowToSteps(nodes: any[], edges: any[]): StepDraft[] | null {
   const start = nodes.find((n: any) => n.type === 'start');
   if (!start) return null;
 
+  // Pré-varredura: todo nó que é alvo DIRETO de 2+ arestas de ramificação
+  // vindas de FONTES DIFERENTES (não é só "as várias saídas desta MESMA
+  // etapa convergindo" -- isso já funciona hoje) é uma reconvergência de
+  // verdade entre pontos diferentes da árvore -- vira um final compartilhado.
+  // Importante: olha o alvo DIRETO da aresta, sem tentar resolver através de
+  // tag/pipeline primeiro -- se o ponto de convergência de fato é um nó de
+  // tag (ex.: "Atribuir Tag: Verificar contribuições", compartilhado por um
+  // resultado de agente E por um "respondeu" de Iniciar Fluxo diferente), é
+  // ELE que precisa virar o final compartilhado, não o pipeline que vem
+  // depois dele -- senão a etapa de tag em si se perde na hora de salvar
+  // (resolveBranch só consegue emitir OU o pulo OU a ação local absorvida
+  // antes dele, nunca os dois juntos).
+  const targetSources = new Map<string, Set<string>>();
+  for (const edge of edges) {
+    if (!edge.sourceHandle) continue;
+    if (!targetSources.has(edge.target)) targetSources.set(edge.target, new Set());
+    targetSources.get(edge.target)!.add(edge.source);
+  }
+  const sharedEntryNodeIds = new Set<string>();
+  for (const [nodeId, srcs] of targetSources) {
+    if (srcs.size >= 2) sharedEntryNodeIds.add(nodeId);
+  }
+  const sharedEndingKeyFor = (nodeId: string) => `ending-${nodeId}`;
+
   // Segue uma ramificação (resultado de agente / saída de "Iniciar Fluxo") até
   // o próximo passo real da lista, absorvendo um nó de tag e/ou pipeline no
-  // meio do caminho (nessa ordem -- é a mesma ordem que o builder usa).
+  // meio do caminho (nessa ordem -- é a mesma ordem que o builder usa). Se o
+  // alvo resolvido for um final compartilhado, PARA ali (next: null) e marca
+  // jumpToEndingKey em vez de inlinar -- quem chama trata isso como "esse
+  // resultado não continua nesta lista, ele pula pra outro lugar".
   const resolveBranch = (sourceId: string, handle: string): { routing: OutcomeRoutingDraft; next: string | null } | null => {
     const edge = edgeFrom(sourceId, handle);
     if (!edge) return { routing: emptyRouting(), next: null };
@@ -266,12 +314,23 @@ function parseFlowToSteps(nodes: any[], edges: any[]): StepDraft[] | null {
     let tagId = '';
     let pipeline: PipelineTarget = { pipelineId: '', columnId: '' };
 
+    // Checa em CADA estágio da absorção (alvo direto, depois de um tag, depois
+    // de um pipeline) -- um nó compartilhado pode ser o alvo direto da aresta
+    // (caso real: Mover Pipeline → Perdido), ou aparecer no meio/fim de uma
+    // cadeia tag→pipeline. Assim que acha um, para ali (next: null) e marca
+    // jumpToEndingKey em vez de inlinar -- quem chama trata isso como "esse
+    // resultado não continua nesta lista, ele pula pra outro lugar".
+    const asJump = (n: any) => ({ routing: { continueFlag: true, pipeline, tagId, jumpToEndingKey: sharedEndingKeyFor(n.id) }, next: null });
+
+    if (sharedEntryNodeIds.has(node.id)) return asJump(node);
+
     if (node.type === 'action-tag') {
       tagId = node.data?.tagId || '';
       const after = edgeFrom(node.id);
       if (!after) return { routing: { continueFlag: false, pipeline, tagId }, next: null };
       node = nodeById.get(after.target);
       if (!node) return null;
+      if (sharedEntryNodeIds.has(node.id)) return asJump(node);
     }
     if (node.type === 'action-pipeline') {
       pipeline = { pipelineId: node.data?.pipelineId || '', columnId: node.data?.pipelineColumnId || '' };
@@ -279,6 +338,7 @@ function parseFlowToSteps(nodes: any[], edges: any[]): StepDraft[] | null {
       if (!after) return { routing: { continueFlag: false, pipeline, tagId }, next: null };
       node = nodeById.get(after.target);
       if (!node) return null;
+      if (sharedEntryNodeIds.has(node.id)) return asJump(node);
     }
     return { routing: { continueFlag: true, pipeline, tagId }, next: node.id };
   };
@@ -355,8 +415,11 @@ function parseFlowToSteps(nodes: any[], edges: any[]): StepDraft[] | null {
           step.flowRouting = { responded: responded.routing, timeout: timeout.routing };
           steps.push(step);
 
-          if (responded.next !== timeout.next) return null;
-          next = responded.next;
+          // Só diverge de verdade se os DOIS continuam (next não-nulo) pra
+          // lugares DIFERENTES -- um lado pulando pro final compartilhado
+          // (next: null) não conta como divergência (ver resolveBranch).
+          if (responded.next !== null && timeout.next !== null && responded.next !== timeout.next) return null;
+          next = responded.next ?? timeout.next ?? null;
           nextMode = 'direct';
         }
       } else if (node.type === 'ai-handoff') {
@@ -408,6 +471,14 @@ function parseFlowToSteps(nodes: any[], edges: any[]): StepDraft[] | null {
         // aresta sem handle -- mesmo motivo do bug já documentado em resolveBranch.
         const trueEdge = edgeFrom(node.id, 'true');
         const falseEdge = edgeFrom(node.id, 'false');
+        // Ramo de condição reconvergindo com outro ponto qualquer da árvore
+        // não tem como virar "pular pra final compartilhado" (StepDraft não
+        // tem esse conceito pra trueSteps/falseSteps, só pra outcomes de
+        // agente/Iniciar Fluxo) -- cai pro fallback 'unsupported' em vez de
+        // inlinar duplicado ou perder a referência.
+        const trueTarget = trueEdge ? trueEdge.target : null;
+        const falseTarget = falseEdge ? falseEdge.target : null;
+        if ((trueTarget && sharedEntryNodeIds.has(trueTarget)) || (falseTarget && sharedEntryNodeIds.has(falseTarget))) return null;
         const trueSteps = trueEdge ? parseChain(trueEdge.target, 'direct', visited) : [];
         const falseSteps = falseEdge ? parseChain(falseEdge.target, 'direct', visited) : [];
         if (trueSteps === null || falseSteps === null) return null;
@@ -428,37 +499,107 @@ function parseFlowToSteps(nodes: any[], edges: any[]): StepDraft[] | null {
     return steps;
   };
 
-  return parseChain(start.id, 'lookahead', new Set([start.id]));
+  const visited = new Set<string>([start.id]);
+  const sharedEndingsByKey = new Map<string, SharedEndingDraft>();
+
+  // Constrói cada final compartilhado ANTES da árvore principal -- assim
+  // resolveBranch já sabe que aquele nó "pertence" a um final (via
+  // sharedEntryNodeIds) e nunca tenta inlinar de novo em outro lugar.
+  for (const nodeId of sharedEntryNodeIds) {
+    const key = sharedEndingKeyFor(nodeId);
+    if (visited.has(nodeId)) continue; // já consumido por outro caminho -- não deveria acontecer, mas por segurança
+    const chain = parseChain(nodeId, 'direct', visited);
+    if (chain === null) return null;
+    sharedEndingsByKey.set(key, { key, name: '', steps: chain });
+  }
+
+  const steps = parseChain(start.id, 'lookahead', visited);
+  if (steps === null) return null;
+
+  // Todo final compartilhado registrado PRECISA ser referenciado por algum
+  // jumpToEndingKey na árvore final -- senão significa que a reconvergência
+  // detectada vem de uma aresta que o parser normal nem visita (ex.: um
+  // resultado de agente com aresta própria no grafo mas fora da string
+  // expectedOutcomes -- dado legado editado direto no Flow Builder). Nesse
+  // caso salvar reconstruiria um final "órfão", sem nenhuma aresta de entrada,
+  // perdendo a conexão real -- mais seguro cair no fallback 'unsupported' do
+  // que arriscar essa perda silenciosa.
+  const collectReferenced = (list: StepDraft[], acc: Set<string>) => {
+    for (const s of list) {
+      if (s.type === 'agent') {
+        for (const r of Object.values(s.outcomeRouting)) if (r.jumpToEndingKey) acc.add(r.jumpToEndingKey);
+      } else if (s.type === 'flow' && s.waitForResponse) {
+        if (s.flowRouting.responded.jumpToEndingKey) acc.add(s.flowRouting.responded.jumpToEndingKey);
+        if (s.flowRouting.timeout.jumpToEndingKey) acc.add(s.flowRouting.timeout.jumpToEndingKey);
+      } else if (s.type === 'condition') {
+        collectReferenced(s.trueSteps, acc);
+        collectReferenced(s.falseSteps, acc);
+      }
+    }
+  };
+  const referenced = new Set<string>();
+  collectReferenced(steps, referenced);
+  for (const ending of sharedEndingsByKey.values()) collectReferenced(ending.steps, referenced);
+  for (const key of sharedEndingsByKey.keys()) {
+    if (!referenced.has(key)) return null;
+  }
+
+  return { steps, sharedEndings: [...sharedEndingsByKey.values()] };
 }
 
 // Bloco "o que fazer depois desse resultado" -- reaproveitado tanto pelos
 // resultados de um agente quanto pelas duas saídas fixas ("Respondeu"/"Não
-// respondeu") de uma etapa "Iniciar Fluxo" com espera ativada.
-function RoutingRow({ label, routing, pipelines, tags, onChange }: {
+// respondeu") de uma etapa "Iniciar Fluxo" com espera ativada. "Ir para
+// final compartilhado" é uma 3ª opção -- pra quando ESTE resultado precisa
+// desembocar no mesmo lugar que outro resultado, de outra etapa qualquer
+// (ver conversa com o usuário: "Agente Master - AR"). Quando escolhida, some
+// com tag/pipeline daqui (o final compartilhado já define o que acontece).
+function RoutingRow({ label, routing, pipelines, tags, sharedEndings, onCreateSharedEnding, onChange }: {
   label: string;
   routing: OutcomeRoutingDraft;
   pipelines: PipelineWithColumns[];
   tags: { id: string; name: string }[];
+  sharedEndings: SharedEndingDraft[];
+  onCreateSharedEnding: () => string;
   onChange: (patch: Partial<OutcomeRoutingDraft>) => void;
 }) {
+  const mode = routing.jumpToEndingKey ? `jump:${routing.jumpToEndingKey}` : routing.continueFlag ? 'continue' : 'end';
+  const handleModeChange = (v: string) => {
+    if (v === '__new__') {
+      const key = onCreateSharedEnding();
+      onChange({ jumpToEndingKey: key });
+    } else if (v.startsWith('jump:')) {
+      onChange({ jumpToEndingKey: v.slice(5) });
+    } else {
+      onChange({ jumpToEndingKey: undefined, continueFlag: v === 'continue' });
+    }
+  };
   return (
     <div className="space-y-1.5 p-2 rounded-md border border-border/50 bg-muted/30">
       <span className="text-[10px] font-semibold text-violet-500">● {label}</span>
-      <Select value={routing.continueFlag ? 'continue' : 'end'} onValueChange={(v) => onChange({ continueFlag: v === 'continue' })}>
+      <Select value={mode} onValueChange={handleModeChange}>
         <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
         <SelectContent>
           <SelectItem value="continue">Continuar para a próxima etapa</SelectItem>
           <SelectItem value="end">Encerrar aqui</SelectItem>
+          {sharedEndings.map((e) => (
+            <SelectItem key={e.key} value={`jump:${e.key}`}>Ir para: {e.name || 'Final sem nome'}</SelectItem>
+          ))}
+          <SelectItem value="__new__">+ Criar novo final compartilhado...</SelectItem>
         </SelectContent>
       </Select>
-      <PipelineColumnPicker pipelines={pipelines} value={routing.pipeline} onChange={(v) => onChange({ pipeline: v })} />
-      <Select value={routing.tagId || 'none'} onValueChange={(v) => onChange({ tagId: v === 'none' ? '' : v })}>
-        <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="Adicionar tag..." /></SelectTrigger>
-        <SelectContent>
-          <SelectItem value="none">Nenhuma tag</SelectItem>
-          {tags.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
-        </SelectContent>
-      </Select>
+      {!routing.jumpToEndingKey && (
+        <>
+          <PipelineColumnPicker pipelines={pipelines} value={routing.pipeline} onChange={(v) => onChange({ pipeline: v })} />
+          <Select value={routing.tagId || 'none'} onValueChange={(v) => onChange({ tagId: v === 'none' ? '' : v })}>
+            <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="Adicionar tag..." /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Nenhuma tag</SelectItem>
+              {tags.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </>
+      )}
     </div>
   );
 }
@@ -612,6 +753,7 @@ function ConditionRuleRow({ rule, tags, pipelines, teamMembers, onChange, onRemo
 // com o usuário).
 function StepCard({
   step, index, total, tags, pipelines, agents, flows, teamMembers, organizationId,
+  sharedEndings, onCreateSharedEnding,
   onChange, onRemove, onMove,
 }: {
   step: StepDraft;
@@ -623,6 +765,8 @@ function StepCard({
   flows: { id: string; name: string }[];
   teamMembers: TeamMember[];
   organizationId?: string | null;
+  sharedEndings: SharedEndingDraft[];
+  onCreateSharedEnding: () => string;
   onChange: (patch: Partial<StepDraft>) => void;
   onRemove: () => void;
   onMove: (direction: -1 | 1) => void;
@@ -808,12 +952,14 @@ function StepCard({
                   label="Respondeu"
                   routing={step.flowRouting.responded}
                   pipelines={pipelines} tags={tags}
+                  sharedEndings={sharedEndings} onCreateSharedEnding={onCreateSharedEnding}
                   onChange={(patch) => onChange({ flowRouting: { ...step.flowRouting, responded: { ...step.flowRouting.responded, ...patch } } })}
                 />
                 <RoutingRow
                   label="Não respondeu (timeout)"
                   routing={step.flowRouting.timeout}
                   pipelines={pipelines} tags={tags}
+                  sharedEndings={sharedEndings} onCreateSharedEnding={onCreateSharedEnding}
                   onChange={(patch) => onChange({ flowRouting: { ...step.flowRouting, timeout: { ...step.flowRouting.timeout, ...patch } } })}
                 />
               </div>
@@ -942,6 +1088,7 @@ function StepCard({
                   label={outcome}
                   routing={step.outcomeRouting[outcome] || emptyRouting()}
                   pipelines={pipelines} tags={tags}
+                  sharedEndings={sharedEndings} onCreateSharedEnding={onCreateSharedEnding}
                   onChange={(patch) => updateRouting(outcome, patch)}
                 />
               ))}
@@ -1003,6 +1150,7 @@ function StepCard({
               steps={step.trueSteps}
               tags={tags} pipelines={pipelines} agents={agents} flows={flows} teamMembers={teamMembers}
               organizationId={organizationId}
+              sharedEndings={sharedEndings} onCreateSharedEnding={onCreateSharedEnding}
               onChange={(next) => onChange({ trueSteps: next })}
               nested
             />
@@ -1014,6 +1162,7 @@ function StepCard({
               steps={step.falseSteps}
               tags={tags} pipelines={pipelines} agents={agents} flows={flows} teamMembers={teamMembers}
               organizationId={organizationId}
+              sharedEndings={sharedEndings} onCreateSharedEnding={onCreateSharedEnding}
               onChange={(next) => onChange({ falseSteps: next })}
               nested
             />
@@ -1029,7 +1178,7 @@ function StepCard({
 // (uma StepCard de 'condition' renderiza duas StepList por dentro). 'nested'
 // só ajusta o visual (mais compacto, sem o aviso "precisa de ao menos um
 // agente" que só faz sentido no nível de topo).
-function StepList({ steps, tags, pipelines, agents, flows, teamMembers, organizationId, onChange, nested }: {
+function StepList({ steps, tags, pipelines, agents, flows, teamMembers, organizationId, sharedEndings, onCreateSharedEnding, onChange, nested }: {
   steps: StepDraft[];
   tags: { id: string; name: string }[];
   pipelines: PipelineWithColumns[];
@@ -1037,6 +1186,8 @@ function StepList({ steps, tags, pipelines, agents, flows, teamMembers, organiza
   flows: { id: string; name: string }[];
   teamMembers: TeamMember[];
   organizationId?: string | null;
+  sharedEndings: SharedEndingDraft[];
+  onCreateSharedEnding: () => string;
   onChange: (next: StepDraft[]) => void;
   nested?: boolean;
 }) {
@@ -1075,6 +1226,8 @@ function StepList({ steps, tags, pipelines, agents, flows, teamMembers, organiza
           flows={flows}
           teamMembers={teamMembers}
           organizationId={organizationId}
+          sharedEndings={sharedEndings}
+          onCreateSharedEnding={onCreateSharedEnding}
           onChange={(patch) => updateStep(s.key, patch)}
           onRemove={() => removeStep(s.key)}
           onMove={(dir) => moveStep(s.key, dir)}
@@ -1144,6 +1297,7 @@ export function ApplyTemplateWizard({ open, onOpenChange, template, onApplied, e
   const [step, setStep] = useState<'name' | 'steps' | 'workspace' | 'applying' | 'review' | 'activating' | 'loading' | 'unsupported'>('workspace');
   const [orchestrationName, setOrchestrationName] = useState('');
   const [stepDrafts, setStepDrafts] = useState<StepDraft[]>([]);
+  const [sharedEndings, setSharedEndings] = useState<SharedEndingDraft[]>([]);
   const [workspaceId, setWorkspaceId] = useState<string>('');
   const [instanceId, setInstanceId] = useState<string | null>(null);
   const [campaignId, setCampaignId] = useState<string | null>(null);
@@ -1165,6 +1319,20 @@ export function ApplyTemplateWizard({ open, onOpenChange, template, onApplied, e
   const hasAgentStepDeep = (list: StepDraft[]): boolean =>
     list.some((s) => s.type === 'agent' || (s.type === 'condition' && (hasAgentStepDeep(s.trueSteps) || hasAgentStepDeep(s.falseSteps))));
   const hasAgentStep = hasAgentStepDeep(stepDrafts);
+
+  // Cria um novo "final compartilhado" vazio e devolve a key na hora --
+  // qualquer RoutingRow (de qualquer ramo, qualquer profundidade) pode criar
+  // um na hora de escolher "Ir para" (ver conversa com o usuário: "Agente
+  // Master - AR").
+  const createSharedEnding = (): string => {
+    const key = newSharedEndingKey();
+    setSharedEndings((prev) => [...prev, { key, name: `Final ${prev.length + 1}`, steps: [] }]);
+    return key;
+  };
+  const updateSharedEnding = (key: string, patch: Partial<SharedEndingDraft>) =>
+    setSharedEndings((prev) => prev.map((e) => (e.key === key ? { ...e, ...patch } : e)));
+  const removeSharedEnding = (key: string) => setSharedEndings((prev) => prev.filter((e) => e.key !== key));
+
   // Caminho "do zero": workspace precisa ser resolvido ANTES de montar as
   // etapas, pra filtrar tags/pipelines só do workspace escolhido (ver
   // conversa com o usuário: "tem que mostrar apenas tags daquele workspace").
@@ -1194,6 +1362,7 @@ export function ApplyTemplateWizard({ open, onOpenChange, template, onApplied, e
     setStep(template ? (availableWorkspaces.length > 1 ? 'workspace' : 'applying') : 'name');
     setOrchestrationName('');
     setStepDrafts([]);
+    setSharedEndings([]);
     setWorkspaceId(availableWorkspaces.length === 1 ? availableWorkspaces[0].id : '');
     setInstanceId(null);
     setCampaignId(null);
@@ -1252,7 +1421,8 @@ export function ApplyTemplateWizard({ open, onOpenChange, template, onApplied, e
         setStep('unsupported');
         return;
       }
-      setStepDrafts(parsed);
+      setStepDrafts(parsed.steps);
+      setSharedEndings(parsed.sharedEndings);
       setStep('steps');
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1274,6 +1444,9 @@ export function ApplyTemplateWizard({ open, onOpenChange, template, onApplied, e
       };
 
       const routingEntry = (routing: OutcomeRoutingDraft | undefined) => {
+        // Pular pra final compartilhado tem prioridade -- ignora tag/pipeline/
+        // continue daqui (o final compartilhado já define o que acontece).
+        if (routing?.jumpToEndingKey) return { jumpToEndingKey: routing.jumpToEndingKey };
         const entry: any = { continue: routing?.continueFlag !== false };
         if (routing?.pipeline) {
           const p = pipelineRef(routing.pipeline);
@@ -1345,13 +1518,14 @@ export function ApplyTemplateWizard({ open, onOpenChange, template, onApplied, e
       });
 
       const steps = template ? undefined : serializeSteps(stepDrafts);
+      const serializedSharedEndings = template ? undefined : sharedEndings.map((e) => ({ key: e.key, name: e.name, steps: serializeSteps(e.steps) }));
 
       const { data, error } = await supabase.functions.invoke('apply-agent-template', {
         body: isEditMode
-          ? { action: 'update_orchestration', instanceId, name: orchestrationName.trim(), workspaceId: workspaceId || null, steps, triggerKeyword }
+          ? { action: 'update_orchestration', instanceId, name: orchestrationName.trim(), workspaceId: workspaceId || null, steps, sharedEndings: serializedSharedEndings, triggerKeyword }
           : template
             ? { action: 'apply', templateId: template.id, workspaceId: workspaceId || null }
-            : { action: 'apply', name: orchestrationName.trim(), workspaceId: workspaceId || null, steps },
+            : { action: 'apply', name: orchestrationName.trim(), workspaceId: workspaceId || null, steps, sharedEndings: serializedSharedEndings },
       });
       if (error || data?.error) {
         toast({ title: isEditMode ? 'Erro ao salvar orquestração' : 'Erro ao criar orquestração', description: error?.message || data?.error, variant: 'destructive' });
@@ -1501,7 +1675,7 @@ export function ApplyTemplateWizard({ open, onOpenChange, template, onApplied, e
 
         {step === 'steps' && (
           <div className="space-y-3 py-2">
-            <div className="max-h-[55vh] overflow-y-auto pr-1">
+            <div className="max-h-[55vh] overflow-y-auto pr-1 space-y-4">
               <StepList
                 steps={stepDrafts}
                 tags={scopedTags}
@@ -1510,8 +1684,49 @@ export function ApplyTemplateWizard({ open, onOpenChange, template, onApplied, e
                 flows={scopedFlows}
                 teamMembers={teamMembers}
                 organizationId={organizationId}
+                sharedEndings={sharedEndings}
+                onCreateSharedEnding={createSharedEnding}
                 onChange={setStepDrafts}
               />
+
+              {sharedEndings.length > 0 && (
+                <div className="space-y-2 pt-2 border-t border-border/50">
+                  <Label className="text-[10px] text-muted-foreground uppercase tracking-wide">
+                    Finais compartilhados -- destino de "Ir para" em qualquer resultado
+                  </Label>
+                  {sharedEndings.map((ending) => (
+                    <div key={ending.key} className="rounded-lg border border-dashed border-violet-300 dark:border-violet-800 p-2.5 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Input
+                          className="h-7 text-xs flex-1"
+                          value={ending.name}
+                          onChange={(e) => updateSharedEnding(ending.key, { name: e.target.value })}
+                          placeholder="Nome do final (ex.: Perdido)"
+                        />
+                        <Button
+                          type="button" variant="ghost" size="icon" className="h-7 w-7 text-destructive shrink-0"
+                          onClick={() => removeSharedEnding(ending.key)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                      <StepList
+                        steps={ending.steps}
+                        tags={scopedTags}
+                        pipelines={scopedPipelines}
+                        agents={existingAgents}
+                        flows={scopedFlows}
+                        teamMembers={teamMembers}
+                        organizationId={organizationId}
+                        sharedEndings={sharedEndings}
+                        onCreateSharedEnding={createSharedEnding}
+                        onChange={(next) => updateSharedEnding(ending.key, { steps: next })}
+                        nested
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <DialogFooter>

@@ -211,7 +211,13 @@ const CampaignsPage = () => {
     };
 
     const filteredCampaigns = campaigns || [];
-    const filteredFolders = folders?.filter(f => matchesWorkspace(f.workspace_ids, f.workspace_id)) || [];
+    // Pastas sem workspace nenhum são globais (ex.: "Criados por Agentes",
+    // criada pela orquestração de agentes) -- sempre visíveis.
+    const filteredFolders = folders?.filter(f => {
+        const wsIds = f.workspace_ids as string[] | undefined;
+        if ((!wsIds || wsIds.length === 0) && !f.workspace_id) return true;
+        return matchesWorkspace(wsIds, f.workspace_id);
+    }) || [];
 
     const rootCampaigns = filteredCampaigns.filter(c => !c.folder_id);
     const getCampaignsInFolder = (folderId: string) => filteredCampaigns.filter(c => c.folder_id === folderId);
