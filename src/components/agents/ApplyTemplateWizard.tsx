@@ -20,7 +20,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { AlertTriangle, Loader2, Plus, Trash2, ChevronUp, ChevronDown, Tag, Kanban, Users, Clock, Bot, Workflow, Sparkles, Settings2 } from 'lucide-react';
+import { AlertTriangle, Loader2, Plus, Trash2, ChevronUp, ChevronDown, Tag, Kanban, Users, Clock, Bot, Workflow, Sparkles, Settings2, GitBranch, User, MessageSquare, FileText } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
@@ -29,6 +29,8 @@ import { useTags } from '@/hooks/useTags';
 import { useAllPipelineColumns, type PipelineWithColumns } from '@/hooks/usePipelines';
 import { useAIAgents, AGENT_FUNCTION_ROLES } from '@/hooks/useAIAgents';
 import { useFlows } from '@/hooks/useFlows';
+import { useTeamMembers, type TeamMember } from '@/hooks/useTeamMembers';
+import type { ConditionRule, ConditionRuleType } from '@/types/flow';
 import type { AgentTemplate } from './AgentTemplateGallery';
 import { buildStepPreview } from './TemplateDetailDialog';
 import { matchesWorkspace } from '@/lib/workspaceMatch';
@@ -78,7 +80,7 @@ function PipelineColumnPicker({ pipelines, value, onChange }: {
   );
 }
 
-type StepType = 'tag' | 'pipeline' | 'transfer' | 'delay' | 'flow' | 'agent';
+type StepType = 'tag' | 'pipeline' | 'transfer' | 'delay' | 'flow' | 'agent' | 'condition';
 
 interface OutcomeRoutingDraft {
   continueFlag: boolean; // default true -- false = encerra a cadeia ali
@@ -132,6 +134,18 @@ interface StepDraft {
   remarketingQuietHours: boolean;
   remarketingQuietStart: string;
   flowRouting: { responded: OutcomeRoutingDraft; timeout: OutcomeRoutingDraft };
+  // 'condition' -- espelha o node real 'condition' (Sim/Não): mesmas regras
+  // (tag/pipeline/responsável/variável/campo do contato/modo de atendimento,
+  // E/OU) do Flow Builder. Cada ramo é sua PRÓPRIA lista de etapas
+  // independente -- depois de uma condição os dois lados seguem cada um pro
+  // seu canto, sem reencontro (ver conversa com o usuário: "para fins dessa
+  // orquestração ok seguir independente"). Se o fluxo real reconvergir os
+  // ramos, o parser detecta e cai pro estado 'unsupported' já existente.
+  conditionLabel: string;
+  conditionRules: ConditionRule[];
+  conditionMatchType: 'all' | 'any';
+  trueSteps: StepDraft[];
+  falseSteps: StepDraft[];
 }
 
 function makeEmptyStep(type: StepType): StepDraft {
@@ -159,6 +173,11 @@ function makeEmptyStep(type: StepType): StepDraft {
     remarketingQuietHours: false,
     remarketingQuietStart: '21:00',
     flowRouting: { responded: emptyRouting(), timeout: emptyRouting() },
+    conditionLabel: '',
+    conditionRules: [],
+    conditionMatchType: 'all',
+    trueSteps: [],
+    falseSteps: [],
   };
 }
 
@@ -169,7 +188,35 @@ const STEP_TYPE_META: Record<StepType, { label: string; icon: typeof Tag }> = {
   delay: { label: 'Aguardar', icon: Clock },
   flow: { label: 'Iniciar Fluxo', icon: Workflow },
   agent: { label: 'Agente de IA', icon: Bot },
+  condition: { label: 'Condição', icon: GitBranch },
 };
+
+const CONDITION_RULE_TYPES: { value: ConditionRuleType; label: string; icon: typeof Tag }[] = [
+  { value: 'tag', label: 'Tag', icon: Tag },
+  { value: 'pipeline', label: 'Pipeline', icon: Kanban },
+  { value: 'assigned', label: 'Responsável', icon: User },
+  { value: 'variable', label: 'Variável', icon: GitBranch },
+  { value: 'contact_field', label: 'Campo do contato', icon: User },
+  { value: 'service_mode', label: 'Modo de atendimento', icon: MessageSquare },
+];
+
+function needsNegateToggle(type: ConditionRuleType): boolean {
+  return ['tag', 'pipeline', 'assigned', 'service_mode'].includes(type);
+}
+
+function negateLabels(type: ConditionRuleType): [string, string] {
+  switch (type) {
+    case 'tag': return ['Tem', 'Não tem'];
+    case 'pipeline': return ['Está no', 'Não está no'];
+    case 'assigned': return ['É', 'Não é / Sem'];
+    case 'service_mode': return ['É', 'Não é'];
+    default: return ['É', 'Não é'];
+  }
+}
+
+function newConditionRule(type: ConditionRuleType = 'tag'): ConditionRule {
+  return { id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, type, negate: false };
+}
 
 function stepOutcomes(step: StepDraft): string[] {
   return step.outcomesText.split(',').map((o) => o.trim()).filter(Boolean);
@@ -187,6 +234,16 @@ function newDraftKey(): string {
 // Flow Builder" em vez de arriscar reconstruir errado (ver conversa com o
 // usuário: "precisa estar tudo disponível pra ajustar quando quiser", mas
 // forçar um encaixe incorreto seria pior que admitir o limite).
+//
+// 'condition' (Sim/Não) é o único node com DOIS caminhos de verdade -- cada
+// ramo vira sua PRÓPRIA sub-lista, reconstruída recursivamente (parseChain
+// chamando a si mesmo). Os ramos NÃO reconvergem (ver conversa com o
+// usuário: "para fins dessa orquestração ok seguir independente") -- se o
+// fluxo real reconverge os dois lados de volta num nó compartilhado, o
+// `visited` (compartilhado por toda a árvore, não só dentro de um ramo)
+// pega isso e devolve null, caindo pro mesmo fallback "unsupported" de
+// sempre em vez de reconstruir errado ("mostrar um aviso e dizer que só
+// pode ser editado no Flow Builder").
 function parseFlowToSteps(nodes: any[], edges: any[]): StepDraft[] | null {
   const nodeById = new Map(nodes.map((n: any) => [n.id, n]));
   const edgesFrom = (id: string) => edges.filter((e: any) => e.source === id);
@@ -224,134 +281,152 @@ function parseFlowToSteps(nodes: any[], edges: any[]): StepDraft[] | null {
     return { routing: { continueFlag: true, pipeline, tagId }, next: node.id };
   };
 
-  const steps: StepDraft[] = [];
-  let guard = 0;
+  // Reconstrói UMA cadeia (linear até parar ou até bater numa 'condition',
+  // que sempre encerra a cadeia ali -- ver StepList: condição é sempre a
+  // última etapa possível de uma lista). `visited` é compartilhado entre
+  // TODAS as chamadas recursivas (os dois ramos de toda 'condition' da
+  // árvore) -- é isso que detecta reconvergência entre ramos.
+  const parseChain = (startId: string, startMode: 'lookahead' | 'direct', visited: Set<string>): StepDraft[] | null => {
+    const steps: StepDraft[] = [];
+    let toProcessId: string | null = startId;
+    let mode = startMode;
+    let guard = 0;
 
-  // `toProcessId` + `mode` juntos dizem o que fazer na próxima volta:
-  // 'lookahead' -- toProcessId é um nó JÁ empurrado como etapa; acha o nó
-  // seguinte pela ÚNICA aresta sem handle que sai dele (caminho linear normal).
-  // 'direct' -- toProcessId JÁ É o próprio nó seguinte, resolvido direto por
-  // resolveBranch (resultado de agente / saída de "Iniciar Fluxo") -- processa
-  // ELE agora, não procura mais uma aresta pra "achar" ele.
-  //
-  // Bug corrigido aqui: antes, depois de uma ramificação (resultado de agente
-  // ou saída de Iniciar Fluxo), o código reusava sempre o modo 'lookahead' --
-  // então se o nó resolvido fosse o ÚLTIMO da cadeia (sem nenhuma aresta
-  // saindo dele), o loop tentava achar "o que vem depois DELE" antes de
-  // sequer empurrá-lo como etapa, e ele sumia da lista silenciosamente (ex.:
-  // um 2º agente encadeado que não tem mais nada depois).
-  let toProcessId: string | null = start.id;
-  let mode: 'lookahead' | 'direct' = 'lookahead';
+    while (toProcessId) {
+      guard++;
+      if (guard > 200) return null;
 
-  while (toProcessId) {
-    guard++;
-    if (guard > 200) return null;
+      let node: any;
+      if (mode === 'lookahead') {
+        const outs = edgesFrom(toProcessId);
+        if (outs.length === 0) break;
+        if (outs.length > 1) return null;
+        const edge = outs[0];
+        if (edge.sourceHandle) return null;
+        node = nodeById.get(edge.target);
+      } else {
+        node = nodeById.get(toProcessId);
+      }
+      if (!node) return null;
+      if (visited.has(node.id)) return null; // reconvergência -- cai pro fallback 'unsupported'
+      visited.add(node.id);
 
-    let node: any;
-    if (mode === 'lookahead') {
-      const outs = edgesFrom(toProcessId);
-      if (outs.length === 0) break;
-      if (outs.length > 1) return null;
-      const edge = outs[0];
-      if (edge.sourceHandle) return null;
-      node = nodeById.get(edge.target);
-    } else {
-      node = nodeById.get(toProcessId);
-    }
-    if (!node) return null;
+      let next: string | null;
+      let nextMode: 'lookahead' | 'direct' = 'lookahead';
 
-    let next: string | null;
-    let nextMode: 'lookahead' | 'direct' = 'lookahead';
-
-    if (node.type === 'action-tag') {
-      const step = makeEmptyStep('tag');
-      step.tagId = node.data?.tagId || '';
-      steps.push(step);
-      next = node.id;
-    } else if (node.type === 'action-pipeline') {
-      const step = makeEmptyStep('pipeline');
-      step.pipeline = { pipelineId: node.data?.pipelineId || '', columnId: node.data?.pipelineColumnId || '' };
-      steps.push(step);
-      next = node.id;
-    } else if (node.type === 'action-transfer') {
-      steps.push(makeEmptyStep('transfer'));
-      next = node.id;
-    } else if (node.type === 'action-delay') {
-      const step = makeEmptyStep('delay');
-      const { delayAmount, delayUnit } = secondsToAmountUnit(node.data?.delaySeconds || 60);
-      step.delayAmount = delayAmount;
-      step.delayUnit = delayUnit;
-      steps.push(step);
-      next = node.id;
-    } else if (node.type === 'action-flow') {
-      const step = makeEmptyStep('flow');
-      step.flowId = node.data?.flowId || '';
-      step.waitForResponse = !!node.data?.waitForResponse;
-      if (!step.waitForResponse) {
+      if (node.type === 'action-tag') {
+        const step = makeEmptyStep('tag');
+        step.tagId = node.data?.tagId || '';
         steps.push(step);
         next = node.id;
-      } else {
-        step.remarketingSteps = (node.data?.remarketingSteps || []).map((r: any) => ({ key: newDraftKey(), message: r.message || '', delayMinutes: r.delayMinutes || 10 }));
-        step.remarketingContext = node.data?.remarketingContext || '';
-        step.remarketingQuietHours = !!node.data?.remarketingQuietHours;
-        step.remarketingQuietStart = node.data?.remarketingQuietStart || '21:00';
-
-        const responded = resolveBranch(node.id, 'responded');
-        const timeout = resolveBranch(node.id, 'timeout');
-        if (!responded || !timeout) return null;
-        step.flowRouting = { responded: responded.routing, timeout: timeout.routing };
-        steps.push(step);
-
-        if (responded.next !== timeout.next) return null;
-        next = responded.next;
-        nextMode = 'direct';
-      }
-    } else if (node.type === 'ai-handoff') {
-      const step = makeEmptyStep('agent');
-      step.agentMode = 'existing';
-      step.agentId = node.data?.agentId || '';
-      step.additionalPrompt = node.data?.additionalPrompt || '';
-      const outcomes = String(node.data?.expectedOutcomes || '').split(',').map((o: string) => o.trim()).filter(Boolean);
-      step.outcomesText = outcomes.join(', ');
-
-      const defaultEdge = edgeFrom(node.id, 'outcome-default');
-      if (defaultEdge) {
-        const defaultNode = nodeById.get(defaultEdge.target);
-        if (defaultNode?.type !== 'action-transfer') return null;
-        step.outcomeDefaultTransfer = true;
-      }
-
-      if (outcomes.length === 0) {
+      } else if (node.type === 'action-pipeline') {
+        const step = makeEmptyStep('pipeline');
+        step.pipeline = { pipelineId: node.data?.pipelineId || '', columnId: node.data?.pipelineColumnId || '' };
         steps.push(step);
         next = node.id;
-      } else {
-        const routing: Record<string, OutcomeRoutingDraft> = {};
-        let nextId: string | null | undefined;
-        let diverged = false;
-        for (const o of outcomes) {
-          const branch = resolveBranch(node.id, `outcome-${o}`);
-          if (!branch) return null;
-          routing[o] = branch.routing;
-          if (branch.next !== null) {
-            if (nextId === undefined) nextId = branch.next;
-            else if (nextId !== branch.next) diverged = true;
-          }
+      } else if (node.type === 'action-transfer') {
+        steps.push(makeEmptyStep('transfer'));
+        next = node.id;
+      } else if (node.type === 'action-delay') {
+        const step = makeEmptyStep('delay');
+        const { delayAmount, delayUnit } = secondsToAmountUnit(node.data?.delaySeconds || 60);
+        step.delayAmount = delayAmount;
+        step.delayUnit = delayUnit;
+        steps.push(step);
+        next = node.id;
+      } else if (node.type === 'action-flow') {
+        const step = makeEmptyStep('flow');
+        step.flowId = node.data?.flowId || '';
+        step.waitForResponse = !!node.data?.waitForResponse;
+        if (!step.waitForResponse) {
+          steps.push(step);
+          next = node.id;
+        } else {
+          step.remarketingSteps = (node.data?.remarketingSteps || []).map((r: any) => ({ key: newDraftKey(), message: r.message || '', delayMinutes: r.delayMinutes || 10 }));
+          step.remarketingContext = node.data?.remarketingContext || '';
+          step.remarketingQuietHours = !!node.data?.remarketingQuietHours;
+          step.remarketingQuietStart = node.data?.remarketingQuietStart || '21:00';
+
+          const responded = resolveBranch(node.id, 'responded');
+          const timeout = resolveBranch(node.id, 'timeout');
+          if (!responded || !timeout) return null;
+          step.flowRouting = { responded: responded.routing, timeout: timeout.routing };
+          steps.push(step);
+
+          if (responded.next !== timeout.next) return null;
+          next = responded.next;
+          nextMode = 'direct';
         }
-        if (diverged) return null;
-        step.outcomeRouting = routing;
+      } else if (node.type === 'ai-handoff') {
+        const step = makeEmptyStep('agent');
+        step.agentMode = 'existing';
+        step.agentId = node.data?.agentId || '';
+        step.additionalPrompt = node.data?.additionalPrompt || '';
+        const outcomes = String(node.data?.expectedOutcomes || '').split(',').map((o: string) => o.trim()).filter(Boolean);
+        step.outcomesText = outcomes.join(', ');
+
+        const defaultEdge = edgeFrom(node.id, 'outcome-default');
+        if (defaultEdge) {
+          const defaultNode = nodeById.get(defaultEdge.target);
+          if (defaultNode?.type !== 'action-transfer') return null;
+          step.outcomeDefaultTransfer = true;
+        }
+
+        if (outcomes.length === 0) {
+          steps.push(step);
+          next = node.id;
+        } else {
+          const routing: Record<string, OutcomeRoutingDraft> = {};
+          let nextId: string | null | undefined;
+          let diverged = false;
+          for (const o of outcomes) {
+            const branch = resolveBranch(node.id, `outcome-${o}`);
+            if (!branch) return null;
+            routing[o] = branch.routing;
+            if (branch.next !== null) {
+              if (nextId === undefined) nextId = branch.next;
+              else if (nextId !== branch.next) diverged = true;
+            }
+          }
+          if (diverged) return null;
+          step.outcomeRouting = routing;
+          steps.push(step);
+          next = nextId === undefined ? null : nextId;
+          nextMode = 'direct';
+        }
+      } else if (node.type === 'condition') {
+        const step = makeEmptyStep('condition');
+        step.conditionLabel = node.data?.conditionLabel || '';
+        step.conditionRules = node.data?.rules || [];
+        step.conditionMatchType = node.data?.matchType === 'any' ? 'any' : 'all';
+
+        // 'direct' -- trueEdge.target/falseEdge.target JÁ SÃO os próprios nós
+        // seguintes (achados pela aresta com handle 'true'/'false'), não um nó
+        // já empurrado cujo "próximo" ainda precisa ser procurado por uma
+        // aresta sem handle -- mesmo motivo do bug já documentado em resolveBranch.
+        const trueEdge = edgeFrom(node.id, 'true');
+        const falseEdge = edgeFrom(node.id, 'false');
+        const trueSteps = trueEdge ? parseChain(trueEdge.target, 'direct', visited) : [];
+        const falseSteps = falseEdge ? parseChain(falseEdge.target, 'direct', visited) : [];
+        if (trueSteps === null || falseSteps === null) return null;
+        step.trueSteps = trueSteps;
+        step.falseSteps = falseSteps;
         steps.push(step);
-        next = nextId === undefined ? null : nextId;
-        nextMode = 'direct';
+        // Condição sempre encerra a cadeia -- não há "próximo passo" único
+        // compartilhado depois dela (ver StepList).
+        return steps;
+      } else {
+        return null;
       }
-    } else {
-      return null;
+
+      toProcessId = next;
+      mode = nextMode;
     }
 
-    toProcessId = next;
-    mode = nextMode;
-  }
+    return steps;
+  };
 
-  return steps;
+  return parseChain(start.id, 'lookahead', new Set([start.id]));
 }
 
 // Bloco "o que fazer depois desse resultado" -- reaproveitado tanto pelos
@@ -386,13 +461,155 @@ function RoutingRow({ label, routing, pipelines, tags, onChange }: {
   );
 }
 
+// Uma regra de condição -- mesmos 6 tipos e mesma UI (compacta) do editor
+// avançado de condição no Flow Builder (NodePropertiesPanel.tsx), pra ter
+// paridade completa (ver conversa com o usuário: "os 6 tipos completos, com E/OU").
+function ConditionRuleRow({ rule, tags, pipelines, teamMembers, onChange, onRemove }: {
+  rule: ConditionRule;
+  tags: { id: string; name: string }[];
+  pipelines: PipelineWithColumns[];
+  teamMembers: TeamMember[];
+  onChange: (patch: Partial<ConditionRule>) => void;
+  onRemove: () => void;
+}) {
+  const showNegate = needsNegateToggle(rule.type);
+  const [posLabel, negLabel] = negateLabels(rule.type);
+
+  return (
+    <div className="space-y-1.5 p-2 rounded-md border border-border/50 bg-muted/30">
+      <div className="flex items-center gap-1.5">
+        <Select
+          value={rule.type}
+          onValueChange={(v) => onChange({
+            type: v as ConditionRuleType,
+            tagId: undefined, pipelineId: undefined, columnId: undefined, userId: undefined,
+            variable: undefined, operator: undefined, value: undefined, contactField: undefined, serviceMode: undefined,
+          })}
+        >
+          <SelectTrigger className="h-7 text-xs flex-1"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {CONDITION_RULE_TYPES.map((t) => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        {showNegate && (
+          <Select value={rule.negate ? 'neg' : 'pos'} onValueChange={(v) => onChange({ negate: v === 'neg' })}>
+            <SelectTrigger className="h-7 text-xs w-32 shrink-0"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="pos">{posLabel}</SelectItem>
+              <SelectItem value="neg">{negLabel}</SelectItem>
+            </SelectContent>
+          </Select>
+        )}
+        <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-destructive shrink-0" onClick={onRemove}>
+          <Trash2 className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+
+      {rule.type === 'tag' && (
+        <Select value={rule.tagId || 'none'} onValueChange={(v) => onChange({ tagId: v === 'none' ? undefined : v })}>
+          <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="Escolha a tag..." /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">Escolha...</SelectItem>
+            {tags.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      )}
+
+      {rule.type === 'pipeline' && (
+        <PipelineColumnPicker
+          pipelines={pipelines}
+          value={{ pipelineId: rule.pipelineId || '', columnId: rule.columnId || '' }}
+          onChange={(v) => onChange({ pipelineId: v.pipelineId || undefined, columnId: v.columnId || undefined })}
+        />
+      )}
+
+      {rule.type === 'assigned' && (
+        rule.negate ? (
+          <p className="text-[11px] text-muted-foreground italic">Verifica se a conversa não tem responsável atribuído.</p>
+        ) : (
+          <Select value={rule.userId || 'none'} onValueChange={(v) => onChange({ userId: v === 'none' ? undefined : v })}>
+            <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="Escolha o responsável..." /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Escolha...</SelectItem>
+              {teamMembers.map((m) => <SelectItem key={m.user_id} value={m.user_id}>{m.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        )
+      )}
+
+      {rule.type === 'variable' && (
+        <div className="space-y-1.5">
+          <Input className="h-7 text-xs" placeholder="Nome da variável" value={rule.variable || ''} onChange={(e) => onChange({ variable: e.target.value })} />
+          <Select value={rule.operator || 'equals'} onValueChange={(v) => onChange({ operator: v as ConditionRule['operator'] })}>
+            <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="equals">Igual a</SelectItem>
+              <SelectItem value="not_equals">Diferente de</SelectItem>
+              <SelectItem value="contains">Contém</SelectItem>
+              <SelectItem value="not_contains">Não contém</SelectItem>
+              <SelectItem value="greater_than">Maior que</SelectItem>
+              <SelectItem value="less_than">Menor que</SelectItem>
+              <SelectItem value="exists">Existe</SelectItem>
+              <SelectItem value="not_exists">Não existe</SelectItem>
+            </SelectContent>
+          </Select>
+          {rule.operator !== 'exists' && rule.operator !== 'not_exists' && (
+            <Input className="h-7 text-xs" placeholder="Valor" value={rule.value || ''} onChange={(e) => onChange({ value: e.target.value })} />
+          )}
+        </div>
+      )}
+
+      {rule.type === 'contact_field' && (
+        <div className="space-y-1.5">
+          <Select value={rule.contactField || 'name'} onValueChange={(v) => onChange({ contactField: v as ConditionRule['contactField'] })}>
+            <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="name">Nome</SelectItem>
+              <SelectItem value="email">Email</SelectItem>
+              <SelectItem value="phone">Telefone</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={rule.operator || 'equals'} onValueChange={(v) => onChange({ operator: v as ConditionRule['operator'] })}>
+            <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="equals">Igual a</SelectItem>
+              <SelectItem value="not_equals">Diferente de</SelectItem>
+              <SelectItem value="contains">Contém</SelectItem>
+              <SelectItem value="exists">Existe</SelectItem>
+              <SelectItem value="not_exists">Não existe</SelectItem>
+            </SelectContent>
+          </Select>
+          {rule.operator !== 'exists' && rule.operator !== 'not_exists' && (
+            <Input className="h-7 text-xs" placeholder="Valor" value={rule.value || ''} onChange={(e) => onChange({ value: e.target.value })} />
+          )}
+        </div>
+      )}
+
+      {rule.type === 'service_mode' && (
+        <Select value={rule.serviceMode || 'pending'} onValueChange={(v) => onChange({ serviceMode: v as ConditionRule['serviceMode'] })}>
+          <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="pending">Pendente</SelectItem>
+            <SelectItem value="bot">Bot / IA</SelectItem>
+            <SelectItem value="human">Humano</SelectItem>
+          </SelectContent>
+        </Select>
+      )}
+    </div>
+  );
+}
+
 // Card de configuração de UMA etapa da orquestração -- o tipo já foi escolhido
 // ao adicionar (via "+ Adicionar etapa"); aqui só configura os campos daquele
 // tipo. 'agent' é o único tipo que pode se repetir na lista (várias etapas de
 // agente encadeadas -- ver conversa com o usuário sobre "orquestração de
 // agentes", ex.: qualificador → verificador de relatório → decide avançar).
+// 'condition' é o único tipo com RAMOS -- cada lado (Sim/Não) é sua própria
+// StepList recursiva, por isso é sempre a ÚLTIMA etapa de uma lista (depois
+// de uma condição os dois ramos seguem cada um pro seu canto -- ver conversa
+// com o usuário).
 function StepCard({
-  step, index, total, tags, pipelines, agents, flows, organizationId,
+  step, index, total, tags, pipelines, agents, flows, teamMembers, organizationId,
   onChange, onRemove, onMove,
 }: {
   step: StepDraft;
@@ -402,6 +619,7 @@ function StepCard({
   pipelines: PipelineWithColumns[];
   agents: { id: string; name: string }[];
   flows: { id: string; name: string }[];
+  teamMembers: TeamMember[];
   organizationId?: string | null;
   onChange: (patch: Partial<StepDraft>) => void;
   onRemove: () => void;
@@ -410,10 +628,10 @@ function StepCard({
   const meta = STEP_TYPE_META[step.type];
   const Icon = meta.icon;
   const outcomes = stepOutcomes(step);
-  // "Iniciar Fluxo" e "Agente de IA" têm muito campo -- recolhidos por padrão
-  // (ver conversa com o usuário: "visualização elegante, sem confusão visual"),
-  // com um resumo de uma linha e um botão pra abrir/fechar a configuração.
-  const collapsible = step.type === 'flow' || step.type === 'agent';
+  // "Iniciar Fluxo", "Agente de IA" e "Condição" têm muito campo -- recolhidos
+  // por padrão (ver conversa com o usuário: "visualização elegante, sem
+  // confusão visual"), com um resumo de uma linha e um botão pra abrir/fechar.
+  const collapsible = step.type === 'flow' || step.type === 'agent' || step.type === 'condition';
   const [expanded, setExpanded] = useState(false);
   const { toast } = useToast();
   const [aiInput, setAiInput] = useState('');
@@ -455,6 +673,11 @@ function StepCard({
         ? agents.find((a) => a.id === step.agentId)?.name
         : step.newAgentName;
       return name ? `${name}${outcomes.length ? ` · ${outcomes.length} resultado${outcomes.length > 1 ? 's' : ''}` : ''}` : 'Nenhum agente configurado ainda';
+    }
+    if (step.type === 'condition') {
+      const ruleCount = step.conditionRules.length;
+      const label = step.conditionLabel || (ruleCount ? `${ruleCount} regra${ruleCount > 1 ? 's' : ''}` : 'Nenhuma regra ainda');
+      return `${label} · Sim: ${step.trueSteps.length} etapa${step.trueSteps.length !== 1 ? 's' : ''} · Não: ${step.falseSteps.length} etapa${step.falseSteps.length !== 1 ? 's' : ''}`;
     }
     return '';
   })();
@@ -729,6 +952,153 @@ function StepCard({
           </div>
         </div>
       )}
+
+      {step.type === 'condition' && expanded && (
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <Label className="text-[10px] text-muted-foreground">Descrição</Label>
+            <Input
+              className="h-8 text-xs" placeholder="Ex.: Verificar se tem tag VIP"
+              value={step.conditionLabel} onChange={(e) => onChange({ conditionLabel: e.target.value })}
+            />
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-[10px] text-muted-foreground">Corresponder a</Label>
+            <Select value={step.conditionMatchType} onValueChange={(v) => onChange({ conditionMatchType: v as 'all' | 'any' })}>
+              <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todas as regras (E)</SelectItem>
+                <SelectItem value="any">Qualquer regra (OU)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-[10px] text-muted-foreground">Regras ({step.conditionRules.length})</Label>
+            {step.conditionRules.map((rule, i) => (
+              <ConditionRuleRow
+                key={rule.id}
+                rule={rule}
+                tags={tags}
+                pipelines={pipelines}
+                teamMembers={teamMembers}
+                onChange={(patch) => onChange({ conditionRules: step.conditionRules.map((r, j) => (j === i ? { ...r, ...patch } : r)) })}
+                onRemove={() => onChange({ conditionRules: step.conditionRules.filter((_, j) => j !== i) })}
+              />
+            ))}
+            <Button
+              type="button" variant="outline" size="sm" className="h-7 text-xs w-full border-dashed"
+              onClick={() => onChange({ conditionRules: [...step.conditionRules, newConditionRule()] })}
+            >
+              <Plus className="h-3 w-3 mr-1" /> Adicionar regra
+            </Button>
+          </div>
+
+          <div className="space-y-2 p-2.5 rounded-lg border border-green-300 dark:border-green-900 bg-green-50/50 dark:bg-green-950/20">
+            <Label className="text-[10px] font-semibold text-green-700 dark:text-green-400">● Sim (regra atendida)</Label>
+            <StepList
+              steps={step.trueSteps}
+              tags={tags} pipelines={pipelines} agents={agents} flows={flows} teamMembers={teamMembers}
+              organizationId={organizationId}
+              onChange={(next) => onChange({ trueSteps: next })}
+              nested
+            />
+          </div>
+
+          <div className="space-y-2 p-2.5 rounded-lg border border-red-300 dark:border-red-900 bg-red-50/50 dark:bg-red-950/20">
+            <Label className="text-[10px] font-semibold text-red-700 dark:text-red-400">● Não (regra não atendida)</Label>
+            <StepList
+              steps={step.falseSteps}
+              tags={tags} pipelines={pipelines} agents={agents} flows={flows} teamMembers={teamMembers}
+              organizationId={organizationId}
+              onChange={(next) => onChange({ falseSteps: next })}
+              nested
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Lista de etapas reaproveitada tanto no nível de topo do wizard quanto dentro
+// de cada ramo (Sim/Não) de uma etapa 'condition' -- por isso é recursiva
+// (uma StepCard de 'condition' renderiza duas StepList por dentro). 'nested'
+// só ajusta o visual (mais compacto, sem o aviso "precisa de ao menos um
+// agente" que só faz sentido no nível de topo).
+function StepList({ steps, tags, pipelines, agents, flows, teamMembers, organizationId, onChange, nested }: {
+  steps: StepDraft[];
+  tags: { id: string; name: string }[];
+  pipelines: PipelineWithColumns[];
+  agents: { id: string; name: string }[];
+  flows: { id: string; name: string }[];
+  teamMembers: TeamMember[];
+  organizationId?: string | null;
+  onChange: (next: StepDraft[]) => void;
+  nested?: boolean;
+}) {
+  const updateStep = (key: string, patch: Partial<StepDraft>) =>
+    onChange(steps.map((s) => (s.key === key ? { ...s, ...patch } : s)));
+  const removeStep = (key: string) => onChange(steps.filter((s) => s.key !== key));
+  const moveStep = (key: string, direction: -1 | 1) => {
+    const idx = steps.findIndex((s) => s.key === key);
+    const target = idx + direction;
+    if (idx === -1 || target < 0 || target >= steps.length) return;
+    const copy = [...steps];
+    [copy[idx], copy[target]] = [copy[target], copy[idx]];
+    onChange(copy);
+  };
+  // Depois de uma condição os dois ramos seguem cada um pro seu canto -- não
+  // há "próxima etapa compartilhada" pra adicionar (ver conversa com o
+  // usuário). Por isso ela é sempre a última etapa possível de uma lista.
+  const hasCondition = steps.some((s) => s.type === 'condition');
+
+  return (
+    <div className={cn('space-y-3', nested && 'space-y-2')}>
+      {steps.length === 0 && (
+        <p className={cn('text-muted-foreground text-center', nested ? 'text-xs py-2' : 'text-sm py-6')}>
+          {nested ? 'Nenhuma etapa neste ramo ainda.' : 'Nenhuma etapa ainda. Adicione ao menos uma etapa de "Agente de IA" pra essa orquestração funcionar.'}
+        </p>
+      )}
+      {steps.map((s, i) => (
+        <StepCard
+          key={s.key}
+          step={s}
+          index={i}
+          total={steps.length}
+          tags={tags}
+          pipelines={pipelines}
+          agents={agents}
+          flows={flows}
+          teamMembers={teamMembers}
+          organizationId={organizationId}
+          onChange={(patch) => updateStep(s.key, patch)}
+          onRemove={() => removeStep(s.key)}
+          onMove={(dir) => moveStep(s.key, dir)}
+        />
+      ))}
+      {!hasCondition && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button type="button" variant="outline" size={nested ? 'sm' : 'default'} className={cn('w-full border-dashed', nested && 'h-7 text-xs')}>
+              <Plus className={cn('mr-2', nested ? 'h-3.5 w-3.5' : 'h-4 w-4')} />
+              Adicionar etapa
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-56">
+            {(Object.keys(STEP_TYPE_META) as StepType[]).map((t) => {
+              const Icon = STEP_TYPE_META[t].icon;
+              return (
+                <DropdownMenuItem key={t} onClick={() => onChange([...steps, makeEmptyStep(t)])}>
+                  <Icon className="h-4 w-4 mr-2 text-violet-500" />
+                  {STEP_TYPE_META[t].label}
+                </DropdownMenuItem>
+              );
+            })}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
     </div>
   );
 }
@@ -762,6 +1132,7 @@ export function ApplyTemplateWizard({ open, onOpenChange, template, onApplied, e
   const { data: pipelinesWithColumns = [] } = useAllPipelineColumns();
   const { data: existingAgents = [] } = useAIAgents();
   const { data: existingFlows = [] } = useFlows();
+  const { data: teamMembers = [] } = useTeamMembers();
 
   const isEditMode = !!editInstanceId;
   const [step, setStep] = useState<'name' | 'steps' | 'workspace' | 'applying' | 'review' | 'activating' | 'loading' | 'unsupported'>('workspace');
@@ -784,7 +1155,10 @@ export function ApplyTemplateWizard({ open, onOpenChange, template, onApplied, e
   const [goalTagId, setGoalTagId] = useState<string>('');
   const [savingGoal, setSavingGoal] = useState(false);
 
-  const hasAgentStep = stepDrafts.some((s) => s.type === 'agent');
+  // Recursiva -- um agente pode estar escondido dentro de um ramo Sim/Não.
+  const hasAgentStepDeep = (list: StepDraft[]): boolean =>
+    list.some((s) => s.type === 'agent' || (s.type === 'condition' && (hasAgentStepDeep(s.trueSteps) || hasAgentStepDeep(s.falseSteps))));
+  const hasAgentStep = hasAgentStepDeep(stepDrafts);
   // Caminho "do zero": workspace precisa ser resolvido ANTES de montar as
   // etapas, pra filtrar tags/pipelines só do workspace escolhido (ver
   // conversa com o usuário: "tem que mostrar apenas tags daquele workspace").
@@ -878,20 +1252,6 @@ export function ApplyTemplateWizard({ open, onOpenChange, template, onApplied, e
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editInstanceId]);
 
-  const addStep = (type: StepType) => setStepDrafts((prev) => [...prev, makeEmptyStep(type)]);
-  const updateStep = (key: string, patch: Partial<StepDraft>) =>
-    setStepDrafts((prev) => prev.map((s) => (s.key === key ? { ...s, ...patch } : s)));
-  const removeStep = (key: string) => setStepDrafts((prev) => prev.filter((s) => s.key !== key));
-  const moveStep = (key: string, direction: -1 | 1) =>
-    setStepDrafts((prev) => {
-      const idx = prev.findIndex((s) => s.key === key);
-      const target = idx + direction;
-      if (idx === -1 || target < 0 || target >= prev.length) return prev;
-      const copy = [...prev];
-      [copy[idx], copy[target]] = [copy[target], copy[idx]];
-      return copy;
-    });
-
   useEffect(() => {
     if (step !== 'applying') return;
     (async () => {
@@ -920,11 +1280,24 @@ export function ApplyTemplateWizard({ open, onOpenChange, template, onApplied, e
         return entry;
       };
 
-      const steps = template ? undefined : stepDrafts.map((s) => {
+      // Recursiva -- uma etapa 'condition' serializa os dois ramos (Sim/Não)
+      // chamando serializeSteps de novo neles (ver StepList/StepCard, mesma
+      // árvore que o backend reconstrói em buildStepsGraph).
+      const serializeSteps = (list: StepDraft[]): any[] => list.map((s) => {
         if (s.type === 'tag') return { type: 'tag', tag: tagRef(s.tagId) };
         if (s.type === 'pipeline') return { type: 'pipeline', pipeline: pipelineRef(s.pipeline) };
         if (s.type === 'transfer') return { type: 'transfer' };
         if (s.type === 'delay') return { type: 'delay', delaySeconds: s.delayAmount * DELAY_UNIT_SECONDS[s.delayUnit] };
+        if (s.type === 'condition') {
+          return {
+            type: 'condition',
+            conditionLabel: s.conditionLabel || undefined,
+            matchType: s.conditionMatchType,
+            rules: s.conditionRules,
+            trueSteps: serializeSteps(s.trueSteps),
+            falseSteps: serializeSteps(s.falseSteps),
+          };
+        }
         if (s.type === 'flow') {
           return {
             type: 'flow',
@@ -964,6 +1337,8 @@ export function ApplyTemplateWizard({ open, onOpenChange, template, onApplied, e
           outcomeDefaultTransfer: s.outcomeDefaultTransfer || undefined,
         };
       });
+
+      const steps = template ? undefined : serializeSteps(stepDrafts);
 
       const { data, error } = await supabase.functions.invoke('apply-agent-template', {
         body: isEditMode
@@ -1120,49 +1495,18 @@ export function ApplyTemplateWizard({ open, onOpenChange, template, onApplied, e
 
         {step === 'steps' && (
           <div className="space-y-3 py-2">
-            <div className="max-h-[55vh] overflow-y-auto pr-1 space-y-3">
-              {stepDrafts.length === 0 && (
-                <p className="text-sm text-muted-foreground text-center py-6">
-                  Nenhuma etapa ainda. Adicione ao menos uma etapa de "Agente de IA" pra essa orquestração funcionar.
-                </p>
-              )}
-              {stepDrafts.map((s, i) => (
-                <StepCard
-                  key={s.key}
-                  step={s}
-                  index={i}
-                  total={stepDrafts.length}
-                  tags={scopedTags}
-                  pipelines={scopedPipelines}
-                  agents={existingAgents}
-                  flows={scopedFlows}
-                  organizationId={organizationId}
-                  onChange={(patch) => updateStep(s.key, patch)}
-                  onRemove={() => removeStep(s.key)}
-                  onMove={(dir) => moveStep(s.key, dir)}
-                />
-              ))}
+            <div className="max-h-[55vh] overflow-y-auto pr-1">
+              <StepList
+                steps={stepDrafts}
+                tags={scopedTags}
+                pipelines={scopedPipelines}
+                agents={existingAgents}
+                flows={scopedFlows}
+                teamMembers={teamMembers}
+                organizationId={organizationId}
+                onChange={setStepDrafts}
+              />
             </div>
-
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="w-full border-dashed">
-                  <Plus className="h-4 w-4 mr-2" />
-                  Adicionar etapa
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="w-56">
-                {(Object.keys(STEP_TYPE_META) as StepType[]).map((t) => {
-                  const Icon = STEP_TYPE_META[t].icon;
-                  return (
-                    <DropdownMenuItem key={t} onClick={() => addStep(t)}>
-                      <Icon className="h-4 w-4 mr-2 text-violet-500" />
-                      {STEP_TYPE_META[t].label}
-                    </DropdownMenuItem>
-                  );
-                })}
-              </DropdownMenuContent>
-            </DropdownMenu>
 
             <DialogFooter>
               <Button

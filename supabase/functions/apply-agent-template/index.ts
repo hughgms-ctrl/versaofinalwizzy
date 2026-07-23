@@ -74,6 +74,24 @@ interface OutcomeRouting {
 }
 interface RemarketingStepInput { message: string; delayMinutes: number; }
 
+// Mesmo shape de ConditionRule usado no Flow Builder (src/types/flow.ts) --
+// não reimporta (edge function roda isolada, sem acesso ao src/ do frontend)
+// mas o formato é idêntico de propósito, pra não precisar traduzir nada.
+interface ConditionRuleInput {
+  id: string;
+  type: "tag" | "pipeline" | "assigned" | "variable" | "contact_field" | "service_mode";
+  negate?: boolean;
+  tagId?: string;
+  pipelineId?: string;
+  columnId?: string;
+  userId?: string;
+  variable?: string;
+  operator?: string;
+  value?: string;
+  contactField?: "name" | "email" | "phone";
+  serviceMode?: "pending" | "bot" | "human";
+}
+
 // Uma orquestração "do zero" é uma LISTA de etapas -- não mais um formato fixo
 // (tag→pipeline→agente→ação). Cada etapa mapeia 1:1 num tipo de node real do
 // Flow Builder (não inventa tipo novo), e pode repetir 'agent' quantas vezes
@@ -92,6 +110,18 @@ type StepInput =
   | { type: "pipeline"; pipeline: PipelineRef }
   | { type: "transfer" }
   | { type: "delay"; delaySeconds?: number }
+  | {
+      // Espelha o node real 'condition' (Sim/Não) -- ver ConditionNode
+      // (src/components/flow/nodes/LogicNodes.tsx): 2 saídas fixas (sourceHandle
+      // "true"/"false"), cada uma vira sua PRÓPRIA sub-lista de etapas
+      // independente (sem reconvergência -- ver conversa com o usuário).
+      type: "condition";
+      conditionLabel?: string;
+      matchType?: "all" | "any";
+      rules: ConditionRuleInput[];
+      trueSteps: StepInput[];
+      falseSteps: StepInput[];
+    }
   | {
       type: "flow";
       flowId: string;
@@ -178,6 +208,12 @@ async function getOrCreateOrchestrationFolder(
   return created.id;
 }
 
+// Recursiva -- um agente pode estar escondido dentro de um ramo Sim/Não de
+// uma 'condition' (ver StepList/StepCard no frontend, mesma checagem lá).
+function hasAgentStepDeep(steps: StepInput[]): boolean {
+  return steps.some((s) => s.type === "agent" || (s.type === "condition" && (hasAgentStepDeep(s.trueSteps || []) || hasAgentStepDeep(s.falseSteps || []))));
+}
+
 // Fallback pra template sem flow_snapshot desenhado (caso do único template
 // semeado até agora): um único nó de agente, sem passos antes/depois.
 function buildSingleAgentGraph(agentId: string, agentName: string) {
@@ -217,11 +253,13 @@ async function buildStepsGraph(
   const edges: any[] = [];
   const createdAgentIds: string[] = [];
   let primaryAgentId: string | null = null;
-  // Pontos "em aberto" que ainda precisam ser ligados na PRÓXIMA etapa -- normalmente
-  // só 1 (a etapa anterior), mas um nó de agente com vários resultados que "continuam"
-  // gera vários pontos em aberto simultâneos, todos alimentando o mesmo próximo passo.
-  let pending: { source: string; sourceHandle?: string }[] = [{ source: "start-1" }];
-  const connectPending = (targetId: string) => {
+  // Compartilhado entre TODAS as chamadas recursivas de processSteps (ramos
+  // aninhados de 'condition' incluídos) -- garante ids únicos mesmo quando o
+  // mesmo tipo de etapa aparece dentro de ramos diferentes.
+  let globalCounter = 0;
+
+  type Pending = { source: string; sourceHandle?: string };
+  const connectPending = (pending: Pending[], targetId: string) => {
     for (const p of pending) {
       edges.push({
         id: `e-${p.source}-${targetId}${p.sourceHandle ? "-" + p.sourceHandle : ""}`,
@@ -232,184 +270,216 @@ async function buildStepsGraph(
     }
   };
 
-  let x = 330;
-  let counter = 0;
-  for (const step of steps) {
-    counter++;
-    if (step.type === "tag") {
-      const id = `tag-${counter}`;
-      nodes.push({ id, type: "action-tag", position: { x, y: 200 }, data: { label: "Adicionar tag", action: "add", tagId: step.tag.id, tagName: step.tag.name } });
-      connectPending(id);
-      pending = [{ source: id }];
-      x += 280;
-    } else if (step.type === "pipeline") {
-      const id = `pipeline-${counter}`;
-      nodes.push({
-        id, type: "action-pipeline", position: { x, y: 200 },
-        data: { label: "Mover pipeline", pipelineId: step.pipeline.id, pipelineColumnId: step.pipeline.columnId, pipelineName: step.pipeline.name, pipelineColumnName: step.pipeline.columnName },
-      });
-      connectPending(id);
-      pending = [{ source: id }];
-      x += 280;
-    } else if (step.type === "transfer") {
-      const id = `transfer-${counter}`;
-      nodes.push({ id, type: "action-transfer", position: { x, y: 200 }, data: { label: "Transferir para atendimento humano" } });
-      connectPending(id);
-      pending = [{ source: id }];
-      x += 280;
-    } else if (step.type === "delay") {
-      const id = `delay-${counter}`;
-      nodes.push({ id, type: "action-delay", position: { x, y: 200 }, data: { label: "Aguardar", delaySeconds: step.delaySeconds || 60 } });
-      connectPending(id);
-      pending = [{ source: id }];
-      x += 280;
-    } else if (step.type === "flow") {
-      const id = `flow-${counter}`;
-      nodes.push({
-        id, type: "action-flow", position: { x, y: 200 },
-        data: {
-          label: "Iniciar Fluxo",
-          flowId: step.flowId,
-          flowName: step.flowName || "",
-          waitForResponse: !!step.waitForResponse,
-          ...(step.waitForResponse ? {
-            remarketingSteps: step.remarketingSteps || [],
-            remarketingContext: step.remarketingContext || "",
-            remarketingQuietHours: !!step.remarketingQuietHours,
-            ...(step.remarketingQuietStart ? { remarketingQuietStart: step.remarketingQuietStart } : {}),
-          } : {}),
-        },
-      });
-      connectPending(id);
-      x += 280;
+  // Processa uma lista de etapas encadeadas a partir de `initialPending`,
+  // devolvendo os pontos "em aberto" pro que vier depois. Recursiva: uma
+  // 'condition' chama processSteps de novo pra cada ramo (Sim/Não), escrevendo
+  // direto nos nodes/edges compartilhados -- e devolve pending VAZIO (a
+  // condição encerra a cadeia ali; cada ramo segue pro seu canto, sem
+  // reconvergência -- ver conversa com o usuário: "para fins dessa
+  // orquestração ok seguir independente").
+  async function processSteps(stepList: StepInput[], initialPending: Pending[], xBase: number, yBase: number): Promise<Pending[]> {
+    let pending = initialPending;
+    let x = xBase;
 
-      if (!step.waitForResponse) {
-        // Passo simples (fire-and-forget): sem ramificação, segue linear.
+    for (const step of stepList) {
+      globalCounter++;
+      const counter = globalCounter;
+
+      if (step.type === "tag") {
+        const id = `tag-${counter}`;
+        nodes.push({ id, type: "action-tag", position: { x, y: yBase }, data: { label: "Adicionar tag", action: "add", tagId: step.tag.id, tagName: step.tag.name } });
+        connectPending(pending, id);
         pending = [{ source: id }];
-      } else {
-        // waitForResponse=true -- DUAS saídas fixas, iguais ao exemplo real
-        // (Agente Master - AR): "responded" (cliente respondeu) e "timeout"
-        // (não respondeu, mesmo com os follow-ups). Cada uma pode opcionalmente
-        // marcar tag/mover pipeline (nós extras -- action-flow não tem o atalho
-        // outcomePipelines que o ai-handoff tem) antes de continuar ou encerrar.
-        const nextPending: typeof pending = [];
-        (["responded", "timeout"] as const).forEach((branch, i) => {
-          const routing = step.routing?.[branch];
-          const shouldContinue = routing?.continue !== false;
-          let fromSource = id;
-          let fromHandle: string | undefined = branch;
-          if (routing?.tag) {
-            const tagNodeId = `flow-${counter}-tag-${branch}`;
-            nodes.push({ id: tagNodeId, type: "action-tag", position: { x, y: 80 + i * 160 }, data: { label: `Tag: ${branch}`, action: "add", tagId: routing.tag.id, tagName: routing.tag.name } });
-            edges.push({ id: `e-${fromSource}-${tagNodeId}`, source: fromSource, target: tagNodeId, sourceHandle: fromHandle });
-            fromSource = tagNodeId;
-            fromHandle = undefined;
-          }
-          if (routing?.pipeline) {
-            const pipelineNodeId = `flow-${counter}-pipeline-${branch}`;
-            nodes.push({
-              id: pipelineNodeId, type: "action-pipeline", position: { x: x + (routing.tag ? 280 : 0), y: 80 + i * 160 },
-              data: { label: "Mover pipeline", pipelineId: routing.pipeline.id, pipelineColumnId: routing.pipeline.columnId, pipelineName: routing.pipeline.name, pipelineColumnName: routing.pipeline.columnName },
-            });
-            edges.push({ id: `e-${fromSource}-${pipelineNodeId}`, source: fromSource, target: pipelineNodeId, ...(fromHandle ? { sourceHandle: fromHandle } : {}) });
-            fromSource = pipelineNodeId;
-            fromHandle = undefined;
-          }
-          if (shouldContinue) nextPending.push({ source: fromSource, sourceHandle: fromHandle });
-        });
-        pending = nextPending;
-        x += 560;
-      }
-    } else if (step.type === "agent") {
-      let agentId = step.agentId || null;
-      let agentName = step.agentName || "Agente";
-      if (!agentId && step.newAgent?.name) {
-        const { data: newAgent, error: newAgentError } = await service
-          .from("ai_agents")
-          .insert({
-            organization_id: organizationId,
-            name: step.newAgent.name,
-            function_role: step.newAgent.functionRole || "recepcao",
-            prompt_base: step.newAgent.promptBase || "",
-            behavior_style: step.newAgent.behaviorStyle || null,
-            response_length: step.newAgent.responseLength || null,
-            tone_style: step.newAgent.toneStyle || null,
-            emoji_usage: step.newAgent.emojiUsage || null,
-            flow_ids: [],
-            workspace_id: workspaceId,
-          })
-          .select("*")
-          .single();
-        if (newAgentError) throw new Error(`Erro ao criar agente "${step.newAgent.name}": ${newAgentError.message}`);
-        agentId = newAgent.id;
-        agentName = newAgent.name;
-        createdAgentIds.push(agentId);
-      }
-      if (!agentId) throw new Error("Etapa de agente sem agentId nem newAgent.name");
-      if (!primaryAgentId) primaryAgentId = agentId;
-
-      const outcomes = (step.outcomes || []).map((o) => o.trim()).filter(Boolean);
-
-      const id = `agent-${counter}`;
-      nodes.push({
-        id, type: "ai-handoff", position: { x, y: 200 },
-        data: {
-          label: agentName,
-          agentId,
-          agentName,
-          ...(step.additionalPrompt ? { additionalPrompt: step.additionalPrompt } : {}),
-          expectedOutcomes: outcomes.join(", "),
-          autoAdvance: true,
-        },
-      });
-      connectPending(id);
-      x += 280;
-
-      if (outcomes.length === 0 && !step.outcomeDefaultTransfer) {
-        pending = [{ source: id }];
-      } else {
-        const nextPending: typeof pending = [];
-        outcomes.forEach((o, i) => {
-          const routing = step.outcomeRouting?.[o];
-          const shouldContinue = routing?.continue !== false;
-          let fromSource = id;
-          let fromHandle: string | undefined = `outcome-${o}`;
-          if (routing?.tag) {
-            const tagNodeId = `tag-out-${counter}-${i}`;
-            nodes.push({ id: tagNodeId, type: "action-tag", position: { x, y: 80 + i * 160 }, data: { label: `Tag: ${o}`, action: "add", tagId: routing.tag.id, tagName: routing.tag.name } });
-            edges.push({ id: `e-${fromSource}-${tagNodeId}`, source: fromSource, target: tagNodeId, sourceHandle: fromHandle });
-            fromSource = tagNodeId;
-            fromHandle = undefined;
-          }
-          // "Mover pipeline" por resultado -- node real (não existe atalho tipo
-          // outcomePipelines no motor de execução pra nó de agente; confirmado
-          // que o único lugar que lia esse campo era este arquivo).
-          if (routing?.pipeline) {
-            const pipelineNodeId = `pipeline-out-${counter}-${i}`;
-            nodes.push({
-              id: pipelineNodeId, type: "action-pipeline", position: { x: x + (routing.tag ? 280 : 0), y: 80 + i * 160 },
-              data: { label: "Mover pipeline", pipelineId: routing.pipeline.id, pipelineColumnId: routing.pipeline.columnId, pipelineName: routing.pipeline.name, pipelineColumnName: routing.pipeline.columnName },
-            });
-            edges.push({ id: `e-${fromSource}-${pipelineNodeId}`, source: fromSource, target: pipelineNodeId, ...(fromHandle ? { sourceHandle: fromHandle } : {}) });
-            fromSource = pipelineNodeId;
-            fromHandle = undefined;
-          }
-          if (shouldContinue) nextPending.push({ source: fromSource, sourceHandle: fromHandle });
-          // shouldContinue===false sem tag/pipeline: nenhuma edge sai daquele resultado -- fim natural da cadeia ali.
-        });
-        // Resultado "não identificado" -- espelha node_3→outcome-default→Transferir
-        // no exemplo real: rede de segurança quando a IA foge do script. Sempre
-        // termina em transferência (não continua a cadeia, igual à produção).
-        if (step.outcomeDefaultTransfer) {
-          const transferId = `agent-${counter}-default-transfer`;
-          nodes.push({ id: transferId, type: "action-transfer", position: { x, y: 80 + outcomes.length * 160 }, data: { label: "Transferir (resultado não identificado)" } });
-          edges.push({ id: `e-${id}-${transferId}`, source: id, target: transferId, sourceHandle: "outcome-default" });
-        }
-        pending = nextPending;
         x += 280;
+      } else if (step.type === "pipeline") {
+        const id = `pipeline-${counter}`;
+        nodes.push({
+          id, type: "action-pipeline", position: { x, y: yBase },
+          data: { label: "Mover pipeline", pipelineId: step.pipeline.id, pipelineColumnId: step.pipeline.columnId, pipelineName: step.pipeline.name, pipelineColumnName: step.pipeline.columnName },
+        });
+        connectPending(pending, id);
+        pending = [{ source: id }];
+        x += 280;
+      } else if (step.type === "transfer") {
+        const id = `transfer-${counter}`;
+        nodes.push({ id, type: "action-transfer", position: { x, y: yBase }, data: { label: "Transferir para atendimento humano" } });
+        connectPending(pending, id);
+        pending = [{ source: id }];
+        x += 280;
+      } else if (step.type === "delay") {
+        const id = `delay-${counter}`;
+        nodes.push({ id, type: "action-delay", position: { x, y: yBase }, data: { label: "Aguardar", delaySeconds: step.delaySeconds || 60 } });
+        connectPending(pending, id);
+        pending = [{ source: id }];
+        x += 280;
+      } else if (step.type === "condition") {
+        const id = `condition-${counter}`;
+        nodes.push({
+          id, type: "condition", position: { x, y: yBase },
+          data: {
+            conditionLabel: step.conditionLabel || "",
+            matchType: step.matchType || "all",
+            rules: step.rules || [],
+          },
+        });
+        connectPending(pending, id);
+        const branchX = x + 280;
+        await processSteps(step.trueSteps || [], [{ source: id, sourceHandle: "true" }], branchX, yBase - 140);
+        await processSteps(step.falseSteps || [], [{ source: id, sourceHandle: "false" }], branchX, yBase + 140);
+        pending = [];
+        x += 280;
+      } else if (step.type === "flow") {
+        const id = `flow-${counter}`;
+        nodes.push({
+          id, type: "action-flow", position: { x, y: yBase },
+          data: {
+            label: "Iniciar Fluxo",
+            flowId: step.flowId,
+            flowName: step.flowName || "",
+            waitForResponse: !!step.waitForResponse,
+            ...(step.waitForResponse ? {
+              remarketingSteps: step.remarketingSteps || [],
+              remarketingContext: step.remarketingContext || "",
+              remarketingQuietHours: !!step.remarketingQuietHours,
+              ...(step.remarketingQuietStart ? { remarketingQuietStart: step.remarketingQuietStart } : {}),
+            } : {}),
+          },
+        });
+        connectPending(pending, id);
+        x += 280;
+
+        if (!step.waitForResponse) {
+          // Passo simples (fire-and-forget): sem ramificação, segue linear.
+          pending = [{ source: id }];
+        } else {
+          // waitForResponse=true -- DUAS saídas fixas, iguais ao exemplo real
+          // (Agente Master - AR): "responded" (cliente respondeu) e "timeout"
+          // (não respondeu, mesmo com os follow-ups). Cada uma pode opcionalmente
+          // marcar tag/mover pipeline (nós extras -- action-flow não tem o atalho
+          // outcomePipelines que o ai-handoff tem) antes de continuar ou encerrar.
+          const nextPending: Pending[] = [];
+          (["responded", "timeout"] as const).forEach((branch, i) => {
+            const routing = step.routing?.[branch];
+            const shouldContinue = routing?.continue !== false;
+            let fromSource = id;
+            let fromHandle: string | undefined = branch;
+            if (routing?.tag) {
+              const tagNodeId = `flow-${counter}-tag-${branch}`;
+              nodes.push({ id: tagNodeId, type: "action-tag", position: { x, y: yBase - 120 + i * 160 }, data: { label: `Tag: ${branch}`, action: "add", tagId: routing.tag.id, tagName: routing.tag.name } });
+              edges.push({ id: `e-${fromSource}-${tagNodeId}`, source: fromSource, target: tagNodeId, sourceHandle: fromHandle });
+              fromSource = tagNodeId;
+              fromHandle = undefined;
+            }
+            if (routing?.pipeline) {
+              const pipelineNodeId = `flow-${counter}-pipeline-${branch}`;
+              nodes.push({
+                id: pipelineNodeId, type: "action-pipeline", position: { x: x + (routing.tag ? 280 : 0), y: yBase - 120 + i * 160 },
+                data: { label: "Mover pipeline", pipelineId: routing.pipeline.id, pipelineColumnId: routing.pipeline.columnId, pipelineName: routing.pipeline.name, pipelineColumnName: routing.pipeline.columnName },
+              });
+              edges.push({ id: `e-${fromSource}-${pipelineNodeId}`, source: fromSource, target: pipelineNodeId, ...(fromHandle ? { sourceHandle: fromHandle } : {}) });
+              fromSource = pipelineNodeId;
+              fromHandle = undefined;
+            }
+            if (shouldContinue) nextPending.push({ source: fromSource, sourceHandle: fromHandle });
+          });
+          pending = nextPending;
+          x += 560;
+        }
+      } else if (step.type === "agent") {
+        let agentId = step.agentId || null;
+        let agentName = step.agentName || "Agente";
+        if (!agentId && step.newAgent?.name) {
+          const { data: newAgent, error: newAgentError } = await service
+            .from("ai_agents")
+            .insert({
+              organization_id: organizationId,
+              name: step.newAgent.name,
+              function_role: step.newAgent.functionRole || "recepcao",
+              prompt_base: step.newAgent.promptBase || "",
+              behavior_style: step.newAgent.behaviorStyle || null,
+              response_length: step.newAgent.responseLength || null,
+              tone_style: step.newAgent.toneStyle || null,
+              emoji_usage: step.newAgent.emojiUsage || null,
+              flow_ids: [],
+              workspace_id: workspaceId,
+            })
+            .select("*")
+            .single();
+          if (newAgentError) throw new Error(`Erro ao criar agente "${step.newAgent.name}": ${newAgentError.message}`);
+          agentId = newAgent.id;
+          agentName = newAgent.name;
+          createdAgentIds.push(agentId);
+        }
+        if (!agentId) throw new Error("Etapa de agente sem agentId nem newAgent.name");
+        if (!primaryAgentId) primaryAgentId = agentId;
+
+        const outcomes = (step.outcomes || []).map((o) => o.trim()).filter(Boolean);
+
+        const id = `agent-${counter}`;
+        nodes.push({
+          id, type: "ai-handoff", position: { x, y: yBase },
+          data: {
+            label: agentName,
+            agentId,
+            agentName,
+            ...(step.additionalPrompt ? { additionalPrompt: step.additionalPrompt } : {}),
+            expectedOutcomes: outcomes.join(", "),
+            autoAdvance: true,
+          },
+        });
+        connectPending(pending, id);
+        x += 280;
+
+        if (outcomes.length === 0 && !step.outcomeDefaultTransfer) {
+          pending = [{ source: id }];
+        } else {
+          const nextPending: Pending[] = [];
+          outcomes.forEach((o, i) => {
+            const routing = step.outcomeRouting?.[o];
+            const shouldContinue = routing?.continue !== false;
+            let fromSource = id;
+            let fromHandle: string | undefined = `outcome-${o}`;
+            if (routing?.tag) {
+              const tagNodeId = `tag-out-${counter}-${i}`;
+              nodes.push({ id: tagNodeId, type: "action-tag", position: { x, y: yBase - 120 + i * 160 }, data: { label: `Tag: ${o}`, action: "add", tagId: routing.tag.id, tagName: routing.tag.name } });
+              edges.push({ id: `e-${fromSource}-${tagNodeId}`, source: fromSource, target: tagNodeId, sourceHandle: fromHandle });
+              fromSource = tagNodeId;
+              fromHandle = undefined;
+            }
+            // "Mover pipeline" por resultado -- node real (não existe atalho tipo
+            // outcomePipelines no motor de execução pra nó de agente; confirmado
+            // que o único lugar que lia esse campo era este arquivo).
+            if (routing?.pipeline) {
+              const pipelineNodeId = `pipeline-out-${counter}-${i}`;
+              nodes.push({
+                id: pipelineNodeId, type: "action-pipeline", position: { x: x + (routing.tag ? 280 : 0), y: yBase - 120 + i * 160 },
+                data: { label: "Mover pipeline", pipelineId: routing.pipeline.id, pipelineColumnId: routing.pipeline.columnId, pipelineName: routing.pipeline.name, pipelineColumnName: routing.pipeline.columnName },
+              });
+              edges.push({ id: `e-${fromSource}-${pipelineNodeId}`, source: fromSource, target: pipelineNodeId, ...(fromHandle ? { sourceHandle: fromHandle } : {}) });
+              fromSource = pipelineNodeId;
+              fromHandle = undefined;
+            }
+            if (shouldContinue) nextPending.push({ source: fromSource, sourceHandle: fromHandle });
+            // shouldContinue===false sem tag/pipeline: nenhuma edge sai daquele resultado -- fim natural da cadeia ali.
+          });
+          // Resultado "não identificado" -- espelha node_3→outcome-default→Transferir
+          // no exemplo real: rede de segurança quando a IA foge do script. Sempre
+          // termina em transferência (não continua a cadeia, igual à produção).
+          if (step.outcomeDefaultTransfer) {
+            const transferId = `agent-${counter}-default-transfer`;
+            nodes.push({ id: transferId, type: "action-transfer", position: { x, y: yBase - 120 + outcomes.length * 160 }, data: { label: "Transferir (resultado não identificado)" } });
+            edges.push({ id: `e-${id}-${transferId}`, source: id, target: transferId, sourceHandle: "outcome-default" });
+          }
+          pending = nextPending;
+          x += 280;
+        }
       }
     }
+
+    return pending;
   }
+
+  await processSteps(steps, [{ source: "start-1" }], 330, 200);
 
   return { nodes, edges, primaryAgentId, createdAgentIds };
 }
@@ -475,7 +545,7 @@ serve(async (req) => {
 
     if (body.action === "update_orchestration") {
       if (!body.instanceId) return errorResponse("instanceId é obrigatório", 400);
-      if (!(body.steps || []).some((s) => s.type === "agent")) {
+      if (!hasAgentStepDeep(body.steps || [])) {
         return errorResponse("A orquestração precisa de ao menos uma etapa de agente", 400);
       }
 
@@ -644,7 +714,7 @@ serve(async (req) => {
       template = data;
     } else if (!body.name?.trim()) {
       return errorResponse("name é obrigatório quando não há templateId", 400);
-    } else if (!(body.steps || []).some((s) => s.type === "agent")) {
+    } else if (!hasAgentStepDeep(body.steps || [])) {
       return errorResponse("A orquestração precisa de ao menos uma etapa de agente", 400);
     }
 
