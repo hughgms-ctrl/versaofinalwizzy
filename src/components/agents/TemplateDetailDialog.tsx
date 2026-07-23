@@ -8,9 +8,10 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Tag, Kanban, Users, Clock, Bot, Workflow, GitBranch } from 'lucide-react';
+import { Loader2, Tag, Kanban, Users, Clock, Bot, Workflow, GitBranch, Mic } from 'lucide-react';
 import { useAgentTemplateDetail } from '@/hooks/useAgentTemplates';
 import { AGENT_FUNCTION_ROLES } from '@/hooks/useAIAgents';
+import { findRecordedMedia, recordedMediaMessage } from '@/lib/templateMediaCheck';
 
 // Preview SOMENTE LEITURA das etapas de um template -- v1 do "clicar num
 // template pra ver dentro" (ver conversa com o usuário). Deliberadamente NÃO
@@ -98,6 +99,7 @@ interface TemplateDetailDialogProps {
 export function TemplateDetailDialog({ templateId, open, onOpenChange, onApply }: TemplateDetailDialogProps) {
   const { data: detail, isLoading } = useAgentTemplateDetail(templateId);
   const steps = detail ? buildStepPreview(detail.flowSnapshot.nodes || [], detail.flowSnapshot.edges || []) : [];
+  const mediaWarning = detail ? recordedMediaMessage(findRecordedMedia(detail.flowSnapshot.nodes)) : null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -117,6 +119,13 @@ export function TemplateDetailDialog({ templateId, open, onOpenChange, onApply }
         {!isLoading && detail && (
           <div className="space-y-3 py-2">
             {detail.category && <Badge variant="secondary">{detail.category}</Badge>}
+
+            {mediaWarning && (
+              <div className="flex gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300">
+                <Mic className="h-4 w-4 shrink-0" />
+                <p>{mediaWarning}</p>
+              </div>
+            )}
 
             {/* Agente principal (agent_snapshot) -- é a única forma de saber "qual
                 agente está nesse template" quando o fluxo ainda não tem etapas

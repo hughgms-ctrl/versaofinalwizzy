@@ -20,7 +20,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { AlertTriangle, Loader2, Plus, Trash2, ChevronUp, ChevronDown, Tag, Kanban, Users, Clock, Bot, Workflow, Sparkles, Settings2, GitBranch, User, MessageSquare, FileText } from 'lucide-react';
+import { AlertTriangle, Loader2, Plus, Trash2, ChevronUp, ChevronDown, Tag, Kanban, Users, Clock, Bot, Workflow, Sparkles, Settings2, GitBranch, User, MessageSquare, FileText, Mic } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
@@ -30,10 +30,12 @@ import { useAllPipelineColumns, type PipelineWithColumns } from '@/hooks/usePipe
 import { useAIAgents, AGENT_FUNCTION_ROLES } from '@/hooks/useAIAgents';
 import { useFlows } from '@/hooks/useFlows';
 import { useTeamMembers, type TeamMember } from '@/hooks/useTeamMembers';
+import { useAgentTemplateDetail } from '@/hooks/useAgentTemplates';
 import type { ConditionRule, ConditionRuleType } from '@/types/flow';
 import type { AgentTemplate } from './AgentTemplateGallery';
 import { buildStepPreview } from './TemplateDetailDialog';
 import { matchesWorkspace } from '@/lib/workspaceMatch';
+import { findRecordedMedia, recordedMediaMessage } from '@/lib/templateMediaCheck';
 import { AgentPersonalityFields, EMPTY_PERSONALITY, type AgentPersonalityValue } from './AgentPersonalityFields';
 import { QuickEditAgentDialog } from './QuickEditAgentDialog';
 
@@ -1133,6 +1135,10 @@ export function ApplyTemplateWizard({ open, onOpenChange, template, onApplied, e
   const { data: existingAgents = [] } = useAIAgents();
   const { data: existingFlows = [] } = useFlows();
   const { data: teamMembers = [] } = useTeamMembers();
+  // Só pra avisar de áudio/vídeo pré-gravado no template antes de ativar (ver
+  // conversa com o usuário) -- não usado no caminho "do zero" (template=null).
+  const { data: templateDetail } = useAgentTemplateDetail(template?.id || null);
+  const mediaWarning = templateDetail ? recordedMediaMessage(findRecordedMedia(templateDetail.flowSnapshot.nodes)) : null;
 
   const isEditMode = !!editInstanceId;
   const [step, setStep] = useState<'name' | 'steps' | 'workspace' | 'applying' | 'review' | 'activating' | 'loading' | 'unsupported'>('workspace');
@@ -1560,6 +1566,14 @@ export function ApplyTemplateWizard({ open, onOpenChange, template, onApplied, e
             <p className="text-sm text-muted-foreground">
               {isEditMode ? 'Alterações salvas. Confira a palavra-chave antes de confirmar.' : 'Criado como rascunho. Confira a palavra-chave que vai disparar esse atendimento antes de ativar.'}
             </p>
+
+            {mediaWarning && (
+              <div className="flex gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300">
+                <Mic className="h-4 w-4 shrink-0" />
+                <p>{mediaWarning}</p>
+              </div>
+            )}
+
             <div className="space-y-2">
               <Label htmlFor="trigger-keyword">Palavra-chave de gatilho</Label>
               <div className="flex gap-2">
