@@ -4,7 +4,7 @@ import {
   X, Layers, MousePointerClick, List, Tag, Kanban, UserPlus, Webhook,
   GitBranch, FormInput, Bot, IterationCw, Plus, Trash2, GripVertical,
   Type, Image, Video, Music, FileText, Clock, Upload, Loader2, Save, Sparkles,
-  Link, ChevronRight, ChevronDown, Folder, Shuffle, User, MessageSquare, Building2, Users
+  Link, ChevronRight, ChevronDown, Folder, Shuffle, User, MessageSquare, Building2, Users, Settings2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -31,6 +31,7 @@ import { useWorkspaces } from '@/hooks/useWorkspaces';
 import { useWhatsAppGroups } from '@/hooks/useWhatsAppGroups';
 import { TrainingRulesList } from '@/components/agents/TrainingRulesList';
 import { QualificationRulesPanel } from '@/components/agents/QualificationRulesPanel';
+import { QuickEditAgentDialog } from '@/components/agents/QuickEditAgentDialog';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { getAvailableVariables, FlowVariableGroup } from '@/lib/flowVariables';
 import { VariableTextarea } from './VariableInserter';
@@ -513,6 +514,7 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
   const [localData, setLocalData] = useState<Record<string, unknown>>({});
   const [isGenerating, setIsGenerating] = useState(false);
   const [expandedFlowFolders, setExpandedFlowFolders] = useState<Set<string>>(new Set());
+  const [quickEditAgentOpen, setQuickEditAgentOpen] = useState(false);
   const { data: allTags = [] } = useAllTags();
   const { data: agents = [] } = useAIAgents();
   const { data: allFlows = [] } = useFlows();
@@ -1596,30 +1598,46 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
           <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="agentId" className="text-xs font-semibold">Agente IA</Label>
-              <Select
-                value={(localData.agentId as string) || ''}
-                onValueChange={(value) => {
-                  const agent = agents.find(a => a.id === value);
-                  const newData = {
-                    ...localData,
-                    agentId: value,
-                    agentName: agent?.name || 'Agente IA'
-                  };
-                  setLocalData(newData);
-                  onUpdate(node.id, newData);
-                }}
-              >
-                <SelectTrigger id="agentId" className="h-11 border-rose-500/50 focus:ring-rose-500 rounded-xl bg-background/50">
-                  <SelectValue placeholder="Selecionar agente..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {agents.map((agent) => (
-                    <SelectItem key={agent.id} value={agent.id}>
-                      {agent.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="flex items-center gap-1.5">
+                <Select
+                  value={(localData.agentId as string) || ''}
+                  onValueChange={(value) => {
+                    const agent = agents.find(a => a.id === value);
+                    const newData = {
+                      ...localData,
+                      agentId: value,
+                      agentName: agent?.name || 'Agente IA'
+                    };
+                    setLocalData(newData);
+                    onUpdate(node.id, newData);
+                  }}
+                >
+                  <SelectTrigger id="agentId" className="h-11 border-rose-500/50 focus:ring-rose-500 rounded-xl bg-background/50">
+                    <SelectValue placeholder="Selecionar agente..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {agents.map((agent) => (
+                      <SelectItem key={agent.id} value={agent.id}>
+                        {agent.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {!!localData.agentId && (
+                  <Button
+                    type="button" variant="ghost" size="icon" className="h-11 w-11 shrink-0"
+                    title="Editar agente base"
+                    onClick={() => setQuickEditAgentOpen(true)}
+                  >
+                    <Settings2 className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+              <QuickEditAgentDialog
+                agentId={(localData.agentId as string) || null}
+                open={quickEditAgentOpen}
+                onOpenChange={setQuickEditAgentOpen}
+              />
             </div>
 
             <div className="space-y-2">

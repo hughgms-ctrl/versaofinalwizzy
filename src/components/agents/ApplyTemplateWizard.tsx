@@ -20,7 +20,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { AlertTriangle, Loader2, Plus, Trash2, ChevronUp, ChevronDown, Tag, Kanban, Users, Clock, Bot, Workflow, Sparkles } from 'lucide-react';
+import { AlertTriangle, Loader2, Plus, Trash2, ChevronUp, ChevronDown, Tag, Kanban, Users, Clock, Bot, Workflow, Sparkles, Settings2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
@@ -31,6 +31,9 @@ import { useAIAgents, AGENT_FUNCTION_ROLES } from '@/hooks/useAIAgents';
 import { useFlows } from '@/hooks/useFlows';
 import type { AgentTemplate } from './AgentTemplateGallery';
 import { buildStepPreview } from './TemplateDetailDialog';
+import { matchesWorkspace } from '@/lib/workspaceMatch';
+import { AgentPersonalityFields, EMPTY_PERSONALITY, type AgentPersonalityValue } from './AgentPersonalityFields';
+import { QuickEditAgentDialog } from './QuickEditAgentDialog';
 
 interface CollidingCampaign {
   id: string;
@@ -114,6 +117,7 @@ interface StepDraft {
   newAgentName: string;
   newAgentFunctionRole: string;
   newAgentPromptBase: string;
+  newAgentPersonality: AgentPersonalityValue;
   additionalPrompt: string;
   outcomesText: string;
   outcomeRouting: Record<string, OutcomeRoutingDraft>;
@@ -143,6 +147,7 @@ function makeEmptyStep(type: StepType): StepDraft {
     newAgentName: '',
     newAgentFunctionRole: 'recepcao',
     newAgentPromptBase: '',
+    newAgentPersonality: { ...EMPTY_PERSONALITY },
     additionalPrompt: '',
     outcomesText: '',
     outcomeRouting: {},
@@ -386,6 +391,7 @@ function StepCard({
   const { toast } = useToast();
   const [aiInput, setAiInput] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [quickEditAgentOpen, setQuickEditAgentOpen] = useState(false);
 
   const handleAIGenerate = async () => {
     if (!aiInput.trim() || !organizationId) return;
@@ -600,13 +606,25 @@ function StepCard({
           </div>
 
           {step.agentMode === 'existing' ? (
-            <Select value={step.agentId || 'none'} onValueChange={(v) => onChange({ agentId: v === 'none' ? '' : v })}>
-              <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Escolha o agente..." /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Escolha...</SelectItem>
-                {agents.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            <div className="flex items-center gap-1.5">
+              <Select value={step.agentId || 'none'} onValueChange={(v) => onChange({ agentId: v === 'none' ? '' : v })}>
+                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Escolha o agente..." /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Escolha...</SelectItem>
+                  {agents.map((a) => <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              {step.agentId && (
+                <Button
+                  type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0"
+                  title="Editar agente base"
+                  onClick={() => setQuickEditAgentOpen(true)}
+                >
+                  <Settings2 className="h-3.5 w-3.5" />
+                </Button>
+              )}
+              <QuickEditAgentDialog agentId={step.agentId || null} open={quickEditAgentOpen} onOpenChange={setQuickEditAgentOpen} />
+            </div>
           ) : (
             <div className="space-y-2">
               <Input
@@ -619,6 +637,10 @@ function StepCard({
                   {AGENT_FUNCTION_ROLES.map((r) => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}
                 </SelectContent>
               </Select>
+              <AgentPersonalityFields
+                value={step.newAgentPersonality}
+                onChange={(patch) => onChange({ newAgentPersonality: { ...step.newAgentPersonality, ...patch } })}
+              />
               <div className="space-y-1.5 p-2 rounded-lg border border-dashed border-violet-300 dark:border-violet-900 bg-violet-50/50 dark:bg-violet-950/20">
                 <Label className="text-[10px] font-semibold text-violet-600 dark:text-violet-400 flex items-center gap-1">
                   <Sparkles className="h-3 w-3" /> Assistente IA para criação de prompt
@@ -748,12 +770,17 @@ export function ApplyTemplateWizard({ open, onOpenChange, template, onApplied, e
     }
   };
 
-  // Tags/pipelines restritos ao workspace já escolhido (nulo/global some pra
-  // fora da lista assim que um workspace é escolhido).
+  // Tags/pipelines/fluxos restritos ao workspace já escolhido (nulo/global
+  // some pra fora da lista assim que um workspace é escolhido) -- ver
+  // conversa com o usuário: "fluxos para criar novo agente tem que ser do
+  // workspace apenas" (mesmo princípio já aplicado a tags/pipelines).
   const scopedTags = workspaceId ? tags.filter((t) => !t.workspace_id || t.workspace_id === workspaceId) : tags;
   const scopedPipelines = workspaceId
     ? pipelinesWithColumns.filter((p) => !p.pipeline.workspace_ids?.length || p.pipeline.workspace_ids.includes(workspaceId))
     : pipelinesWithColumns;
+  const scopedFlows = workspaceId
+    ? existingFlows.filter((f) => matchesWorkspace(workspaceId, f.workspace_ids, f.workspace_id))
+    : existingFlows;
 
   useEffect(() => {
     if (!open || isEditMode) return;
@@ -895,7 +922,15 @@ export function ApplyTemplateWizard({ open, onOpenChange, template, onApplied, e
           type: 'agent',
           ...(s.agentMode === 'existing'
             ? { agentId: s.agentId, agentName: existingAgents.find((a) => a.id === s.agentId)?.name }
-            : { newAgent: { name: s.newAgentName.trim(), functionRole: s.newAgentFunctionRole, promptBase: s.newAgentPromptBase } }),
+            : { newAgent: {
+                name: s.newAgentName.trim(),
+                functionRole: s.newAgentFunctionRole,
+                promptBase: s.newAgentPromptBase,
+                behaviorStyle: s.newAgentPersonality.behaviorStyle,
+                responseLength: s.newAgentPersonality.responseLength,
+                toneStyle: s.newAgentPersonality.toneStyle,
+                emojiUsage: s.newAgentPersonality.emojiUsage,
+              } }),
           additionalPrompt: s.additionalPrompt || undefined,
           outcomes,
           outcomeRouting,
@@ -1073,7 +1108,7 @@ export function ApplyTemplateWizard({ open, onOpenChange, template, onApplied, e
                   tags={scopedTags}
                   pipelines={scopedPipelines}
                   agents={existingAgents}
-                  flows={existingFlows}
+                  flows={scopedFlows}
                   organizationId={organizationId}
                   onChange={(patch) => updateStep(s.key, patch)}
                   onRemove={() => removeStep(s.key)}

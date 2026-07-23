@@ -1,6 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { resolveWorkspaceInstanceBinding, sendWhatsAppMessage } from '../_shared/whatsappProvider.ts';
 import { resolveCaller, assertCallerCanAccessOrg, AccessError, type CallerAuth } from '../_shared/access.ts';
+import { buildPersonalityBlock } from '../_shared/agentPersonality.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -334,7 +335,9 @@ Deno.serve(async (req) => {
         const agentParts: string[] = [];
         if (agent.prompt_base) agentParts.push(agent.prompt_base);
         if (agent.persona) agentParts.push(`PERSONA: ${agent.persona}`);
-        
+        const personalityBlock0 = buildPersonalityBlock(agent);
+        if (personalityBlock0) agentParts.push(personalityBlock0);
+
         masterPrompt = {
           id: `agent-${agent.id}`,
           name: `Agent: ${agent.name}`,
@@ -638,6 +641,8 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
   if (agent?.persona) {
     systemPrompt += `PERSONA: ${agent.persona}\n\n`;
   }
+  const personalityBlockSim = buildPersonalityBlock(agent);
+  if (personalityBlockSim) systemPrompt += `${personalityBlockSim}\n\n`;
   systemPrompt += `---\n\n`;
 
   // 3. INSTRUÇÕES ESPECÍFICAS PARA ESTE MOMENTO (NÓ DO FLUXO)
@@ -1368,6 +1373,8 @@ async function invokeAgentAI(
   if (agent?.persona) {
     systemPrompt += `PERSONA: ${agent.persona}\n\n`;
   }
+  const personalityBlockInvoke = buildPersonalityBlock(agent);
+  if (personalityBlockInvoke) systemPrompt += `${personalityBlockInvoke}\n\n`;
   systemPrompt += `---\n\n`;
 
   // 3. INSTRUÇÕES ESPECÍFICAS PARA ESTA ETAPA (NÓ DO FLUXO) - High priority
@@ -1820,6 +1827,8 @@ async function invokeDocumentAgentAI(
   if (agent?.persona) {
     systemPrompt += `PERSONA: ${agent.persona}\n\n`;
   }
+  const personalityBlockDoc = buildPersonalityBlock(agent);
+  if (personalityBlockDoc) systemPrompt += `${personalityBlockDoc}\n\n`;
   systemPrompt += `---\n\n`;
 
   // 3. OBJETIVO ATUAL: COLETA DE DADOS (NÓ DO FLUXO)
@@ -3052,6 +3061,8 @@ function buildLegacySystemPrompt(ctx: any): string {
     if (activeAgent.persona) {
       prompt += `PERSONA: ${activeAgent.persona}\n\n`;
     }
+    const personalityBlockLegacy = buildPersonalityBlock(activeAgent);
+    if (personalityBlockLegacy) prompt += `${personalityBlockLegacy}\n\n`;
     prompt += `---\n\n`;
   }
 

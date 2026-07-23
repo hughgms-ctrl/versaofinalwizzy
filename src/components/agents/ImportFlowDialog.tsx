@@ -7,6 +7,7 @@ import { Loader2, AlertTriangle } from 'lucide-react';
 import { useFlows } from '@/hooks/useFlows';
 import { useAgentInstances, useImportFlowAsInstance } from '@/hooks/useAgentInstances';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
+import { matchesWorkspace } from '@/lib/workspaceMatch';
 import { supabase } from '@/integrations/supabase/client';
 
 interface DetectedAgent {
@@ -30,7 +31,7 @@ interface ImportFlowDialogProps {
 export function ImportFlowDialog({ open, onOpenChange, onImported }: ImportFlowDialogProps) {
   const { data: flows = [] } = useFlows();
   const { data: instances = [] } = useAgentInstances();
-  const { availableWorkspaces } = useWorkspaceContext();
+  const { availableWorkspaces, selectedWorkspaceId } = useWorkspaceContext();
   const importFlow = useImportFlowAsInstance();
 
   const [flowId, setFlowId] = useState('');
@@ -38,8 +39,13 @@ export function ImportFlowDialog({ open, onOpenChange, onImported }: ImportFlowD
   const [campaigns, setCampaigns] = useState<{ id: string; name: string }[]>([]);
   const [campaignId, setCampaignId] = useState<string>('');
 
+  // Só fluxos do workspace selecionado no topo (ver conversa com o usuário:
+  // "fluxos para criar novo agente tem que ser do workspace apenas") -- com
+  // "Todos os Workspaces" selecionado, matchesWorkspace deixa tudo passar.
   const alreadyImportedFlowIds = new Set(instances.map((i) => i.flow_id));
-  const importableFlows = flows.filter((f) => !alreadyImportedFlowIds.has(f.id));
+  const importableFlows = flows.filter(
+    (f) => !alreadyImportedFlowIds.has(f.id) && matchesWorkspace(selectedWorkspaceId, f.workspace_ids, f.workspace_id)
+  );
 
   const getWorkspaceName = (id: string | null) => availableWorkspaces?.find((w: any) => w.id === id)?.name;
 

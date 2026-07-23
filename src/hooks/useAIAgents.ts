@@ -21,6 +21,12 @@ export interface AIAgent {
   folder_id: string | null;
   provider: string | null;
   model: string | null;
+  // Personalidade estruturada (ver src/lib/agentPersonality.ts) -- null =
+  // sem seleção, sem efeito extra no prompt (agentes criados antes disto).
+  behavior_style: string | null;
+  response_length: string | null;
+  tone_style: string | null;
+  emoji_usage: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -68,6 +74,10 @@ export function useCreateAIAgent() {
       workspace_id?: string | null;
       provider?: string;
       model?: string;
+      behavior_style?: string | null;
+      response_length?: string | null;
+      tone_style?: string | null;
+      emoji_usage?: string | null;
     }) => {
       if (!profile?.organization_id) throw new Error('No organization');
       const { data, error } = await supabase

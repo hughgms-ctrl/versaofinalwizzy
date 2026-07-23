@@ -107,7 +107,17 @@ type StepInput =
       type: "agent";
       agentId?: string; // usa um agente JÁ existente (reuso entre orquestrações)
       agentName?: string;
-      newAgent?: { name: string; functionRole?: string; promptBase?: string }; // OU cria um novo agora
+      newAgent?: {
+        name: string;
+        functionRole?: string;
+        promptBase?: string;
+        // Personalidade estruturada (ver src/lib/agentPersonality.ts) -- null/undefined
+        // = sem seleção, sem efeito extra no prompt.
+        behaviorStyle?: string | null;
+        responseLength?: string | null;
+        toneStyle?: string | null;
+        emojiUsage?: string | null;
+      }; // OU cria um novo agora
       additionalPrompt?: string; // prompt específico deste passo -- SOMA ao prompt_base do agente, não substitui
       outcomes?: string[];
       outcomeRouting?: Record<string, OutcomeRouting>;
@@ -321,6 +331,10 @@ async function buildStepsGraph(
             name: step.newAgent.name,
             function_role: step.newAgent.functionRole || "recepcao",
             prompt_base: step.newAgent.promptBase || "",
+            behavior_style: step.newAgent.behaviorStyle || null,
+            response_length: step.newAgent.responseLength || null,
+            tone_style: step.newAgent.toneStyle || null,
+            emoji_usage: step.newAgent.emojiUsage || null,
             flow_ids: [],
             workspace_id: workspaceId,
           })

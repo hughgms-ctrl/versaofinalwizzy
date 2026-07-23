@@ -6,6 +6,7 @@ import { useAgentFolders, useCreateAgentFolder, useDeleteAgentFolder, useRenameA
 import { AgentListItem } from './AgentListItem';
 import { ApplyTemplateWizard } from './ApplyTemplateWizard';
 import { ImportFlowDialog } from './ImportFlowDialog';
+import { AgentPersonalityFields, EMPTY_PERSONALITY, type AgentPersonalityValue } from './AgentPersonalityFields';
 import { Button } from '@/components/ui/button';
 import { Plus, FolderPlus, Folder, ChevronDown, ChevronRight, MoreHorizontal, Trash2, Pencil, MapPinned, Bot, Workflow, Import } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
@@ -37,6 +38,7 @@ export function AgentsTab() {
   const [importFlowOpen, setImportFlowOpen] = useState(false);
   const [newName, setNewName] = useState('');
   const [newRole, setNewRole] = useState(AGENT_FUNCTION_ROLES[0]?.value || 'recepcao');
+  const [newPersonality, setNewPersonality] = useState<AgentPersonalityValue>(EMPTY_PERSONALITY);
   const [newFolderName, setNewFolderName] = useState('');
   const [folderDialogOpen, setFolderDialogOpen] = useState(false);
   const [folderWorkspaceId, setFolderWorkspaceId] = useState<string | null>(null);
@@ -59,6 +61,10 @@ export function AgentsTab() {
     createAgent.mutate({
       name: newName,
       function_role: newRole,
+      behavior_style: newPersonality.behaviorStyle,
+      response_length: newPersonality.responseLength,
+      tone_style: newPersonality.toneStyle,
+      emoji_usage: newPersonality.emojiUsage,
     }, {
       onSuccess: (data) => {
         if (selectedFolder && data) {
@@ -72,6 +78,7 @@ export function AgentsTab() {
         setOpen(false);
         setNewName('');
         setNewRole('recepcao');
+        setNewPersonality(EMPTY_PERSONALITY);
         setSelectedFolder(null);
       },
     });
@@ -246,6 +253,10 @@ export function AgentsTab() {
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+                <div>
+                  <label className="text-sm font-medium mb-1 block">Personalidade</label>
+                  <AgentPersonalityFields value={newPersonality} onChange={(patch) => setNewPersonality((prev) => ({ ...prev, ...patch }))} />
                 </div>
                 {folders.length > 0 && (
                   <div>

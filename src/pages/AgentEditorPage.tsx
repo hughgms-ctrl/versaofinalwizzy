@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { MainLayout } from '@/components/layout/MainLayout';
-import { useAIAgents, useUpdateAIAgent } from '@/hooks/useAIAgents';
-import { useAgentFunctionRoles } from '@/hooks/useAgentFunctionRoles';
+import { useAIAgents, useUpdateAIAgent, AGENT_FUNCTION_ROLES } from '@/hooks/useAIAgents';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
@@ -12,6 +11,7 @@ import { ArrowLeft, Save, Sparkles, Loader2, ChevronDown, ChevronRight } from 'l
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { TrainingRulesList } from '@/components/agents/TrainingRulesList';
+import { AgentPersonalityFields, EMPTY_PERSONALITY, type AgentPersonalityValue } from '@/components/agents/AgentPersonalityFields';
 
 
 
@@ -19,7 +19,6 @@ const AgentEditorPage = () => {
   const { agentId } = useParams();
   const navigate = useNavigate();
   const { data: agents = [], isLoading: isAgentsLoading } = useAIAgents();
-  const { data: roles = [], isLoading: isRolesLoading } = useAgentFunctionRoles();
   const updateAgent = useUpdateAIAgent();
 
   const agent = agents.find(a => a.id === agentId);
@@ -29,6 +28,7 @@ const AgentEditorPage = () => {
   const [functionRole, setFunctionRole] = useState('recepcao');
   const [promptBase, setPromptBase] = useState('');
   const [isActive, setIsActive] = useState(false);
+  const [personality, setPersonality] = useState<AgentPersonalityValue>(EMPTY_PERSONALITY);
 
   // AI assist state
   const [aiInput, setAiInput] = useState('');
@@ -47,6 +47,12 @@ const AgentEditorPage = () => {
       setFunctionRole(agent.function_role || 'recepcao');
       setPromptBase(agent.prompt_base || '');
       setIsActive(agent.is_active);
+      setPersonality({
+        behaviorStyle: agent.behavior_style || EMPTY_PERSONALITY.behaviorStyle,
+        responseLength: agent.response_length || EMPTY_PERSONALITY.responseLength,
+        toneStyle: agent.tone_style || EMPTY_PERSONALITY.toneStyle,
+        emojiUsage: agent.emoji_usage || EMPTY_PERSONALITY.emojiUsage,
+      });
     }
   }, [agent]);
 
@@ -59,6 +65,10 @@ const AgentEditorPage = () => {
       function_role: functionRole,
       prompt_base: promptBase,
       is_active: isActive,
+      behavior_style: personality.behaviorStyle,
+      response_length: personality.responseLength,
+      tone_style: personality.toneStyle,
+      emoji_usage: personality.emojiUsage,
     });
   };
 
@@ -66,7 +76,7 @@ const AgentEditorPage = () => {
     if (!aiInput.trim()) return;
     setIsGenerating(true);
     try {
-      const roleLabel = roles.find(r => r.value === functionRole)?.label || functionRole;
+      const roleLabel = AGENT_FUNCTION_ROLES.find(r => r.value === functionRole)?.label || functionRole;
       const { data, error } = await supabase.functions.invoke('generate-agent-prompt', {
         body: { userDescription: aiInput, agentName: name, agentRole: roleLabel },
       });
@@ -83,7 +93,7 @@ const AgentEditorPage = () => {
     }
   };
 
-  if (isAgentsLoading || isRolesLoading) {
+  if (isAgentsLoading) {
     return <MainLayout title="Carregando..."><div /></MainLayout>;
   }
 
@@ -137,7 +147,7 @@ const AgentEditorPage = () => {
                   <Select value={functionRole} onValueChange={setFunctionRole}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {roles.map(r => (
+                      {AGENT_FUNCTION_ROLES.map(r => (
                         <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
                       ))}
                     </SelectContent>
@@ -147,6 +157,10 @@ const AgentEditorPage = () => {
               <div>
                 <label className="text-sm font-medium mb-1 block">Descrição</label>
                 <Input value={description} onChange={e => setDescription(e.target.value)} placeholder="Descrição breve do agente..." />
+              </div>
+              <div>
+                <label className="text-sm font-medium mb-1 block">Personalidade</label>
+                <AgentPersonalityFields value={personality} onChange={(patch) => setPersonality((prev) => ({ ...prev, ...patch }))} />
               </div>
             </div>
           )}
