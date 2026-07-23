@@ -26,6 +26,11 @@ const TRANSCRIPTION_MODELS = [
   { value: 'whisper-1', label: 'Whisper 1' },
 ];
 
+const EMBEDDING_MODELS = [
+  { value: 'text-embedding-3-small', label: 'Text Embedding 3 Small' },
+  { value: 'text-embedding-3-large', label: 'Text Embedding 3 Large' },
+];
+
 const FEATURES: { value: AIModelFeature; label: string; description: string; section?: string }[] = [
   { value: 'flow_ai', label: 'Flow AI', description: 'Assistente interno do Wizzy Flow para projetos, tarefas, processos e POPs.', section: 'Wizzy Flow' },
   { value: 'agents', label: 'Agentes IA', description: 'Respostas automáticas e orquestração de atendimento.' },
@@ -40,6 +45,7 @@ const FEATURES: { value: AIModelFeature; label: string; description: string; sec
   { value: 'transcription', label: 'Transcrição', description: 'Áudios e mídia convertidos para texto.' },
   { value: 'agent_tester_persona', label: 'Testador — Persona', description: 'Simula o cliente numa conversa de teste com o agente.', section: 'Testador de Agentes' },
   { value: 'agent_tester_evaluator', label: 'Testador — Avaliador', description: 'Analisa a transcrição simulada e sugere ajustes no agente.', section: 'Testador de Agentes' },
+  { value: 'knowledge_base_embedding', label: 'Base de Conhecimento — Embedding', description: 'Indexa os arquivos enviados e busca os trechos relevantes pra cada pergunta.', section: 'Base de Conhecimento' },
 ];
 
 const DEFAULT_STRATEGY: AdminAIModelStrategy = {
@@ -58,6 +64,7 @@ const DEFAULT_STRATEGY: AdminAIModelStrategy = {
     transcription: 'gpt-4o-mini-transcribe',
     agent_tester_persona: 'gpt-4o-mini',
     agent_tester_evaluator: 'gpt-4.1-mini',
+    knowledge_base_embedding: 'text-embedding-3-small',
   },
 };
 
@@ -86,7 +93,9 @@ export function AdminAIModelsContent({ showHeader = true }: { showHeader?: boole
   };
 
   const modelsForFeature = (feature?: AIModelFeature) => {
-    return feature === 'transcription' ? TRANSCRIPTION_MODELS : TEXT_MODELS;
+    if (feature === 'transcription') return TRANSCRIPTION_MODELS;
+    if (feature === 'knowledge_base_embedding') return EMBEDDING_MODELS;
+    return TEXT_MODELS;
   };
 
   const safeFeatureModel = (feature: AIModelFeature) => {
@@ -113,6 +122,7 @@ export function AdminAIModelsContent({ showHeader = true }: { showHeader?: boole
       transcription: safeFeatureModel('transcription'),
       agent_tester_persona: safeFeatureModel('agent_tester_persona'),
       agent_tester_evaluator: safeFeatureModel('agent_tester_evaluator'),
+      knowledge_base_embedding: safeFeatureModel('knowledge_base_embedding'),
     },
   });
 

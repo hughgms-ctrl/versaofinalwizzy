@@ -183,7 +183,8 @@ export type AIModelFeature =
   | 'qualification_rules'
   | 'flow_ai'
   | 'agent_tester_persona'
-  | 'agent_tester_evaluator';
+  | 'agent_tester_evaluator'
+  | 'knowledge_base_embedding';
 
 export interface AdminAIModelStrategy {
   default_model: string;

@@ -12,6 +12,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { TrainingRulesList } from '@/components/agents/TrainingRulesList';
 import { AgentPersonalityFields, EMPTY_PERSONALITY, type AgentPersonalityValue } from '@/components/agents/AgentPersonalityFields';
+import { AgentKnowledgeSection } from '@/components/agents/AgentKnowledgeSection';
 
 
 
@@ -219,6 +220,16 @@ const AgentEditorPage = () => {
             agentId={agentId}
             organizationId={agent.organization_id}
           />
+        </div>
+
+        {/* Base de Conhecimento */}
+        <div className="rounded-lg border bg-card p-6 space-y-3">
+          <h3 className="font-semibold text-foreground">Base de Conhecimento</h3>
+          <p className="text-xs text-muted-foreground">
+            Arquivos que o agente consulta pra responder -- só os trechos relevantes pra cada pergunta entram no
+            prompt, não o arquivo inteiro.
+          </p>
+          {agentId && <AgentKnowledgeSection agentId={agentId} />}
         </div>
       </div>
     </MainLayout>

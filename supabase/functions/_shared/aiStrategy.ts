@@ -17,6 +17,7 @@ export const DEFAULT_AI_MODEL_STRATEGY = {
     flow_ai: 'gpt-4.1-mini',
     agent_tester_persona: 'gpt-4o-mini',
     agent_tester_evaluator: 'gpt-4.1-mini',
+    knowledge_base_embedding: 'text-embedding-3-small',
   },
 };
 

@@ -1153,6 +1153,7 @@ Deno.serve(async (req) => {
           flow_ai: 'gpt-4.1-mini',
           agent_tester_persona: 'gpt-4o-mini',
           agent_tester_evaluator: 'gpt-4.1-mini',
+          knowledge_base_embedding: 'text-embedding-3-small',
         },
       }
 
@@ -1195,6 +1196,10 @@ Deno.serve(async (req) => {
         'gpt-4o-mini-transcribe',
         'whisper-1',
       ]
+      const embeddingModels = [
+        'text-embedding-3-small',
+        'text-embedding-3-large',
+      ]
       const allowedFeatures = [
         'agents',
         'conversation_summary',
@@ -1209,14 +1214,22 @@ Deno.serve(async (req) => {
         'flow_ai',
         'agent_tester_persona',
         'agent_tester_evaluator',
+        'knowledge_base_embedding',
       ]
       const defaultModel = String(body.default_model || 'gpt-4o-mini').trim()
       if (!textModels.includes(defaultModel)) throw new Error('Modelo padrão inválido')
 
       const nextFeatures: Record<string, string> = {}
       for (const feature of allowedFeatures) {
-        const model = String(body.features?.[feature] || defaultModel).trim()
-        const allowedModels = feature === 'transcription' ? transcriptionModels : textModels
+        // knowledge_base_embedding não pode cair pro defaultModel (é um modelo de
+        // chat, incompatível com embedding) -- fallback próprio, igual transcription.
+        const featureFallback = feature === 'knowledge_base_embedding' ? 'text-embedding-3-small' : defaultModel
+        const model = String(body.features?.[feature] || featureFallback).trim()
+        const allowedModels = feature === 'transcription'
+          ? transcriptionModels
+          : feature === 'knowledge_base_embedding'
+            ? embeddingModels
+            : textModels
         if (!allowedModels.includes(model)) throw new Error(`Modelo inválido para ${feature}`)
         nextFeatures[feature] = model
       }

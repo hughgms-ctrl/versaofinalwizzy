@@ -2,6 +2,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { resolveWorkspaceInstanceBinding, sendWhatsAppMessage } from '../_shared/whatsappProvider.ts';
 import { resolveCaller, assertCallerCanAccessOrg, AccessError, type CallerAuth } from '../_shared/access.ts';
 import { buildPersonalityBlock } from '../_shared/agentPersonality.ts';
+import { buildKnowledgeBlock } from '../_shared/agentKnowledge.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -337,6 +338,8 @@ Deno.serve(async (req) => {
         if (agent.persona) agentParts.push(`PERSONA: ${agent.persona}`);
         const personalityBlock0 = buildPersonalityBlock(agent);
         if (personalityBlock0) agentParts.push(personalityBlock0);
+        const knowledgeBlock0 = await buildKnowledgeBlock(supabase, organizationId, agent.id, messageContent);
+        if (knowledgeBlock0) agentParts.push(knowledgeBlock0);
 
         masterPrompt = {
           id: `agent-${agent.id}`,
@@ -643,6 +646,9 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
   }
   const personalityBlockSim = buildPersonalityBlock(agent);
   if (personalityBlockSim) systemPrompt += `${personalityBlockSim}\n\n`;
+  const lastUserMessageSim = [...(conversationHistory || [])].reverse().find((m: any) => m.role === 'user')?.content || '';
+  const knowledgeBlockSim = await buildKnowledgeBlock(supabase, organizationId, agent?.id, lastUserMessageSim);
+  if (knowledgeBlockSim) systemPrompt += `${knowledgeBlockSim}\n\n`;
   systemPrompt += `---\n\n`;
 
   // 3. INSTRUÇÕES ESPECÍFICAS PARA ESTE MOMENTO (NÓ DO FLUXO)
@@ -1375,6 +1381,8 @@ async function invokeAgentAI(
   }
   const personalityBlockInvoke = buildPersonalityBlock(agent);
   if (personalityBlockInvoke) systemPrompt += `${personalityBlockInvoke}\n\n`;
+  const knowledgeBlockInvoke = await buildKnowledgeBlock(supabase, ctx.organizationId, agent?.id, messageContent);
+  if (knowledgeBlockInvoke) systemPrompt += `${knowledgeBlockInvoke}\n\n`;
   systemPrompt += `---\n\n`;
 
   // 3. INSTRUÇÕES ESPECÍFICAS PARA ESTA ETAPA (NÓ DO FLUXO) - High priority
@@ -1829,6 +1837,8 @@ async function invokeDocumentAgentAI(
   }
   const personalityBlockDoc = buildPersonalityBlock(agent);
   if (personalityBlockDoc) systemPrompt += `${personalityBlockDoc}\n\n`;
+  const knowledgeBlockDoc = await buildKnowledgeBlock(supabase, ctx.organizationId, agent?.id, messageContent);
+  if (knowledgeBlockDoc) systemPrompt += `${knowledgeBlockDoc}\n\n`;
   systemPrompt += `---\n\n`;
 
   // 3. OBJETIVO ATUAL: COLETA DE DADOS (NÓ DO FLUXO)
@@ -2385,7 +2395,7 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
   let replyText: string | null = null;
   let replySentViaTool = false;
 
-  const systemPrompt = buildLegacySystemPrompt(ctx);
+  const systemPrompt = await buildLegacySystemPrompt(supabase, ctx, messageContent);
   const aiMessages: any[] = [
     { role: 'system', content: systemPrompt },
     ...ctx.messages.map((m: any) => ({
@@ -3040,7 +3050,7 @@ function inferOutcomeFromReply(reply: string | null, configuredOutcomes: string[
 
 // ==================== LEGACY HELPERS ====================
 
-function buildLegacySystemPrompt(ctx: any): string {
+async function buildLegacySystemPrompt(supabase: any, ctx: any, messageContent: string): Promise<string> {
   const activeAgent = ctx.agents.find((a: any) => a.id === ctx.conversation.ai_agent_id);
   const additionalContext = ctx.additionalContext || '';
   
@@ -3063,6 +3073,8 @@ function buildLegacySystemPrompt(ctx: any): string {
     }
     const personalityBlockLegacy = buildPersonalityBlock(activeAgent);
     if (personalityBlockLegacy) prompt += `${personalityBlockLegacy}\n\n`;
+    const knowledgeBlockLegacy = await buildKnowledgeBlock(supabase, ctx.organizationId, activeAgent.id, messageContent);
+    if (knowledgeBlockLegacy) prompt += `${knowledgeBlockLegacy}\n\n`;
     prompt += `---\n\n`;
   }
 
