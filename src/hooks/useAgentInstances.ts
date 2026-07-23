@@ -135,7 +135,7 @@ export function useImportFlowAsInstance() {
   const { profile } = useAuth();
 
   return useMutation({
-    mutationFn: async (params: { flowId: string; aiAgentId: string; campaignId: string | null }) => {
+    mutationFn: async (params: { flowId: string; aiAgentId: string; campaignId: string | null; name: string }) => {
       if (!profile?.organization_id) throw new Error('Sem organização');
       let status: 'draft' | 'active' | 'paused' = 'draft';
       if (params.campaignId) {
@@ -145,6 +145,15 @@ export function useImportFlowAsInstance() {
           .eq('id', params.campaignId)
           .maybeSingle();
         status = campaign?.is_active ? 'active' : 'paused';
+      }
+      // O nome digitado vira a identidade própria da orquestração -- grava
+      // no fluxo (e na campanha, se houver) porque é isso que os cartões de
+      // orquestração exibem, nunca o nome do agente por trás (ver conversa
+      // com o usuário: "Perguntar um nome sempre").
+      const { error: flowError } = await supabase.from('flows').update({ name: params.name }).eq('id', params.flowId);
+      if (flowError) throw flowError;
+      if (params.campaignId) {
+        await supabase.from('campaigns').update({ name: params.name }).eq('id', params.campaignId);
       }
       const { error } = await (supabase as any).from('agent_instances').insert({
         organization_id: profile.organization_id,
@@ -158,8 +167,12 @@ export function useImportFlowAsInstance() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['agent-instances'] });
+      queryClient.invalidateQueries({ queryKey: ['agent-orchestrations'] });
+      queryClient.invalidateQueries({ queryKey: ['agent-usage-counts'] });
       queryClient.invalidateQueries({ queryKey: ['ai-agents'] });
-      toast({ title: 'Fluxo importado', description: 'Agora ele aparece como orquestração em "Meus agentes".' });
+      queryClient.invalidateQueries({ queryKey: ['flows'] });
+      queryClient.invalidateQueries({ queryKey: ['campaigns'] });
+      toast({ title: 'Fluxo importado', description: 'Agora ele aparece como sua própria orquestração em "Meus agentes".' });
     },
     onError: (error: any) => {
       toast({ title: 'Erro ao importar fluxo', description: error.message, variant: 'destructive' });

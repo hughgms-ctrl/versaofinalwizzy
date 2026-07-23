@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Loader2, AlertTriangle } from 'lucide-react';
@@ -35,6 +36,7 @@ export function ImportFlowDialog({ open, onOpenChange, onImported }: ImportFlowD
   const importFlow = useImportFlowAsInstance();
 
   const [flowId, setFlowId] = useState('');
+  const [name, setName] = useState('');
   const [detected, setDetected] = useState<DetectedAgent | 'checking' | 'none' | null>(null);
   const [campaigns, setCampaigns] = useState<{ id: string; name: string }[]>([]);
   const [campaignId, setCampaignId] = useState<string>('');
@@ -51,6 +53,7 @@ export function ImportFlowDialog({ open, onOpenChange, onImported }: ImportFlowD
 
   const reset = () => {
     setFlowId('');
+    setName('');
     setDetected(null);
     setCampaigns([]);
     setCampaignId('');
@@ -63,6 +66,7 @@ export function ImportFlowDialog({ open, onOpenChange, onImported }: ImportFlowD
     setCampaignId('');
 
     const flow = flows.find((f) => f.id === id);
+    setName(flow?.name || '');
     const aiNode = (flow?.nodes || []).find((n: any) => n.type === 'ai-handoff');
     if (!aiNode?.data?.agentId) {
       setDetected('none');
@@ -77,9 +81,9 @@ export function ImportFlowDialog({ open, onOpenChange, onImported }: ImportFlowD
   };
 
   const handleImport = () => {
-    if (!flowId || !detected || detected === 'checking' || detected === 'none') return;
+    if (!flowId || !name.trim() || !detected || detected === 'checking' || detected === 'none') return;
     importFlow.mutate(
-      { flowId, aiAgentId: detected.agentId, campaignId: campaignId || null },
+      { flowId, aiAgentId: detected.agentId, campaignId: campaignId || null, name: name.trim() },
       { onSuccess: () => { onOpenChange(false); onImported?.(); } },
     );
   };
@@ -111,6 +115,16 @@ export function ImportFlowDialog({ open, onOpenChange, onImported }: ImportFlowD
               <p className="text-xs text-muted-foreground">Todos os fluxos já estão vinculados a uma orquestração.</p>
             )}
           </div>
+
+          {flowId && (
+            <div className="space-y-2">
+              <Label>Nome da orquestração</Label>
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex.: Triagem - Carlos" />
+              <p className="text-xs text-muted-foreground">
+                É o nome que vai aparecer no cartão da orquestração -- o agente usado dentro dela mantém seu próprio nome e continua reaproveitável.
+              </p>
+            </div>
+          )}
 
           {detected === 'checking' && (
             <p className="text-xs text-muted-foreground flex items-center gap-1.5">
@@ -155,7 +169,7 @@ export function ImportFlowDialog({ open, onOpenChange, onImported }: ImportFlowD
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancelar</Button>
           <Button
-            disabled={!flowId || detected === 'checking' || detected === 'none' || !detected || importFlow.isPending}
+            disabled={!flowId || !name.trim() || detected === 'checking' || detected === 'none' || !detected || importFlow.isPending}
             onClick={handleImport}
           >
             Importar

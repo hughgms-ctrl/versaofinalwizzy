@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAIAgents, useCreateAIAgent, useUpdateAIAgent, AGENT_FUNCTION_ROLES } from '@/hooks/useAIAgents';
-import { useAgentInstances } from '@/hooks/useAgentInstances';
+import { useAgentOrchestrations, useAgentUsageCounts } from '@/hooks/useAgentOrchestrations';
 import { useAgentFolders, useCreateAgentFolder, useDeleteAgentFolder, useRenameAgentFolder, useMoveAgentToFolder } from '@/hooks/useAgentFolders';
 import { AgentListItem } from './AgentListItem';
+import { OrchestrationListItem } from './OrchestrationListItem';
 import { ApplyTemplateWizard } from './ApplyTemplateWizard';
 import { ImportFlowDialog } from './ImportFlowDialog';
 import { AgentPersonalityFields, EMPTY_PERSONALITY, type AgentPersonalityValue } from './AgentPersonalityFields';
@@ -16,6 +17,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
+import { matchesWorkspace } from '@/lib/workspaceMatch';
 import { AgentFolder } from '@/hooks/useAgentFolders';
 import { enforceEntryCreationLimit } from '@/lib/entryFlow';
 
@@ -23,8 +25,8 @@ export function AgentsTab() {
   const queryClient = useQueryClient();
   const { data: agents = [], isLoading } = useAIAgents();
   const { data: folders = [] } = useAgentFolders();
-  const { data: agentInstances = [] } = useAgentInstances();
-  const instanceIdByAgentId = new Map(agentInstances.map((i) => [i.ai_agent_id, i.id]));
+  const { data: orchestrations = [] } = useAgentOrchestrations();
+  const { data: usageCounts } = useAgentUsageCounts();
   const createAgent = useCreateAIAgent();
   const updateAgent = useUpdateAIAgent();
   const createFolder = useCreateAgentFolder();
@@ -48,11 +50,12 @@ export function AgentsTab() {
   const [editingFolder, setEditingFolder] = useState<AgentFolder | null>(null);
   const [showRenameDialog, setShowRenameDialog] = useState(false);
   const [editingInstanceId, setEditingInstanceId] = useState<string | null>(null);
-  // Separar "Agentes" (só prompt/persona, sem fluxo próprio) de "Orquestrações"
-  // (têm agent_instances -- fluxo+campanha por trás) -- ver conversa com o
-  // usuário. Em abas, não pastas: é uma distinção automática/estrutural (dá
-  // pra saber sozinho pelo instanceId), pastas continuam livres pro usuário
-  // organizar do jeito que quiser DENTRO de cada aba.
+  // "Agentes" e "Orquestrações" são entidades SEPARADAS agora (ver conversa
+  // com o usuário: "o agente simples fica quietinho lá... a orquestração vai
+  // aparecer separado") -- agentes são TODOS os ai_agents, incondicionalmente;
+  // orquestrações vêm de agent_instances, com nome/cartão próprios (nome do
+  // fluxo, não do agente). Este filtro só decide qual das duas listas (ou
+  // ambas) mostrar, não afeta mais os dados em si.
   const [kindFilter, setKindFilter] = useState<'all' | 'agent' | 'orchestration'>('all');
 
   const handleCreate = () => {
@@ -135,18 +138,18 @@ export function AgentsTab() {
     return !f.workspace_id || f.workspace_id === selectedWorkspaceId;
   });
 
-  const kindFilteredAgents = agents.filter((a) => {
-    if (kindFilter === 'all') return true;
-    const isOrchestration = instanceIdByAgentId.has(a.id);
-    return kindFilter === 'orchestration' ? isOrchestration : !isOrchestration;
-  });
-  const agentsInFolder = (folderId: string) => kindFilteredAgents.filter(a => (a as any).folder_id === folderId);
-  const agentsWithoutFolder = kindFilteredAgents.filter(a => {
+  const showAgents = kindFilter !== 'orchestration';
+  const showOrchestrations = kindFilter !== 'agent';
+
+  const agentsInFolder = (folderId: string) => agents.filter(a => (a as any).folder_id === folderId);
+  const agentsWithoutFolder = agents.filter(a => {
     const folderId = (a as any).folder_id;
     if (folderId) return false;
     if (!selectedWorkspaceId) return true;
     return !a.workspace_id || a.workspace_id === selectedWorkspaceId;
   });
+
+  const filteredOrchestrations = orchestrations.filter((o) => matchesWorkspace(selectedWorkspaceId, o.workspaceIds, o.workspaceId));
 
   const getWorkspaceName = (wsId: string | null) => {
     if (!wsId) return null;
@@ -346,7 +349,7 @@ export function AgentsTab() {
       </Dialog>
 
       {/* Folders - collapsed by default */}
-      {filteredFolders.map(folder => {
+      {showAgents && filteredFolders.map(folder => {
         const folderAgents = agentsInFolder(folder.id);
         const isExpanded = expandedFolders.has(folder.id);
         const wsName = getWorkspaceName(folder.workspace_id);
@@ -398,7 +401,7 @@ export function AgentsTab() {
             {isExpanded && (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3 pl-6">
                 {folderAgents.map(agent => (
-                  <AgentListItem key={agent.id} agent={agent} folders={folders} onMoveToFolder={handleMoveAgentToFolder} instanceId={instanceIdByAgentId.get(agent.id)} onEdit={setEditingInstanceId} />
+                  <AgentListItem key={agent.id} agent={agent} folders={folders} onMoveToFolder={handleMoveAgentToFolder} usageCount={usageCounts?.get(agent.id) || 0} />
                 ))}
                 {folderAgents.length === 0 && (
                   <p className="text-xs text-muted-foreground col-span-full py-2">Nenhum agente nesta pasta</p>
@@ -410,12 +413,26 @@ export function AgentsTab() {
       })}
 
       {/* Agents without folder */}
-      {agentsWithoutFolder.length > 0 && (
+      {showAgents && agentsWithoutFolder.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3">
           {agentsWithoutFolder.map(agent => (
-            <AgentListItem key={agent.id} agent={agent} folders={folders} onMoveToFolder={handleMoveAgentToFolder} instanceId={instanceIdByAgentId.get(agent.id)} onEdit={setEditingInstanceId} />
+            <AgentListItem key={agent.id} agent={agent} folders={folders} onMoveToFolder={handleMoveAgentToFolder} usageCount={usageCounts?.get(agent.id) || 0} />
           ))}
         </div>
+      )}
+
+      {/* Orchestrations - entidade própria, cartão e nome separados do agente
+          por trás (ver conversa com o usuário). Sem pastas por enquanto:
+          agent_instances não tem folder_id ainda. */}
+      {showOrchestrations && filteredOrchestrations.length > 0 && (
+        <div className={cn("grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3", showAgents && "mt-4")}>
+          {filteredOrchestrations.map(orchestration => (
+            <OrchestrationListItem key={orchestration.id} orchestration={orchestration} onEdit={setEditingInstanceId} />
+          ))}
+        </div>
+      )}
+      {showOrchestrations && !showAgents && filteredOrchestrations.length === 0 && (
+        <p className="text-xs text-muted-foreground py-2">Nenhuma orquestração ainda -- crie uma ou importe um fluxo existente.</p>
       )}
 
       <ApplyTemplateWizard
@@ -426,6 +443,8 @@ export function AgentsTab() {
         onApplied={() => {
           queryClient.invalidateQueries({ queryKey: ['ai-agents'] });
           queryClient.invalidateQueries({ queryKey: ['agent-instances'] });
+          queryClient.invalidateQueries({ queryKey: ['agent-orchestrations'] });
+          queryClient.invalidateQueries({ queryKey: ['agent-usage-counts'] });
           queryClient.invalidateQueries({ queryKey: ['campaigns'] });
           setOrchestrationWizardOpen(false);
         }}
@@ -437,6 +456,8 @@ export function AgentsTab() {
         onImported={() => {
           queryClient.invalidateQueries({ queryKey: ['ai-agents'] });
           queryClient.invalidateQueries({ queryKey: ['agent-instances'] });
+          queryClient.invalidateQueries({ queryKey: ['agent-orchestrations'] });
+          queryClient.invalidateQueries({ queryKey: ['agent-usage-counts'] });
         }}
       />
     </div>
