@@ -225,47 +225,71 @@ function parseFlowToSteps(nodes: any[], edges: any[]): StepDraft[] | null {
   };
 
   const steps: StepDraft[] = [];
-  let currentId: string | null = start.id;
   let guard = 0;
 
-  while (currentId) {
+  // `toProcessId` + `mode` juntos dizem o que fazer na próxima volta:
+  // 'lookahead' -- toProcessId é um nó JÁ empurrado como etapa; acha o nó
+  // seguinte pela ÚNICA aresta sem handle que sai dele (caminho linear normal).
+  // 'direct' -- toProcessId JÁ É o próprio nó seguinte, resolvido direto por
+  // resolveBranch (resultado de agente / saída de "Iniciar Fluxo") -- processa
+  // ELE agora, não procura mais uma aresta pra "achar" ele.
+  //
+  // Bug corrigido aqui: antes, depois de uma ramificação (resultado de agente
+  // ou saída de Iniciar Fluxo), o código reusava sempre o modo 'lookahead' --
+  // então se o nó resolvido fosse o ÚLTIMO da cadeia (sem nenhuma aresta
+  // saindo dele), o loop tentava achar "o que vem depois DELE" antes de
+  // sequer empurrá-lo como etapa, e ele sumia da lista silenciosamente (ex.:
+  // um 2º agente encadeado que não tem mais nada depois).
+  let toProcessId: string | null = start.id;
+  let mode: 'lookahead' | 'direct' = 'lookahead';
+
+  while (toProcessId) {
     guard++;
     if (guard > 200) return null;
-    const outs = edgesFrom(currentId);
-    if (outs.length === 0) break;
-    if (outs.length > 1) return null;
-    const edge = outs[0];
-    if (edge.sourceHandle) return null;
-    const node = nodeById.get(edge.target);
+
+    let node: any;
+    if (mode === 'lookahead') {
+      const outs = edgesFrom(toProcessId);
+      if (outs.length === 0) break;
+      if (outs.length > 1) return null;
+      const edge = outs[0];
+      if (edge.sourceHandle) return null;
+      node = nodeById.get(edge.target);
+    } else {
+      node = nodeById.get(toProcessId);
+    }
     if (!node) return null;
+
+    let next: string | null;
+    let nextMode: 'lookahead' | 'direct' = 'lookahead';
 
     if (node.type === 'action-tag') {
       const step = makeEmptyStep('tag');
       step.tagId = node.data?.tagId || '';
       steps.push(step);
-      currentId = node.id;
+      next = node.id;
     } else if (node.type === 'action-pipeline') {
       const step = makeEmptyStep('pipeline');
       step.pipeline = { pipelineId: node.data?.pipelineId || '', columnId: node.data?.pipelineColumnId || '' };
       steps.push(step);
-      currentId = node.id;
+      next = node.id;
     } else if (node.type === 'action-transfer') {
       steps.push(makeEmptyStep('transfer'));
-      currentId = node.id;
+      next = node.id;
     } else if (node.type === 'action-delay') {
       const step = makeEmptyStep('delay');
       const { delayAmount, delayUnit } = secondsToAmountUnit(node.data?.delaySeconds || 60);
       step.delayAmount = delayAmount;
       step.delayUnit = delayUnit;
       steps.push(step);
-      currentId = node.id;
+      next = node.id;
     } else if (node.type === 'action-flow') {
       const step = makeEmptyStep('flow');
       step.flowId = node.data?.flowId || '';
       step.waitForResponse = !!node.data?.waitForResponse;
       if (!step.waitForResponse) {
         steps.push(step);
-        currentId = node.id;
+        next = node.id;
       } else {
         step.remarketingSteps = (node.data?.remarketingSteps || []).map((r: any) => ({ key: newDraftKey(), message: r.message || '', delayMinutes: r.delayMinutes || 10 }));
         step.remarketingContext = node.data?.remarketingContext || '';
@@ -279,8 +303,8 @@ function parseFlowToSteps(nodes: any[], edges: any[]): StepDraft[] | null {
         steps.push(step);
 
         if (responded.next !== timeout.next) return null;
-        currentId = responded.next;
-        continue;
+        next = responded.next;
+        nextMode = 'direct';
       }
     } else if (node.type === 'ai-handoff') {
       const step = makeEmptyStep('agent');
@@ -299,7 +323,7 @@ function parseFlowToSteps(nodes: any[], edges: any[]): StepDraft[] | null {
 
       if (outcomes.length === 0) {
         steps.push(step);
-        currentId = node.id;
+        next = node.id;
       } else {
         const routing: Record<string, OutcomeRoutingDraft> = {};
         let nextId: string | null | undefined;
@@ -316,12 +340,15 @@ function parseFlowToSteps(nodes: any[], edges: any[]): StepDraft[] | null {
         if (diverged) return null;
         step.outcomeRouting = routing;
         steps.push(step);
-        currentId = nextId === undefined ? null : nextId;
-        continue;
+        next = nextId === undefined ? null : nextId;
+        nextMode = 'direct';
       }
     } else {
       return null;
     }
+
+    toProcessId = next;
+    mode = nextMode;
   }
 
   return steps;
@@ -1065,7 +1092,7 @@ export function ApplyTemplateWizard({ open, onOpenChange, template, onApplied, e
             </div>
             <DialogFooter>
               <Button variant="ghost" onClick={() => onOpenChange(false)}>Fechar</Button>
-              <Button onClick={() => { onOpenChange(false); if (editFlowId) navigate(`/flows/${editFlowId}`); }}>
+              <Button onClick={() => { onOpenChange(false); if (editFlowId) navigate(`/flow-builder?id=${editFlowId}`); }}>
                 Abrir no Flow Builder
               </Button>
             </DialogFooter>
