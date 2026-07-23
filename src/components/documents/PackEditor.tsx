@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
-import { ArrowLeft, Save, Link2, GripVertical, Pencil, Info, Sparkles, Loader2, MessageCircle, FileText } from 'lucide-react';
+import { ArrowLeft, Save, Link2, GripVertical, Pencil, Info, Sparkles, Loader2, MessageCircle, FileText, X, Combine } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -65,6 +65,7 @@ export function PackEditor({ pack, onBack }: PackEditorProps) {
   );
   const [expandedField, setExpandedField] = useState<string | null>(null);
   const [isUnifying, setIsUnifying] = useState(false);
+  const [selectedForMerge, setSelectedForMerge] = useState<Set<string>>(new Set());
   const [autoSendWhatsApp, setAutoSendWhatsApp] = useState((pack as any)?.auto_send_whatsapp || false);
   const [defaultSigners, setDefaultSigners] = useState<SignerInput[]>(
     ((pack as any)?.default_signers as SignerInput[]) || []
@@ -226,6 +227,96 @@ export function PackEditor({ pack, onBack }: PackEditorProps) {
     }
   };
 
+  const toggleMergeSelection = (originalName: string) => {
+    setSelectedForMerge(prev => {
+      const next = new Set(prev);
+      if (next.has(originalName)) next.delete(originalName);
+      else next.add(originalName);
+      return next;
+    });
+  };
+
+  const toPackFieldConfig = (f: (typeof mergedFields)[number]): PackFieldConfig => ({
+    originalName: f.originalName,
+    label: f.label,
+    description: f.description,
+    type: f.type,
+    required: f.required,
+    sourceTemplateIds: f.sourceTemplateIds,
+    mappedFields: f.mappedFields || [],
+  });
+
+  const handleManualMerge = () => {
+    const selected = mergedFields.filter(f => selectedForMerge.has(f.originalName));
+    if (selected.length < 2) return;
+
+    // Campos que coexistem no mesmo documento não podem virar um único campo:
+    // cada um precisa do próprio valor dentro daquele documento.
+    for (let i = 0; i < selected.length; i++) {
+      for (let j = i + 1; j < selected.length; j++) {
+        const overlap = selected[i].sourceTemplateIds.some(id => selected[j].sourceTemplateIds.includes(id));
+        if (overlap) {
+          toast({
+            title: 'Não é possível mesclar',
+            description: `"${selected[i].label}" e "${selected[j].label}" aparecem no mesmo documento — não podem representar a mesma informação.`,
+            variant: 'destructive',
+          });
+          return;
+        }
+      }
+    }
+
+    const mappedFields = selected.flatMap(f =>
+      f.mappedFields && f.mappedFields.length > 0
+        ? f.mappedFields
+        : [...new Set(f.sourceTemplateIds)].map(templateId => ({ fieldName: f.originalName, templateId }))
+    );
+
+    const primary = selected[0];
+    const merged: PackFieldConfig = {
+      originalName: primary.originalName,
+      label: primary.label,
+      description: primary.description,
+      type: primary.type,
+      required: true,
+      sourceTemplateIds: [...new Set(mappedFields.map(mf => mf.templateId))],
+      mappedFields,
+    };
+
+    const untouched = mergedFields.filter(f => !selectedForMerge.has(f.originalName)).map(toPackFieldConfig);
+    setFieldConfigs([...untouched, merged]);
+    setSelectedForMerge(new Set());
+    toast({ title: 'Campos mesclados', description: `${selected.length} campos agora são um só no formulário.` });
+  };
+
+  const handleRemoveMapping = (parentOriginalName: string, mapping: { fieldName: string; templateId: string }) => {
+    const base = mergedFields.map(toPackFieldConfig);
+    const idx = base.findIndex(c => c.originalName === parentOriginalName);
+    if (idx === -1) return;
+
+    const parent = base[idx];
+    const remaining = (parent.mappedFields || []).filter(
+      mf => !(mf.fieldName === mapping.fieldName && mf.templateId === mapping.templateId)
+    );
+
+    const next = [...base];
+    if (remaining.length === 0) {
+      next.splice(idx, 1);
+    } else {
+      next[idx] = { ...parent, mappedFields: remaining, sourceTemplateIds: [...new Set(remaining.map(mf => mf.templateId))] };
+    }
+    next.push({
+      originalName: mapping.fieldName,
+      label: mapping.fieldName,
+      description: '',
+      type: 'text',
+      required: true,
+      sourceTemplateIds: [mapping.templateId],
+      mappedFields: [mapping],
+    });
+    setFieldConfigs(next);
+  };
+
   const handleSave = () => {
     if (!name.trim() || selectedIds.length === 0) return;
 
@@ -373,25 +464,46 @@ export function PackEditor({ pack, onBack }: PackEditorProps) {
         {/* Field Configuration Panel */}
         {selectedIds.length >= 1 && (
           <div className="lg:col-span-3">
-            <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
               <Label>Configuração dos campos ({mergedFields.length})</Label>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleAIUnify}
-                disabled={isUnifying || selectedIds.length < 1}
-                className="gap-1.5 text-xs"
-              >
-                {isUnifying ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Sparkles className="h-3.5 w-3.5" />
+              <div className="flex items-center gap-2">
+                {selectedForMerge.size > 0 && (
+                  <>
+                    <span className="text-xs text-muted-foreground">{selectedForMerge.size} selecionado(s)</span>
+                    <Button size="sm" variant="ghost" className="text-xs" onClick={() => setSelectedForMerge(new Set())}>
+                      Limpar
+                    </Button>
+                  </>
                 )}
-                {isUnifying ? 'Analisando...' : 'Unificar com IA'}
-              </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleManualMerge}
+                  disabled={selectedForMerge.size < 2}
+                  className="gap-1.5 text-xs"
+                >
+                  <Combine className="h-3.5 w-3.5" />
+                  Mesclar selecionados
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleAIUnify}
+                  disabled={isUnifying || selectedIds.length < 1}
+                  className="gap-1.5 text-xs"
+                >
+                  {isUnifying ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-3.5 w-3.5" />
+                  )}
+                  {isUnifying ? 'Analisando...' : 'Unificar com IA'}
+                </Button>
+              </div>
             </div>
             <p className="text-xs text-muted-foreground mt-1 mb-3">
-              A IA analisa os campos de todos os templates e unifica automaticamente campos similares para que o cliente preencha uma única vez.
+              Marque os campos que representam a mesma informação e clique em "Mesclar selecionados" para que o
+              cliente preencha uma única vez, ou use a IA para sugerir isso automaticamente.
             </p>
 
             {mergedFields.length > 0 ? (
@@ -418,6 +530,9 @@ export function PackEditor({ pack, onBack }: PackEditorProps) {
                             )}
                             onUpdate={(updates) => updateFieldConfig(field.originalName, updates)}
                             templates={templates || []}
+                            isSelectedForMerge={selectedForMerge.has(field.originalName)}
+                            onToggleMergeSelect={() => toggleMergeSelection(field.originalName)}
+                            onRemoveMapping={(mapping) => handleRemoveMapping(field.originalName, mapping)}
                           />
                         ))}
                       </SortableContext>
@@ -440,6 +555,9 @@ export function PackEditor({ pack, onBack }: PackEditorProps) {
                             )}
                             onUpdate={(updates) => updateFieldConfig(field.originalName, updates)}
                             templates={templates || []}
+                            isSelectedForMerge={selectedForMerge.has(field.originalName)}
+                            onToggleMergeSelect={() => toggleMergeSelection(field.originalName)}
+                            onRemoveMapping={(mapping) => handleRemoveMapping(field.originalName, mapping)}
                           />
                         ))}
                       </SortableContext>
@@ -473,6 +591,9 @@ type FieldConfigCardProps = {
   onUpdate: (updates: Partial<PackFieldConfig>) => void;
   templates: any[];
   dragHandleProps?: Record<string, any>;
+  isSelectedForMerge: boolean;
+  onToggleMergeSelect: () => void;
+  onRemoveMapping: (mapping: { fieldName: string; templateId: string }) => void;
 };
 
 function SortableFieldConfigCard(props: Omit<FieldConfigCardProps, 'dragHandleProps'>) {
@@ -506,16 +627,25 @@ function FieldConfigCard({
   onUpdate,
   templates,
   dragHandleProps,
+  isSelectedForMerge,
+  onToggleMergeSelect,
+  onRemoveMapping,
 }: FieldConfigCardProps) {
   const hasMappings = field.mappedFields && field.mappedFields.length > 1;
 
   return (
     <Collapsible open={isExpanded} onOpenChange={onToggle}>
-      <Card className="p-0 overflow-hidden">
+      <Card className={`p-0 overflow-hidden ${isSelectedForMerge ? 'border-primary ring-1 ring-primary' : ''}`}>
         <CollapsibleTrigger className="w-full p-3 flex items-center gap-2 hover:bg-muted/50 transition-colors text-left">
           <div {...dragHandleProps} className="cursor-grab active:cursor-grabbing" onClick={e => e.stopPropagation()}>
             <GripVertical className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
           </div>
+          <Checkbox
+            checked={isSelectedForMerge}
+            onCheckedChange={() => onToggleMergeSelect()}
+            onClick={e => e.stopPropagation()}
+            className="shrink-0"
+          />
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
               <span className="text-sm font-medium truncate">{field.label}</span>
@@ -589,20 +719,28 @@ function FieldConfigCard({
               </div>
             </div>
 
-            {/* Show AI-mapped fields */}
+            {/* Show combined fields (via IA ou mesclagem manual) */}
             {hasMappings && (
               <div className="p-2 rounded bg-primary/5 space-y-1">
                 <div className="flex items-center gap-1.5 text-xs text-primary font-medium">
-                  <Sparkles className="h-3 w-3" />
-                  Campos unificados pela IA
+                  <Combine className="h-3 w-3" />
+                  Campos combinados neste
                 </div>
                 {field.mappedFields!.map((mf, i) => {
                   const tpl = templates.find(t => t.id === mf.templateId);
                   return (
-                    <div key={i} className="text-[11px] text-muted-foreground flex items-center gap-1">
+                    <div key={i} className="text-[11px] text-muted-foreground flex items-center gap-1 group">
                       <code className="bg-muted px-1 rounded">{mf.fieldName}</code>
                       <span>→</span>
-                      <span>{tpl?.name || mf.templateId}</span>
+                      <span className="flex-1">{tpl?.name || mf.templateId}</span>
+                      <button
+                        type="button"
+                        title="Desfazer — voltar a ser um campo separado"
+                        className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+                        onClick={() => onRemoveMapping(mf)}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
                     </div>
                   );
                 })}
