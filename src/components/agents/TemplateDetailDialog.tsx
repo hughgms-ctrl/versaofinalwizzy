@@ -167,10 +167,6 @@ export function TemplateDetailDialog({ templateId, open, onOpenChange, onApply }
                 );
               })}
             </div>
-
-            <p className="text-[11px] text-muted-foreground">
-              Funil de conversão por etapa e o testador em massa chegam numa próxima fase.
-            </p>
           </div>
         )}
 
