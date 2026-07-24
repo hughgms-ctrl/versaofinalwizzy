@@ -46,6 +46,7 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { useToast } from '@/hooks/use-toast';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
+import { matchesWorkspace as matchesWorkspaceShared } from '@/lib/workspaceMatch';
 import { cn } from '@/lib/utils';
 
 export function TemplatesList({ onGeneratedForSignature }: { onGeneratedForSignature?: (docId: string) => void } = {}) {
@@ -80,10 +81,7 @@ export function TemplatesList({ onGeneratedForSignature }: { onGeneratedForSigna
     toast({ title: 'Link copiado!', description: 'O link do formulário foi copiado para a área de transferência.' });
   };
 
-  const matchesWorkspace = (wsId: string | null | undefined) => {
-    if (!selectedWorkspaceId) return true;
-    return wsId === selectedWorkspaceId;
-  };
+  const matchesWorkspace = (wsId: string | null | undefined) => matchesWorkspaceShared(selectedWorkspaceId, undefined, wsId);
 
   const filtered = templates?.filter(t => {
     if (!matchesWorkspace(t.workspace_id)) return false;

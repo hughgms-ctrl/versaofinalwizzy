@@ -31,6 +31,7 @@ import {
 import { useFlows } from "@/hooks/useFlows";
 import { useFlowFolders } from "@/hooks/useFlowFolders";
 import { useWorkspaces } from "@/hooks/useWorkspaces";
+import { useWorkspaceContext } from "@/contexts/WorkspaceContext";
 import { useTags } from "@/hooks/useTags";
 import { enforceEntryCreationLimit } from "@/lib/entryFlow";
 
@@ -66,6 +67,7 @@ export function CampaignDialog({
     const { data: campaigns = [] } = useCampaigns();
     const { data: flowFolders = [] } = useFlowFolders();
     const { data: workspaces = [] } = useWorkspaces();
+    const { selectedWorkspaceId } = useWorkspaceContext();
     const { data: tags = [] } = useTags();
 
     useEffect(() => {
@@ -92,10 +94,10 @@ export function CampaignDialog({
             setMatchType("exact");
             setFlowId("");
             setTriggerType("keyword");
-            setWorkspaceId("");
+            setWorkspaceId(selectedWorkspaceId && workspaces.some(w => w.id === selectedWorkspaceId) ? selectedWorkspaceId : "");
             setWebhookToken("");
         }
-    }, [campaignToEdit, open, flows]);
+    }, [campaignToEdit, open, flows, selectedWorkspaceId, workspaces]);
 
     const webhookUrl = webhookToken
         ? `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/campaign-webhook/${webhookToken}`

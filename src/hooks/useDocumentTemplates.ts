@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
+import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 
 export interface DocumentTemplate {
   id: string;
@@ -48,6 +49,7 @@ export function useCreateDocumentTemplate() {
   const queryClient = useQueryClient();
   const { profile } = useAuth();
   const { toast } = useToast();
+  const { selectedWorkspaceId } = useWorkspaceContext();
 
   return useMutation({
     mutationFn: async (template: {
@@ -60,10 +62,12 @@ export function useCreateDocumentTemplate() {
       fields: any[];
       original_file_url?: string;
       auto_send_whatsapp?: boolean;
+      workspace_id?: string | null;
     }) => {
       const { data, error } = await (supabase as any)
         .from('document_templates')
         .insert({
+          workspace_id: selectedWorkspaceId,
           ...template,
           organization_id: profile!.organization_id,
           created_by: profile!.id,

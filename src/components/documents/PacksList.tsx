@@ -56,6 +56,7 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from 'sonner';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
+import { matchesWorkspace as matchesWorkspaceShared } from '@/lib/workspaceMatch';
 import { cn } from '@/lib/utils';
 
 export function PacksList({ onGeneratedForSignature }: { onGeneratedForSignature?: (docId: string) => void } = {}) {
@@ -84,10 +85,7 @@ export function PacksList({ onGeneratedForSignature }: { onGeneratedForSignature
   const [folderWorkspaceId, setFolderWorkspaceId] = useState<string | null>(null);
   const [editingFolder, setEditingFolder] = useState<DocumentFolder | null>(null);
 
-  const matchesWorkspace = (wsId: string | null | undefined) => {
-    if (!selectedWorkspaceId) return true;
-    return wsId === selectedWorkspaceId;
-  };
+  const matchesWorkspace = (wsId: string | null | undefined) => matchesWorkspaceShared(selectedWorkspaceId, undefined, wsId);
 
   const filtered = packs?.filter(p => {
     if (!matchesWorkspace(p.workspace_id)) return false;

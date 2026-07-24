@@ -1282,7 +1282,7 @@ interface ApplyTemplateWizardProps {
 export function ApplyTemplateWizard({ open, onOpenChange, template, onApplied, editInstanceId }: ApplyTemplateWizardProps) {
   const { toast } = useToast();
   const navigate = useNavigate();
-  const { availableWorkspaces, selectedOrganizationId: organizationId } = useWorkspaceContext();
+  const { availableWorkspaces, selectedOrganizationId: organizationId, selectedWorkspaceId } = useWorkspaceContext();
   const { data: tags = [] } = useTags();
   const { data: pipelinesWithColumns = [] } = useAllPipelineColumns();
   const { data: existingAgents = [] } = useAIAgents();
@@ -1339,6 +1339,9 @@ export function ApplyTemplateWizard({ open, onOpenChange, template, onApplied, e
   const goToStepsViaWorkspace = () => {
     if (availableWorkspaces.length > 1) {
       setStep('workspace');
+      setWorkspaceId(
+        selectedWorkspaceId && availableWorkspaces.some((w) => w.id === selectedWorkspaceId) ? selectedWorkspaceId : ''
+      );
     } else {
       setWorkspaceId(availableWorkspaces[0]?.id || '');
       setStep('steps');
@@ -1363,7 +1366,11 @@ export function ApplyTemplateWizard({ open, onOpenChange, template, onApplied, e
     setOrchestrationName('');
     setStepDrafts([]);
     setSharedEndings([]);
-    setWorkspaceId(availableWorkspaces.length === 1 ? availableWorkspaces[0].id : '');
+    setWorkspaceId(
+      availableWorkspaces.length === 1
+        ? availableWorkspaces[0].id
+        : (selectedWorkspaceId && availableWorkspaces.some((w) => w.id === selectedWorkspaceId) ? selectedWorkspaceId : '')
+    );
     setInstanceId(null);
     setCampaignId(null);
     setTriggerKeyword('');
