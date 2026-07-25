@@ -58,6 +58,7 @@ const NotFound = lazy(() => import("./pages/NotFound"));
 const CampaignsPage = lazy(() => import("./pages/CampaignsPage"));
 const CalendarPage = lazy(() => import("./pages/CalendarPage"));
 const LandingPage = lazy(() => import("./pages/LandingPage"));
+const LandingPageV2 = lazy(() => import("./pages/LandingPageV2"));
 const CheckoutNoticePage = lazy(() => import("./pages/CheckoutNoticePage"));
 const PlansPage = lazy(() => import("./pages/PlansPage"));
 const SubscriptionPage = lazy(() => import("./pages/SubscriptionPage"));
@@ -103,6 +104,7 @@ const App = () => (
                   <Suspense fallback={<RouteLoader />}>
                     <Routes>
                       <Route path="/landing" element={<LandingPage />} />
+                      <Route path="/landing-v2" element={<LandingPageV2 />} />
                       <Route path="/auth" element={<AuthPage />} />
                       <Route path="/" element={<LandingPage />} />
                       <Route path="/dashboard" element={<ProtectedRoute><Index /></ProtectedRoute>} />

@@ -210,6 +210,9 @@ verify_jwt = false
 [functions.carousel-enhance-field]
 verify_jwt = false
 
+[functions.carousel-extract-source]
+verify_jwt = false
+
 [functions.instagram-oauth-start]
 verify_jwt = false
 

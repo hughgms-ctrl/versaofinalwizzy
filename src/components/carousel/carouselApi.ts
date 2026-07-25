@@ -2,7 +2,7 @@
 // Tabelas via Supabase (RLS por organização) + IA via Edge Functions.
 import { supabase } from "@/integrations/supabase/client";
 import { rowToCarousel, rowToModel, rowToSlide, slidePatchToRow } from "./mappers";
-import type { Carousel, CarouselModel, Slide, TrendingIdea, VisualStyle } from "./types";
+import type { Carousel, CarouselModel, CarouselSourceType, Slide, TrendingIdea, VisualStyle } from "./types";
 
 /* ----------------------------- Modelos ----------------------------- */
 
@@ -135,6 +135,10 @@ export interface GeneratePayload {
   slides: { order: number; hasImage: boolean }[];
   /** Ideia de CTA opcional para o último slide (crua; a IA melhora). */
   ctaIdea?: string;
+  /** Fonte do carrossel: ideia livre, texto colado, link de artigo ou vídeo do YouTube. */
+  sourceType?: CarouselSourceType;
+  /** Material de origem (quando sourceType != "idea") usado como base real da geração. */
+  sourceContent?: string;
 }
 
 export async function generateCarousel(
@@ -180,6 +184,17 @@ export async function enhanceModelField(
   });
   if (error) throw error;
   return (data as { value: string }).value ?? value;
+}
+
+export async function extractSource(
+  type: Extract<CarouselSourceType, "link" | "youtube">,
+  value: string,
+): Promise<{ title: string; content: string }> {
+  const { data, error } = await supabase.functions.invoke("carousel-extract-source", {
+    body: { type, value },
+  });
+  if (error) throw error;
+  return data as { title: string; content: string };
 }
 
 export async function fetchTrending(niche: string): Promise<TrendingIdea[]> {

@@ -173,6 +173,21 @@ export interface GenerateTextsParams {
   audience: string;
   /** Ideia de CTA do usuário (opcional, pode vir crua) para o último slide. */
   ctaIdea?: string | null;
+  /** Material de origem (texto colado, artigo ou transcrição de vídeo) — quando presente, os slides são extraídos DESSE conteúdo em vez de criados do zero a partir do tema. */
+  sourceContent?: string | null;
+}
+
+// Trunca o material de origem pra caber num prompt razoável sem estourar tokens.
+const MAX_SOURCE_CHARS = 12000;
+
+function sourceContentInstruction(sourceContent: string): string {
+  return (
+    `MATERIAL DE ORIGEM (base real do conteúdo — extraia dali os pontos mais valiosos, ` +
+    `surpreendentes e específicos, e estruture em slides seguindo a estratégia acima; ` +
+    `NÃO invente fatos, dados ou exemplos que não estejam no material, mas pode reescrever ` +
+    `e resumir com sua própria voz; ignore ruído como menus, propaganda ou links relacionados ` +
+    `caso apareçam no meio do texto):\n"""\n${sourceContent.trim().slice(0, MAX_SOURCE_CHARS)}\n"""`
+  );
 }
 
 // Instrução compartilhada para o CTA quando o usuário forneceu uma ideia.
@@ -217,6 +232,7 @@ export async function generateSlideTexts(
     `Número de slides: ${p.slideCount}`,
     `Gere exatamente ${p.slideCount} slides numerados de 1 a ${p.slideCount}.`,
     "Siga a estratégia do objetivo e priorize substância real em cada slide — nada de frases bonitas e vazias.",
+    p.sourceContent?.trim() ? sourceContentInstruction(p.sourceContent) : "",
     p.ctaIdea?.trim() ? ctaIdeaInstruction(p.ctaIdea.trim()) : "",
   ].filter(Boolean).join("\n");
 

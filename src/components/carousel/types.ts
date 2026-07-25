@@ -14,6 +14,7 @@ export type Tone = "professional" | "casual" | "motivational" | "direct";
 export type PeopleInImages = "with" | "without" | "indifferent";
 export type OverlayPosition = "top" | "center" | "bottom" | "full";
 export type TextAlign = "left" | "center" | "right";
+export type CarouselSourceType = "idea" | "text" | "link" | "youtube";
 
 export interface CarouselModel {
   id: string;
@@ -64,6 +65,8 @@ export interface Carousel {
   audience: string | null;
   brandColor: string | null;
   peopleInImages: PeopleInImages | null;
+  sourceType: CarouselSourceType;
+  sourceContent: string | null;
   createdAt: string;
   slides: Slide[];
 }

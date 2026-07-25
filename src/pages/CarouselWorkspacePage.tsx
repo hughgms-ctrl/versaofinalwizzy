@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -13,10 +14,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { Rocket, Download, Search, Sparkles } from "lucide-react";
+import { Rocket, Download, Search, Sparkles, FileText, Link2, Youtube, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useCarousel, useCarouselModels } from "@/components/carousel/hooks";
-import { fetchTrending, generateCarousel } from "@/components/carousel/carouselApi";
+import { extractSource, fetchTrending, generateCarousel } from "@/components/carousel/carouselApi";
 import { SLIDE_COUNTS, VISUAL_STYLE_OPTIONS, ensureCarouselFonts } from "@/components/carousel/constants";
 import { downloadCarouselZip } from "@/components/carousel/renderSlide";
 import SlideCard from "@/components/carousel/SlideCard";
@@ -25,7 +26,15 @@ import TextEditor from "@/components/carousel/TextEditor";
 import CarouselProgressBar from "@/components/carousel/ProgressBar";
 import type { TrendingIdea, VisualStyle } from "@/components/carousel/types";
 
-type IdeaSource = "idea" | "trending";
+type IdeaSource = "idea" | "trending" | "text" | "link" | "youtube";
+
+const SOURCE_OPTIONS: { value: IdeaSource; label: string; icon: typeof Sparkles }[] = [
+  { value: "idea", label: "Minha ideia", icon: Sparkles },
+  { value: "trending", label: "Tendência", icon: Search },
+  { value: "text", label: "Colar texto", icon: FileText },
+  { value: "link", label: "Link da web", icon: Link2 },
+  { value: "youtube", label: "YouTube", icon: Youtube },
+];
 
 export default function CarouselWorkspacePage() {
   const { id } = useParams<{ id: string }>();
@@ -44,6 +53,11 @@ export default function CarouselWorkspacePage() {
   const [trending, setTrending] = useState<TrendingIdea[]>([]);
   const [trendingLoading, setTrendingLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [sourceUrl, setSourceUrl] = useState("");
+  const [sourceContent, setSourceContent] = useState("");
+  const [sourceTitle, setSourceTitle] = useState("");
+  const [extracting, setExtracting] = useState(false);
+  const [showExtractedPreview, setShowExtractedPreview] = useState(false);
 
   // ---- centro / direita ----
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -98,9 +112,44 @@ export default function CarouselWorkspacePage() {
     }
   };
 
+  const doExtractSource = async () => {
+    if (!sourceUrl.trim()) {
+      return toast.error(ideaSource === "youtube" ? "Cole o link do vídeo" : "Cole o link do artigo");
+    }
+    if (ideaSource !== "link" && ideaSource !== "youtube") return;
+    setExtracting(true);
+    try {
+      const { title, content } = await extractSource(ideaSource, sourceUrl.trim());
+      setSourceContent(content);
+      setSourceTitle(title);
+      if (!prompt.trim() && title) setPrompt(title);
+      setShowExtractedPreview(true);
+      toast.success("Conteúdo extraído com sucesso");
+    } catch (e) {
+      toast.error((e as Error).message ?? "Não foi possível extrair o conteúdo");
+    } finally {
+      setExtracting(false);
+    }
+  };
+
+  const usesSource = ideaSource === "text" || ideaSource === "link" || ideaSource === "youtube";
+
   const generate = async () => {
     if (!modelId) return toast.error("Selecione um modelo");
-    if (prompt.trim().length < 5) return toast.error("Descreva o tema do carrossel");
+    if (usesSource) {
+      if (sourceContent.trim().length < 30) {
+        return toast.error(
+          ideaSource === "text"
+            ? "Cole o texto que vai virar carrossel"
+            : "Extraia o conteúdo antes de gerar",
+        );
+      }
+    } else if (prompt.trim().length < 5) {
+      return toast.error("Descreva o tema do carrossel");
+    }
+
+    const finalPrompt = prompt.trim() || sourceContent.trim().slice(0, 60) || "Carrossel";
+
     setSubmitting(true);
     try {
       const slidesCfg = Array.from({ length: slideCount }, (_, i) => ({
@@ -109,11 +158,13 @@ export default function CarouselWorkspacePage() {
       }));
       const { carouselId } = await generateCarousel({
         modelId,
-        prompt: prompt.trim(),
+        prompt: finalPrompt,
         slideCount,
         imageStyle,
         slides: slidesCfg,
         ctaIdea: ctaIdea.trim() || undefined,
+        sourceType: ideaSource === "trending" ? "idea" : ideaSource,
+        sourceContent: usesSource ? sourceContent.trim() : undefined,
       });
       navigate(`/tools/carousel/${carouselId}`);
     } catch (e) {
@@ -186,32 +237,104 @@ export default function CarouselWorkspacePage() {
             {/* tema */}
             <div className="space-y-2">
               <Label className="text-xs text-muted-foreground">Tema</Label>
-              <div className="grid grid-cols-2 gap-2">
-                {(["idea", "trending"] as IdeaSource[]).map((s) => (
+              <div className="flex flex-wrap gap-1.5">
+                {SOURCE_OPTIONS.map((s) => (
                   <button
-                    key={s}
+                    key={s.value}
                     type="button"
-                    onClick={() => setIdeaSource(s)}
+                    onClick={() => setIdeaSource(s.value)}
                     className={cn(
-                      "rounded-md border px-2 py-1.5 text-xs transition",
-                      ideaSource === s
+                      "flex items-center gap-1.5 rounded-md border px-2 py-1.5 text-xs transition",
+                      ideaSource === s.value
                         ? "border-primary bg-primary/10 text-foreground"
                         : "border-border bg-background text-muted-foreground hover:border-muted-foreground",
                     )}
                   >
-                    {s === "idea" ? "Minha ideia" : "Buscar tendência"}
+                    <s.icon className="h-3.5 w-3.5" />
+                    {s.label}
                   </button>
                 ))}
               </div>
 
-              {ideaSource === "idea" ? (
+              {ideaSource === "text" && (
+                <div className="space-y-1.5">
+                  <Textarea
+                    value={sourceContent}
+                    onChange={(e) => setSourceContent(e.target.value)}
+                    rows={6}
+                    placeholder="Cole aqui um artigo, roteiro ou texto — a IA extrai os pontos mais fortes e transforma em carrossel."
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    {sourceContent.trim().length} caracteres colados.
+                  </p>
+                </div>
+              )}
+
+              {(ideaSource === "link" || ideaSource === "youtube") && (
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <Input
+                      value={sourceUrl}
+                      onChange={(e) => setSourceUrl(e.target.value)}
+                      placeholder={
+                        ideaSource === "youtube"
+                          ? "Cole o link do vídeo do YouTube"
+                          : "Cole o link do artigo"
+                      }
+                    />
+                    <Button type="button" variant="outline" onClick={doExtractSource} disabled={extracting}>
+                      {extracting ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : ideaSource === "youtube" ? (
+                        "Transcrever"
+                      ) : (
+                        "Extrair"
+                      )}
+                    </Button>
+                  </div>
+                  {sourceContent && (
+                    <div className="rounded-md border border-border bg-background p-2 text-[11px]">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="truncate font-medium text-foreground">
+                          {sourceTitle || "Conteúdo extraído"}
+                        </p>
+                        <button
+                          type="button"
+                          className="shrink-0 text-muted-foreground underline"
+                          onClick={() => setShowExtractedPreview((v) => !v)}
+                        >
+                          {showExtractedPreview ? "ocultar" : "ver texto"}
+                        </button>
+                      </div>
+                      {showExtractedPreview && (
+                        <p className="mt-1.5 max-h-32 overflow-y-auto whitespace-pre-wrap text-muted-foreground">
+                          {sourceContent.slice(0, 2000)}
+                          {sourceContent.length > 2000 ? "…" : ""}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {usesSource && (
+                <Input
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  placeholder="Título do carrossel (opcional — a IA sugere um)"
+                />
+              )}
+
+              {ideaSource === "idea" && (
                 <Textarea
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
                   rows={3}
                   placeholder="Ex: 5 erros que travam seu crescimento"
                 />
-              ) : (
+              )}
+
+              {ideaSource === "trending" && (
                 <div className="space-y-2">
                   <Button
                     type="button"

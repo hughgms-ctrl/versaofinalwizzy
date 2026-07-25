@@ -27,6 +27,9 @@ interface GenerateBody {
   slides: SlideFlag[];
   // ideia de CTA opcional (pode vir crua; a IA melhora e preserva a palavra-chave)
   ctaIdea?: string | null;
+  // fonte do carrossel: ideia livre, texto colado, link de artigo ou vídeo do YouTube
+  sourceType?: "idea" | "text" | "link" | "youtube";
+  sourceContent?: string | null;
   // briefing direto (quando não há modelId)
   niche?: string;
   objective?: string;
@@ -102,6 +105,8 @@ Deno.serve(async (req) => {
         brand_color: briefing.brandColor,
         people_in_images: briefing.peopleInImages,
         cta_idea: body.ctaIdea?.trim() || null,
+        source_type: body.sourceType ?? "idea",
+        source_content: body.sourceContent?.trim() || null,
       })
       .select()
       .single();
@@ -173,6 +178,7 @@ async function runGeneration(
       tone: briefing.tone,
       audience: briefing.audience,
       ctaIdea: body.ctaIdea,
+      sourceContent: body.sourceContent,
     });
 
     for (const slide of slides ?? []) {
