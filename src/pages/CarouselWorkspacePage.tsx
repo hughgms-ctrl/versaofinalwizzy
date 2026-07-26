@@ -21,6 +21,7 @@ import { useCarousel, useCarouselModels } from "@/components/carousel/hooks";
 import { extractSource, fetchTrending, generateCarousel, saveAsTemplate } from "@/components/carousel/carouselApi";
 import { SLIDE_COUNTS, ensureCarouselFonts } from "@/components/carousel/constants";
 import { downloadCarouselZip } from "@/components/carousel/renderSlide";
+import ChatPanel from "@/components/carousel/ChatPanel";
 import SlideCard from "@/components/carousel/SlideCard";
 import SlideGrid from "@/components/carousel/SlideGrid";
 import StyleGallery from "@/components/carousel/StyleGallery";
@@ -46,6 +47,7 @@ export default function CarouselWorkspacePage() {
 
   // ---- coluna esquerda (criação) ----
   const [modelId, setModelId] = useState("");
+  const [mode, setMode] = useState<"form" | "chat">("form");
   const [ideaSource, setIdeaSource] = useState<IdeaSource>("idea");
   const [prompt, setPrompt] = useState("");
   const [ctaIdea, setCtaIdea] = useState("");
@@ -220,13 +222,9 @@ export default function CarouselWorkspacePage() {
           <div className="space-y-3 p-4">
             <h2 className="text-sm font-semibold">Criar carrossel</h2>
 
-            <Accordion type="multiple" defaultValue={["modelo", "tema"]} className="space-y-2">
-            {/* modelo */}
-            <AccordionItem value="modelo" className="rounded-md border border-border px-3">
-              <AccordionTrigger className="py-2.5 text-xs text-muted-foreground hover:no-underline">
-                Projeto
-              </AccordionTrigger>
-              <AccordionContent className="pb-3">
+            {/* projeto — visível nos dois modos */}
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Projeto</Label>
               {modelsLoading ? (
                 <p className="text-xs text-muted-foreground">Carregando...</p>
               ) : models.length === 0 ? (
@@ -251,9 +249,45 @@ export default function CarouselWorkspacePage() {
                   </SelectContent>
                 </Select>
               )}
-              </AccordionContent>
-            </AccordionItem>
+            </div>
 
+            {/* alternância formulário / chat */}
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setMode("form")}
+                className={cn(
+                  "rounded-md border py-1.5 text-xs transition",
+                  mode === "form"
+                    ? "border-primary bg-primary/10 text-foreground"
+                    : "border-border bg-background text-muted-foreground hover:border-muted-foreground",
+                )}
+              >
+                Formulário
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode("chat")}
+                className={cn(
+                  "rounded-md border py-1.5 text-xs transition",
+                  mode === "chat"
+                    ? "border-primary bg-primary/10 text-foreground"
+                    : "border-border bg-background text-muted-foreground hover:border-muted-foreground",
+                )}
+              >
+                Chat
+              </button>
+            </div>
+
+            {mode === "chat" ? (
+              <ChatPanel
+                modelId={modelId}
+                carouselId={carousel?.id ?? null}
+                onCarouselChanged={(id) => navigate(`/tools/carousel/${id}`)}
+              />
+            ) : (
+            <>
+            <Accordion type="multiple" defaultValue={["tema"]} className="space-y-2">
             {/* tema */}
             <AccordionItem value="tema" className="rounded-md border border-border px-3">
               <AccordionTrigger className="py-2.5 text-xs text-muted-foreground hover:no-underline">
@@ -475,6 +509,8 @@ export default function CarouselWorkspacePage() {
               <Rocket className="mr-2 h-4 w-4" />
               {submitting ? "Iniciando..." : "Gerar carrossel"}
             </Button>
+            </>
+            )}
           </div>
         </aside>
 

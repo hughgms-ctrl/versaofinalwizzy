@@ -225,6 +225,9 @@ verify_jwt = false
 [functions.carousel-knowledge-process-file]
 verify_jwt = false
 
+[functions.carousel-chat]
+verify_jwt = false
+
 [functions.instagram-oauth-start]
 verify_jwt = false
 

@@ -404,6 +404,20 @@ export async function generateStyleSamples(force = false): Promise<Record<string
   return data.samples ?? {};
 }
 
+export interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+/** Modo chat: cria ou edita um carrossel via conversa (function calling no backend). */
+export async function chatWithCarousel(params: {
+  modelId: string;
+  carouselId: string | null;
+  messages: ChatMessage[];
+}): Promise<{ reply: string; carouselId?: string }> {
+  return invokeFn("carousel-chat", params);
+}
+
 export async function fetchTrending(niche: string, modelId?: string): Promise<TrendingIdea[]> {
   const data = await invokeFn<{ ideas: TrendingIdea[] }>("carousel-trending", { niche, modelId });
   return data.ideas ?? [];
