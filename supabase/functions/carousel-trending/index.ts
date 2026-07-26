@@ -2,7 +2,7 @@
 // carousel-trending — sugestões de tema em alta para um nicho (GPT-4o).
 // =====================================================================
 import { authenticateUser, errorResponse, handleCors, jsonResponse } from "../_shared/middleware.ts";
-import { getTrendingIdeas, resolveOpenAIKey } from "../_shared/carousel.ts";
+import { getTrendingIdeas, resolveCarouselModel, resolveOpenAIKey } from "../_shared/carousel.ts";
 
 Deno.serve(async (req) => {
   const pre = handleCors(req);
@@ -15,7 +15,8 @@ Deno.serve(async (req) => {
     if (!trimmed) return errorResponse("niche é obrigatório", 400);
 
     const apiKey = await resolveOpenAIKey(supabase, organizationId);
-    const ideas = await getTrendingIdeas(apiKey, trimmed, 8);
+    const model = await resolveCarouselModel();
+    const ideas = await getTrendingIdeas(apiKey, trimmed, 8, model);
     return jsonResponse({ ideas });
   } catch (err) {
     const status = (err as { status?: number })?.status ?? 500;

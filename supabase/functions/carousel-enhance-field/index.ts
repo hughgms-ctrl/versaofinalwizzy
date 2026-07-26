@@ -4,7 +4,7 @@
 // uma versão mais rica e específica, melhor para a geração dos carrosséis.
 // =====================================================================
 import { authenticateUser, errorResponse, handleCors, jsonResponse } from "../_shared/middleware.ts";
-import { enhanceModelField, resolveOpenAIKey, type EnhanceField } from "../_shared/carousel.ts";
+import { enhanceModelField, resolveCarouselModel, resolveOpenAIKey, type EnhanceField } from "../_shared/carousel.ts";
 
 interface Body {
   field: EnhanceField;
@@ -28,11 +28,12 @@ Deno.serve(async (req) => {
     }
 
     const apiKey = await resolveOpenAIKey(supabase, organizationId);
+    const model = await resolveCarouselModel();
     const improved = await enhanceModelField(apiKey, field, value.trim(), {
       niche,
       objective,
       tone,
-    });
+    }, model);
 
     return jsonResponse({ value: improved });
   } catch (err) {

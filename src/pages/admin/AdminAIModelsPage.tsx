@@ -46,6 +46,7 @@ const FEATURES: { value: AIModelFeature; label: string; description: string; sec
   { value: 'agent_tester_persona', label: 'Testador — Persona', description: 'Simula o cliente numa conversa de teste com o agente.', section: 'Testador de Agentes' },
   { value: 'agent_tester_evaluator', label: 'Testador — Avaliador', description: 'Analisa a transcrição simulada e sugere ajustes no agente.', section: 'Testador de Agentes' },
   { value: 'knowledge_base_embedding', label: 'Base de Conhecimento — Embedding', description: 'Indexa os arquivos enviados e busca os trechos relevantes pra cada pergunta.', section: 'Base de Conhecimento' },
+  { value: 'carousel', label: 'Carrossel IA', description: 'Geração de texto dos slides, análise de referência (visão) e sugestões de tendência.', section: 'Carrossel' },
 ];
 
 const DEFAULT_STRATEGY: AdminAIModelStrategy = {
@@ -65,6 +66,7 @@ const DEFAULT_STRATEGY: AdminAIModelStrategy = {
     agent_tester_persona: 'gpt-4o-mini',
     agent_tester_evaluator: 'gpt-4.1-mini',
     knowledge_base_embedding: 'text-embedding-3-small',
+    carousel: 'gpt-4o',
   },
 };
 
@@ -123,6 +125,7 @@ export function AdminAIModelsContent({ showHeader = true }: { showHeader?: boole
       agent_tester_persona: safeFeatureModel('agent_tester_persona'),
       agent_tester_evaluator: safeFeatureModel('agent_tester_evaluator'),
       knowledge_base_embedding: safeFeatureModel('knowledge_base_embedding'),
+      carousel: safeFeatureModel('carousel'),
     },
   });
 

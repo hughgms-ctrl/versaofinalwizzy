@@ -2,7 +2,7 @@
 // carousel-regenerate-text — regenera o texto (title/body) de um slide.
 // =====================================================================
 import { authenticateUser, errorResponse, handleCors, jsonResponse } from "../_shared/middleware.ts";
-import { regenerateSlideText, resolveOpenAIKey } from "../_shared/carousel.ts";
+import { regenerateSlideText, resolveCarouselModel, resolveOpenAIKey } from "../_shared/carousel.ts";
 
 interface Body {
   carouselId: string;
@@ -36,8 +36,10 @@ Deno.serve(async (req) => {
     if (!slide) return errorResponse("Slide não encontrado", 404);
 
     const apiKey = await resolveOpenAIKey(supabase, organizationId);
+    const model = await resolveCarouselModel();
     const { title, body } = await regenerateSlideText({
       apiKey,
+      model,
       prompt: carousel.prompt,
       niche: carousel.niche ?? "",
       objective: carousel.objective,

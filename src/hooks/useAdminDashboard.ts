@@ -184,7 +184,8 @@ export type AIModelFeature =
   | 'flow_ai'
   | 'agent_tester_persona'
   | 'agent_tester_evaluator'
-  | 'knowledge_base_embedding';
+  | 'knowledge_base_embedding'
+  | 'carousel';
 
 export interface AdminAIModelStrategy {
   default_model: string;

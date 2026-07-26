@@ -10,6 +10,7 @@ import {
   buildImagePrompt,
   generateImage,
   generateSlideTexts,
+  resolveCarouselModel,
   resolveOpenAIKey,
   uploadImage,
 } from "../_shared/carousel.ts";
@@ -169,8 +170,10 @@ async function runGeneration(
       .order("order", { ascending: true });
 
     // 1. Textos de todos os slides.
+    const model = await resolveCarouselModel();
     const texts = await generateSlideTexts({
       apiKey,
+      model,
       prompt: body.prompt,
       slideCount: body.slideCount,
       niche: briefing.niche,

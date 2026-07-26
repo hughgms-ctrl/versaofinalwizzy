@@ -1154,6 +1154,7 @@ Deno.serve(async (req) => {
           agent_tester_persona: 'gpt-4o-mini',
           agent_tester_evaluator: 'gpt-4.1-mini',
           knowledge_base_embedding: 'text-embedding-3-small',
+          carousel: 'gpt-4o',
         },
       }
 
@@ -1215,6 +1216,7 @@ Deno.serve(async (req) => {
         'agent_tester_persona',
         'agent_tester_evaluator',
         'knowledge_base_embedding',
+        'carousel',
       ]
       const defaultModel = String(body.default_model || 'gpt-4o-mini').trim()
       if (!textModels.includes(defaultModel)) throw new Error('Modelo padrão inválido')

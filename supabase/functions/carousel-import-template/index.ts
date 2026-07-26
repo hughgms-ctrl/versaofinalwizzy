@@ -18,6 +18,7 @@ import {
   buildImagePrompt,
   generateImage,
   generateSlideTextsFromReference,
+  resolveCarouselModel,
   resolveOpenAIKey,
   uploadImage,
 } from "../_shared/carousel.ts";
@@ -106,7 +107,8 @@ async function runImport(carouselId: string, images: string[], apiKey: string) {
     await service.from("carousels").update({ status: "processing" }).eq("id", carouselId);
 
     // 1. Análise por visão da referência (estrutura + estilo, nunca texto literal).
-    const ref = await analyzeCarouselReference(apiKey, images);
+    const model = await resolveCarouselModel();
+    const ref = await analyzeCarouselReference(apiKey, images, model);
 
     await service
       .from("carousels")
@@ -128,6 +130,7 @@ async function runImport(carouselId: string, images: string[], apiKey: string) {
     // 2. Textos — inspirados no tema/papel de cada slide, nunca copiados.
     const texts = await generateSlideTextsFromReference({
       apiKey,
+      model,
       niche: ref.inferredNiche,
       objective: ref.inferredObjective,
       tone: ref.inferredTone,

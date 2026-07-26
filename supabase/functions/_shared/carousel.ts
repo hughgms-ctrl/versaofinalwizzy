@@ -2,12 +2,31 @@
 // Carrossel IA — helpers compartilhados (Deno / Edge Functions)
 // Porte de backend/src/services/openai.service.ts, trending.service.ts e
 // storage.service.ts do projeto original. Sem SDK: tudo via fetch.
-// Texto: GPT-4o (chat/completions). Imagem: gpt-image-1 (images/generations).
+// Texto: modelo escolhido em Configurações de IA > Modelos (feature "carousel"),
+// com fallback pro default global. Imagem: gpt-image-1 (images/generations).
 // Storage: Supabase Storage (substitui o Cloudflare R2).
 // =====================================================================
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { getAIModelStrategy } from "./aiStrategy.ts";
 
 const OPENAI_CHAT = "https://api.openai.com/v1/chat/completions";
 const OPENAI_IMAGES = "https://api.openai.com/v1/images/generations";
+
+// Cliente service_role só pra ler platform_settings.ai_model_strategy — a
+// RLS dessa tabela não libera leitura pro client do usuário (só platform_admin).
+let serviceClientForStrategy: ReturnType<typeof createClient> | null = null;
+
+/** Modelo de chat configurado pelo admin pra feature "carousel" — cai pro default_model se não configurado. */
+export async function resolveCarouselModel(): Promise<string> {
+  if (!serviceClientForStrategy) {
+    serviceClientForStrategy = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    );
+  }
+  const strategy = await getAIModelStrategy(serviceClientForStrategy);
+  return strategy.features?.carousel || strategy.default_model || DEFAULT_CAROUSEL_MODEL;
+}
 
 export const STYLE_HINTS: Record<string, string> = {
   cinematic:
@@ -124,11 +143,16 @@ function parseJsonObject<T>(raw: string | null | undefined): T {
   return JSON.parse(json) as T;
 }
 
+// Modelo padrão quando o admin ainda não configurou "carrossel" em
+// Configurações de IA > Modelos — mesma chave usada em _shared/aiStrategy.ts.
+export const DEFAULT_CAROUSEL_MODEL = "gpt-4o";
+
 async function chatCompletion(
   apiKey: string,
   system: string,
   user: string,
   temperature: number,
+  model: string = DEFAULT_CAROUSEL_MODEL,
 ): Promise<string> {
   const res = await fetch(OPENAI_CHAT, {
     method: "POST",
@@ -137,7 +161,7 @@ async function chatCompletion(
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: "gpt-4o",
+      model,
       temperature,
       messages: [
         { role: "system", content: system },
@@ -162,6 +186,7 @@ async function chatCompletionVision(
   system: string,
   userContent: VisionContentPart[],
   temperature: number,
+  model: string = DEFAULT_CAROUSEL_MODEL,
 ): Promise<string> {
   const res = await fetch(OPENAI_CHAT, {
     method: "POST",
@@ -170,7 +195,7 @@ async function chatCompletionVision(
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: "gpt-4o",
+      model,
       temperature,
       messages: [
         { role: "system", content: system },
@@ -208,6 +233,7 @@ export interface GenerateTextsParams {
   ctaIdea?: string | null;
   /** Material de origem (texto colado, artigo ou transcrição de vídeo) — quando presente, os slides são extraídos DESSE conteúdo em vez de criados do zero a partir do tema. */
   sourceContent?: string | null;
+  model?: string;
 }
 
 // Teto de segurança (não um corte real) — o material de origem deve ser processado
@@ -292,6 +318,7 @@ const VALID_TONES = new Set(["professional", "casual", "motivational", "direct"]
 export async function analyzeCarouselReference(
   apiKey: string,
   images: string[],
+  model?: string,
 ): Promise<ReferenceAnalysis> {
   const system = [
     "Você analisa carrosséis de Instagram de referência pra extrair ESTRUTURA e ESTILO — NUNCA o texto exato nem a identidade de pessoas reais que apareçam nas imagens.",
@@ -314,7 +341,7 @@ export async function analyzeCarouselReference(
     ...images.map((url): VisionContentPart => ({ type: "image_url", image_url: { url } })),
   ];
 
-  const raw = await chatCompletionVision(apiKey, system, userContent, 0.4);
+  const raw = await chatCompletionVision(apiKey, system, userContent, 0.4, model);
   const parsed = parseJsonObject<Partial<ReferenceAnalysis>>(raw);
   const rawSlides = Array.isArray(parsed.slides) ? parsed.slides : [];
 
@@ -358,6 +385,7 @@ export interface GenerateFromReferenceParams {
   slideCount: number;
   slideBrief: { order: number; role: string; themeConcept: string }[];
   ctaIdea?: string | null;
+  model?: string;
 }
 
 export async function generateSlideTextsFromReference(
@@ -397,7 +425,7 @@ export async function generateSlideTextsFromReference(
     p.ctaIdea?.trim() ? ctaIdeaInstruction(p.ctaIdea.trim()) : "",
   ].filter(Boolean).join("\n");
 
-  const raw = await chatCompletion(p.apiKey, system, user, 0.85);
+  const raw = await chatCompletion(p.apiKey, system, user, 0.85, p.model);
   const parsed = parseJsonObject<SlideText[] | { slides?: SlideText[] }>(raw);
   const slides: SlideText[] = Array.isArray(parsed)
     ? parsed
@@ -452,7 +480,7 @@ export async function generateSlideTexts(
     p.ctaIdea?.trim() ? ctaIdeaInstruction(p.ctaIdea.trim()) : "",
   ].filter(Boolean).join("\n");
 
-  const raw = await chatCompletion(p.apiKey, system, user, 0.8);
+  const raw = await chatCompletion(p.apiKey, system, user, 0.8, p.model);
   const parsed = parseJsonObject<SlideText[] | { slides?: SlideText[] }>(raw);
   const slides: SlideText[] = Array.isArray(parsed)
     ? parsed
@@ -489,6 +517,7 @@ export interface RegenerateTextParams {
   instruction?: string;
   /** Ideia de CTA do usuário (opcional) — usada ao regenerar o último slide. */
   ctaIdea?: string | null;
+  model?: string;
 }
 
 export async function regenerateSlideText(
@@ -529,7 +558,7 @@ export async function regenerateSlideText(
       : "Melhore e reescreva mantendo o mesmo propósito do slide.",
   ].filter(Boolean).join("\n");
 
-  const raw = await chatCompletion(p.apiKey, system, user, 0.9);
+  const raw = await chatCompletion(p.apiKey, system, user, 0.9, p.model);
   const parsed = parseJsonObject<{ title?: string; body?: string }>(raw);
   return {
     title: parsed.title?.trim() ?? p.currentTitle ?? "",
@@ -576,6 +605,7 @@ export async function enhanceModelField(
   field: EnhanceField,
   value: string,
   ctx: EnhanceContext = {},
+  model?: string,
 ): Promise<string> {
   const g = ENHANCE_GUIDE[field];
   const system = g.role + " " + g.task + " " + g.example +
@@ -590,7 +620,7 @@ export async function enhanceModelField(
     ctx.tone ? `Tom: ${TONE_LABEL[ctx.tone] ?? ctx.tone}` : "",
   ].filter(Boolean).join("\n");
 
-  const raw = await chatCompletion(apiKey, system, user, 0.7);
+  const raw = await chatCompletion(apiKey, system, user, 0.7, model);
   // O modelo às vezes devolve com aspas ou quebras — normaliza para uma linha.
   return raw.trim().replace(/^["'`]+|["'`]+$/g, "").replace(/\s+/g, " ").trim();
 }
@@ -688,12 +718,13 @@ export async function getTrendingIdeas(
   apiKey: string,
   niche: string,
   count = 8,
+  model?: string,
 ): Promise<TrendingIdea[]> {
   const system =
     'Você é um estrategista de conteúdo para Instagram. Dado um nicho, sugira temas de carrossel com alto potencial de engajamento e relevância atual. Retorne APENAS um JSON com a chave "ideas" contendo um array de objetos { title, description } — title curto e chamativo, description em uma frase. Sem markdown.';
   const user = `Nicho: ${niche}\nGere ${count} sugestões de tema para carrossel.`;
 
-  const raw = await chatCompletion(apiKey, system, user, 0.9);
+  const raw = await chatCompletion(apiKey, system, user, 0.9, model);
   const parsed = parseJsonObject<{ ideas?: TrendingIdea[] }>(raw);
   const ideas = Array.isArray(parsed.ideas) ? parsed.ideas : [];
   return ideas
