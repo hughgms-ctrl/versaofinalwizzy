@@ -1,5 +1,6 @@
 import type {
   Objective,
+  OverlayPosition,
   PeopleInImages,
   TextAlign,
   Tone,
@@ -45,6 +46,77 @@ export const STYLE_PREVIEWS: Record<VisualStyle, string> = {
   illustration:
     "linear-gradient(135deg, #ff6b6b 0%, #ff6b6b 33%, #4ecdc4 33%, #4ecdc4 66%, #ffe66d 66%)",
 };
+
+/** Formato pré-pronto (biblioteca de formatos): preset de layout aplicado aos slides no lugar do padrão fixo. */
+export interface LayoutPreset {
+  id: string;
+  label: string;
+  hint: string;
+  textAlign: TextAlign;
+  overlayPosition: OverlayPosition;
+  overlayIntensity: number;
+  titleSize: number;
+  bodySize: number;
+  titleBold: boolean;
+}
+
+export const LAYOUT_PRESETS: LayoutPreset[] = [
+  {
+    id: "classic",
+    label: "Clássico",
+    hint: "Texto embaixo, alinhado à esquerda",
+    textAlign: "left",
+    overlayPosition: "bottom",
+    overlayIntensity: 0.85,
+    titleSize: 80,
+    bodySize: 36,
+    titleBold: true,
+  },
+  {
+    id: "headline",
+    label: "Manchete",
+    hint: "Texto grande, direto ao ponto",
+    textAlign: "left",
+    overlayPosition: "bottom",
+    overlayIntensity: 0.9,
+    titleSize: 100,
+    bodySize: 40,
+    titleBold: true,
+  },
+  {
+    id: "impact",
+    label: "Impacto Central",
+    hint: "Frase centralizada sobre a imagem toda",
+    textAlign: "center",
+    overlayPosition: "center",
+    overlayIntensity: 0.75,
+    titleSize: 96,
+    bodySize: 34,
+    titleBold: true,
+  },
+  {
+    id: "editorial",
+    label: "Editorial",
+    hint: "Texto no topo, tom mais leve",
+    textAlign: "left",
+    overlayPosition: "top",
+    overlayIntensity: 0.7,
+    titleSize: 64,
+    bodySize: 32,
+    titleBold: false,
+  },
+  {
+    id: "board",
+    label: "Quadro Cheio",
+    hint: "Camada escura cobrindo tudo, texto centralizado",
+    textAlign: "center",
+    overlayPosition: "full",
+    overlayIntensity: 0.55,
+    titleSize: 72,
+    bodySize: 34,
+    titleBold: true,
+  },
+];
 
 export const SLIDE_COUNTS = [5, 7, 10] as const;
 

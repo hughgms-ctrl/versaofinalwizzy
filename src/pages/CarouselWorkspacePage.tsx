@@ -18,8 +18,9 @@ import { Rocket, Download, Search, Sparkles, FileText, Link2, Youtube, Loader2 }
 import { toast } from "sonner";
 import { useCarousel, useCarouselModels } from "@/components/carousel/hooks";
 import { extractSource, fetchTrending, generateCarousel } from "@/components/carousel/carouselApi";
-import { SLIDE_COUNTS, VISUAL_STYLE_OPTIONS, ensureCarouselFonts } from "@/components/carousel/constants";
+import { LAYOUT_PRESETS, SLIDE_COUNTS, VISUAL_STYLE_OPTIONS, ensureCarouselFonts } from "@/components/carousel/constants";
 import { downloadCarouselZip } from "@/components/carousel/renderSlide";
+import LayoutPresetPreview from "@/components/carousel/LayoutPresetPreview";
 import SlideCard from "@/components/carousel/SlideCard";
 import SlideGrid from "@/components/carousel/SlideGrid";
 import StyleSwatch from "@/components/carousel/StyleSwatch";
@@ -49,6 +50,7 @@ export default function CarouselWorkspacePage() {
   const [prompt, setPrompt] = useState("");
   const [ctaIdea, setCtaIdea] = useState("");
   const [imageStyle, setImageStyle] = useState<VisualStyle>("cinematic");
+  const [formatId, setFormatId] = useState(LAYOUT_PRESETS[0].id);
   const [slideCount, setSlideCount] = useState<5 | 7 | 10>(5);
   const [withImage, setWithImage] = useState<Set<number>>(new Set([1]));
   const [trending, setTrending] = useState<TrendingIdea[]>([]);
@@ -150,6 +152,7 @@ export default function CarouselWorkspacePage() {
     }
 
     const finalPrompt = prompt.trim() || sourceContent.trim().slice(0, 60) || "Carrossel";
+    const format = LAYOUT_PRESETS.find((f) => f.id === formatId) ?? LAYOUT_PRESETS[0];
 
     setSubmitting(true);
     try {
@@ -166,6 +169,14 @@ export default function CarouselWorkspacePage() {
         ctaIdea: ctaIdea.trim() || undefined,
         sourceType: ideaSource === "trending" ? "idea" : ideaSource,
         sourceContent: usesSource ? sourceContent.trim() : undefined,
+        layout: {
+          textAlign: format.textAlign,
+          overlayPosition: format.overlayPosition,
+          overlayIntensity: format.overlayIntensity,
+          titleSize: format.titleSize,
+          bodySize: format.bodySize,
+          titleBold: format.titleBold,
+        },
       });
       navigate(`/tools/carousel/${carouselId}`);
     } catch (e) {
@@ -415,6 +426,30 @@ export default function CarouselWorkspacePage() {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+
+            {/* biblioteca de formatos */}
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Formato</Label>
+              <div className="grid grid-cols-3 gap-2">
+                {LAYOUT_PRESETS.map((f) => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    onClick={() => setFormatId(f.id)}
+                    title={f.hint}
+                    className={cn(
+                      "space-y-1 rounded-md border p-1 transition",
+                      formatId === f.id
+                        ? "border-primary bg-primary/10"
+                        : "border-border bg-background hover:border-muted-foreground",
+                    )}
+                  >
+                    <LayoutPresetPreview preset={f} className="aspect-square w-full" />
+                    <p className="truncate text-center text-[10px] text-muted-foreground">{f.label}</p>
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* número de slides */}

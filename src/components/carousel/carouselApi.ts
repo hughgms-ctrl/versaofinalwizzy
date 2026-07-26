@@ -139,6 +139,15 @@ export interface GeneratePayload {
   sourceType?: CarouselSourceType;
   /** Material de origem (quando sourceType != "idea") usado como base real da geração. */
   sourceContent?: string;
+  /** Formato pré-pronto escolhido na biblioteca de formatos (layout dos slides). */
+  layout?: {
+    textAlign: string;
+    overlayPosition: string;
+    overlayIntensity: number;
+    titleSize: number;
+    bodySize: number;
+    titleBold: boolean;
+  };
 }
 
 export async function generateCarousel(
