@@ -179,6 +179,9 @@ async function runImport(carouselId: string, images: string[], apiKey: string) {
     await service.from("carousels").update({ status: "done" }).eq("id", carouselId);
   } catch (err) {
     console.error(`[carousel-import-template] erro ao importar ${carouselId}:`, err);
-    await service.from("carousels").update({ status: "failed" }).eq("id", carouselId);
+    await service
+      .from("carousels")
+      .update({ status: "failed", error_message: (err as Error)?.message ?? "Erro desconhecido" })
+      .eq("id", carouselId);
   }
 }

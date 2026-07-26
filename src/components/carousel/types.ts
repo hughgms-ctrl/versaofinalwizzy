@@ -70,6 +70,7 @@ export interface Carousel {
   sourceContent: string | null;
   isTemplate: boolean;
   templateSource: TemplateSource | null;
+  errorMessage: string | null;
   createdAt: string;
   slides: Slide[];
 }

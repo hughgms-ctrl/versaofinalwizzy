@@ -564,8 +564,10 @@ export default function CarouselWorkspacePage() {
 
                 {carousel.status === "failed" && (
                   <div className="w-full rounded-xl border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
-                    A geração falhou. Verifique a chave da OpenAI em Configurações &gt;
-                    Integrações e tente novamente.
+                    <p className="font-medium">A geração falhou.</p>
+                    <p className="mt-1 text-xs opacity-90">
+                      {carousel.errorMessage || "Verifique a chave da OpenAI em Configurações > Integrações e tente novamente."}
+                    </p>
                   </div>
                 )}
 

@@ -77,6 +77,7 @@ export function rowToCarousel(r: any, slides: Slide[] = []): Carousel {
     sourceContent: r.source_content ?? null,
     isTemplate: r.is_template ?? false,
     templateSource: r.template_source ?? null,
+    errorMessage: r.error_message ?? null,
     createdAt: r.created_at,
     slides,
   };

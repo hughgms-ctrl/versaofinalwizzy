@@ -216,6 +216,9 @@ async function runGeneration(
     await service.from("carousels").update({ status: "done" }).eq("id", carouselId);
   } catch (err) {
     console.error(`[carousel-generate] erro ao gerar ${carouselId}:`, err);
-    await service.from("carousels").update({ status: "failed" }).eq("id", carouselId);
+    await service
+      .from("carousels")
+      .update({ status: "failed", error_message: (err as Error)?.message ?? "Erro desconhecido" })
+      .eq("id", carouselId);
   }
 }
