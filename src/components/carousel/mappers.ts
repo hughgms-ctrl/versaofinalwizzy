@@ -59,6 +59,8 @@ export function rowToCarousel(r: any, slides: Slide[] = []): Carousel {
     peopleInImages: r.people_in_images ?? null,
     sourceType: r.source_type ?? "idea",
     sourceContent: r.source_content ?? null,
+    isTemplate: r.is_template ?? false,
+    templateSource: r.template_source ?? null,
     createdAt: r.created_at,
     slides,
   };

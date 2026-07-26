@@ -37,6 +37,7 @@ const ToolsPage = lazy(() => import("./pages/ToolsPage"));
 const CarouselPage = lazy(() => import("./pages/CarouselPage"));
 const CarouselModelsPage = lazy(() => import("./pages/CarouselModelsPage"));
 const CarouselWorkspacePage = lazy(() => import("./pages/CarouselWorkspacePage"));
+const CarouselTemplatesPage = lazy(() => import("./pages/CarouselTemplatesPage"));
 const CnisPage = lazy(() => import("./pages/CnisPage"));
 const WizzyFlowPage = lazy(() => import("./pages/WizzyFlowPage"));
 const QuizListPage = lazy(() => import("./pages/QuizListPage"));
@@ -125,6 +126,7 @@ const App = () => (
                       <Route path="/tools" element={<ProtectedRoute><ToolsPage /></ProtectedRoute>} />
                       <Route path="/tools/carousel" element={<ProtectedRoute><CarouselPage /></ProtectedRoute>} />
                       <Route path="/tools/carousel/models" element={<ProtectedRoute><CarouselModelsPage /></ProtectedRoute>} />
+                      <Route path="/tools/carousel/templates" element={<ProtectedRoute><CarouselTemplatesPage /></ProtectedRoute>} />
                       <Route path="/tools/carousel/new" element={<ProtectedRoute><CarouselWorkspacePage /></ProtectedRoute>} />
                       <Route path="/tools/carousel/:id" element={<ProtectedRoute><CarouselWorkspacePage /></ProtectedRoute>} />
                       <Route path="/tools/buttons" element={<ProtectedRoute><WidgetsPage /></ProtectedRoute>} />

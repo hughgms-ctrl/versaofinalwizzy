@@ -15,6 +15,7 @@ export type PeopleInImages = "with" | "without" | "indifferent";
 export type OverlayPosition = "top" | "center" | "bottom" | "full";
 export type TextAlign = "left" | "center" | "right";
 export type CarouselSourceType = "idea" | "text" | "link" | "youtube";
+export type TemplateSource = "created" | "screenshot" | "instagram_link";
 
 export interface CarouselModel {
   id: string;
@@ -67,6 +68,8 @@ export interface Carousel {
   peopleInImages: PeopleInImages | null;
   sourceType: CarouselSourceType;
   sourceContent: string | null;
+  isTemplate: boolean;
+  templateSource: TemplateSource | null;
   createdAt: string;
   slides: Slide[];
 }

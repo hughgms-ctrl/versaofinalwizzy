@@ -153,6 +153,39 @@ async function chatCompletion(
   return json.choices?.[0]?.message?.content ?? "";
 }
 
+type VisionContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string } };
+
+async function chatCompletionVision(
+  apiKey: string,
+  system: string,
+  userContent: VisionContentPart[],
+  temperature: number,
+): Promise<string> {
+  const res = await fetch(OPENAI_CHAT, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: "gpt-4o",
+      temperature,
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: userContent },
+      ],
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`OpenAI vision falhou (${res.status}): ${body}`);
+  }
+  const json = await res.json();
+  return json.choices?.[0]?.message?.content ?? "";
+}
+
 // ---------------------------------------------------------------------
 // Geração de textos (todos os slides de uma vez).
 // ---------------------------------------------------------------------
@@ -215,6 +248,171 @@ function ctaIdeaInstruction(ctaIdea: string): string {
     "MAS preserve a intenção e QUALQUER palavra-chave/gatilho EXATAMENTE como o usuário escreveu (ex.: 'comente ORCAMENTO', 'mande a palavra X no direct'). " +
     "Nunca invente uma palavra-chave que o usuário não citou."
   );
+}
+
+// ---------------------------------------------------------------------
+// Biblioteca de templates — análise por visão de um carrossel de referência
+// (prints enviados pelo usuário) + geração de um carrossel NOVO inspirado
+// na estrutura/estilo dele. Nunca extrai o texto literal nem reaproveita a
+// foto de pessoas reais que apareçam na referência — só o "molde".
+// ---------------------------------------------------------------------
+export interface SlideAnalysis {
+  order: number;
+  hasRealPersonPhoto: boolean;
+  visualStyle: string;
+  overlayPosition: string;
+  textAlign: string;
+  role: "cover" | "middle" | "cta";
+  themeConcept: string;
+}
+
+export interface ReferenceAnalysis {
+  slides: SlideAnalysis[];
+  inferredNiche: string;
+  inferredObjective: string;
+  inferredTone: string;
+  overallVisualStyle: string;
+}
+
+const VALID_VISUAL_STYLES = new Set([
+  "cinematic",
+  "photorealistic",
+  "minimalist",
+  "watercolor",
+  "dark",
+  "illustration",
+]);
+const VALID_OVERLAY_POSITIONS = new Set(["top", "center", "bottom", "full"]);
+const VALID_TEXT_ALIGNS = new Set(["left", "center", "right"]);
+const VALID_OBJECTIVES = new Set(["educate", "sell", "engage", "inspire"]);
+const VALID_TONES = new Set(["professional", "casual", "motivational", "direct"]);
+
+export async function analyzeCarouselReference(
+  apiKey: string,
+  images: string[],
+): Promise<ReferenceAnalysis> {
+  const system = [
+    "Você analisa carrosséis de Instagram de referência pra extrair ESTRUTURA e ESTILO — NUNCA o texto exato nem a identidade de pessoas reais que apareçam nas imagens.",
+    "Para cada imagem (na ordem enviada, representando os slides 1..N do carrossel), retorne:",
+    "- hasRealPersonPhoto: true se o fundo mostra uma FOTO REAL de uma pessoa identificável (rosto real, não ilustração/abstrato/objeto).",
+    "- visualStyle: cinematic | photorealistic | minimalist | watercolor | dark | illustration — o que mais se aproxima do estilo visual.",
+    "- overlayPosition: top | center | bottom | full — onde fica a camada escura/o bloco de texto sobre a imagem.",
+    "- textAlign: left | center | right.",
+    "- role: cover (é o 1º slide), cta (é o último, tem chamada de ação) ou middle (demais).",
+    "- themeConcept: uma frase curta descrevendo do que aquele slide TRATA conceitualmente (o assunto/ideia) — PROIBIDO copiar o texto literal do slide, é só pra entender o tema.",
+    "Também retorne um resumo geral do carrossel inteiro: inferredNiche, inferredObjective (educate|sell|engage|inspire), inferredTone (professional|casual|motivational|direct), overallVisualStyle (o estilo predominante).",
+    "Retorne APENAS um JSON: { slides: [{ order, hasRealPersonPhoto, visualStyle, overlayPosition, textAlign, role, themeConcept }], inferredNiche, inferredObjective, inferredTone, overallVisualStyle }",
+  ].join("\n");
+
+  const userContent: VisionContentPart[] = [
+    {
+      type: "text",
+      text: `Analise estas ${images.length} imagens, na ordem enviada (slide 1 a ${images.length}) de um carrossel de referência.`,
+    },
+    ...images.map((url): VisionContentPart => ({ type: "image_url", image_url: { url } })),
+  ];
+
+  const raw = await chatCompletionVision(apiKey, system, userContent, 0.4);
+  const parsed = parseJsonObject<Partial<ReferenceAnalysis>>(raw);
+  const rawSlides = Array.isArray(parsed.slides) ? parsed.slides : [];
+
+  const slides: SlideAnalysis[] = images.map((_, i) => {
+    const order = i + 1;
+    const found = (rawSlides.find((s) => s.order === order) ?? rawSlides[i] ?? {}) as Partial<SlideAnalysis>;
+    return {
+      order,
+      hasRealPersonPhoto: !!found.hasRealPersonPhoto,
+      visualStyle: VALID_VISUAL_STYLES.has(found.visualStyle ?? "") ? (found.visualStyle as string) : "cinematic",
+      overlayPosition: VALID_OVERLAY_POSITIONS.has(found.overlayPosition ?? "")
+        ? (found.overlayPosition as string)
+        : "bottom",
+      textAlign: VALID_TEXT_ALIGNS.has(found.textAlign ?? "") ? (found.textAlign as string) : "left",
+      role: order === 1 ? "cover" : order === images.length ? "cta" : "middle",
+      themeConcept: found.themeConcept?.trim() ?? "",
+    };
+  });
+
+  const overallVisualStyle = VALID_VISUAL_STYLES.has(parsed.overallVisualStyle ?? "")
+    ? (parsed.overallVisualStyle as string)
+    : slides[0]?.visualStyle ?? "cinematic";
+
+  return {
+    slides,
+    inferredNiche: parsed.inferredNiche?.trim() || "Geral",
+    inferredObjective: VALID_OBJECTIVES.has(parsed.inferredObjective ?? "")
+      ? (parsed.inferredObjective as string)
+      : "educate",
+    inferredTone: VALID_TONES.has(parsed.inferredTone ?? "") ? (parsed.inferredTone as string) : "professional",
+    overallVisualStyle,
+  };
+}
+
+export interface GenerateFromReferenceParams {
+  apiKey: string;
+  niche: string;
+  objective: string;
+  tone: string;
+  audience: string;
+  slideCount: number;
+  slideBrief: { order: number; role: string; themeConcept: string }[];
+  ctaIdea?: string | null;
+}
+
+export async function generateSlideTextsFromReference(
+  p: GenerateFromReferenceParams,
+): Promise<SlideText[]> {
+  const strategy = OBJECTIVE_STRATEGY[p.objective] ?? OBJECTIVE_STRATEGY.educate;
+  const briefLines = p.slideBrief
+    .map((s) => `Slide ${s.order} (${s.role}): ${s.themeConcept || "sem descrição — use seu critério"}`)
+    .join("\n");
+  const system =
+    "Você é um copywriter sênior de carrosséis para Instagram. Vai criar um carrossel NOVO E 100% ORIGINAL, " +
+    "inspirado na ESTRUTURA e no TEMA de um carrossel de referência que a pessoa gostou — mas o texto tem que ser " +
+    "todo seu: PROIBIDO copiar ou parafrasear de perto qualquer frase do original. Use a referência só pra entender " +
+    "o tipo de gancho, o papel de cada slide na sequência (capa, meio, CTA) e o assunto geral.\n\n" +
+    "REGRAS UNIVERSAIS (valem sempre):\n" +
+    "1) Cada slide do meio entrega UM ponto concreto e específico — nunca uma frase óbvia ou de encher linguiça.\n" +
+    "2) Seja ESPECÍFICO: passos, números, exemplos práticos. PROIBIDO clichê ('seja consistente', 'acredite em você' e afins).\n" +
+    "3) Os slides formam uma SEQUÊNCIA coerente — cada um constrói sobre o anterior.\n" +
+    "4) O body é autoexplicativo.\n\n" +
+    VIRAL_MECHANICS + "\n\n" +
+    "ESTRATÉGIA PARA ESTE CARROSSEL:\n" + strategy + "\n\n" +
+    "FORMATO DE CADA SLIDE:\n" +
+    "- title: gancho curto e impactante do slide (máx 6 palavras).\n" +
+    "- body: o conteúdo do slide — concreto, específico e autoexplicativo (máx 30 palavras).\n" +
+    "- imageTheme: conceito visual que REFORÇA o texto.\n\n" +
+    "Retorne APENAS um JSON array: [{ order, title, body, imageTheme }]";
+
+  const user = [
+    `Nicho: ${p.niche}`,
+    `Objetivo: ${OBJECTIVE_LABEL[p.objective] ?? p.objective}`,
+    `Tom: ${TONE_LABEL[p.tone] ?? p.tone}`,
+    `Audiência: ${p.audience}`,
+    `Número de slides: ${p.slideCount}`,
+    `Gere exatamente ${p.slideCount} slides numerados de 1 a ${p.slideCount}.`,
+    "ESTRUTURA DE REFERÊNCIA (só inspiração de tema e papel de cada slide — escreva tudo com palavras suas):",
+    briefLines,
+    p.ctaIdea?.trim() ? ctaIdeaInstruction(p.ctaIdea.trim()) : "",
+  ].filter(Boolean).join("\n");
+
+  const raw = await chatCompletion(p.apiKey, system, user, 0.85);
+  const parsed = parseJsonObject<SlideText[] | { slides?: SlideText[] }>(raw);
+  const slides: SlideText[] = Array.isArray(parsed)
+    ? parsed
+    : Array.isArray(parsed.slides)
+    ? parsed.slides
+    : [];
+
+  return Array.from({ length: p.slideCount }, (_, i) => {
+    const order = i + 1;
+    const found = slides.find((s) => s.order === order) ?? slides[i];
+    return {
+      order,
+      title: found?.title?.trim() ?? "",
+      body: found?.body?.trim() ?? "",
+      imageTheme: found?.imageTheme?.trim() ?? "",
+    };
+  });
 }
 
 export async function generateSlideTexts(

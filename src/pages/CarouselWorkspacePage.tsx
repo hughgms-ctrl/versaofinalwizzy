@@ -14,10 +14,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { Rocket, Download, Search, Sparkles, FileText, Link2, Youtube, Loader2 } from "lucide-react";
+import { Rocket, Download, Search, Sparkles, FileText, Link2, Youtube, Loader2, LayoutTemplate } from "lucide-react";
 import { toast } from "sonner";
 import { useCarousel, useCarouselModels } from "@/components/carousel/hooks";
-import { extractSource, fetchTrending, generateCarousel } from "@/components/carousel/carouselApi";
+import { extractSource, fetchTrending, generateCarousel, saveAsTemplate } from "@/components/carousel/carouselApi";
 import { LAYOUT_PRESETS, SLIDE_COUNTS, VISUAL_STYLE_OPTIONS, ensureCarouselFonts } from "@/components/carousel/constants";
 import { downloadCarouselZip } from "@/components/carousel/renderSlide";
 import LayoutPresetPreview from "@/components/carousel/LayoutPresetPreview";
@@ -66,6 +66,7 @@ export default function CarouselWorkspacePage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [savingTemplate, setSavingTemplate] = useState(false);
 
   useEffect(() => {
     ensureCarouselFonts();
@@ -206,6 +207,20 @@ export default function CarouselWorkspacePage() {
       toast.error("Falha ao gerar o .zip");
     } finally {
       setDownloading(false);
+    }
+  };
+
+  const handleSaveAsTemplate = async () => {
+    if (!carousel) return;
+    setSavingTemplate(true);
+    try {
+      await saveAsTemplate(carousel.id);
+      toast.success("Salvo na biblioteca de Templates");
+      navigate("/tools/carousel/templates");
+    } catch {
+      toast.error("Falha ao salvar como template");
+    } finally {
+      setSavingTemplate(false);
     }
   };
 
@@ -514,6 +529,17 @@ export default function CarouselWorkspacePage() {
                         <Download className="mr-2 h-4 w-4" />
                         {downloading ? "Gerando..." : "Baixar .zip"}
                       </Button>
+                      {!carousel.isTemplate && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={handleSaveAsTemplate}
+                          disabled={savingTemplate}
+                        >
+                          <LayoutTemplate className="mr-2 h-4 w-4" />
+                          {savingTemplate ? "Salvando..." : "Salvar como template"}
+                        </Button>
+                      )}
                       <Button size="sm" variant="outline" disabled title="Em breve">
                         Instagram
                         <Badge variant="secondary" className="ml-2">Em breve</Badge>

@@ -89,6 +89,42 @@ export function useCarousels() {
   return { carousels, loading, reload, remove };
 }
 
+/* ------------------------ Biblioteca de Templates ------------------------ */
+
+export function useTemplates() {
+  const [templates, setTemplates] = useState<Carousel[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const reload = useCallback(async () => {
+    setLoading(true);
+    try {
+      setTemplates(await api.listTemplates());
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  // Enquanto algum template ainda está sendo importado (pending/processing),
+  // repolla pra refletir o progresso sem precisar o usuário atualizar a página.
+  useEffect(() => {
+    const hasPending = templates.some((t) => t.status === "pending" || t.status === "processing");
+    if (!hasPending) return;
+    const timer = setInterval(reload, 4000);
+    return () => clearInterval(timer);
+  }, [templates, reload]);
+
+  const remove = useCallback(async (id: string) => {
+    await api.deleteCarousel(id);
+    setTemplates((p) => p.filter((t) => t.id !== id));
+  }, []);
+
+  return { templates, loading, reload, remove };
+}
+
 /* ------------- Carrossel único + sincronização Realtime ------------- */
 
 export function useCarousel(carouselId: string | undefined) {

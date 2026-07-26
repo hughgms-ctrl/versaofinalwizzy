@@ -4,7 +4,7 @@ import { MainLayout } from "@/components/layout/MainLayout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
-import { Plus, LayoutGrid, Trash2, Images } from "lucide-react";
+import { Plus, LayoutGrid, LayoutTemplate, Trash2, Images } from "lucide-react";
 import { useCarousels } from "@/components/carousel/hooks";
 import { ensureCarouselFonts } from "@/components/carousel/constants";
 import SlideCard from "@/components/carousel/SlideCard";
@@ -39,6 +39,9 @@ export default function CarouselPage() {
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => navigate("/tools/carousel/models")}>
               <LayoutGrid className="mr-2 h-4 w-4" /> Modelos
+            </Button>
+            <Button variant="outline" onClick={() => navigate("/tools/carousel/templates")}>
+              <LayoutTemplate className="mr-2 h-4 w-4" /> Templates
             </Button>
             <Button onClick={() => navigate("/tools/carousel/new")}>
               <Plus className="mr-2 h-4 w-4" /> Novo carrossel
