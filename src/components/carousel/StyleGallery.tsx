@@ -12,8 +12,9 @@ import type { VisualStyle } from "./types";
 const SAMPLE_BUCKET = "flow-media";
 const SAMPLE_PREFIX = "carousel-style-samples";
 
-function sampleUrl(style: VisualStyle): string {
-  return supabase.storage.from(SAMPLE_BUCKET).getPublicUrl(`${SAMPLE_PREFIX}/${style}.png`).data.publicUrl;
+function sampleUrl(style: VisualStyle, version: number): string {
+  const url = supabase.storage.from(SAMPLE_BUCKET).getPublicUrl(`${SAMPLE_PREFIX}/${style}.png`).data.publicUrl;
+  return version ? `${url}?v=${version}` : url;
 }
 
 /** Galeria de estilo visual com a amostra real gerada por IA de cada opção. */
@@ -26,17 +27,21 @@ export default function StyleGallery({
 }) {
   const [broken, setBroken] = useState<Set<VisualStyle>>(new Set());
   const [generating, setGenerating] = useState(false);
+  // Muda a cada (re)geração pra forçar o navegador a buscar a imagem nova
+  // em vez de servir a versão em cache do mesmo caminho.
+  const [version, setVersion] = useState(0);
 
   const anyMissing = VISUAL_STYLE_OPTIONS.some((s) => broken.has(s.value));
 
   const doGenerate = async () => {
     setGenerating(true);
     try {
-      await generateStyleSamples();
+      await generateStyleSamples(true);
       setBroken(new Set());
+      setVersion(Date.now());
       toast.success("Amostras geradas");
     } catch (e) {
-      toast.error((e as Error).message ?? "Falha ao gerar amostras (precisa ser admin da plataforma)");
+      toast.error((e as Error).message ?? "Falha ao gerar amostras");
     } finally {
       setGenerating(false);
     }
@@ -59,7 +64,7 @@ export default function StyleGallery({
             <div className="relative aspect-square w-full bg-muted">
               {!broken.has(s.value) ? (
                 <img
-                  src={sampleUrl(s.value)}
+                  src={sampleUrl(s.value, version)}
                   alt={s.label}
                   className="h-full w-full object-cover"
                   onError={() => setBroken((prev) => new Set(prev).add(s.value))}
@@ -75,23 +80,21 @@ export default function StyleGallery({
         ))}
       </div>
 
-      {anyMissing && (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="w-full"
-          onClick={doGenerate}
-          disabled={generating}
-        >
-          {generating ? (
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-          ) : (
-            <Wand2 className="mr-2 h-4 w-4" />
-          )}
-          {generating ? "Gerando amostras..." : "Gerar amostras de exemplo"}
-        </Button>
-      )}
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="w-full"
+        onClick={doGenerate}
+        disabled={generating}
+      >
+        {generating ? (
+          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+        ) : (
+          <Wand2 className="mr-2 h-4 w-4" />
+        )}
+        {generating ? "Gerando amostras..." : anyMissing ? "Gerar amostras de exemplo" : "Atualizar amostras"}
+      </Button>
     </div>
   );
 }

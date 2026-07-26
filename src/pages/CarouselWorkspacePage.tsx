@@ -13,6 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { cn } from "@/lib/utils";
 import { Rocket, Download, Search, Sparkles, FileText, Link2, Youtube, Loader2, LayoutTemplate } from "lucide-react";
 import { toast } from "sonner";
@@ -216,12 +217,16 @@ export default function CarouselWorkspacePage() {
       <div className="grid h-[calc(100vh-3.5rem)] grid-cols-1 overflow-hidden lg:grid-cols-[300px_1fr_320px]">
         {/* ============ ESQUERDA — CRIAÇÃO ============ */}
         <aside className="overflow-y-auto border-r border-border bg-card">
-          <div className="space-y-5 p-4">
+          <div className="space-y-3 p-4">
             <h2 className="text-sm font-semibold">Criar carrossel</h2>
 
+            <Accordion type="multiple" defaultValue={["modelo", "tema"]} className="space-y-2">
             {/* modelo */}
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Modelo</Label>
+            <AccordionItem value="modelo" className="rounded-md border border-border px-3">
+              <AccordionTrigger className="py-2.5 text-xs text-muted-foreground hover:no-underline">
+                Modelo
+              </AccordionTrigger>
+              <AccordionContent className="pb-3">
               {modelsLoading ? (
                 <p className="text-xs text-muted-foreground">Carregando...</p>
               ) : models.length === 0 ? (
@@ -246,11 +251,15 @@ export default function CarouselWorkspacePage() {
                   </SelectContent>
                 </Select>
               )}
-            </div>
+              </AccordionContent>
+            </AccordionItem>
 
             {/* tema */}
-            <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">Tema</Label>
+            <AccordionItem value="tema" className="rounded-md border border-border px-3">
+              <AccordionTrigger className="py-2.5 text-xs text-muted-foreground hover:no-underline">
+                Tema
+              </AccordionTrigger>
+              <AccordionContent className="space-y-2 pb-3">
               <div className="flex flex-wrap gap-1.5">
                 {SOURCE_OPTIONS.map((s) => (
                   <button
@@ -380,13 +389,15 @@ export default function CarouselWorkspacePage() {
                   )}
                 </div>
               )}
-            </div>
+              </AccordionContent>
+            </AccordionItem>
 
             {/* ideia de CTA (opcional) */}
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">
-                Ideia do CTA <span className="text-muted-foreground/70">(opcional)</span>
-              </Label>
+            <AccordionItem value="cta" className="rounded-md border border-border px-3">
+              <AccordionTrigger className="py-2.5 text-xs text-muted-foreground hover:no-underline">
+                Ideia do CTA <span className="ml-1 text-muted-foreground/70">(opcional)</span>
+              </AccordionTrigger>
+              <AccordionContent className="space-y-1.5 pb-3">
               <Textarea
                 value={ctaIdea}
                 onChange={(e) => setCtaIdea(e.target.value)}
@@ -396,17 +407,25 @@ export default function CarouselWorkspacePage() {
               <p className="text-[11px] text-muted-foreground">
                 A IA melhora sua ideia e mantém a palavra-chave. Se deixar em branco, ela cria o CTA sozinha.
               </p>
-            </div>
+              </AccordionContent>
+            </AccordionItem>
 
             {/* estilo de imagem */}
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Estilo da imagem</Label>
+            <AccordionItem value="estilo" className="rounded-md border border-border px-3">
+              <AccordionTrigger className="py-2.5 text-xs text-muted-foreground hover:no-underline">
+                Estilo da imagem
+              </AccordionTrigger>
+              <AccordionContent className="pb-3">
               <StyleGallery value={imageStyle} onChange={setImageStyle} />
-            </div>
+              </AccordionContent>
+            </AccordionItem>
 
             {/* número de slides */}
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Número de slides</Label>
+            <AccordionItem value="slideCount" className="rounded-md border border-border px-3">
+              <AccordionTrigger className="py-2.5 text-xs text-muted-foreground hover:no-underline">
+                Número de slides
+              </AccordionTrigger>
+              <AccordionContent className="pb-3">
               <div className="flex gap-2">
                 {SLIDE_COUNTS.map((n) => (
                   <button
@@ -424,16 +443,22 @@ export default function CarouselWorkspacePage() {
                   </button>
                 ))}
               </div>
-            </div>
+              </AccordionContent>
+            </AccordionItem>
 
             {/* grade de imagens */}
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Slides com imagem de fundo</Label>
+            <AccordionItem value="slideGrid" className="rounded-md border border-border px-3">
+              <AccordionTrigger className="py-2.5 text-xs text-muted-foreground hover:no-underline">
+                Slides com imagem de fundo
+              </AccordionTrigger>
+              <AccordionContent className="space-y-1.5 pb-3">
               <SlideGrid count={slideCount} selected={withImage} onToggle={toggle} />
               <p className="text-[11px] text-muted-foreground">
                 {withImage.size} de {slideCount} com imagem
               </p>
-            </div>
+              </AccordionContent>
+            </AccordionItem>
+            </Accordion>
 
             <Button
               type="button"

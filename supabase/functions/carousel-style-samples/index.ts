@@ -16,9 +16,11 @@ const SAMPLE_BUCKET = "flow-media";
 const SAMPLE_PREFIX = "carousel-style-samples";
 const STYLES = ["cinematic", "photorealistic", "minimalist", "watercolor", "dark", "illustration"];
 
-// Assunto neutro e genérico — o objetivo é mostrar a DIFERENÇA de estilo, não um tema específico.
+// Rosto em close-up, perto da câmera — mesmo "assunto" em todos os estilos pra dar
+// pra comparar de verdade a diferença visual entre eles (luz, textura, traço).
 const SAMPLE_SUBJECT =
-  "a modern workspace with a laptop, a cup of coffee and an open notebook on a wooden desk near a window";
+  "a close-up portrait of a person's face looking directly at the camera, head and shoulders framing, " +
+  "natural expression, simple neutral background";
 
 interface Body {
   force?: boolean;
@@ -54,7 +56,7 @@ Deno.serve(async (req) => {
         const prompt = buildImagePrompt({
           prompt: SAMPLE_SUBJECT,
           imageStyle: style,
-          peopleInImages: "indifferent",
+          peopleInImages: "with",
         });
         const bytes = await generateImage(apiKey, prompt);
         const { error } = await service.storage
