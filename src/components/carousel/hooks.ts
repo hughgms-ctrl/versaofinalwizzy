@@ -4,7 +4,7 @@ import { createRealtimeChannel } from "@/lib/realtimeChannel";
 import { useAuth } from "@/hooks/useAuth";
 import * as api from "./carouselApi";
 import { rowToSlide } from "./mappers";
-import type { Carousel, CarouselModel, Slide } from "./types";
+import type { Carousel, CarouselModel, KnowledgeItem, Slide } from "./types";
 
 /* --------------------------- Modelos --------------------------- */
 
@@ -60,6 +60,47 @@ export function useCarouselModels() {
   );
 
   return { models, loading, error, reload, createModel, updateModel, deleteModel };
+}
+
+/* --------------------- Base de conhecimento do Projeto --------------------- */
+
+export function useKnowledgeItems(modelId: string | undefined) {
+  const [items, setItems] = useState<KnowledgeItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const reload = useCallback(async () => {
+    if (!modelId) {
+      setItems([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      setItems(await api.listKnowledgeItems(modelId));
+    } finally {
+      setLoading(false);
+    }
+  }, [modelId]);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  // Enquanto algum arquivo ainda está sendo processado (extração de texto),
+  // repolla pra refletir o status sem precisar o usuário atualizar a página.
+  useEffect(() => {
+    const hasPending = items.some((i) => i.status === "pending" || i.status === "processing");
+    if (!hasPending) return;
+    const timer = setInterval(reload, 3000);
+    return () => clearInterval(timer);
+  }, [items, reload]);
+
+  const remove = useCallback(async (id: string) => {
+    await api.deleteKnowledgeItem(id);
+    setItems((prev) => prev.filter((i) => i.id !== id));
+  }, []);
+
+  return { items, loading, reload, remove };
 }
 
 /* ----------------------- Lista de carrosséis ----------------------- */

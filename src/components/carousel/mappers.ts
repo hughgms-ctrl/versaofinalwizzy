@@ -1,7 +1,23 @@
 // Mapeadores linha (snake_case do Postgres) -> tipo de domínio (camelCase).
-import type { Carousel, CarouselModel, Slide } from "./types";
+import type { Carousel, CarouselModel, KnowledgeItem, Slide } from "./types";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
+
+export function rowToKnowledgeItem(r: any): KnowledgeItem {
+  return {
+    id: r.id,
+    modelId: r.model_id,
+    type: r.type,
+    title: r.title,
+    content: r.content ?? null,
+    sourceUrl: r.source_url ?? null,
+    storagePath: r.storage_path ?? null,
+    templateId: r.template_id ?? null,
+    status: r.status,
+    errorMessage: r.error_message ?? null,
+    createdAt: r.created_at,
+  };
+}
 
 export function rowToModel(r: any): CarouselModel {
   return {

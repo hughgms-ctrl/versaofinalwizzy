@@ -78,3 +78,20 @@ export interface TrendingIdea {
   title: string;
   description: string;
 }
+
+export type KnowledgeItemType = "text" | "file" | "link" | "template";
+export type KnowledgeItemStatus = "pending" | "processing" | "ready" | "error";
+
+export interface KnowledgeItem {
+  id: string;
+  modelId: string;
+  type: KnowledgeItemType;
+  title: string;
+  content: string | null;
+  sourceUrl: string | null;
+  storagePath: string | null;
+  templateId: string | null;
+  status: KnowledgeItemStatus;
+  errorMessage: string | null;
+  createdAt: string;
+}

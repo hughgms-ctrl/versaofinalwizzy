@@ -219,6 +219,12 @@ verify_jwt = false
 [functions.carousel-style-samples]
 verify_jwt = false
 
+[functions.carousel-knowledge-add-link]
+verify_jwt = false
+
+[functions.carousel-knowledge-process-file]
+verify_jwt = false
+
 [functions.instagram-oauth-start]
 verify_jwt = false
 

@@ -1,8 +1,16 @@
 // Camada de dados do Carrossel IA na Wizzy.
 // Tabelas via Supabase (RLS por organização) + IA via Edge Functions.
 import { supabase } from "@/integrations/supabase/client";
-import { rowToCarousel, rowToModel, rowToSlide, slidePatchToRow } from "./mappers";
-import type { Carousel, CarouselModel, CarouselSourceType, Slide, TrendingIdea, VisualStyle } from "./types";
+import { rowToCarousel, rowToKnowledgeItem, rowToModel, rowToSlide, slidePatchToRow } from "./mappers";
+import type {
+  Carousel,
+  CarouselModel,
+  CarouselSourceType,
+  KnowledgeItem,
+  Slide,
+  TrendingIdea,
+  VisualStyle,
+} from "./types";
 
 /* ----------------------------- Modelos ----------------------------- */
 
@@ -73,6 +81,99 @@ export async function updateModel(
 
 export async function deleteModel(id: string): Promise<void> {
   const { error } = await supabase.from("carousel_models").delete().eq("id", id);
+  if (error) throw error;
+}
+
+/* --------------------- Base de conhecimento (Projeto) --------------------- */
+// carousel_model_knowledge é uma tabela nova — ainda não existe no types.ts
+// gerado do Supabase, por isso os casts `as any`, mesmo padrão já usado nas
+// colunas novas de carousels (is_template, source_type etc.).
+
+const KNOWLEDGE_BUCKET = "carousel-knowledge-files";
+
+export async function listKnowledgeItems(modelId: string): Promise<KnowledgeItem[]> {
+  const { data, error } = await (supabase as any).from("carousel_model_knowledge")
+    .select("*")
+    .eq("model_id", modelId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map(rowToKnowledgeItem);
+}
+
+export async function addTextKnowledgeItem(
+  modelId: string,
+  organizationId: string,
+  title: string,
+  content: string,
+): Promise<KnowledgeItem> {
+  const { data, error } = await (supabase as any).from("carousel_model_knowledge")
+    .insert({ organization_id: organizationId, model_id: modelId, type: "text", title, content, status: "ready" })
+    .select()
+    .single();
+  if (error) throw error;
+  return rowToKnowledgeItem(data);
+}
+
+export async function addTemplateKnowledgeItem(
+  modelId: string,
+  organizationId: string,
+  templateId: string,
+  title: string,
+): Promise<KnowledgeItem> {
+  const { data, error } = await (supabase as any).from("carousel_model_knowledge")
+    .insert({
+      organization_id: organizationId,
+      model_id: modelId,
+      type: "template",
+      title,
+      template_id: templateId,
+      status: "ready",
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return rowToKnowledgeItem(data);
+}
+
+export async function addLinkKnowledgeItem(
+  modelId: string,
+  type: "link" | "youtube",
+  value: string,
+): Promise<KnowledgeItem> {
+  const data = await invokeFn("carousel-knowledge-add-link", { modelId, type, value });
+  return rowToKnowledgeItem(data);
+}
+
+export async function addFileKnowledgeItem(
+  modelId: string,
+  organizationId: string,
+  file: File,
+): Promise<KnowledgeItem> {
+  const path = `${modelId}/${Date.now()}-${file.name}`;
+  const { error: uploadError } = await supabase.storage.from(KNOWLEDGE_BUCKET).upload(path, file, { upsert: false });
+  if (uploadError) throw uploadError;
+
+  const { data: row, error } = await (supabase as any).from("carousel_model_knowledge")
+    .insert({
+      organization_id: organizationId,
+      model_id: modelId,
+      type: "file",
+      title: file.name,
+      storage_path: path,
+      status: "processing",
+    })
+    .select()
+    .single();
+  if (error) throw error;
+
+  const item = rowToKnowledgeItem(row);
+  // Extração roda em background na edge function — a UI faz polling do status.
+  invokeFn("carousel-knowledge-process-file", { itemId: item.id }).catch(() => {});
+  return item;
+}
+
+export async function deleteKnowledgeItem(id: string): Promise<void> {
+  const { error } = await (supabase as any).from("carousel_model_knowledge").delete().eq("id", id);
   if (error) throw error;
 }
 
@@ -303,7 +404,7 @@ export async function generateStyleSamples(force = false): Promise<Record<string
   return data.samples ?? {};
 }
 
-export async function fetchTrending(niche: string): Promise<TrendingIdea[]> {
-  const data = await invokeFn<{ ideas: TrendingIdea[] }>("carousel-trending", { niche });
+export async function fetchTrending(niche: string, modelId?: string): Promise<TrendingIdea[]> {
+  const data = await invokeFn<{ ideas: TrendingIdea[] }>("carousel-trending", { niche, modelId });
   return data.ideas ?? [];
 }

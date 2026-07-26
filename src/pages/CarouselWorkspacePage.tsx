@@ -106,7 +106,7 @@ export default function CarouselWorkspacePage() {
     if (!selectedModel) return;
     setTrendingLoading(true);
     try {
-      setTrending(await fetchTrending(selectedModel.niche));
+      setTrending(await fetchTrending(selectedModel.niche, selectedModel.id));
     } catch {
       toast.error("Não foi possível buscar tendências");
     } finally {
@@ -136,7 +136,7 @@ export default function CarouselWorkspacePage() {
   const usesSource = ideaSource === "text" || ideaSource === "link" || ideaSource === "youtube";
 
   const generate = async () => {
-    if (!modelId) return toast.error("Selecione um modelo");
+    if (!modelId) return toast.error("Selecione um projeto");
     if (usesSource) {
       if (sourceContent.trim().length < 30) {
         return toast.error(
@@ -224,7 +224,7 @@ export default function CarouselWorkspacePage() {
             {/* modelo */}
             <AccordionItem value="modelo" className="rounded-md border border-border px-3">
               <AccordionTrigger className="py-2.5 text-xs text-muted-foreground hover:no-underline">
-                Modelo
+                Projeto
               </AccordionTrigger>
               <AccordionContent className="pb-3">
               {modelsLoading ? (
@@ -235,7 +235,7 @@ export default function CarouselWorkspacePage() {
                   className="w-full"
                   onClick={() => navigate("/tools/carousel/models")}
                 >
-                  Crie um modelo primeiro
+                  Crie um projeto primeiro
                 </Button>
               ) : (
                 <Select value={modelId} onValueChange={setModelId}>
@@ -483,7 +483,7 @@ export default function CarouselWorkspacePage() {
           <div className="mx-auto flex max-w-2xl flex-col items-center gap-5 p-6">
             {!carousel && !loading && (
               <div className="mt-20 text-center text-sm text-muted-foreground">
-                Selecione um modelo, defina o tema e gere seu carrossel.
+                Selecione um projeto, defina o tema e gere seu carrossel.
               </div>
             )}
 

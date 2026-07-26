@@ -110,7 +110,7 @@ export default function ModelForm({ initial, onSubmit, onCancel }: Props) {
         peopleInImages,
       });
     } catch {
-      setError("Falha ao salvar modelo");
+      setError("Falha ao salvar projeto");
     } finally {
       setSaving(false);
     }
@@ -120,7 +120,7 @@ export default function ModelForm({ initial, onSubmit, onCancel }: Props) {
     <form onSubmit={submit} className="space-y-6">
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-1.5">
-          <Label className="text-xs text-muted-foreground">Nome do modelo</Label>
+          <Label className="text-xs text-muted-foreground">Nome do projeto</Label>
           <Input
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -211,7 +211,7 @@ export default function ModelForm({ initial, onSubmit, onCancel }: Props) {
 
       <div className="flex gap-3">
         <Button type="submit" disabled={saving}>
-          {saving ? "Salvando..." : "Salvar modelo"}
+          {saving ? "Salvando..." : "Salvar projeto"}
         </Button>
         {onCancel && (
           <Button type="button" variant="outline" onClick={onCancel}>

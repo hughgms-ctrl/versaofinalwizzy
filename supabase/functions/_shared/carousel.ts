@@ -752,15 +752,56 @@ export interface TrendingIdea {
   description: string;
 }
 
+// Teto de segurança pro contexto da base de conhecimento — soma de vários
+// itens (texto, links, arquivos), então mais conservador que o de uma fonte
+// única (sourceExtract.ts). ~30k caracteres é bastante contexto sem inflar
+// demais o prompt de uma sugestão de tendência.
+const MAX_KNOWLEDGE_CONTEXT_CHARS = 30000;
+
+/** Concatena os itens prontos da base de conhecimento de um Projeto pra enriquecer prompts (Tendências etc.). */
+export async function buildKnowledgeContext(
+  supabase: any,
+  modelId: string,
+): Promise<string | null> {
+  const { data: items } = await supabase
+    .from("carousel_model_knowledge")
+    .select("title, content, type")
+    .eq("model_id", modelId)
+    .eq("status", "ready")
+    .not("content", "is", null)
+    .order("created_at", { ascending: false });
+
+  if (!items?.length) return null;
+
+  let context = "";
+  for (const item of items) {
+    const block = `--- ${item.title} (${item.type}) ---\n${item.content}\n\n`;
+    if (context.length + block.length > MAX_KNOWLEDGE_CONTEXT_CHARS) break;
+    context += block;
+  }
+  return context.trim() || null;
+}
+
 export async function getTrendingIdeas(
   apiKey: string,
   niche: string,
   count = 8,
   model?: string,
+  knowledgeContext?: string | null,
 ): Promise<TrendingIdea[]> {
   const system =
-    'Você é um estrategista de conteúdo para Instagram. Dado um nicho, sugira temas de carrossel com alto potencial de engajamento e relevância atual. Retorne APENAS um JSON com a chave "ideas" contendo um array de objetos { title, description } — title curto e chamativo, description em uma frase. Sem markdown.';
-  const user = `Nicho: ${niche}\nGere ${count} sugestões de tema para carrossel.`;
+    'Você é um estrategista de conteúdo para Instagram. Dado um nicho, sugira temas de carrossel com alto potencial de engajamento e relevância atual. ' +
+    (knowledgeContext?.trim()
+      ? "Priorize temas alinhados ao material de referência/pesquisa fornecido — use-o como contexto real do negócio, não ignore. "
+      : "") +
+    'Retorne APENAS um JSON com a chave "ideas" contendo um array de objetos { title, description } — title curto e chamativo, description em uma frase. Sem markdown.';
+  const user = [
+    `Nicho: ${niche}`,
+    `Gere ${count} sugestões de tema para carrossel.`,
+    knowledgeContext?.trim()
+      ? `MATERIAL DE REFERÊNCIA DO PROJETO (base de conhecimento):\n"""\n${knowledgeContext.trim()}\n"""`
+      : "",
+  ].filter(Boolean).join("\n");
 
   const raw = await chatCompletion(apiKey, system, user, 0.9, model);
   const parsed = parseJsonObject<{ ideas?: TrendingIdea[] }>(raw);

@@ -5,13 +5,16 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Plus, Pencil, Trash2 } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
 import { useCarouselModels } from "@/components/carousel/hooks";
 import ModelForm from "@/components/carousel/ModelForm";
+import KnowledgeBase from "@/components/carousel/KnowledgeBase";
 import { OBJECTIVE_OPTIONS, PEOPLE_OPTIONS, TONE_OPTIONS, labelOf } from "@/components/carousel/constants";
 import type { CarouselModel } from "@/components/carousel/types";
 
 export default function CarouselModelsPage() {
   const navigate = useNavigate();
+  const { profile } = useAuth();
   const { models, loading, createModel, updateModel, deleteModel } = useCarouselModels();
   const [editing, setEditing] = useState<CarouselModel | null>(null);
   const [creating, setCreating] = useState(false);
@@ -19,9 +22,9 @@ export default function CarouselModelsPage() {
   if (creating || editing) {
     return (
       <MainLayout>
-        <div className="mx-auto max-w-3xl space-y-6">
+        <div className="mx-auto max-w-3xl space-y-8">
           <h1 className="text-2xl font-bold text-foreground">
-            {editing ? "Editar modelo" : "Novo modelo"}
+            {editing ? "Editar projeto" : "Novo projeto"}
           </h1>
           <ModelForm
             initial={editing ?? undefined}
@@ -30,12 +33,22 @@ export default function CarouselModelsPage() {
               setEditing(null);
             }}
             onSubmit={async (data) => {
-              if (editing) await updateModel(editing.id, data);
-              else await createModel(data);
-              setCreating(false);
-              setEditing(null);
+              if (editing) {
+                const updated = await updateModel(editing.id, data);
+                setEditing(updated);
+              } else {
+                const created = await createModel(data);
+                setCreating(false);
+                setEditing(created);
+              }
             }}
           />
+
+          {editing && profile?.organization_id && (
+            <div className="border-t border-border pt-6">
+              <KnowledgeBase modelId={editing.id} organizationId={profile.organization_id} />
+            </div>
+          )}
         </div>
       </MainLayout>
     );
@@ -52,13 +65,13 @@ export default function CarouselModelsPage() {
             >
               <ArrowLeft className="h-3 w-3" /> Voltar
             </button>
-            <h1 className="text-2xl font-bold text-foreground">Modelos</h1>
+            <h1 className="text-2xl font-bold text-foreground">Projetos</h1>
             <p className="text-muted-foreground">
-              A identidade da marca reutilizada em cada carrossel.
+              A identidade da marca e a base de conhecimento reutilizadas em cada carrossel.
             </p>
           </div>
           <Button onClick={() => setCreating(true)}>
-            <Plus className="mr-2 h-4 w-4" /> Novo modelo
+            <Plus className="mr-2 h-4 w-4" /> Novo projeto
           </Button>
         </div>
 
@@ -66,7 +79,7 @@ export default function CarouselModelsPage() {
           <p className="text-sm text-muted-foreground">Carregando...</p>
         ) : models.length === 0 ? (
           <Card className="flex flex-col items-center justify-center gap-3 border-dashed p-12 text-center">
-            <p className="text-muted-foreground">Nenhum modelo salvo ainda.</p>
+            <p className="text-muted-foreground">Nenhum projeto salvo ainda.</p>
             <Button onClick={() => setCreating(true)}>
               <Plus className="mr-2 h-4 w-4" /> Criar o primeiro
             </Button>
@@ -103,7 +116,7 @@ export default function CarouselModelsPage() {
                       variant="ghost"
                       size="sm"
                       onClick={() => {
-                        if (confirm("Excluir este modelo?")) deleteModel(m.id);
+                        if (confirm("Excluir este projeto?")) deleteModel(m.id);
                       }}
                     >
                       <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Excluir

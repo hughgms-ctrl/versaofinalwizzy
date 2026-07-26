@@ -38,7 +38,7 @@ export default function CarouselPage() {
           </div>
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => navigate("/tools/carousel/models")}>
-              <LayoutGrid className="mr-2 h-4 w-4" /> Modelos
+              <LayoutGrid className="mr-2 h-4 w-4" /> Projetos
             </Button>
             <Button variant="outline" onClick={() => navigate("/tools/carousel/templates")}>
               <LayoutTemplate className="mr-2 h-4 w-4" /> Templates
