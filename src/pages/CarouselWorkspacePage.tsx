@@ -18,12 +18,11 @@ import { Rocket, Download, Search, Sparkles, FileText, Link2, Youtube, Loader2, 
 import { toast } from "sonner";
 import { useCarousel, useCarouselModels } from "@/components/carousel/hooks";
 import { extractSource, fetchTrending, generateCarousel, saveAsTemplate } from "@/components/carousel/carouselApi";
-import { LAYOUT_PRESETS, SLIDE_COUNTS, VISUAL_STYLE_OPTIONS, ensureCarouselFonts } from "@/components/carousel/constants";
+import { SLIDE_COUNTS, ensureCarouselFonts } from "@/components/carousel/constants";
 import { downloadCarouselZip } from "@/components/carousel/renderSlide";
-import LayoutPresetPreview from "@/components/carousel/LayoutPresetPreview";
 import SlideCard from "@/components/carousel/SlideCard";
 import SlideGrid from "@/components/carousel/SlideGrid";
-import StyleSwatch from "@/components/carousel/StyleSwatch";
+import StyleGallery from "@/components/carousel/StyleGallery";
 import TextEditor from "@/components/carousel/TextEditor";
 import CarouselProgressBar from "@/components/carousel/ProgressBar";
 import type { TrendingIdea, VisualStyle } from "@/components/carousel/types";
@@ -50,7 +49,6 @@ export default function CarouselWorkspacePage() {
   const [prompt, setPrompt] = useState("");
   const [ctaIdea, setCtaIdea] = useState("");
   const [imageStyle, setImageStyle] = useState<VisualStyle>("cinematic");
-  const [formatId, setFormatId] = useState(LAYOUT_PRESETS[0].id);
   const [slideCount, setSlideCount] = useState<5 | 7 | 10>(5);
   const [withImage, setWithImage] = useState<Set<number>>(new Set([1]));
   const [trending, setTrending] = useState<TrendingIdea[]>([]);
@@ -153,7 +151,6 @@ export default function CarouselWorkspacePage() {
     }
 
     const finalPrompt = prompt.trim() || sourceContent.trim().slice(0, 60) || "Carrossel";
-    const format = LAYOUT_PRESETS.find((f) => f.id === formatId) ?? LAYOUT_PRESETS[0];
 
     setSubmitting(true);
     try {
@@ -170,14 +167,6 @@ export default function CarouselWorkspacePage() {
         ctaIdea: ctaIdea.trim() || undefined,
         sourceType: ideaSource === "trending" ? "idea" : ideaSource,
         sourceContent: usesSource ? sourceContent.trim() : undefined,
-        layout: {
-          textAlign: format.textAlign,
-          overlayPosition: format.overlayPosition,
-          overlayIntensity: format.overlayIntensity,
-          titleSize: format.titleSize,
-          bodySize: format.bodySize,
-          titleBold: format.titleBold,
-        },
       });
       navigate(`/tools/carousel/${carouselId}`);
     } catch (e) {
@@ -426,45 +415,7 @@ export default function CarouselWorkspacePage() {
             {/* estilo de imagem */}
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">Estilo da imagem</Label>
-              <Select value={imageStyle} onValueChange={(v) => setImageStyle(v as VisualStyle)}>
-                <SelectTrigger className="h-9">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {VISUAL_STYLE_OPTIONS.map((s) => (
-                    <SelectItem key={s.value} value={s.value}>
-                      <span className="flex items-center gap-2">
-                        <StyleSwatch style={s.value} className="h-4 w-4" />
-                        {s.label}
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* biblioteca de formatos */}
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Formato</Label>
-              <div className="grid grid-cols-3 gap-2">
-                {LAYOUT_PRESETS.map((f) => (
-                  <button
-                    key={f.id}
-                    type="button"
-                    onClick={() => setFormatId(f.id)}
-                    title={f.hint}
-                    className={cn(
-                      "space-y-1 rounded-md border p-1 transition",
-                      formatId === f.id
-                        ? "border-primary bg-primary/10"
-                        : "border-border bg-background hover:border-muted-foreground",
-                    )}
-                  >
-                    <LayoutPresetPreview preset={f} className="aspect-square w-full" />
-                    <p className="truncate text-center text-[10px] text-muted-foreground">{f.label}</p>
-                  </button>
-                ))}
-              </div>
+              <StyleGallery value={imageStyle} onChange={setImageStyle} />
             </div>
 
             {/* número de slides */}

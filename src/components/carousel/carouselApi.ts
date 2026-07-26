@@ -85,9 +85,11 @@ function mapCarouselRow(r: any): Carousel {
   return rowToCarousel(r, slides);
 }
 
+// Colunas de fonte/template (is_template, template_source, source_type, source_content)
+// são recentes e ainda não existem no types.ts gerado do Supabase — casts pontuais
+// `as any` nos pontos que as tocam, mesmo padrão já usado em mappers.ts.
 export async function listCarousels(): Promise<Carousel[]> {
-  const { data, error } = await supabase
-    .from("carousels")
+  const { data, error } = await (supabase.from("carousels") as any)
     .select("*, carousel_slides(*)")
     .eq("is_template", false)
     .order("created_at", { ascending: false });
@@ -114,8 +116,7 @@ export async function deleteCarousel(id: string): Promise<void> {
 /* ---------------------------- Templates ---------------------------- */
 
 export async function listTemplates(): Promise<Carousel[]> {
-  const { data, error } = await supabase
-    .from("carousels")
+  const { data, error } = await (supabase.from("carousels") as any)
     .select("*, carousel_slides(*)")
     .eq("is_template", true)
     .order("created_at", { ascending: false });
@@ -125,8 +126,7 @@ export async function listTemplates(): Promise<Carousel[]> {
 
 /** Marca um carrossel já criado como template reutilizável (não duplica — vira template no lugar). */
 export async function saveAsTemplate(id: string): Promise<void> {
-  const { error } = await supabase
-    .from("carousels")
+  const { error } = await (supabase.from("carousels") as any)
     .update({ is_template: true, template_source: "created" })
     .eq("id", id);
   if (error) throw error;
@@ -138,16 +138,14 @@ export async function cloneTemplate(
   organizationId: string,
   userId: string,
 ): Promise<{ carouselId: string }> {
-  const { data: tpl, error: tErr } = await supabase
-    .from("carousels")
+  const { data: tpl, error: tErr } = await (supabase.from("carousels") as any)
     .select("*, carousel_slides(*)")
     .eq("id", templateId)
     .maybeSingle();
   if (tErr) throw tErr;
   if (!tpl) throw new Error("Template não encontrado");
 
-  const { data: clone, error: cErr } = await supabase
-    .from("carousels")
+  const { data: clone, error: cErr } = await (supabase.from("carousels") as any)
     .insert({
       organization_id: organizationId,
       user_id: userId,
@@ -242,15 +240,6 @@ export interface GeneratePayload {
   sourceType?: CarouselSourceType;
   /** Material de origem (quando sourceType != "idea") usado como base real da geração. */
   sourceContent?: string;
-  /** Formato pré-pronto escolhido na biblioteca de formatos (layout dos slides). */
-  layout?: {
-    textAlign: string;
-    overlayPosition: string;
-    overlayIntensity: number;
-    titleSize: number;
-    bodySize: number;
-    titleBold: boolean;
-  };
 }
 
 export async function generateCarousel(
@@ -307,6 +296,15 @@ export async function extractSource(
   });
   if (error) throw error;
   return data as { title: string; content: string };
+}
+
+/** Gera (ou regenera, se force) as 6 amostras reais de estilo visual — requer platform_admin. */
+export async function generateStyleSamples(force = false): Promise<Record<string, string>> {
+  const { data, error } = await supabase.functions.invoke("carousel-style-samples", {
+    body: { force },
+  });
+  if (error) throw error;
+  return (data as { samples: Record<string, string> }).samples ?? {};
 }
 
 export async function fetchTrending(niche: string): Promise<TrendingIdea[]> {

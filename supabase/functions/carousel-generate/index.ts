@@ -19,43 +19,6 @@ interface SlideFlag {
   hasImage: boolean;
 }
 
-// Formato pré-pronto (biblioteca de formatos) — preset de layout aplicado aos
-// slides no lugar do padrão fixo. Vem do front (constants.ts::LAYOUT_PRESETS);
-// validado aqui porque chega como texto livre no payload.
-interface LayoutInput {
-  textAlign?: string;
-  overlayPosition?: string;
-  overlayIntensity?: number;
-  titleSize?: number;
-  bodySize?: number;
-  titleBold?: boolean;
-}
-
-const TEXT_ALIGNS = new Set(["left", "center", "right"]);
-const OVERLAY_POSITIONS = new Set(["top", "center", "bottom", "full"]);
-
-function resolveLayout(layout: LayoutInput | null | undefined) {
-  const textAlign = layout?.textAlign && TEXT_ALIGNS.has(layout.textAlign) ? layout.textAlign : "left";
-  const overlayPosition =
-    layout?.overlayPosition && OVERLAY_POSITIONS.has(layout.overlayPosition)
-      ? layout.overlayPosition
-      : "bottom";
-  const overlayIntensity =
-    typeof layout?.overlayIntensity === "number" && layout.overlayIntensity >= 0 && layout.overlayIntensity <= 1
-      ? layout.overlayIntensity
-      : 0.85;
-  const titleSize =
-    typeof layout?.titleSize === "number" && layout.titleSize >= 24 && layout.titleSize <= 140
-      ? layout.titleSize
-      : 80;
-  const bodySize =
-    typeof layout?.bodySize === "number" && layout.bodySize >= 16 && layout.bodySize <= 80
-      ? layout.bodySize
-      : 36;
-  const titleBold = typeof layout?.titleBold === "boolean" ? layout.titleBold : true;
-  return { textAlign, overlayPosition, overlayIntensity, titleSize, bodySize, titleBold };
-}
-
 interface GenerateBody {
   modelId?: string | null;
   prompt: string;
@@ -67,8 +30,6 @@ interface GenerateBody {
   // fonte do carrossel: ideia livre, texto colado, link de artigo ou vídeo do YouTube
   sourceType?: "idea" | "text" | "link" | "youtube";
   sourceContent?: string | null;
-  // formato pré-pronto escolhido na biblioteca de formatos (layout dos slides)
-  layout?: LayoutInput | null;
   // briefing direto (quando não há modelId)
   niche?: string;
   objective?: string;
@@ -125,7 +86,6 @@ Deno.serve(async (req) => {
     const accent = briefing.brandColor ?? "#3B82F6";
     const solidBg = briefing.brandColor ?? "#0a0a0a";
     const imageMap = new Map(body.slides.map((s) => [s.order, s.hasImage]));
-    const layout = resolveLayout(body.layout);
 
     // Cria o carrossel.
     const { data: carousel, error: cErr } = await service
@@ -163,13 +123,13 @@ Deno.serve(async (req) => {
       bg_color: solidBg,
       accent_color: accent,
       font_family: "Montserrat",
-      text_align: layout.textAlign,
+      text_align: "left",
       text_position: "center",
-      overlay_position: layout.overlayPosition,
-      overlay_intensity: layout.overlayIntensity,
-      title_size: layout.titleSize,
-      title_bold: layout.titleBold,
-      body_size: layout.bodySize,
+      overlay_position: "bottom",
+      overlay_intensity: 0.85,
+      title_size: 80,
+      title_bold: true,
+      body_size: 36,
     }));
     const { error: sErr } = await service.from("carousel_slides").insert(slideRows);
     if (sErr) return errorResponse(`Falha ao criar slides: ${sErr.message}`, 500);
