@@ -31,6 +31,21 @@ export const VISUAL_STYLE_OPTIONS: {
   { value: "illustration", label: "Ilustração", hint: "Vetorial, editorial" },
 ];
 
+/** Amostra visual (gradiente CSS) de cada estilo de imagem, usada como preview no seletor. */
+export const STYLE_PREVIEWS: Record<VisualStyle, string> = {
+  cinematic:
+    "linear-gradient(180deg, #0b0b12 0%, #1a1a2e 42%, #d4af37 50%, #1a1a2e 58%, #0b0b12 100%)",
+  photorealistic: "linear-gradient(135deg, #a8c8e8 0%, #f5e6c8 55%, #e8a87c 100%)",
+  minimalist: "radial-gradient(circle at 50% 45%, #ffffff 0%, #f2f2f2 55%, #e2e2e2 100%)",
+  watercolor:
+    "radial-gradient(circle at 25% 30%, #f6b8c9 0%, transparent 55%), " +
+    "radial-gradient(circle at 75% 35%, #a9d8ea 0%, transparent 55%), " +
+    "radial-gradient(circle at 50% 80%, #f7e59a 0%, transparent 55%), #fdfbf6",
+  dark: "linear-gradient(135deg, #050505 0%, #1c1c1c 55%, #3d0000 100%)",
+  illustration:
+    "linear-gradient(135deg, #ff6b6b 0%, #ff6b6b 33%, #4ecdc4 33%, #4ecdc4 66%, #ffe66d 66%)",
+};
+
 export const SLIDE_COUNTS = [5, 7, 10] as const;
 
 export const OBJECTIVE_OPTIONS: {

@@ -190,6 +190,21 @@ function sourceContentInstruction(sourceContent: string): string {
   );
 }
 
+// Mecânica de viralização — vale para QUALQUER objetivo. Um carrossel "bobinho"
+// (raso, previsível, sem tensão) não viraliza mesmo com o conteúdo correto; este
+// bloco força os ingredientes que fazem alguém parar de rolar o feed, deslizar
+// até o fim e comentar. Reaproveitado na geração completa e na regeneração de
+// slide único, pra manter o mesmo padrão em qualquer edição.
+const VIRAL_MECHANICS = [
+  "MECÂNICA DE VIRALIZAÇÃO (vale sempre, qualquer que seja o objetivo — o carrossel tem que ser bom o bastante pra alguém parar de rolar o feed, deslizar até o fim e comentar):",
+  "- Teste do scroll-stopper: se um estranho no feed batesse o olho só na CAPA, ela sozinha teria que fisgar. Se o gancho não causar um 'espera, o quê?' ou uma pergunta na cabeça de quem lê, refaça.",
+  "- Loop aberto entre slides: cada slide (exceto o último) termina deixando uma pergunta ou tensão não resolvida que só o PRÓXIMO slide resolve — é isso que faz a pessoa arrastar pro lado em vez de sair do post.",
+  "- Pelo menos 1 slide do meio precisa ser uma tomada de posição, contraste ou virada de expectativa (mito x verdade, o que todo mundo faz x o que realmente funciona, número que contraria o senso comum) — o tipo de slide que faz a pessoa concordar, discordar ou se identificar em voz alta nos comentários.",
+  "- Densidade de 'printável': pelo menos uma frase do carrossel devia ser boa o bastante pra alguém printar e postar no story marcando a página.",
+  "- CTA final pede uma ação de ENGAJAMENTO explícita e conectada ao valor entregue (comentar uma palavra/opinião, marcar alguém que precisa ver isso, salvar pra não perder) — nunca um 'segue a gente' genérico e desconectado do conteúdo.",
+  "- PROIBIDO: carrossel 'bobinho' — previsível, óbvio, sem tensão, dá pra adivinhar a próxima frase antes de ler.",
+].join("\n");
+
 // Instrução compartilhada para o CTA quando o usuário forneceu uma ideia.
 // Preserva a intenção e QUALQUER palavra-chave/gatilho exatamente como escrito
 // (ex.: integrações tipo ManyChat que disparam por palavra-chave no comentário).
@@ -216,6 +231,7 @@ export async function generateSlideTexts(
     "5) O body é autoexplicativo: sozinho já entrega valor.\n" +
     "6) CAPA (slide 1): é SEMPRE um gancho que abre curiosidade — pergunta instigante, número/dado chocante, afirmação forte/contraintuitiva ou promessa específica. NUNCA um título genérico ou enciclopédico (PROIBIDO 'História dos X', 'Guia sobre Y', 'Tudo sobre Z'). Varie o tipo de gancho; a pergunta é uma ótima primeira opção quando encaixa no tema.\n" +
     "7) ÚLTIMO slide: é SEMPRE um CTA — chamada de ação clara (salvar, seguir, comentar, compartilhar ou chamar no direct) conectada ao valor entregue. NUNCA use o último slide para apresentar conteúdo novo.\n\n" +
+    VIRAL_MECHANICS + "\n\n" +
     "ESTRATÉGIA PARA ESTE CARROSSEL:\n" + strategy + "\n\n" +
     "FORMATO DE CADA SLIDE:\n" +
     "- title: gancho curto e impactante do slide (máx 6 palavras).\n" +
@@ -294,6 +310,7 @@ export async function regenerateSlideText(
     "Regenere o texto de um único slide para que ele cumpra o objetivo do carrossel com um ponto concreto e específico — nada de frases genéricas, óbvias, clichês ou motivacionais vazias. " +
     "Seja ESPECÍFICO: use passos, números, exemplos práticos, o 'como' e o 'porquê'. Se a audiência já sabe o que o slide diz, refaça com mais profundidade e informação nova. " +
     "Mantenha coerência com o propósito do slide dentro da sequência do carrossel.\n\n" +
+    VIRAL_MECHANICS + "\n\n" +
     "ESTRATÉGIA DO CARROSSEL:\n" + strategy + roleHint + "\n\n" +
     "title: gancho curto e impactante (máx 6 palavras). body: o conteúdo do slide — concreto, específico e autoexplicativo (máx 30 palavras). " +
     "Responda SOMENTE com JSON puro e válido { title, body }, sem markdown e sem nenhum texto fora do JSON.";

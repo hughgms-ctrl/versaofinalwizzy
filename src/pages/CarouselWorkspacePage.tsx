@@ -22,6 +22,7 @@ import { SLIDE_COUNTS, VISUAL_STYLE_OPTIONS, ensureCarouselFonts } from "@/compo
 import { downloadCarouselZip } from "@/components/carousel/renderSlide";
 import SlideCard from "@/components/carousel/SlideCard";
 import SlideGrid from "@/components/carousel/SlideGrid";
+import StyleSwatch from "@/components/carousel/StyleSwatch";
 import TextEditor from "@/components/carousel/TextEditor";
 import CarouselProgressBar from "@/components/carousel/ProgressBar";
 import type { TrendingIdea, VisualStyle } from "@/components/carousel/types";
@@ -406,7 +407,10 @@ export default function CarouselWorkspacePage() {
                 <SelectContent>
                   {VISUAL_STYLE_OPTIONS.map((s) => (
                     <SelectItem key={s.value} value={s.value}>
-                      {s.label}
+                      <span className="flex items-center gap-2">
+                        <StyleSwatch style={s.value} className="h-4 w-4" />
+                        {s.label}
+                      </span>
                     </SelectItem>
                   ))}
                 </SelectContent>
