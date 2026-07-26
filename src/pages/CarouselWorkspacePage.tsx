@@ -58,7 +58,6 @@ export default function CarouselWorkspacePage() {
   const [sourceContent, setSourceContent] = useState("");
   const [sourceTitle, setSourceTitle] = useState("");
   const [extracting, setExtracting] = useState(false);
-  const [showExtractedPreview, setShowExtractedPreview] = useState(false);
 
   // ---- centro / direita ----
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -125,7 +124,6 @@ export default function CarouselWorkspacePage() {
       setSourceContent(content);
       setSourceTitle(title);
       if (!prompt.trim() && title) setPrompt(title);
-      setShowExtractedPreview(true);
       toast.success("Conteúdo extraído com sucesso");
     } catch (e) {
       toast.error((e as Error).message ?? "Não foi possível extrair o conteúdo");
@@ -310,24 +308,12 @@ export default function CarouselWorkspacePage() {
                   </div>
                   {sourceContent && (
                     <div className="rounded-md border border-border bg-background p-2 text-[11px]">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="truncate font-medium text-foreground">
-                          {sourceTitle || "Conteúdo extraído"}
-                        </p>
-                        <button
-                          type="button"
-                          className="shrink-0 text-muted-foreground underline"
-                          onClick={() => setShowExtractedPreview((v) => !v)}
-                        >
-                          {showExtractedPreview ? "ocultar" : "ver texto"}
-                        </button>
-                      </div>
-                      {showExtractedPreview && (
-                        <p className="mt-1.5 max-h-32 overflow-y-auto whitespace-pre-wrap text-muted-foreground">
-                          {sourceContent.slice(0, 2000)}
-                          {sourceContent.length > 2000 ? "…" : ""}
-                        </p>
-                      )}
+                      <p className="truncate font-medium text-foreground">
+                        ✓ {sourceTitle || "Conteúdo extraído"}
+                      </p>
+                      <p className="text-muted-foreground">
+                        {sourceContent.trim().length.toLocaleString("pt-BR")} caracteres — todo o conteúdo será usado na geração.
+                      </p>
                     </div>
                   )}
                 </div>

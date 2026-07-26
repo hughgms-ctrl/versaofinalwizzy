@@ -210,8 +210,10 @@ export interface GenerateTextsParams {
   sourceContent?: string | null;
 }
 
-// Trunca o material de origem pra caber num prompt razoável sem estourar tokens.
-const MAX_SOURCE_CHARS = 12000;
+// Teto de segurança (não um corte real) — o material de origem deve ser processado
+// INTEIRO para gerar conteúdo de valor; ~100k caracteres (~25k tokens) cabem com
+// folga na janela do gpt-4o e cobrem qualquer artigo/transcrição real.
+const MAX_SOURCE_CHARS = 100000;
 
 function sourceContentInstruction(sourceContent: string): string {
   return (

@@ -9,7 +9,10 @@ import { authenticateUser, errorResponse, handleCors, jsonResponse } from "../_s
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
-const MAX_CONTENT_CHARS = 12000;
+// Teto de segurança (não um corte real) — o objetivo é processar o artigo/vídeo
+// INTEIRO; isso só evita abuso de payload em páginas anormalmente gigantes.
+// ~100k caracteres cobrem qualquer artigo ou transcrição real com folga.
+const MAX_CONTENT_CHARS = 100000;
 
 interface Body {
   type: "link" | "youtube";

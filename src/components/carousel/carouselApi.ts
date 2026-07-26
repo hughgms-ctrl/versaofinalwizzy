@@ -205,11 +205,7 @@ export async function cloneTemplate(
 export async function importTemplateFromScreenshots(
   images: string[],
 ): Promise<{ carouselId: string }> {
-  const { data, error } = await supabase.functions.invoke("carousel-import-template", {
-    body: { images },
-  });
-  if (error) throw error;
-  return data as { carouselId: string };
+  return invokeFn("carousel-import-template", { images });
 }
 
 export async function patchSlide(
@@ -224,6 +220,25 @@ export async function patchSlide(
     .single();
   if (error) throw error;
   return rowToSlide(data);
+}
+
+/**
+ * Invoca uma edge function e, em erro, tenta extrair a mensagem REAL do corpo
+ * da resposta ({ error: "..." }) — o supabase-js só devolve um texto genérico
+ * ("Edge Function returned a non-2xx status code") em error.message por padrão,
+ * escondendo a causa de fato (ex.: "Nenhuma chave OpenAI configurada").
+ */
+async function invokeFn<T = unknown>(name: string, body: unknown): Promise<T> {
+  const { data, error } = await supabase.functions.invoke(name, { body });
+  if (error) {
+    const ctx = (error as { context?: Response }).context;
+    if (ctx && typeof ctx.json === "function") {
+      const parsed = await ctx.clone().json().catch(() => null);
+      if (parsed?.error) throw new Error(parsed.error);
+    }
+    throw error;
+  }
+  return data as T;
 }
 
 /* ------------------------------- IA -------------------------------- */
@@ -245,11 +260,7 @@ export interface GeneratePayload {
 export async function generateCarousel(
   payload: GeneratePayload,
 ): Promise<{ carouselId: string }> {
-  const { data, error } = await supabase.functions.invoke("carousel-generate", {
-    body: payload,
-  });
-  if (error) throw error;
-  return data as { carouselId: string };
+  return invokeFn("carousel-generate", payload);
 }
 
 export async function regenerateText(
@@ -257,10 +268,7 @@ export async function regenerateText(
   slideId: string,
   instruction?: string,
 ): Promise<Slide> {
-  const { data, error } = await supabase.functions.invoke("carousel-regenerate-text", {
-    body: { carouselId, slideId, instruction },
-  });
-  if (error) throw error;
+  const data = await invokeFn("carousel-regenerate-text", { carouselId, slideId, instruction });
   return rowToSlide(data);
 }
 
@@ -268,10 +276,7 @@ export async function regenerateImage(
   carouselId: string,
   slideId: string,
 ): Promise<Slide> {
-  const { data, error } = await supabase.functions.invoke("carousel-regenerate-image", {
-    body: { carouselId, slideId },
-  });
-  if (error) throw error;
+  const data = await invokeFn("carousel-regenerate-image", { carouselId, slideId });
   return rowToSlide(data);
 }
 
@@ -280,37 +285,24 @@ export async function enhanceModelField(
   value: string,
   context?: { niche?: string; objective?: string; tone?: string },
 ): Promise<string> {
-  const { data, error } = await supabase.functions.invoke("carousel-enhance-field", {
-    body: { field, value, ...context },
-  });
-  if (error) throw error;
-  return (data as { value: string }).value ?? value;
+  const data = await invokeFn<{ value: string }>("carousel-enhance-field", { field, value, ...context });
+  return data.value ?? value;
 }
 
 export async function extractSource(
   type: Extract<CarouselSourceType, "link" | "youtube">,
   value: string,
 ): Promise<{ title: string; content: string }> {
-  const { data, error } = await supabase.functions.invoke("carousel-extract-source", {
-    body: { type, value },
-  });
-  if (error) throw error;
-  return data as { title: string; content: string };
+  return invokeFn("carousel-extract-source", { type, value });
 }
 
-/** Gera (ou regenera, se force) as 6 amostras reais de estilo visual — requer platform_admin. */
+/** Gera (ou regenera, se force) as 6 amostras reais de estilo visual. */
 export async function generateStyleSamples(force = false): Promise<Record<string, string>> {
-  const { data, error } = await supabase.functions.invoke("carousel-style-samples", {
-    body: { force },
-  });
-  if (error) throw error;
-  return (data as { samples: Record<string, string> }).samples ?? {};
+  const data = await invokeFn<{ samples: Record<string, string> }>("carousel-style-samples", { force });
+  return data.samples ?? {};
 }
 
 export async function fetchTrending(niche: string): Promise<TrendingIdea[]> {
-  const { data, error } = await supabase.functions.invoke("carousel-trending", {
-    body: { niche },
-  });
-  if (error) throw error;
-  return (data as { ideas: TrendingIdea[] }).ideas ?? [];
+  const data = await invokeFn<{ ideas: TrendingIdea[] }>("carousel-trending", { niche });
+  return data.ideas ?? [];
 }
