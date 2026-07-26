@@ -9,6 +9,8 @@ import { buildImagePrompt, generateImage, resolveOpenAIKey, uploadImage } from "
 interface Body {
   carouselId: string;
   slideId: string;
+  /** Descrição do que a pessoa quer na imagem — sobrescreve o image_theme salvo e é persistida pra próxima regeneração. */
+  imageTheme?: string;
 }
 
 const service = createClient(
@@ -22,7 +24,7 @@ Deno.serve(async (req) => {
 
   try {
     const { organizationId, supabase } = await authenticateUser(req);
-    const { carouselId, slideId } = (await req.json()) as Body;
+    const { carouselId, slideId, imageTheme } = (await req.json()) as Body;
     if (!carouselId || !slideId) return errorResponse("Payload inválido", 400);
 
     const { data: carousel } = await supabase
@@ -41,8 +43,9 @@ Deno.serve(async (req) => {
     if (!slide) return errorResponse("Slide não encontrado", 404);
 
     const apiKey = await resolveOpenAIKey(supabase, organizationId);
+    const theme = imageTheme?.trim() || slide.image_theme;
     const imagePrompt = buildImagePrompt({
-      imageTheme: slide.image_theme,
+      imageTheme: theme,
       prompt: carousel.prompt,
       slideTitle: slide.title,
       imageStyle: carousel.image_style,
@@ -56,7 +59,7 @@ Deno.serve(async (req) => {
 
     const { data: updated } = await supabase
       .from("carousel_slides")
-      .update({ has_image: true, image_prompt: imagePrompt, image_url: imageUrl })
+      .update({ has_image: true, image_theme: theme, image_prompt: imagePrompt, image_url: imageUrl })
       .eq("id", slideId)
       .select()
       .single();

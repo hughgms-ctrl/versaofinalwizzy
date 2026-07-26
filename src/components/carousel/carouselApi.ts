@@ -275,8 +275,9 @@ export async function regenerateText(
 export async function regenerateImage(
   carouselId: string,
   slideId: string,
+  imageTheme?: string,
 ): Promise<Slide> {
-  const data = await invokeFn("carousel-regenerate-image", { carouselId, slideId });
+  const data = await invokeFn("carousel-regenerate-image", { carouselId, slideId, imageTheme });
   return rowToSlide(data);
 }
 

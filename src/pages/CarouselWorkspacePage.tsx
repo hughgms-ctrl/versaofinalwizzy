@@ -329,11 +329,17 @@ export default function CarouselWorkspacePage() {
               )}
 
               {usesSource && (
-                <Input
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
-                  placeholder="Título do carrossel (opcional — a IA sugere um)"
-                />
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground">
+                    Ideia / direcionamento <span className="text-muted-foreground/70">(opcional)</span>
+                  </Label>
+                  <Textarea
+                    value={prompt}
+                    onChange={(e) => setPrompt(e.target.value)}
+                    rows={2}
+                    placeholder="A IA sugere um título a partir do conteúdo — edite aqui se quiser dar um foco, ângulo ou título específico"
+                  />
+                </div>
               )}
 
               {ideaSource === "idea" && (
@@ -576,7 +582,7 @@ export default function CarouselWorkspacePage() {
                 await patchSlide(selected.id, patch);
               }}
               onRegenerateText={(instruction) => wrap(() => regenerateText(selected.id, instruction))}
-              onRegenerateImage={() => wrap(() => regenerateImage(selected.id))}
+              onRegenerateImage={(imageTheme) => wrap(() => regenerateImage(selected.id, imageTheme))}
               onToggleImage={async (hasImage) => {
                 if (hasImage) await wrap(() => regenerateImage(selected.id));
                 else await patchSlide(selected.id, { hasImage: false, imageUrl: null });

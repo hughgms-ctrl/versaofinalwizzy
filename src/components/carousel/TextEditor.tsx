@@ -16,7 +16,7 @@ interface Props {
   slide: Slide;
   onPatch: (patch: Partial<Slide>) => Promise<void> | void;
   onRegenerateText: (instruction?: string) => Promise<void> | void;
-  onRegenerateImage: () => Promise<void> | void;
+  onRegenerateImage: (imageTheme?: string) => Promise<void> | void;
   onToggleImage: (hasImage: boolean) => Promise<void> | void;
   busy?: boolean;
 }
@@ -104,6 +104,7 @@ export default function TextEditor({
   const [body, setBody] = useState(slide.body ?? "");
   const [instruction, setInstruction] = useState("");
   const [showInstruction, setShowInstruction] = useState(false);
+  const [imageTheme, setImageTheme] = useState(slide.imageTheme ?? "");
 
   const [overlay, setOverlay] = useState(slide.overlayIntensity ?? 0.85);
   const [titleSize, setTitleSize] = useState(slide.titleSize ?? 80);
@@ -114,10 +115,11 @@ export default function TextEditor({
     setBody(slide.body ?? "");
     setInstruction("");
     setShowInstruction(false);
+    setImageTheme(slide.imageTheme ?? "");
     setOverlay(slide.overlayIntensity ?? 0.85);
     setTitleSize(slide.titleSize ?? 80);
     setBodySize(slide.bodySize ?? 36);
-  }, [slide.id, slide.title, slide.body, slide.overlayIntensity, slide.titleSize, slide.bodySize]);
+  }, [slide.id, slide.title, slide.body, slide.imageTheme, slide.overlayIntensity, slide.titleSize, slide.bodySize]);
 
   const align = (slide.textAlign ?? "left") as TextAlign;
   const overlayPosition = slide.overlayPosition ?? "bottom";
@@ -297,24 +299,35 @@ export default function TextEditor({
         )}
 
         {slide.hasImage ? (
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              className="flex-1"
-              disabled={busy}
-              onClick={() => onRegenerateImage()}
-            >
-              <RefreshCw className="mr-2 h-4 w-4" /> Regenerar
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={busy}
-              onClick={() => onToggleImage(false)}
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
+          <div className="space-y-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">O que você quer na imagem</Label>
+              <Textarea
+                value={imageTheme}
+                onChange={(e) => setImageTheme(e.target.value)}
+                rows={2}
+                placeholder="Ex: amanhecer dourado dramático com luz entrando pela janela"
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1"
+                disabled={busy}
+                onClick={() => onRegenerateImage(imageTheme.trim() || undefined)}
+              >
+                <RefreshCw className="mr-2 h-4 w-4" /> Trocar imagem
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={busy}
+                onClick={() => onToggleImage(false)}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
         ) : (
           <Button

@@ -221,9 +221,9 @@ export function useCarousel(carouselId: string | undefined) {
   );
 
   const regenerateImage = useCallback(
-    async (slideId: string) => {
+    async (slideId: string, imageTheme?: string) => {
       if (!carouselId) return;
-      const updated = await api.regenerateImage(carouselId, slideId);
+      const updated = await api.regenerateImage(carouselId, slideId, imageTheme);
       applySlide(updated);
       return updated;
     },

@@ -36,10 +36,10 @@ export const STYLE_HINTS: Record<string, string> = {
   minimalist:
     "minimalist, lots of negative space, simple shapes, clean, flat design",
   watercolor:
-    "soft watercolor painting, hand-painted texture, gentle gradients, artistic",
+    "vibrant watercolor painting, rich colorful pigments, flowing multicolor gradients, hand-painted texture, artistic",
   dark: "dark moody aesthetic, low-key lighting, deep shadows, high contrast",
   illustration:
-    "modern vector illustration, bold colors, clean lines, editorial style",
+    "modern vector illustration, vibrant multicolor palette, bold saturated colors, clean lines, editorial style",
 };
 
 const OBJECTIVE_LABEL: Record<string, string> = {
@@ -679,6 +679,44 @@ export async function generateImage(
   const json = await res.json();
   const b64 = json.data?.[0]?.b64_json;
   if (!b64) throw new Error("gpt-image-1 não retornou imagem");
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+const OPENAI_IMAGE_EDITS = "https://api.openai.com/v1/images/edits";
+
+/**
+ * gpt-image-1 (edits): transforma uma imagem EXISTENTE seguindo o prompt, em vez
+ * de gerar do zero — usado pra manter a mesma pessoa/composição entre estilos
+ * (gera uma base fotorrealista uma vez, depois "reestiliza" essa mesma imagem
+ * pros outros estilos, ao invés de 6 gerações independentes e sem relação).
+ */
+export async function editImage(
+  apiKey: string,
+  sourceBytes: Uint8Array,
+  prompt: string,
+): Promise<Uint8Array> {
+  const form = new FormData();
+  form.append("model", "gpt-image-1");
+  form.append("image", new Blob([sourceBytes], { type: "image/png" }), "source.png");
+  form.append("prompt", prompt);
+  form.append("n", "1");
+  form.append("size", "1024x1024");
+
+  const res = await fetch(OPENAI_IMAGE_EDITS, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}` },
+    body: form,
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`OpenAI image edit falhou (${res.status}): ${body}`);
+  }
+  const json = await res.json();
+  const b64 = json.data?.[0]?.b64_json;
+  if (!b64) throw new Error("gpt-image-1 não retornou imagem editada");
   const binary = atob(b64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
