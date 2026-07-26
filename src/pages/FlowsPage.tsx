@@ -46,6 +46,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { useNavigate } from 'react-router-dom';
+import { confirmDialog } from '@/lib/confirmDialog';
 import { useFlows, useToggleFlowActive, useDeleteFlow, useToggleFlowVisibleInChat, useDuplicateFlow } from '@/hooks/useFlows';
 import {
   useFlowFolders,
@@ -154,10 +155,13 @@ const FlowsPage = () => {
     navigate(`/flow-builder?id=${flowId}`);
   };
 
-  const handleDeleteFlow = (flowId: string) => {
-    if (confirm('Tem certeza que deseja excluir este fluxo?')) {
-      deleteFlow.mutate(flowId);
-    }
+  const handleDeleteFlow = async (flowId: string) => {
+    const confirmed = await confirmDialog('Tem certeza que deseja excluir este fluxo?', {
+      title: 'Excluir fluxo',
+      confirmLabel: 'Excluir',
+      variant: 'destructive',
+    });
+    if (confirmed) deleteFlow.mutate(flowId);
   };
 
   const handleCreateFolder = () => {
@@ -189,10 +193,13 @@ const FlowsPage = () => {
     }
   };
 
-  const handleDeleteFolder = (folderId: string) => {
-    if (confirm('Tem certeza que deseja excluir esta pasta? Os fluxos dentro dela ficarão sem pasta.')) {
-      deleteFolder.mutate(folderId);
-    }
+  const handleDeleteFolder = async (folderId: string) => {
+    const confirmed = await confirmDialog('Tem certeza que deseja excluir esta pasta? Os fluxos dentro dela ficarão sem pasta.', {
+      title: 'Excluir pasta',
+      confirmLabel: 'Excluir',
+      variant: 'destructive',
+    });
+    if (confirmed) deleteFolder.mutate(folderId);
   };
 
   const handleMoveToFolder = (flowId: string, folderId: string | null) => {

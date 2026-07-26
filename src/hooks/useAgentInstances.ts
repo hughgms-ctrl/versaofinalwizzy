@@ -8,9 +8,10 @@ export interface AgentInstance {
   organization_id: string;
   template_id: string | null;
   flow_id: string;
-  ai_agent_id: string;
+  ai_agent_id: string | null;
   campaign_id: string | null;
   status: 'draft' | 'active' | 'paused';
+  flow_created_by_wizard: boolean;
 }
 
 // Todo agente criado pela orquestração (ver ApplyTemplateWizard) tem uma linha
@@ -22,7 +23,7 @@ export function useAgentInstances() {
     queryFn: async (): Promise<AgentInstance[]> => {
       const { data, error } = await (supabase as any)
         .from('agent_instances')
-        .select('id, organization_id, template_id, flow_id, ai_agent_id, campaign_id, status');
+        .select('id, organization_id, template_id, flow_id, ai_agent_id, campaign_id, status, flow_created_by_wizard');
       if (error) throw error;
       return (data as AgentInstance[]) || [];
     },
@@ -162,6 +163,9 @@ export function useImportFlowAsInstance() {
         ai_agent_id: params.aiAgentId,
         campaign_id: params.campaignId,
         status,
+        // Fluxo importado (já existia antes) -- nunca apagar automaticamente
+        // junto com a orquestração (ver conversa com o usuário).
+        flow_created_by_wizard: false,
       });
       if (error) throw error;
     },
@@ -176,6 +180,50 @@ export function useImportFlowAsInstance() {
     },
     onError: (error: any) => {
       toast({ title: 'Erro ao importar fluxo', description: error.message, variant: 'destructive' });
+    },
+  });
+}
+
+// Cria a linha de agent_instances pra uma orquestração nova: fluxo e
+// campanha já foram criados (em branco / com o gatilho escolhido) antes
+// desta chamada -- aqui só liga os dois como "draft", sem agente ainda (o
+// agente entra depois como nó ai-handoff, montado direto no Flow Builder;
+// ver conversa com o usuário: "agente inicial dispensado"). Mesmo padrão de
+// insert direto do cliente que useImportFlowAsInstance já usa.
+export function useCreateOrchestrationInstance() {
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const { profile } = useAuth();
+
+  return useMutation({
+    mutationFn: async (params: { flowId: string; campaignId: string | null }): Promise<AgentInstance> => {
+      if (!profile?.organization_id) throw new Error('Sem organização');
+      const { data, error } = await (supabase as any)
+        .from('agent_instances')
+        .insert({
+          organization_id: profile.organization_id,
+          template_id: null,
+          flow_id: params.flowId,
+          ai_agent_id: null,
+          campaign_id: params.campaignId,
+          status: 'draft',
+          // Fluxo criado do zero especificamente pra essa orquestração -- vale
+          // perguntar se apaga junto na hora de excluir (ver conversa com o
+          // usuário).
+          flow_created_by_wizard: true,
+        })
+        .select('id, organization_id, template_id, flow_id, ai_agent_id, campaign_id, status, flow_created_by_wizard')
+        .single();
+      if (error) throw error;
+      return data as AgentInstance;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['agent-instances'] });
+      queryClient.invalidateQueries({ queryKey: ['agent-orchestrations'] });
+      queryClient.invalidateQueries({ queryKey: ['agent-usage-counts'] });
+    },
+    onError: (error: any) => {
+      toast({ title: 'Erro ao criar orquestração', description: error.message, variant: 'destructive' });
     },
   });
 }

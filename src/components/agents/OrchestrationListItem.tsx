@@ -139,7 +139,7 @@ export function OrchestrationListItem({ orchestration, onEdit }: OrchestrationLi
                 )}
                 <DropdownMenuItem
                   className="text-destructive"
-                  onClick={() => deleteOrchestration.mutate(orchestration.id)}
+                  onClick={() => deleteOrchestration.mutate(orchestration)}
                 >
                   <Trash2 className="h-3.5 w-3.5 mr-2" /> Excluir
                 </DropdownMenuItem>

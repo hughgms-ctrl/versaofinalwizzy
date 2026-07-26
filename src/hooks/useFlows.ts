@@ -235,12 +235,19 @@ export function useDeleteFlow() {
 
   return useMutation({
     mutationFn: async (flowId: string) => {
-      const { error } = await (supabase
+      // .select() força o Postgrest a devolver as linhas de fato apagadas --
+      // sem isso, uma policy de RLS que bloqueia silenciosamente (0 linhas
+      // afetadas, sem erro) passaria por "sucesso" mesmo sem apagar nada.
+      const { data, error } = await (supabase
         .from('flows' as 'contacts')
         .delete()
-        .eq('id', flowId) as unknown as Promise<{ error: Error | null }>);
+        .eq('id', flowId)
+        .select('id') as unknown as Promise<{ data: unknown[] | null; error: Error | null }>);
 
       if (error) throw error;
+      if (!data || data.length === 0) {
+        throw new Error('Nenhum fluxo foi apagado -- você pode não ter permissão para excluir este item.');
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['flows'] });
@@ -248,7 +255,7 @@ export function useDeleteFlow() {
     },
     onError: (error) => {
       console.error('Error deleting flow:', error);
-      toast.error('Erro ao excluir fluxo');
+      toast.error(`Erro ao excluir fluxo: ${error.message}`);
     },
   });
 }

@@ -134,21 +134,28 @@ export function useDeleteCampaign() {
 
     return useMutation({
         mutationFn: async (id: string) => {
-            const { error } = await supabase
+            // .select() força o Postgrest a devolver as linhas de fato apagadas --
+            // sem isso, uma policy de RLS que bloqueia silenciosamente (0 linhas
+            // afetadas, sem erro) passaria por "sucesso" mesmo sem apagar nada.
+            const { data, error } = await supabase
                 .from('campaigns')
                 .delete()
-                .eq('id', id);
+                .eq('id', id)
+                .select('id');
 
             if (error) throw error;
+            if (!data || data.length === 0) {
+                throw new Error('Nenhuma campanha foi apagada -- você pode não ter permissão para excluir este item.');
+            }
             return id;
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['campaigns'] });
             toast.success('Campanha excluída!');
         },
-        onError: (error) => {
+        onError: (error: any) => {
             console.error('Error deleting campaign:', error);
-            toast.error('Erro ao excluir campanha');
+            toast.error(`Erro ao excluir campanha: ${error?.message || 'Erro interno'}`);
         },
     });
 }

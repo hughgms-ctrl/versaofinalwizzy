@@ -1,11 +1,12 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAIAgents, useCreateAIAgent, useUpdateAIAgent, AGENT_FUNCTION_ROLES } from '@/hooks/useAIAgents';
 import { useAgentOrchestrations, useAgentUsageCounts } from '@/hooks/useAgentOrchestrations';
 import { useAgentFolders, useCreateAgentFolder, useDeleteAgentFolder, useRenameAgentFolder, useMoveAgentToFolder } from '@/hooks/useAgentFolders';
 import { AgentListItem } from './AgentListItem';
 import { OrchestrationListItem } from './OrchestrationListItem';
-import { ApplyTemplateWizard } from './ApplyTemplateWizard';
+import { CreateOrchestrationDialog } from './CreateOrchestrationDialog';
 import { ImportFlowDialog } from './ImportFlowDialog';
 import { AgentPersonalityFields, EMPTY_PERSONALITY, type AgentPersonalityValue } from './AgentPersonalityFields';
 import { Button } from '@/components/ui/button';
@@ -22,6 +23,7 @@ import { AgentFolder } from '@/hooks/useAgentFolders';
 import { enforceEntryCreationLimit } from '@/lib/entryFlow';
 
 export function AgentsTab() {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: agents = [], isLoading } = useAIAgents();
   const { data: folders = [] } = useAgentFolders();
@@ -49,7 +51,6 @@ export function AgentsTab() {
   // Rename/edit folder dialog
   const [editingFolder, setEditingFolder] = useState<AgentFolder | null>(null);
   const [showRenameDialog, setShowRenameDialog] = useState(false);
-  const [editingInstanceId, setEditingInstanceId] = useState<string | null>(null);
   // "Agentes" e "Orquestrações" são entidades SEPARADAS agora (ver conversa
   // com o usuário: "o agente simples fica quietinho lá... a orquestração vai
   // aparecer separado") -- agentes são TODOS os ai_agents, incondicionalmente;
@@ -85,6 +86,17 @@ export function AgentsTab() {
         setSelectedFolder(null);
       },
     });
+  };
+
+  // Orquestração agora É um fluxo real -- editar significa ir direto pro
+  // Flow Builder de verdade, sem nenhum diálogo/parser no meio (ver
+  // redesenho: ApplyTemplateWizard deixou de reconstruir etapas a partir do
+  // grafo). O flowId já está disponível na lista que useAgentOrchestrations
+  // retorna.
+  const handleEditOrchestration = (instanceId: string) => {
+    const orchestration = orchestrations.find((o) => o.id === instanceId);
+    if (!orchestration) return;
+    navigate(`/flow-builder?id=${orchestration.flowId}`);
   };
 
   const handleCreateFolder = () => {
@@ -427,7 +439,7 @@ export function AgentsTab() {
       {showOrchestrations && filteredOrchestrations.length > 0 && (
         <div className={cn("grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-3", showAgents && "mt-4")}>
           {filteredOrchestrations.map(orchestration => (
-            <OrchestrationListItem key={orchestration.id} orchestration={orchestration} onEdit={setEditingInstanceId} />
+            <OrchestrationListItem key={orchestration.id} orchestration={orchestration} onEdit={handleEditOrchestration} />
           ))}
         </div>
       )}
@@ -435,19 +447,9 @@ export function AgentsTab() {
         <p className="text-xs text-muted-foreground py-2">Nenhuma orquestração ainda -- crie uma ou importe um fluxo existente.</p>
       )}
 
-      <ApplyTemplateWizard
-        open={!!editingInstanceId || orchestrationWizardOpen}
-        onOpenChange={(isOpen) => { if (!isOpen) { setEditingInstanceId(null); setOrchestrationWizardOpen(false); } }}
-        template={null}
-        editInstanceId={editingInstanceId}
-        onApplied={() => {
-          queryClient.invalidateQueries({ queryKey: ['ai-agents'] });
-          queryClient.invalidateQueries({ queryKey: ['agent-instances'] });
-          queryClient.invalidateQueries({ queryKey: ['agent-orchestrations'] });
-          queryClient.invalidateQueries({ queryKey: ['agent-usage-counts'] });
-          queryClient.invalidateQueries({ queryKey: ['campaigns'] });
-          setOrchestrationWizardOpen(false);
-        }}
+      <CreateOrchestrationDialog
+        open={orchestrationWizardOpen}
+        onOpenChange={setOrchestrationWizardOpen}
       />
 
       <ImportFlowDialog

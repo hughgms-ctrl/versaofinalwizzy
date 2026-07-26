@@ -1,6 +1,7 @@
 import React, { Suspense, lazy } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
+import { ConfirmDialogHost } from "@/lib/confirmDialog";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Navigate, Routes, Route } from "react-router-dom";
@@ -100,6 +101,7 @@ const App = () => (
               <NotificationProvider>
                 <Toaster />
                 <Sonner />
+                <ConfirmDialogHost />
                 <BrowserRouter>
                   <MetaPixelTracker />
                   <Suspense fallback={<RouteLoader />}>

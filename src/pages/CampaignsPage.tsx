@@ -38,6 +38,7 @@ import {
     DialogFooter,
 } from "@/components/ui/dialog";
 import { CampaignDialog } from "@/components/campaigns/CampaignDialog";
+import { confirmDialog } from "@/lib/confirmDialog";
 import {
     useCampaigns,
     useUpdateCampaign,
@@ -149,10 +150,13 @@ const CampaignsPage = () => {
         updateCampaign.mutate({ id, is_active: isActive });
     };
 
-    const handleDelete = (id: string) => {
-        if (confirm("Tem certeza que deseja excluir esta campanha?")) {
-            deleteCampaign.mutate(id);
-        }
+    const handleDelete = async (id: string) => {
+        const confirmed = await confirmDialog("Tem certeza que deseja excluir esta campanha?", {
+            title: "Excluir campanha",
+            confirmLabel: "Excluir",
+            variant: "destructive",
+        });
+        if (confirmed) deleteCampaign.mutate(id);
     };
 
     const handleCreateFolder = () => {
@@ -182,10 +186,13 @@ const CampaignsPage = () => {
         }
     };
 
-    const handleDeleteFolder = (folderId: string) => {
-        if (confirm("Tem certeza que deseja excluir esta pasta? As campanhas dentro dela ficarão sem pasta.")) {
-            deleteFolder.mutate(folderId);
-        }
+    const handleDeleteFolder = async (folderId: string) => {
+        const confirmed = await confirmDialog("Tem certeza que deseja excluir esta pasta? As campanhas dentro dela ficarão sem pasta.", {
+            title: "Excluir pasta",
+            confirmLabel: "Excluir",
+            variant: "destructive",
+        });
+        if (confirmed) deleteFolder.mutate(folderId);
     };
 
     const handleMoveToFolder = (campaignId: string, folderId: string | null) => {

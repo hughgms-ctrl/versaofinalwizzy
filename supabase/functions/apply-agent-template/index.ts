@@ -16,6 +16,11 @@ import {
 // escritas em flows/ai_agents/campaigns/agent_instances usam service_role depois
 // de confirmado que o usuário pertence à org e pode ver o template).
 //
+// Criação "do zero" (sem templateId) e a action 'update_orchestration' NÃO
+// existem mais aqui -- orquestração do zero agora cria fluxo/campanha/instância
+// direto do cliente (ver useCreateOrchestrationInstance) e é sempre editada no
+// Flow Builder real, sem passar por um "step builder" no servidor.
+//
 // NÃO reaproveita o checkCampaignTriggers de zapi-webhook (por precaução -- esse é
 // o arquivo mais sensível do sistema, campanhas/conversas em produção dependem
 // dele, e o formato da checagem aqui é diferente: comparar gatilho candidato
@@ -29,6 +34,10 @@ function normalizeText(text: string): string {
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
     .trim();
+}
+
+function suggestKeywordFromName(name: string): string {
+  return normalizeText(name).replace(/[^a-z0-9\s]/g, "").trim().replace(/\s+/g, "");
 }
 
 interface CollidingCampaign {
@@ -65,118 +74,13 @@ async function checkKeywordCollision(
   return colliding;
 }
 
-interface TagRef { id: string; name: string; }
-interface PipelineRef { id: string; name: string; columnId: string; columnName: string; }
-interface OutcomeRouting {
-  continue?: boolean; // default true -- se false, esse resultado encerra a cadeia ali
-  tag?: TagRef;
-  pipeline?: PipelineRef;
-  // Pula pra um "final compartilhado" (ver SharedEndingInput) em vez de
-  // continuar nesta MESMA lista -- pra quando dois pontos diferentes (ex.:
-  // dois "não respondeu" de Iniciar Fluxo distintos) precisam levar pro
-  // MESMO próximo passo (ver conversa com o usuário: "Agente Master - AR").
-  // Quando setado, tem prioridade sobre continue/tag/pipeline.
-  jumpToEndingKey?: string;
-}
-
-interface SharedEndingInput {
-  key: string;
-  name?: string;
-  steps: StepInput[];
-}
-interface RemarketingStepInput { message: string; delayMinutes: number; }
-
-// Mesmo shape de ConditionRule usado no Flow Builder (src/types/flow.ts) --
-// não reimporta (edge function roda isolada, sem acesso ao src/ do frontend)
-// mas o formato é idêntico de propósito, pra não precisar traduzir nada.
-interface ConditionRuleInput {
-  id: string;
-  type: "tag" | "pipeline" | "assigned" | "variable" | "contact_field" | "service_mode";
-  negate?: boolean;
-  tagId?: string;
-  pipelineId?: string;
-  columnId?: string;
-  userId?: string;
-  variable?: string;
-  operator?: string;
-  value?: string;
-  contactField?: "name" | "email" | "phone";
-  serviceMode?: "pending" | "bot" | "human";
-}
-
-// Uma orquestração "do zero" é uma LISTA de etapas -- não mais um formato fixo
-// (tag→pipeline→agente→ação). Cada etapa mapeia 1:1 num tipo de node real do
-// Flow Builder (não inventa tipo novo), e pode repetir 'agent' quantas vezes
-// quiser -- é assim que "Agente 1 qualifica → Agente 2 verifica relatório →
-// decide avançar" fica possível (ver conversa com o usuário: "o agente é uma
-// orquestração de agentes, não um agente separado").
-//
-// 'flow' reproduz o node 'action-flow' EXATAMENTE como usado na produção real
-// do usuário ("Agente Master - AR", workspace Previdenciário 1): disparar o
-// fluxo é fire-and-forget, mas quando waitForResponse=true o node vira um
-// portão com DUAS saídas fixas -- "responded" (cliente respondeu) e "timeout"
-// (não respondeu) -- com uma régua de follow-ups (mensagem+atraso) cutucando
-// o cliente enquanto espera. Sem waitForResponse, é um passo linear simples.
-type StepInput =
-  | { type: "tag"; tag: TagRef }
-  | { type: "pipeline"; pipeline: PipelineRef }
-  | { type: "transfer" }
-  | { type: "delay"; delaySeconds?: number }
-  | {
-      // Espelha o node real 'condition' (Sim/Não) -- ver ConditionNode
-      // (src/components/flow/nodes/LogicNodes.tsx): 2 saídas fixas (sourceHandle
-      // "true"/"false"), cada uma vira sua PRÓPRIA sub-lista de etapas
-      // independente (sem reconvergência -- ver conversa com o usuário).
-      type: "condition";
-      conditionLabel?: string;
-      matchType?: "all" | "any";
-      rules: ConditionRuleInput[];
-      trueSteps: StepInput[];
-      falseSteps: StepInput[];
-    }
-  | {
-      type: "flow";
-      flowId: string;
-      flowName?: string;
-      waitForResponse?: boolean;
-      remarketingSteps?: RemarketingStepInput[];
-      remarketingContext?: string;
-      remarketingQuietHours?: boolean;
-      remarketingQuietStart?: string;
-      routing?: { responded?: OutcomeRouting; timeout?: OutcomeRouting };
-    }
-  | {
-      type: "agent";
-      agentId?: string; // usa um agente JÁ existente (reuso entre orquestrações)
-      agentName?: string;
-      newAgent?: {
-        name: string;
-        functionRole?: string;
-        promptBase?: string;
-        // Personalidade estruturada (ver src/lib/agentPersonality.ts) -- null/undefined
-        // = sem seleção, sem efeito extra no prompt.
-        behaviorStyle?: string | null;
-        responseLength?: string | null;
-        toneStyle?: string | null;
-        emojiUsage?: string | null;
-      }; // OU cria um novo agora
-      additionalPrompt?: string; // prompt específico deste passo -- SOMA ao prompt_base do agente, não substitui
-      outcomes?: string[];
-      outcomeRouting?: Record<string, OutcomeRouting>;
-      // resultado "não identificado" (a IA respondeu algo fora dos resultados
-      // configurados) -- espelha node_3→outcome-default→Transferir no exemplo real.
-      outcomeDefaultTransfer?: boolean;
-    };
-
 interface ApplyBody {
-  action: "apply" | "activate" | "check_keyword" | "save_as_template" | "update_orchestration" | "set_goal_tag";
-  templateId?: string; // 'apply': se ausente, cria do zero (sem template)
-  name?: string; // 'apply'/'update_orchestration': nome da orquestração; 'save_as_template': nome do template
+  action: "apply" | "activate" | "check_keyword" | "save_as_template" | "set_goal_tag";
+  templateId?: string; // 'apply': obrigatório
+  name?: string; // 'save_as_template': nome do template
   workspaceId?: string | null;
   triggerKeyword?: string;
-  instanceId?: string; // pra action:'activate'/'check_keyword'/'save_as_template'/'update_orchestration'/'set_goal_tag'
-  steps?: StepInput[]; // orquestração do zero (sem templateId), ou reconstruída pra 'update_orchestration'
-  sharedEndings?: SharedEndingInput[]; // finais nomeados que qualquer resultado (de qualquer profundidade) pode "pular pra"
+  instanceId?: string; // pra action:'activate'/'check_keyword'/'save_as_template'/'set_goal_tag'
   // 'save_as_template' (só admin de plataforma, sempre vai pra galeria global)
   description?: string;
   category?: string;
@@ -185,10 +89,6 @@ interface ApplyBody {
   // orquestração, marca conversão (ver get_agent_instance_conversion). null
   // remove o objetivo (volta a não mostrar conversão nenhuma).
   goalTagId?: string | null;
-}
-
-function suggestKeywordFromName(name: string): string {
-  return normalizeText(name).replace(/[^a-z0-9\s]/g, "").trim().replace(/\s+/g, "");
 }
 
 // Fluxos/campanhas criados por uma orquestração entram numa pasta fixa,
@@ -221,17 +121,6 @@ async function getOrCreateOrchestrationFolder(
   return created.id;
 }
 
-// Recursiva -- um agente pode estar escondido dentro de um ramo Sim/Não de
-// uma 'condition' (ver StepList/StepCard no frontend, mesma checagem lá).
-function hasAgentStepDeep(steps: StepInput[]): boolean {
-  return steps.some((s) => s.type === "agent" || (s.type === "condition" && (hasAgentStepDeep(s.trueSteps || []) || hasAgentStepDeep(s.falseSteps || []))));
-}
-
-// Um agente pode, em tese, morar só dentro de um final compartilhado -- checa os dois.
-function hasAgentAnywhere(steps: StepInput[], sharedEndings: SharedEndingInput[]): boolean {
-  return hasAgentStepDeep(steps) || sharedEndings.some((e) => hasAgentStepDeep(e.steps || []));
-}
-
 // Fallback pra template sem flow_snapshot desenhado (caso do único template
 // semeado até agora): um único nó de agente, sem passos antes/depois.
 function buildSingleAgentGraph(agentId: string, agentName: string) {
@@ -241,303 +130,6 @@ function buildSingleAgentGraph(agentId: string, agentName: string) {
   ];
   const edges: any[] = [{ id: "e-start-1-agent-1", source: "start-1", target: "agent-1" }];
   return { nodes, edges };
-}
-
-// Monta um grafo de fluxo REAL a partir da lista de etapas -- reproduz os
-// mesmos tipos/campos de node que o Flow Builder e o flow-execute já sabem
-// rodar (não inventa node type novo): 'action-tag' { action, tagId, tagName },
-// 'action-pipeline' { pipelineId, pipelineColumnId, pipelineName,
-// pipelineColumnName } (confirmado em flow-execute/index.ts:executePipelineMove
-// -- NÃO é "columnId", esse era um bug; e o atalho "outcomePipelines" direto no
-// node do agente também não existe em lugar nenhum do backend, por isso
-// "mover pipeline" por resultado agora sempre gera um node action-pipeline de
-// verdade, igual as outras ações), 'action-transfer' { label }, 'action-delay'
-// { delaySeconds }, 'ai-handoff' { agentId, agentName, additionalPrompt,
-// expectedOutcomes: "a, b" }. Edges do agente usam sourceHandle
-// "outcome-<texto exato>".
-//
-// Precisa de acesso ao DB (service role) porque uma etapa de agente pode
-// pedir pra CRIAR um agente novo ali mesmo (newAgent) -- por isso não é uma
-// função pura; roda dentro da mesma requisição de 'apply', antes do fluxo
-// existir, e devolve quais agentIds foram criados agora (pra rollback manual
-// se alguma etapa seguinte falhar).
-async function buildStepsGraph(
-  service: any,
-  organizationId: string,
-  workspaceId: string | null,
-  steps: StepInput[],
-  sharedEndings: SharedEndingInput[] = [],
-): Promise<{ nodes: any[]; edges: any[]; primaryAgentId: string | null; createdAgentIds: string[] }> {
-  const nodes: any[] = [{ id: "start-1", type: "start", position: { x: 50, y: 200 }, data: { label: "Início" } }];
-  const edges: any[] = [];
-  const createdAgentIds: string[] = [];
-  let primaryAgentId: string | null = null;
-  // Compartilhado entre TODAS as chamadas recursivas de processSteps (ramos
-  // aninhados de 'condition' incluídos) -- garante ids únicos mesmo quando o
-  // mesmo tipo de etapa aparece dentro de ramos diferentes.
-  let globalCounter = 0;
-  // key do final compartilhado -> id do PRIMEIRO node da cadeia dele -- é pra
-  // onde qualquer "pular pra" (jumpToEndingKey) aponta (ver conversa com o
-  // usuário: "Agente Master - AR").
-  const endingFirstNodeId = new Map<string, string>();
-
-  type Pending = { source: string; sourceHandle?: string };
-  const connectPending = (pending: Pending[], targetId: string) => {
-    for (const p of pending) {
-      edges.push({
-        id: `e-${p.source}-${targetId}${p.sourceHandle ? "-" + p.sourceHandle : ""}`,
-        source: p.source,
-        target: targetId,
-        ...(p.sourceHandle ? { sourceHandle: p.sourceHandle } : {}),
-      });
-    }
-  };
-
-  // Processa uma lista de etapas encadeadas a partir de `initialPending`,
-  // devolvendo os pontos "em aberto" pro que vier depois (e o id do PRIMEIRO
-  // node criado nessa chamada, usado quando ela monta um final compartilhado
-  // -- é pra ele que quem "pula" vai apontar). Recursiva: uma 'condition'
-  // chama processSteps de novo pra cada ramo (Sim/Não), escrevendo direto nos
-  // nodes/edges compartilhados -- e devolve pending VAZIO (a condição encerra
-  // a cadeia ali; cada ramo segue pro seu canto, sem reconvergência -- ver
-  // conversa com o usuário: "para fins dessa orquestração ok seguir
-  // independente" -- reconvergência de verdade agora passa por um final
-  // compartilhado em vez disso).
-  async function processSteps(stepList: StepInput[], initialPending: Pending[], xBase: number, yBase: number): Promise<{ pending: Pending[]; firstNodeId: string | null }> {
-    let pending = initialPending;
-    let x = xBase;
-    let firstNodeId: string | null = null;
-    const noteFirst = (id: string) => { if (firstNodeId === null) firstNodeId = id; };
-
-    for (const step of stepList) {
-      globalCounter++;
-      const counter = globalCounter;
-
-      if (step.type === "tag") {
-        const id = `tag-${counter}`;
-        noteFirst(id);
-        nodes.push({ id, type: "action-tag", position: { x, y: yBase }, data: { label: "Adicionar tag", action: "add", tagId: step.tag.id, tagName: step.tag.name } });
-        connectPending(pending, id);
-        pending = [{ source: id }];
-        x += 280;
-      } else if (step.type === "pipeline") {
-        const id = `pipeline-${counter}`;
-        noteFirst(id);
-        nodes.push({
-          id, type: "action-pipeline", position: { x, y: yBase },
-          data: { label: "Mover pipeline", pipelineId: step.pipeline.id, pipelineColumnId: step.pipeline.columnId, pipelineName: step.pipeline.name, pipelineColumnName: step.pipeline.columnName },
-        });
-        connectPending(pending, id);
-        pending = [{ source: id }];
-        x += 280;
-      } else if (step.type === "transfer") {
-        const id = `transfer-${counter}`;
-        noteFirst(id);
-        nodes.push({ id, type: "action-transfer", position: { x, y: yBase }, data: { label: "Transferir para atendimento humano" } });
-        connectPending(pending, id);
-        pending = [{ source: id }];
-        x += 280;
-      } else if (step.type === "delay") {
-        const id = `delay-${counter}`;
-        noteFirst(id);
-        nodes.push({ id, type: "action-delay", position: { x, y: yBase }, data: { label: "Aguardar", delaySeconds: step.delaySeconds || 60 } });
-        connectPending(pending, id);
-        pending = [{ source: id }];
-        x += 280;
-      } else if (step.type === "condition") {
-        const id = `condition-${counter}`;
-        noteFirst(id);
-        nodes.push({
-          id, type: "condition", position: { x, y: yBase },
-          data: {
-            conditionLabel: step.conditionLabel || "",
-            matchType: step.matchType || "all",
-            rules: step.rules || [],
-          },
-        });
-        connectPending(pending, id);
-        const branchX = x + 280;
-        await processSteps(step.trueSteps || [], [{ source: id, sourceHandle: "true" }], branchX, yBase - 140);
-        await processSteps(step.falseSteps || [], [{ source: id, sourceHandle: "false" }], branchX, yBase + 140);
-        pending = [];
-        x += 280;
-      } else if (step.type === "flow") {
-        const id = `flow-${counter}`;
-        noteFirst(id);
-        nodes.push({
-          id, type: "action-flow", position: { x, y: yBase },
-          data: {
-            label: "Iniciar Fluxo",
-            flowId: step.flowId,
-            flowName: step.flowName || "",
-            waitForResponse: !!step.waitForResponse,
-            ...(step.waitForResponse ? {
-              remarketingSteps: step.remarketingSteps || [],
-              remarketingContext: step.remarketingContext || "",
-              remarketingQuietHours: !!step.remarketingQuietHours,
-              ...(step.remarketingQuietStart ? { remarketingQuietStart: step.remarketingQuietStart } : {}),
-            } : {}),
-          },
-        });
-        connectPending(pending, id);
-        x += 280;
-
-        if (!step.waitForResponse) {
-          // Passo simples (fire-and-forget): sem ramificação, segue linear.
-          pending = [{ source: id }];
-        } else {
-          // waitForResponse=true -- DUAS saídas fixas, iguais ao exemplo real
-          // (Agente Master - AR): "responded" (cliente respondeu) e "timeout"
-          // (não respondeu, mesmo com os follow-ups). Cada uma pode opcionalmente
-          // marcar tag/mover pipeline (nós extras -- action-flow não tem o atalho
-          // outcomePipelines que o ai-handoff tem) antes de continuar ou encerrar.
-          const nextPending: Pending[] = [];
-          (["responded", "timeout"] as const).forEach((branch, i) => {
-            const routing = step.routing?.[branch];
-            if (routing?.jumpToEndingKey) {
-              const targetId = endingFirstNodeId.get(routing.jumpToEndingKey);
-              if (targetId) edges.push({ id: `e-${id}-${targetId}-${branch}`, source: id, target: targetId, sourceHandle: branch });
-              return; // já foi ligado direto no final compartilhado -- não continua esta cadeia
-            }
-            const shouldContinue = routing?.continue !== false;
-            let fromSource = id;
-            let fromHandle: string | undefined = branch;
-            if (routing?.tag) {
-              const tagNodeId = `flow-${counter}-tag-${branch}`;
-              nodes.push({ id: tagNodeId, type: "action-tag", position: { x, y: yBase - 120 + i * 160 }, data: { label: `Tag: ${branch}`, action: "add", tagId: routing.tag.id, tagName: routing.tag.name } });
-              edges.push({ id: `e-${fromSource}-${tagNodeId}`, source: fromSource, target: tagNodeId, sourceHandle: fromHandle });
-              fromSource = tagNodeId;
-              fromHandle = undefined;
-            }
-            if (routing?.pipeline) {
-              const pipelineNodeId = `flow-${counter}-pipeline-${branch}`;
-              nodes.push({
-                id: pipelineNodeId, type: "action-pipeline", position: { x: x + (routing.tag ? 280 : 0), y: yBase - 120 + i * 160 },
-                data: { label: "Mover pipeline", pipelineId: routing.pipeline.id, pipelineColumnId: routing.pipeline.columnId, pipelineName: routing.pipeline.name, pipelineColumnName: routing.pipeline.columnName },
-              });
-              edges.push({ id: `e-${fromSource}-${pipelineNodeId}`, source: fromSource, target: pipelineNodeId, ...(fromHandle ? { sourceHandle: fromHandle } : {}) });
-              fromSource = pipelineNodeId;
-              fromHandle = undefined;
-            }
-            if (shouldContinue) nextPending.push({ source: fromSource, sourceHandle: fromHandle });
-          });
-          pending = nextPending;
-          x += 560;
-        }
-      } else if (step.type === "agent") {
-        let agentId = step.agentId || null;
-        let agentName = step.agentName || "Agente";
-        if (!agentId && step.newAgent?.name) {
-          const { data: newAgent, error: newAgentError } = await service
-            .from("ai_agents")
-            .insert({
-              organization_id: organizationId,
-              name: step.newAgent.name,
-              function_role: step.newAgent.functionRole || "recepcao",
-              prompt_base: step.newAgent.promptBase || "",
-              behavior_style: step.newAgent.behaviorStyle || null,
-              response_length: step.newAgent.responseLength || null,
-              tone_style: step.newAgent.toneStyle || null,
-              emoji_usage: step.newAgent.emojiUsage || null,
-              flow_ids: [],
-              workspace_id: workspaceId,
-            })
-            .select("*")
-            .single();
-          if (newAgentError) throw new Error(`Erro ao criar agente "${step.newAgent.name}": ${newAgentError.message}`);
-          agentId = newAgent.id;
-          agentName = newAgent.name;
-          createdAgentIds.push(agentId);
-        }
-        if (!agentId) throw new Error("Etapa de agente sem agentId nem newAgent.name");
-        if (!primaryAgentId) primaryAgentId = agentId;
-
-        const outcomes = (step.outcomes || []).map((o) => o.trim()).filter(Boolean);
-
-        const id = `agent-${counter}`;
-        noteFirst(id);
-        nodes.push({
-          id, type: "ai-handoff", position: { x, y: yBase },
-          data: {
-            label: agentName,
-            agentId,
-            agentName,
-            ...(step.additionalPrompt ? { additionalPrompt: step.additionalPrompt } : {}),
-            expectedOutcomes: outcomes.join(", "),
-            autoAdvance: true,
-          },
-        });
-        connectPending(pending, id);
-        x += 280;
-
-        if (outcomes.length === 0 && !step.outcomeDefaultTransfer) {
-          pending = [{ source: id }];
-        } else {
-          const nextPending: Pending[] = [];
-          outcomes.forEach((o, i) => {
-            const routing = step.outcomeRouting?.[o];
-            if (routing?.jumpToEndingKey) {
-              const targetId = endingFirstNodeId.get(routing.jumpToEndingKey);
-              if (targetId) edges.push({ id: `e-${id}-${targetId}-outcome-${o}`, source: id, target: targetId, sourceHandle: `outcome-${o}` });
-              return; // já foi ligado direto no final compartilhado -- não continua esta cadeia
-            }
-            const shouldContinue = routing?.continue !== false;
-            let fromSource = id;
-            let fromHandle: string | undefined = `outcome-${o}`;
-            if (routing?.tag) {
-              const tagNodeId = `tag-out-${counter}-${i}`;
-              nodes.push({ id: tagNodeId, type: "action-tag", position: { x, y: yBase - 120 + i * 160 }, data: { label: `Tag: ${o}`, action: "add", tagId: routing.tag.id, tagName: routing.tag.name } });
-              edges.push({ id: `e-${fromSource}-${tagNodeId}`, source: fromSource, target: tagNodeId, sourceHandle: fromHandle });
-              fromSource = tagNodeId;
-              fromHandle = undefined;
-            }
-            // "Mover pipeline" por resultado -- node real (não existe atalho tipo
-            // outcomePipelines no motor de execução pra nó de agente; confirmado
-            // que o único lugar que lia esse campo era este arquivo).
-            if (routing?.pipeline) {
-              const pipelineNodeId = `pipeline-out-${counter}-${i}`;
-              nodes.push({
-                id: pipelineNodeId, type: "action-pipeline", position: { x: x + (routing.tag ? 280 : 0), y: yBase - 120 + i * 160 },
-                data: { label: "Mover pipeline", pipelineId: routing.pipeline.id, pipelineColumnId: routing.pipeline.columnId, pipelineName: routing.pipeline.name, pipelineColumnName: routing.pipeline.columnName },
-              });
-              edges.push({ id: `e-${fromSource}-${pipelineNodeId}`, source: fromSource, target: pipelineNodeId, ...(fromHandle ? { sourceHandle: fromHandle } : {}) });
-              fromSource = pipelineNodeId;
-              fromHandle = undefined;
-            }
-            if (shouldContinue) nextPending.push({ source: fromSource, sourceHandle: fromHandle });
-            // shouldContinue===false sem tag/pipeline: nenhuma edge sai daquele resultado -- fim natural da cadeia ali.
-          });
-          // Resultado "não identificado" -- espelha node_3→outcome-default→Transferir
-          // no exemplo real: rede de segurança quando a IA foge do script. Sempre
-          // termina em transferência (não continua a cadeia, igual à produção).
-          if (step.outcomeDefaultTransfer) {
-            const transferId = `agent-${counter}-default-transfer`;
-            nodes.push({ id: transferId, type: "action-transfer", position: { x, y: yBase - 120 + outcomes.length * 160 }, data: { label: "Transferir (resultado não identificado)" } });
-            edges.push({ id: `e-${id}-${transferId}`, source: id, target: transferId, sourceHandle: "outcome-default" });
-          }
-          pending = nextPending;
-          x += 280;
-        }
-      }
-    }
-
-    return { pending, firstNodeId };
-  }
-
-  // Constrói cada final compartilhado ANTES da árvore principal -- sem
-  // pending nenhum (edges de entrada vêm depois, de quem "pular pra" ele),
-  // só pra já ter o id do primeiro node de cada um na hora de montar a
-  // árvore principal (ver conversa com o usuário: "Agente Master - AR").
-  let sharedEndingX = 330;
-  for (const ending of sharedEndings) {
-    const built = await processSteps(ending.steps || [], [], sharedEndingX, 700);
-    if (built.firstNodeId) endingFirstNodeId.set(ending.key, built.firstNodeId);
-    sharedEndingX += 400;
-  }
-
-  await processSteps(steps, [{ source: "start-1" }], 330, 200);
-
-  return { nodes, edges, primaryAgentId, createdAgentIds };
 }
 
 serve(async (req) => {
@@ -599,83 +191,6 @@ serve(async (req) => {
       return jsonResponse({ activated: true, collidingCampaigns: colliding });
     }
 
-    if (body.action === "update_orchestration") {
-      if (!body.instanceId) return errorResponse("instanceId é obrigatório", 400);
-      if (!hasAgentAnywhere(body.steps || [], body.sharedEndings || [])) {
-        return errorResponse("A orquestração precisa de ao menos uma etapa de agente", 400);
-      }
-
-      const { data: instance, error: instanceError } = await rls
-        .from("agent_instances")
-        .select("id, flow_id, campaign_id, ai_agent_id")
-        .eq("id", body.instanceId)
-        .maybeSingle();
-      if (instanceError || !instance) return errorResponse("Instância não encontrada ou sem permissão", 404);
-
-      const workspaceId = body.workspaceId || null;
-      const entityName = body.name?.trim() || undefined;
-
-      // Reaproveita EXATAMENTE a mesma montagem de grafo do 'apply' -- uma
-      // etapa de agente pode continuar referenciando um agentId já existente
-      // (nada muda nele) ou pedir newAgent (cria um agente novo agora, do
-      // mesmo jeito que na criação original). Agentes que saíram da lista
-      // durante a edição simplesmente ficam órfãos do fluxo, sem serem apagados
-      // -- podem estar em uso em outra orquestração.
-      let builtNodes: any[];
-      let builtEdges: any[];
-      let primaryAgentId: string | null;
-      let createdAgentIds: string[];
-      try {
-        const built = await buildStepsGraph(service, organizationId, workspaceId, body.steps || [], body.sharedEndings || []);
-        builtNodes = built.nodes;
-        builtEdges = built.edges;
-        primaryAgentId = built.primaryAgentId;
-        createdAgentIds = built.createdAgentIds;
-      } catch (stepsError: any) {
-        return errorResponse(stepsError?.message || "Erro ao montar as etapas da orquestração", 500);
-      }
-
-      const { error: flowUpdateError } = await service
-        .from("flows")
-        .update({
-          ...(entityName ? { name: entityName } : {}),
-          workspace_id: workspaceId,
-          workspace_ids: workspaceId ? [workspaceId] : [],
-          nodes: builtNodes,
-          edges: builtEdges,
-        })
-        .eq("id", instance.flow_id);
-      if (flowUpdateError) {
-        for (const id of createdAgentIds) await service.from("ai_agents").delete().eq("id", id);
-        return errorResponse(`Erro ao atualizar fluxo: ${flowUpdateError.message}`, 500);
-      }
-
-      for (const id of createdAgentIds) {
-        await service.from("ai_agents").update({ flow_ids: [instance.flow_id] }).eq("id", id);
-      }
-
-      if (instance.campaign_id) {
-        await service
-          .from("campaigns")
-          .update({
-            ...(entityName ? { name: entityName } : {}),
-            workspace_id: workspaceId,
-            ...(body.triggerKeyword?.trim() ? { trigger_keyword: body.triggerKeyword.trim() } : {}),
-          })
-          .eq("id", instance.campaign_id);
-      }
-
-      if (primaryAgentId && primaryAgentId !== instance.ai_agent_id) {
-        await service.from("agent_instances").update({ ai_agent_id: primaryAgentId }).eq("id", instance.id);
-      }
-
-      const collidingCampaigns = instance.campaign_id && body.triggerKeyword?.trim()
-        ? await checkKeywordCollision(service, organizationId, body.triggerKeyword.trim(), instance.campaign_id)
-        : [];
-
-      return jsonResponse({ updated: true, flowId: instance.flow_id, collidingCampaigns });
-    }
-
     if (body.action === "set_goal_tag") {
       if (!body.instanceId) return errorResponse("instanceId é obrigatório", 400);
 
@@ -709,6 +224,7 @@ serve(async (req) => {
         .eq("id", body.instanceId)
         .maybeSingle();
       if (instanceError || !instance) return errorResponse("Instância não encontrada ou sem permissão", 404);
+      if (!instance.ai_agent_id) return errorResponse("Essa orquestração ainda não tem um agente de IA no fluxo", 400);
 
       const { data: flow, error: flowError } = await rls
         .from("flows")
@@ -755,84 +271,54 @@ serve(async (req) => {
       return jsonResponse({ template });
     }
 
-    // action: 'apply' -- com templateId, aplica um template; sem templateId, cria uma
-    // orquestração do zero (fluxo+agente(s)+campanha+instância juntos, já linkados,
-    // com o mesmo aviso de colisão) -- unifica o que hoje é feito manualmente em 3
-    // telas soltas (Agentes IA / Fluxos / Campanhas) quando não vem de template.
-    let template: any = null;
-    if (body.templateId) {
-      const { data, error: templateError } = await rls
-        .from("agent_templates")
-        .select("*")
-        .eq("id", body.templateId)
-        .maybeSingle();
-      if (templateError || !data) return errorResponse("Template não encontrado ou sem permissão", 404);
-      template = data;
-    } else if (!body.name?.trim()) {
-      return errorResponse("name é obrigatório quando não há templateId", 400);
-    } else if (!hasAgentAnywhere(body.steps || [], body.sharedEndings || [])) {
-      return errorResponse("A orquestração precisa de ao menos uma etapa de agente", 400);
-    }
+    // action: 'apply' -- aplica um template da galeria (cria fluxo, agente e
+    // campanha novos pra organização a partir do snapshot salvo do template).
+    if (body.action !== "apply") return errorResponse(`Ação desconhecida: ${body.action}`, 400);
+    if (!body.templateId) return errorResponse("templateId é obrigatório", 400);
 
-    const flowSnapshot = (template?.flow_snapshot || {}) as any;
-    const agentSnapshot = (template?.agent_snapshot || {}) as any;
+    const { data: template, error: templateError } = await rls
+      .from("agent_templates")
+      .select("*")
+      .eq("id", body.templateId)
+      .maybeSingle();
+    if (templateError || !template) return errorResponse("Template não encontrado ou sem permissão", 404);
+
+    const flowSnapshot = (template.flow_snapshot || {}) as any;
+    const agentSnapshot = (template.agent_snapshot || {}) as any;
     const workspaceId = body.workspaceId || null;
-    const entityName = template?.name || body.name!.trim();
-    const entityDescription = template?.description ?? null;
+    const entityName = template.name;
+    const entityDescription = template.description ?? null;
 
-    // createdAgentIds rastreia SÓ os agentes criados NESTA requisição (pra
-    // rollback manual se uma etapa seguinte falhar) -- agentes já existentes
-    // referenciados por uma etapa (reuso entre orquestrações) nunca são apagados.
-    let createdAgentIds: string[] = [];
-    let primaryAgentId: string | null = null;
-    let builtNodes: any[];
-    let builtEdges: any[];
+    // Template: sempre cria 1 agente a partir do agent_snapshot (agent_instances
+    // guarda esse id como "agente principal" mesmo quando o flow_snapshot já
+    // embute vários nós de agente próprios).
+    const { data: agent, error: agentError } = await service
+      .from("ai_agents")
+      .insert({
+        organization_id: organizationId,
+        name: entityName,
+        description: entityDescription,
+        function_role: agentSnapshot.function_role || "recepcao",
+        prompt_base: agentSnapshot.prompt_base || "",
+        persona: agentSnapshot.persona || null,
+        knowledge_base: agentSnapshot.knowledge_base || null,
+        flow_ids: [],
+        workspace_id: workspaceId,
+      })
+      .select("*")
+      .single();
+    if (agentError) return errorResponse(`Erro ao criar agente: ${agentError.message}`, 500);
 
-    const hasSnapshotNodes = Array.isArray(flowSnapshot.nodes) && flowSnapshot.nodes.length > 0;
-    if (template) {
-      // Template: sempre cria 1 agente a partir do agent_snapshot (agent_instances
-      // exige um ai_agent_id -- serve de bookkeeping/"agente principal" mesmo
-      // quando o flow_snapshot já embute vários nós de agente próprios).
-      const { data: agent, error: agentError } = await service
-        .from("ai_agents")
-        .insert({
-          organization_id: organizationId,
-          name: entityName,
-          description: entityDescription,
-          function_role: agentSnapshot.function_role || "recepcao",
-          prompt_base: agentSnapshot.prompt_base || "",
-          persona: agentSnapshot.persona || null,
-          knowledge_base: agentSnapshot.knowledge_base || null,
-          flow_ids: [],
-          workspace_id: workspaceId,
-        })
-        .select("*")
-        .single();
-      if (agentError) return errorResponse(`Erro ao criar agente: ${agentError.message}`, 500);
-      createdAgentIds = [agent.id];
-      primaryAgentId = agent.id;
-      // Com grafo já desenhado no template, usa como está; sem isso (caso do
-      // único template semeado até agora), grafo mínimo com esse agente.
-      ({ nodes: builtNodes, edges: builtEdges } = hasSnapshotNodes
-        ? { nodes: flowSnapshot.nodes, edges: flowSnapshot.edges || [] }
-        : buildSingleAgentGraph(agent.id, entityName));
-    } else {
-      // From-scratch: monta o grafo real a partir da lista de etapas, criando
-      // (ou reaproveitando) os agentes de cada etapa 'agent' ao longo do caminho.
-      try {
-        const built = await buildStepsGraph(service, organizationId, workspaceId, body.steps || [], body.sharedEndings || []);
-        builtNodes = built.nodes;
-        builtEdges = built.edges;
-        primaryAgentId = built.primaryAgentId;
-        createdAgentIds = built.createdAgentIds;
-      } catch (stepsError: any) {
-        return errorResponse(stepsError?.message || "Erro ao montar as etapas da orquestração", 500);
-      }
-    }
-
-    const rollbackCreatedAgents = async () => {
-      for (const id of createdAgentIds) await service.from("ai_agents").delete().eq("id", id);
+    const rollbackCreatedAgent = async () => {
+      await service.from("ai_agents").delete().eq("id", agent.id);
     };
+
+    // Com grafo já desenhado no template, usa como está; sem isso (caso do
+    // único template semeado até agora), grafo mínimo com esse agente.
+    const hasSnapshotNodes = Array.isArray(flowSnapshot.nodes) && flowSnapshot.nodes.length > 0;
+    const { nodes: builtNodes, edges: builtEdges } = hasSnapshotNodes
+      ? { nodes: flowSnapshot.nodes, edges: flowSnapshot.edges || [] }
+      : buildSingleAgentGraph(agent.id, entityName);
 
     const flowFolderId = await getOrCreateOrchestrationFolder(service, "flow_folders", organizationId);
 
@@ -853,20 +339,17 @@ serve(async (req) => {
       .select("*")
       .single();
     if (flowError) {
-      await rollbackCreatedAgents();
+      await rollbackCreatedAgent();
       return errorResponse(`Erro ao criar fluxo: ${flowError.message}`, 500);
     }
 
     // flow_ids é só bookkeeping (não afeta execução -- quem roda é o node
-    // ai-handoff) -- soma este fluxo aos agentes criados agora, sem apagar
-    // vínculos com outras orquestrações que já usavam esses mesmos agentes.
-    for (const id of createdAgentIds) {
-      await service.from("ai_agents").update({ flow_ids: [flow.id] }).eq("id", id);
-    }
+    // ai-handoff).
+    await service.from("ai_agents").update({ flow_ids: [flow.id] }).eq("id", agent.id);
 
     const campaignFolderId = await getOrCreateOrchestrationFolder(service, "campaign_folders", organizationId);
 
-    const suggestedKeyword = body.triggerKeyword || template?.suggested_trigger_keyword || suggestKeywordFromName(entityName) || entityName;
+    const suggestedKeyword = body.triggerKeyword || template.suggested_trigger_keyword || suggestKeywordFromName(entityName) || entityName;
     const { data: campaign, error: campaignError } = await service
       .from("campaigns")
       .insert({
@@ -883,7 +366,7 @@ serve(async (req) => {
       .single();
     if (campaignError) {
       await service.from("flows").delete().eq("id", flow.id);
-      await rollbackCreatedAgents();
+      await rollbackCreatedAgent();
       return errorResponse(`Erro ao criar campanha: ${campaignError.message}`, 500);
     }
 
@@ -891,28 +374,27 @@ serve(async (req) => {
       .from("agent_instances")
       .insert({
         organization_id: organizationId,
-        template_id: template?.id || null,
+        template_id: template.id,
         flow_id: flow.id,
-        ai_agent_id: primaryAgentId,
+        ai_agent_id: agent.id,
         campaign_id: campaign.id,
         status: "draft",
+        // Fluxo criado agora a partir do template -- vale perguntar se apaga
+        // junto na hora de excluir a orquestração.
+        flow_created_by_wizard: true,
       })
       .select("*")
       .single();
     if (instanceError) {
       await service.from("campaigns").delete().eq("id", campaign.id);
       await service.from("flows").delete().eq("id", flow.id);
-      await rollbackCreatedAgents();
+      await rollbackCreatedAgent();
       return errorResponse(`Erro ao criar instância: ${instanceError.message}`, 500);
     }
 
     const collidingCampaigns = await checkKeywordCollision(service, organizationId, suggestedKeyword, campaign.id);
 
-    const { data: primaryAgent } = primaryAgentId
-      ? await service.from("ai_agents").select("*").eq("id", primaryAgentId).maybeSingle()
-      : { data: null };
-
-    return jsonResponse({ instance, flow, agent: primaryAgent, campaign, collidingCampaigns });
+    return jsonResponse({ instance, flow, agent, campaign, collidingCampaigns });
   } catch (error: any) {
     if (error instanceof AuthError) return errorResponse(error.message, error.status);
     console.error("apply-agent-template error:", error);
