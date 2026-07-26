@@ -34,6 +34,12 @@ function overlayGradient(position: string, a: number): string {
   return `linear-gradient(to bottom, transparent 0%, transparent 45%, ${dark} 100%)`;
 }
 
+// Layout "card": fundo sólido (claro ou não) com a imagem como um bloco
+// menor e recortado (não em tela cheia) — em vez de foto de fundo com
+// overlay escuro. Usado quando a referência importada tem esse design
+// (ex.: print de tweet/notícia com texto num bloco e foto separada).
+const CARD_IMAGE_RATIO = 0.56;
+
 /**
  * Preview WYSIWYG (CSS) de um slide 1:1 — espelha o render do canvas.
  * Usado nas miniaturas e no preview principal.
@@ -43,6 +49,7 @@ export default function SlideCard({ slide, total, size = 400, className = "" }: 
   // Bucket privado: image_url é path/URL legada; assinamos sob demanda (createSignedUrl).
   const displayUrl = useSignedCarouselImage(slide.imageUrl);
   const scale = size / 1080;
+  const isCard = slide.layoutMode === "card";
   const position = slide.overlayPosition ?? "bottom";
   const intensity = slide.overlayIntensity ?? 0.85;
   const titleSize = slide.titleSize ?? 80;
@@ -51,9 +58,88 @@ export default function SlideCard({ slide, total, size = 400, className = "" }: 
   const accent = slide.accentColor ?? "#3B82F6";
   const align = (slide.textAlign ?? "left") as TextAlign;
   const font = slide.fontFamily ?? "Montserrat";
+  const textColor = slide.textColor ?? (isCard ? "#111111" : "#ffffff");
+  const bgColor = slide.bgColor ?? (isCard ? "#ffffff" : "#0a0a0a");
   const numText = `${String(slide.order).padStart(2, "0")}/${String(
     total ?? slide.order,
   ).padStart(2, "0")}`;
+
+  if (isCard) {
+    const imageOnTop = position === "top";
+    const imageBlock = hasImg && displayUrl ? (
+      <div style={{ height: size * CARD_IMAGE_RATIO, padding: 24 * scale }}>
+        <img
+          src={displayUrl}
+          alt=""
+          crossOrigin="anonymous"
+          className="h-full w-full object-cover"
+          style={{ borderRadius: 16 * scale }}
+        />
+      </div>
+    ) : null;
+
+    const textBlock = (
+      <div
+        className={`flex flex-1 flex-col justify-center ${HALIGN[align].items} ${HALIGN[align].text}`}
+        style={{ padding: 90 * scale, color: textColor, fontFamily: font }}
+      >
+        {slide.title && (
+          <h3 className="leading-tight" style={{ fontSize: titleSize * scale, fontWeight: bold ? 700 : 400 }}>
+            {slide.title}
+          </h3>
+        )}
+        {slide.title && (
+          <div
+            style={{
+              width: 80 * scale,
+              height: 3 * scale,
+              background: accent,
+              borderRadius: 2 * scale,
+              marginTop: 20 * scale,
+            }}
+          />
+        )}
+        {slide.body && (
+          <p className="leading-snug" style={{ fontSize: bodySize * scale, marginTop: 24 * scale, opacity: 0.85 }}>
+            {slide.body}
+          </p>
+        )}
+      </div>
+    );
+
+    return (
+      <div
+        className={`relative flex flex-col overflow-hidden rounded-xl border border-border ${className}`}
+        style={{ width: size, height: size, background: bgColor }}
+      >
+        {imageOnTop ? (
+          <>
+            {imageBlock}
+            {textBlock}
+          </>
+        ) : (
+          <>
+            {textBlock}
+            {imageBlock}
+          </>
+        )}
+        <span
+          className="absolute font-semibold text-white"
+          style={{
+            left: 90 * scale,
+            top: 90 * scale,
+            fontSize: 28 * scale,
+            padding: `${11 * scale}px ${16 * scale}px`,
+            borderRadius: 10 * scale,
+            background: "rgba(0,0,0,0.4)",
+            fontFamily: font,
+          }}
+        >
+          {numText}
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div

@@ -28,6 +28,9 @@ export async function resolveCarouselModel(): Promise<string> {
   return strategy.features?.carousel || strategy.default_model || DEFAULT_CAROUSEL_MODEL;
 }
 
+/** "overlay": foto de fundo cheia + texto por cima. "card": fundo sólido, imagem recortada, texto separado. */
+export type LayoutMode = "overlay" | "card";
+
 export const STYLE_HINTS: Record<string, string> = {
   cinematic:
     "cinematic lighting, dramatic composition, shallow depth of field, film grain, 35mm",
@@ -286,10 +289,19 @@ function ctaIdeaInstruction(ctaIdea: string): string {
 // ---------------------------------------------------------------------
 export interface SlideAnalysis {
   order: number;
+  /** índice (0-based) da imagem enviada de onde este slide foi extraído — um print pode conter vários. */
+  sourceImageIndex: number;
   hasRealPersonPhoto: boolean;
   visualStyle: string;
+  /** "overlay": foto cheia + camada escura. "card": fundo sólido, imagem menor recortada, texto separado. */
+  layoutMode: LayoutMode;
+  /** posição do overlay (modo overlay) OU da imagem dentro do card (modo card). */
   overlayPosition: string;
   textAlign: string;
+  /** hex aproximado do fundo (relevante sobretudo no modo card). */
+  backgroundColor: string;
+  /** hex aproximado da cor do texto. */
+  textColor: string;
   role: "cover" | "middle" | "cta";
   themeConcept: string;
 }
@@ -300,6 +312,7 @@ export interface ReferenceAnalysis {
   inferredObjective: string;
   inferredTone: string;
   overallVisualStyle: string;
+  overallLayoutMode: LayoutMode;
 }
 
 const VALID_VISUAL_STYLES = new Set([
@@ -310,10 +323,17 @@ const VALID_VISUAL_STYLES = new Set([
   "dark",
   "illustration",
 ]);
+const VALID_LAYOUT_MODES = new Set(["overlay", "card"]);
 const VALID_OVERLAY_POSITIONS = new Set(["top", "center", "bottom", "full"]);
 const VALID_TEXT_ALIGNS = new Set(["left", "center", "right"]);
 const VALID_OBJECTIVES = new Set(["educate", "sell", "engage", "inspire"]);
 const VALID_TONES = new Set(["professional", "casual", "motivational", "direct"]);
+const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
+const MAX_ANALYZED_SLIDES = 10;
+
+function safeHex(value: unknown, fallback: string): string {
+  return typeof value === "string" && HEX_COLOR_RE.test(value) ? value : fallback;
+}
 
 export async function analyzeCarouselReference(
   apiKey: string,
@@ -321,52 +341,74 @@ export async function analyzeCarouselReference(
   model?: string,
 ): Promise<ReferenceAnalysis> {
   const system = [
-    "Você analisa carrosséis de Instagram de referência pra extrair ESTRUTURA e ESTILO — NUNCA o texto exato nem a identidade de pessoas reais que apareçam nas imagens.",
-    "Para cada imagem (na ordem enviada, representando os slides 1..N do carrossel), retorne:",
-    "- hasRealPersonPhoto: true se o fundo mostra uma FOTO REAL de uma pessoa identificável (rosto real, não ilustração/abstrato/objeto).",
-    "- visualStyle: cinematic | photorealistic | minimalist | watercolor | dark | illustration — o que mais se aproxima do estilo visual.",
-    "- overlayPosition: top | center | bottom | full — onde fica a camada escura/o bloco de texto sobre a imagem.",
+    "Você analisa carrosséis de Instagram de referência pra extrair ESTRUTURA e DESIGN reais — NUNCA o texto exato nem a identidade de pessoas reais que apareçam nas imagens.",
+    `Cada imagem enviada (há ${images.length}, índice 0 a ${images.length - 1}) pode conter UM slide OU VÁRIOS (ex.: um print compilado mostrando 3-4 etapas/telas do carrossel lado a lado ou empilhadas). Identifique CADA slide/etapa separadamente, na ordem em que aparecem — não invente etapas que não estão nas imagens, e não junte etapas diferentes num só item.`,
+    "Para CADA slide identificado, retorne:",
+    "- sourceImageIndex: de qual imagem enviada (0-based) esse slide veio.",
+    "- hasRealPersonPhoto: true se aparece uma FOTO REAL de pessoa identificável (rosto real, não ilustração/abstrato/objeto).",
+    "- layoutMode: \"overlay\" se o slide é uma foto de fundo em tela cheia com o texto por cima (com ou sem camada escura); \"card\" se o fundo é sólido/claro (branco, cor lisa) com o texto num bloco próprio e a imagem (se houver) aparecendo separada, menor, tipo um cartão — CASO do print de tweet/notícia/quote.",
+    "- visualStyle: cinematic | photorealistic | minimalist | watercolor | dark | illustration — o que mais se aproxima do estilo/mood visual.",
+    "- overlayPosition: top | center | bottom | full — no modo overlay, onde fica a camada escura; no modo card, se a imagem fica no topo ou embaixo do bloco de texto (use \"top\" ou \"bottom\").",
     "- textAlign: left | center | right.",
-    "- role: cover (é o 1º slide), cta (é o último, tem chamada de ação) ou middle (demais).",
+    "- backgroundColor: cor hex aproximada do fundo (ex.: \"#ffffff\" pra um card branco, \"#0a0a0a\" pra um fundo escuro).",
+    "- textColor: cor hex aproximada do texto principal (ex.: \"#111111\" sobre fundo claro, \"#ffffff\" sobre fundo escuro/foto).",
+    "- role: cover (é a 1ª etapa), cta (é a última, tem chamada de ação) ou middle (demais).",
     "- themeConcept: uma frase curta descrevendo do que aquele slide TRATA conceitualmente (o assunto/ideia) — PROIBIDO copiar o texto literal do slide, é só pra entender o tema.",
-    "Também retorne um resumo geral do carrossel inteiro: inferredNiche, inferredObjective (educate|sell|engage|inspire), inferredTone (professional|casual|motivational|direct), overallVisualStyle (o estilo predominante).",
-    "Retorne APENAS um JSON: { slides: [{ order, hasRealPersonPhoto, visualStyle, overlayPosition, textAlign, role, themeConcept }], inferredNiche, inferredObjective, inferredTone, overallVisualStyle }",
+    "Também retorne um resumo geral: inferredNiche, inferredObjective (educate|sell|engage|inspire), inferredTone (professional|casual|motivational|direct), overallVisualStyle e overallLayoutMode (o padrão predominante entre os slides).",
+    "Retorne APENAS um JSON: { slides: [{ order, sourceImageIndex, hasRealPersonPhoto, layoutMode, visualStyle, overlayPosition, textAlign, backgroundColor, textColor, role, themeConcept }], inferredNiche, inferredObjective, inferredTone, overallVisualStyle, overallLayoutMode }",
   ].join("\n");
 
   const userContent: VisionContentPart[] = [
     {
       type: "text",
-      text: `Analise estas ${images.length} imagens, na ordem enviada (slide 1 a ${images.length}) de um carrossel de referência.`,
+      text: `Analise estas ${images.length} imagens (índice 0 a ${images.length - 1}) de um carrossel de referência — cada uma pode conter uma ou várias etapas.`,
     },
     ...images.map((url): VisionContentPart => ({ type: "image_url", image_url: { url } })),
   ];
 
   const raw = await chatCompletionVision(apiKey, system, userContent, 0.4, model);
   const parsed = parseJsonObject<Partial<ReferenceAnalysis>>(raw);
-  const rawSlides = Array.isArray(parsed.slides) ? parsed.slides : [];
+  const rawSlides = (Array.isArray(parsed.slides) ? parsed.slides : []) as Array<Record<string, unknown>>;
 
-  const slides: SlideAnalysis[] = images.map((_, i) => {
-    const order = i + 1;
-    const found = (rawSlides.find((s) => s.order === order) ?? rawSlides[i] ?? {}) as Partial<SlideAnalysis>;
-    return {
-      order,
-      hasRealPersonPhoto: !!found.hasRealPersonPhoto,
-      visualStyle: VALID_VISUAL_STYLES.has(found.visualStyle ?? "") ? (found.visualStyle as string) : "cinematic",
-      overlayPosition: VALID_OVERLAY_POSITIONS.has(found.overlayPosition ?? "")
-        ? (found.overlayPosition as string)
-        : "bottom",
-      textAlign: VALID_TEXT_ALIGNS.has(found.textAlign ?? "") ? (found.textAlign as string) : "left",
-      role: order === 1 ? "cover" : order === images.length ? "cta" : "middle",
-      themeConcept: found.themeConcept?.trim() ?? "",
-    };
-  });
+  // Confia na ordem que o modelo devolveu (já deve vir crescente); renumera 1..N
+  // pra garantir sequência sem furos, e limita a um teto de segurança.
+  const sorted = [...rawSlides]
+    .sort((a, b) => (Number(a.order) || 0) - (Number(b.order) || 0))
+    .slice(0, MAX_ANALYZED_SLIDES);
+
+  const total = sorted.length || images.length;
+  const slides: SlideAnalysis[] = (sorted.length ? sorted : images.map((_, i) => ({ sourceImageIndex: i }))).map(
+    (found, i) => {
+      const order = i + 1;
+      const imgIdx = Number(found.sourceImageIndex);
+      return {
+        order,
+        sourceImageIndex: Number.isInteger(imgIdx) && imgIdx >= 0 && imgIdx < images.length ? imgIdx : Math.min(i, images.length - 1),
+        hasRealPersonPhoto: !!found.hasRealPersonPhoto,
+        layoutMode: VALID_LAYOUT_MODES.has(found.layoutMode as string) ? (found.layoutMode as LayoutMode) : "overlay",
+        visualStyle: VALID_VISUAL_STYLES.has(found.visualStyle as string) ? (found.visualStyle as string) : "cinematic",
+        overlayPosition: VALID_OVERLAY_POSITIONS.has(found.overlayPosition as string)
+          ? (found.overlayPosition as string)
+          : "bottom",
+        textAlign: VALID_TEXT_ALIGNS.has(found.textAlign as string) ? (found.textAlign as string) : "left",
+        backgroundColor: safeHex(found.backgroundColor, "#0a0a0a"),
+        textColor: safeHex(found.textColor, "#ffffff"),
+        role: order === 1 ? "cover" : order === total ? "cta" : "middle",
+        themeConcept: typeof found.themeConcept === "string" ? found.themeConcept.trim() : "",
+      };
+    },
+  );
 
   const overallVisualStyle = VALID_VISUAL_STYLES.has(parsed.overallVisualStyle ?? "")
     ? (parsed.overallVisualStyle as string)
     : slides[0]?.visualStyle ?? "cinematic";
+  const overallLayoutMode = VALID_LAYOUT_MODES.has(parsed.overallLayoutMode as string)
+    ? (parsed.overallLayoutMode as LayoutMode)
+    : slides[0]?.layoutMode ?? "overlay";
 
   return {
     slides,
+    overallLayoutMode,
     inferredNiche: parsed.inferredNiche?.trim() || "Geral",
     inferredObjective: VALID_OBJECTIVES.has(parsed.inferredObjective ?? "")
       ? (parsed.inferredObjective as string)

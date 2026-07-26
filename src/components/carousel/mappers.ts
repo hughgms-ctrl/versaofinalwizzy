@@ -55,6 +55,7 @@ export function rowToSlide(r: any): Slide {
     titleSize: r.title_size ?? null,
     titleBold: r.title_bold ?? null,
     bodySize: r.body_size ?? null,
+    layoutMode: r.layout_mode ?? null,
   };
 }
 
@@ -106,6 +107,7 @@ export function slidePatchToRow(patch: Partial<Slide>): Record<string, unknown> 
     titleSize: "title_size",
     titleBold: "title_bold",
     bodySize: "body_size",
+    layoutMode: "layout_mode",
   };
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(patch)) {

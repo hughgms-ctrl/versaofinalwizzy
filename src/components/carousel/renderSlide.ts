@@ -117,6 +117,46 @@ function drawCover(ctx: CanvasRenderingContext2D, img: HTMLImageElement) {
   ctx.drawImage(img, (SIZE - w) / 2, (SIZE - h) / 2, w, h);
 }
 
+/** Desenha a imagem em "cover" dentro de um retângulo arredondado (layout "card"). */
+function drawCoverInRect(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  radius: number,
+) {
+  ctx.save();
+  roundRect(ctx, x, y, w, h, radius);
+  ctx.clip();
+  const scale = Math.max(w / img.width, h / img.height);
+  const iw = img.width * scale;
+  const ih = img.height * scale;
+  ctx.drawImage(img, x + (w - iw) / 2, y + (h - ih) / 2, iw, ih);
+  ctx.restore();
+}
+
+function drawOrderBadge(
+  ctx: CanvasRenderingContext2D,
+  font: string,
+  order: number,
+  total: number,
+) {
+  const numText = `${String(order).padStart(2, "0")}/${String(total).padStart(2, "0")}`;
+  const badgeFs = 28;
+  setFont(ctx, font, true, badgeFs);
+  const numW = ctx.measureText(numText).width;
+  const padX = 16;
+  const badgeW = numW + padX * 2;
+  const badgeH = badgeFs + 22;
+  ctx.fillStyle = "rgba(0,0,0,0.4)";
+  roundRect(ctx, PADDING, PADDING, badgeW, badgeH, 10);
+  ctx.fill();
+  ctx.fillStyle = "#ffffff";
+  ctx.fillText(numText, PADDING + padX, PADDING + badgeH / 2 + badgeFs * 0.35);
+}
+
 let fontsReady: Promise<void> | null = null;
 async function ensureFontsLoaded() {
   ensureCarouselFonts();
@@ -135,6 +175,108 @@ async function ensureFontsLoaded() {
   return fontsReady;
 }
 
+// Layout "card": fundo sólido com a imagem como um bloco recortado (não em
+// tela cheia) — espelha o modo equivalente do preview CSS em SlideCard.tsx.
+const CARD_IMAGE_RATIO = 0.56;
+const CARD_IMAGE_PADDING = 24;
+const CARD_IMAGE_RADIUS = 16;
+
+async function renderCardSlideToBlob(
+  ctx: CanvasRenderingContext2D,
+  canvas: HTMLCanvasElement,
+  slide: Slide,
+  total: number,
+): Promise<Blob> {
+  const hasImage = slide.hasImage && !!slide.imageUrl;
+  const bgColor = slide.bgColor ?? "#ffffff";
+  const textColor = slide.textColor ?? "#111111";
+  const accent = slide.accentColor ?? DEFAULT_ACCENT;
+  const font = slide.fontFamily ?? DEFAULT_FONT;
+  const align = (slide.textAlign ?? "left") as Align;
+  const imageOnTop = (slide.overlayPosition ?? "bottom") === "top";
+  const titleSize = slide.titleSize ?? DEFAULT_TITLE;
+  const bodySize = slide.bodySize ?? DEFAULT_BODY;
+  const bold = slide.titleBold ?? true;
+  const titleLh = titleSize * LINE_GAP;
+  const bodyLh = bodySize * LINE_GAP;
+
+  ctx.fillStyle = bgColor;
+  ctx.fillRect(0, 0, SIZE, SIZE);
+
+  const imageAreaH = hasImage ? SIZE * CARD_IMAGE_RATIO : 0;
+  const textAreaY = imageOnTop ? imageAreaH : 0;
+  const textAreaH = SIZE - imageAreaH;
+
+  if (hasImage) {
+    try {
+      const signed = await resolveCarouselImageUrl(slide.imageUrl);
+      const img = await loadImage(signed!);
+      const ix = CARD_IMAGE_PADDING;
+      const iy = (imageOnTop ? 0 : SIZE - imageAreaH) + CARD_IMAGE_PADDING;
+      const iw = SIZE - CARD_IMAGE_PADDING * 2;
+      const ih = imageAreaH - CARD_IMAGE_PADDING * 2;
+      drawCoverInRect(ctx, img, ix, iy, iw, ih, CARD_IMAGE_RADIUS);
+    } catch {
+      // sem imagem carregável — fica só o fundo sólido
+    }
+  }
+
+  ctx.textBaseline = "alphabetic";
+  ctx.textAlign = "left";
+
+  setFont(ctx, font, bold, titleSize);
+  const titleLines = slide.title ? wrapText(ctx, slide.title) : [];
+  setFont(ctx, font, false, bodySize);
+  const bodyLines = slide.body ? wrapText(ctx, slide.body) : [];
+
+  const titleBlock = titleLines.length * titleLh;
+  const hasAccent = titleLines.length > 0;
+  const accentBlock = hasAccent ? ACCENT_GAP + ACCENT_H : 0;
+  const bodyBlock = bodyLines.length
+    ? (titleLines.length ? BODY_GAP : 0) + bodyLines.length * bodyLh
+    : 0;
+  const totalHeight = titleBlock + accentBlock + bodyBlock;
+  const top = textAreaY + (textAreaH - totalHeight) / 2;
+
+  drawOrderBadge(ctx, font, slide.order, total);
+
+  setFont(ctx, font, bold, titleSize);
+  ctx.fillStyle = textColor;
+  let y = top + titleSize;
+  for (const line of titleLines) {
+    const w = ctx.measureText(line).width;
+    ctx.fillText(line, lineLeft(align, w), y);
+    y += titleLh;
+  }
+
+  let lineY = top + titleBlock;
+  if (hasAccent) {
+    lineY += ACCENT_GAP;
+    const accentX = lineLeft(align, ACCENT_W);
+    ctx.fillStyle = accent;
+    roundRect(ctx, accentX, lineY, ACCENT_W, ACCENT_H, ACCENT_H / 2);
+    ctx.fill();
+    lineY += ACCENT_H;
+  }
+
+  if (bodyLines.length) {
+    setFont(ctx, font, false, bodySize);
+    ctx.fillStyle = textColor;
+    ctx.globalAlpha = 0.85;
+    let by = (titleLines.length ? lineY + BODY_GAP : top) + bodySize;
+    for (const line of bodyLines) {
+      const w = ctx.measureText(line).width;
+      ctx.fillText(line, lineLeft(align, w), by);
+      by += bodyLh;
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  return await new Promise<Blob>((resolve, reject) =>
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("toBlob falhou"))), "image/png"),
+  );
+}
+
 /** Renderiza um slide para um canvas 1080x1080 e retorna um blob PNG. */
 export async function renderSlideToBlob(slide: Slide, total: number): Promise<Blob> {
   await ensureFontsLoaded();
@@ -143,6 +285,10 @@ export async function renderSlideToBlob(slide: Slide, total: number): Promise<Bl
   canvas.width = SIZE;
   canvas.height = SIZE;
   const ctx = canvas.getContext("2d")!;
+
+  if (slide.layoutMode === "card") {
+    return renderCardSlideToBlob(ctx, canvas, slide, total);
+  }
 
   const hasImage = slide.hasImage && !!slide.imageUrl;
 
@@ -197,19 +343,7 @@ export async function renderSlideToBlob(slide: Slide, total: number): Promise<Bl
   else if (position === "center" || position === "full") top = (SIZE - totalHeight) / 2;
   else top = SIZE - PADDING - totalHeight;
 
-  // badge "01/10"
-  const numText = `${String(slide.order).padStart(2, "0")}/${String(total).padStart(2, "0")}`;
-  const badgeFs = 28;
-  setFont(ctx, font, true, badgeFs);
-  const numW = ctx.measureText(numText).width;
-  const padX = 16;
-  const badgeW = numW + padX * 2;
-  const badgeH = badgeFs + 22;
-  ctx.fillStyle = "rgba(0,0,0,0.4)";
-  roundRect(ctx, PADDING, PADDING, badgeW, badgeH, 10);
-  ctx.fill();
-  ctx.fillStyle = "#ffffff";
-  ctx.fillText(numText, PADDING + padX, PADDING + badgeH / 2 + badgeFs * 0.35);
+  drawOrderBadge(ctx, font, slide.order, total);
 
   // título
   setFont(ctx, font, bold, titleSize);

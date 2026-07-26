@@ -16,6 +16,8 @@ export type OverlayPosition = "top" | "center" | "bottom" | "full";
 export type TextAlign = "left" | "center" | "right";
 export type CarouselSourceType = "idea" | "text" | "link" | "youtube";
 export type TemplateSource = "created" | "screenshot" | "instagram_link";
+/** "overlay": foto de fundo cheia + texto por cima (padrão). "card": fundo sólido, imagem num bloco recortado, texto separado. */
+export type LayoutMode = "overlay" | "card";
 
 export interface CarouselModel {
   id: string;
@@ -50,6 +52,7 @@ export interface Slide {
   titleSize: number | null;
   titleBold: boolean | null;
   bodySize: number | null;
+  layoutMode: LayoutMode | null;
 }
 
 export interface Carousel {

@@ -194,7 +194,10 @@ export function useCarousel(carouselId: string | undefined) {
     reload();
   }, [reload]);
 
-  // Realtime: status do carrossel + atualizações de cada slide.
+  // Realtime: mudanças no carrossel (status, mas também slide_count/prompt/
+  // niche etc. — o import de template só sabe a contagem real de slides
+  // depois da análise por visão, então recarrega tudo em vez de só o
+  // status) + atualizações de cada slide.
   useEffect(() => {
     if (!carouselId) return;
     const channel = createRealtimeChannel(`carousel:${carouselId}`)
@@ -206,9 +209,8 @@ export function useCarousel(carouselId: string | undefined) {
           table: "carousels",
           filter: `id=eq.${carouselId}`,
         },
-        (payload) => {
-          const status = (payload.new as { status: Carousel["status"] }).status;
-          setCarousel((prev) => (prev ? { ...prev, status } : prev));
+        () => {
+          reload();
         },
       )
       .on(
@@ -236,7 +238,7 @@ export function useCarousel(carouselId: string | undefined) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [carouselId]);
+  }, [carouselId, reload]);
 
   const applySlide = (slide: Slide) =>
     setCarousel((prev) =>

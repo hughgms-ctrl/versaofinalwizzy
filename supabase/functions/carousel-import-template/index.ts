@@ -1,15 +1,16 @@
 // =====================================================================
 // carousel-import-template — recebe prints de um carrossel de referência,
-// analisa por visão (GPT-4o) a ESTRUTURA e o ESTILO de cada slide, e gera
+// analisa por visão (GPT-4o) a ESTRUTURA e o DESIGN de cada slide, e gera
 // um carrossel NOVO E ORIGINAL inspirado nisso — nunca copia o texto nem
 // reaproveita foto de pessoas reais da referência (gera pessoa por IA
 // quando o slide original tinha uma). O resultado nasce como template
 // (is_template = true) na biblioteca de Templates.
 //
-// Mesma arquitetura assíncrona do carousel-generate: cria o carrossel +
-// slides vazios, devolve o id na hora, e roda análise + geração em
-// background (EdgeRuntime.waitUntil) — o progresso chega via Realtime,
-// reaproveitando 100% da UI/hooks já usados pela geração normal.
+// Uma imagem enviada pode conter MAIS DE UM slide de referência (ex.: um
+// print compilado com 3-4 etapas) — por isso o número de slides só é
+// conhecido DEPOIS da análise por visão, e as linhas de carousel_slides só
+// são criadas em background, não na resposta síncrona (diferente do
+// carousel-generate, onde o slideCount já vem do usuário).
 // =====================================================================
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { authenticateUser, errorResponse, handleCors, jsonResponse } from "../_shared/middleware.ts";
@@ -48,6 +49,8 @@ Deno.serve(async (req) => {
       return errorResponse(`Envie no máximo ${MAX_IMAGES} imagens por vez`, 400);
     }
 
+    // Só o carrossel nasce agora — os slides só depois da análise, já que
+    // uma imagem pode virar vários (contagem real desconhecida por enquanto).
     const { data: carousel, error: cErr } = await service
       .from("carousels")
       .insert({
@@ -72,25 +75,6 @@ Deno.serve(async (req) => {
       return errorResponse(`Falha ao criar template: ${cErr?.message}`, 500);
     }
 
-    const slideRows = Array.from({ length: images.length }, (_, i) => ({
-      carousel_id: carousel.id,
-      order: i + 1,
-      has_image: true,
-      text_color: "#ffffff",
-      bg_color: "#0a0a0a",
-      accent_color: "#3B82F6",
-      font_family: "Montserrat",
-      text_align: "left",
-      text_position: "center",
-      overlay_position: "bottom",
-      overlay_intensity: 0.85,
-      title_size: 80,
-      title_bold: true,
-      body_size: 36,
-    }));
-    const { error: sErr } = await service.from("carousel_slides").insert(slideRows);
-    if (sErr) return errorResponse(`Falha ao criar slides: ${sErr.message}`, 500);
-
     const apiKey = await resolveOpenAIKey(supabase, organizationId);
     // @ts-ignore EdgeRuntime existe no runtime do Supabase
     EdgeRuntime.waitUntil(runImport(carousel.id, images, apiKey));
@@ -106,9 +90,32 @@ async function runImport(carouselId: string, images: string[], apiKey: string) {
   try {
     await service.from("carousels").update({ status: "processing" }).eq("id", carouselId);
 
-    // 1. Análise por visão da referência (estrutura + estilo, nunca texto literal).
+    // 1. Análise por visão da referência — estrutura, design real (fundo/
+    // texto/layout) e detecção de múltiplos slides numa mesma imagem.
     const model = await resolveCarouselModel();
     const ref = await analyzeCarouselReference(apiKey, images, model);
+
+    // 2. Agora que sabemos quantos slides existem de fato, cria as linhas —
+    // cada uma já com o design detectado (nunca copiando o texto).
+    const slideRows = ref.slides.map((s) => ({
+      carousel_id: carouselId,
+      order: s.order,
+      has_image: true,
+      text_color: s.textColor,
+      bg_color: s.backgroundColor,
+      accent_color: "#3B82F6",
+      font_family: "Montserrat",
+      text_align: s.textAlign,
+      text_position: "center",
+      overlay_position: s.overlayPosition,
+      overlay_intensity: 0.85,
+      title_size: 80,
+      title_bold: true,
+      body_size: 36,
+      layout_mode: s.layoutMode,
+    }));
+    const { error: sErr } = await service.from("carousel_slides").insert(slideRows);
+    if (sErr) throw new Error(`Falha ao criar slides: ${sErr.message}`);
 
     await service
       .from("carousels")
@@ -118,6 +125,7 @@ async function runImport(carouselId: string, images: string[], apiKey: string) {
         objective: ref.inferredObjective,
         tone: ref.inferredTone,
         image_style: ref.overallVisualStyle,
+        slide_count: ref.slides.length,
       })
       .eq("id", carouselId);
 
@@ -127,7 +135,7 @@ async function runImport(carouselId: string, images: string[], apiKey: string) {
       .eq("carousel_id", carouselId)
       .order("order", { ascending: true });
 
-    // 2. Textos — inspirados no tema/papel de cada slide, nunca copiados.
+    // 3. Textos — inspirados no tema/papel de cada slide, nunca copiados.
     const texts = await generateSlideTextsFromReference({
       apiKey,
       model,
@@ -135,27 +143,20 @@ async function runImport(carouselId: string, images: string[], apiKey: string) {
       objective: ref.inferredObjective,
       tone: ref.inferredTone,
       audience: "",
-      slideCount: images.length,
+      slideCount: ref.slides.length,
       slideBrief: ref.slides.map((s) => ({ order: s.order, role: s.role, themeConcept: s.themeConcept })),
     });
 
     for (const slide of slides ?? []) {
       const text = texts.find((t) => t.order === slide.order);
-      const analysis = ref.slides.find((s) => s.order === slide.order);
       if (!text) continue;
       await service
         .from("carousel_slides")
-        .update({
-          title: text.title,
-          body: text.body,
-          image_theme: text.imageTheme,
-          text_align: analysis?.textAlign ?? "left",
-          overlay_position: analysis?.overlayPosition ?? "bottom",
-        })
+        .update({ title: text.title, body: text.body, image_theme: text.imageTheme })
         .eq("id", slide.id);
     }
 
-    // 3. Imagens — quando o slide de referência tinha pessoa real, força geração
+    // 4. Imagens — quando o slide de referência tinha pessoa real, força geração
     // de pessoa por IA (nunca reaproveita a foto de quem apareceu no original).
     for (const slide of slides ?? []) {
       const text = texts.find((t) => t.order === slide.order);
