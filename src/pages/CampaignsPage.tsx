@@ -205,15 +205,15 @@ const CampaignsPage = () => {
         });
     };
 
-    // Filter folders by selected workspace (campaigns are already workspace-filtered server-side)
+    // Filter folders by selected workspace (campaigns are already workspace-filtered server-side).
+    // A folder with NO workspace assigned appears in EVERY workspace ("Vazio = aparece em todos"),
+    // mirroring how no-workspace campaigns are shown for any selected workspace (workspace_id IS NULL).
     const matchesWorkspace = (wsIds?: string[] | null, legacyId?: string | null) => {
         if (!selectedWorkspaceId) return true;
-        if (selectedWorkspaceId === "unassigned") {
-            const hasWs = (wsIds && wsIds.length > 0) || !!legacyId;
-            return !hasWs;
-        }
+        const hasWs = (wsIds && wsIds.length > 0) || !!legacyId;
+        if (selectedWorkspaceId === "unassigned") return !hasWs;
+        if (!hasWs) return true; // empty = appears in all workspaces
         if (wsIds && wsIds.length > 0) return wsIds.includes(selectedWorkspaceId);
-        if (!legacyId) return false;
         return legacyId === selectedWorkspaceId;
     };
 
