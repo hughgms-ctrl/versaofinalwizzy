@@ -543,9 +543,15 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
   // ─── Pointer-events drag (replaces HTML5 drag to avoid conflicts with pan) ───
   const startCardDrag = useCallback((e: React.PointerEvent, conversationId: string, cardEl: HTMLElement) => {
     if (e.button !== 0 || e.pointerType !== 'mouse') return;
-    // Don't drag from interactive children
+    // Don't drag from interactive children.
+    // Radix menus/dialogs/popovers are React portals rendered as children of the card,
+    // so their pointer events still bubble up the React tree to this handler even though
+    // they live outside the card in the DOM. Bail out for them too — otherwise the
+    // preventDefault + setPointerCapture below steals the pointerup from the menu item
+    // and the card's onClick opens the details dialog instead of running the action.
     const t = e.target as HTMLElement;
     if (t.closest('button, a, input, textarea, select, [role="button"], label')) return;
+    if (t.closest('[role="menu"], [role="menuitem"], [role="dialog"], [data-radix-popper-content-wrapper]')) return;
     e.preventDefault();
     e.stopPropagation();
     cardEl.setPointerCapture(e.pointerId);
@@ -1194,6 +1200,9 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
                 className="flex shrink-0 items-center gap-1"
                 onMouseDown={(event) => event.stopPropagation()}
                 onClick={(event) => event.stopPropagation()}
+                onPointerDown={(event) => event.stopPropagation()}
+                onPointerMove={(event) => event.stopPropagation()}
+                onPointerUp={(event) => event.stopPropagation()}
               >
                 {isAIActive && <Bot className="h-3.5 w-3.5 text-purple-300" />}
                 <ConversationCardActions
