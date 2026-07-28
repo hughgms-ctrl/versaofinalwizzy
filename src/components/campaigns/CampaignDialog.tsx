@@ -74,7 +74,7 @@ export function CampaignDialog({
             setFlowId(campaignToEdit.flow_id);
 
             // Infer triggerType from match_type
-            if (['exact', 'contains', 'starts_with'].includes(campaignToEdit.match_type)) {
+            if (['exact', 'contains', 'all_words', 'starts_with'].includes(campaignToEdit.match_type)) {
                 setTriggerType("keyword");
                 setTriggerKeyword(campaignToEdit.trigger_keyword);
                 setMatchType(campaignToEdit.match_type);

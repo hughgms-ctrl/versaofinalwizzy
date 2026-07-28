@@ -123,7 +123,9 @@ export function CampaignTriggerFields({
                                             className="min-h-[60px] text-sm"
                                         />
                                         <p className="text-[10px] text-muted-foreground">
-                                            Separe as palavras por vírgula.
+                                            {matchType === 'all_words'
+                                                ? 'Separe por vírgula. A campanha só dispara se a mensagem tiver TODOS os termos, em qualquer ordem (ignora acento, pontuação e espaço extra).'
+                                                : 'Separe as palavras por vírgula. Qualquer uma delas já dispara a campanha.'}
                                         </p>
                                     </div>
 
@@ -135,7 +137,8 @@ export function CampaignTriggerFields({
                                             </SelectTrigger>
                                             <SelectContent>
                                                 <SelectItem value="exact">Mensagem exata (só a palavra)</SelectItem>
-                                                <SelectItem value="contains">Contém a palavra na frase</SelectItem>
+                                                <SelectItem value="contains">Contém qualquer uma das palavras</SelectItem>
+                                                <SelectItem value="all_words">Contém todas as palavras (em qualquer ordem)</SelectItem>
                                                 <SelectItem value="starts_with">Frase começa com a palavra</SelectItem>
                                             </SelectContent>
                                         </Select>
