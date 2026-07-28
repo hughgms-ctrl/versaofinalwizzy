@@ -128,8 +128,8 @@ export function MobileNav() {
           <span className="sr-only">Abrir menu</span>
         </Button>
       </SheetTrigger>
-      <SheetContent side="left" className="w-[280px] p-0">
-        <SheetHeader className="p-4 border-b border-border">
+      <SheetContent side="left" className="flex w-[280px] flex-col gap-0 overflow-hidden p-0">
+        <SheetHeader className="shrink-0 p-4 border-b border-border">
           <SheetTitle className="flex items-center gap-3">
             <img
               src={wizzyLogo}
@@ -140,7 +140,7 @@ export function MobileNav() {
           </SheetTitle>
         </SheetHeader>
 
-        <div className="space-y-2 border-b border-border p-3">
+        <div className="shrink-0 space-y-2 border-b border-border p-3">
           <OrganizationSwitcher
             contentAlign="start"
             triggerClassName="flex h-10 w-full max-w-none rounded-lg px-3"
@@ -148,7 +148,7 @@ export function MobileNav() {
           <WorkspaceSwitcher collapsed={false} />
         </div>
 
-        <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
+        <nav className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 space-y-1">
           {visibleNavigation.map((item) => {
             const isActive = location.pathname === item.href;
             const isLocked = item.planModule ? !canAccessPlanModule(item.planModule) : false;
@@ -184,7 +184,7 @@ export function MobileNav() {
         </nav>
 
         {/* User Profile */}
-        <div className="border-t border-border p-4">
+        <div className="shrink-0 border-t border-border p-4">
           <button
             onClick={() => handleNavigateTo('/profile')}
             className="flex items-center gap-3 w-full rounded-lg p-1 -m-1 hover:bg-muted transition-colors"
