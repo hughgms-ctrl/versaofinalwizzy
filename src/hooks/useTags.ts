@@ -74,10 +74,10 @@ export function useAllContactTags() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('contact_tags' as any)
-        .select('contact_id, tag_id');
+        .select('contact_id, tag_id') as { data: { contact_id: string; tag_id: string }[] | null; error: any };
 
       if (error) throw error;
-      return (data || []) as { contact_id: string; tag_id: string }[];
+      return data || [];
     },
   });
 }

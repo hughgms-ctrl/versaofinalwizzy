@@ -327,11 +327,11 @@ function ContactTagsDisplay({ contactId }: { contactId: string }) {
 
   if (!allContactTags?.length || !allTags) return null;
 
-  const tagDetails = allContactTags
+  const matchedTagDetails = allContactTags
     .filter((ct) => ct.contact_id === contactId)
     .map((ct) => allTags.find((t: { id: string }) => t.id === ct.tag_id))
-    .filter(Boolean)
-    .slice(0, 3);
+    .filter(Boolean);
+  const tagDetails = matchedTagDetails.slice(0, 3);
 
   if (!tagDetails.length) return null;
 
@@ -349,9 +349,9 @@ function ContactTagsDisplay({ contactId }: { contactId: string }) {
           {tag.name}
         </span>
       ))}
-      {contactTags.length > 3 && (
+      {matchedTagDetails.length > 3 && (
         <span className="text-[10px] text-muted-foreground">
-          +{contactTags.length - 3}
+          +{matchedTagDetails.length - 3}
         </span>
       )}
     </div>
