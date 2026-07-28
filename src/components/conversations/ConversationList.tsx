@@ -1,5 +1,5 @@
 import { DbConversation, useProfiles } from '@/hooks/useConversations';
-import { useContactTags, useTags } from '@/hooks/useTags';
+import { useAllContactTags, useTags } from '@/hooks/useTags';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
 import { useFollowUpStatus } from '@/hooks/useFollowUpStatus';
 import { Bot, MessageCircle, Check, CheckCheck, RefreshCw } from 'lucide-react';
@@ -158,6 +158,11 @@ export function ConversationList({ conversations, selectedId, onSelect, onSpyVie
                       contactId={conversation.contact?.id}
                       instanceId={(conversation as any).whatsapp_instance_id}
                       size={40}
+                      // Refreshing from the WhatsApp API happens once when a
+                      // conversation is opened (ConversationDetail). Doing it
+                      // per row here fired one external API call per contact
+                      // on every list render — hundreds at a time.
+                      autoRefetch={false}
                     />
                     <div
                       className={cn(
@@ -312,15 +317,19 @@ export function ConversationList({ conversations, selectedId, onSelect, onSpyVie
   );
 }
 
-// Separate component for contact tags to avoid prop drilling
+// Separate component for contact tags to avoid prop drilling.
+// Reads from the shared `all-contact-tags` cache instead of firing one
+// request per row — with hundreds of conversations rendered at once, a
+// per-contact query here used to mean hundreds of network calls per load.
 function ContactTagsDisplay({ contactId }: { contactId: string }) {
-  const { data: contactTags } = useContactTags(contactId);
+  const { data: allContactTags } = useAllContactTags();
   const { data: allTags } = useTags();
 
-  if (!contactTags?.length || !allTags) return null;
+  if (!allContactTags?.length || !allTags) return null;
 
-  const tagDetails = contactTags
-    .map((ct: { tag_id: string }) => allTags.find((t: { id: string }) => t.id === ct.tag_id))
+  const tagDetails = allContactTags
+    .filter((ct) => ct.contact_id === contactId)
+    .map((ct) => allTags.find((t: { id: string }) => t.id === ct.tag_id))
     .filter(Boolean)
     .slice(0, 3);
 

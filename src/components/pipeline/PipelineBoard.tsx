@@ -198,6 +198,9 @@ export function PipelineBoard({ onConversationClick }: PipelineBoardProps) {
                             contactId={conversation.contact?.id}
                             instanceId={(conversation as any).whatsapp_instance_id}
                             size={32}
+                            // Same fix as ConversationList: avoid one WhatsApp
+                            // API call per card across every pipeline column.
+                            autoRefetch={false}
                           />
                           <div className="flex-1 min-w-0">
                             {(() => {

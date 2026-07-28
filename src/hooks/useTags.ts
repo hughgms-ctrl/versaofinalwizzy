@@ -66,6 +66,22 @@ export function useAllTags() {
   });
 }
 
+// All contact<->tag links, unfiltered by contact. Used to avoid firing one
+// request per contact when rendering a list (e.g. conversation list badges).
+export function useAllContactTags() {
+  return useQuery({
+    queryKey: ['all-contact-tags'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('contact_tags' as any)
+        .select('contact_id, tag_id');
+
+      if (error) throw error;
+      return (data || []) as { contact_id: string; tag_id: string }[];
+    },
+  });
+}
+
 export function useContactTags(contactId: string | null) {
   return useQuery({
     queryKey: ['contact-tags', contactId],

@@ -1145,6 +1145,9 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
               instanceId={(conversation as any).whatsapp_instance_id}
               size={18}
               className="ring-1 ring-white/10"
+              // Same fix as ConversationList: avoid one WhatsApp API call
+              // per card across every pipeline column.
+              autoRefetch={false}
             />
             <span
               className={cn(

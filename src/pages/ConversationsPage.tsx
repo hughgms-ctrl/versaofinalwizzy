@@ -13,7 +13,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useQuery } from '@tanstack/react-query';
-import { useTags } from '@/hooks/useTags';
+import { useTags, useAllContactTags } from '@/hooks/useTags';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { NewConversationDialog } from '@/components/conversations/NewConversationDialog';
 import { useUserPermissions, useCurrentUserRole } from '@/hooks/useUserPermissions';
@@ -61,17 +61,8 @@ const ConversationsPage = () => {
   const { data: myShares = [] } = useConversationShares();
   const { data: messageSearchResult } = useMessageSearch(searchQuery);
 
-  // Fetch contact tags for filtering
-  const { data: allContactTags = [] } = useQuery({
-    queryKey: ['all-contact-tags'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('contact_tags')
-        .select('contact_id, tag_id');
-      if (error) throw error;
-      return data || [];
-    },
-  });
+  // Fetch contact tags for filtering (shared cache with ConversationList badges)
+  const { data: allContactTags = [] } = useAllContactTags();
 
   // Fetch pipeline positions to filter conversations by pipeline access
   const isRestricted = userRole && userRole !== 'owner' && userRole !== 'admin';
