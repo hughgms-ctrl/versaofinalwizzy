@@ -42,7 +42,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { DbConversation } from '@/hooks/useConversations';
 import { usePipelines, usePipelineColumns, useMoveConversation, useTransferConversationToWorkspace, Pipeline } from '@/hooks/usePipelines';
 import { Workspace } from '@/hooks/useWorkspaces';
-import { useTags, useContactTags, useAddTagToContact, useRemoveTagFromContact, useCreateTag } from '@/hooks/useTags';
+import { useTags, useAllContactTags, useAddTagToContact, useRemoveTagFromContact, useCreateTag } from '@/hooks/useTags';
 import { useNavigate } from 'react-router-dom';
 import { ShareConversationDialog } from './ShareConversationDialog';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
@@ -90,7 +90,13 @@ export function ConversationCardActions({
 
   const contactId = conversation.contact?.id || null;
   const { data: tags } = useTags();
-  const { data: contactTags } = useContactTags(contactId);
+  // Reads from the shared batch cache instead of firing one request per
+  // card — this component is rendered once per conversation in the list.
+  const { data: allContactTags } = useAllContactTags();
+  const contactTags = useMemo(
+    () => (contactId ? allContactTags?.filter((ct) => ct.contact_id === contactId) : undefined),
+    [allContactTags, contactId]
+  );
   const addTag = useAddTagToContact();
   const removeTag = useRemoveTagFromContact();
   const createTag = useCreateTag();
