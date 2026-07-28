@@ -1187,7 +1187,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
 
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
-                <p className={cn("truncate text-[12px] font-semibold text-zinc-100", hasUnread && "text-white")} data-sensitive>
+                <p className={cn("truncate text-[12px] font-semibold text-zinc-100", hasUnread && "dark:text-white")} data-sensitive>
                   {hasName ? contactName : formattedPhone}
                 </p>
                 {hasName && (
