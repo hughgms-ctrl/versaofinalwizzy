@@ -14,10 +14,8 @@ export interface CampaignFolder {
   position: number;
 }
 
-// campaign_folders is not in the generated Supabase types yet, so we cast the
-// table name to a known one ('contacts') to bypass the type check, exactly like
-// other recently-added tables in this codebase do.
-const FOLDERS = 'campaign_folders' as 'contacts';
+// campaign_folders já está nos types gerados — sem cast, o type check vale de verdade.
+const FOLDERS = 'campaign_folders' as const;
 
 export function useCampaignFolders() {
   return useQuery({
@@ -39,7 +37,12 @@ export function useCampaignFolders() {
         error = retry.error;
       }
 
-      if (error) throw error;
+      if (error) {
+        // Sem isso a query falha em silêncio e a página mostra "nenhuma pasta"
+        // como se o banco estivesse vazio (RLS, rede, schema cache do PostgREST...).
+        console.error('[campaign-folders] falha ao carregar pastas:', error);
+        throw error;
+      }
       return (data || []).map((folder: any) => ({
         ...folder,
         position: folder.position || 0,
@@ -81,15 +84,19 @@ export function useCreateCampaignFolder() {
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) {
+        console.error('[campaign-folders] falha ao criar pasta:', error);
+        throw error;
+      }
       return data as unknown as CampaignFolder;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['campaign-folders'] });
       toast.success('Pasta criada com sucesso');
     },
-    onError: (error) => {
-      toast.error('Erro ao criar pasta: ' + error.message);
+    onError: (error: any) => {
+      const code = error?.code ? ` (${error.code})` : '';
+      toast.error('Erro ao criar pasta: ' + (error?.message || 'erro desconhecido') + code);
     },
   });
 }

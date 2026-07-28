@@ -39,6 +39,7 @@ import {
 } from "@/components/ui/dialog";
 import { CampaignDialog } from "@/components/campaigns/CampaignDialog";
 import { confirmDialog } from "@/lib/confirmDialog";
+import { toast } from "sonner";
 import {
     useCampaigns,
     useUpdateCampaign,
@@ -118,7 +119,7 @@ const CampaignsPage = () => {
     const [folderWorkspaceIds, setFolderWorkspaceIds] = useState<string[]>([]);
 
     const { data: campaigns, isLoading: campaignsLoading } = useCampaigns();
-    const { data: folders, isLoading: foldersLoading } = useCampaignFolders();
+    const { data: folders, isLoading: foldersLoading, error: foldersError } = useCampaignFolders();
     const updateCampaign = useUpdateCampaign();
     const deleteCampaign = useDeleteCampaign();
     const updateCampaignPositions = useUpdateCampaignPositions();
@@ -161,13 +162,26 @@ const CampaignsPage = () => {
 
     const handleCreateFolder = () => {
         if (newFolderName.trim()) {
-            createFolder.mutate({
-                name: newFolderName.trim(),
-                parentId: currentFolderId,
-                workspaceIds: folderWorkspaceIds,
-            });
+            const parentId = currentFolderId;
+            const wsIds = folderWorkspaceIds;
+            createFolder.mutate(
+                { name: newFolderName.trim(), parentId, workspaceIds: wsIds },
+                {
+                    onSuccess: (folder) => {
+                        // A pasta pode ser criada com sucesso e mesmo assim sumir da tela:
+                        // ou está em outro workspace, ou é subpasta de uma pasta que não
+                        // está aberta. Sem este aviso o usuário só vê "nada aconteceu".
+                        if (!matchesWorkspace(wsIds, wsIds[0] || null)) {
+                            toast.info(`A pasta "${folder.name}" foi criada em outro workspace e não aparece no filtro atual.`);
+                        } else if (parentId && parentId !== openFolderId) {
+                            toast.info(`A pasta "${folder.name}" foi criada dentro de outra pasta.`);
+                        }
+                    },
+                }
+            );
             setNewFolderName("");
             setFolderWorkspaceIds([]);
+            setCurrentFolderId(null);
             setShowFolderDialog(false);
         }
     };
@@ -540,7 +554,8 @@ const CampaignsPage = () => {
         );
     }
 
-    const isEmpty = (!campaigns || campaigns.length === 0) && (!folders || folders.length === 0);
+    // Com erro nas pastas não caímos no estado vazio — ele esconderia o aviso de falha.
+    const isEmpty = !foldersError && (!campaigns || campaigns.length === 0) && (!folders || folders.length === 0);
 
     return (
         <MainLayout
@@ -679,6 +694,15 @@ const CampaignsPage = () => {
                             </span>
                         ))}
                     </div>
+
+                    {/* Falha ao carregar pastas: sem isto a página mostra "nenhuma pasta"
+                        como se o banco estivesse vazio. */}
+                    {foldersError && (
+                        <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-500">
+                            Não foi possível carregar as pastas: {(foldersError as any)?.message || "erro desconhecido"}
+                            {(foldersError as any)?.code ? ` (${(foldersError as any).code})` : ""}
+                        </div>
+                    )}
 
                     {/* Toolbar */}
                     <div className="flex items-center justify-between">
