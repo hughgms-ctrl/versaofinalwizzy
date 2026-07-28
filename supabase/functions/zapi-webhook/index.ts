@@ -3223,6 +3223,23 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
       console.log(`Campaign ${campaign.id} keywords:`, keywords, `Match type: ${campaign.match_type}`);
 
       const msgNormalized = normalizeText(msgLower);
+
+      // "all_words": E lógico -- todos os termos da lista precisam aparecer na
+      // mensagem, em qualquer ordem. Ignora pontuação e espaço extra dos dois
+      // lados, que é o que costuma quebrar gatilho de anúncio copiado.
+      if (campaign.match_type === 'all_words') {
+        const msgWords = stripPunctuation(msgNormalized);
+        const terms = keywords
+          .map((k: string) => stripPunctuation(normalizeText(k)))
+          .filter(Boolean);
+
+        if (terms.length && terms.every((t: string) => msgWords.includes(t))) {
+          console.log(`MATCH FOUND! Campaign: ${campaign.id}, all_words:`, terms);
+          return { flowId: campaign.flow_id, campaignId: campaign.id };
+        }
+        continue;
+      }
+
       for (const kw of keywords) {
         let matched = false;
         const kwNormalized = normalizeText(kw);
@@ -3256,5 +3273,14 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
       .toLowerCase()
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")
+      // Espa\u00e7o duplicado / quebra de linha no meio da frase n\u00e3o pode quebrar o
+      // gatilho -- \u00e9 o erro mais comum ao colar a palavra-chave de um an\u00fancio.
+      .replace(/\s+/g, " ")
       .trim();
+  }
+
+  // S\u00f3 para o modo "todas as palavras": troca pontua\u00e7\u00e3o por espa\u00e7o, sen\u00e3o
+  // "houston," nunca casa com o termo "houston".
+  function stripPunctuation(text: string): string {
+    return text.replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim();
   }

@@ -78,7 +78,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
 
 const triggerLabel = (campaign: Campaign) => {
-    if (["exact", "contains", "starts_with"].includes(campaign.match_type)) {
+    if (["exact", "contains", "all_words", "starts_with"].includes(campaign.match_type)) {
         return {
             value: campaign.trigger_keyword,
             sub:
@@ -86,7 +86,9 @@ const triggerLabel = (campaign: Campaign) => {
                     ? "Mensagem Exata"
                     : campaign.match_type === "contains"
                         ? "Contém Palavra"
-                        : "Começa com",
+                        : campaign.match_type === "all_words"
+                            ? "Contém Todas"
+                            : "Começa com",
             isKeyword: true,
         };
     }
