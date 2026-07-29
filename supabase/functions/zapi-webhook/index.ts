@@ -2046,9 +2046,14 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
           return respond({ success: true, duplicate: true, ia_echo: true });
         }
       }
-      // If still not found after wait, it might be a system message not tracked — save as bot
-      finalIsFromBot = true;
-      console.log(`[WEBHOOK] IA mode outbound not found after wait — saving as bot message.`);
+      // If still not found after wait, it's NOT an orchestrator message — the
+      // orchestrator always inserts with is_from_bot=true synchronously before
+      // sending (see agent-orchestrator), so dedup above would have caught a
+      // genuine (even slow) AI message. Not found here means a human sent it
+      // straight from the connected phone while the conversation happened to
+      // be in IA mode — save as human, not bot.
+      finalIsFromBot = false;
+      console.log(`[WEBHOOK] IA mode outbound not found after wait — saving as human/native-app message (not orchestrator).`);
     } else {
       // Not in IA mode — this echo is from a human-sent message OR a message sent from WhatsApp native app.
       // zapi-send-message saves synchronously, so dedup above should have caught it.
