@@ -1,10 +1,13 @@
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, ArrowRight, CalendarClock } from 'lucide-react';
+import { AlertTriangle, ArrowRight, CalendarClock, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useOrganizationPlan } from '@/hooks/useOrganizationPlan';
 import { useAuth } from '@/hooks/useAuth';
 import { useCurrentUserRole } from '@/hooks/useUserPermissions';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
+
+const DISMISSED_KEY_PREFIX = 'plan-limit-alert-dismissed:';
 
 function formatDate(date?: string | null) {
   if (!date) return 'data nao definida';
@@ -24,8 +27,6 @@ export function PlanUsageAlert() {
   const { isTrial, trialEndsAt, planName, usage } = useOrganizationPlan(activeOrganizationId);
   const canManageBilling = userRole === 'owner' || userRole === 'admin' || userRole === 'platform_admin';
 
-  if (!canManageBilling) return null;
-
   const exceededResources = [
     usage.isTeamAtLimit && usage.teamLimit > 0 ? `usuários (${usage.teamCount}/${usage.teamLimit})` : null,
     usage.isWorkspaceAtLimit && usage.workspaceLimit > 0 ? `workspaces (${usage.workspaceCount}/${usage.workspaceLimit})` : null,
@@ -33,7 +34,20 @@ export function PlanUsageAlert() {
     usage.isStorageAtLimit && usage.storageLimit > 0 ? `armazenamento` : null,
   ].filter(Boolean);
 
+  // Keyed by org + the exact set of exceeded resources, so dismissing this
+  // banner doesn't hide a *different* limit hit later (e.g. upgrading past
+  // the workspace limit but then hitting the WhatsApp number limit).
+  const dismissKey = `${DISMISSED_KEY_PREFIX}${activeOrganizationId || 'none'}:${exceededResources.join('|')}`;
+  const [dismissed, setDismissed] = useState(false);
+
+  useEffect(() => {
+    setDismissed(localStorage.getItem(dismissKey) === '1');
+  }, [dismissKey]);
+
+  if (!canManageBilling) return null;
+
   if (exceededResources.length > 0) {
+    if (dismissed) return null;
     return (
       <div className="border-b border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-950 dark:text-amber-100 md:px-6">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -46,10 +60,24 @@ export function PlanUsageAlert() {
               </p>
             </div>
           </div>
-          <Button size="sm" variant="outline" onClick={() => navigate('/plans')} className="w-fit gap-2 border-amber-500/40 bg-background">
-            Fazer upgrade
-            <ArrowRight className="h-4 w-4" />
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button size="sm" variant="outline" onClick={() => navigate('/plans')} className="w-fit gap-2 border-amber-500/40 bg-background">
+              Fazer upgrade
+              <ArrowRight className="h-4 w-4" />
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-8 w-8 shrink-0 text-amber-900/70 hover:bg-amber-500/20 hover:text-amber-950 dark:text-amber-100/70 dark:hover:text-amber-100"
+              onClick={() => {
+                localStorage.setItem(dismissKey, '1');
+                setDismissed(true);
+              }}
+              aria-label="Dispensar aviso"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       </div>
     );
