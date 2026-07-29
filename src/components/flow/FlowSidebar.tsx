@@ -56,10 +56,15 @@ interface FlowSidebarProps {
   onDragStart: (event: React.DragEvent, nodeType: FlowNodeType, label: string) => void;
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
+  /** Adiciona o bloco por clique/toque -- no mobile o drag-and-drop HTML5 não dispara. */
+  onAddNode?: (nodeType: FlowNodeType, label: string) => void;
+  /** 'sheet' = renderizado dentro da gaveta mobile (largura total, sem botão de colapsar). */
+  variant?: 'panel' | 'sheet';
 }
 
-export function FlowSidebar({ onDragStart, isCollapsed, onToggleCollapse }: FlowSidebarProps) {
+export function FlowSidebar({ onDragStart, isCollapsed, onToggleCollapse, onAddNode, variant = 'panel' }: FlowSidebarProps) {
   const [expandedCategories, setExpandedCategories] = useState<string[]>(['content', 'ia', 'actions', 'logic']);
+  const isSheet = variant === 'sheet';
 
   const toggleCategory = (categoryId: string) => {
     setExpandedCategories(prev =>
@@ -103,20 +108,27 @@ export function FlowSidebar({ onDragStart, isCollapsed, onToggleCollapse }: Flow
   }
 
   return (
-    <div className="w-72 bg-card border-r border-border h-full overflow-y-auto flex flex-col">
+    <div className={cn(
+      "bg-card border-border h-full overflow-y-auto flex flex-col",
+      isSheet ? "w-full" : "w-72 border-r"
+    )}>
       <div className="p-4 border-b border-border flex items-center justify-between">
         <div>
           <h2 className="font-semibold text-foreground">Componentes</h2>
-          <p className="text-xs text-muted-foreground mt-1">Arraste para adicionar ao fluxo</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            {isSheet ? 'Toque para adicionar ao fluxo' : 'Arraste (ou clique) para adicionar ao fluxo'}
+          </p>
         </div>
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onToggleCollapse}
-          className="h-8 w-8"
-        >
-          <PanelLeftClose className="h-4 w-4" />
-        </Button>
+        {!isSheet && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onToggleCollapse}
+            className="h-8 w-8"
+          >
+            <PanelLeftClose className="h-4 w-4" />
+          </Button>
+        )}
       </div>
 
       <div className="p-3 space-y-2 flex-1 overflow-y-auto">
@@ -149,11 +161,26 @@ export function FlowSidebar({ onDragStart, isCollapsed, onToggleCollapse }: Flow
                     return (
                       <div
                         key={component.type}
-                        draggable
+                        draggable={!isSheet}
                         onDragStart={(e) => handleDragStart(e, component)}
-                        className="group flex items-center gap-2 px-2 py-2 rounded-md border border-border bg-card hover:border-primary/50 hover:shadow-sm cursor-grab active:cursor-grabbing transition-all"
+                        onClick={() => onAddNode?.(component.type, component.label)}
+                        role={onAddNode ? 'button' : undefined}
+                        tabIndex={onAddNode ? 0 : undefined}
+                        onKeyDown={(e) => {
+                          if (!onAddNode) return;
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            onAddNode(component.type, component.label);
+                          }
+                        }}
+                        className={cn(
+                          "group flex items-center gap-2 px-2 py-2 rounded-md border border-border bg-card hover:border-primary/50 hover:shadow-sm transition-all",
+                          isSheet ? "cursor-pointer active:bg-muted" : "cursor-grab active:cursor-grabbing"
+                        )}
                       >
-                        <GripVertical className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                        {!isSheet && (
+                          <GripVertical className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                        )}
                         <div className={cn(
                           "h-7 w-7 rounded-md flex items-center justify-center flex-shrink-0",
                           component.color

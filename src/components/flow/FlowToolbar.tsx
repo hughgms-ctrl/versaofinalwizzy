@@ -117,7 +117,10 @@ export function FlowToolbar({
 
   return (
     <>
-      <div className="flex items-center gap-2">
+      {/* No mobile a barra precisa quebrar em linhas: ancorada em top-right, o
+          conteúdo em linha única saía pela esquerda da tela e o nome do fluxo /
+          voltar ficavam inalcançáveis. Em md+ o comportamento é o mesmo de antes. */}
+      <div className="flex flex-wrap items-center justify-end gap-2 max-w-[calc(100vw-2rem)] md:max-w-none md:flex-nowrap">
         <Button
           size="sm"
           variant="ghost"
@@ -132,7 +135,7 @@ export function FlowToolbar({
         <Input
           value={flowName}
           onChange={(e) => onNameChange(e.target.value)}
-          className="h-8 w-48 text-sm font-medium"
+          className="h-8 w-32 md:w-48 text-sm font-medium"
           placeholder="Nome do fluxo"
         />
 

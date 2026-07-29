@@ -17,7 +17,9 @@ const FlowBuilderPage = () => {
       newButtonLabel="Novo Fluxo"
       fullWidth={true}
     >
-      <div className="h-[calc(100vh-64px)] border-t border-border flex flex-col">
+      {/* Header tem 64px só em md+; no mobile é min-h-14 (56px) e a barra de
+          endereço do navegador mexe no 100vh -- por isso dvh. */}
+      <div className="h-[calc(100dvh-3.5rem)] md:h-[calc(100vh-64px)] border-t border-border flex flex-col">
         {flowId && <OrchestrationContextBanner flowId={flowId} />}
         <div className="flex-1 min-h-0">
           <ReactFlowProvider>

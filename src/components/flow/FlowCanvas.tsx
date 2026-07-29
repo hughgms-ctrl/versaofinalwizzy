@@ -50,7 +50,10 @@ import { useTags } from '@/hooks/useTags';
 import { usePipelines } from '@/hooks/usePipelines';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
-import { Loader2 } from 'lucide-react';
+import { useIsMobile } from '@/hooks/use-mobile';
+import { Button } from '@/components/ui/button';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import { Loader2, Blocks } from 'lucide-react';
 import { toast } from 'sonner';
 
 const nodeTypes = {
@@ -114,6 +117,8 @@ function FlowCanvasInner() {
   const [isMasterActive, setIsMasterActive] = useState(false);
   const [showMinimap, setShowMinimap] = useState(false);
   const [showMasterPromptDialog, setShowMasterPromptDialog] = useState(false);
+  const [showMobilePalette, setShowMobilePalette] = useState(false);
+  const isMobile = useIsMobile();
 
   const { zoomIn, zoomOut, setViewport, getViewport, screenToFlowPosition } = useReactFlow();
   const { data: flow, isLoading } = useFlow(flowId);
@@ -359,6 +364,36 @@ function FlowCanvasInner() {
     event.dataTransfer.dropEffect = 'move';
   }, []);
 
+  const insertNode = useCallback(
+    (type: FlowNodeType, label: string, position: { x: number; y: number }, avoidOverlap = false) => {
+      setNodes((nds) => {
+        let { x, y } = position;
+        // Ao adicionar por clique/toque todos os blocos cairiam no mesmo ponto do
+        // centro da tela -- desloca em diagonal até achar espaço livre.
+        if (avoidOverlap) {
+          while (nds.some((n) => Math.abs(n.position.x - x) < 24 && Math.abs(n.position.y - y) < 24)) {
+            x += 36;
+            y += 36;
+          }
+        }
+
+        const newNode: Node = {
+          id: getId(),
+          type,
+          position: { x, y },
+          data: {
+            label,
+            // Initialize content-block with empty items
+            ...(type === 'content-block' ? { items: [] } : {}),
+          },
+        };
+
+        return nds.concat(newNode);
+      });
+    },
+    [setNodes]
+  );
+
   const onDrop = useCallback(
     (event: React.DragEvent) => {
       event.preventDefault();
@@ -377,20 +412,28 @@ function FlowCanvasInner() {
         y: event.clientY,
       });
 
-      const newNode: Node = {
-        id: getId(),
-        type,
-        position,
-        data: {
-          label,
-          // Initialize content-block with empty items
-          ...(type === 'content-block' ? { items: [] } : {}),
-        },
-      };
-
-      setNodes((nds) => nds.concat(newNode));
+      insertNode(type, label, position);
     },
-    [setNodes, screenToFlowPosition]
+    [insertNode, screenToFlowPosition]
+  );
+
+  // Adiciona no centro do canvas -- caminho usado pelo clique/toque, já que o
+  // drag-and-drop HTML5 do sidebar não dispara em telas de toque.
+  const addNodeAtCenter = useCallback(
+    (type: FlowNodeType, label: string) => {
+      if (!type) return;
+
+      const bounds = reactFlowWrapper.current?.getBoundingClientRect();
+      const position = screenToFlowPosition(
+        bounds
+          ? { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 }
+          : { x: window.innerWidth / 2, y: window.innerHeight / 2 }
+      );
+
+      insertNode(type, label, position, true);
+      toast.success(`"${label}" adicionado ao fluxo`);
+    },
+    [insertNode, screenToFlowPosition]
   );
 
   const onDragStart = (event: React.DragEvent, nodeType: FlowNodeType, label: string) => {
@@ -425,13 +468,32 @@ function FlowCanvasInner() {
 
   return (
     <div className="flex h-full">
-      <FlowSidebar
-        onDragStart={onDragStart}
-        isCollapsed={sidebarCollapsed}
-        onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
-      />
+      {isMobile ? (
+        <Sheet open={showMobilePalette} onOpenChange={setShowMobilePalette}>
+          <SheetContent side="left" className="w-[85vw] max-w-sm p-0 flex flex-col">
+            <SheetHeader className="sr-only">
+              <SheetTitle>Componentes do fluxo</SheetTitle>
+            </SheetHeader>
+            <FlowSidebar
+              variant="sheet"
+              onDragStart={onDragStart}
+              onAddNode={(type, label) => {
+                addNodeAtCenter(type, label);
+                setShowMobilePalette(false);
+              }}
+            />
+          </SheetContent>
+        </Sheet>
+      ) : (
+        <FlowSidebar
+          onDragStart={onDragStart}
+          onAddNode={addNodeAtCenter}
+          isCollapsed={sidebarCollapsed}
+          onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+        />
+      )}
 
-      <div className="flex-1 h-full" ref={reactFlowWrapper}>
+      <div className="flex-1 h-full min-w-0" ref={reactFlowWrapper}>
         <ReactFlow
           nodes={nodes}
           edges={edges.map(e => ({
@@ -497,6 +559,18 @@ function FlowCanvasInner() {
               isGenerating={isGeneratingAI}
             />
           </Panel>
+          {isMobile && (
+            <Panel position="top-left">
+              <Button
+                size="sm"
+                className="gap-1.5 shadow-lg"
+                onClick={() => setShowMobilePalette(true)}
+              >
+                <Blocks className="h-4 w-4" />
+                Blocos
+              </Button>
+            </Panel>
+          )}
           <Controls className="!bg-card !border-border !shadow-lg [&>button]:!bg-card [&>button]:!border-border [&>button]:!text-foreground hover:[&>button]:!bg-muted" />
           {showMinimap && (
             <MiniMap
