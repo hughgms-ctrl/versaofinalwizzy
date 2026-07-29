@@ -4,7 +4,7 @@ import { MainLayout } from '@/components/layout/MainLayout';
 import { ConversationList } from '@/components/conversations/ConversationList';
 import { ConversationDetail } from '@/components/conversations/ConversationDetail';
 import { ConversationFilters, ConversationFiltersState, defaultFilters } from '@/components/shared/ConversationFilters';
-import { useConversations, DbConversation } from '@/hooks/useConversations';
+import { usePaginatedConversations, DbConversation } from '@/hooks/useConversations';
 import { useWhatsAppStatus } from '@/hooks/useWhatsAppStatus';
 import { supabase } from '@/integrations/supabase/client';
 import { isWithinInterval, parseISO } from 'date-fns';
@@ -48,7 +48,15 @@ const ConversationsPage = () => {
   const { selectedWorkspace, selectedWorkspaceId, selectedOrganizationId: conversationsOrgId } = useWorkspaceContext();
   const isWizzyEngageReleased = toolReleaseFlags?.wizzy_engage === true
     || Boolean(conversationsOrgId && internalTestOrgIds?.includes(conversationsOrgId));
-  const { data: conversations, isLoading, error, refetch } = useConversations({
+  const {
+    data: conversations,
+    isLoading,
+    error,
+    refetch,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = usePaginatedConversations({
     onlyArchived: showArchived,
     // Quando o usuário filtra por "Encerradas", buscamos só essas;
     // caso contrário, mostramos abertas/em andamento (escondendo as encerradas por padrão).
@@ -500,6 +508,9 @@ const ConversationsPage = () => {
                   onSpyView={handleSpyView}
                   searchQuery={searchQuery}
                   messageSnippets={messageSearchResult?.snippets}
+                  hasMore={hasNextPage}
+                  isLoadingMore={isFetchingNextPage}
+                  onLoadMore={fetchNextPage}
                 />
               ) : searchQuery || filters.datePreset !== 'all' || filters.statusFilter !== 'all' || filters.tagFilter !== 'all' || filters.showOnlyUnread || filters.showOnlyAI ? (
                 <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-8">

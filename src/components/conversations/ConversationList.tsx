@@ -16,9 +16,12 @@ interface ConversationListProps {
   onSpyView?: (conversation: DbConversation) => void;
   searchQuery?: string;
   messageSnippets?: Map<string, string>;
+  hasMore?: boolean;
+  isLoadingMore?: boolean;
+  onLoadMore?: () => void;
 }
 
-export function ConversationList({ conversations, selectedId, onSelect, onSpyView, searchQuery, messageSnippets }: ConversationListProps) {
+export function ConversationList({ conversations, selectedId, onSelect, onSpyView, searchQuery, messageSnippets, hasMore, isLoadingMore, onLoadMore }: ConversationListProps) {
   const { data: profiles } = useProfiles();
   const { data: workspaces = [] } = useWorkspaces();
   const { data: followUpMap = {} } = useFollowUpStatus();
@@ -312,6 +315,16 @@ export function ConversationList({ conversations, selectedId, onSelect, onSpyVie
             </div>
           );
         })}
+        {hasMore && (
+          <button
+            type="button"
+            onClick={onLoadMore}
+            disabled={isLoadingMore}
+            className="w-full text-xs text-muted-foreground hover:text-foreground py-2 disabled:opacity-50"
+          >
+            {isLoadingMore ? 'Carregando...' : 'Carregar mais conversas'}
+          </button>
+        )}
       </div>
     </div>
   );

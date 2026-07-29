@@ -178,6 +178,142 @@ export function useConversations(options?: { includeArchived?: boolean; onlyArch
   return query;
 }
 
+const CONVERSATIONS_PAGE_SIZE = 100;
+
+function buildConversationsPageQuery(
+  organizationId: string,
+  selectedWorkspaceId: string | null | undefined,
+  opts: { includeArchived: boolean; onlyArchived: boolean; includeClosed: boolean; onlyClosed: boolean }
+) {
+  let query = supabase
+    .from('conversations')
+    .select(`
+      *,
+      contact:contacts(id, name, phone, avatar_url, email, workspace_id, created_at, metadata, contact_presence(presence_type, expires_at)),
+      last_message:messages(id, content, type, direction, is_from_bot, read_at, delivered_at)
+    `)
+    .eq('organization_id', organizationId)
+    .order('last_message_at', { ascending: false, nullsFirst: false });
+
+  if (opts.onlyArchived) {
+    query = query.eq('status', 'archived');
+  } else if (opts.onlyClosed) {
+    query = query.eq('status', 'closed' as any);
+  } else {
+    if (!opts.includeArchived) query = query.neq('status', 'archived');
+    if (!opts.includeClosed) query = query.neq('status', 'closed' as any);
+  }
+
+  if (selectedWorkspaceId) {
+    if (selectedWorkspaceId === 'unassigned') {
+      query = query.is('workspace_id', null);
+    } else {
+      query = query.eq('workspace_id', selectedWorkspaceId);
+    }
+  }
+
+  return query;
+}
+
+// Paginated version of useConversations for the main inbox list: fetching
+// all ~1000 conversations with embedded contact/last-message joins in one
+// request took 4+ seconds. This fetches CONVERSATIONS_PAGE_SIZE at a time
+// and grows via fetchNextPage(), so the inbox opens fast and only pulls
+// more as the user scrolls. Kept separate from useConversations (used by
+// Pipeline boards and dialogs, which need the full set for their own
+// grouping/lookups) to avoid changing behavior there.
+export function usePaginatedConversations(options?: { includeArchived?: boolean; onlyArchived?: boolean; includeClosed?: boolean; onlyClosed?: boolean }) {
+  const { session, profile } = useAuth();
+  const { selectedWorkspaceId } = useWorkspaceContext();
+  const queryClient = useQueryClient();
+  const includeArchived = options?.includeArchived ?? false;
+  const onlyArchived = options?.onlyArchived ?? false;
+  const includeClosed = options?.includeClosed ?? false;
+  const onlyClosed = options?.onlyClosed ?? false;
+
+  const queryKey = ['conversations-paginated', { includeArchived, onlyArchived, includeClosed, onlyClosed, selectedWorkspaceId, orgId: profile?.organization_id }];
+
+  const query = useInfiniteQuery({
+    queryKey,
+    queryFn: async ({ pageParam }): Promise<DbConversation[]> => {
+      const { data, error } = await buildConversationsPageQuery(profile!.organization_id, selectedWorkspaceId, {
+        includeArchived,
+        onlyArchived,
+        includeClosed,
+        onlyClosed,
+      })
+        .range(pageParam, pageParam + CONVERSATIONS_PAGE_SIZE - 1)
+        .order('created_at', { referencedTable: 'messages', ascending: false })
+        .limit(1, { referencedTable: 'messages' });
+
+      if (error) throw error;
+      return (data || []) as unknown as DbConversation[];
+    },
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) =>
+      lastPage.length < CONVERSATIONS_PAGE_SIZE ? undefined : allPages.length * CONVERSATIONS_PAGE_SIZE,
+    enabled: !!session && !!profile?.organization_id,
+    staleTime: 15_000,
+    refetchOnWindowFocus: true,
+    refetchInterval: 30_000,
+  });
+
+  // Subscribe to realtime updates, same as useConversations but scoped to
+  // this hook's own query key so it doesn't touch the non-paginated cache.
+  useEffect(() => {
+    if (!session || !profile?.organization_id) return;
+
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleConversationsRefresh = () => {
+      if (refreshTimer) return;
+
+      refreshTimer = setTimeout(() => {
+        refreshTimer = null;
+        queryClient.invalidateQueries({ queryKey: ['conversations-paginated'] });
+      }, 1500);
+    };
+
+    const channel = createRealtimeChannel(`conversations-paginated-realtime-${profile.organization_id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'conversations',
+          filter: `organization_id=eq.${profile.organization_id}`,
+        },
+        () => {
+          scheduleConversationsRefresh();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'contact_presence',
+          filter: `organization_id=eq.${profile.organization_id}`,
+        },
+        () => {
+          scheduleConversationsRefresh();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      supabase.removeChannel(channel);
+    };
+  }, [session, profile?.organization_id, queryClient]);
+
+  const conversations = useMemo(() => query.data?.pages.flat() ?? [], [query.data]);
+
+  return {
+    ...query,
+    data: conversations,
+  };
+}
+
 const MESSAGES_PAGE_SIZE = 50;
 
 export function useMessages(conversationId: string | null) {
