@@ -190,15 +190,21 @@ export function useNewMessageNotifications() {
             conversation_id: string;
           };
 
-          // Fetch contact info for the conversation
+          // O canal recebe INSERT de `messages` de TODAS as organizações (a
+          // tabela não tem organization_id para filtrar no nível do Postgres —
+          // ver TODO(perf/fase6) acima). Filtrar organization_id aqui faz o
+          // Postgres descartar mensagens de outra org sem juntar `contacts`;
+          // maybeSingle() evita erro quando a linha não bate (caso normal
+          // para a maioria dos eventos, já que são de outros tenants).
           const { data: conversation } = await supabase
             .from('conversations')
             .select('id, organization_id, workspace_id, assigned_to, contact:contacts(id, name, phone, workspace_id)')
             .eq('id', message.conversation_id)
-            .single();
+            .eq('organization_id', selectedOrganizationId)
+            .maybeSingle();
 
-          // Escopo de organização: ignora mensagens de outra org (defesa contra
-          // eventos cross-tenant que cheguem pelo canal sem filtro de DB).
+          // Segunda checagem redundante por segurança (ex.: selectedOrganizationId
+          // mudar entre o evento disparar e este callback rodar).
           if (conversation && conversation.organization_id !== selectedOrganizationId) {
             return;
           }
