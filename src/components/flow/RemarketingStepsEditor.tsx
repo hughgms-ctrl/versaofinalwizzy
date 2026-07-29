@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { Plus, Trash2, Sparkles, Loader2, Clock, Moon, Image, Video, FileText, X } from 'lucide-react';
+import { Plus, Trash2, Sparkles, Loader2, Clock, Moon, Image, Video, FileText, X, MousePointerClick, Copy } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -81,11 +81,21 @@ export function RemarketingStepsEditor({ localData, handleChange }: RemarketingS
     handleChange('remarketingSteps', newSteps);
   };
 
+  const setStepButtons = (idx: number, buttons: any[]) => {
+    const newSteps = [...steps];
+    newSteps[idx] = { ...newSteps[idx], buttons };
+    handleChange('remarketingSteps', newSteps);
+  };
+
+  // Botões do próprio bloco (nó de botões), para reaproveitar no follow-up
+  const nodeButtons = (localData.buttons as Array<{ id: string; label: string }>) || [];
+
   return (
     <div className="space-y-2 pt-2 border-t border-border/50">
       <Label className="text-xs font-semibold">Sequência de Follow-up</Label>
       <p className="text-[10px] text-muted-foreground">
         Cada tentativa aguarda o tempo configurado após a anterior. Se o usuário não responder, segue pela saída vermelha.
+        Botões de resposta são opcionais (até 3); onde o número não suporta botões nativos, viram lista numerada no texto.
       </p>
 
       <input
@@ -200,6 +210,81 @@ export function RemarketingStepsEditor({ localData, handleChange }: RemarketingS
               {uploadingStepId === step.id ? 'Enviando...' : 'Anexar mídia (foto, vídeo, doc)'}
             </Button>
           )}
+
+          {/* Quick-reply buttons */}
+          {(step.buttons as any[])?.length > 0 && (
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-1.5 text-muted-foreground">
+                <MousePointerClick className="h-3 w-3" />
+                <span className="text-[10px] font-medium">Botões de resposta</span>
+              </div>
+              {(step.buttons as any[]).map((btn: any, btnIdx: number) => (
+                <div key={btn.id} className="flex items-center gap-1">
+                  <Input
+                    value={btn.label || ''}
+                    onChange={(e) => {
+                      const newButtons = [...(step.buttons as any[])];
+                      newButtons[btnIdx] = { ...newButtons[btnIdx], label: e.target.value };
+                      setStepButtons(idx, newButtons);
+                    }}
+                    placeholder={`Botão ${btnIdx + 1}`}
+                    maxLength={20}
+                    className="h-7 text-xs"
+                  />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 text-destructive shrink-0"
+                    onClick={() => {
+                      const newButtons = (step.buttons as any[]).filter((_: any, i: number) => i !== btnIdx);
+                      setStepButtons(idx, newButtons);
+                    }}
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
+              ))}
+              {step.mediaUrl && (
+                <p className="text-[10px] text-amber-600">
+                  Com mídia anexada os botões vão como lista numerada no texto.
+                </p>
+              )}
+            </div>
+          )}
+
+          <div className="flex items-center gap-1">
+            {((step.buttons as any[])?.length || 0) < 3 && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-[10px] gap-1.5 flex-1 border-dashed"
+                onClick={() => {
+                  const current = (step.buttons as any[]) || [];
+                  setStepButtons(idx, [...current, { id: generateId(), label: '' }]);
+                }}
+              >
+                <MousePointerClick className="h-3 w-3" />
+                Adicionar botão
+              </Button>
+            )}
+            {nodeButtons.length > 0 && !(step.buttons as any[])?.length && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-[10px] gap-1.5"
+                title="Repetir os mesmos botões do bloco, para a resposta cair na saída certa"
+                onClick={() => {
+                  setStepButtons(
+                    idx,
+                    nodeButtons.slice(0, 3).map((b) => ({ id: generateId(), label: b.label }))
+                  );
+                }}
+              >
+                <Copy className="h-3 w-3" />
+                Copiar do bloco
+              </Button>
+            )}
+          </div>
         </div>
       ))}
 
@@ -289,11 +374,11 @@ export function RemarketingStepsEditor({ localData, handleChange }: RemarketingS
                 });
                 if (error) throw error;
                 if (data?.steps) {
-                  // Preserve media attachments when AI regenerates text
+                  // Preserve media attachments and buttons when AI regenerates text
                   const mergedSteps = data.steps.map((newStep: any) => {
                     const existing = steps.find((s: any) => s.id === newStep.id);
                     return existing
-                      ? { ...newStep, mediaUrl: existing.mediaUrl, mediaType: existing.mediaType, mediaName: existing.mediaName }
+                      ? { ...newStep, mediaUrl: existing.mediaUrl, mediaType: existing.mediaType, mediaName: existing.mediaName, buttons: existing.buttons }
                       : newStep;
                   });
                   handleChange('remarketingSteps', mergedSteps);

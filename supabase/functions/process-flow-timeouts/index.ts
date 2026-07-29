@@ -120,6 +120,14 @@ async function loadConnectionSettings(supabase: any) {
   };
 }
 
+function replaceVars(text: string, variables: Record<string, any> | null | undefined): string {
+  let out = text || '';
+  for (const [key, val] of Object.entries(variables || {})) {
+    out = out.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), String(val));
+  }
+  return out;
+}
+
 function getProvider(instance: any): Provider {
   if (instance?.provider === 'evolution' || instance?.evolution_instance_name || instance?.evolution_instance_id) {
     return 'evolution';
@@ -202,12 +210,20 @@ async function sendFollowUpProviderMessage(params: {
   messageText: string;
   mediaUrl?: string | null;
   mediaType?: string | null;
+  buttons?: Array<{ id?: string; label: string }> | null;
 }) {
   const { settings, instance, phone, messageText, mediaUrl } = params;
   const provider = getProvider(instance);
   const normalizedPhone = phone.replace(/\D/g, '');
   const mediaType = (params.mediaType || 'image') as 'image' | 'video' | 'audio' | 'document';
   const hasMedia = !!mediaUrl;
+
+  // Quick-reply buttons: native on UAZAPI (text-only, up to 3). Everywhere else,
+  // they degrade to a numbered list appended to the text — same rule as flow-execute.
+  const buttons = (params.buttons || []).filter((b) => (b?.label || '').trim());
+  const buttonsText = buttons.length ? buttons.map((b, i) => `${i + 1}. ${b.label}`).join('\n') : '';
+  const fallbackText = buttonsText ? `${messageText}\n\n${buttonsText}`.trim() : messageText;
+  const canSendNativeButtons = buttons.length > 0 && buttons.length <= 3 && !hasMedia && provider === 'uazapi';
 
   if (provider === 'evolution') {
     const evolutionBaseUrl = settings.evolutionBaseUrl;
@@ -224,7 +240,7 @@ async function sendFollowUpProviderMessage(params: {
           number: normalizedPhone,
           mediatype: mediaType,
           mimetype: guessMimeType(mediaType, mediaUrl || undefined),
-          caption: messageText || undefined,
+          caption: fallbackText || undefined,
           media: mediaUrl,
           fileName: fileNameFromUrl(mediaUrl || undefined, `${mediaType}-${Date.now()}`),
           delay: 1000,
@@ -239,16 +255,17 @@ async function sendFollowUpProviderMessage(params: {
         body: JSON.stringify(body),
       });
       if (!response.ok) throw new Error(`Evolution media send failed: ${response.status} ${await response.text()}`);
-      return { provider, zapiMessageId: await parseProviderMessageId(response), msgType: mediaType };
+      // Audio has no caption on Evolution — nothing but the media itself goes out.
+      return { provider, zapiMessageId: await parseProviderMessageId(response), msgType: mediaType, sentText: mediaType === 'audio' ? '' : fallbackText, nativeButtons: false };
     }
 
     const response = await fetch(`${evolutionBaseUrl}/message/sendText/${evolutionInstanceName}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', apikey: evolutionApiKey },
-      body: JSON.stringify({ number: normalizedPhone, text: messageText, delay: 1000, linkPreview: true }),
+      body: JSON.stringify({ number: normalizedPhone, text: fallbackText, delay: 1000, linkPreview: true }),
     });
     if (!response.ok) throw new Error(`Evolution text send failed: ${response.status} ${await response.text()}`);
-    return { provider, zapiMessageId: await parseProviderMessageId(response), msgType: 'text' };
+    return { provider, zapiMessageId: await parseProviderMessageId(response), msgType: 'text', sentText: fallbackText, nativeButtons: false };
   }
 
   if (!settings.uazapiBaseUrl || !instance.zapi_token) {
@@ -264,7 +281,7 @@ async function sendFollowUpProviderMessage(params: {
       mimeType: guessMimeType(mediaType, mediaUrl || undefined),
       fileName: fileNameFromUrl(mediaUrl || undefined, `${mediaType}-${Date.now()}`),
     };
-    if (messageText) body.caption = messageText;
+    if (fallbackText) body.caption = fallbackText;
     if (mediaType === 'audio') body.ptt = true;
     const response = await fetch(`${settings.uazapiBaseUrl}/send/media`, {
       method: 'POST',
@@ -272,16 +289,46 @@ async function sendFollowUpProviderMessage(params: {
       body: JSON.stringify(body),
     });
     if (!response.ok) throw new Error(`UAZAPI media send failed: ${response.status} ${await response.text()}`);
-    return { provider, zapiMessageId: await parseProviderMessageId(response), msgType: mediaType };
+    return { provider, zapiMessageId: await parseProviderMessageId(response), msgType: mediaType, sentText: fallbackText, nativeButtons: false };
+  }
+
+  if (canSendNativeButtons) {
+    try {
+      const nativeResponse = await fetch(`${settings.uazapiBaseUrl}/send/buttons`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', token: instance.zapi_token },
+        body: JSON.stringify({
+          number: normalizedPhone,
+          title: '',
+          message: messageText,
+          footer: '',
+          buttons: buttons.map((b, i) => ({ id: b.id || `btn_${i}`, label: b.label })),
+        }),
+      });
+
+      if (nativeResponse.ok) {
+        const nativeResult = await nativeResponse.clone().json().catch(() => ({}));
+        if (!nativeResult?.error) {
+          console.log('[FLOW TIMEOUTS] Native follow-up buttons sent successfully');
+          // Native buttons render separately, so the saved text is just the message body.
+          return { provider, zapiMessageId: await parseProviderMessageId(nativeResponse), msgType: 'text', sentText: messageText, nativeButtons: true };
+        }
+        console.log(`[FLOW TIMEOUTS] Native buttons returned error: ${JSON.stringify(nativeResult)} — falling back to text`);
+      } else {
+        console.log(`[FLOW TIMEOUTS] Native buttons failed (${nativeResponse.status}): ${await nativeResponse.text()} — falling back to text`);
+      }
+    } catch (nativeErr) {
+      console.log(`[FLOW TIMEOUTS] Native buttons exception: ${nativeErr} — falling back to text`);
+    }
   }
 
   const response = await fetch(`${settings.uazapiBaseUrl}/send/text`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', token: instance.zapi_token },
-    body: JSON.stringify({ number: normalizedPhone, text: messageText }),
+    body: JSON.stringify({ number: normalizedPhone, text: fallbackText }),
   });
   if (!response.ok) throw new Error(`UAZAPI text send failed: ${response.status} ${await response.text()}`);
-  return { provider, zapiMessageId: await parseProviderMessageId(response), msgType: 'text' };
+  return { provider, zapiMessageId: await parseProviderMessageId(response), msgType: 'text', sentText: fallbackText, nativeButtons: false };
 }
 
 Deno.serve(async (req) => {
@@ -603,9 +650,10 @@ Deno.serve(async (req) => {
         if (remarketingSteps.length > 0 && currentStep < remarketingSteps.length) {
           const step = remarketingSteps[currentStep];
           console.log(`[FLOW TIMEOUTS] Exec ${exec.id}: sending remarketing step ${currentStep + 1}/${remarketingSteps.length}`);
-          let followUpSent = !(step.message || step.mediaUrl);
+          const stepHasContent = !!(step.message || step.mediaUrl || (step.buttons as any[])?.length);
+          let followUpSent = !stepHasContent;
 
-          if (step.message || step.mediaUrl) {
+          if (stepHasContent) {
             const conv = convById.get(exec.conversation_id) || null;
 
             if (conv) {
@@ -615,40 +663,46 @@ Deno.serve(async (req) => {
 
               if (contact?.phone && instance) {
                 const variables = exec.variables || {};
-                let messageText = step.message || '';
-                for (const [key, val] of Object.entries(variables as Record<string, any>)) {
-                  messageText = messageText.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), String(val));
-                }
+                const messageText = replaceVars(step.message || '', variables);
 
                 const hasMedia = !!step.mediaUrl;
                 const mediaType = step.mediaType || 'image';
+                const stepButtons = ((step.buttons || []) as Array<{ id?: string; label: string }>)
+                  .filter((b) => (b?.label || '').trim())
+                  .map((b) => ({ ...b, label: replaceVars(b.label, variables) }));
 
                 try {
-                  console.log(`[FLOW TIMEOUTS] Sending follow-up via ${getProvider(instance)}: step=${currentStep + 1}, media=${hasMedia ? mediaType : 'none'}`);
-                  const { provider, zapiMessageId, msgType } = await sendFollowUpProviderMessage({
+                  console.log(`[FLOW TIMEOUTS] Sending follow-up via ${getProvider(instance)}: step=${currentStep + 1}, media=${hasMedia ? mediaType : 'none'}, buttons=${stepButtons.length}`);
+                  const { provider, zapiMessageId, msgType, sentText, nativeButtons } = await sendFollowUpProviderMessage({
                     settings: connectionSettings,
                     instance,
                     phone: contact.phone,
                     messageText,
                     mediaUrl: step.mediaUrl,
                     mediaType,
+                    buttons: stepButtons,
                   });
 
                   // Save to messages table
-                  if (zapiMessageId || messageText || hasMedia) {
+                  if (zapiMessageId || messageText || hasMedia || stepButtons.length) {
                     await supabase.from('messages').insert({
                       conversation_id: exec.conversation_id,
-                      content: messageText || '',
+                      content: sentText || '',
                       type: msgType,
                       direction: 'outbound',
                       is_from_bot: true,
                       media_url: hasMedia ? step.mediaUrl : null,
                       zapi_message_id: zapiMessageId,
-                      metadata: { 
+                      metadata: {
                         source: 'remarketing_followup',
                         remarketing_step: currentStep + 1,
                         flow_name: exec.flow?.name || null,
                         provider,
+                        ...(stepButtons.length ? {
+                          type: 'buttons',
+                          native_buttons: nativeButtons,
+                          buttons: stepButtons.map((b) => b.label),
+                        } : {}),
                       },
                     });
 
