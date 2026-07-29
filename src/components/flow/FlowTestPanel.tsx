@@ -12,6 +12,7 @@ import { AIFeedbackDialog } from '@/components/conversations/AIFeedbackDialog';
 import { useFlow } from '@/hooks/useFlows';
 import { Node, Edge } from '@xyflow/react';
 import { ContentItem } from '@/types/flow';
+import { followUpHandleId } from './nodes/followUpHandles';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -54,7 +55,7 @@ interface SimState {
   activeAgentPrompt?: string;
   expectedOutcomes?: string[];
   parentFlowStack: Array<{ flowId: string; flowData: any; nodeId: string; nodes: Node[]; edges: Edge[] }>;
-  followUpResolve?: ((responded: boolean) => void) | null;
+  followUpResolve?: ((outcome: string) => void) | null;
 }
 
 // Preloaded org data
@@ -160,21 +161,45 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
   const resolvePipeline = (pipelineId: string) => orgContext?.pipelines.find(p => p.id === pipelineId);
   const resolveAgent = (agentId: string) => orgContext?.agents.find(a => a.id === agentId);
 
-  // Ref to hold the follow-up resolve function (accessible from handleUserInput)
-  const followUpResolveRef = useRef<((responded: boolean) => void) | null>(null);
+  // Ref to hold the follow-up resolve function (accessible from handleUserInput).
+  // Resolve com a alça de saída: 'responded', 'timeout' ou a alça do botão clicado.
+  const followUpResolveRef = useRef<((outcome: string) => void) | null>(null);
+  // Botões da tentativa de follow-up que está na tela, para saber por qual saída sair.
+  const followUpButtonsRef = useRef<Array<{ id: string; label: string }>>([]);
+
+  // Mesma ordem do webhook: rótulo exato > número > parcial.
+  const followUpOutcomeFor = (value: string): string => {
+    const buttons = followUpButtonsRef.current;
+    const text = (value || '').trim().toLowerCase();
+    if (!buttons.length || !text) return 'responded';
+
+    let index = buttons.findIndex(b => (b.label || '').trim().toLowerCase() === text);
+    if (index < 0) {
+      const asNumber = Number(text);
+      if (Number.isInteger(asNumber) && asNumber >= 1 && asNumber <= buttons.length) index = asNumber - 1;
+    }
+    if (index < 0) {
+      index = buttons.findIndex(b => {
+        const label = (b.label || '').trim().toLowerCase();
+        return !!label && (text.includes(label) || label.includes(text));
+      });
+    }
+    return index >= 0 ? followUpHandleId(buttons[index].label) : 'responded';
+  };
 
   // ===== FOLLOW-UP MECHANISM =====
   // Waits for user response while sending follow-up messages on timers.
   // Returns true if user responded, false if all follow-ups exhausted (timeout).
   const waitForResponseWithFollowUps = async (
-    remarketingSteps: Array<{ id?: string; delayMinutes: number; message: string }>,
+    remarketingSteps: Array<{ id?: string; delayMinutes: number; message: string; buttons?: Array<{ id: string; label: string }> }>,
     variableName: string
-  ): Promise<boolean> => {
+  ): Promise<string> => {
     // Enable user input
+    followUpButtonsRef.current = [];
     setSimState(prev => ({ ...prev, waitingForInput: true, inputVariable: variableName }));
 
     // Create a promise that resolves when user responds or all follow-ups are sent + final wait
-    return new Promise<boolean>((resolve) => {
+    return new Promise<string>((resolve) => {
       followUpResolveRef.current = resolve;
       setSimState(prev => ({ ...prev, followUpResolve: resolve }));
 
@@ -202,18 +227,23 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
           } else {
             addMsg({ type: 'action', content: `Follow-up #${i + 1} (sem mensagem configurada)`, actionIcon: '📩' });
           }
+
+          const stepButtons = (step.buttons || []).filter(b => (b.label || '').trim());
+          followUpButtonsRef.current = stepButtons;
+          setSimState(prev => ({ ...prev, pendingButtons: stepButtons.length ? stepButtons : prev.pendingButtons }));
           await wait(400);
         }
 
         // All follow-ups sent, wait a final 3 seconds for last chance response
         addMsg({ type: 'action', content: `Última chance de resposta...`, actionIcon: '⏱️' });
         await wait(3000);
-        
+
         // If still not resolved, timeout
         if (followUpResolveRef.current) {
           followUpResolveRef.current = null;
+          followUpButtonsRef.current = [];
           setSimState(prev => ({ ...prev, followUpResolve: null, waitingForInput: false }));
-          resolve(false); // timeout
+          resolve('timeout');
         }
       })();
     });
@@ -489,16 +519,26 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
       }
     };
 
+    // Saída específica de botão só vale se estiver ligada; senão cai no verde,
+    // igual ao webhook faz em produção.
+    const resolveOutcomeHandle = (outcome: string) =>
+      edges.some(e => e.source === node.id && e.sourceHandle === outcome) ? outcome : 'responded';
+
     // Helper: handle nodes that wait for response with optional follow-ups
     const handleWaitWithFollowUps = async (variableName: string, outputHandle?: string) => {
       const steps = (d.remarketingSteps as Array<{ id?: string; delayMinutes: number; message: string }>) || [];
       if (steps.length > 0) {
         addMsg({ type: 'action', content: `Aguardando resposta com ${steps.length} follow-up(s)`, actionIcon: '📩' });
-        const responded = await waitForResponseWithFollowUps(steps, variableName);
-        if (responded) {
-          addMsg({ type: 'action', content: `✓ Cliente respondeu`, actionIcon: '✅' });
+        const outcome = await waitForResponseWithFollowUps(steps, variableName);
+        if (outcome !== 'timeout') {
+          const handle = resolveOutcomeHandle(outcome);
+          addMsg({
+            type: 'action',
+            content: handle === 'responded' ? `✓ Cliente respondeu` : `✓ Cliente respondeu pela saída "${handle}"`,
+            actionIcon: '✅',
+          });
           await wait(400);
-          await advanceOrEnd('responded');
+          await advanceOrEnd(handle);
         } else {
           addMsg({ type: 'action', content: `✗ Timeout — sem resposta`, actionIcon: '⏱️' });
           await wait(400);
@@ -664,11 +704,16 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
           if (waitForResp && followUpSteps.length > 0) {
             // Wait for user to respond with follow-up messages
             addMsg({ type: 'action', content: `Aguardando resposta com ${followUpSteps.length} follow-up(s)`, actionIcon: '📩' });
-            const responded = await waitForResponseWithFollowUps(followUpSteps, 'resposta');
-            if (responded) {
-              addMsg({ type: 'action', content: `✓ Cliente respondeu`, actionIcon: '✅' });
+            const outcome = await waitForResponseWithFollowUps(followUpSteps, 'resposta');
+            if (outcome !== 'timeout') {
+              const handle = resolveOutcomeHandle(outcome);
+              addMsg({
+                type: 'action',
+                content: handle === 'responded' ? `✓ Cliente respondeu` : `✓ Cliente respondeu pela saída "${handle}"`,
+                actionIcon: '✅',
+              });
               await wait(400);
-              await advanceOrEnd('responded');
+              await advanceOrEnd(handle);
             } else {
               addMsg({ type: 'action', content: `✗ Timeout — sem resposta`, actionIcon: '⏱️' });
               await wait(400);
@@ -785,8 +830,10 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
     if (followUpResolveRef.current) {
       const resolve = followUpResolveRef.current;
       followUpResolveRef.current = null;
-      setSimState(prev => ({ ...prev, followUpResolve: null, waitingForInput: false, variables: { ...prev.variables, [simState.inputVariable || 'resposta']: val } }));
-      resolve(true); // user responded
+      const outcome = followUpOutcomeFor(val);
+      followUpButtonsRef.current = [];
+      setSimState(prev => ({ ...prev, followUpResolve: null, waitingForInput: false, pendingButtons: undefined, variables: { ...prev.variables, [simState.inputVariable || 'resposta']: val } }));
+      resolve(outcome); // user responded
       return;
     }
 
@@ -872,8 +919,14 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
     if (followUpResolveRef.current) {
       const resolve = followUpResolveRef.current;
       followUpResolveRef.current = null;
+      // O botão do próprio nó tem precedência sobre o do follow-up, como no webhook.
+      const curNode = (simState.activeFlowData?.nodes as Node[] | undefined)?.find(n => n.id === simState.currentNodeId);
+      const nodeButtons = ((curNode?.data as Record<string, any>)?.buttons as Array<{ id: string; label: string }>) || [];
+      const nodeIndex = nodeButtons.findIndex(b => (b.label || '').trim().toLowerCase() === val.trim().toLowerCase());
+      const outcome = nodeIndex >= 0 ? `btn_${nodeIndex}` : followUpOutcomeFor(val);
+      followUpButtonsRef.current = [];
       setSimState(prev => ({ ...prev, followUpResolve: null, waitingForInput: false, pendingButtons: undefined, variables: { ...prev.variables, button_choice: val } }));
-      resolve(true);
+      resolve(outcome);
       return;
     }
 
@@ -900,8 +953,10 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
     if (followUpResolveRef.current) {
       const resolve = followUpResolveRef.current;
       followUpResolveRef.current = null;
+      const outcome = followUpOutcomeFor(row.title);
+      followUpButtonsRef.current = [];
       setSimState(prev => ({ ...prev, followUpResolve: null, waitingForInput: false, pendingList: undefined, variables: { ...prev.variables, list_choice: row.title } }));
-      resolve(true);
+      resolve(outcome);
       return;
     }
 

@@ -1,6 +1,8 @@
 import { Handle, Position, NodeProps, Node } from '@xyflow/react';
 import { Tag, Kanban, UserPlus, Clock, Webhook, IterationCw, FileText, GitBranch, Building2, Users } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { getFollowUpOutputs } from './followUpHandles';
+import { WaitOutputRows } from './followUpOutputs';
 
 interface ActionNodeData extends Record<string, unknown> {
   label?: string;
@@ -106,6 +108,8 @@ export function DepartmentActionNode({ data, selected }: NodeProps<ActionNode>) 
 export function FlowActionNode({ data, selected }: NodeProps<ActionNode>) {
   const waitForResponse = !!(data.waitForResponse);
   const steps = (data.remarketingSteps as any[]) || [];
+  const followUpOutputs = getFollowUpOutputs(data);
+  const hasFollowUpOutputs = waitForResponse && followUpOutputs.length > 0;
   const hasWarning = !data.flowId && data.flowName?.includes('⚠️');
 
   return (
@@ -137,9 +141,11 @@ export function FlowActionNode({ data, selected }: NodeProps<ActionNode>) {
             </span>
           </div>
         )}
+
+        {hasFollowUpOutputs && <WaitOutputRows outputs={followUpOutputs} />}
       </div>
 
-      {!waitForResponse ? (
+      {hasFollowUpOutputs ? null : !waitForResponse ? (
         <Handle
           type="source"
           position={Position.Right}

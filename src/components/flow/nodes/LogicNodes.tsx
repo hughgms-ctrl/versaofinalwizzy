@@ -2,6 +2,8 @@ import { Handle, Position, NodeProps, Node } from '@xyflow/react';
 import { GitBranch, FormInput, Shuffle, Clock, Tag, Kanban, User, MessageSquare, FileText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ConditionRule, RandomizerVariant } from '@/types/flow';
+import { getFollowUpOutputs } from './followUpHandles';
+import { WaitOutputRows } from './followUpOutputs';
 
 interface LogicNodeData extends Record<string, unknown> {
   label?: string;
@@ -136,6 +138,7 @@ export function ConditionNode({ data, selected }: NodeProps<LogicNode>) {
 
 export function UserInputNode({ data, selected }: NodeProps<LogicNode>) {
   const steps = (data.remarketingSteps as any[]) || [];
+  const followUpOutputs = getFollowUpOutputs(data);
 
   return (
     <div
@@ -169,37 +172,43 @@ export function UserInputNode({ data, selected }: NodeProps<LogicNode>) {
             </span>
           </div>
         )}
+
+        {followUpOutputs.length > 0 && <WaitOutputRows outputs={followUpOutputs} />}
       </div>
 
       {/* Dual handles - user-input always waits for response */}
-      <Handle
-        type="source"
-        position={Position.Right}
-        id="responded"
-        className="!w-3 !h-3 !bg-green-500 !border-2 !border-background !-right-1.5"
-        style={{ top: '40%' }}
-        title="Respondeu"
-      />
-      <Handle
-        type="source"
-        position={Position.Right}
-        id="timeout"
-        className="!w-3 !h-3 !bg-red-500 !border-2 !border-background !-right-1.5"
-        style={{ top: '70%' }}
-        title="Não respondeu (timeout)"
-      />
-      <span
-        className="absolute text-[9px] text-green-600 dark:text-green-400 font-medium whitespace-nowrap pointer-events-none"
-        style={{ right: '-8px', top: '40%', transform: 'translate(100%, -50%)', paddingLeft: '4px' }}
-      >
-        ✓ Respondeu
-      </span>
-      <span
-        className="absolute text-[9px] text-red-500 font-medium whitespace-nowrap pointer-events-none"
-        style={{ right: '-8px', top: '70%', transform: 'translate(100%, -50%)', paddingLeft: '4px' }}
-      >
-        ✗ Timeout
-      </span>
+      {followUpOutputs.length === 0 && (
+        <>
+          <Handle
+            type="source"
+            position={Position.Right}
+            id="responded"
+            className="!w-3 !h-3 !bg-green-500 !border-2 !border-background !-right-1.5"
+            style={{ top: '40%' }}
+            title="Respondeu"
+          />
+          <Handle
+            type="source"
+            position={Position.Right}
+            id="timeout"
+            className="!w-3 !h-3 !bg-red-500 !border-2 !border-background !-right-1.5"
+            style={{ top: '70%' }}
+            title="Não respondeu (timeout)"
+          />
+          <span
+            className="absolute text-[9px] text-green-600 dark:text-green-400 font-medium whitespace-nowrap pointer-events-none"
+            style={{ right: '-8px', top: '40%', transform: 'translate(100%, -50%)', paddingLeft: '4px' }}
+          >
+            ✓ Respondeu
+          </span>
+          <span
+            className="absolute text-[9px] text-red-500 font-medium whitespace-nowrap pointer-events-none"
+            style={{ right: '-8px', top: '70%', transform: 'translate(100%, -50%)', paddingLeft: '4px' }}
+          >
+            ✗ Timeout
+          </span>
+        </>
+      )}
     </div>
   );
 }

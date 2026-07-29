@@ -2,6 +2,8 @@ import { Handle, Position, NodeProps, Node } from '@xyflow/react';
 import { Layers, Type, Image, Video, Music, FileText, Clock, GripVertical, MessageSquareMore } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ContentItem } from '@/types/flow';
+import { getFollowUpOutputs } from './followUpHandles';
+import { WaitOutputRows } from './followUpOutputs';
 
 interface ContentBlockNodeData extends Record<string, unknown> {
   label?: string;
@@ -35,6 +37,8 @@ const itemTypeLabels: Record<string, string> = {
 export function ContentBlockNode({ data, selected }: NodeProps<ContentBlockNode>) {
   const items = (data.items as ContentItem[]) || [];
   const waitForResponse = !!data.waitForResponse;
+  const followUpOutputs = getFollowUpOutputs(data);
+  const hasFollowUpOutputs = waitForResponse && followUpOutputs.length > 0;
 
   return (
     <div 
@@ -110,10 +114,12 @@ export function ContentBlockNode({ data, selected }: NodeProps<ContentBlockNode>
             ) : null}
           </div>
         )}
+
+        {hasFollowUpOutputs && <WaitOutputRows outputs={followUpOutputs} />}
       </div>
-      
+
       {/* Output handles */}
-      {!waitForResponse ? (
+      {hasFollowUpOutputs ? null : !waitForResponse ? (
         // Single default output
         <Handle
           type="source"

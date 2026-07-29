@@ -323,6 +323,77 @@ function normalizeBaseUrl(value?: string | null): string {
   return (value || '').trim().replace(/\/+$/, '');
 }
 
+/**
+ * Alça de saída gerada por um botão de mensagem de follow-up.
+ * Cópia exata de src/components/flow/nodes/followUpOutputs.tsx — as duas precisam
+ * produzir o mesmo id, senão a aresta desenhada no editor não é encontrada aqui.
+ */
+function followUpHandleId(label: string): string {
+  const decomposed = (label || '').trim().normalize('NFD');
+  let slug = '';
+  for (const char of decomposed) {
+    const code = char.charCodeAt(0);
+    if (code >= 0x300 && code <= 0x36f) continue;
+    const lower = char.toLowerCase();
+    slug += (lower >= 'a' && lower <= 'z') || (lower >= '0' && lower <= '9') ? lower : '_';
+  }
+  slug = slug.replace(/_+/g, '_').replace(/^_/, '').replace(/_$/, '');
+
+  if (slug) return `fu_${slug}`;
+
+  let hash = 5381;
+  for (let i = 0; i < label.length; i++) {
+    hash = ((hash << 5) + hash + label.charCodeAt(i)) >>> 0;
+  }
+  return `fu_h${hash.toString(36)}`;
+}
+
+/**
+ * Casa a resposta do contato com os botões da mensagem de follow-up que foi enviada.
+ * Ordem: rótulo exato > número (a lista numerada do fallback em texto) > parcial.
+ * O parcial fica por último de propósito: com botões "Não" e "Não sei", "não sei"
+ * precisa ganhar do "Não" que apareceria primeiro num casamento único.
+ */
+function matchFollowUpButtonHandle(node: any, remarketingStep: number, userText: string): string | null {
+  const steps = (node?.data?.remarketingSteps || []) as any[];
+  const text = (userText || '').trim().toLowerCase();
+  // remarketing_step 0 = nenhuma tentativa saiu ainda, então nenhum botão foi mostrado.
+  if (!steps.length || !text || !remarketingStep) return null;
+
+  // O contador já aponta para a próxima tentativa; a enviada é a anterior.
+  const sentIndex = Math.min(Math.max(remarketingStep - 1, 0), steps.length - 1);
+  const sentStep = steps[sentIndex];
+  const ordered = [sentStep, ...steps.filter((_: any, i: number) => i !== sentIndex)];
+
+  const labelsOf = (step: any) =>
+    ((step?.buttons || []) as any[])
+      .map((b: any) => (b?.label || '').trim())
+      .filter(Boolean);
+
+  for (const step of ordered) {
+    const labels = labelsOf(step);
+    if (!labels.length) continue;
+
+    for (const label of labels) {
+      if (text === label.toLowerCase()) return followUpHandleId(label);
+    }
+
+    if (step === sentStep) {
+      const index = Number(text);
+      if (Number.isInteger(index) && index >= 1 && index <= labels.length) {
+        return followUpHandleId(labels[index - 1]);
+      }
+    }
+
+    for (const label of labels) {
+      const lower = label.toLowerCase();
+      if (text.includes(lower) || lower.includes(text)) return followUpHandleId(label);
+    }
+  }
+
+  return null;
+}
+
 async function loadConnectionSettings(supabase: any) {
   const { data: row } = await supabase
     .from('platform_settings')
@@ -2315,7 +2386,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
     // no active flow execution (see the `else` branch below).
     const { data: activeFlowExec } = await supabase
       .from('flow_executions')
-      .select('id, status, current_node_id, flow_id, variables, flow:flows(nodes, edges, master_prompt, is_master_active, name)')
+      .select('id, status, current_node_id, flow_id, variables, remarketing_step, flow:flows(nodes, edges, master_prompt, is_master_active, name)')
       .eq('conversation_id', conversation.id)
       .in('status', ['running', 'waiting_input'])
       .order('started_at', { ascending: false })
@@ -2333,6 +2404,20 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
       const isAtActionFlow = currentNode?.type === 'action-flow' && (currentNode.data?.waitForResponse || (currentNode.data?.remarketingSteps as any[])?.length > 0);
       const isAtMessageButtons = currentNode?.type === 'message-buttons';
       const isAtMessageList = currentNode?.type === 'message-list';
+
+      // Botão de follow-up com saída própria desenhada no fluxo: tem precedência
+      // sobre o 'responded', porque é uma resposta específica, não "respondeu algo".
+      const followUpHandle = activeFlowExec.status === 'waiting_input'
+        ? matchFollowUpButtonHandle(currentNode, (activeFlowExec as any).remarketing_step || 0, triggerText || '')
+        : null;
+      const followUpEdge = followUpHandle
+        ? ((activeFlowExec.flow?.edges || []) as any[]).find(
+            (e: any) => e.source === activeFlowExec.current_node_id && e.sourceHandle === followUpHandle
+          )
+        : null;
+      if (followUpHandle) {
+        console.log(`[WEBHOOK] Follow-up button matched handle=${followUpHandle}, edge=${followUpEdge ? followUpEdge.target : 'nenhuma (cai no fluxo normal)'}`);
+      }
 
       if (isAtAIHandoff && activeFlowExec.status === 'waiting_input') {
         // Check if AI is paused by the human agent
@@ -2369,7 +2454,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
         const flowEdges = (activeFlowExec.flow?.edges || []) as any[];
         const respondedEdge = flowEdges.find((e: any) => e.source === activeFlowExec.current_node_id && e.sourceHandle === 'responded');
         const fallbackEdge = flowEdges.find((e: any) => e.source === activeFlowExec.current_node_id && !e.sourceHandle);
-        const respondedTarget = respondedEdge?.target || fallbackEdge?.target || null;
+        const respondedTarget = followUpEdge?.target || respondedEdge?.target || fallbackEdge?.target || null;
 
         console.log(`[WEBHOOK] action-flow responded edge target: ${respondedTarget}`);
 
@@ -2425,7 +2510,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
         // Find the 'responded' edge from this content-block node
         const flowEdges = (activeFlowExec.flow?.edges || []) as any[];
         const respondedEdge = flowEdges.find((e: any) => e.source === activeFlowExec.current_node_id && e.sourceHandle === 'responded');
-        const nextEdge = respondedEdge || flowEdges.find((e: any) => e.source === activeFlowExec.current_node_id);
+        const nextEdge = followUpEdge || respondedEdge || flowEdges.find((e: any) => e.source === activeFlowExec.current_node_id);
         const nextNodeId = nextEdge?.target || null;
 
         if (nextNodeId) {
@@ -2476,38 +2561,40 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
         const userResponse = (triggerText || '').trim().toLowerCase();
         let matchedHandle: string | null = null;
 
-        if (isAtMessageButtons) {
-          const buttons = (currentNode.data?.buttons || []) as Array<{ id: string; label: string }>;
-          // Match by: exact label, button number (1, 2, 3), or partial match
-          for (let i = 0; i < buttons.length; i++) {
-            const btnLabel = buttons[i].label.toLowerCase();
-            const btnNumber = String(i + 1);
-            if (userResponse === btnLabel || userResponse === btnNumber || userResponse.includes(btnLabel) || btnLabel.includes(userResponse)) {
-              matchedHandle = `btn_${i}`;
-              console.log(`[WEBHOOK] Matched button ${i}: "${buttons[i].label}" (handle: ${matchedHandle})`);
-              break;
+        // Casamento em duas passadas: exato/número antes de parcial. Numa passada só,
+        // a opção "Não" ganharia de "Não sei" só por vir antes na lista.
+        const matchOption = (options: string[], handlePrefix: string): string | null => {
+          for (let i = 0; i < options.length; i++) {
+            if (userResponse === options[i].toLowerCase() || userResponse === String(i + 1)) {
+              return `${handlePrefix}${i}`;
             }
           }
+          for (let i = 0; i < options.length; i++) {
+            const option = options[i].toLowerCase();
+            if (userResponse.includes(option) || option.includes(userResponse)) {
+              return `${handlePrefix}${i}`;
+            }
+          }
+          return null;
+        };
+
+        if (isAtMessageButtons) {
+          const buttons = (currentNode.data?.buttons || []) as Array<{ id: string; label: string }>;
+          matchedHandle = matchOption(buttons.map((b) => b.label || ''), 'btn_');
+          if (matchedHandle) console.log(`[WEBHOOK] Matched button handle: ${matchedHandle}`);
         } else {
           // List: match rows
           const sections = (currentNode.data?.sections || []) as Array<{ title: string; rows: Array<{ id: string; title: string }> }>;
-          let rowIndex = 0;
-          for (const section of sections) {
-            for (const row of section.rows || []) {
-              const rowTitle = row.title.toLowerCase();
-              if (userResponse === rowTitle || userResponse.includes(rowTitle) || rowTitle.includes(userResponse)) {
-                matchedHandle = `row_${rowIndex}`;
-                console.log(`[WEBHOOK] Matched list row ${rowIndex}: "${row.title}" (handle: ${matchedHandle})`);
-                break;
-              }
-              rowIndex++;
-            }
-            if (matchedHandle) break;
-          }
+          const allRows = sections.flatMap((section) => section.rows || []);
+          matchedHandle = matchOption(allRows.map((r) => r.title || ''), 'row_');
+          if (matchedHandle) console.log(`[WEBHOOK] Matched list row handle: ${matchedHandle}`);
         }
 
         // Find the target edge: specific handle match > 'responded' fallback > any edge
         let targetEdge = matchedHandle ? flowEdges.find((e: any) => e.source === activeFlowExec.current_node_id && e.sourceHandle === matchedHandle) : null;
+        // A opção do próprio nó vem primeiro (o botão do follow-up costuma repetir
+        // o rótulo dela); a saída exclusiva do follow-up entra quando não casou.
+        if (!targetEdge) targetEdge = followUpEdge || null;
         if (!targetEdge) {
           // Fallback: try 'responded' handle or any edge without specific handle
           targetEdge = flowEdges.find((e: any) => e.source === activeFlowExec.current_node_id && e.sourceHandle === 'responded');
@@ -2566,7 +2653,33 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
         const flowEdgesGeneric = (activeFlowExec.flow?.edges || []) as any[];
         const hasOutgoingEdge = flowEdgesGeneric.some((e: any) => e.source === activeFlowExec.current_node_id);
 
-        if (!hasOutgoingEdge) {
+        if (followUpEdge) {
+          // Botão do follow-up com saída própria: avança por ela em vez de reexecutar o nó.
+          console.log(`[WEBHOOK] Follow-up button routing to ${followUpEdge.target}`);
+          const varsWithChoice = { ...((activeFlowExec as any).variables || {}) };
+          const inputVariable = currentNode?.data?.variableName;
+          if (inputVariable && triggerText) varsWithChoice[String(inputVariable)] = triggerText;
+
+          await supabase.from('flow_executions').update({
+            status: 'running',
+            current_node_id: followUpEdge.target,
+            variables: varsWithChoice,
+            timeout_at: null,
+            remarketing_step: 0,
+          }).eq('id', activeFlowExec.id);
+
+          const resumePromise = fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/flow-execute`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
+            body: JSON.stringify({
+              flowId: activeFlowExec.flow_id,
+              conversationId: conversation.id,
+              startNodeId: followUpEdge.target,
+              triggerMessage: triggerText || '[mídia]',
+            }),
+          });
+          runBackground(resumePromise);
+        } else if (!hasOutgoingEdge) {
           console.log(`[WEBHOOK] Node ${activeFlowExec.current_node_id} has NO outgoing edge — flow STOPS`);
           await supabase.from('flow_executions').update({
             status: 'completed',

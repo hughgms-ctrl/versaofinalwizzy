@@ -1,6 +1,8 @@
 import { Handle, Position, NodeProps, Node } from '@xyflow/react';
 import { MousePointerClick, List, ImageIcon, Video, FileText } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { followUpHandleId, getFollowUpOutputs } from './followUpHandles';
+import { FollowUpOutputRows } from './followUpOutputs';
 
 interface MessageNodeData extends Record<string, unknown> {
   label?: string;
@@ -67,6 +69,10 @@ export function ButtonsMessageNode({ data, selected }: NodeProps<MessageNode>) {
   const buttons = (data.buttons as Array<{ id: string; label: string }>) || [];
   const steps = (data.remarketingSteps as any[]) || [];
   const validButtons = buttons.filter(b => b.label);
+  // Botão de follow-up com o mesmo rótulo de um botão do bloco reaproveita a saída
+  // existente (é a mesma pergunta insistida) — senão o nó mostraria "Sim" duas vezes.
+  const nodeLabels = new Set(validButtons.map((b) => followUpHandleId(b.label)));
+  const followUpOutputs = getFollowUpOutputs(data).filter((o) => !nodeLabels.has(o.handleId));
   
   return (
     <BaseMessageNode
@@ -102,6 +108,8 @@ export function ButtonsMessageNode({ data, selected }: NodeProps<MessageNode>) {
           </div>
         )}
 
+        <FollowUpOutputRows outputs={followUpOutputs} />
+
         {/* Timeout separator */}
         <div className="relative pt-2 mt-1 border-t border-dashed border-border/60">
           <div className="flex items-center gap-1.5">
@@ -123,7 +131,7 @@ export function ButtonsMessageNode({ data, selected }: NodeProps<MessageNode>) {
 export function ListMessageNode({ data, selected }: NodeProps<MessageNode>) {
   const steps = (data.remarketingSteps as any[]) || [];
   const sections = (data.sections as Array<{ title: string; rows: Array<{ id: string; title: string; description?: string }> }>) || [];
-  
+
   // Flatten all rows for handle rendering
   const allRows: Array<{ id: string; title: string; sectionTitle?: string }> = [];
   sections.forEach(section => {
@@ -131,6 +139,10 @@ export function ListMessageNode({ data, selected }: NodeProps<MessageNode>) {
       allRows.push({ ...row, sectionTitle: section.title });
     });
   });
+
+  // Igual ao nó de botões: rótulo repetido reaproveita a saída da opção da lista.
+  const rowLabels = new Set(allRows.map((r) => followUpHandleId(r.title)));
+  const followUpOutputs = getFollowUpOutputs(data).filter((o) => !rowLabels.has(o.handleId));
 
   return (
     <BaseMessageNode
@@ -168,6 +180,8 @@ export function ListMessageNode({ data, selected }: NodeProps<MessageNode>) {
             📋 Ver opções
           </div>
         )}
+
+        <FollowUpOutputRows outputs={followUpOutputs} />
 
         {/* Timeout separator */}
         <div className="relative pt-2 mt-1 border-t border-dashed border-border/60">
