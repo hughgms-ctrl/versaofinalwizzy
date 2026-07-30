@@ -276,7 +276,7 @@
   }
 
   :root:not(.dark) .pipeline-board::before {
-    background: hsl(0 0% 100% / 0.55);
+    background: hsl(0 0% 100% / 0.35);
   }
 
   /* Pipeline Column Styles */
@@ -288,8 +288,9 @@
   }
 
   :root:not(.dark) .pipeline-column {
-    background: hsl(var(--card) / 0.55);
-    border-color: hsl(var(--border) / 0.7);
+    background: hsl(var(--card) / 0.92);
+    border-color: hsl(var(--border));
+    box-shadow: var(--shadow-md);
   }
 
   .pipeline-card {
