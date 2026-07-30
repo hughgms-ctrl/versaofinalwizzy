@@ -1363,16 +1363,12 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
     <div
       ref={scrollContainerRef}
       className={cn(
-        "pipeline-board relative flex items-stretch gap-5 h-[calc(100vh-140px)] p-4",
+        "relative flex items-stretch h-[calc(100vh-140px)]",
         isMobile ? "select-auto overflow-x-auto overflow-y-hidden" : "select-none cursor-grab overflow-x-auto overflow-y-hidden"
       )}
       style={{
         touchAction: isMobile ? 'pan-x pan-y' : 'pan-y',
         WebkitOverflowScrolling: 'touch',
-        backgroundColor: boardBackground,
-        backgroundImage: boardBackgroundImage ? `linear-gradient(rgb(0 0 0 / 0.18), rgb(0 0 0 / 0.18)), url(${boardBackgroundImage})` : undefined,
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
       }}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
@@ -1489,6 +1485,19 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
         </Popover>
       </div>
 
+      {/* Inner content row: sized to fit ALL columns (w-max) so the board
+          background/wash covers the full scrollable width, not just the
+          scroller's own clipped viewport. */}
+      <div
+        className="pipeline-board relative flex items-stretch gap-5 p-4 w-max min-h-full"
+        style={{
+          backgroundColor: boardBackground,
+          backgroundImage: boardBackgroundImage ? `linear-gradient(rgb(0 0 0 / 0.18), rgb(0 0 0 / 0.18)), url(${boardBackgroundImage})` : undefined,
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+        }}
+      >
+
       {/* Unassigned column - show when configured */}
       {pipeline?.show_unassigned && (
         <div
@@ -1562,6 +1571,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
           </div>
         );
       })}
+      </div>
 
       <PipelineCardDetailDialog
         conversation={selectedCard}
