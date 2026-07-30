@@ -72,7 +72,7 @@ export function ImportFlowDialog({ open, onOpenChange, onImported }: ImportFlowD
       setDetected('none');
       return;
     }
-    setDetected({ agentId: aiNode.data.agentId, agentName: aiNode.data.agentName || 'Agente' });
+    setDetected({ agentId: String(aiNode.data.agentId), agentName: String(aiNode.data.agentName || 'Agente') });
 
     const { data } = await supabase.from('campaigns').select('id, name').eq('flow_id', id);
     const found = (data as any[]) || [];

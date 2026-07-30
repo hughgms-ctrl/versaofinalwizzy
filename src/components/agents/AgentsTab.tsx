@@ -41,7 +41,7 @@ export function AgentsTab() {
   const [orchestrationWizardOpen, setOrchestrationWizardOpen] = useState(false);
   const [importFlowOpen, setImportFlowOpen] = useState(false);
   const [newName, setNewName] = useState('');
-  const [newRole, setNewRole] = useState(AGENT_FUNCTION_ROLES[0]?.value || 'recepcao');
+  const [newRole, setNewRole] = useState<string>(AGENT_FUNCTION_ROLES[0]?.value || 'recepcao');
   const [newPersonality, setNewPersonality] = useState<AgentPersonalityValue>(EMPTY_PERSONALITY);
   const [newFolderName, setNewFolderName] = useState('');
   const [folderDialogOpen, setFolderDialogOpen] = useState(false);

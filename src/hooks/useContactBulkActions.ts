@@ -44,9 +44,9 @@ export function useBulkAddTag() {
 
   return useMutation({
     mutationFn: async ({ contactIds, tagId }: { contactIds: string[]; tagId: string }) => {
-      return runBatched(contactIds, (contactId) =>
-        addTag.mutateAsync({ contactId, tagId, addedByType: 'manual' })
-      );
+      return runBatched(contactIds, async (contactId) => {
+        await addTag.mutateAsync({ contactId, tagId, addedByType: 'manual' });
+      });
     },
     onSuccess: ({ success, failed }) => {
       queryClient.invalidateQueries({ queryKey: ['contacts'] });
@@ -61,7 +61,9 @@ export function useBulkRemoveTag() {
 
   return useMutation({
     mutationFn: async ({ contactIds, tagId }: { contactIds: string[]; tagId: string }) => {
-      return runBatched(contactIds, (contactId) => removeTag.mutateAsync({ contactId, tagId }));
+      return runBatched(contactIds, async (contactId) => {
+        await removeTag.mutateAsync({ contactId, tagId });
+      });
     },
     onSuccess: ({ success, failed }) => {
       queryClient.invalidateQueries({ queryKey: ['contacts'] });
