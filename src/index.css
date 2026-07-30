@@ -261,8 +261,11 @@
   }
 
   /* Pipeline Board Styles */
-  /* Softens saturated board background colors (custom or default) so they don't
-     clash with the light theme's white shell. No-op in dark mode. */
+  /* In light mode, the custom/default board color is tied down toward the
+     app's own --background token so the board reads as part of the same
+     neutral surface family as the header, instead of a mismatched color
+     patch. Only a faint hint of the chosen color survives. Dark mode is
+     untouched (colorful board still pops fine against the dark shell there). */
   .pipeline-board {
     isolation: isolate;
   }
@@ -276,7 +279,7 @@
   }
 
   :root:not(.dark) .pipeline-board::before {
-    background: hsl(0 0% 100% / 0.35);
+    background: hsl(var(--background) / 0.92);
   }
 
   /* Pipeline Column Styles */
@@ -287,8 +290,10 @@
     box-shadow: var(--shadow-sm);
   }
 
+  /* Light mode: match --card exactly, same as every other card surface in
+     the app (metric-card, conversation-item, etc.), for full consistency. */
   :root:not(.dark) .pipeline-column {
-    background: hsl(var(--card) / 0.92);
+    background: hsl(var(--card));
     border-color: hsl(var(--border));
     box-shadow: var(--shadow-md);
   }
