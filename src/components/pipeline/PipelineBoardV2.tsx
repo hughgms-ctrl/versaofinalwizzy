@@ -1363,7 +1363,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
     <div
       ref={scrollContainerRef}
       className={cn(
-        "relative flex items-stretch gap-5 h-[calc(100vh-140px)] p-4",
+        "pipeline-board relative flex items-stretch gap-5 h-[calc(100vh-140px)] p-4",
         isMobile ? "select-auto overflow-x-auto overflow-y-hidden" : "select-none cursor-grab overflow-x-auto overflow-y-hidden"
       )}
       style={{

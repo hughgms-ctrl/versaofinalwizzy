@@ -260,12 +260,36 @@
     color: hsl(var(--status-urgent));
   }
 
+  /* Pipeline Board Styles */
+  /* Softens saturated board background colors (custom or default) so they don't
+     clash with the light theme's white shell. No-op in dark mode. */
+  .pipeline-board {
+    isolation: isolate;
+  }
+
+  .pipeline-board::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+  }
+
+  :root:not(.dark) .pipeline-board::before {
+    background: hsl(0 0% 100% / 0.55);
+  }
+
   /* Pipeline Column Styles */
   .pipeline-column {
     @apply flex-shrink-0 w-[260px] rounded-lg p-2 flex flex-col h-full border border-white/5;
     background: hsl(var(--card) / 0.08);
     backdrop-filter: blur(8px);
     box-shadow: var(--shadow-sm);
+  }
+
+  :root:not(.dark) .pipeline-column {
+    background: hsl(var(--card) / 0.55);
+    border-color: hsl(var(--border) / 0.7);
   }
 
   .pipeline-card {
