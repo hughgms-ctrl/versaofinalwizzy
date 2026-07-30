@@ -94,7 +94,7 @@ export function TaskAttachments({ taskId, isEditing = false }: TaskAttachmentsPr
 
       if (error) throw error;
       // Bucket privado: gera signed URLs (displayUrl) pros arquivos; links passam direto.
-      return resolveAttachmentUrls(data ?? []);
+      return resolveAttachmentUrls((data ?? []) as any[]) as Promise<any[]>;
     },
   });
 
