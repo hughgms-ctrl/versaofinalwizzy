@@ -1485,11 +1485,13 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
         </Popover>
       </div>
 
-      {/* Inner content row: sized to fit ALL columns (w-max) so the board
-          background/wash covers the full scrollable width, not just the
-          scroller's own clipped viewport. */}
+      {/* Inner content row: at least the full viewport width (min-w-full) so
+          the board fills the screen when there are few columns, but grows
+          past it (w-max) to wrap every column when there are many -- covers
+          the full scrollable width either way, not just the scroller's own
+          clipped viewport. */}
       <div
-        className="pipeline-board relative flex items-stretch gap-5 p-4 w-max min-h-full"
+        className="pipeline-board relative flex items-stretch gap-5 p-4 w-max min-w-full min-h-full shrink-0"
         style={{
           backgroundColor: boardBackground,
           backgroundImage: boardBackgroundImage ? `linear-gradient(rgb(0 0 0 / 0.18), rgb(0 0 0 / 0.18)), url(${boardBackgroundImage})` : undefined,
