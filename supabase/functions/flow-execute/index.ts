@@ -1,6 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { resolveWorkspaceInstanceBinding, sendWhatsAppMessage } from '../_shared/whatsappProvider.ts';
 import { resolveCaller, assertCallerCanAccessOrg, AccessError, type CallerAuth } from '../_shared/access.ts';
+import { moveConversationToPipeline } from '../_shared/pipelineMove.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -1929,7 +1930,7 @@ async function executePipelineAction(
   supabase: SupabaseClientType
 ): Promise<NodeResult> {
   try {
-    const columnId = String(data.pipelineColumnId || '');
+    const columnId = String(data.pipelineColumnId || data.columnId || '');
     const pipelineId = String(data.pipelineId || '');
     const columnName = String(data.pipelineColumnName || 'Etapa');
 
@@ -1943,36 +1944,12 @@ async function executePipelineAction(
       .update({ status: 'open' }) // Ensure it's open if moved in pipeline
       .eq('id', context.conversationId);
 
-    // 2. Get old position for history (unique constraint on conversation_id means only one pipeline at a time)
-    let fromColumnId: string | null = null;
-    const { data: existingPos } = await supabase
-      .from('conversation_pipeline_positions')
-      .select('id, column_id, pipeline_id')
-      .eq('conversation_id', context.conversationId)
-      .maybeSingle();
-
-    if (existingPos) {
-      fromColumnId = existingPos.pipeline_id === pipelineId ? existingPos.column_id : null;
-      const { error } = await supabase
-        .from('conversation_pipeline_positions')
-        .update({
-          pipeline_id: pipelineId,
-          column_id: columnId,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', existingPos.id);
-      if (error) throw error;
-    } else {
-      const { error } = await supabase
-        .from('conversation_pipeline_positions')
-        .insert({
-          conversation_id: context.conversationId,
-          pipeline_id: pipelineId,
-          column_id: columnId,
-          order: 0,
-        });
-      if (error) throw error;
-    }
+    // 2. Move de verdade: reaproveita a posicao existente e apaga sobras em
+    //    outros pipelines (senao o card continua aparecendo na origem).
+    const { fromColumnId, error: moveError } = await moveConversationToPipeline(
+      supabase, context.conversationId, pipelineId, columnId,
+    );
+    if (moveError) throw new Error(moveError);
 
     // 3. Log stage history
     await supabase

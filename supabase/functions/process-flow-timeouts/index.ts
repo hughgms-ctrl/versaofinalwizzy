@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { moveConversationToPipeline } from '../_shared/pipelineMove.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -817,29 +818,10 @@ Deno.serve(async (req) => {
             if (movePipelineId && moveColumnId) {
               console.log(`[FLOW TIMEOUTS] Exec ${exec.id}: moving conversation to pipeline ${movePipelineId} column ${moveColumnId}`);
               
-              const { data: existingPos } = await supabase
-                .from('conversation_pipeline_positions')
-                .select('id, column_id')
-                .eq('conversation_id', exec.conversation_id)
-                .maybeSingle();
-
-              const fromColumnId = existingPos?.column_id || null;
-
-              if (existingPos) {
-                await supabase.from('conversation_pipeline_positions').update({
-                  pipeline_id: movePipelineId,
-                  column_id: moveColumnId,
-                  order: 0,
-                  updated_at: new Date().toISOString(),
-                }).eq('id', existingPos.id);
-              } else {
-                await supabase.from('conversation_pipeline_positions').insert({
-                  conversation_id: exec.conversation_id,
-                  pipeline_id: movePipelineId,
-                  column_id: moveColumnId,
-                  order: 0,
-                });
-              }
+              const { fromColumnId, error: moveError } = await moveConversationToPipeline(
+                supabase, exec.conversation_id, movePipelineId, moveColumnId,
+              );
+              if (moveError) console.error(`[FLOW TIMEOUTS] Exec ${exec.id}: move error:`, moveError);
 
               // Log stage change
               await supabase.from('conversation_stage_history').insert({
