@@ -14,6 +14,7 @@ dist-ssr
 .env
 .env.*
 !.env.example
+!.env.docker.example
 
 # CNIS runner local runtime
 tools/cnis-runner/.cnis-chromium-profile/
@@ -32,3 +33,7 @@ Wizzy Cnis Leitura/cnis-checker/.git.local-backup/
 *.njsproj
 *.sln
 *.sw?
+
+# Saidas de testes locais contra a Evolution (contem tokens)
+inst.json
+r.txt

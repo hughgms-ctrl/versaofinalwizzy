@@ -1,4 +1,11 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { moveConversationToPipeline } from '../_shared/pipelineMove.ts';
+import {
+  MAX_EVOLUTION_REPLY_BUTTONS,
+  evolutionButtonsAccepted,
+  evolutionTargetFrom,
+  sendEvolutionReplyButtons,
+} from '../_shared/evolutionButtons.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -218,12 +225,12 @@ async function sendFollowUpProviderMessage(params: {
   const mediaType = (params.mediaType || 'image') as 'image' | 'video' | 'audio' | 'document';
   const hasMedia = !!mediaUrl;
 
-  // Quick-reply buttons: native on UAZAPI (text-only, up to 3). Everywhere else,
-  // they degrade to a numbered list appended to the text — same rule as flow-execute.
+  // Quick-reply buttons: native on UAZAPI and Evolution (text-only, up to 3).
+  // Sem caminho nativo, viram lista numerada no texto — mesma regra do flow-execute.
   const buttons = (params.buttons || []).filter((b) => (b?.label || '').trim());
   const buttonsText = buttons.length ? buttons.map((b, i) => `${i + 1}. ${b.label}`).join('\n') : '';
   const fallbackText = buttonsText ? `${messageText}\n\n${buttonsText}`.trim() : messageText;
-  const canSendNativeButtons = buttons.length > 0 && buttons.length <= 3 && !hasMedia && provider === 'uazapi';
+  const canSendNativeButtons = buttons.length > 0 && buttons.length <= MAX_EVOLUTION_REPLY_BUTTONS && !hasMedia;
 
   if (provider === 'evolution') {
     const evolutionBaseUrl = settings.evolutionBaseUrl;
@@ -257,6 +264,31 @@ async function sendFollowUpProviderMessage(params: {
       if (!response.ok) throw new Error(`Evolution media send failed: ${response.status} ${await response.text()}`);
       // Audio has no caption on Evolution — nothing but the media itself goes out.
       return { provider, zapiMessageId: await parseProviderMessageId(response), msgType: mediaType, sentText: mediaType === 'audio' ? '' : fallbackText, nativeButtons: false };
+    }
+
+    if (canSendNativeButtons) {
+      try {
+        // O id de cada botão é o próprio rótulo: o casamento da resposta do
+        // follow-up é por rótulo, e alguns aparelhos devolvem só o id.
+        const nativeResponse = await sendEvolutionReplyButtons(
+          { baseUrl: evolutionBaseUrl, apiKey: evolutionApiKey, instanceName: evolutionInstanceName },
+          {
+            phone: normalizedPhone,
+            text: messageText,
+            buttons: buttons.map((b) => ({ id: b.label, label: b.label })),
+          },
+        );
+
+        const accepted = await evolutionButtonsAccepted(nativeResponse);
+        if (accepted.ok) {
+          console.log('[FLOW TIMEOUTS] Native Evolution follow-up buttons sent successfully');
+          // Native buttons render separately, so the saved text is just the message body.
+          return { provider, zapiMessageId: await parseProviderMessageId(nativeResponse), msgType: 'text', sentText: messageText, nativeButtons: true };
+        }
+        console.log(`[FLOW TIMEOUTS] Native Evolution buttons failed (${accepted.detail}) — falling back to text`);
+      } catch (nativeErr) {
+        console.log(`[FLOW TIMEOUTS] Native Evolution buttons exception: ${nativeErr} — falling back to text`);
+      }
     }
 
     const response = await fetch(`${evolutionBaseUrl}/message/sendText/${evolutionInstanceName}`, {
@@ -294,15 +326,18 @@ async function sendFollowUpProviderMessage(params: {
 
   if (canSendNativeButtons) {
     try {
-      const nativeResponse = await fetch(`${settings.uazapiBaseUrl}/send/buttons`, {
+      // /send/menu é o endpoint unificado da UAZAPI (button/list/poll). Cada opção
+      // vai só com o rótulo: sem "|id" a UAZAPI usa o próprio texto como id, que é
+      // exatamente o que o casamento da resposta do follow-up espera. O pipe é o
+      // separador do formato, então some com ele no rótulo.
+      const nativeResponse = await fetch(`${settings.uazapiBaseUrl}/send/menu`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', token: instance.zapi_token },
         body: JSON.stringify({
           number: normalizedPhone,
-          title: '',
-          message: messageText,
-          footer: '',
-          buttons: buttons.map((b, i) => ({ id: b.id || `btn_${i}`, label: b.label })),
+          type: 'button',
+          text: messageText,
+          choices: buttons.map((b) => String(b.label || '').replace(/\|/g, '/')),
         }),
       });
 
@@ -817,29 +852,10 @@ Deno.serve(async (req) => {
             if (movePipelineId && moveColumnId) {
               console.log(`[FLOW TIMEOUTS] Exec ${exec.id}: moving conversation to pipeline ${movePipelineId} column ${moveColumnId}`);
               
-              const { data: existingPos } = await supabase
-                .from('conversation_pipeline_positions')
-                .select('id, column_id')
-                .eq('conversation_id', exec.conversation_id)
-                .maybeSingle();
-
-              const fromColumnId = existingPos?.column_id || null;
-
-              if (existingPos) {
-                await supabase.from('conversation_pipeline_positions').update({
-                  pipeline_id: movePipelineId,
-                  column_id: moveColumnId,
-                  order: 0,
-                  updated_at: new Date().toISOString(),
-                }).eq('id', existingPos.id);
-              } else {
-                await supabase.from('conversation_pipeline_positions').insert({
-                  conversation_id: exec.conversation_id,
-                  pipeline_id: movePipelineId,
-                  column_id: moveColumnId,
-                  order: 0,
-                });
-              }
+              const { fromColumnId, error: moveError } = await moveConversationToPipeline(
+                supabase, exec.conversation_id, movePipelineId, moveColumnId,
+              );
+              if (moveError) console.error(`[FLOW TIMEOUTS] Exec ${exec.id}: move error:`, moveError);
 
               // Log stage change
               await supabase.from('conversation_stage_history').insert({
