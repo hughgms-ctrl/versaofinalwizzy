@@ -270,30 +270,50 @@ Deno.serve(async (req) => {
       return fail('conversation_not_found', `Conversation ${conversationId} not found`, 404);
     }
 
+    // A org de ENVIO é a da conversa, não a do fluxo: o workspace, o número e o
+    // contato pertencem à conversa. Usar flow.organization_id aqui fazia o SELECT
+    // do workspace não achar linha nenhuma quando as duas orgs divergiam, e o
+    // resultado aparecia como "workspace sem número" — mesmo com número vinculado.
+    // Todos os outros caminhos de envio (zapi-send-message, agent-orchestrator,
+    // process-scheduled-messages) já usam a org da conversa.
+    const sendOrganizationId = conversation.organization_id || flow.organization_id;
+
+    // Fluxo de uma org rodando sobre conversa de outra é sempre erro de dados —
+    // e antes ficava mascarado como workspace sem número. Falha explícita.
+    if (
+      flow.organization_id && conversation.organization_id &&
+      flow.organization_id !== conversation.organization_id
+    ) {
+      return fail(
+        'org_mismatch',
+        `Fluxo ${flowId} (org ${flow.organization_id}) não pertence à org da conversa ${conversationId} (org ${conversation.organization_id}).`,
+      );
+    }
+
     // Regra de negócio: conversa dentro de um workspace só envia pelo número
     // do workspace. Se o workspace não tem número associado, abortamos — sem
     // fallback por organização.
     const workspaceBinding = await resolveWorkspaceInstanceBinding(
       supabase,
-      flow.organization_id,
+      sendOrganizationId,
       conversation.workspace_id,
     );
     if (workspaceBinding.blocked) {
       return fail(
         'workspace_without_number',
-        `Workspace ${conversation.workspace_id} sem número associado; abortando envio.`,
+        `Workspace ${conversation.workspace_id} (org ${sendOrganizationId}) sem número associado; abortando envio.`,
       );
     }
 
     // 3. Get WhatsApp instance according to the admin provider strategy.
     const { instance, error: instanceError } = await resolveWhatsAppInstance(
       supabase,
-      flow.organization_id,
+      sendOrganizationId,
       workspaceBinding.workspaceInstanceId || conversation.whatsapp_instance_id,
     );
 
     if (instanceError || !instance) {
-      return fail('no_connected_instance', `No connected instance for org ${flow.organization_id}`);
+      return fail('no_connected_instance', `No connected instance for org ${sendOrganizationId}`);
     }
     const connectionSettings = await loadConnectionSettings(supabase);
     const provider = instance.provider === 'evolution' ? 'evolution' : 'uazapi';
@@ -307,7 +327,7 @@ Deno.serve(async (req) => {
           .insert({
             flow_id: flowId,
             conversation_id: conversationId,
-            organization_id: flow.organization_id,
+            organization_id: sendOrganizationId,
             status: 'running',
             current_node_id: startNodeId || 'start-1',
             variables: initialVariables && typeof initialVariables === 'object' ? initialVariables : {},
@@ -328,7 +348,7 @@ Deno.serve(async (req) => {
           contactPhone: conversation.contacts?.phone || '',
           contactId: conversation.contact_id,
           variables: initialVariables && typeof initialVariables === 'object' ? { ...initialVariables } : {},
-          organizationId: flow.organization_id,
+          organizationId: sendOrganizationId,
           zapiInstanceId: instance.zapi_instance_id!,
           zapiToken: instance.zapi_token!,
           provider,
