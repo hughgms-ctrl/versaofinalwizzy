@@ -241,9 +241,10 @@ Deno.serve(async (req) => {
     // respondido 200 e o fluxo simplesmente não acontecia, sem registro em
     // flow_executions e sem nada visível para quem chamou. Agora o chamador
     // (campaign-webhook, process-campaign-queue, zapi-webhook) recebe o motivo.
+    // fnVersion serve só para saber, pela resposta, se o deploy desta função subiu.
     const fail = (reason: string, detail: string, status = 422) => {
       console.error(`[FLOW EXECUTE] ${detail}`);
-      return new Response(JSON.stringify({ error: detail, reason }), {
+      return new Response(JSON.stringify({ error: detail, reason, fnVersion: 'fe-v2' }), {
         status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     };
@@ -290,18 +291,43 @@ Deno.serve(async (req) => {
       );
     }
 
+    // REGRA: um fluxo de um workspace NUNCA envia pelo número de outro workspace.
+    // Cada fluxo tem UM workspace. A coluna workspace_ids é legado (pastas
+    // multi-workspace escreviam nela); só a usamos como fallback para linhas
+    // antigas em que workspace_id ficou nulo — sempre a primeira posição.
+    const flowWorkspaceId: string | null = flow.workspace_id
+      || (Array.isArray(flow.workspace_ids) ? flow.workspace_ids[0] : null)
+      || null;
+
+    if (
+      conversation.workspace_id &&
+      flowWorkspaceId &&
+      conversation.workspace_id !== flowWorkspaceId
+    ) {
+      return fail(
+        'workspace_mismatch',
+        `Fluxo ${flowId} é do workspace ${flowWorkspaceId} e não pode enviar na conversa ` +
+        `${conversationId}, que está no workspace ${conversation.workspace_id}.`,
+      );
+    }
+
+    // Conversa sem workspace: envia pelo número do workspace DO FLUXO, em vez de
+    // cair no fallback da org (que poderia ser o número de outro workspace —
+    // exatamente o que a regra proíbe).
+    const effectiveWorkspaceId = conversation.workspace_id || flowWorkspaceId;
+
     // Regra de negócio: conversa dentro de um workspace só envia pelo número
     // do workspace. Se o workspace não tem número associado, abortamos — sem
     // fallback por organização.
     const workspaceBinding = await resolveWorkspaceInstanceBinding(
       supabase,
       sendOrganizationId,
-      conversation.workspace_id,
+      effectiveWorkspaceId,
     );
     if (workspaceBinding.blocked) {
       return fail(
         'workspace_without_number',
-        `Workspace ${conversation.workspace_id} (org ${sendOrganizationId}) sem número associado; abortando envio.`,
+        `Workspace ${effectiveWorkspaceId} (org ${sendOrganizationId}) sem número associado; abortando envio.`,
       );
     }
 

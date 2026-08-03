@@ -5,6 +5,8 @@ const corsHeaders = {
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Campanha de um workspace só usa o número desse workspace. Sem número vinculado,
+// retorna null — nunca cai no fallback da org (que seria o número de outro workspace).
 async function resolveCampaignInstance(supabase: any, organizationId: string, workspaceId?: string | null) {
     if (workspaceId) {
         const { data: workspace } = await supabase
@@ -13,20 +15,21 @@ async function resolveCampaignInstance(supabase: any, organizationId: string, wo
             .eq('id', workspaceId)
             .eq('organization_id', organizationId)
             .maybeSingle();
-        if (workspace?.whatsapp_instance_id) {
-            const { data: instance } = await supabase
-                .from('whatsapp_instances')
-                .select('id, phone_number, logical_phone')
-                .eq('id', workspace.whatsapp_instance_id)
-                .eq('organization_id', organizationId)
-                .maybeSingle();
-            if (instance?.id) return instance;
-        }
+        if (!workspace?.whatsapp_instance_id) return null;
+
+        const { data: instance, error } = await supabase
+            .from('whatsapp_instances')
+            .select('id, phone_number')
+            .eq('id', workspace.whatsapp_instance_id)
+            .eq('organization_id', organizationId)
+            .maybeSingle();
+        if (error) console.error('[trigger-campaign-on-tag] erro ao buscar instância do workspace:', error);
+        return instance || null;
     }
 
     const { data: instance } = await supabase
         .from('whatsapp_instances')
-        .select('id, phone_number, logical_phone')
+        .select('id, phone_number')
         .eq('organization_id', organizationId)
         .eq('status', 'connected')
         .eq('is_active', true)
@@ -98,9 +101,13 @@ Deno.serve(async (req) => {
                 .eq('contact_id', contactId)
                 .eq('organization_id', organizationId);
 
-            conversationQuery = campaignInstance?.id
-                ? conversationQuery.eq('whatsapp_instance_id', campaignInstance.id)
-                : conversationQuery.is('whatsapp_instance_id', null);
+            // Regra: campanha de um workspace atua SOMENTE sobre a conversa daquele
+            // workspace — nunca pega a conversa do contato em outro workspace.
+            conversationQuery = campaign.workspace_id
+                ? conversationQuery.eq('workspace_id', campaign.workspace_id)
+                : campaignInstance?.id
+                    ? conversationQuery.eq('whatsapp_instance_id', campaignInstance.id)
+                    : conversationQuery.is('whatsapp_instance_id', null);
 
             let { data: conversation } = await conversationQuery
                 .order('updated_at', { ascending: false })
@@ -115,7 +122,7 @@ Deno.serve(async (req) => {
                         organization_id: organizationId,
                         workspace_id: campaign.workspace_id || null,
                         whatsapp_instance_id: campaignInstance?.id || null,
-                        source_phone: campaignInstance?.phone_number || campaignInstance?.logical_phone || null,
+                        source_phone: campaignInstance?.phone_number || null,
                         status: 'open'
                     })
                     .select('id')
