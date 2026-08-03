@@ -1,12 +1,30 @@
 -- ============================================================================
--- Cards que ficaram nos DOIS pipelines depois de usar o no "movimentar para
--- pipeline" — diagnostico + conserto.
+-- Cards que aparecem em "Pipeline Geral" E em "eventos passados" depois de usar
+-- o no "movimentar para pipeline" — diagnostico + conserto.
 --
--- Causa (corrigida no codigo em supabase/functions/_shared/pipelineMove.ts):
--- o no gravava a posicao com UPSERT usando onConflict
--- 'conversation_id,pipeline_id'. Esse upsert nao move nada: ele cria uma linha
--- nova no pipeline de destino e deixa a linha antiga viva no pipeline de origem.
--- Resultado: o mesmo card aparece em "geral" E em "passado".
+-- >>> DIAGNOSTICO CONCLUIDO EM 2026-07-30. LEIA ANTES DE RODAR QUALQUER COISA:
+--
+--   O no NAO duplicou. As PARTES 0 a 6 abaixo foram escritas para a hipotese de
+--   posicao duplicada (mesma conversa em dois pipelines) e ela foi DESCARTADA:
+--   a query da PARTE 1 voltou 0. Elas ficam aqui como diagnostico reutilizavel,
+--   nao como plano de acao.
+--
+--   O que realmente existe sao 28 contatos com DUAS conversas cada:
+--     - a boa: instancia "Sucesso do cliente" (connected), historico real,
+--       card em "eventos passados" — foi essa que o no moveu, corretamente;
+--     - a orfa: whatsapp_instance_id NULL, criada na rajada de 08/07 entre
+--       16h e 17h30, com 1 mensagem outbound (entregue/lida) do disparo
+--       "Ola, {NOME}, vai tudo bem com voce?". O card dela entrou no board em
+--       28/07 14:54:13 (todos no mesmo segundo, insercao em lote) e nunca saiu
+--       do "Pipeline Geral".
+--
+--   As 27 mensagens das orfas (a do Fagner tem 0) NAO existem na conversa boa —
+--   conferido comparando content. Por isso o conserto e UNIFICAR (PARTE 7), e
+--   nao apagar: apagar perderia o registro de um disparo que foi entregue.
+--
+--   O bug do upsert citado abaixo e real e foi corrigido em
+--   supabase/functions/_shared/pipelineMove.ts, mas nao e a causa deste caso —
+--   o fluxo passou pelo flow-execute, que ja movia certo.
 --
 -- Rodar no SQL Editor do Supabase, UMA PARTE POR VEZ. As PARTES 0 a 2 sao so
 -- leitura. Nada muda no banco ate a PARTE 3.
@@ -196,3 +214,187 @@ HAVING COUNT(*) > 1;
 -- ============================================================================
 -- ALTER TABLE public.conversation_pipeline_positions
 -- ADD CONSTRAINT unique_conversation_pipeline_position UNIQUE (conversation_id);
+
+
+-- ############################################################################
+-- PARTE 7 — O CONSERTO DE VERDADE DESTE CASO: unificar as 28 orfas
+--
+-- Move a mensagem de 08/07 da conversa orfa para a conversa boa e tira o card
+-- da orfa do board. A conversa orfa em si continua existindo (vazia) — apagar
+-- ela e a PARTE 8, opcional e separada.
+--
+-- Rode os PASSOS na ordem. O 1 e o 2 sao leitura/backup; nada muda ate o 3.
+-- ############################################################################
+
+-- 7.1 — PASSO 1: tabela de mapeamento orfa -> boa. E o backup que permite
+--       desfazer tudo. NAO apague ela ate ter certeza do resultado.
+CREATE TABLE public._merge_orfas_20260730 AS
+WITH orfa AS (
+  SELECT
+    pos.id          AS position_id,
+    pos.pipeline_id,
+    pos.column_id,
+    pos."order",
+    conv.id         AS orfa_id,
+    conv.contact_id
+  FROM public.conversation_pipeline_positions pos
+  JOIN public.conversations conv ON conv.id = pos.conversation_id
+  JOIN public.pipelines p        ON p.id = pos.pipeline_id
+  WHERE p.name = 'Pipeline Geral'
+    AND conv.whatsapp_instance_id IS NULL
+)
+SELECT o.*, b.boa_id
+FROM orfa o
+JOIN LATERAL (
+  -- a conversa boa: mesma pessoa, outra conversa, com card em eventos passados
+  SELECT conv2.id AS boa_id
+  FROM public.conversation_pipeline_positions pos2
+  JOIN public.conversations conv2 ON conv2.id = pos2.conversation_id
+  JOIN public.pipelines p2        ON p2.id = pos2.pipeline_id
+  WHERE conv2.contact_id = o.contact_id
+    AND conv2.id <> o.orfa_id
+    AND p2.name = 'eventos passados'
+  ORDER BY conv2.created_at
+  LIMIT 1
+) b ON true;
+
+-- 7.2 — PASSO 2: sanidade. As tres colunas tem que dar 28, 28, 28.
+--       Se boas_distintas < total, duas orfas apontam para a mesma conversa boa
+--       — PARE e investigue antes de seguir.
+SELECT
+  COUNT(*)                    AS total,
+  COUNT(DISTINCT orfa_id)     AS orfas_distintas,
+  COUNT(DISTINCT boa_id)      AS boas_distintas
+FROM public._merge_orfas_20260730;
+
+-- 7.3 — PASSO 2b: backup das mensagens que serao movidas (permite desfazer o
+--       PASSO 3 sozinho). Esperado: 27 linhas (a orfa do Fagner tem 0).
+CREATE TABLE public._merge_orfas_msgs_20260730 AS
+SELECT m.id AS message_id, m.conversation_id AS conversation_id_original
+FROM public.messages m
+WHERE m.conversation_id IN (SELECT orfa_id FROM public._merge_orfas_20260730);
+
+SELECT COUNT(*) AS mensagens_a_mover FROM public._merge_orfas_msgs_20260730;
+
+-- 7.4 — PASSO 3: mover as mensagens para a conversa boa.
+UPDATE public.messages m
+SET conversation_id = mp.boa_id
+FROM public._merge_orfas_20260730 mp
+WHERE m.conversation_id = mp.orfa_id;
+
+-- 7.5 — PASSO 4: recalcular last_message_at/direction das conversas boas.
+--       Importa principalmente para as 9 que estavam com 0 mensagens.
+UPDATE public.conversations c
+SET last_message_at        = sub.max_at,
+    last_message_direction = sub.dir
+FROM (
+  SELECT
+    m.conversation_id,
+    MAX(m.created_at) AS max_at,
+    (SELECT m2.direction::text
+       FROM public.messages m2
+      WHERE m2.conversation_id = m.conversation_id
+      ORDER BY m2.created_at DESC
+      LIMIT 1) AS dir
+  FROM public.messages m
+  WHERE m.conversation_id IN (SELECT boa_id FROM public._merge_orfas_20260730)
+  GROUP BY m.conversation_id
+) sub
+WHERE c.id = sub.conversation_id
+  AND c.last_message_at IS DISTINCT FROM sub.max_at;
+
+-- 7.6 — PASSO 5: tirar o card da orfa do board (a conversa continua existindo).
+DELETE FROM public.conversation_pipeline_positions
+WHERE id IN (SELECT position_id FROM public._merge_orfas_20260730);
+
+-- 7.7 — PASSO 6: verificacao.
+--       a) Pipeline Geral cai de 62 para 34; eventos passados segue com 46.
+SELECT p.name, COUNT(*) AS cards
+FROM public.conversation_pipeline_positions pos
+JOIN public.pipelines p ON p.id = pos.pipeline_id
+WHERE p.name IN ('Pipeline Geral', 'eventos passados')
+GROUP BY p.name;
+
+--       b) Nenhum contato com dois cards. Tem que voltar vazio.
+WITH pos AS (
+  SELECT p.conversation_id, c.contact_id
+  FROM public.conversation_pipeline_positions p
+  JOIN public.conversations c ON c.id = p.conversation_id
+)
+SELECT contact_id, COUNT(DISTINCT conversation_id)
+FROM pos GROUP BY contact_id HAVING COUNT(DISTINCT conversation_id) > 1;
+
+--       c) As orfas ficaram vazias e as boas receberam a mensagem:
+SELECT
+  (SELECT COUNT(*) FROM public.messages
+    WHERE conversation_id IN (SELECT orfa_id FROM public._merge_orfas_20260730)) AS msgs_ainda_nas_orfas,
+  (SELECT COUNT(*) FROM public.messages
+    WHERE conversation_id IN (SELECT boa_id FROM public._merge_orfas_20260730)) AS msgs_nas_boas;
+-- msgs_ainda_nas_orfas tem que ser 0.
+
+-- 7.8 — ROLLBACK (se algo saiu errado, na ordem inversa):
+-- UPDATE public.messages m
+-- SET conversation_id = b.conversation_id_original
+-- FROM public._merge_orfas_msgs_20260730 b
+-- WHERE m.id = b.message_id;
+--
+-- INSERT INTO public.conversation_pipeline_positions (id, conversation_id, pipeline_id, column_id, "order")
+-- SELECT position_id, orfa_id, pipeline_id, column_id, "order"
+-- FROM public._merge_orfas_20260730;
+
+-- 7.9 — LIMPEZA (so depois de conferir tudo, e da PARTE 8 se for fazer):
+-- DROP TABLE public._merge_orfas_20260730;
+-- DROP TABLE public._merge_orfas_msgs_20260730;
+
+
+-- ############################################################################
+-- PARTE 8 — OPCIONAL, DEPOIS: apagar as 28 conversas orfas ja vazias.
+--
+-- Elas somem do board na PARTE 7, mas continuam na lista de conversas, sem
+-- numero e sem mensagem. Apagar exige checar as FKs que NAO sao cascade.
+-- ############################################################################
+
+-- 8.1 — Quais tabelas apontam para conversations sem ON DELETE CASCADE/SET NULL
+--       (essas bloqueiam o DELETE). confdeltype: a=NO ACTION, r=RESTRICT.
+SELECT c.conname, c.conrelid::regclass AS tabela, a.attname AS coluna
+FROM pg_constraint c
+JOIN unnest(c.conkey) WITH ORDINALITY k(attnum, ord) ON true
+JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum
+WHERE c.confrelid = 'public.conversations'::regclass
+  AND c.contype = 'f'
+  AND c.confdeltype IN ('a', 'r');
+
+-- 8.2 — RESULTADO DA 8.1 EM 2026-07-30: so duas tabelas bloqueiam —
+--       generated_documents e document_signatures (as mesmas que o app limpa
+--       antes de excluir uma conversa, ver ConversationActionsMenu.tsx).
+--       Depende da tabela criada em 7.1, entao rode a PARTE 7 antes.
+SELECT 'generated_documents' AS tabela, COUNT(*) AS linhas_apontando_para_orfa
+FROM public.generated_documents
+WHERE conversation_id IN (SELECT orfa_id FROM public._merge_orfas_20260730)
+UNION ALL
+SELECT 'document_signatures', COUNT(*)
+FROM public.document_signatures
+WHERE conversation_id IN (SELECT orfa_id FROM public._merge_orfas_20260730);
+
+-- 8.2b — Se alguma das duas voltar > 0: NAO apague nem zere a referencia.
+--        Reaponte para a conversa boa — o documento continua ligado ao mesmo
+--        atendimento, agora na conversa que sobreviveu.
+-- UPDATE public.generated_documents g
+-- SET conversation_id = mp.boa_id
+-- FROM public._merge_orfas_20260730 mp
+-- WHERE g.conversation_id = mp.orfa_id;
+--
+-- UPDATE public.document_signatures d
+-- SET conversation_id = mp.boa_id
+-- FROM public._merge_orfas_20260730 mp
+-- WHERE d.conversation_id = mp.orfa_id;
+
+-- 8.3 — Com as duas em 0 (ou reapontadas), pode apagar. O resto das FKs e
+--       cascade/set null, entao o card, o historico de etapa, os logs de fluxo
+--       e afins somem junto — e as mensagens ja saira na PARTE 7.
+-- DELETE FROM public.conversations
+-- WHERE id IN (SELECT orfa_id FROM public._merge_orfas_20260730);
+
+-- 8.4 — Verificacao final: tem que voltar 0.
+-- SELECT COUNT(*) FROM public.conversations
+-- WHERE id IN (SELECT orfa_id FROM public._merge_orfas_20260730);

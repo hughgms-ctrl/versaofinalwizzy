@@ -1,0 +1,46 @@
+# Frontend do Wizzy na VPS. Supabase continua na nuvem.
+# Uso: cp .env.docker.example .env.docker && editar && docker compose up -d --build
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # Lidos do .env.docker (ver env_file abaixo nao serve pra build args,
+        # por isso o compose puxa do shell/--env-file).
+        VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:?defina VITE_SUPABASE_URL}
+        VITE_SUPABASE_PUBLISHABLE_KEY: ${VITE_SUPABASE_PUBLISHABLE_KEY:?defina VITE_SUPABASE_PUBLISHABLE_KEY}
+        VITE_SUPABASE_PROJECT_ID: ${VITE_SUPABASE_PROJECT_ID:?defina VITE_SUPABASE_PROJECT_ID}
+        VITE_ENABLE_CNIS_RUNNER: ${VITE_ENABLE_CNIS_RUNNER:-false}
+        VITE_CNIS_RUNNER_WINDOWS_INSTALLER_URL: ${VITE_CNIS_RUNNER_WINDOWS_INSTALLER_URL:-}
+        INCLUDE_CNIS_INSTALLER: ${INCLUDE_CNIS_INSTALLER:-false}
+    image: wizzy-web:latest
+    container_name: wizzy-web
+    restart: unless-stopped
+    ports:
+      # Porta HTTP local pro Nginx Proxy Manager apontar.
+      # - NPM em container: use a rede compartilhada abaixo e apague este ports:
+      #   (no NPM aponte para host `wizzy-web`, porta 80).
+      # - NPM fora de container: deixe assim e aponte para 127.0.0.1:8080.
+      # 0.0.0.0 aqui abriria o site em HTTP puro na porta 8080 pra internet.
+      - "127.0.0.1:8080:80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/healthz"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # Descomente para falar direto com o container do Nginx Proxy Manager.
+    # networks:
+    #   - proxy
+
+# networks:
+#   proxy:
+#     external: true
+#     name: npm_default   # confira com: docker network ls

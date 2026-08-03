@@ -155,6 +155,10 @@ export interface MediaMessageConfig {
 
 export interface ButtonsMessageConfig {
   text: string;
+  /** Título em negrito acima da mensagem (nativo na Evolution). */
+  title?: string;
+  /** Rodapé abaixo dos botões (nativo na Evolution). */
+  footer?: string;
   buttons: Array<{
     id: string;
     label: string;

@@ -1,0 +1,42 @@
+# Contexto de build enxuto: sem isso o Docker manda ~700MB pro daemon.
+node_modules
+dist
+dist-ssr
+.git
+.github
+.claude
+.codex-backups
+.lovable
+docs
+Wizzy Cnis Leitura
+
+# Segredos nunca entram na imagem. As chaves VITE_* chegam por build-arg
+# (veja docker-compose.yml), nao por arquivo copiado.
+.env
+.env.*
+!.env.example
+
+# Instalador do CNIS runner (~350MB). Fica de fora por padrao.
+# Para embutir o .exe na imagem, comente as 2 linhas abaixo e suba
+# INCLUDE_CNIS_INSTALLER=true (veja docs/deploy-vps-docker.md).
+tools/cnis-runner/installer-parts
+public/downloads
+
+# Runtime local do runner / lixo de dev
+tools/cnis-runner/.cnis-chromium-profile
+tools/cnis-runner/*.log
+*.log
+check_*.mjs
+check_*.cjs
+check_*.ts
+check_*.sql
+debug_*.mjs
+debug_*.cjs
+debug_*.ts
+test_*.ts
+test_*.cjs
+get_org_id.cjs
+
+# Nao muda o build do frontend
+supabase/functions
+supabase/migrations

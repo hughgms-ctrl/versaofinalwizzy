@@ -176,6 +176,50 @@ function firstObject(...values: any[]): any | null {
   return null;
 }
 
+/**
+ * Texto de uma resposta a botão/lista nativo do WhatsApp.
+ *
+ * O formato muda conforme o tipo de mensagem enviada e a versão do aparelho:
+ * botão antigo (buttonsResponseMessage), botão de template
+ * (templateButtonReplyMessage), lista (listResponseMessage) e o formato atual
+ * que a Evolution usa, nativeFlow (interactiveResponseMessage, com display_text
+ * e id dentro de um JSON em paramsJson).
+ *
+ * Devolve o texto exibido quando existe e o id da opção quando não — o
+ * casamento com as saídas do nó aceita os dois.
+ */
+function extractInteractiveReplyText(reply: any): string | null {
+  const nativeFlow = reply.nativeFlowResponseMessage || reply.NativeFlowResponseMessage;
+  let nativeFlowText: string | null = null;
+  let nativeFlowId: string | null = null;
+  if (nativeFlow?.paramsJson || nativeFlow?.ParamsJson) {
+    try {
+      const params = JSON.parse(nativeFlow.paramsJson || nativeFlow.ParamsJson);
+      nativeFlowText = params?.display_text || params?.displayText || null;
+      nativeFlowId = params?.id || params?.selectedId || null;
+    } catch {
+      // paramsJson malformado: sobra o texto do corpo, tratado abaixo.
+    }
+  }
+
+  const singleSelect = reply.singleSelectReply || reply.SingleSelectReply;
+
+  // O nativeFlow vem antes do corpo de propósito: no quick_reply da Evolution o
+  // body.text é o texto genérico "Sent a quick reply", que não casa com saída
+  // nenhuma — o rótulo real está no paramsJson.
+  const value = reply.selectedDisplayText || reply.SelectedDisplayText
+    || nativeFlowText
+    || nativeFlowId
+    || reply.title || reply.Title
+    || reply.selectedButtonId || reply.SelectedButtonId
+    || reply.selectedId || reply.SelectedId
+    || singleSelect?.selectedRowId || singleSelect?.SelectedRowId
+    || reply.body?.text || reply.Body?.text
+    || null;
+
+  return value ? String(value).trim() : null;
+}
+
 function firstNonEmptyObject(...values: any[]): any | null {
   for (const value of values) {
     if (value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length > 0) return value;
@@ -1318,7 +1362,27 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
   const locationMsg = eventMessage.locationMessage || eventMessage.LocationMessage || evolutionMessage.locationMessage;
   const contactMsg = eventMessage.contactMessage || eventMessage.ContactMessage || evolutionMessage.contactMessage;
 
-  if (conversationText) {
+  // Toque em botão/lista nativo não chega como texto: vem numa mensagem de
+  // resposta própria, que varia com o formato usado no envio e com o aparelho.
+  // Sem isto o texto sai vazio e o fluxo não casa a escolha com nenhuma saída.
+  const interactiveReply = firstObject(
+    eventMessage.interactiveResponseMessage, eventMessage.InteractiveResponseMessage,
+    eventMessage.buttonsResponseMessage, eventMessage.ButtonsResponseMessage,
+    eventMessage.templateButtonReplyMessage, eventMessage.TemplateButtonReplyMessage,
+    eventMessage.listResponseMessage, eventMessage.ListResponseMessage,
+    evolutionMessage.interactiveResponseMessage, evolutionMessage.buttonsResponseMessage,
+    evolutionMessage.templateButtonReplyMessage, evolutionMessage.listResponseMessage,
+    payload.interactiveResponseMessage, payload.buttonsResponseMessage,
+    payload.templateButtonReplyMessage, payload.listResponseMessage,
+    msg.interactiveResponseMessage, msg.buttonsResponseMessage,
+    msg.templateButtonReplyMessage, msg.listResponseMessage,
+  );
+
+  if (interactiveReply) {
+    messageType = 'text';
+    textContent = extractInteractiveReplyText(interactiveReply);
+    console.log(`[WEBHOOK] Interactive reply detected -> "${textContent}"`);
+  } else if (conversationText) {
     messageType = 'text';
     textContent = conversationText;
   } else if (extendedText) {
@@ -2563,9 +2627,17 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
 
         // Casamento em duas passadas: exato/número antes de parcial. Numa passada só,
         // a opção "Não" ganharia de "Não sei" só por vir antes na lista.
-        const matchOption = (options: string[], handlePrefix: string): string | null => {
+        const matchOption = (options: string[], handlePrefix: string, ids?: string[]): string | null => {
+          // Botão nativo volta como o rótulo na maioria dos aparelhos, mas alguns
+          // devolvem o id da opção ("btn_0") — aceita os dois antes do parcial.
           for (let i = 0; i < options.length; i++) {
-            if (userResponse === options[i].toLowerCase() || userResponse === String(i + 1)) {
+            const optionId = ids?.[i]?.toLowerCase();
+            if (
+              userResponse === options[i].toLowerCase() ||
+              userResponse === String(i + 1) ||
+              (!!optionId && userResponse === optionId) ||
+              userResponse === `${handlePrefix}${i}`
+            ) {
               return `${handlePrefix}${i}`;
             }
           }
@@ -2580,7 +2652,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
 
         if (isAtMessageButtons) {
           const buttons = (currentNode.data?.buttons || []) as Array<{ id: string; label: string }>;
-          matchedHandle = matchOption(buttons.map((b) => b.label || ''), 'btn_');
+          matchedHandle = matchOption(buttons.map((b) => b.label || ''), 'btn_', buttons.map((b) => b.id || ''));
           if (matchedHandle) console.log(`[WEBHOOK] Matched button handle: ${matchedHandle}`);
         } else {
           // List: match rows

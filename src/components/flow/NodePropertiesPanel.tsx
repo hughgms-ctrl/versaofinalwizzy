@@ -1355,6 +1355,27 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
               />
             </div>
             <div className="space-y-2">
+              <Label htmlFor="buttonsTitle">Título (opcional)</Label>
+              <Input
+                id="buttonsTitle"
+                value={(localData.title as string) || ''}
+                onChange={(e) => handleChange('title', e.target.value)}
+                placeholder="Primeira linha do texto"
+              />
+              <p className="text-xs text-muted-foreground">
+                Aparece em negrito acima da mensagem. Se ficar vazio, a primeira linha do texto é usada.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="buttonsFooter">Rodapé (opcional)</Label>
+              <Input
+                id="buttonsFooter"
+                value={(localData.footer as string) || ''}
+                onChange={(e) => handleChange('footer', e.target.value)}
+                placeholder="Texto pequeno abaixo dos botões"
+              />
+            </div>
+            <div className="space-y-2">
               <Label>Botões (máximo 3)</Label>
               {[0, 1, 2].map((index) => {
                 const buttons = (localData.buttons as Array<{ id: string; label: string }>) || [];

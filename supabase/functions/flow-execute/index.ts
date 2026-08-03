@@ -2,6 +2,12 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { resolveWorkspaceInstanceBinding, sendWhatsAppMessage } from '../_shared/whatsappProvider.ts';
 import { resolveCaller, assertCallerCanAccessOrg, AccessError, type CallerAuth } from '../_shared/access.ts';
 import { moveConversationToPipeline } from '../_shared/pipelineMove.ts';
+import {
+  MAX_EVOLUTION_REPLY_BUTTONS,
+  evolutionButtonsAccepted,
+  evolutionTargetFrom,
+  sendEvolutionReplyButtons,
+} from '../_shared/evolutionButtons.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -1595,47 +1601,82 @@ async function sendButtonsMessage(data: Record<string, unknown>, context: Execut
   try {
     const content = replaceVariables(String(data.text || data.content || ''), context.variables);
     const buttons = data.buttons as Array<{ id: string; label: string }> || [];
+    const title = replaceVariables(String(data.title || ''), context.variables).trim();
+    const footer = replaceVariables(String(data.footer || ''), context.variables).trim();
 
     if (!content || buttons.length === 0) {
       return { success: true };
     }
 
     const normalizedPhone = context.contactPhone.replace(/\D/g, '');
-    
+
+    // Só a Evolution tem campo próprio de título/rodapé; nos outros caminhos eles
+    // entram no corpo do texto para não sumirem.
+    const composedContent = [title ? `*${title}*` : '', content, footer].filter(Boolean).join('\n\n');
+
     // Build fallback text (always included in body for devices that don't render buttons)
     const buttonsText = buttons.map((b, i) => `${i + 1}. ${b.label}`).join('\n');
-    const fallbackMessage = `${content}\n\n${buttonsText}`;
-
-    if (context.provider === 'evolution') {
-      await sendTextMessage(fallbackMessage, context, createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!), nodeId);
-      return { success: true, waitForInput: true };
-    }
-
-    if (!context.uazapiBaseUrl) {
-      return { success: false, error: 'UAZAPI not configured for native buttons' };
-    }
+    const fallbackMessage = `${composedContent}\n\n${buttonsText}`;
 
     let response: Response;
     let sentNativeButtons = false;
-    let displayMessage = fallbackMessage;
 
-    // Try native Z-API buttons first (up to 3 buttons supported)
-    if (buttons.length <= 3) {
+    if (context.provider === 'evolution') {
+      // Botão nativo via /message/sendButtons. A Evolution monta o corpo como
+      // "*título*\n\ndescrição", então a primeira linha do texto do nó vira o
+      // título quando não há um título próprio configurado.
+      const target = evolutionTargetFrom(context.evolutionBaseUrl, context.evolutionApiKey, context.evolutionInstanceName);
+
+      if (target && buttons.length <= MAX_EVOLUTION_REPLY_BUTTONS) {
+        try {
+          const nativeResponse = await sendEvolutionReplyButtons(target, {
+            phone: normalizedPhone,
+            text: content,
+            title,
+            footer,
+            buttons,
+          });
+
+          const accepted = await evolutionButtonsAccepted(nativeResponse);
+          if (accepted.ok) {
+            response = nativeResponse;
+            sentNativeButtons = true;
+            console.log('[FLOW EXECUTE] Native Evolution buttons sent successfully');
+          } else {
+            console.log(`[FLOW EXECUTE] Native Evolution buttons failed (${accepted.detail}), falling back to text`);
+          }
+        } catch (nativeErr) {
+          console.log(`[FLOW EXECUTE] Native Evolution buttons exception: ${nativeErr}, falling back to text`);
+        }
+      } else if (!target) {
+        return { success: false, error: 'Evolution API not configured for native buttons' };
+      } else {
+        console.log(`[FLOW EXECUTE] ${buttons.length} buttons > ${MAX_EVOLUTION_REPLY_BUTTONS}, using text fallback`);
+      }
+
+      if (!sentNativeButtons) {
+        // Fallback: a lista numerada no corpo do texto, que o casamento da
+        // resposta no webhook também aceita.
+        await sendTextMessage(fallbackMessage, context, createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!), nodeId);
+        return { success: true, waitForInput: true };
+      }
+    } else if (!context.uazapiBaseUrl) {
+      return { success: false, error: 'UAZAPI not configured for native buttons' };
+    } else if (buttons.length <= 3) {
+      // Try native UAZAPI buttons first (WhatsApp renders at most 3 reply buttons)
       try {
+        // /send/menu é o endpoint unificado (button/list/poll). Cada opção vai como
+        // "rótulo|id" — o pipe é o separador, então some com ele no rótulo.
         const nativeBody = {
           number: normalizedPhone,
-          title: '',
-          message: content,
-          footer: '',
-          buttons: buttons.map((b, i) => ({
-            id: `btn_${i}`,
-            label: b.label,
-          })),
+          type: 'button',
+          text: composedContent,
+          choices: buttons.map((b, i) => `${String(b.label || '').replace(/\|/g, '/')}|btn_${i}`),
         };
 
-        console.log(`[FLOW EXECUTE] Trying native buttons via /send/buttons: ${JSON.stringify(nativeBody)}`);
-        
-        const nativeResponse = await fetch(`${context.uazapiBaseUrl}/send/buttons`, {
+        console.log(`[FLOW EXECUTE] Trying native buttons via /send/menu: ${JSON.stringify(nativeBody)}`);
+
+        const nativeResponse = await fetch(`${context.uazapiBaseUrl}/send/menu`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -1650,7 +1691,6 @@ async function sendButtonsMessage(data: Record<string, unknown>, context: Execut
           if (!nativeResult?.error) {
             response = nativeResponse;
             sentNativeButtons = true;
-            displayMessage = content; // Native buttons show the content separately
             console.log(`[FLOW EXECUTE] Native buttons sent successfully`);
           } else {
             console.log(`[FLOW EXECUTE] Native buttons API returned error: ${JSON.stringify(nativeResult)}, falling back to text`);
@@ -1707,7 +1747,7 @@ async function sendButtonsMessage(data: Record<string, unknown>, context: Execut
 
       await supabase.from('messages').insert({
         conversation_id: context.conversationId,
-        content: sentNativeButtons ? content : fallbackMessage,
+        content: sentNativeButtons ? composedContent : fallbackMessage,
         type: 'text',
         direction: 'outbound',
         is_from_bot: !!context.isFromOrchestrator,
@@ -1740,6 +1780,8 @@ async function sendListMessage(data: Record<string, unknown>, context: Execution
     const content = replaceVariables(String(data.content || ''), context.variables);
 
     // Lists are sent as formatted text for both providers.
+    // (Na Evolution, /message/sendList continua estourando 400
+    // "this.isZero is not a function" — só os botões têm caminho nativo.)
     const sections = data.sections as Array<{ title: string; rows: Array<{ title: string; description?: string }> }> || [];
 
     let listText = content;
