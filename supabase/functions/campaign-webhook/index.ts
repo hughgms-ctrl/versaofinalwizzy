@@ -278,15 +278,30 @@ Deno.serve(async (req) => {
             const variables: AnyObj = { ...item, phone, campaign_id: campaign.id, campaign_name: campaign.name };
 
             if (window.within) {
-                // Dentro da janela -> dispara o fluxo agora (em background) e conta o gatilho.
-                await supabase.rpc('increment_campaign_count', { campaign_id: campaign.id });
-
-                const flowPromise = fetch(`${supabaseUrl}/functions/v1/flow-execute`, {
+                // Dentro da janela -> dispara o fluxo agora.
+                // O flow-execute responde assim que enfileira a execução em background
+                // (EdgeRuntime.waitUntil), então o await aqui é barato. Disparar sem
+                // aguardar mata a requisição junto com o isolate quando esta função
+                // retorna, e o fluxo nunca chega a rodar.
+                const flowResp = await fetch(`${supabaseUrl}/functions/v1/flow-execute`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseKey}` },
-                    body: JSON.stringify({ flowId: campaign.flow_id, conversationId, variables }),
+                    body: JSON.stringify({ flowId: campaign.flow_id, conversationId, isFromOrchestrator: true, variables }),
+                }).catch((err) => {
+                    console.error('[campaign-webhook] flow-execute error:', err);
+                    return null;
                 });
-                flowPromise.catch((err) => console.error('[campaign-webhook] flow-execute error:', err));
+
+                if (!flowResp || !flowResp.ok) {
+                    const detail = flowResp ? await flowResp.text().catch(() => '') : 'fetch falhou';
+                    console.error('[campaign-webhook] flow-execute rejeitou o disparo:', detail);
+                    skipped++;
+                    results.push({ phone, conversation_id: conversationId, status: 'error_flow', error: detail });
+                    continue;
+                }
+
+                // Só conta o gatilho depois que o fluxo foi aceito.
+                await supabase.rpc('increment_campaign_count', { campaign_id: campaign.id });
 
                 processed++;
                 results.push({ phone, conversation_id: conversationId, status: 'triggered' });

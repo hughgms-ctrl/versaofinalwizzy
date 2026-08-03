@@ -86,6 +86,7 @@ Deno.serve(async (req) => {
         }
 
         let processed = 0;
+        let failed = 0;
 
         for (const campaign of campaigns) {
             const campaignInstance = await resolveCampaignInstance(supabase, organizationId, campaign.workspace_id);
@@ -124,35 +125,46 @@ Deno.serve(async (req) => {
 
             if (!conversation) continue;
 
-            // Increment campaign trigger count
-            await supabase.rpc('increment_campaign_count', { campaign_id: campaign.id });
-
             // Since tag added is mostly internal, we can just trigger the flow directly
-            // No strict business hours check for internal tags unless requested, 
+            // No strict business hours check for internal tags unless requested,
             // but let's just trigger it directly via flow-execute
-            
+
             console.log(`Triggering campaign ${campaign.id} (Flow ${campaign.flow_id}) for conversation ${conversation.id}`);
 
-            const flowExecPromise = fetch(`${supabaseUrl}/functions/v1/flow-execute`, {
+            // O flow-execute responde assim que enfileira a execução em background,
+            // então aguardar aqui é barato. Disparar sem aguardar mata a requisição
+            // junto com o isolate quando esta função retorna, e o fluxo nunca roda.
+            const flowResp = await fetch(`${supabaseUrl}/functions/v1/flow-execute`, {
                 method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json', 
-                    'Authorization': `Bearer ${supabaseKey}` 
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${supabaseKey}`
                 },
                 body: JSON.stringify({
                     flowId: campaign.flow_id,
                     conversationId: conversation.id,
                     organizationId: organizationId,
+                    isFromOrchestrator: true,
                     variables: { campaign_id: campaign.id, campaign_name: campaign.name },
                 }),
+            }).catch(err => {
+                console.error('Flow exec error:', err);
+                return null;
             });
 
-            // Run in background without waiting for completion to not block the trigger
-            flowExecPromise.catch(err => console.error('Flow exec error:', err));
+            if (!flowResp || !flowResp.ok) {
+                const detail = flowResp ? await flowResp.text().catch(() => '') : 'fetch falhou';
+                console.error(`Flow exec rejeitado para campanha ${campaign.id}:`, detail);
+                failed++;
+                continue;
+            }
+
+            // Só conta o gatilho depois que o fluxo foi aceito.
+            await supabase.rpc('increment_campaign_count', { campaign_id: campaign.id });
             processed++;
         }
 
-        return new Response(JSON.stringify({ processed, success: true }), {
+        return new Response(JSON.stringify({ processed, failed, success: true }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
     } catch (error) {
