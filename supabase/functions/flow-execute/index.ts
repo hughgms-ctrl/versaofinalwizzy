@@ -236,62 +236,71 @@ Deno.serve(async (req) => {
       }
     }
 
+    // PRÉ-VOO (síncrono, antes de responder). Estas quatro checagens rodavam
+    // dentro do promise de background: quando falhavam, a função já tinha
+    // respondido 200 e o fluxo simplesmente não acontecia, sem registro em
+    // flow_executions e sem nada visível para quem chamou. Agora o chamador
+    // (campaign-webhook, process-campaign-queue, zapi-webhook) recebe o motivo.
+    const fail = (reason: string, detail: string, status = 422) => {
+      console.error(`[FLOW EXECUTE] ${detail}`);
+      return new Response(JSON.stringify({ error: detail, reason }), {
+        status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    };
+
+    // 1. Get the flow
+    const { data: flow, error: flowError } = await supabase
+      .from('flows')
+      .select('*')
+      .eq('id', flowId)
+      .single();
+
+    if (flowError || !flow) {
+      return fail('flow_not_found', `Flow ${flowId} not found: ${flowError?.message || 'sem registro'}`, 404);
+    }
+
+    // 2. Get conversation and contact
+    const { data: conversation, error: convError } = await supabase
+      .from('conversations')
+      .select('*, contacts(*)')
+      .eq('id', conversationId)
+      .single();
+
+    if (convError || !conversation) {
+      return fail('conversation_not_found', `Conversation ${conversationId} not found`, 404);
+    }
+
+    // Regra de negócio: conversa dentro de um workspace só envia pelo número
+    // do workspace. Se o workspace não tem número associado, abortamos — sem
+    // fallback por organização.
+    const workspaceBinding = await resolveWorkspaceInstanceBinding(
+      supabase,
+      flow.organization_id,
+      conversation.workspace_id,
+    );
+    if (workspaceBinding.blocked) {
+      return fail(
+        'workspace_without_number',
+        `Workspace ${conversation.workspace_id} sem número associado; abortando envio.`,
+      );
+    }
+
+    // 3. Get WhatsApp instance according to the admin provider strategy.
+    const { instance, error: instanceError } = await resolveWhatsAppInstance(
+      supabase,
+      flow.organization_id,
+      workspaceBinding.workspaceInstanceId || conversation.whatsapp_instance_id,
+    );
+
+    if (instanceError || !instance) {
+      return fail('no_connected_instance', `No connected instance for org ${flow.organization_id}`);
+    }
+    const connectionSettings = await loadConnectionSettings(supabase);
+    const provider = instance.provider === 'evolution' ? 'evolution' : 'uazapi';
+
     // Start background execution
     const executionPromise = (async () => {
       try {
-        // 1. Get the flow
-        const { data: flow, error: flowError } = await supabase
-          .from('flows')
-          .select('*')
-          .eq('id', flowId)
-          .single();
-
-        if (flowError || !flow) {
-          console.error(`[FLOW EXECUTE] Flow ${flowId} not found:`, flowError);
-          return;
-        }
-
-        // 2. Get conversation and contact
-        const { data: conversation, error: convError } = await supabase
-          .from('conversations')
-          .select('*, contacts(*)')
-          .eq('id', conversationId)
-          .single();
-
-        if (convError || !conversation) {
-          console.error(`[FLOW EXECUTE] Conversation ${conversationId} not found`);
-          return;
-        }
-
-        // Regra de negócio: conversa dentro de um workspace só envia pelo número
-        // do workspace. Se o workspace não tem número associado, abortamos — sem
-        // fallback por organização.
-        const workspaceBinding = await resolveWorkspaceInstanceBinding(
-          supabase,
-          flow.organization_id,
-          conversation.workspace_id,
-        );
-        if (workspaceBinding.blocked) {
-          console.error(
-            `[FLOW EXECUTE] Workspace ${conversation.workspace_id} sem número associado; abortando envio.`,
-          );
-          return;
-        }
-
-        // 3. Get WhatsApp instance according to the admin provider strategy.
-        const { instance, error: instanceError } = await resolveWhatsAppInstance(
-          supabase,
-          flow.organization_id,
-          workspaceBinding.workspaceInstanceId || conversation.whatsapp_instance_id,
-        );
-
-        if (instanceError || !instance) {
-          console.error(`[FLOW EXECUTE] No connected instance for org ${flow.organization_id}`);
-          return;
-        }
-        const connectionSettings = await loadConnectionSettings(supabase);
-        const provider = instance.provider === 'evolution' ? 'evolution' : 'uazapi';
-
         // 4. Create flow execution record
         const { data: execution, error: execError } = await supabase
           .from('flow_executions')

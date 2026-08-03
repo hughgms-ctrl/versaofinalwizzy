@@ -336,7 +336,7 @@ Deno.serve(async (req) => {
             contacts_processed: processed + queued,
         });
 
-        return new Response(JSON.stringify({ success: true, version: 'diag-v3', processed, queued, skipped, results }), {
+        return new Response(JSON.stringify({ success: true, version: 'diag-v4', processed, queued, skipped, results }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
     } catch (error) {
