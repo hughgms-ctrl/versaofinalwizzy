@@ -18,6 +18,8 @@ async function loadConnectionSettings(supabase: any) {
   const value = row?.value || {};
   return {
     uazapiBaseUrl: normalizeBaseUrl(value.uazapi_base_url || Deno.env.get('UAZAPI_BASE_URL')),
+    evolutionBaseUrl: normalizeBaseUrl(value.evolution_base_url || Deno.env.get('EVOLUTION_BASE_URL')),
+    evolutionApiKey: value.evolution_api_key || Deno.env.get('EVOLUTION_API_KEY') || '',
   };
 }
 
@@ -76,6 +78,86 @@ async function ensureUazapiLabel(baseUrl: string, token: string, tagName: string
   return null;
 }
 
+// ── Evolution: aplica/remove etiqueta via POST /label/handleLabel ──
+// A Evolution não expõe criação de etiqueta; se a tag não tiver etiqueta
+// correspondente no WhatsApp, respondemos skipped com orientação (a etiqueta
+// precisa ser criada no app WhatsApp Business — o webhook LABELS_EDIT mapeia).
+async function applyEvolutionLabel(
+  supabase: any,
+  settings: any,
+  instance: any,
+  contact: any,
+  tag: any,
+  action: 'add' | 'remove',
+): Promise<Record<string, unknown>> {
+  const apiKey = instance.evolution_api_key || settings.evolutionApiKey || instance.zapi_token;
+  const evoName = instance.evolution_instance_name || instance.zapi_instance_id;
+  if (!settings.evolutionBaseUrl || !apiKey || !evoName) {
+    return { success: false, provider: 'evolution', error: 'Evolution API not configured' };
+  }
+
+  // 1) mapeamento já conhecido (mantido pelo webhook/reconciliação)
+  let labelId: string | null = null;
+  const { data: mapping } = await supabase
+    .from('whatsapp_labels')
+    .select('label_id')
+    .eq('whatsapp_instance_id', instance.id)
+    .eq('tag_id', tag.id)
+    .is('deleted_at', null)
+    .maybeSingle();
+  if (mapping?.label_id) labelId = mapping.label_id;
+
+  // 2) fallback: busca o catálogo por nome e registra o mapeamento
+  if (!labelId) {
+    const response = await fetch(`${settings.evolutionBaseUrl}/label/findLabels/${evoName}`, {
+      headers: { apikey: apiKey },
+    }).catch(() => null);
+    if (response?.ok) {
+      const body = await response.json().catch(() => null);
+      const labels = Array.isArray(body) ? body : (Array.isArray(body?.labels) ? body.labels : []);
+      const normalizedName = tag.name.trim().toLowerCase();
+      const found = labels.find((item: any) =>
+        String(item?.name || '').trim().toLowerCase() === normalizedName);
+      if (found) {
+        labelId = String(found.labelId ?? found.id ?? '').trim() || null;
+        if (labelId) {
+          await supabase.from('whatsapp_labels').upsert({
+            organization_id: instance.organization_id,
+            whatsapp_instance_id: instance.id,
+            label_id: labelId,
+            name: String(found.name).trim(),
+            color: found.color === null || found.color === undefined ? null : String(found.color),
+            tag_id: tag.id,
+            deleted_at: null,
+            updated_at: new Date().toISOString(),
+          }, { onConflict: 'whatsapp_instance_id,label_id' });
+        }
+      }
+    }
+  }
+
+  if (!labelId) {
+    return {
+      success: true,
+      skipped: true,
+      provider: 'evolution',
+      message: `Etiqueta "${tag.name}" nao existe no WhatsApp. Crie a etiqueta no app WhatsApp Business que ela sera vinculada automaticamente.`,
+    };
+  }
+
+  const number = String(contact.phone || '').replace(/\D/g, '');
+  const response = await fetch(`${settings.evolutionBaseUrl}/label/handleLabel/${evoName}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', apikey: apiKey },
+    body: JSON.stringify({ number, labelId, action }),
+  });
+  const raw = await response.text();
+  if (!response.ok) {
+    return { success: false, provider: 'evolution', error: `handleLabel failed: ${response.status}`, details: raw.slice(0, 500) };
+  }
+  return { success: true, provider: 'evolution', labelId, action };
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
@@ -100,8 +182,9 @@ Deno.serve(async (req) => {
     const { data: userData, error: authError } = await userClient.auth.getUser();
     if (authError || !userData?.user) return respond(401, { error: 'Unauthorized' });
 
-    const { contactId, tagId } = await req.json();
+    const { contactId, tagId, action: rawAction } = await req.json();
     if (!contactId || !tagId) return respond(400, { error: 'contactId and tagId are required' });
+    const action = rawAction === 'remove' ? 'remove' : 'add';
 
     const { data: profile } = await supabase
       .from('profiles')
@@ -156,17 +239,19 @@ Deno.serve(async (req) => {
 
     if (!instance) return respond(200, { success: false, error: 'No connected instance' });
     const provider = instance.provider === 'evolution' ? 'evolution' : 'uazapi';
-    if (provider !== 'uazapi') {
-      return respond(200, {
-        success: true,
-        skipped: true,
-        provider,
-        message: 'Etiquetas do WhatsApp ainda nao implementadas para Evolution; evitando chamada UAZAPI indevida.',
-      });
-    }
-    if (!instance.zapi_token) return respond(200, { success: false, error: 'No connected instance' });
-
     const settings = await loadConnectionSettings(supabase);
+
+    if (provider === 'evolution') {
+      return respond(200, await applyEvolutionLabel(supabase, settings, instance, contact, tag, action));
+    }
+
+    if (action === 'remove') {
+      // UAZAPI: remoção de etiqueta não implementada (o /chat/labels atual só
+      // aplica); a reconciliação/webhook não cobre uazapi, então só pulamos.
+      return respond(200, { success: true, skipped: true, provider, message: 'Remocao de etiqueta nao implementada para UAZAPI.' });
+    }
+
+    if (!instance.zapi_token) return respond(200, { success: false, error: 'No connected instance' });
     if (!settings.uazapiBaseUrl) return respond(200, { success: false, error: 'UAZAPI_BASE_URL not configured' });
 
     const labelId = await ensureUazapiLabel(settings.uazapiBaseUrl, instance.zapi_token, tag.name, tag.color);

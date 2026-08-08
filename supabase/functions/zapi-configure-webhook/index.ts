@@ -100,7 +100,7 @@ async function configureEvolutionWebhook(
     webhookBase64: true,
     byEvents: false,
     base64: true,
-    events: ['QRCODE_UPDATED', 'CONNECTION_UPDATE', 'MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'SEND_MESSAGE', 'PRESENCE_UPDATE'],
+    events: ['QRCODE_UPDATED', 'CONNECTION_UPDATE', 'MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'SEND_MESSAGE', 'PRESENCE_UPDATE', 'LABELS_EDIT', 'LABELS_ASSOCIATION'],
   };
 
   const attempts = [
