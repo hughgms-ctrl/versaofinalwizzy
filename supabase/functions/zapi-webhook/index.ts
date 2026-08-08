@@ -3709,6 +3709,21 @@ async function handleLabelAssociation(supabase: any, instance: any, data: any) {
   // Etiquetas em grupos n\u00e3o t\u00eam contato correspondente no Wizzy.
   if (isGroupChat(chatId)) return respond({ success: true, ignored: true, reason: 'group_chat' });
 
+  // chatId @lid n\u00e3o cont\u00e9m o telefone (endere\u00e7amento an\u00f4nimo \u2014 a maioria dos
+  // chats hoje). Quem sabe traduzir lid\u2192telefone \u00e9 a tabela IsOnWhatsapp no
+  // Postgres da Evolution, que a sync-whatsapp-labels acessa. Delegamos a ela
+  // em background, escopada \u00e0 inst\u00e2ncia \u2014 corrige em segundos, n\u00e3o no cron.
+  if (chatId.includes('@lid')) {
+    const baseUrl = Deno.env.get('SUPABASE_URL')!;
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    runBackground(fetch(`${baseUrl}/functions/v1/sync-whatsapp-labels`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
+      body: JSON.stringify({ instanceId: instance.id }),
+    }));
+    return respond({ success: true, deferred: true, reason: 'lid_chat_delegated_to_reconciliation' });
+  }
+
   let { data: mapping } = await supabase
     .from('whatsapp_labels')
     .select('id, tag_id')

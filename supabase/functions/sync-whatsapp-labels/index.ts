@@ -242,9 +242,31 @@ async function fetchChatLabelsFromEvolutionDb(pg: PgClient, evoInstanceName: str
   const map = new Map<string, string[]>();
   for (const row of result.rows) {
     const jid = String(row.jid || '');
-    if (!jid || jid.includes('@g.us') || jid.includes('@broadcast')) continue;
+    if (!jid || jid.includes('@g.us') || jid.includes('@broadcast') || jid.includes('@newsletter')) continue;
     const labelIds = parseChatLabels(row.labels);
     if (labelIds.length) map.set(jid, labelIds);
+  }
+  return map;
+}
+
+// A maioria dos chats da Evolution usa remoteJid @lid (endereçamento anônimo,
+// sem telefone — confirmado no banco vivo: ~85% dos chats). A tabela
+// IsOnWhatsapp (global, sem instanceId) guarda o par lid ↔ jid de telefone.
+// Precisa de GRANT SELECT pro usuário read-only; sem o grant, seguimos sem
+// resolução de lid (chats @lid ficam de fora e são logados).
+async function loadLidMap(pg: PgClient): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  try {
+    const result = await pg.queryObject<{ remoteJid: string; lid: string }>(
+      `SELECT "remoteJid", lid FROM "IsOnWhatsapp" WHERE lid IS NOT NULL`,
+    );
+    for (const row of result.rows) {
+      const lidDigits = String(row.lid || '').split('@')[0].replace(/\D/g, '');
+      const phoneJid = String(row.remoteJid || '');
+      if (lidDigits && phoneJid) map.set(lidDigits, phoneJid);
+    }
+  } catch (error) {
+    console.warn('[SYNC_LABELS] IsOnWhatsapp unavailable (missing GRANT?); @lid chats will be skipped:', String(error).slice(0, 120));
   }
   return map;
 }
@@ -277,6 +299,7 @@ async function reconcileOrgAssociations(
   pg: PgClient,
   organizationId: string,
   instances: any[],
+  lidMap: Map<string, string>,
 ) {
   // labelId→tagId por instância (etiquetas vivas e mapeadas)
   const instanceMappings = new Map<string, Map<string, string>>();
@@ -304,6 +327,7 @@ async function reconcileOrgAssociations(
   // quando só um deles tem a etiqueta).
   const desired = new Map<string, Set<string>>();
   let chatCount = 0;
+  let unresolvedLids = 0;
   for (const instance of instances) {
     const evoName = instance.evolution_instance_name || instance.zapi_instance_id;
     const byLabel = instanceMappings.get(instance.id);
@@ -311,8 +335,18 @@ async function reconcileOrgAssociations(
     const chatLabels = await fetchChatLabelsFromEvolutionDb(pg, evoName);
     chatCount += chatLabels.size;
     for (const [jid, labelIds] of chatLabels) {
+      // @lid não contém o telefone — resolve via IsOnWhatsapp (lid → jid real)
+      let lookupJid = jid;
+      if (jid.includes('@lid')) {
+        const mapped = lidMap.get(jid.split('@')[0].replace(/\D/g, ''));
+        if (!mapped) {
+          unresolvedLids++;
+          continue;
+        }
+        lookupJid = mapped;
+      }
       let contactId: string | undefined;
-      for (const variant of phoneKeyVariants(jid)) {
+      for (const variant of phoneKeyVariants(lookupJid)) {
         contactId = contactIndex.get(variant);
         if (contactId) break;
       }
@@ -377,7 +411,7 @@ async function reconcileOrgAssociations(
     else removed += batch.length;
   }
 
-  return { inserted, removed, chats: chatCount };
+  return { inserted, removed, chats: chatCount, unresolvedLids };
 }
 
 Deno.serve(async (req) => {
@@ -440,9 +474,24 @@ Deno.serve(async (req) => {
     if (bodyData.instanceId) instanceQuery = instanceQuery.eq('id', bodyData.instanceId);
 
     const { data: instances } = await instanceQuery;
-    const targets = (instances || []).filter((instance: any) =>
+    let targets = (instances || []).filter((instance: any) =>
       instance.evolution_instance_name || instance.zapi_instance_id);
     if (!targets.length) return respond({ success: true, message: 'no_evolution_instances' });
+
+    // Reconciliação é por org (união das instâncias irmãs): sincronizar só uma
+    // instância poderia remover associação legítima vinda de outro número da
+    // mesma org. Com filtro por instanceId, expandimos para as irmãs.
+    if (bodyData.instanceId) {
+      const orgIds = Array.from(new Set(targets.map((instance: any) => instance.organization_id)));
+      const { data: siblings } = await supabase
+        .from('whatsapp_instances')
+        .select('id, organization_id, provider, evolution_instance_name, evolution_api_key, zapi_instance_id, zapi_token, status')
+        .eq('provider', 'evolution')
+        .in('organization_id', orgIds);
+      const expanded = (siblings || []).filter((instance: any) =>
+        instance.evolution_instance_name || instance.zapi_instance_id);
+      if (expanded.length) targets = expanded;
+    }
 
     // ── 1) Catálogo por instância ──
     const catalogResults = [];
@@ -457,6 +506,7 @@ Deno.serve(async (req) => {
       const pg = new PgClient(evolutionDbUrl);
       try {
         await pg.connect();
+        const lidMap = await loadLidMap(pg);
         const byOrg = new Map<string, any[]>();
         for (const instance of targets) {
           const list = byOrg.get(instance.organization_id) || [];
@@ -465,7 +515,7 @@ Deno.serve(async (req) => {
         }
         for (const [orgId, orgInstances] of byOrg) {
           try {
-            associationResults[orgId] = await reconcileOrgAssociations(supabase, pg, orgId, orgInstances);
+            associationResults[orgId] = await reconcileOrgAssociations(supabase, pg, orgId, orgInstances, lidMap);
           } catch (orgError) {
             console.error(`[SYNC_LABELS] org ${orgId} reconcile failed:`, orgError);
             associationResults[orgId] = { error: String(orgError) };
