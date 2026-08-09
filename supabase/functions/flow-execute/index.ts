@@ -355,6 +355,31 @@ Deno.serve(async (req) => {
     if (contactName) contactSeed.name = contactName;
     if (contactPhone) contactSeed.phone = contactPhone;
 
+    // Campos customizados do contato (metadata.custom_fields), gravados pela
+    // importação por planilha. É o que permite mandar uma mensagem diferente
+    // para cada contato: a coluna da planilha vira {{minha_coluna}} no fluxo.
+    // Semeados ANTES do merge de initialVariables, então uma variável de mesmo
+    // nome vinda da campanha continua tendo prioridade.
+    // metadata é jsonb: quase sempre chega como objeto, mas se algum caminho
+    // gravou uma string JSON o acesso direto devolveria undefined e os campos
+    // sumiriam sem erro nenhum. Faz o parse defensivo antes de ler.
+    let contactMetadata = conversation.contacts?.metadata;
+    if (typeof contactMetadata === 'string') {
+      try {
+        contactMetadata = JSON.parse(contactMetadata);
+      } catch {
+        contactMetadata = null;
+      }
+    }
+
+    const customFields = contactMetadata?.custom_fields;
+    if (customFields && typeof customFields === 'object' && !Array.isArray(customFields)) {
+      for (const [key, value] of Object.entries(customFields)) {
+        if (value === undefined || value === null || value === '') continue;
+        contactSeed[key] = value;
+      }
+    }
+
     const seededVariables: Record<string, unknown> = { ...contactSeed };
     if (initialVariables && typeof initialVariables === 'object') {
       // Só sobrescreve o seed com valor de verdade: process-scheduled-messages e

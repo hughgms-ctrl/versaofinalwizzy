@@ -35,6 +35,7 @@ import { QualificationRulesPanel } from '@/components/agents/QualificationRulesP
 import { QuickEditAgentDialog } from '@/components/agents/QuickEditAgentDialog';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { getAvailableVariables, FlowVariableGroup } from '@/lib/flowVariables';
+import { useContactCustomFields } from '@/hooks/useContactCustomFields';
 import { VariableTextarea } from './VariableInserter';
 
 // Generate simple unique ID
@@ -581,6 +582,7 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
   const [expandedFlowFolders, setExpandedFlowFolders] = useState<Set<string>>(new Set());
   const [quickEditAgentOpen, setQuickEditAgentOpen] = useState(false);
   const { data: allTags = [] } = useAllTags();
+  const { data: contactCustomFields = [] } = useContactCustomFields();
   const { data: agents = [] } = useAIAgents();
   const { data: allFlows = [] } = useFlows();
   const { data: flowFolders = [] } = useFlowFolders();
@@ -618,8 +620,8 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
 
   // Variáveis disponíveis para usar com {{...}} neste nó (calculadas pelos nós anteriores).
   const availableVariables = useMemo<FlowVariableGroup[]>(
-    () => getAvailableVariables(nodes || [], edges || [], node?.id || ''),
-    [nodes, edges, node?.id],
+    () => getAvailableVariables(nodes || [], edges || [], node?.id || '', contactCustomFields),
+    [nodes, edges, node?.id, contactCustomFields],
   );
 
   if (!node) return null;

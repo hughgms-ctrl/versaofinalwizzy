@@ -99,6 +99,7 @@ export function useUpdateContact() {
 export function useCreateContact() {
   const queryClient = useQueryClient();
   const { profile } = useAuth();
+  const { selectedWorkspaceId } = useWorkspaceContext();
 
   return useMutation({
     mutationFn: async (data: Partial<Contact>) => {
@@ -128,12 +129,24 @@ export function useCreateContact() {
         }
       }
 
+      // Herda o workspace selecionado quando o chamador não informou um. Sem
+      // isto o contato nasce com workspace_id null e some da própria lista que
+      // acabou de criá-lo (a lista filtra por workspace), além de esbarrar na
+      // policy de contacts, que exige workspace_id não nulo.
+      const workspaceId =
+        data.workspace_id !== undefined
+          ? data.workspace_id
+          : selectedWorkspaceId && selectedWorkspaceId !== 'unassigned'
+            ? selectedWorkspaceId
+            : null;
+
       const { data: newContact, error } = await supabase
         .from('contacts')
         .insert({
           ...data,
           phone: formattedPhone || data.phone, // use formatted if available
           organization_id: profile.organization_id,
+          workspace_id: workspaceId,
         } as any)
         .select()
         .single();

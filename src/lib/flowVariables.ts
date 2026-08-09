@@ -84,6 +84,12 @@ export function getAvailableVariables(
   nodes: Node[],
   edges: Edge[],
   targetNodeId: string,
+  /**
+   * Campos customizados de contato cadastrados na organização
+   * (contact_custom_fields). Ficam disponíveis como {{key}} porque o
+   * flow-execute os semeia a partir de contacts.metadata.custom_fields.
+   */
+  contactCustomFields: Array<{ key: string; label: string }> = [],
 ): FlowVariableGroup[] {
   const upstreamIds = getUpstreamNodeIds(targetNodeId, edges);
   const upstreamNodes = nodes.filter((n) => upstreamIds.has(n.id));
@@ -120,6 +126,19 @@ export function getAvailableVariables(
       { name: 'campaign_id', description: 'ID único da campanha que disparou o fluxo' },
     ],
   });
+
+  // 2b. Campos personalizados do contato (criados na importação por planilha).
+  // Preenchidos por contato, então cada um recebe o próprio valor.
+  if (contactCustomFields.length > 0) {
+    groups.push({
+      label: 'Campos do contato',
+      hint: 'Campos personalizados preenchidos em cada contato (ex: pela importação de planilha).',
+      variables: contactCustomFields.map((field) => ({
+        name: field.key,
+        description: field.label,
+      })),
+    });
+  }
 
   // 3. Variáveis de sistema, disponíveis só quando há um nó anterior que as gera.
   const hasChoiceUpstream = upstreamNodes.some(

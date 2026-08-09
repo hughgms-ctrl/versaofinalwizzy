@@ -13,6 +13,7 @@ import {
   Users,
   Smartphone,
   Settings,
+  Upload,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -29,6 +30,7 @@ import { ContactFilters, ContactFiltersState, FilterCondition, defaultContactFil
 import { ContactListItem } from '@/components/contacts/ContactListItem';
 import { ContactBulkActionsBar } from '@/components/contacts/ContactBulkActionsBar';
 import { NewContactDialog } from '@/components/contacts/NewContactDialog';
+import { ImportContactsDialog } from '@/components/contacts/ImportContactsDialog';
 import { Checkbox } from '@/components/ui/checkbox';
 
 function matchesCondition(contact: Contact, condition: FilterCondition, joins?: ContactFilterJoins): boolean {
@@ -82,6 +84,7 @@ const ContactsPage = () => {
   const [filters, setFilters] = useState<ContactFiltersState>(defaultContactFilters);
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [showNewContactDialog, setShowNewContactDialog] = useState(false);
+  const [showImportDialog, setShowImportDialog] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   // Filter contacts
@@ -235,6 +238,16 @@ const ContactsPage = () => {
           onFiltersChange={setFilters}
           filteredCount={filteredContacts.length}
         />
+
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8"
+          onClick={() => setShowImportDialog(true)}
+        >
+          <Upload className="mr-2 h-3.5 w-3.5" />
+          Importar
+        </Button>
       </div>
 
       {/* Bulk actions bar */}
@@ -366,6 +379,12 @@ const ContactsPage = () => {
       <NewContactDialog
         open={showNewContactDialog}
         onOpenChange={setShowNewContactDialog}
+      />
+
+      {/* Import Contacts Dialog */}
+      <ImportContactsDialog
+        open={showImportDialog}
+        onOpenChange={setShowImportDialog}
       />
     </MainLayout>
   );
