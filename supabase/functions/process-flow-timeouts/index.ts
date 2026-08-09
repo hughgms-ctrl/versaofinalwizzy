@@ -135,12 +135,54 @@ async function loadConnectionSettings(supabase: any) {
   };
 }
 
-function replaceVars(text: string, variables: Record<string, any> | null | undefined): string {
-  let out = text || '';
-  for (const [key, val] of Object.entries(variables || {})) {
-    out = out.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), String(val));
+// Espelha replaceVariables de flow-execute. Antes esta versão só trocava as
+// chaves que existiam em variables e deixava o resto literal, então o follow-up
+// mandava "Olá {{name}}" para o cliente mesmo depois do motor já estar corrigido.
+const VARIABLE_ALIASES: Record<string, string[]> = {
+  name: ['nome'],
+  nome: ['name'],
+  phone: ['telefone'],
+  telefone: ['phone'],
+};
+
+function lookupVariable(variables: Record<string, any>, varName: string): unknown {
+  const direct = variables[varName];
+  if (direct !== undefined && direct !== null && direct !== '') return direct;
+
+  for (const alias of VARIABLE_ALIASES[varName] || []) {
+    const value = variables[alias];
+    if (value !== undefined && value !== null && value !== '') return value;
   }
-  return out;
+  return undefined;
+}
+
+// "Olá {{name}}, tudo bem?" sem nome viraria "Olá , tudo bem?". Só roda em linha
+// que perdeu variável, para não reformatar texto escrito de propósito.
+function tidyLineAfterEmptyVariable(line: string): string {
+  return line
+    .replace(/[ \t]+([,;:!?.])/g, '$1')
+    .replace(/([,;:])\s*(?=[,;:])/g, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/^[ \t]*[,;:][ \t]*/, '')
+    .replace(/[ \t]+$/, '')
+    .replace(/^\p{Ll}/u, (c) => c.toUpperCase());
+}
+
+function replaceVars(text: string, variables: Record<string, any> | null | undefined): string {
+  const vars = variables || {};
+  return (text || '').split('\n').map((line) => {
+    let hasEmptyVariable = false;
+    const replaced = line.replace(/\{\{(\w+)\}\}/g, (_match, varName) => {
+      const value = lookupVariable(vars, varName);
+      if (value === undefined) {
+        hasEmptyVariable = true;
+        return '';
+      }
+      return String(value);
+    });
+
+    return hasEmptyVariable ? tidyLineAfterEmptyVariable(replaced) : replaced;
+  }).join('\n');
 }
 
 function getProvider(instance: any): Provider {
@@ -520,7 +562,9 @@ Deno.serve(async (req) => {
     if (contactIds.length) {
       const { data: contactRows } = await supabase
         .from('contacts')
-        .select('id, phone')
+        // name entra aqui porque o follow-up resolve {{name}} na mensagem; sem a
+        // coluna a variável nunca tinha valor e a chave crua ia para o cliente.
+        .select('id, phone, name')
         .in('id', contactIds);
       for (const ct of contactRows || []) contactById.set(ct.id, ct);
     }
@@ -705,7 +749,14 @@ Deno.serve(async (req) => {
               const instance = resolveInstance(conv.organization_id, conv.whatsapp_instance_id);
 
               if (contact?.phone && instance) {
-                const variables = exec.variables || {};
+                // Execuções antigas gravaram variables vazio (o motor só passou a
+                // semear name/phone depois), e o follow-up roda dias após o start.
+                // Semear a partir do contato aqui conserta as que já estão na fila
+                // sem depender do que foi gravado no disparo.
+                const variables: Record<string, any> = { ...(exec.variables || {}) };
+                if (!variables.name && contact.name?.trim()) variables.name = contact.name.trim();
+                if (!variables.phone && contact.phone) variables.phone = contact.phone;
+
                 const messageText = replaceVars(step.message || '', variables);
 
                 const hasMedia = !!step.mediaUrl;

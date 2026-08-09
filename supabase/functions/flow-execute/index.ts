@@ -344,6 +344,28 @@ Deno.serve(async (req) => {
     const connectionSettings = await loadConnectionSettings(supabase);
     const provider = instance.provider === 'evolution' ? 'evolution' : 'uazapi';
 
+    // Semeia name/phone a partir do contato da conversa. Cada chamador semeava
+    // (ou esquecia de semear) essas variáveis por conta própria: disparo manual
+    // pela conversa e zapi-webhook não mandavam nada, e a mensagem saía com
+    // {{name}} cru. O contato já está carregado aqui, então o motor resolve para
+    // TODO caminho de entrada. O que o chamador manda continua tendo prioridade.
+    const contactSeed: Record<string, unknown> = {};
+    const contactName = conversation.contacts?.name?.trim();
+    const contactPhone = conversation.contacts?.phone;
+    if (contactName) contactSeed.name = contactName;
+    if (contactPhone) contactSeed.phone = contactPhone;
+
+    const seededVariables: Record<string, unknown> = { ...contactSeed };
+    if (initialVariables && typeof initialVariables === 'object') {
+      // Só sobrescreve o seed com valor de verdade: process-scheduled-messages e
+      // trigger-campaign-on-tag mandam name: contact?.name, que vem null quando o
+      // contato não tem nome salvo — e um null do chamador não pode apagar o seed.
+      for (const [key, value] of Object.entries(initialVariables)) {
+        if (value === undefined || value === null || value === '') continue;
+        seededVariables[key] = value;
+      }
+    }
+
     // Start background execution
     const executionPromise = (async () => {
       try {
@@ -356,7 +378,7 @@ Deno.serve(async (req) => {
             organization_id: sendOrganizationId,
             status: 'running',
             current_node_id: startNodeId || 'start-1',
-            variables: initialVariables && typeof initialVariables === 'object' ? initialVariables : {},
+            variables: seededVariables,
           })
           .select()
           .single();
@@ -373,7 +395,7 @@ Deno.serve(async (req) => {
           conversationId,
           contactPhone: conversation.contacts?.phone || '',
           contactId: conversation.contact_id,
-          variables: initialVariables && typeof initialVariables === 'object' ? { ...initialVariables } : {},
+          variables: { ...seededVariables },
           organizationId: sendOrganizationId,
           zapiInstanceId: instance.zapi_instance_id!,
           zapiToken: instance.zapi_token!,
