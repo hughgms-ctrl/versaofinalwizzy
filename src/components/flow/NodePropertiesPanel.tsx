@@ -4,7 +4,8 @@ import {
   X, Layers, MousePointerClick, List, Tag, Kanban, UserPlus, Webhook,
   GitBranch, FormInput, Bot, IterationCw, Plus, Trash2, GripVertical,
   Type, Image, Video, Music, FileText, Clock, Upload, Loader2, Save, Sparkles,
-  Link, ChevronRight, ChevronDown, Folder, Shuffle, User, MessageSquare, Building2, Users, Settings2
+  Link, ChevronRight, ChevronDown, Folder, Shuffle, User, MessageSquare, Building2, Users, Settings2,
+  AlertTriangle
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -108,6 +109,12 @@ const contentItemTypes: { type: ContentItemType; label: string; icon: React.Comp
   { type: 'delay', label: 'Pausa', icon: Clock },
 ];
 
+// O WhatsApp recusa mídia acima de ~16MB. Como o provedor é quem baixa a URL,
+// o limite vale igual para upload e para URL externa colada.
+const MAX_MEDIA_BYTES = 16 * 1024 * 1024;
+
+const formatBytes = (bytes: number) => `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+
 // Media Upload Field Component with Preview
 function MediaUploadField({
   item,
@@ -117,6 +124,7 @@ function MediaUploadField({
   onUpdate: (item: ContentItem) => void;
 }) {
   const [isUploading, setIsUploading] = useState(false);
+  const [urlWarning, setUrlWarning] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { profile } = useAuth();
 
@@ -133,6 +141,14 @@ function MediaUploadField({
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    if (file.size > MAX_MEDIA_BYTES) {
+      toast.error(
+        `Arquivo muito grande (${formatBytes(file.size)}). O WhatsApp aceita no máximo 16 MB — comprima o arquivo antes de enviar.`
+      );
+      e.target.value = '';
+      return;
+    }
 
     // flow-media com WRITE escopado por org (migration 20260714130000): path começa com orgId.
     const orgId = profile?.organization_id;
@@ -157,6 +173,7 @@ function MediaUploadField({
         .from('flow-media')
         .getPublicUrl(filePath);
 
+      setUrlWarning(null);
       onUpdate({ ...item, mediaUrl: publicUrl });
       toast.success('Arquivo enviado com sucesso!');
     } catch (error: any) {
@@ -168,8 +185,48 @@ function MediaUploadField({
   };
 
   const handleRemoveMedia = () => {
+    setUrlWarning(null);
     onUpdate({ ...item, mediaUrl: undefined });
   };
+
+  // URL externa: quem baixa é o servidor do WhatsApp, então checamos o tamanho
+  // pelo content-length antes do fluxo rodar. Best-effort — sem CORS ou sem o
+  // header, seguimos sem aviso em vez de bloquear uma URL possivelmente válida.
+  useEffect(() => {
+    const url = item.mediaUrl;
+    if (!url || !/^https?:\/\//i.test(url)) {
+      setUrlWarning(null);
+      return;
+    }
+    // Upload próprio já foi validado no handleFileUpload.
+    if (url.includes('/storage/v1/object/public/')) {
+      setUrlWarning(null);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(url, { method: 'HEAD' });
+        if (cancelled) return;
+        const size = Number(res.headers.get('content-length'));
+        if (Number.isFinite(size) && size > MAX_MEDIA_BYTES) {
+          setUrlWarning(
+            `Este arquivo tem ${formatBytes(size)}. O WhatsApp aceita no máximo 16 MB, então o envio vai falhar.`
+          );
+        } else {
+          setUrlWarning(null);
+        }
+      } catch {
+        if (!cancelled) setUrlWarning(null);
+      }
+    }, 800);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [item.mediaUrl]);
 
   const renderPreview = () => {
     if (!item.mediaUrl) return null;
@@ -313,6 +370,7 @@ function MediaUploadField({
                 {item.type === 'audio' && 'MP3, WAV, OGG, M4A'}
                 {item.type === 'document' && 'PDF, DOC, DOCX, XLS, XLSX'}
               </p>
+              <p className="text-xs text-muted-foreground/70">Máx. 16 MB</p>
             </div>
           )}
         </div>
@@ -343,6 +401,13 @@ function MediaUploadField({
           </Button>
         )}
       </div>
+
+      {urlWarning && (
+        <div className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-2">
+          <AlertTriangle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+          <p className="text-xs text-destructive">{urlWarning}</p>
+        </div>
+      )}
 
       {/* Caption Input (except for audio) */}
       {item.type !== 'audio' && (

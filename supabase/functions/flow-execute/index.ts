@@ -1619,11 +1619,13 @@ async function sendMediaItem(
   }
 
   let zapiMessageId: string | null = null;
+  let sendError: string | null = null;
 
   if (!response.ok) {
     const error = await response.text();
     console.error(`[FLOW EXECUTE] Failed to send ${mediaType}. Status: ${response.status}, Error: ${error}`);
-    // Don't throw — still save to DB so user sees it was attempted
+    // Don't throw — still save to DB, but marked as failed so the UI shows it
+    sendError = (error || `Provider returned ${response.status}`).slice(0, 500);
   } else {
     zapiMessageId = await parseProviderMessageId(response);
     console.log(`[FLOW EXECUTE] ${mediaType} sent successfully via ${context.provider} (ID: ${zapiMessageId})`);
@@ -1639,14 +1641,16 @@ async function sendMediaItem(
       is_from_bot: !!context.isFromOrchestrator,
       media_url: mediaUrl,
       zapi_message_id: zapiMessageId,
-      metadata: { 
-        source: 'flow_execute', 
+      ...(sendError ? { failed_at: new Date().toISOString(), error_message: sendError } : {}),
+      metadata: {
+        source: 'flow_execute',
         provider: context.provider,
-        type: mediaType, 
+        type: mediaType,
         is_from_orchestrator: !!context.isFromOrchestrator,
         node_id: nodeId,
         flow_id: context.flowId,
-        has_fixed_transcription: mediaType === 'audio' && !!processedTranscription
+        has_fixed_transcription: mediaType === 'audio' && !!processedTranscription,
+        ...(sendError ? { send_error: sendError } : {})
       },
     }).select('id').single();
 
