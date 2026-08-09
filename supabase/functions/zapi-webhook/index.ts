@@ -398,7 +398,11 @@ function followUpHandleId(label: string): string {
  * O parcial fica por último de propósito: com botões "Não" e "Não sei", "não sei"
  * precisa ganhar do "Não" que apareceria primeiro num casamento único.
  */
-function matchFollowUpButtonHandle(node: any, remarketingStep: number, userText: string): string | null {
+function matchFollowUpButtonHandle(
+  node: any,
+  remarketingStep: number,
+  userText: string,
+): { handleId: string; exact: boolean } | null {
   const steps = (node?.data?.remarketingSteps || []) as any[];
   const text = (userText || '').trim().toLowerCase();
   // remarketing_step 0 = nenhuma tentativa saiu ainda, então nenhum botão foi mostrado.
@@ -419,19 +423,21 @@ function matchFollowUpButtonHandle(node: any, remarketingStep: number, userText:
     if (!labels.length) continue;
 
     for (const label of labels) {
-      if (text === label.toLowerCase()) return followUpHandleId(label);
+      if (text === label.toLowerCase()) return { handleId: followUpHandleId(label), exact: true };
     }
 
     if (step === sentStep) {
       const index = Number(text);
       if (Number.isInteger(index) && index >= 1 && index <= labels.length) {
-        return followUpHandleId(labels[index - 1]);
+        return { handleId: followUpHandleId(labels[index - 1]), exact: true };
       }
     }
 
     for (const label of labels) {
       const lower = label.toLowerCase();
-      if (text.includes(lower) || lower.includes(text)) return followUpHandleId(label);
+      if (text.includes(lower) || lower.includes(text)) {
+        return { handleId: followUpHandleId(label), exact: false };
+      }
     }
   }
 
@@ -2482,16 +2488,17 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
 
       // Botão de follow-up com saída própria desenhada no fluxo: tem precedência
       // sobre o 'responded', porque é uma resposta específica, não "respondeu algo".
-      const followUpHandle = activeFlowExec.status === 'waiting_input'
+      const followUpMatch = activeFlowExec.status === 'waiting_input'
         ? matchFollowUpButtonHandle(currentNode, (activeFlowExec as any).remarketing_step || 0, triggerText || '')
         : null;
+      const followUpHandle = followUpMatch?.handleId || null;
       const followUpEdge = followUpHandle
         ? ((activeFlowExec.flow?.edges || []) as any[]).find(
             (e: any) => e.source === activeFlowExec.current_node_id && e.sourceHandle === followUpHandle
           )
         : null;
       if (followUpHandle) {
-        console.log(`[WEBHOOK] Follow-up button matched handle=${followUpHandle}, edge=${followUpEdge ? followUpEdge.target : 'nenhuma (cai no fluxo normal)'}`);
+        console.log(`[WEBHOOK] Follow-up button matched handle=${followUpHandle} (exact=${followUpMatch?.exact}), edge=${followUpEdge ? followUpEdge.target : 'nenhuma (cai no fluxo normal)'}`);
       }
 
       if (isAtAIHandoff && activeFlowExec.status === 'waiting_input') {
@@ -2638,6 +2645,9 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
 
         // Casamento em duas passadas: exato/número antes de parcial. Numa passada só,
         // a opção "Não" ganharia de "Não sei" só por vir antes na lista.
+        // O tipo do casamento é devolvido junto porque o parcial não pode ganhar de um
+        // casamento exato num botão do follow-up (ver a escolha da aresta abaixo).
+        let matchedExact = false;
         const matchOption = (options: string[], handlePrefix: string, ids?: string[]): string | null => {
           // Botão nativo volta como o rótulo na maioria dos aparelhos, mas alguns
           // devolvem o id da opção ("btn_0") — aceita os dois antes do parcial.
@@ -2649,6 +2659,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
               (!!optionId && userResponse === optionId) ||
               userResponse === `${handlePrefix}${i}`
             ) {
+              matchedExact = true;
               return `${handlePrefix}${i}`;
             }
           }
@@ -2677,6 +2688,13 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
         let targetEdge = matchedHandle ? flowEdges.find((e: any) => e.source === activeFlowExec.current_node_id && e.sourceHandle === matchedHandle) : null;
         // A opção do próprio nó vem primeiro (o botão do follow-up costuma repetir
         // o rótulo dela); a saída exclusiva do follow-up entra quando não casou.
+        // Exceção: com o rótulo batendo exatamente num botão do follow-up, a saída dele
+        // ganha do casamento PARCIAL do nó — senão "Quero saber mais" (follow-up) seria
+        // engolido pelo "Quero" (bloco) e o clique iria para a saída errada.
+        if (targetEdge && !matchedExact && followUpEdge && followUpMatch?.exact) {
+          console.log(`[WEBHOOK] Follow-up exact match beats partial node match — using ${followUpHandle}`);
+          targetEdge = followUpEdge;
+        }
         if (!targetEdge) targetEdge = followUpEdge || null;
         if (!targetEdge) {
           // Fallback: try 'responded' handle or any edge without specific handle

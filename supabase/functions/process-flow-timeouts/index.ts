@@ -13,6 +13,14 @@ const corsHeaders = {
 };
 
 /**
+ * Janela de espera após a última tentativa de follow-up, antes de rotear pela saída
+ * "Não respondeu". Precisa ser generosa: os botões da última mensagem só funcionam
+ * enquanto a execução continua parada no nó. O nó pode sobrescrever com
+ * remarketingFinalWaitMinutes, ou desligar o roteamento com remarketingRouteOnTimeout.
+ */
+const DEFAULT_FINAL_WAIT_MINUTES = 1440; // 24h
+
+/**
  * CRITICAL SAFETY: Check if a contact responded AFTER the last follow-up message.
  * This MUST check after the LAST follow-up, NOT after execution start.
  * Reason: contacts often send messages BEFORE follow-ups begin (initial flow interaction),
@@ -778,9 +786,24 @@ Deno.serve(async (req) => {
             nextTimeoutAt = new Date(Date.now() + delayMs).toISOString();
             console.log(`[FLOW TIMEOUTS] Next step ${nextStepIndex + 1} scheduled in ${nextStep.delayMinutes}min`);
           } else {
-            // Last step done — short timeout to trigger the timeout edge
-            nextTimeoutAt = new Date(Date.now() + 1000).toISOString();
-            console.log(`[FLOW TIMEOUTS] All ${remarketingSteps.length} steps sent — will route via timeout edge next`);
+            // Última tentativa enviada. Rotear pelo timeout 1s depois matava os botões
+            // dessa última mensagem: a execução saía do nó antes de o contato clicar,
+            // e o clique não achava mais os remarketingSteps (cai no fluxo genérico).
+            // Agora a janela de espera é configurável no nó, e pode ser desligada.
+            const nodeDataForWait = isChatFollowUp ? execVars : (currentNode?.data || {});
+            const routeOnTimeout = nodeDataForWait.remarketingRouteOnTimeout !== false;
+
+            if (!routeOnTimeout) {
+              nextTimeoutAt = null;
+              console.log(`[FLOW TIMEOUTS] All ${remarketingSteps.length} steps sent — timeout routing OFF, waiting indefinitely for a reply`);
+            } else {
+              const configuredWait = Number(nodeDataForWait.remarketingFinalWaitMinutes);
+              const waitMinutes = Number.isFinite(configuredWait) && configuredWait > 0
+                ? configuredWait
+                : DEFAULT_FINAL_WAIT_MINUTES;
+              nextTimeoutAt = new Date(Date.now() + waitMinutes * 60 * 1000).toISOString();
+              console.log(`[FLOW TIMEOUTS] All ${remarketingSteps.length} steps sent — waiting ${waitMinutes}min for a reply before the timeout edge`);
+            }
           }
 
           await supabase.from('flow_executions').update({
