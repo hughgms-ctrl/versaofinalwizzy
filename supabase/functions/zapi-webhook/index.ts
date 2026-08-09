@@ -2469,7 +2469,10 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
       .from('flow_executions')
       .select('id, status, current_node_id, flow_id, variables, remarketing_step, flow:flows(nodes, edges, master_prompt, is_master_active, name)')
       .eq('conversation_id', conversation.id)
-      .in('status', ['running', 'waiting_input'])
+      // waiting_delay = parado num "Atraso Inteligente". Continua sendo fluxo
+      // ativo: sem ele aqui, uma mensagem do contato durante a espera cairia
+      // no Campaign Trigger e dispararia um segundo fluxo em paralelo.
+      .in('status', ['running', 'waiting_input', 'waiting_delay'])
       .order('started_at', { ascending: false })
       .limit(1)
       .maybeSingle();

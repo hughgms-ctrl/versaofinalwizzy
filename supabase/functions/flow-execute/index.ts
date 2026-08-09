@@ -451,7 +451,10 @@ async function cleanupFlowEnd(
     .select('id')
     .eq('conversation_id', conversationId)
     .neq('id', executionId)
-    .in('status', ['running', 'waiting_input'])
+    // waiting_delay também é fluxo vivo (pai parado num atraso inteligente):
+    // sem isso, o fim de um sub-fluxo jogaria a conversa para 'humano' e
+    // mataria o pai que só estava esperando a hora de continuar.
+    .in('status', ['running', 'waiting_input', 'waiting_delay'])
     .limit(1);
 
   const hasParentFlow = otherActiveFlows && otherActiveFlows.length > 0;
@@ -603,6 +606,32 @@ async function runFlowExecution(
 
       // CORE FLOW LOGIC: Find next node via EDGE connection
       const nextNodeId = findNextNode(currentNode, edges, result.outputHandle);
+
+      // ESPERA LONGA (atraso inteligente): para a execução e agenda a retomada
+      // JÁ NO PRÓXIMO NÓ. Guardar o nó de atraso faria o cron reexecutá-lo e
+      // reagendar de novo, prendendo o contato num laço infinito de espera.
+      if (result.resumeAt) {
+        if (!nextNodeId) {
+          console.log(`[FLOW EXECUTE] Node ${currentNode.id} (smart-delay) has NO connected next node — flow STOPS`);
+          currentNodeId = null;
+          break;
+        }
+
+        console.log(`[FLOW EXECUTE] Smart delay: parking execution until ${result.resumeAt.toISOString()}, resuming at node ${nextNodeId}`);
+
+        await supabase
+          .from('flow_executions')
+          .update({
+            status: 'waiting_delay',
+            current_node_id: nextNodeId,
+            timeout_at: result.resumeAt.toISOString(),
+            variables: context.variables,
+            execution_log: executionLog,
+            remarketing_step: 0,
+          })
+          .eq('id', executionId);
+        return;
+      }
       
       if (!nextNodeId) {
         console.log(`[FLOW EXECUTE] Node ${currentNode.id} (${currentNode.type}) has NO connected next node — flow STOPS`);
@@ -656,6 +685,10 @@ interface NodeResult {
   outputHandle?: string;
   variables?: Record<string, unknown>;
   waitForInput?: boolean;
+  // Espera longa (atraso inteligente): a execução para aqui e o cron
+  // process-flow-timeouts retoma no nó seguinte quando a hora chegar.
+  // Não dá para usar setTimeout: a edge function morre antes.
+  resumeAt?: Date;
   metadata?: any;
 }
 
@@ -686,6 +719,9 @@ async function executeNode(
 
     case 'action-delay':
       return await executeDelay(data);
+
+    case 'smart-delay':
+      return executeSmartDelay(data);
 
     case 'action-tag':
       return await executeTagAction(data, context, supabase);
@@ -1954,6 +1990,163 @@ async function executeDelay(data: Record<string, unknown>): Promise<NodeResult> 
 
   await new Promise(resolve => setTimeout(resolve, ms));
   return { success: true };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ATRASO INTELIGENTE (smart-delay)
+// Diferente do action-delay (que bloqueia com setTimeout e é limitado a 30s),
+// aqui a espera é de minutos a dias. Então não bloqueamos: devolvemos o
+// instante da retomada e o motor parqueia a execução para o cron acordar.
+// Todo o cálculo de horário é feito no fuso de São Paulo, que é o que o
+// usuário vê e configura no editor do fluxo.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const FLOW_TIMEZONE = 'America/Sao_Paulo';
+
+// Partes da data/hora local de São Paulo para um instante UTC qualquer.
+function getSaoPauloParts(date: Date): { year: number; month: number; day: number; hour: number; minute: number; weekday: number } {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: FLOW_TIMEZONE,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', weekday: 'short',
+    hour12: false,
+  }).formatToParts(date);
+
+  const get = (t: string) => parts.find(p => p.type === t)?.value || '0';
+  const weekdayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+
+  return {
+    year: Number(get('year')),
+    month: Number(get('month')),
+    day: Number(get('day')),
+    // Intl devolve "24" para meia-noite em hourCycle h23/h24; normalizamos.
+    hour: Number(get('hour')) % 24,
+    minute: Number(get('minute')),
+    weekday: weekdayMap[get('weekday')] ?? 0,
+  };
+}
+
+// Offset do fuso (em minutos) vigente naquele instante — respeita horário de verão.
+function getSaoPauloOffsetMinutes(date: Date): number {
+  const p = getSaoPauloParts(date);
+  const asUTC = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute);
+  // Zera segundos/ms para não introduzir ruído no arredondamento.
+  const base = Math.floor(date.getTime() / 60000) * 60000;
+  return (asUTC - base) / 60000;
+}
+
+// Converte uma data/hora "de parede" de São Paulo para o instante UTC correto.
+function saoPauloWallClockToUtc(year: number, month: number, day: number, hour: number, minute: number): Date {
+  const naiveUtc = Date.UTC(year, month - 1, day, hour, minute);
+  // Primeira estimativa com o offset vigente na data alvo, depois refina uma vez
+  // (cobre a virada de horário de verão perto do instante calculado).
+  let offset = getSaoPauloOffsetMinutes(new Date(naiveUtc));
+  let result = new Date(naiveUtc - offset * 60000);
+  const refined = getSaoPauloOffsetMinutes(result);
+  if (refined !== offset) {
+    offset = refined;
+    result = new Date(naiveUtc - offset * 60000);
+  }
+  return result;
+}
+
+function parseHHMM(value: unknown, fallback: string): { hour: number; minute: number } {
+  const [fh, fm] = fallback.split(':').map(Number);
+  const [h, m] = String(value || fallback).split(':').map(Number);
+  if (!Number.isFinite(h) || !Number.isFinite(m) || h < 0 || h > 23 || m < 0 || m > 59) {
+    return { hour: fh, minute: fm };
+  }
+  return { hour: h, minute: m };
+}
+
+function executeSmartDelay(data: Record<string, unknown>): NodeResult {
+  const delayType = String(data.delayType || 'fixed');
+  const now = new Date();
+
+  try {
+    if (delayType === 'fixed') {
+      const minutes = Number(data.fixedMinutes);
+      const safeMinutes = Number.isFinite(minutes) && minutes > 0 ? minutes : 30;
+      return { success: true, resumeAt: new Date(now.getTime() + safeMinutes * 60 * 1000) };
+    }
+
+    if (delayType === 'until_time') {
+      const { hour, minute } = parseHHMM(data.time, '09:00');
+      const p = getSaoPauloParts(now);
+      let target = saoPauloWallClockToUtc(p.year, p.month, p.day, hour, minute);
+      // Horário já passou hoje → mesma hora amanhã.
+      if (target.getTime() <= now.getTime()) {
+        const t = getSaoPauloParts(new Date(now.getTime() + 24 * 60 * 60 * 1000));
+        target = saoPauloWallClockToUtc(t.year, t.month, t.day, hour, minute);
+      }
+      return { success: true, resumeAt: target };
+    }
+
+    if (delayType === 'until_business_hours') {
+      const start = parseHHMM(data.businessHoursStart, '08:00');
+      const end = parseHHMM(data.businessHoursEnd, '18:00');
+      const weekdaysOnly = data.weekdaysOnly !== false;
+
+      const startMin = start.hour * 60 + start.minute;
+      const endMin = end.hour * 60 + end.minute;
+
+      // Procura o próximo instante dentro da janela comercial. O laço anda no
+      // máximo 8 dias, o que cobre feriado prolongado + fim de semana.
+      for (let i = 0; i <= 8; i++) {
+        const probe = new Date(now.getTime() + i * 24 * 60 * 60 * 1000);
+        const p = getSaoPauloParts(probe);
+        const isWeekend = p.weekday === 0 || p.weekday === 6;
+        if (weekdaysOnly && isWeekend) continue;
+
+        const nowMin = p.hour * 60 + p.minute;
+        // Hoje, já dentro do expediente → segue imediatamente.
+        if (i === 0 && nowMin >= startMin && nowMin < endMin) {
+          return { success: true, resumeAt: new Date(now.getTime() + 1000) };
+        }
+        // Ainda vai abrir neste dia → espera a abertura.
+        if (i > 0 || nowMin < startMin) {
+          return { success: true, resumeAt: saoPauloWallClockToUtc(p.year, p.month, p.day, start.hour, start.minute) };
+        }
+        // Passou do fechamento: cai para o próximo dia candidato.
+      }
+
+      // Configuração impossível (ex.: só dias úteis com janela inválida).
+      console.log('[FLOW EXECUTE] smart-delay: no business-hours slot found in 8 days, continuing immediately');
+      return { success: true, resumeAt: new Date(now.getTime() + 1000) };
+    }
+
+    if (delayType === 'until_date') {
+      const raw = String(data.date || '').trim();
+      if (!raw) {
+        console.log('[FLOW EXECUTE] smart-delay: until_date without a date, continuing immediately');
+        return { success: true };
+      }
+      // O input datetime-local manda "YYYY-MM-DDTHH:mm" sem fuso: é hora de
+      // parede de São Paulo, não UTC. Interpretar como UTC adiantaria 3h.
+      const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
+      const target = m
+        ? saoPauloWallClockToUtc(Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4]), Number(m[5]))
+        : new Date(raw);
+
+      if (Number.isNaN(target.getTime())) {
+        console.log(`[FLOW EXECUTE] smart-delay: invalid date "${raw}", continuing immediately`);
+        return { success: true };
+      }
+      // Data no passado não trava o fluxo — segue em frente.
+      if (target.getTime() <= now.getTime()) {
+        console.log(`[FLOW EXECUTE] smart-delay: date ${raw} already passed, continuing immediately`);
+        return { success: true };
+      }
+      return { success: true, resumeAt: target };
+    }
+
+    console.log(`[FLOW EXECUTE] smart-delay: unknown delayType "${delayType}", continuing immediately`);
+    return { success: true };
+  } catch (error) {
+    // Um atraso mal configurado não deve matar o fluxo do contato.
+    console.error('[FLOW EXECUTE] smart-delay error, continuing immediately:', error);
+    return { success: true };
+  }
 }
 
 async function executeTagAction(

@@ -517,6 +517,64 @@ Deno.serve(async (req) => {
     }
 
     // ═══════════════════════════════════════════════════════════════════
+    // PHASE 1.8: SMART DELAY — retoma execuções paradas no "Atraso Inteligente"
+    // O nó já gravou current_node_id como o PRÓXIMO nó; aqui só destravamos e
+    // mandamos o motor seguir. Sem checagem de "respondeu": um atraso é uma
+    // pausa programada, não uma espera por resposta do contato.
+    // ═══════════════════════════════════════════════════════════════════
+    const { data: delayedExecs } = await supabase
+      .from('flow_executions')
+      .select('id, flow_id, conversation_id, current_node_id')
+      .eq('status', 'waiting_delay')
+      .not('timeout_at', 'is', null)
+      .lt('timeout_at', nowIso)
+      .limit(50);
+
+    let delaysResumed = 0;
+    for (const exec of (delayedExecs || [])) {
+      try {
+        if (!exec.current_node_id) {
+          console.error(`[FLOW TIMEOUTS] Smart delay exec ${exec.id} has no current_node_id — completing`);
+          await supabase.from('flow_executions').update({
+            status: 'completed',
+            timeout_at: null,
+            completed_at: new Date().toISOString(),
+            error_message: 'Smart delay without a resume node',
+          }).eq('id', exec.id);
+          continue;
+        }
+
+        // flow-execute SEMPRE cria uma execução nova (não reaproveita esta), então
+        // encerramos a atual antes de chamar. Deixá-la aberta a manteria para
+        // sempre como "fluxo ativo" e travaria os gatilhos da conversa.
+        // Fechar ANTES da chamada também evita reprocessar a cada rodada do cron
+        // caso o fetch falhe.
+        await supabase.from('flow_executions').update({
+          status: 'completed',
+          timeout_at: null,
+          completed_at: new Date().toISOString(),
+        }).eq('id', exec.id);
+
+        console.log(`[FLOW TIMEOUTS] Smart delay elapsed for exec ${exec.id} — resuming at node ${exec.current_node_id}`);
+
+        await fetch(`${supabaseUrl}/functions/v1/flow-execute`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseKey}` },
+          body: JSON.stringify({
+            flowId: exec.flow_id,
+            conversationId: exec.conversation_id,
+            startNodeId: exec.current_node_id,
+          }),
+        });
+
+        delaysResumed++;
+      } catch (delayErr) {
+        console.error(`[FLOW TIMEOUTS] Error resuming smart delay exec ${exec.id}:`, delayErr);
+      }
+    }
+    if (delaysResumed > 0) console.log(`[FLOW TIMEOUTS] Resumed ${delaysResumed} smart-delay executions.`);
+
+    // ═══════════════════════════════════════════════════════════════════
     // PHASE 2: Process timed-out executions (send follow-ups or route)
     // ═══════════════════════════════════════════════════════════════════
     const { data: timedOut, error } = await supabase
@@ -537,7 +595,7 @@ Deno.serve(async (req) => {
 
     if (!timedOut || timedOut.length === 0) {
       console.log('[FLOW TIMEOUTS] No timed-out executions found.');
-      return new Response(JSON.stringify({ success: true, processed: 0, autoFixed, recoveredFromQuietBug }), {
+      return new Response(JSON.stringify({ success: true, processed: 0, autoFixed, recoveredFromQuietBug, delaysResumed }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -952,9 +1010,9 @@ Deno.serve(async (req) => {
       }
     }
 
-    console.log(`[FLOW TIMEOUTS] ✅ Processed ${processed} executions, auto-fixed ${autoFixed}, recovered ${recoveredFromQuietBug}.`);
+    console.log(`[FLOW TIMEOUTS] ✅ Processed ${processed} executions, auto-fixed ${autoFixed}, recovered ${recoveredFromQuietBug}, delays resumed ${delaysResumed}.`);
 
-    return new Response(JSON.stringify({ success: true, processed, autoFixed, recoveredFromQuietBug }), {
+    return new Response(JSON.stringify({ success: true, processed, autoFixed, recoveredFromQuietBug, delaysResumed }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {
