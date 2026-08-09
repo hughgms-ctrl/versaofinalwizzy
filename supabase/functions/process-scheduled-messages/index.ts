@@ -24,6 +24,7 @@ const CONTACT_PAGE_SIZE = 25;
 
 interface ScheduledMessage {
   id: string;
+  name: string | null;
   organization_id: string;
   workspace_id: string | null;
   content_type: 'message' | 'flow';
@@ -50,6 +51,7 @@ interface ScheduledMessage {
 
 interface Contact {
   id: string;
+  name: string | null;
   phone: string;
   organization_id: string;
 }
@@ -362,7 +364,8 @@ async function fetchPendingContactPage(
 ): Promise<Contact[]> {
   const { data } = await supabase
     .from('scheduled_message_contacts')
-    .select('contact_id, contacts(id, phone, organization_id)')
+    // `name` é obrigatório aqui: alimenta a variável {{name}} do fluxo agendado.
+    .select('contact_id, contacts(id, name, phone, organization_id)')
     .eq('scheduled_message_id', scheduledId)
     .eq('status', 'pending')
     .limit(pageSize);
@@ -454,8 +457,17 @@ async function sendOneContact(
 async function runFlowForContact(
   scheduled: ScheduledMessage,
   conversation: any,
+  contact: Contact,
 ): Promise<void> {
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  // Sem isto o fluxo agendado roda com variables={} e {{name}} sai vazio —
+  // ao contrário da campanha, que já semeia nome/telefone.
+  const variables = {
+    name: contact.name || '',
+    phone: contact.phone || '',
+    schedule_id: scheduled.id,
+    schedule_name: scheduled.name || '',
+  };
   const r = await fetch(`${supabaseUrl}/functions/v1/flow-execute`, {
     method: 'POST',
     headers: {
@@ -466,6 +478,7 @@ async function runFlowForContact(
       flowId: scheduled.flow_id,
       conversationId: conversation.id,
       organizationId: scheduled.organization_id,
+      variables,
     }),
   });
   if (!r.ok) {
@@ -557,7 +570,7 @@ async function processContactCampaign(
 
       try {
         if (isFlow) {
-          await runFlowForContact(scheduled, conversation);
+          await runFlowForContact(scheduled, conversation, contact);
         } else {
           await sendOneContact(supabase, scheduled, contact, conversation, scheduledInstanceId);
         }

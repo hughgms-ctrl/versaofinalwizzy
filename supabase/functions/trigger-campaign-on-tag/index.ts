@@ -61,9 +61,10 @@ Deno.serve(async (req) => {
         const tagId = record.tag_id;
 
         // 1. Get contact's organization
+        // `name`/`phone` alimentam as variáveis {{name}}/{{phone}} do fluxo.
         const { data: contact } = await supabase
             .from('contacts')
-            .select('organization_id, phone')
+            .select('organization_id, name, phone')
             .eq('id', contactId)
             .single();
 
@@ -152,7 +153,12 @@ Deno.serve(async (req) => {
                     conversationId: conversation.id,
                     organizationId: organizationId,
                     isFromOrchestrator: true,
-                    variables: { campaign_id: campaign.id, campaign_name: campaign.name },
+                    variables: {
+                        name: contact.name || '',
+                        phone: contact.phone || '',
+                        campaign_id: campaign.id,
+                        campaign_name: campaign.name,
+                    },
                 }),
             }).catch(err => {
                 console.error('Flow exec error:', err);

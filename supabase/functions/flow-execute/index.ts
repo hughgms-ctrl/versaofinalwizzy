@@ -2298,10 +2298,57 @@ function findNextNode(currentNode: FlowNode, edges: FlowEdge[], outputHandle?: s
   return edge?.target || null;
 }
 
+// Nomes alternativos aceitos para a mesma variável. A UI anuncia {{name}}, mas
+// {{nome}} é o que todo mundo escreve por reflexo — sem isso a mensagem sairia
+// com a chave crua para o cliente.
+const VARIABLE_ALIASES: Record<string, string[]> = {
+  name: ['nome'],
+  nome: ['name'],
+  phone: ['telefone'],
+  telefone: ['phone'],
+};
+
+function lookupVariable(variables: Record<string, unknown>, varName: string): unknown {
+  const direct = variables[varName];
+  if (direct !== undefined && direct !== null && direct !== '') return direct;
+
+  for (const alias of VARIABLE_ALIASES[varName] || []) {
+    const value = variables[alias];
+    if (value !== undefined && value !== null && value !== '') return value;
+  }
+  return undefined;
+}
+
+// "Olá {{name}}, tudo bem?" sem nome viraria "Olá , tudo bem?" — costura a
+// pontuação órfã deixada pelo buraco. Só roda em linha que perdeu variável,
+// para nunca reformatar texto que o usuário escreveu de propósito.
+function tidyLineAfterEmptyVariable(line: string): string {
+  return line
+    .replace(/[ \t]+([,;:!?.])/g, '$1')       // espaço antes de pontuação
+    .replace(/([,;:])\s*(?=[,;:])/g, '')      // pontuação duplicada consecutiva
+    .replace(/[ \t]{2,}/g, ' ')               // espaços duplos no meio da frase
+    .replace(/^[ \t]*[,;:][ \t]*/, '')        // linha começando com pontuação
+    .replace(/[ \t]+$/, '')                   // espaço sobrando no fim da linha
+    // "{{name}}, bom dia." vira "bom dia." — recupera a maiúscula inicial.
+    .replace(/^\p{Ll}/u, (c) => c.toUpperCase());
+}
+
 function replaceVariables(text: string, variables: Record<string, unknown>): string {
-  return text.replace(/\{\{(\w+)\}\}/g, (match, varName) => {
-    return String(variables[varName] || match);
-  });
+  // Variável sem valor vira string vazia, NUNCA o {{placeholder}} literal:
+  // o cliente não pode receber "Olá {{name}}," numa mensagem do WhatsApp.
+  return text.split('\n').map((line) => {
+    let hasEmptyVariable = false;
+    const replaced = line.replace(/\{\{(\w+)\}\}/g, (_match, varName) => {
+      const value = lookupVariable(variables, varName);
+      if (value === undefined) {
+        hasEmptyVariable = true;
+        return '';
+      }
+      return String(value);
+    });
+
+    return hasEmptyVariable ? tidyLineAfterEmptyVariable(replaced) : replaced;
+  }).join('\n');
 }
 async function logNodeExecution(
   supabase: SupabaseClientType,
