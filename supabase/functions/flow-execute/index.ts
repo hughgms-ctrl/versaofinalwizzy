@@ -193,8 +193,12 @@ Deno.serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const { flowId, conversationId, startNodeId, isFromOrchestrator, triggerMessage, variables: initialVariables } = await req.json();
-    console.log(`[FLOW EXECUTE] Received request: flowId=${flowId}, conversationId=${conversationId}, startNodeId=${startNodeId}, isFromOrchestrator=${isFromOrchestrator}, triggerMessage=${triggerMessage}`);
+    // resumedFromExecutionId: mandado pelo cron ao acordar um atraso. Um atraso
+    // não pausa a execução — ela é fechada e outra nasce no nó de retomada. Sem
+    // esse elo, a passagem do contato pelo fluxo fica quebrada em N linhas soltas
+    // e o histórico não consegue remontar a jornada.
+    const { flowId, conversationId, startNodeId, isFromOrchestrator, triggerMessage, variables: initialVariables, resumedFromExecutionId } = await req.json();
+    console.log(`[FLOW EXECUTE] Received request: flowId=${flowId}, conversationId=${conversationId}, startNodeId=${startNodeId}, isFromOrchestrator=${isFromOrchestrator}, triggerMessage=${triggerMessage}, resumedFrom=${resumedFromExecutionId || '-'}`);
 
     if (!flowId || !conversationId) {
       return new Response(
@@ -394,6 +398,20 @@ Deno.serve(async (req) => {
     // Start background execution
     const executionPromise = (async () => {
       try {
+        // Retomada de atraso: herda a raiz da execução anterior para que todos os
+        // trechos continuem sendo a MESMA passagem no histórico. Se a anterior
+        // sumiu (retenção/exclusão), esta vira raiz de si mesma — jornada mais
+        // curta é melhor do que jornada órfã.
+        let rootExecutionId: string | null = null;
+        if (resumedFromExecutionId) {
+          const { data: previous } = await supabase
+            .from('flow_executions')
+            .select('root_execution_id')
+            .eq('id', resumedFromExecutionId)
+            .maybeSingle();
+          rootExecutionId = previous?.root_execution_id || resumedFromExecutionId;
+        }
+
         // 4. Create flow execution record
         const { data: execution, error: execError } = await supabase
           .from('flow_executions')
@@ -404,6 +422,9 @@ Deno.serve(async (req) => {
             status: 'running',
             current_node_id: startNodeId || 'start-1',
             variables: seededVariables,
+            resumed_from_execution_id: resumedFromExecutionId || null,
+            // Insert sem raiz é preenchido pelo trigger do banco com o próprio id.
+            ...(rootExecutionId ? { root_execution_id: rootExecutionId } : {}),
           })
           .select()
           .single();
@@ -632,17 +653,18 @@ async function runFlowExecution(
       // CORE FLOW LOGIC: Find next node via EDGE connection
       const nextNodeId = findNextNode(currentNode, edges, result.outputHandle);
 
-      // ESPERA LONGA (atraso inteligente): para a execução e agenda a retomada
-      // JÁ NO PRÓXIMO NÓ. Guardar o nó de atraso faria o cron reexecutá-lo e
-      // reagendar de novo, prendendo o contato num laço infinito de espera.
+      // ESPERA LONGA (atraso inteligente, ou atraso comum acima de 30s): para a
+      // execução e agenda a retomada JÁ NO PRÓXIMO NÓ. Guardar o nó de atraso
+      // faria o cron reexecutá-lo e reagendar de novo, prendendo o contato num
+      // laço infinito de espera.
       if (result.resumeAt) {
         if (!nextNodeId) {
-          console.log(`[FLOW EXECUTE] Node ${currentNode.id} (smart-delay) has NO connected next node — flow STOPS`);
+          console.log(`[FLOW EXECUTE] Node ${currentNode.id} (${currentNode.type}) has NO connected next node — flow STOPS`);
           currentNodeId = null;
           break;
         }
 
-        console.log(`[FLOW EXECUTE] Smart delay: parking execution until ${result.resumeAt.toISOString()}, resuming at node ${nextNodeId}`);
+        console.log(`[FLOW EXECUTE] Delay: parking execution until ${result.resumeAt.toISOString()}, resuming at node ${nextNodeId}`);
 
         await supabase
           .from('flow_executions')
@@ -727,8 +749,36 @@ async function executeNode(
   const { type, data } = node;
 
   // Log node entry for timeline visibility
-  await logNodeExecution(supabase, context, node, executionId);
+  const logId = await logNodeExecution(supabase, context, node, executionId);
+  const nodeStartedAt = Date.now();
 
+  try {
+    const result = await runNodeByType(type, data, node, context, supabase, flow, executionId);
+    await finishNodeLog(
+      supabase,
+      logId,
+      result.success ? 'success' : 'failed',
+      nodeStartedAt,
+      result.error,
+    );
+    return result;
+  } catch (err) {
+    // Exceção crua do nó: marca no log e repassa para runFlowExecution, que já
+    // sabe encerrar a execução.
+    await finishNodeLog(supabase, logId, 'error', nodeStartedAt, String(err));
+    throw err;
+  }
+}
+
+async function runNodeByType(
+  type: string,
+  data: Record<string, unknown>,
+  node: FlowNode,
+  context: ExecutionContext,
+  supabase: SupabaseClientType,
+  flow?: any,
+  executionId?: string
+): Promise<NodeResult> {
   switch (type) {
     case 'start':
       return { success: true };
@@ -2003,6 +2053,10 @@ async function sendListMessage(data: Record<string, unknown>, context: Execution
   }
 }
 
+// Teto do que dá para esperar bloqueando dentro da edge function. Acima disso a
+// espera precisa ser parqueada no banco, senão a função morre antes da hora.
+const INLINE_DELAY_MAX_MS = 30000;
+
 async function executeDelay(data: Record<string, unknown>): Promise<NodeResult> {
   const duration = Number(data.duration) || 3;
   const unit = String(data.unit) || 'seconds';
@@ -2011,17 +2065,28 @@ async function executeDelay(data: Record<string, unknown>): Promise<NodeResult> 
   if (unit === 'minutes') ms = duration * 60 * 1000;
   if (unit === 'hours') ms = duration * 60 * 60 * 1000;
 
-  ms = Math.min(ms, 30000);
+  // ESPERA LONGA: antes isto era `ms = Math.min(ms, 30000)` — quem configurava
+  // 2 horas recebia 30 segundos, sem aviso nenhum. O atraso simplesmente não
+  // acontecia e o fluxo seguia direto. Agora a espera longa é parqueada no banco
+  // e o cron retoma na hora certa, igual ao Atraso Inteligente.
+  if (ms > INLINE_DELAY_MAX_MS) {
+    const resumeAt = new Date(Date.now() + ms);
+    console.log(`[FLOW EXECUTE] Delay of ${duration} ${unit} exceeds inline limit — parking until ${resumeAt.toISOString()}`);
+    return { success: true, resumeAt };
+  }
 
+  // Espera curta continua bloqueando: é o que dá o ritmo natural entre mensagens
+  // e não vale o custo de uma volta pelo cron.
   await new Promise(resolve => setTimeout(resolve, ms));
   return { success: true };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ATRASO INTELIGENTE (smart-delay)
-// Diferente do action-delay (que bloqueia com setTimeout e é limitado a 30s),
-// aqui a espera é de minutos a dias. Então não bloqueamos: devolvemos o
-// instante da retomada e o motor parqueia a execução para o cron acordar.
+// Diferente do action-delay (que espera uma duração fixa), aqui a espera é
+// calculada a partir de horário comercial / hora do dia. Nos dois casos a
+// espera longa não bloqueia: devolvemos o instante da retomada e o motor
+// parqueia a execução para o cron acordar.
 // Todo o cálculo de horário é feito no fuso de São Paulo, que é o que o
 // usuário vê e configura no editor do fluxo.
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2594,17 +2659,23 @@ function replaceVariables(text: string, variables: Record<string, unknown>): str
     return hasEmptyVariable ? tidyLineAfterEmptyVariable(replaced) : replaced;
   }).join('\n');
 }
+// Grava a ENTRADA no nó e devolve o id da linha, para que o resultado possa ser
+// carimbado quando o nó terminar (ver finishNodeLog).
+//
+// O insert continua acontecendo ANTES da execução de propósito: se o nó travar
+// ou a edge function morrer no meio, a passagem do contato por ele fica
+// registrada do mesmo jeito. O que faltava era o desfecho.
 async function logNodeExecution(
   supabase: SupabaseClientType,
   context: ExecutionContext,
   node: any,
   executionId?: string
-) {
+): Promise<string | null> {
   try {
     const { id: nodeId, type: nodeType, data } = node;
     const nodeName = data?.label || data?.name || nodeType;
 
-    await supabase.from('flow_node_logs').insert({
+    const { data: logRow } = await supabase.from('flow_node_logs').insert({
       organization_id: context.organizationId,
       conversation_id: context.conversationId,
       flow_execution_id: executionId,
@@ -2612,8 +2683,32 @@ async function logNodeExecution(
       node_name: nodeName,
       node_type: nodeType,
       input_data: data,
-    });
+    }).select('id').single();
+
+    return logRow?.id || null;
   } catch (err) {
     console.error('[FLOW EXECUTE] Error logging node execution:', err);
+    return null;
+  }
+}
+
+// Carimba o desfecho do nó no log da entrada. Nunca lança: o histórico é
+// observabilidade, e falhar aqui não pode derrubar a execução do fluxo.
+async function finishNodeLog(
+  supabase: SupabaseClientType,
+  logId: string | null,
+  status: 'success' | 'failed' | 'error',
+  startedAt: number,
+  errorMessage?: string,
+) {
+  if (!logId) return;
+  try {
+    await supabase.from('flow_node_logs').update({
+      status,
+      duration_ms: Date.now() - startedAt,
+      error_message: errorMessage ? String(errorMessage).slice(0, 500) : null,
+    }).eq('id', logId);
+  } catch (err) {
+    console.error('[FLOW EXECUTE] Error finishing node log:', err);
   }
 }

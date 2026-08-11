@@ -524,7 +524,7 @@ Deno.serve(async (req) => {
     // ═══════════════════════════════════════════════════════════════════
     const { data: delayedExecs } = await supabase
       .from('flow_executions')
-      .select('id, flow_id, conversation_id, current_node_id')
+      .select('id, flow_id, conversation_id, current_node_id, variables')
       .eq('status', 'waiting_delay')
       .not('timeout_at', 'is', null)
       .lt('timeout_at', nowIso)
@@ -564,6 +564,13 @@ Deno.serve(async (req) => {
             flowId: exec.flow_id,
             conversationId: exec.conversation_id,
             startNodeId: exec.current_node_id,
+            // Liga a execução nova à que acabou de fechar: as duas são a MESMA
+            // passagem do contato pelo fluxo, só fatiada pela espera. Sem isso o
+            // histórico mostraria cada trecho como uma entrada independente.
+            resumedFromExecutionId: exec.id,
+            // As variáveis acumuladas até aqui precisam atravessar a espera —
+            // senão o trecho depois do atraso perde o que o fluxo já coletou.
+            variables: exec.variables || {},
           }),
         });
 
