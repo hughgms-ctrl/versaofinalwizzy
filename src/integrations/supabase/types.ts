@@ -7940,6 +7940,7 @@ export type Database = {
           group_jids: Json
           id: string
           last_executed_at: string | null
+          last_run_summary: Json | null
           media_type: string | null
           media_url: string | null
           message_content: string | null
@@ -7972,6 +7973,7 @@ export type Database = {
           group_jids?: Json
           id?: string
           last_executed_at?: string | null
+          last_run_summary?: Json | null
           media_type?: string | null
           media_url?: string | null
           message_content?: string | null
@@ -8004,6 +8006,7 @@ export type Database = {
           group_jids?: Json
           id?: string
           last_executed_at?: string | null
+          last_run_summary?: Json | null
           media_type?: string | null
           media_url?: string | null
           message_content?: string | null
