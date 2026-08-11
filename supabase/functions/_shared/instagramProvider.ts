@@ -418,3 +418,66 @@ export async function verifyWebhookSignature(req: Request, rawBody: string, appS
     .join('');
   return timingSafeEqualHex(computedSig, expectedSig);
 }
+
+// ==================== signed_request (deauthorize / data deletion) ====================
+
+// Meta posts `signed_request` (form-encoded) to the Deauthorize and Data
+// Deletion callbacks. Format is `<base64url signature>.<base64url payload>` —
+// note the signature comes FIRST here, the opposite order of our own OAuth
+// state above, and the encoding is base64URL (`-`/`_`), not plain base64.
+//
+// Unlike the webhook verifier, this one FAILS CLOSED when no app secret is
+// configured: acting on an unverified payload would mean disconnecting an
+// account (or deleting data) on the say-so of an unauthenticated caller.
+
+export interface SignedRequestPayload {
+  /** App-scoped user id — for Instagram Login this is the IGSID. */
+  user_id?: string;
+  algorithm?: string;
+  issued_at?: number;
+  [key: string]: unknown;
+}
+
+function base64UrlDecode(input: string): Uint8Array {
+  const normalized = input.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
+  const binary = atob(padded);
+  return Uint8Array.from(binary, (c) => c.charCodeAt(0));
+}
+
+export async function parseSignedRequest(
+  signedRequest: string,
+  appSecret: string,
+): Promise<SignedRequestPayload | null> {
+  if (!appSecret || !signedRequest) return null;
+
+  const [encodedSig, encodedPayload] = String(signedRequest).split('.');
+  if (!encodedSig || !encodedPayload) return null;
+
+  try {
+    const key = await crypto.subtle.importKey(
+      'raw',
+      new TextEncoder().encode(appSecret),
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign'],
+    );
+    const sigBuffer = await crypto.subtle.sign(
+      'HMAC',
+      key,
+      new TextEncoder().encode(encodedPayload),
+    );
+    const computedSig = Array.from(new Uint8Array(sigBuffer))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
+    const providedSig = Array.from(base64UrlDecode(encodedSig))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
+
+    if (!timingSafeEqualHex(computedSig, providedSig)) return null;
+
+    return JSON.parse(new TextDecoder().decode(base64UrlDecode(encodedPayload)));
+  } catch {
+    return null;
+  }
+}
