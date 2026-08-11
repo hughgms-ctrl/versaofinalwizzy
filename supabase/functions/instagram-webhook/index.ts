@@ -56,6 +56,11 @@ async function handleMessagingEvent(supabase: any, account: any, messagingEvent:
   await supabase.from('instagram_conversations').update({
     last_message_at: new Date().toISOString(),
     last_message_direction: 'inbound',
+    // Opens Meta's 24-hour messaging window. Tracked separately from
+    // last_message_at (which our own outbound sends also bump) because only a
+    // message FROM the person opens the window — this is what
+    // instagram-process-followups checks before sending a normal DM.
+    last_inbound_at: new Date().toISOString(),
     unread_count: (conversation.unread_count || 0) + 1,
   }).eq('id', conversation.id);
 }

@@ -126,6 +126,12 @@ Deno.serve(async (req) => {
           const message = interpolate(action.text, vars);
           let trackedLinkId: string | null = null;
 
+          // Addressed by comment_id, NOT by IGSID: whoever just commented has no
+          // open 24-hour window, so this has to go out as a private reply (see
+          // InstagramRecipient in instagramProvider.ts). Meta allows exactly one
+          // per comment, within 7 days of the comment.
+          const recipient = { comment_id: event.commentId };
+
           let result;
           if (action.button?.url) {
             const { data: trackedLink } = await supabase
@@ -140,9 +146,9 @@ Deno.serve(async (req) => {
               .single();
             trackedLinkId = trackedLink?.id || null;
             const redirectUrl = `${supabaseUrl}/functions/v1/instagram-link-redirect?id=${trackedLinkId}`;
-            result = await sendInstagramButtonMessage(account, event.fromIgsid, message, action.button.label || 'Ver mais', redirectUrl);
+            result = await sendInstagramButtonMessage(account, recipient, message, action.button.label || 'Ver mais', redirectUrl);
           } else {
-            result = await sendInstagramMessage(account, event.fromIgsid, message);
+            result = await sendInstagramMessage(account, recipient, message);
           }
 
           let conversationId: string | null = null;

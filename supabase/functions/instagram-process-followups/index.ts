@@ -12,17 +12,33 @@ Deno.serve(async (req) => {
   const supabase = createClient(supabaseUrl, serviceRoleKey);
 
   try {
+    // Atomically reserve the due rows (marks them 'sending') before doing any
+    // network work. Without this, a batch that outlives the one-minute cron
+    // interval gets picked up again by the next run and sent twice.
+    const { data: claimedRows, error: claimError } = await supabase
+      .rpc('claim_instagram_followups', { p_limit: 50 });
+
+    if (claimError) throw claimError;
+
+    const claimedIds = (claimedRows || []).map((r: any) => r.id);
+    if (!claimedIds.length) {
+      return new Response(JSON.stringify({ success: true, sent: 0, failed: 0, skipped: 0, total: 0 }), {
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    // The claim function returns bare rows; re-read with the relations the send
+    // needs (the RPC can't express PostgREST's embedding syntax).
     const { data: dueRows, error } = await supabase
       .from('instagram_pending_followups')
-      .select('*, instagram_contacts(*), instagram_automation_rules(instagram_account_id, instagram_accounts(*))')
-      .eq('status', 'pending')
-      .lte('resume_at', new Date().toISOString())
-      .limit(50);
+      .select('*, instagram_contacts(*), instagram_conversations(last_inbound_at), instagram_automation_rules(instagram_account_id, instagram_accounts(*))')
+      .in('id', claimedIds);
 
     if (error) throw error;
 
     let sent = 0;
     let failed = 0;
+    let skipped = 0;
 
     for (const row of dueRows || []) {
       try {
@@ -35,6 +51,28 @@ Deno.serve(async (req) => {
             processed_at: new Date().toISOString(),
           }).eq('id', row.id);
           failed++;
+          continue;
+        }
+
+        // Meta only accepts a normal DM while the 24-hour window is open, and
+        // the window is opened by the person's own last message — not by ours.
+        // The initial comment→DM used up this comment's one private reply, so
+        // there's no window-free path left here.
+        //
+        // Recorded as 'skipped', not 'error': nothing failed technically, the
+        // person simply never replied. Marking it as an error would hide real
+        // send failures among the routine ones.
+        const lastInbound = row.instagram_conversations?.last_inbound_at;
+        const windowOpen = lastInbound
+          && Date.now() - new Date(lastInbound).getTime() < 24 * 60 * 60 * 1000;
+
+        if (!windowOpen) {
+          await supabase.from('instagram_pending_followups').update({
+            status: 'skipped',
+            error: 'janela_24h_fechada: contato nao respondeu',
+            processed_at: new Date().toISOString(),
+          }).eq('id', row.id);
+          skipped++;
           continue;
         }
 
@@ -52,7 +90,11 @@ Deno.serve(async (req) => {
         const text = clicked ? config.clicked_text : config.not_clicked_text;
 
         if (text) {
-          const result = await sendInstagramMessage(account, contact.igsid, text);
+          // Addressed by IGSID (not comment_id): the private reply for this
+          // comment was already spent on the initial DM, and Meta allows only
+          // one per comment. This send is therefore a normal DM and depends on
+          // the 24-hour window being open — see the window check above.
+          const result = await sendInstagramMessage(account, { id: contact.igsid }, text);
           if (result.ok) {
             const conversation = row.conversation_id
               ? { id: row.conversation_id }
@@ -82,16 +124,21 @@ Deno.serve(async (req) => {
         sent++;
       } catch (rowError) {
         console.error('[instagram-process-followups] row error:', rowError);
+        // Back to 'pending' while attempts remain, so a transient failure (a
+        // blip at Meta) is retried on the next run instead of being discarded.
+        // The claim function's `attempts < 3` ceiling is what stops this from
+        // looping forever; at that point the row stays 'error' for good.
+        const exhausted = (row.attempts || 0) >= 3;
         await supabase.from('instagram_pending_followups').update({
-          status: 'error',
+          status: exhausted ? 'error' : 'pending',
           error: String(rowError).slice(0, 500),
-          processed_at: new Date().toISOString(),
+          processed_at: exhausted ? new Date().toISOString() : null,
         }).eq('id', row.id);
         failed++;
       }
     }
 
-    return new Response(JSON.stringify({ success: true, sent, failed, total: (dueRows || []).length }), {
+    return new Response(JSON.stringify({ success: true, sent, failed, skipped, total: (dueRows || []).length }), {
       headers: { 'Content-Type': 'application/json' },
     });
   } catch (error) {
@@ -103,15 +150,7 @@ Deno.serve(async (req) => {
   }
 });
 
-// MANUAL DEPLOY NOTE (mirrors 20260618120000_fase5a_pg_cron_retencao.sql's
-// convention — cron registration is NOT run via `supabase db push`, apply by
-// hand once in the SQL editor after this function is deployed):
-//
-// SELECT cron.schedule(
-//   'instagram-process-followups', '* * * * *',
-//   $$ SELECT net.http_post(
-//     url := 'https://zaobtetbjpuzibjymhzw.supabase.co/functions/v1/instagram-process-followups',
-//     headers := '{"Content-Type": "application/json"}'::jsonb,
-//     body := '{}'::jsonb
-//   ); $$
-// );
+// The cron registration for this function lives in
+// supabase/migrations/20260811150000_instagram_queue_lock_and_window.sql.
+// It used to be a comment here for manual application, which meant there was no
+// way to tell from the repo whether it had ever actually been scheduled.

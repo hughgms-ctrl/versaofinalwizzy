@@ -258,6 +258,10 @@ verify_jwt = false
 [functions.instagram-process-followups]
 verify_jwt = false
 
+# Renovação semanal do token de 60 dias, chamada pelo pg_cron (sem JWT).
+[functions.instagram-refresh-tokens]
+verify_jwt = false
+
 # Callbacks obrigatórios da Meta (App Review). Chamados pelos servidores da Meta
 # sem JWT; a autenticidade vem do signed_request assinado com o app secret.
 [functions.instagram-deauthorize]

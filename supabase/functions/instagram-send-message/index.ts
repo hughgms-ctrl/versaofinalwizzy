@@ -70,7 +70,24 @@ Deno.serve(async (req) => {
       });
     }
 
-    const result = await sendInstagramMessage(account, contact.igsid, text);
+    // Agent replying by hand from the inbox: addressed by IGSID, which requires
+    // the 24-hour window to be open. Checked up front so the agent gets a clear
+    // reason instead of Meta's opaque rejection after the fact.
+    const lastInbound = conversation.last_inbound_at;
+    const windowOpen = lastInbound
+      && Date.now() - new Date(lastInbound).getTime() < 24 * 60 * 60 * 1000;
+
+    if (!windowOpen) {
+      return new Response(JSON.stringify({
+        error: 'A janela de 24 horas do Instagram está fechada. Só é possível responder até 24h após a última mensagem do contato.',
+        code: 'window_closed',
+      }), {
+        status: 409,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const result = await sendInstagramMessage(account, { id: contact.igsid }, text);
     if (!result.ok) {
       await supabase.from('instagram_messages').insert({
         conversation_id: conversationId,

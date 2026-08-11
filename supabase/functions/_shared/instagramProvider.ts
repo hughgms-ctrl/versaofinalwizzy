@@ -10,7 +10,12 @@
 // calls after auth go to graph.instagram.com (not graph.facebook.com).
 // Reference: https://developers.facebook.com/docs/instagram-platform/instagram-api-with-instagram-login
 
-export const GRAPH_API_BASE = 'https://graph.instagram.com';
+// Pin the API version explicitly. An unversioned path resolves to the OLDEST
+// version Meta still supports, which moves without warning — so calls that work
+// today can start failing on a Meta-side sunset we never opted into. Pinning
+// makes the upgrade a deliberate, testable change instead.
+export const GRAPH_API_VERSION = 'v25.0';
+export const GRAPH_API_BASE = `https://graph.instagram.com/${GRAPH_API_VERSION}`;
 const IG_OAUTH_AUTHORIZE_URL = 'https://www.instagram.com/oauth/authorize';
 const IG_OAUTH_TOKEN_URL = 'https://api.instagram.com/oauth/access_token';
 
@@ -151,16 +156,33 @@ export async function ensureInstagramConversation(supabase: any, account: any, c
 // `account.page_access_token` holds the Instagram User long-lived access
 // token (column name is a holdover from the Facebook-Login-with-Page design;
 // this app uses Instagram Login, so there is no Facebook Page token here).
-export async function sendInstagramMessage(
+// How the recipient is addressed. This is the single most consequential choice
+// in the whole module:
+//
+//   { id: <IGSID> }         — a normal DM. Only allowed inside an open 24-hour
+//                             messaging window, i.e. after the person messaged
+//                             the business first.
+//   { comment_id: <ID> }    — a PRIVATE REPLY. Allowed *because* the person
+//                             commented, with no pre-existing window: up to 7
+//                             days after the comment, ONCE per comment, ever.
+//
+// Someone who merely commented on a post has no open window, so the
+// comment→DM flow must use comment_id. Addressing them by IGSID is rejected by
+// Meta ("outside allowed window"), which is exactly how that flow fails.
+export type InstagramRecipient =
+  | { id: string }
+  | { comment_id: string };
+
+async function postMessage(
   account: any,
-  igsid: string,
-  text: string,
+  recipient: InstagramRecipient,
+  message: unknown,
 ): Promise<InstagramSendResult> {
   const endpoint = `${GRAPH_API_BASE}/${account.ig_business_account_id}/messages`;
   const response = await fetch(`${endpoint}?access_token=${encodeURIComponent(account.page_access_token)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ recipient: { id: igsid }, message: { text } }),
+    body: JSON.stringify({ recipient, message }),
   });
   const responseText = await response.text();
   const responseJson = parseJson(responseText);
@@ -173,49 +195,40 @@ export async function sendInstagramMessage(
   };
 }
 
+export async function sendInstagramMessage(
+  account: any,
+  recipient: InstagramRecipient,
+  text: string,
+): Promise<InstagramSendResult> {
+  return postMessage(account, recipient, { text });
+}
+
 // Sends a message with a single URL button, using Instagram's "generic
 // template" attachment (the same structure Messenger Platform uses).
 // `buttonUrl` should already be a Wizzy tracked-link redirect URL, not the
 // final destination, so click-through can be detected for follow-ups.
 export async function sendInstagramButtonMessage(
   account: any,
-  igsid: string,
+  recipient: InstagramRecipient,
   text: string,
   buttonLabel: string,
   buttonUrl: string,
 ): Promise<InstagramSendResult> {
-  const endpoint = `${GRAPH_API_BASE}/${account.ig_business_account_id}/messages`;
-  const response = await fetch(`${endpoint}?access_token=${encodeURIComponent(account.page_access_token)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      recipient: { id: igsid },
-      message: {
-        attachment: {
-          type: 'template',
-          payload: {
-            template_type: 'generic',
-            elements: [
-              {
-                title: text.slice(0, 80),
-                subtitle: text.length > 80 ? text.slice(80, 160) : undefined,
-                buttons: [{ type: 'web_url', url: buttonUrl, title: buttonLabel.slice(0, 20) }],
-              },
-            ],
+  return postMessage(account, recipient, {
+    attachment: {
+      type: 'template',
+      payload: {
+        template_type: 'generic',
+        elements: [
+          {
+            title: text.slice(0, 80),
+            subtitle: text.length > 80 ? text.slice(80, 160) : undefined,
+            buttons: [{ type: 'web_url', url: buttonUrl, title: buttonLabel.slice(0, 20) }],
           },
-        },
+        ],
       },
-    }),
+    },
   });
-  const responseText = await response.text();
-  const responseJson = parseJson(responseText);
-  return {
-    ok: response.ok,
-    status: response.status,
-    igMessageId: responseJson?.message_id || null,
-    responseText,
-    responseJson,
-  };
 }
 
 export async function replyToComment(account: any, commentId: string, message: string): Promise<InstagramActionResult> {
@@ -301,6 +314,23 @@ export async function exchangeForLongLivedToken(appSecret: string, shortLivedTok
   const response = await fetch(url.toString());
   const json = await response.json();
   if (!response.ok) throw new Error(`Falha ao gerar long-lived token: ${JSON.stringify(json)}`);
+  return { accessToken: json.access_token as string, expiresIn: Number(json.expires_in || 0) };
+}
+
+// GET https://graph.instagram.com/refresh_access_token?grant_type=ig_refresh_token
+//
+// Long-lived tokens last 60 days. Refreshing returns a NEW 60-day token, so a
+// weekly sweep keeps a connection alive indefinitely — without it every client
+// silently drops off two months after connecting and has to redo the OAuth by
+// hand. Meta requires the token to be at least 24 hours old and still valid: a
+// token already expired cannot be refreshed, only re-authorized.
+export async function refreshLongLivedToken(accessToken: string) {
+  const url = new URL(`${GRAPH_API_BASE}/refresh_access_token`);
+  url.searchParams.set('grant_type', 'ig_refresh_token');
+  url.searchParams.set('access_token', accessToken);
+  const response = await fetch(url.toString());
+  const json = await response.json();
+  if (!response.ok) throw new Error(`Falha ao renovar token: ${JSON.stringify(json)}`);
   return { accessToken: json.access_token as string, expiresIn: Number(json.expires_in || 0) };
 }
 
