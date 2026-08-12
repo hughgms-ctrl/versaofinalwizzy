@@ -39,6 +39,39 @@ O que você precisa em mãos:
 
 É gratuito e leva dois minutos.
 
+### Se aparecer "Não é possível acessar este serviço"
+
+Tela branca com esse texto e a URL terminando em `/account_status/error/`:
+a plataforma de desenvolvedor está **bloqueada para a sua conta pessoal do
+Facebook**. Não é erro do app nem do guia — é anterior a tudo, e nenhuma
+configuração contorna.
+
+Causas, da mais comum para a menos:
+
+| Causa | Como confirmar |
+|---|---|
+| Registro de desenvolvedor nunca concluído | Volte pela home do developers.facebook.com e clique em *Começar*, em vez de ir direto para `/apps` |
+| Conta pessoal nova, sem telefone confirmado ou 2FA | Configurações da conta → Segurança |
+| Restrição ativa herdada da conta do Facebook | [facebook.com/support](https://www.facebook.com/support) → Central de Contas |
+| Falso positivo do antifraude | Só o suporte resolve |
+
+O que fazer, nesta ordem:
+
+1. Verificar restrições em [facebook.com/support](https://www.facebook.com/support).
+   Se houver alguma ativa, resolva primeiro — o resto é consequência dela.
+2. Confirmar telefone e e-mail, e ativar 2FA na conta pessoal.
+3. Usar o link **"envie uma solicitação de suporte"** da própria tela de erro,
+   explicando que quer registrar como desenvolvedor para integrar a API do
+   Instagram ao seu produto. Resposta em alguns dias.
+
+**Alternativa se não destravar:** criar o app por **outra conta pessoal do
+Facebook** que seja estabelecida e de uso real — sua, de sócio, de alguém da
+equipe. O app não fica preso a essa pessoa: depois de criado, vincula-se ao
+Business Manager da empresa e outros administradores são adicionados.
+
+> Não crie uma conta do Facebook nova só para isso. Conta recém-criada é
+> justamente o perfil que mais cai nesse bloqueio, então o problema se repete.
+
 ---
 
 ## Passo 2 — Criar o app
