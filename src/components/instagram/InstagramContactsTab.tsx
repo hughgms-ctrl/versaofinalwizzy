@@ -77,7 +77,14 @@ function Avatar({ contact }: { contact: InstagramContact }) {
   );
 }
 
-/** Etiqueta de alcance, com a explicação junto — é a coluna que gera dúvida. */
+/**
+ * Etiqueta de alcance, com a explicação junto — é a coluna que gera dúvida.
+ *
+ * O estado é carregado por um ponto colorido, e não pelo texto: o verde do
+ * `status-open` sobre superfície clara não alcança 4.5:1 em corpo pequeno, e
+ * texto colorido ilegível é o preço mais comum que se paga por "deixar bonito".
+ * O ponto colore sem depender de contraste de leitura.
+ */
 function ReachBadge({ contact }: { contact: InstagramContact }) {
   const open = isWindowOpen(contact);
   const lastInbound = contact.instagram_conversations?.[0]?.last_inbound_at;
@@ -86,17 +93,18 @@ function ReachBadge({ contact }: { contact: InstagramContact }) {
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
-          <Badge
-            variant="outline"
-            className={cn(
-              'font-normal',
-              open
-                ? 'border-green-500/30 bg-green-500/10 text-green-600 dark:text-green-400'
-                : 'text-muted-foreground',
-            )}
-          >
-            {open ? 'alcançável' : 'fora da janela'}
-          </Badge>
+          <span className="inline-flex cursor-default items-center gap-1.5 whitespace-nowrap text-sm">
+            <span
+              aria-hidden
+              className={cn(
+                'h-1.5 w-1.5 shrink-0 rounded-full',
+                open ? 'bg-status-open' : 'bg-muted-foreground/40',
+              )}
+            />
+            <span className={open ? undefined : 'text-muted-foreground'}>
+              {open ? 'alcançável' : 'fora da janela'}
+            </span>
+          </span>
         </TooltipTrigger>
         <TooltipContent className="max-w-xs text-xs leading-relaxed">
           {open ? (
@@ -273,11 +281,14 @@ export function InstagramContactsTab({ connectedAccounts }: { connectedAccounts:
             key={f.key}
             type="button"
             onClick={() => setFilter(f.key)}
+            // O estado ativo vem da borda e do fundo, não da cor do texto: o
+            // magenta da marca em 12px não chega aos 4.5:1 exigidos, e um
+            // filtro que não se lê não é um filtro.
             className={cn(
-              'rounded-full border px-3 py-1 text-xs transition',
+              'rounded-full border px-3 py-1 text-xs transition-colors duration-150',
               filter === f.key
-                ? 'border-primary bg-primary/10 text-primary'
-                : 'text-muted-foreground hover:border-muted-foreground/40',
+                ? 'border-primary bg-primary/10 font-medium text-foreground'
+                : 'text-muted-foreground hover:border-muted-foreground/40 hover:text-foreground',
             )}
           >
             {f.label}

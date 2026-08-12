@@ -84,11 +84,20 @@ export interface GuidedState {
 export interface InstagramTemplate {
   id: string;
   title: string;
-  /** Frase curta do card, no tom de "o que isto faz por mim". */
+  /** Frase curta da linha, no tom de "o que isto faz por mim". */
   description: string;
-  /** Emoji do card. Ilustração barata que dá identidade sem virar biblioteca de ícones. */
-  emoji: string;
-  badge?: 'POPULAR' | 'NOVO';
+  /**
+   * O mecanismo, em três passos.
+   *
+   * Substituiu o emoji que ilustrava cada modelo. Emoji decora e não informa —
+   * e, repetido em sete cartões iguais, vira ruído. Os passos ocupam o mesmo
+   * espaço dizendo a única coisa que a pessoa precisa saber para escolher: o
+   * que dispara, o que a pessoa recebe e o que acontece depois.
+   */
+  steps: [string, string, string];
+  /** Agrupador da lista. É taxonomia real (de onde nasce), não rótulo decorativo. */
+  group: 'comment' | 'message';
+  badge?: string;
   triggerType: InstagramTriggerType;
   defaults: Partial<GuidedState>;
 }
@@ -113,8 +122,11 @@ const BASE: GuidedState = {
   publicReplyText: 'Te chamei no direct 😉',
 
   openingMode: 'welcome',
+  // Um emoji por mensagem, no máximo. Aqui eles são CONTEÚDO, não interface:
+  // DM de Instagram sem nenhum soa a robô de banco. Dois na mesma mensagem já
+  // soam a robô de marketing.
   openingText:
-    'Olá! Eu estou muito feliz que você está aqui, muito obrigado pelo seu interesse 😊\n\nClique abaixo e eu vou te mandar o link em um segundo ✨',
+    'Oi! Que bom que você comentou 😊\n\nToca no botão abaixo e eu te mando o link agora mesmo.',
   openingButtonLabel: 'Me envie o link',
   emailInvalidText: 'Hmm, isso não parece um e-mail. Pode mandar de novo? 🙂',
 
@@ -135,10 +147,11 @@ const BASE: GuidedState = {
 export const INSTAGRAM_TEMPLATES: InstagramTemplate[] = [
   {
     id: 'comment-to-link',
-    title: 'Enviar links automaticamente por DM a partir dos comentários',
+    title: 'Enviar links automaticamente por DM',
     description: 'Quem comenta uma palavra recebe o link no direct, sem você digitar nada.',
-    emoji: '💬',
-    badge: 'POPULAR',
+    steps: ['comentário com palavra-chave', 'DM de boas-vindas', 'link'],
+    group: 'comment',
+    badge: 'Mais usado',
     triggerType: 'comment_keyword',
     defaults: {
       name: 'Comentou → recebe o link',
@@ -148,7 +161,8 @@ export const INSTAGRAM_TEMPLATES: InstagramTemplate[] = [
     id: 'comment-to-email',
     title: 'Capturar e-mails a partir dos comentários',
     description: 'A DM pede o e-mail antes de entregar o material. O endereço fica salvo no contato.',
-    emoji: '📧',
+    steps: ['comentário com palavra-chave', 'DM pedindo o e-mail', 'link'],
+    group: 'comment',
     triggerType: 'comment_keyword',
     defaults: {
       name: 'Comentou → deixa o e-mail',
@@ -165,7 +179,8 @@ export const INSTAGRAM_TEMPLATES: InstagramTemplate[] = [
     id: 'comment-ask-follow',
     title: 'Pedir para seguirem antes de mandar o link',
     description: 'A DM convida a seguir o perfil e só entrega o link depois da confirmação.',
-    emoji: '➕',
+    steps: ['comentário com palavra-chave', 'DM convidando a seguir', 'link'],
+    group: 'comment',
     triggerType: 'comment_keyword',
     defaults: {
       name: 'Comentou → segue → recebe o link',
@@ -179,7 +194,8 @@ export const INSTAGRAM_TEMPLATES: InstagramTemplate[] = [
     id: 'story-leads',
     title: 'Gerar leads com stories',
     description: 'Quem responde ao seu story entra na conversa e recebe o que você oferecer.',
-    emoji: '⚡',
+    steps: ['resposta a story', 'DM de boas-vindas', 'link'],
+    group: 'message',
     triggerType: 'story_reply',
     defaults: {
       name: 'Respondeu o story → recebe o link',
@@ -192,7 +208,8 @@ export const INSTAGRAM_TEMPLATES: InstagramTemplate[] = [
     id: 'answer-all-dms',
     title: 'Responder todas as suas DMs',
     description: 'Ninguém fica sem resposta: toda mensagem nova recebe um retorno na hora.',
-    emoji: '📥',
+    steps: ['qualquer mensagem no direct', 'resposta imediata', 'time assume'],
+    group: 'message',
     triggerType: 'dm_keyword',
     defaults: {
       name: 'Resposta automática no direct',
@@ -206,7 +223,8 @@ export const INSTAGRAM_TEMPLATES: InstagramTemplate[] = [
     id: 'welcome-new',
     title: 'Dar boas-vindas a quem chega pela primeira vez',
     description: 'Dispara só na primeira mensagem de cada pessoa — a apresentação da sua marca.',
-    emoji: '👋',
+    steps: ['primeira mensagem do contato', 'apresentação', 'time assume'],
+    group: 'message',
     triggerType: 'first_message',
     defaults: {
       name: 'Boas-vindas ao contato novo',
@@ -219,7 +237,8 @@ export const INSTAGRAM_TEMPLATES: InstagramTemplate[] = [
     id: 'story-mention-thanks',
     title: 'Agradecer quem menciona você no story',
     description: 'Cada menção vira uma conversa aberta, em vez de passar batido.',
-    emoji: '🙏',
+    steps: ['menção no story', 'agradecimento', 'conversa aberta'],
+    group: 'message',
     triggerType: 'story_mention',
     defaults: {
       name: 'Mencionou no story → agradecimento',
@@ -233,11 +252,18 @@ export const INSTAGRAM_TEMPLATES: InstagramTemplate[] = [
 export const BLANK_TEMPLATE: InstagramTemplate = {
   id: 'blank',
   title: 'Começar do zero',
-  description: 'Monte a automação escolhendo cada etapa você mesmo.',
-  emoji: '✨',
+  description: 'Escolha cada etapa você mesmo, a partir de um formulário vazio.',
+  steps: ['você escolhe', 'você escreve', 'você entrega'],
+  group: 'comment',
   triggerType: 'comment_keyword',
   defaults: { name: '' },
 };
+
+/** Rótulos dos grupos da lista de modelos. */
+export const TEMPLATE_GROUPS: Array<{ key: InstagramTemplate['group']; label: string }> = [
+  { key: 'comment', label: 'A partir de comentários' },
+  { key: 'message', label: 'A partir de mensagens e stories' },
+];
 
 export function templateById(id: string): InstagramTemplate {
   return INSTAGRAM_TEMPLATES.find((t) => t.id === id) || BLANK_TEMPLATE;

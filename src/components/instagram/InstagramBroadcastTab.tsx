@@ -4,7 +4,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Progress } from '@/components/ui/progress';
 import {
@@ -141,20 +140,21 @@ export function InstagramBroadcastTab({ accounts }: InstagramBroadcastTabProps) 
 
   return (
     <div className="space-y-4">
-      <Card className="border-amber-500/30 bg-amber-500/[0.04]">
-        <CardContent className="flex gap-3 py-4">
-          <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
-          <div className="space-y-1 text-sm">
-            <p className="font-medium">O público é quem respondeu nas últimas 24 horas.</p>
-            <p className="text-muted-foreground">
-              O Instagram não entrega DM fora dessa janela — e tentar derruba a conta.
-              Não é limite da Wizzy: é a regra da Meta, e a conta punida seria a sua.
-              Para alcançar mais gente, o caminho é fazer mais gente responder
-              (automação de comentário, story, enquete).
-            </p>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Nota, não cartão: a lista abaixo já é feita de cartões, e mais um do
+          mesmo peso competiria com ela. A cor de atenção fica só no ícone —
+          `status-pending` como texto não passa dos 4.5:1 em corpo pequeno. */}
+      <div className="flex gap-3 rounded-lg border border-status-pending/25 bg-status-pending/[0.06] p-4">
+        <Info className="mt-0.5 h-4 w-4 shrink-0 text-status-pending" aria-hidden />
+        <div className="max-w-[70ch] space-y-1 text-sm">
+          <p className="font-medium">O público é quem respondeu nas últimas 24 horas.</p>
+          <p className="text-muted-foreground">
+            O Instagram não entrega DM fora dessa janela — e insistir derruba a conta.
+            Não é limite da Wizzy: é regra da Meta, e a conta punida seria a sua. Para
+            alcançar mais gente, o caminho é fazer mais gente responder — automação de
+            comentário, story ou enquete.
+          </p>
+        </div>
+      </div>
 
       <div className="flex justify-end">
         <Button onClick={() => setOpen(true)} className="gap-2">
@@ -186,16 +186,20 @@ export function InstagramBroadcastTab({ accounts }: InstagramBroadcastTabProps) 
                     <div className="min-w-0">
                       <p className="flex items-center gap-2 font-medium">
                         {broadcast.name}
-                        <Badge
-                          variant="outline"
-                          className={cn(
-                            'font-normal',
-                            broadcast.status === 'sending' && 'border-blue-500/30 text-blue-600 dark:text-blue-400',
-                            broadcast.status === 'cancelled' && 'text-muted-foreground',
-                          )}
-                        >
+                        {/* Mesmo padrão da aba de contatos: o ponto carrega o
+                            estado, o texto fica legível. */}
+                        <span className="inline-flex items-center gap-1.5 text-sm font-normal text-muted-foreground">
+                          <span
+                            aria-hidden
+                            className={cn(
+                              'h-1.5 w-1.5 shrink-0 rounded-full',
+                              broadcast.status === 'sending' && 'animate-pulse bg-primary',
+                              broadcast.status === 'completed' && 'bg-status-open',
+                              broadcast.status === 'cancelled' && 'bg-muted-foreground/40',
+                            )}
+                          />
                           {STATUS_LABEL[broadcast.status]}
-                        </Badge>
+                        </span>
                       </p>
                       <p className="line-clamp-1 text-sm text-muted-foreground">{broadcast.message}</p>
                     </div>

@@ -61,7 +61,14 @@ interface InstagramGuidedEditorProps {
   onSave: () => void;
 }
 
-/** Um bloco de pergunta, com o título no tom da tela do ManyChat. */
+/**
+ * Um bloco de pergunta.
+ *
+ * O título fica em `text-base`, não maior: num painel de formulário a escala
+ * precisa ser apertada — quatro títulos grandes empilhados brigam entre si e
+ * com os controles, que são o que a pessoa veio operar. A separação entre
+ * seções vem de uma linha e do respiro, não do tamanho da fonte.
+ */
 function Section({
   title,
   children,
@@ -73,11 +80,11 @@ function Section({
 }) {
   return (
     <section
-      className="space-y-3"
+      className="space-y-3 border-t pt-6 first:border-t-0 first:pt-0"
       onFocusCapture={onFocusCapture}
       onMouseDown={onFocusCapture}
     >
-      <h3 className="text-lg font-semibold leading-snug">{title}</h3>
+      <h3 className="text-base font-semibold leading-snug tracking-tight">{title}</h3>
       {children}
     </section>
   );
@@ -235,7 +242,7 @@ export function InstagramGuidedEditor({
 
         <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
           {/* ── Perguntas ─────────────────────────────────────────────── */}
-          <div className="min-h-0 space-y-7 overflow-y-auto border-r p-5">
+          <div className="min-h-0 space-y-6 overflow-y-auto border-r p-5 pb-10">
             <div className="grid gap-3 sm:grid-cols-2">
               {accounts.length > 1 && (
                 <div className="space-y-1.5">

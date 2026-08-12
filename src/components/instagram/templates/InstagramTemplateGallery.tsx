@@ -1,11 +1,16 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
-import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ArrowRight, Instagram, Sparkles, Zap } from 'lucide-react';
-import { BLANK_TEMPLATE, INSTAGRAM_TEMPLATES, type InstagramTemplate } from './instagramTemplates';
+import { ArrowRight, ChevronRight, Plus } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import {
+  BLANK_TEMPLATE,
+  INSTAGRAM_TEMPLATES,
+  TEMPLATE_GROUPS,
+  type InstagramTemplate,
+} from './instagramTemplates';
 
 /**
  * A porta de entrada do Wizzy Engage.
@@ -15,10 +20,18 @@ import { BLANK_TEMPLATE, INSTAGRAM_TEMPLATES, type InstagramTemplate } from './i
  * faz o cliente novo fechar a aba: automação é um assunto em que ninguém sabe o
  * que é possível até ver um exemplo.
  *
- * Os modelos resolvem isso mostrando resultados ("quem comenta recebe o link")
- * em vez de mecanismos ("gatilho", "ação", "escopo"). Escolher um abre o
- * formulário guiado já preenchido; o que sobra para a pessoa é trocar o texto e
- * o link.
+ * DESENHO: uma lista, não uma grade de cartões.
+ *
+ * A primeira versão eram sete cartões iguais, cada um com um emoji. Dois
+ * problemas, e o emoji era o menor deles. Cartões idênticos repetidos não criam
+ * hierarquia — com sete opções do mesmo tamanho e peso, o olho não tem por onde
+ * começar. E o emoji ocupava justamente o espaço mais nobre da linha sem dizer
+ * nada: 💬 e 📧 não distinguem "manda o link" de "pede o e-mail".
+ *
+ * A lista resolve os dois. Uma superfície só, dividida por linhas, dá ordem de
+ * leitura; e no lugar do emoji entra o MECANISMO em três passos
+ * (comentário → DM de boas-vindas → link), que é literalmente a informação que
+ * decide a escolha. Ler a linha já é entender a automação.
  */
 
 interface InstagramTemplateGalleryProps {
@@ -46,7 +59,21 @@ function useInstagramContactCount() {
   });
 }
 
-function TemplateCard({
+/** Os três passos, separados por seta. É o que substituiu o emoji. */
+function Mechanism({ steps }: { steps: readonly string[] }) {
+  return (
+    <p className="mt-2 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
+      {steps.map((step, index) => (
+        <span key={step} className="inline-flex items-center gap-1.5">
+          {index > 0 && <ArrowRight className="h-3 w-3 shrink-0 opacity-50" aria-hidden />}
+          {step}
+        </span>
+      ))}
+    </p>
+  );
+}
+
+function TemplateRow({
   template,
   onPick,
 }: {
@@ -57,29 +84,27 @@ function TemplateCard({
     <button
       type="button"
       onClick={() => onPick(template)}
-      className="group flex h-full flex-col rounded-xl border bg-card p-4 text-left transition hover:border-primary/40 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className={cn(
+        'group flex w-full items-center gap-4 px-4 py-3.5 text-left transition-colors duration-150',
+        'hover:bg-accent focus-visible:bg-accent focus-visible:outline-none',
+        'focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+      )}
     >
-      <div className="mb-3 flex items-start justify-between gap-2">
-        <span className="text-2xl leading-none" aria-hidden>{template.emoji}</span>
-        {template.badge && (
-          <Badge
-            variant="secondary"
-            className="bg-orange-500/10 text-[10px] font-bold tracking-wide text-orange-600 dark:text-orange-400"
-          >
-            {template.badge}
-          </Badge>
-        )}
+      <div className="min-w-0 flex-1">
+        <span className="flex flex-wrap items-center gap-2">
+          <span className="font-medium leading-snug">{template.title}</span>
+          {template.badge && (
+            <Badge variant="secondary" className="font-normal">{template.badge}</Badge>
+          )}
+        </span>
+        <p className="mt-0.5 text-sm text-muted-foreground">{template.description}</p>
+        <Mechanism steps={template.steps} />
       </div>
 
-      <p className="font-medium leading-snug group-hover:text-primary">{template.title}</p>
-      <p className="mt-1.5 text-sm text-muted-foreground">{template.description}</p>
-
-      <div className="mt-auto flex items-center gap-1.5 pt-4 text-xs text-muted-foreground">
-        <Zap className="h-3.5 w-3.5" />
-        Automação rápida
-        <Instagram className="ml-1 h-3.5 w-3.5" />
-        IG
-      </div>
+      <ChevronRight
+        className="h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-150 group-hover:translate-x-0.5 motion-reduce:transition-none motion-reduce:group-hover:translate-x-0"
+        aria-hidden
+      />
     </button>
   );
 }
@@ -95,14 +120,14 @@ export function InstagramTemplateGallery({
   const firstName = (profile?.full_name || '').trim().split(/\s+/)[0];
 
   return (
-    <div className="space-y-8">
-      <div>
-        <h2 className="text-2xl font-semibold tracking-tight">
-          {firstName ? `Olá, ${firstName}!` : 'Comece por aqui'}
+    <div className="max-w-3xl space-y-8">
+      <header>
+        <h2 className="text-xl font-semibold tracking-tight">
+          {firstName ? `Olá, ${firstName}` : 'Comece por aqui'}
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">
           {connectedAccounts === 0 ? (
-            <>Nenhuma conta conectada ainda — conecte o Instagram em Configurações para começar.</>
+            <>Conecte o Instagram em Configurações para começar a automatizar.</>
           ) : (
             <>
               {connectedAccounts} {connectedAccounts === 1 ? 'conta conectada' : 'contas conectadas'}
@@ -111,38 +136,50 @@ export function InstagramTemplateGallery({
             </>
           )}
         </p>
-      </div>
+      </header>
 
-      <div>
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <h3 className="text-lg font-semibold">Comece aqui</h3>
-          <Button variant="link" size="sm" onClick={onOpenFlows} className="gap-1 px-0">
+      <section className="space-y-6">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <h3 className="font-medium">Modelos prontos</h3>
+          <button
+            type="button"
+            onClick={onOpenFlows}
+            className="inline-flex items-center gap-1 text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
+          >
             Prefiro montar um fluxo
-            <ArrowRight className="h-3.5 w-3.5" />
-          </Button>
+            <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+          </button>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {INSTAGRAM_TEMPLATES.map((template) => (
-            <TemplateCard key={template.id} template={template} onPick={onPick} />
-          ))}
-        </div>
-      </div>
+        {TEMPLATE_GROUPS.map((group) => {
+          const items = INSTAGRAM_TEMPLATES.filter((t) => t.group === group.key);
+          if (!items.length) return null;
 
-      <Card className="border-dashed">
-        <CardContent className="flex flex-wrap items-center justify-between gap-4 py-5">
-          <div className="flex items-start gap-3">
-            <Sparkles className="mt-0.5 h-5 w-5 text-muted-foreground" />
-            <div>
-              <p className="font-medium">{BLANK_TEMPLATE.title}</p>
-              <p className="text-sm text-muted-foreground">{BLANK_TEMPLATE.description}</p>
+          return (
+            <div key={group.key} className="space-y-2">
+              <p className="text-sm text-muted-foreground">{group.label}</p>
+              {/* Uma superfície com linhas, e não um cartão por modelo: com sete
+                  opções do mesmo peso, o olho não teria por onde começar. */}
+              <div className="divide-y divide-border overflow-hidden rounded-lg border bg-card">
+                {items.map((template) => (
+                  <TemplateRow key={template.id} template={template} onPick={onPick} />
+                ))}
+              </div>
             </div>
-          </div>
-          <Button variant="outline" onClick={() => onPick(BLANK_TEMPLATE)}>
-            Criar do zero
-          </Button>
-        </CardContent>
-      </Card>
+          );
+        })}
+      </section>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-5">
+        <div>
+          <p className="text-sm font-medium">{BLANK_TEMPLATE.title}</p>
+          <p className="text-sm text-muted-foreground">{BLANK_TEMPLATE.description}</p>
+        </div>
+        <Button variant="outline" onClick={() => onPick(BLANK_TEMPLATE)} className="gap-1.5">
+          <Plus className="h-4 w-4" />
+          Criar do zero
+        </Button>
+      </div>
     </div>
   );
 }
