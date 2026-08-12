@@ -132,6 +132,12 @@ Você precisa de três valores:
 | **Instagram App Secret** | Mesma seção → botão *Show* (pede a senha do Facebook) |
 | **Verify token** | **Você inventa.** É uma senha qualquer que você escolhe agora e vai repetir no Passo 6. Use algo longo e aleatório. |
 
+> **Não confunda com o botão "Gerar token"** da seção *1. Gere tokens de acesso*.
+> Aquele é um token de acesso manual, para testar chamadas à API na mão — o
+> Wizzy **não usa**, porque obtém o próprio token pelo OAuth quando o cliente
+> clica em "Conectar". O painel chama as duas coisas de "token", mas só o
+> *verify token* (que você inventa) entra na configuração do Wizzy.
+
 > Atenção: use o **Instagram App ID**, não o "App ID" geral que aparece no topo
 > do painel em Configurações → Básico. São números diferentes, e o errado faz o
 > OAuth falhar com uma mensagem genérica.
