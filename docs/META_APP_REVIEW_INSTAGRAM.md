@@ -2,6 +2,11 @@
 
 > Guia de submissão do app **Wizzy-IG**. Criado em 2026-08-11.
 >
+> **Se o app ainda não existe no painel da Meta, comece por
+> `META_CRIAR_APP_INSTAGRAM.md`** — criação do app, credenciais, webhook e
+> primeiro teste em modo Development. Este documento parte do ponto em que a
+> conexão já funciona com a sua conta.
+>
 > **Por que isso trava o produto:** em modo Development a Meta não entrega webhooks
 > nem permite ler comentários de contas que não têm papel no app. O OAuth conecta
 > normalmente, o que engana — mas nenhuma automação dispara para um cliente real.
