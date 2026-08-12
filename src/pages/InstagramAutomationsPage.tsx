@@ -25,7 +25,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Instagram, Plus, Pencil, Trash2, Loader2, ListChecks } from 'lucide-react';
+import { Instagram, Plus, Pencil, Trash2, Loader2, ListChecks, Workflow } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useInstagramAccounts } from '@/hooks/useInstagramAccounts';
 import {
@@ -40,6 +40,7 @@ import {
 } from '@/hooks/useInstagramAutomationRules';
 import { InstagramDmPreview } from '@/components/instagram/InstagramDmPreview';
 import { InstagramMediaPicker } from '@/components/instagram/InstagramMediaPicker';
+import { InstagramFlowsTab } from '@/components/instagram/flow/InstagramFlowsTab';
 
 type ActionKey = 'like_comment' | 'reply_comment_public' | 'send_dm' | 'add_tag' | 'notify_assignee';
 
@@ -327,7 +328,7 @@ export default function InstagramAutomationsPage() {
   return (
     <MainLayout
       title="Wizzy Engage"
-      subtitle="Comentário com palavra-chave → curtida, resposta pública e DM, estilo ManyChat"
+      subtitle="Automações de Instagram: comentário, direct, story e menção"
     >
       <Tabs defaultValue="rules" className="space-y-6">
         <TabsList className="bg-muted p-1 h-auto flex-wrap">
@@ -335,11 +336,19 @@ export default function InstagramAutomationsPage() {
             <Instagram className="h-4 w-4" />
             Automações
           </TabsTrigger>
+          <TabsTrigger value="flows" className="gap-2">
+            <Workflow className="h-4 w-4" />
+            Fluxos
+          </TabsTrigger>
           <TabsTrigger value="logs" className="gap-2">
             <ListChecks className="h-4 w-4" />
             Logs
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="flows" className="space-y-4">
+          <InstagramFlowsTab connectedAccounts={connectedAccounts.length} />
+        </TabsContent>
 
         <TabsContent value="rules" className="space-y-4">
           {connectedAccounts.length === 0 && (

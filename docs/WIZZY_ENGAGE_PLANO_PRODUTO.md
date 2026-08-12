@@ -4,8 +4,8 @@
 > Avaliação do dono: *"está bem fraquinho"* — quer fluxos visuais e preview da
 > mensagem, com o ManyChat como parâmetro.
 >
-> **Este documento é para decidir escopo, não é registro de trabalho feito.**
-> Nada aqui foi implementado.
+> **Estado em 2026-08-12:** Fases A, B e a fundação da C estão feitas. O placar
+> abaixo está atualizado; o que continua ❌ é o que falta.
 
 ## Primeiro: respondendo à pergunta
 
@@ -73,13 +73,13 @@ Levantado da documentação oficial e material de produto (fontes no fim).
 |---|---|---|---|
 | G1 | Comentário em post/reel com palavra-chave | ✅ | ✅ **tem** |
 | G2 | Comentário em post específico vs. todos | ✅ | ✅ **tem** (media_ids) |
-| G3 | DM com palavra-chave | ✅ | ❌ |
-| G4 | Resposta a story | ✅ | ❌ (webhook detecta, não automatiza) |
-| G5 | Menção em story | ✅ | ❌ |
+| G3 | DM com palavra-chave | ✅ | ✅ feito |
+| G4 | Resposta a story | ✅ | ✅ feito |
+| G5 | Menção em story | ✅ | ✅ feito |
 | G6 | Comentário em Live | ✅ | ❌ ⚠️ |
 | G7 | Ice breakers (perguntas no início da conversa) | ✅ | ❌ |
 | G8 | Link direto que abre a DM já num fluxo (ref URL) | ✅ | ❌ |
-| G9 | Primeira mensagem / novo contato | ✅ | ❌ |
+| G9 | Primeira mensagem / novo contato | ✅ | ✅ feito |
 
 ### Blocos de conteúdo
 
@@ -116,10 +116,10 @@ Levantado da documentação oficial e material de produto (fontes no fim).
 
 | # | Recurso | ManyChat | Wizzy |
 |---|---|---|---|
-| P1 | **Preview da mensagem** enquanto edita | ✅ | ❌ ← *você pediu* |
-| P2 | Construtor visual de fluxo | ✅ | ✅ (só WhatsApp) |
+| P1 | **Preview da mensagem** enquanto edita | ✅ | ✅ feito |
+| P2 | Construtor visual de fluxo | ✅ | ✅ WhatsApp e Instagram |
 | P3 | Templates prontos | ✅ 50+ | ❌ |
-| P4 | Seletor visual de post (escolher o post numa grade) | ✅ | ❌ (digita ID à mão) |
+| P4 | Seletor visual de post (escolher o post numa grade) | ✅ | ✅ feito |
 | P5 | Analytics por fluxo (taxa de resposta, clique) | ✅ | ⚠️ logs crus |
 | P6 | Broadcast / disparo | ✅ | ❌ ⚠️ |
 | P7 | Multi-canal no mesmo fluxo | ✅ | ❌ ← *seu briefing pedia* |
@@ -164,15 +164,41 @@ Por que antes dos fluxos: multiplica o que o produto faz sem depender da
 decisão arquitetural da Fase C. É a diferença entre "automatiza comentário" e
 "automatiza Instagram".
 
-### Fase C — Instagram no construtor de fluxos (grande)
+### Fase C — Instagram no construtor de fluxos
 
-A Fase 3 do seu roadmap original. É aqui que mora a decisão difícil, porque
-`flow_executions` hoje aponta para a tabela de conversas do WhatsApp.
+**Fundação entregue em 2026-08-12**, pela opção C2.
 
-Três caminhos possíveis — **preciso da sua decisão**, está no fim do documento.
+O que existe agora:
 
-Junto vêm os blocos que faltam para o Instagram: imagem, vídeo, arquivo (C4–C7),
-card e carrossel (C8–C9), delay de digitação (C10) e coleta validada (C11).
+| Peça | Onde |
+|---|---|
+| Tabelas próprias | `instagram_flows`, `instagram_flow_executions` (migration 20260812140000) |
+| Motor próprio | `instagram-flow-execute` |
+| Retomada por cron | `instagram-flow-timeouts`, a cada minuto |
+| Construtor visual | `/tools/wizzy-engage/fluxo`, aba **Fluxos** |
+
+Sete blocos, escolhidos por serem o que o canal suporta hoje: enviar mensagem
+(com quick replies ou botão de link), esperar resposta, esperar tempo, se/então,
+adicionar etiqueta, passar para atendente e chamar sistema externo.
+
+Três decisões que valem registro:
+
+- **Uma execução viva por conversa**, garantida por índice único parcial no
+  banco. Quem comenta três vezes em dois minutos entraria três vezes no mesmo
+  fluxo; a checagem no código não bastaria, porque dois webhooks concorrentes
+  leriam "não tem nenhuma" ao mesmo tempo.
+- **A private reply do comentário é gasta na primeira mensagem** do fluxo, e só
+  nela. Da segunda em diante tudo depende da janela de 24h — por isso o bloco de
+  espera por resposta é o que destrava fluxos longos.
+- **Uma saída leva a um caminho só.** Ligar a mesma saída a dois blocos criaria
+  uma bifurcação que o motor não percorre: ele seguiria a primeira aresta e a
+  segunda ficaria morta, sem aviso. O canvas substitui a ligação anterior.
+
+**Ainda falta nesta fase:** os blocos de mídia (C4–C7), card e carrossel
+(C8–C9), delay de digitação (C10) e coleta validada (C11). Também não há teste
+do fluxo sem publicar (o equivalente ao `FlowTestPanel` do WhatsApp) nem tela de
+acompanhamento das execuções — o hook `useInstagramFlowExecutions` já existe,
+falta a interface.
 
 ### Fase D — Biblioteca e medição (média)
 

@@ -46,6 +46,7 @@ const QuizBuilderPage = lazy(() => import("./pages/QuizBuilderPage"));
 const PublicQuizPage = lazy(() => import("./pages/PublicQuizPage"));
 const IntegrationsPage = lazy(() => import("./pages/IntegrationsPage"));
 const InstagramAutomationsPage = lazy(() => import("./pages/InstagramAutomationsPage"));
+const InstagramFlowBuilderPage = lazy(() => import("./pages/InstagramFlowBuilderPage"));
 const PrivacyPolicyPage = lazy(() => import("./pages/PrivacyPolicyPage"));
 const TermsOfServicePage = lazy(() => import("./pages/TermsOfServicePage"));
 const DataDeletionPage = lazy(() => import("./pages/DataDeletionPage"));
@@ -143,6 +144,7 @@ const App = () => (
                       <Route path="/documents" element={<ProtectedRoute><DocumentsPage /></ProtectedRoute>} />
                       <Route path="/integrations" element={<ProtectedRoute><IntegrationsPage /></ProtectedRoute>} />
                       <Route path="/tools/wizzy-engage" element={<ProtectedRoute><InstagramAutomationsPage /></ProtectedRoute>} />
+                      <Route path="/tools/wizzy-engage/fluxo" element={<ProtectedRoute><InstagramFlowBuilderPage /></ProtectedRoute>} />
                       <Route path="/privacidade" element={<PrivacyPolicyPage />} />
                       <Route path="/termos" element={<TermsOfServicePage />} />
                       <Route path="/exclusao-de-dados" element={<DataDeletionPage />} />

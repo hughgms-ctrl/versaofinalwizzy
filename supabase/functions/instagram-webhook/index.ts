@@ -102,6 +102,88 @@ async function handleMessagingEvent(
   };
 }
 
+/**
+ * Entrega a mensagem a um fluxo que estava esperando resposta desta conversa.
+ *
+ * Tem precedência sobre disparar fluxo novo: quem já está numa jornada e
+ * responde está continuando aquela conversa, não começando outra. Sem isto, a
+ * resposta a uma pergunta do fluxo poderia iniciar uma segunda jornada em
+ * paralelo — e o índice de "uma execução viva por conversa" recusaria a
+ * entrada, com a resposta da pessoa se perdendo.
+ *
+ * Devolve true quando havia execução esperando.
+ */
+async function resumeWaitingFlow(
+  supabase: any,
+  serviceRoleKey: string,
+  supabaseUrl: string,
+  conversationId: string,
+  replyText: string,
+): Promise<boolean> {
+  const { data: waiting } = await supabase
+    .from('instagram_flow_executions')
+    .select('id')
+    .eq('conversation_id', conversationId)
+    .eq('status', 'waiting_input')
+    .maybeSingle();
+
+  if (!waiting) return false;
+
+  await fetch(`${supabaseUrl}/functions/v1/instagram-flow-execute`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${serviceRoleKey}` },
+    body: JSON.stringify({ resumeExecutionId: waiting.id, replyText }),
+  }).catch((err) => console.error('[instagram-webhook] retomada de fluxo falhou:', err));
+
+  return true;
+}
+
+/**
+ * Dispara os fluxos visuais cujo gatilho casa com o evento.
+ *
+ * Fluxos e regras simples convivem: quem quer "comentou → recebe DM" usa a
+ * regra; quem precisa de ramificação e espera usa o fluxo. Os dois são
+ * consultados para o mesmo evento.
+ */
+async function triggerFlows(
+  supabase: any,
+  account: any,
+  serviceRoleKey: string,
+  supabaseUrl: string,
+  triggerTypes: string[],
+  event: Record<string, unknown>,
+  text: string,
+) {
+  const { data: flows } = await supabase
+    .from('instagram_flows')
+    .select('id, trigger_type, trigger_config')
+    .eq('instagram_account_id', account.id)
+    .in('trigger_type', triggerTypes)
+    .eq('is_active', true);
+
+  for (const flow of flows || []) {
+    const keywordApplies = flow.trigger_type === 'dm_keyword'
+      || flow.trigger_type === 'story_reply'
+      || flow.trigger_type === 'comment_keyword';
+    if (keywordApplies && !matchesKeywords(flow.trigger_config, text)) continue;
+
+    // Escopo por post, quando o gatilho é comentário.
+    if (flow.trigger_type === 'comment_keyword') {
+      const config = flow.trigger_config || {};
+      const mediaId = event.mediaId as string | undefined;
+      if (config.scope === 'specific_media' && mediaId && !(config.media_ids || []).includes(mediaId)) {
+        continue;
+      }
+    }
+
+    await fetch(`${supabaseUrl}/functions/v1/instagram-flow-execute`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${serviceRoleKey}` },
+      body: JSON.stringify({ flowId: flow.id, event }),
+    }).catch((err) => console.error('[instagram-webhook] disparo de fluxo falhou:', err));
+  }
+}
+
 /** Testa o texto recebido contra as palavras-chave configuradas na regra. */
 function matchesKeywords(config: any, text: string): boolean {
   const keywords: string[] = (config?.keywords || [])
@@ -330,6 +412,18 @@ async function handleCommentChange(
       }),
     }).catch((err) => console.error('[instagram-webhook] rule-execute call failed:', err));
   }
+
+  // Fluxos visuais com gatilho de comentário. O commentId vai junto: é ele que
+  // permite ao fluxo abrir com uma private reply, a única forma de alcançar
+  // quem só comentou.
+  await triggerFlows(supabase, account, serviceRoleKey, supabaseUrl, ['comment_keyword'], {
+    type: 'comment',
+    commentId,
+    mediaId,
+    text,
+    fromIgsid,
+    fromUsername: value?.from?.username,
+  }, text);
 }
 
 Deno.serve(async (req) => {
@@ -427,9 +521,30 @@ Deno.serve(async (req) => {
         // "quero", e a pessoa receberia o link e a automação de boas-vindas ao
         // mesmo tempo. O postback já teve a resposta dele.
         if (ingested && !handledAsQuickReply) {
-          await handleMessageTriggers(
-            supabase, account, serviceRoleKey, supabaseUrl, eventRow?.id, ingested,
+          // Quem já está numa jornada e responde está continuando aquela
+          // conversa. Só quem não está é candidato a entrar numa nova.
+          const resumed = await resumeWaitingFlow(
+            supabase, serviceRoleKey, supabaseUrl, ingested.conversation.id, ingested.text,
           );
+
+          if (!resumed) {
+            await handleMessageTriggers(
+              supabase, account, serviceRoleKey, supabaseUrl, eventRow?.id, ingested,
+            );
+
+            const triggerTypes = ingested.messageType === 'story_reply' ? ['story_reply']
+              : ingested.messageType === 'story_mention' ? ['story_mention']
+              : ['dm_keyword'];
+            if (ingested.isFirstMessage) triggerTypes.push('first_message');
+
+            await triggerFlows(supabase, account, serviceRoleKey, supabaseUrl, triggerTypes, {
+              type: 'message',
+              messageType: ingested.messageType,
+              text: ingested.text,
+              fromIgsid: ingested.contact.igsid,
+              fromUsername: ingested.contact.username,
+            }, ingested.text);
+          }
         }
       }
     }

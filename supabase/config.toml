@@ -257,6 +257,15 @@ verify_jwt = false
 [functions.instagram-rule-execute]
 verify_jwt = false
 
+# Motor dos fluxos visuais do Instagram. Interno: exige a service role key no
+# Authorization, checada dentro da função.
+[functions.instagram-flow-execute]
+verify_jwt = false
+
+# Retomada das execuções estacionadas (espera longa / sem resposta), pelo cron.
+[functions.instagram-flow-timeouts]
+verify_jwt = false
+
 [functions.instagram-link-redirect]
 verify_jwt = false
 
