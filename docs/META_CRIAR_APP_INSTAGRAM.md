@@ -324,7 +324,8 @@ Quando tiver testado e visto o fluxo funcionando ponta a ponta, siga para
 `META_APP_REVIEW_INSTAGRAM.md`. Ele parte exatamente daqui: verificação de CNPJ,
 Live Mode, screencasts e submissão.
 
-Uma decisão que vale tomar antes de submeter, registrada lá: remover
-`instagram_business_content_publish` de `REQUESTED_SCOPES` em
-`instagram-oauth-start`. Nenhuma função publica conteúdo, e pedir permissão que
-não dá para demonstrar no vídeo é motivo comum de rejeição.
+Uma decisão já aplicada no código (2026-08-12): `instagram_business_content_publish`
+foi removido de `REQUESTED_SCOPES` em `instagram-oauth-start` e do espelho em
+`instagram-oauth-callback`. Nenhuma função publica conteúdo, e pedir permissão que
+não dá para demonstrar no vídeo é motivo comum de rejeição. Não inclua essa
+permissão na submissão.

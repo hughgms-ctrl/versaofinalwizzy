@@ -16,7 +16,6 @@ const WEBHOOK_SUBSCRIBE_FIELDS = ['comments', 'messages', 'messaging_postbacks',
 // account row for display in the connect UI ("permissions granted").
 const REQUESTED_SCOPES_FALLBACK = [
   'instagram_business_basic',
-  'instagram_business_content_publish',
   'instagram_business_manage_messages',
   'instagram_business_manage_comments',
 ];

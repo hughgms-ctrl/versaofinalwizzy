@@ -175,15 +175,16 @@ enviamos mensagens não solicitadas: toda conversa começa por uma ação da pr�
 pessoa (comentário ou DM enviada para a empresa).
 ```
 
-### `instagram_business_content_publish`
+### `instagram_business_content_publish` — **não solicitar**
 
-> ⚠️ **Recomendação: remova esta permissão da solicitação.** O código não publica
-> conteúdo — nenhuma função chama endpoint de publicação. Pedir uma permissão que
-> você não consegue demonstrar no screencast é motivo comum de rejeição, e ela
-> pode ser solicitada depois, separadamente, quando houver a funcionalidade.
+> ✅ **Removida do código em 2026-08-12.** Saiu de `REQUESTED_SCOPES` em
+> `supabase/functions/instagram-oauth-start/index.ts` e do espelho
+> `REQUESTED_SCOPES_FALLBACK` em `instagram-oauth-callback`. O app não pede mais
+> essa permissão no OAuth, então **não a inclua na submissão** — pedir permissão
+> que não dá para demonstrar no screencast é motivo comum de rejeição.
 >
-> Para removê-la, edite `REQUESTED_SCOPES` em
-> `supabase/functions/instagram-oauth-start/index.ts` e não a inclua na submissão.
+> Se um dia existir funcionalidade de publicação, ela pode ser solicitada depois,
+> num review separado; basta devolver a string às duas listas.
 
 ---
 

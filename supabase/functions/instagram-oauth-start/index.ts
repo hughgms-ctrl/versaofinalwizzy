@@ -12,9 +12,13 @@ const corsHeaders = {
 // / `instagram_business_manage_comments` require Advanced Access (App Review)
 // before working for accounts without a role on the app — in Development
 // mode they work immediately for admins/developers/testers.
+//
+// `instagram_business_content_publish` was deliberately dropped: no function
+// publishes content, and asking for a permission you cannot demonstrate in the
+// App Review screencast is a common cause of rejection. Add it back only when
+// there is a publishing feature to show.
 const REQUESTED_SCOPES = [
   'instagram_business_basic',
-  'instagram_business_content_publish',
   'instagram_business_manage_messages',
   'instagram_business_manage_comments',
 ];
