@@ -225,7 +225,7 @@ function DmScreen({
         {hasLink && (
           <>
             <Bubble from="business">
-              {interpolate(guided.linkMessage).trim() || 'Aqui está o link 👇'}
+              {interpolate(guided.linkMessage).trim() || 'Aqui está o link:'}
             </Bubble>
             <div className="flex justify-start">
               <div className="w-[80%] overflow-hidden rounded-2xl rounded-bl-md bg-[#262626]">

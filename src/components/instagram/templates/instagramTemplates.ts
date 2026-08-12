@@ -119,24 +119,26 @@ const BASE: GuidedState = {
   keywords: '',
   matchType: 'any',
   interactWithComment: true,
-  publicReplyText: 'Te chamei no direct 😉',
+  publicReplyText: 'Te chamei no direct!',
 
   openingMode: 'welcome',
-  // Um emoji por mensagem, no máximo. Aqui eles são CONTEÚDO, não interface:
-  // DM de Instagram sem nenhum soa a robô de banco. Dois na mesma mensagem já
-  // soam a robô de marketing.
+  // Sem emoji nos textos padrão, e o calor fica por conta das palavras.
+  //
+  // Eles voltariam à tela pela porta dos fundos: o cartão do modelo mostra a
+  // primeira linha desta mensagem, então um emoji aqui é um emoji na galeria.
+  // Quem quiser continua livre para pôr o seu — o campo é de quem edita.
   openingText:
-    'Oi! Que bom que você comentou 😊\n\nToca no botão abaixo e eu te mando o link agora mesmo.',
+    'Oi! Que bom que você comentou.\n\nToca no botão abaixo e eu te mando o link agora mesmo.',
   openingButtonLabel: 'Me envie o link',
-  emailInvalidText: 'Hmm, isso não parece um e-mail. Pode mandar de novo? 🙂',
+  emailInvalidText: 'Hmm, isso não parece um e-mail. Pode mandar de novo?',
 
   linkEnabled: true,
-  linkMessage: 'Perfeito! Aqui está o link 👇',
+  linkMessage: 'Perfeito, aqui está o link:',
   linkLabel: 'Acessar',
   linkUrl: '',
 
   reminderEnabled: false,
-  reminderText: 'Ainda dá tempo de conferir o que te enviei 😉',
+  reminderText: 'Ainda dá tempo de conferir o que te enviei.',
   reminderWaitValue: '60',
   reminderWaitUnit: 'minutes',
 
@@ -168,8 +170,8 @@ export const INSTAGRAM_TEMPLATES: InstagramTemplate[] = [
       name: 'Comentou → deixa o e-mail',
       openingMode: 'ask_email',
       openingText:
-        'Oi! Que bom que você se interessou 😊\n\nMe manda aqui o seu melhor e-mail que eu te envio o material na sequência.',
-      linkMessage: 'Anotado! Aqui está o que prometi 👇',
+        'Oi! Que bom que você se interessou.\n\nMe manda aqui o seu melhor e-mail que eu te envio o material na sequência.',
+      linkMessage: 'Anotado. Aqui está o que prometi:',
       linkLabel: 'Receber material',
       tagEnabled: true,
       tagName: 'lead-instagram',
@@ -186,7 +188,7 @@ export const INSTAGRAM_TEMPLATES: InstagramTemplate[] = [
       name: 'Comentou → segue → recebe o link',
       openingMode: 'ask_follow',
       openingText:
-        'Oi! Já separei o link para você 💜\n\nMe segue aqui para não perder os próximos e toca no botão abaixo que eu te mando agora.',
+        'Oi! Já separei o link para você.\n\nMe segue aqui para não perder os próximos e toca no botão abaixo que eu te mando agora.',
       openingButtonLabel: 'Já estou seguindo',
     },
   },
@@ -201,7 +203,7 @@ export const INSTAGRAM_TEMPLATES: InstagramTemplate[] = [
       name: 'Respondeu o story → recebe o link',
       keywordMode: 'any',
       openingText:
-        'Ahh que bom que você respondeu! 🙌\n\nToca no botão abaixo que eu te mando o link agora mesmo.',
+        'Que bom que você respondeu!\n\nToca no botão abaixo que eu te mando o link agora mesmo.',
     },
   },
   {
@@ -215,7 +217,7 @@ export const INSTAGRAM_TEMPLATES: InstagramTemplate[] = [
       name: 'Resposta automática no direct',
       keywordMode: 'any',
       openingText:
-        'Oi! Recebi sua mensagem 😊 Já já alguém do time te responde por aqui.\n\nSe quiser adiantar, toca no botão abaixo.',
+        'Oi! Recebi sua mensagem. Já já alguém do time te responde por aqui.\n\nSe quiser adiantar, me conta o que você precisa.',
       linkEnabled: false,
     },
   },
@@ -229,7 +231,7 @@ export const INSTAGRAM_TEMPLATES: InstagramTemplate[] = [
     defaults: {
       name: 'Boas-vindas ao contato novo',
       openingText:
-        'Seja muito bem-vindo(a)! 💜\n\nEu sou o atendimento por aqui. Me conta o que você procura que eu te ajudo.',
+        'Seja muito bem-vindo(a)!\n\nEu sou o atendimento por aqui. Me conta o que você procura que eu te ajudo.',
       linkEnabled: false,
     },
   },
@@ -242,7 +244,7 @@ export const INSTAGRAM_TEMPLATES: InstagramTemplate[] = [
     triggerType: 'story_mention',
     defaults: {
       name: 'Mencionou no story → agradecimento',
-      openingText: 'Vi que você me marcou no seu story, muito obrigado! 💜',
+      openingText: 'Vi que você me marcou no seu story. Muito obrigado!',
       linkEnabled: false,
     },
   },
@@ -259,11 +261,37 @@ export const BLANK_TEMPLATE: InstagramTemplate = {
   defaults: { name: '' },
 };
 
-/** Rótulos dos grupos da lista de modelos. */
+/** Rótulos dos grupos da galeria de modelos. */
 export const TEMPLATE_GROUPS: Array<{ key: InstagramTemplate['group']; label: string }> = [
   { key: 'comment', label: 'A partir de comentários' },
   { key: 'message', label: 'A partir de mensagens e stories' },
 ];
+
+/**
+ * A conversa que o modelo produz, reduzida ao que cabe num cartão.
+ *
+ * É o que dá identidade visual a cada modelo sem recorrer a ilustração: a
+ * primeira mensagem e a forma como a pessoa responde já são diferentes em cada
+ * um, e são justamente o que se quer saber antes de escolher. Um desenho
+ * genérico ocuparia o mesmo espaço dizendo menos.
+ */
+export function templatePreview(template: InstagramTemplate): {
+  message: string;
+  reply: { kind: 'chip' | 'text'; label: string } | null;
+} {
+  const merged = { ...BASE, ...template.defaults };
+  // Só a primeira linha: o cartão mostra a abertura da conversa, não a
+  // mensagem inteira. Quem quiser ler tudo abre o modelo.
+  const message = merged.openingText.split('\n').map((line) => line.trim()).filter(Boolean)[0] || '';
+
+  if (merged.openingMode === 'ask_email') {
+    return { message, reply: { kind: 'text', label: 'ana.souza@email.com' } };
+  }
+  if (merged.linkEnabled) {
+    return { message, reply: { kind: 'chip', label: merged.openingButtonLabel } };
+  }
+  return { message, reply: null };
+}
 
 export function templateById(id: string): InstagramTemplate {
   return INSTAGRAM_TEMPLATES.find((t) => t.id === id) || BLANK_TEMPLATE;
@@ -326,7 +354,7 @@ export function guidedToPayload(state: GuidedState) {
       ? {
           label: state.linkLabel.trim() || 'Acessar',
           url: state.linkUrl.trim(),
-          message: state.linkMessage.trim() || 'Aqui está o link 👇',
+          message: state.linkMessage.trim() || 'Aqui está o link:',
         }
       : undefined,
     // Coleta e quick reply são caminhos alternativos para a MESMA coisa: fazer a

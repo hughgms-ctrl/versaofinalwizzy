@@ -176,7 +176,7 @@ Deno.serve(async (req) => {
                 rule_id: ruleId,
                 contact_id: contact.id,
                 destination_url: action.button.url,
-                link_message: interpolate(action.button.message || 'Perfeito! Aqui está o link 👇', vars),
+                link_message: interpolate(action.button.message || 'Perfeito, aqui está o link:', vars),
                 link_label: action.button.label || 'Acessar',
               })
               .select('id')

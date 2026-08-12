@@ -381,7 +381,7 @@ async function deliverTrackedLink(
   const redirectUrl = `${supabaseUrl}/functions/v1/instagram-link-redirect?id=${link.id}`;
   // Texto gravado junto do link na criação. O padrão cobre os links criados
   // antes desta coluna existir.
-  const text = link.link_message || 'Perfeito! Aqui está o link 👇';
+  const text = link.link_message || 'Perfeito, aqui está o link:';
   const result = await sendInstagramButtonMessage(
     account,
     { id: senderId },
