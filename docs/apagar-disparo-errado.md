@@ -10,6 +10,8 @@ por `scheduled_id` deixaria sobreviventes.
 
 ## Antes de começar — o que o WhatsApp permite
 
+
+
 - O **"apagar para todos" só funciona dentro de ~2 dias do envio.** Passou disso,
   o provedor até aceita a chamada, mas o destinatário continua vendo a mensagem.
   Rode o quanto antes.
