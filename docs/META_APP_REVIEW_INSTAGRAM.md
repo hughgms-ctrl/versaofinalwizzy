@@ -93,6 +93,12 @@ App Dashboard → alternador no topo → **Live**.
 Requer os campos da Etapa 2 preenchidos. Um app em Development nunca recebe
 Advanced Access, então isso não é opcional.
 
+> Provavelmente já feito: **o Live Mode é pré-requisito para receber webhook**,
+> mesmo em teste com conta testadora (*"Apps must be set to Live in the App
+> Dashboard to receive webhook notifications"*). Quem seguiu
+> `META_CRIAR_APP_INSTAGRAM.md` ligou no Passo 7.5. Ligar o Live Mode não
+> concede Advanced Access — isso continua dependendo do review.
+
 ---
 
 ## Etapa 4 — Conta de teste para o revisor

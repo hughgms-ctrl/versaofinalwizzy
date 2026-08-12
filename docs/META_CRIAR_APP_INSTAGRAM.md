@@ -1,9 +1,21 @@
 # Criar o app do Instagram na Meta — do zero
 
 > Escrito em 2026-08-11, para quem nunca criou o app. Quando terminar este
-> documento, o Wizzy Engage estará conectável em modo Development — o que já
-> permite testar o produto inteiro com as suas próprias contas. O App Review
-> (para atender cliente real) vem depois, em `META_APP_REVIEW_INSTAGRAM.md`.
+> documento, o Wizzy Engage estará testável ponta a ponta com as suas próprias
+> contas. O App Review (para atender cliente real) vem depois, em
+> `META_APP_REVIEW_INSTAGRAM.md`.
+
+> ⚠️ **Correção de 2026-08-12.** A primeira versão deste guia dizia que dava
+> para testar em modo Development. **Não dá.** A documentação da Meta é
+> explícita: *"Apps must be set to Live in the App Dashboard to receive webhook
+> notifications."* Sem Live Mode nenhum webhook chega — nem para conta testadora
+> — e como todo o Engage é disparado por webhook de comentário, nada acontece.
+>
+> Isso **não** significa esperar o App Review. Live Mode e Advanced Access são
+> coisas separadas: Live Mode é um botão que você liga assim que os campos
+> básicos estiverem preenchidos (Passo 7.5 abaixo). Com o app em Live e sem
+> Advanced Access, você recebe webhooks das contas que têm papel de testador —
+> suficiente para validar o produto inteiro.
 
 ## Antes de começar: o que você está criando
 
@@ -219,7 +231,29 @@ Os dois últimos são exigidos no App Review; preencher agora evita voltar depoi
 
 ---
 
-## Passo 8 — Adicionar sua conta como testadora
+## Passo 7.5 — Ligar o Live Mode
+
+**Obrigatório para receber webhook**, inclusive em teste. O painel avisa isso na
+seção de webhooks: *"Para receber webhooks, o modo do app precisa estar definido
+como Publicado"*.
+
+Antes de ligar, a Meta exige alguns campos em **Configurações do app → Básico**:
+
+| Campo | Valor |
+|---|---|
+| Ícone do app | 1024×1024, sem transparência |
+| Categoria | Business and Pages |
+| URL da Política de Privacidade | `https://<seu-domínio>/privacidade` |
+| URL dos Termos de Serviço | `https://<seu-domínio>/termos` |
+
+> Use o domínio público do Wizzy (onde o cliente acessa), não a URL do Supabase.
+> As três páginas já existem no app.
+
+Depois: alternador no topo do painel → **Ao vivo** (*Live*).
+
+Não confunda com App Review. Ligar o Live Mode **não** dá Advanced Access — ele
+só faz a Meta passar a entregar webhooks, e apenas para contas com papel no app.
+Para atender cliente real ainda é preciso o review.
 
 Em modo Development, só contas **com papel no app** conseguem autorizar. Sem
 isto, o OAuth falha mesmo com tudo configurado.
@@ -256,7 +290,7 @@ Se algo falhar, o erro quase sempre é um destes:
 
 ## O que funciona agora, e o que não
 
-Com tudo acima feito, **em modo Development**:
+Com tudo acima feito — incluindo o **Live Mode** do Passo 7.5:
 
 ✅ Conectar sua conta e as contas de testadores que você adicionar
 ✅ Criar regras no Wizzy Engage
@@ -265,10 +299,16 @@ Com tudo acima feito, **em modo Development**:
 ✅ Ver a conversa chegar em Conversas → Instagram
 
 ❌ **Qualquer conta que não tenha papel no app.** Um cliente real conecta, a tela
-   diz sucesso, e nada dispara — porque a Meta não entrega o webhook.
+   diz sucesso, e nada dispara — sem Advanced Access a Meta não entrega o webhook
+   dele.
 
 Ou seja: dá para validar o produto inteiro agora, com você mesmo. Para vender,
 falta o App Review.
+
+> Se o Live Mode ficar **desligado**, nem o seu próprio teste funciona: a
+> conexão OAuth conclui normalmente, a conta aparece conectada, e nenhum
+> comentário dispara nada. É o sintoma mais confuso do módulo, porque tudo
+> parece certo.
 
 ---
 
