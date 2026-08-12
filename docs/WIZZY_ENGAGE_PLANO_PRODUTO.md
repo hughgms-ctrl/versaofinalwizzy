@@ -122,7 +122,8 @@ Levantado da documentação oficial e material de produto (fontes no fim).
 | P3 | Templates prontos | ✅ 50+ | ✅ 7 modelos |
 | P4 | Seletor visual de post (escolher o post numa grade) | ✅ | ✅ feito |
 | P5 | Analytics por fluxo (taxa de resposta, clique) | ✅ | ⚠️ logs crus |
-| P6 | Broadcast / disparo | ✅ | ❌ ⚠️ |
+| P6 | Broadcast / disparo | ✅ | ✅ feito, com público recortado pela janela de 24h |
+| P9 | Lista de contatos do canal | ✅ | ✅ feito (aba própria) |
 | P7 | Multi-canal no mesmo fluxo | ✅ | ❌ ← *seu briefing pedia* |
 | P8 | Teste do fluxo sem publicar | ✅ | ✅ `FlowTestPanel` |
 
@@ -252,7 +253,10 @@ automação. Hoje só há o log cru por execução.
 
 ---
 
-## Contatos e disparo em massa no Instagram (analisado em 2026-08-13)
+## Contatos e disparo em massa no Instagram
+
+> Analisado em 2026-08-13, **implementado em 2026-08-14** depois de o dono
+> aprovar os dois caminhos recomendados: aba própria e público recortado.
 
 Pergunta do dono: mostrar os contatos do Instagram na aba **Contatos** da Wizzy
 e permitir disparo (em massa ou individual) para eles em **Campanhas**.
@@ -296,9 +300,49 @@ Ou seja: cabe em **Campanhas** como um tipo de campanha com público próprio
 antes do envio — para a pessoa entender por que 2.000 contatos viram 80
 destinatários. O que não cabe é a lista inteira.
 
-**Nenhuma das duas foi implementada nesta entrega**: a primeira é uma decisão de
-produto (aba própria vs. mexer em `contacts`) e a segunda depende de aceitar que
-o público é sempre um recorte. Ambas ficam prontas para a próxima.
+### O que foi construído (2026-08-14)
+
+Migration `20260814120000`. Duas abas novas dentro do Wizzy Engage:
+
+**Contatos** (`InstagramContactsTab`) — lê `instagram_contacts` com @, foto,
+e-mail coletado, etiquetas e o **alcance**: quem respondeu nas últimas 24h pode
+receber mensagem hoje, quem não respondeu só volta a ser alcançável se escrever
+de novo. Filtros por alcançáveis, com e-mail e vinculados; busca por @, nome e
+e-mail.
+
+O vínculo com o contato da Wizzy existe (`instagram_contacts.linked_contact_id`)
+e é **sempre manual**. Nunca automático: dois cadastros com o mesmo nome não
+provam ser o mesmo humano, e unir os errados só aparece quando a mensagem vai
+para quem não devia.
+
+**Disparos** (`InstagramBroadcastTab`) — o número de alcançáveis aparece grande,
+ao lado do total, **antes** de escrever a mensagem. Esse contraste é o ponto
+principal da tela: sem ele o cliente monta o disparo, vê 80 de 2.000 e conclui
+que a ferramenta falhou.
+
+Três decisões que valem registro:
+
+- **O público é calculado no servidor, não no navegador.** A RLS não dá INSERT
+  em `instagram_broadcasts` a ninguém; a lista sai de
+  `instagram-broadcast-create`. Aceitar uma lista pronta da tela permitiria
+  montar qualquer conjunto no console e mandar para base fria — e a conta
+  derrubada seria a do cliente.
+- **A janela é reconferida no momento do envio.** A lista foi montada quando o
+  disparo começou; num lote de mil pessoas a última é alcançada muitos minutos
+  depois, e nesse intervalo a janela de alguém fecha. Quem fechou vira
+  `skipped`, não `failed` — não falhou nada, a pessoa parou de responder. A tela
+  chama isso de "saíram da janela antes da vez", não de "pulados".
+- **O disparo consome a mesma cota das automações** (`source='broadcast'` no
+  ledger). Um disparo grande e um post viral acontecem no mesmo dia; sem
+  compartilhar o teto, o disparo comeria a cota e as automações parariam de
+  responder sem que ninguém entendesse por quê.
+
+Conversa arquivada fica de fora do público: é o sinal mais próximo de "não quero
+mais falar com esta pessoa" que existe hoje no produto.
+
+**Ainda não há:** opt-out explícito (hoje o sinal é arquivar a conversa),
+relatório de cliques por disparo (o link é rastreado, falta a tela) e agendamento
+— todo disparo começa na hora.
 
 ---
 

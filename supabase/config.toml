@@ -277,6 +277,16 @@ verify_jwt = false
 [functions.instagram-bind-next-post]
 verify_jwt = false
 
+# Monta o disparo e sua lista. Chamada pela tela; a autorização é feita dentro
+# da função (getRequestUser + assertActiveOrganizationAccess pela org DONA da
+# conta), como nas demais funções do módulo.
+[functions.instagram-broadcast-create]
+verify_jwt = false
+
+# Drenagem do disparo, chamada pelo pg_cron a cada minuto (sem JWT).
+[functions.instagram-broadcast-send]
+verify_jwt = false
+
 # Renovação semanal do token de 60 dias, chamada pelo pg_cron (sem JWT).
 [functions.instagram-refresh-tokens]
 verify_jwt = false

@@ -204,7 +204,7 @@ async function postMessage(
 // reserved in the same statement that counts, so concurrent webhook executions
 // can't all pass the same check (verified with 10 concurrent callers against a
 // 2/s ceiling → exactly 2 granted).
-export type InstagramSendSource = 'automation' | 'followup' | 'manual';
+export type InstagramSendSource = 'automation' | 'followup' | 'manual' | 'broadcast';
 
 export async function reserveInstagramSendSlot(
   supabase: any,

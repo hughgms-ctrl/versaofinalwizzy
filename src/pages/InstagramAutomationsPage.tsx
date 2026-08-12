@@ -6,7 +6,18 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Home, Instagram, ListChecks, Loader2, Pencil, Plus, Trash2, Workflow } from 'lucide-react';
+import {
+  Home,
+  Instagram,
+  ListChecks,
+  Loader2,
+  Megaphone,
+  Pencil,
+  Plus,
+  Trash2,
+  Users,
+  Workflow,
+} from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useInstagramAccounts } from '@/hooks/useInstagramAccounts';
 import {
@@ -18,6 +29,8 @@ import {
   useUpsertInstagramAutomationRule,
 } from '@/hooks/useInstagramAutomationRules';
 import { InstagramFlowsTab } from '@/components/instagram/flow/InstagramFlowsTab';
+import { InstagramContactsTab } from '@/components/instagram/InstagramContactsTab';
+import { InstagramBroadcastTab } from '@/components/instagram/InstagramBroadcastTab';
 import { InstagramTemplateGallery } from '@/components/instagram/templates/InstagramTemplateGallery';
 import { InstagramGuidedEditor } from '@/components/instagram/templates/InstagramGuidedEditor';
 import {
@@ -173,6 +186,14 @@ export default function InstagramAutomationsPage() {
             <Workflow className="h-4 w-4" />
             Fluxos
           </TabsTrigger>
+          <TabsTrigger value="contacts" className="gap-2">
+            <Users className="h-4 w-4" />
+            Contatos
+          </TabsTrigger>
+          <TabsTrigger value="broadcast" className="gap-2">
+            <Megaphone className="h-4 w-4" />
+            Disparos
+          </TabsTrigger>
           <TabsTrigger value="logs" className="gap-2">
             <ListChecks className="h-4 w-4" />
             Logs
@@ -189,6 +210,14 @@ export default function InstagramAutomationsPage() {
 
         <TabsContent value="flows" className="space-y-4">
           <InstagramFlowsTab connectedAccounts={connectedAccounts.length} />
+        </TabsContent>
+
+        <TabsContent value="contacts">
+          <InstagramContactsTab connectedAccounts={connectedAccounts.length} />
+        </TabsContent>
+
+        <TabsContent value="broadcast">
+          <InstagramBroadcastTab accounts={connectedAccounts} />
         </TabsContent>
 
         <TabsContent value="rules" className="space-y-4">
