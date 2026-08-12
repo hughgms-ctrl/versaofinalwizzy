@@ -1,5 +1,9 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { ensureInstagramConversation, sendInstagramMessage } from '../_shared/instagramProvider.ts';
+import {
+  ensureInstagramConversation,
+  reserveInstagramSendSlot,
+  sendInstagramMessage,
+} from '../_shared/instagramProvider.ts';
 
 // Invoked every minute by pg_cron (see the manual dashboard setup note at the
 // bottom of this file) — mirrors process-scheduled-messages/process-flow-timeouts'
@@ -90,6 +94,22 @@ Deno.serve(async (req) => {
         const text = clicked ? config.clicked_text : config.not_clicked_text;
 
         if (text) {
+          // Cota da conta. Diferente dos outros caminhos, aqui a linha volta
+          // para 'pending' em vez de ser descartada: o follow-up tem hora certa
+          // mas não é urgente ao segundo, então esperar o próximo minuto é
+          // melhor do que perdê-lo. `attempts` não é revertido de propósito —
+          // o teto de 3 continua valendo, senão uma conta cronicamente no
+          // limite reprocessaria a mesma linha para sempre.
+          const hasSlot = await reserveInstagramSendSlot(supabase, account.id, 'followup');
+          if (!hasSlot) {
+            await supabase.from('instagram_pending_followups').update({
+              status: 'pending',
+              error: 'aguardando cota de envio da conta',
+            }).eq('id', row.id);
+            skipped++;
+            continue;
+          }
+
           // Addressed by IGSID (not comment_id): the private reply for this
           // comment was already spent on the initial DM, and Meta allows only
           // one per comment. This send is therefore a normal DM and depends on

@@ -195,12 +195,72 @@ async function postMessage(
   };
 }
 
+// ==================== Rate limit por conta ====================
+// Meta's real ceiling is per Instagram account, not per contact. A viral post
+// brings hundreds of comments in minutes and the automation answers all of
+// them at once — which reads as spam and gets the CLIENT's account restricted.
+//
+// Every send path must call this first and honour a `false`: the slot is
+// reserved in the same statement that counts, so concurrent webhook executions
+// can't all pass the same check (verified with 10 concurrent callers against a
+// 2/s ceiling → exactly 2 granted).
+export type InstagramSendSource = 'automation' | 'followup' | 'manual';
+
+export async function reserveInstagramSendSlot(
+  supabase: any,
+  instagramAccountId: string,
+  source: InstagramSendSource = 'automation',
+): Promise<boolean> {
+  const { data, error } = await supabase.rpc('reserve_instagram_send_slot', {
+    p_account_id: instagramAccountId,
+    p_source: source,
+  });
+  if (error) {
+    // Fail CLOSED. The whole point is protecting the client's account from a
+    // burst; if we can't tell whether there's room, sending anyway is the one
+    // outcome we're trying to prevent.
+    console.error('[instagram] reserve_instagram_send_slot failed:', error);
+    return false;
+  }
+  return data === true;
+}
+
 export async function sendInstagramMessage(
   account: any,
   recipient: InstagramRecipient,
   text: string,
 ): Promise<InstagramSendResult> {
   return postMessage(account, recipient, { text });
+}
+
+// Sends a message with quick replies — the tappable chips shown under a DM.
+//
+// Why this exists at all: a `web_url` button opens the browser, which does NOT
+// count as a reply, so Meta's 24-hour window stays shut and every follow-up
+// scheduled after it is skipped. A quick reply is a real message FROM the
+// person, so one tap opens the window. That's the whole mechanism — the link
+// then goes out in a second message, inside an open window.
+//
+// Meta's limits: at most 13 chips, title up to 20 chars, payload up to 1000.
+export interface InstagramQuickReply {
+  title: string;
+  payload: string;
+}
+
+export async function sendInstagramQuickReplyMessage(
+  account: any,
+  recipient: InstagramRecipient,
+  text: string,
+  quickReplies: InstagramQuickReply[],
+): Promise<InstagramSendResult> {
+  return postMessage(account, recipient, {
+    text,
+    quick_replies: quickReplies.slice(0, 13).map((qr) => ({
+      content_type: 'text',
+      title: qr.title.slice(0, 20),
+      payload: qr.payload.slice(0, 1000),
+    })),
+  });
 }
 
 // Sends a message with a single URL button, using Instagram's "generic

@@ -23,9 +23,9 @@
 | 8 | `subscribed_apps` no callback do OAuth | ✅ já existia |
 | 9 | Gatilho por DM com palavra-chave | ❌ pendente |
 | 10 | Gatilho por resposta a story | ❌ pendente (webhook detecta, não automatiza) |
-| 11 | Rate limit de envio (~2/s, ~200 DM/h por conta) | ❌ pendente |
+| 11 | Rate limit de envio (~2/s, ~200 DM/h por conta) | ✅ feito |
 | 12 | Variações de resposta pública (sorteio) | ❌ pendente |
-| 13 | Quick replies (botão que abre a janela de 24h) | ❌ pendente |
+| 13 | Quick replies (botão que abre a janela de 24h) | ✅ feito |
 | 14 | Seletor visual de posts (`GET /{id}/media`) | ❌ pendente |
 
 ---
@@ -112,21 +112,76 @@ está em migration, junto com o cron novo de refresh de token.
 
 ---
 
+## O que foi feito em 2026-08-11 (segunda parte)
+
+### 7. Rate limit por conta
+
+O único limite que existia era `max_per_contact_per_day` — quantas vezes o
+**mesmo** contato pode ser atingido. Isso não protege o que de fato derruba a
+conta do cliente: o **volume total** que ela dispara. Um post que viraliza traz
+centenas de comentários em minutos e o Engage respondia a todos em rajada.
+
+`reserve_instagram_send_slot()` reserva a vaga na mesma instrução que conta, com
+um advisory lock por conta. Checar-e-depois-enviar em duas etapas não resolveria:
+execuções concorrentes do webhook leriam a mesma contagem e todas passariam.
+
+Tetos configuráveis por conta em `instagram_accounts.send_rate_limit`, com
+default de 2/s e 200/h. A Meta não publica o número exato e ele varia por conta,
+por isso é ajustável.
+
+Os **três** caminhos de envio passam pela mesma conta corrente
+(`instagram_send_ledger`), incluindo a resposta manual da inbox — uma inbox
+movimentada durante um post viral estouraria justamente o teto que a automação
+está tentando respeitar. A coluna `source` responde "quem comeu a cota".
+
+Comportamento em cada caminho, deliberadamente diferente:
+
+| Caminho | Sem cota |
+|---|---|
+| Automação (regra) | passo `skipped` com motivo — o comentário não volta |
+| Follow-up (fila) | volta a `pending`, tenta no minuto seguinte |
+| Inbox (manual) | 429 com mensagem clara — o atendente está na tela |
+
+Verificado em Postgres real: 10 chamadas concorrentes contra teto de 2/s →
+exatamente 2 concedidas e 2 linhas no ledger. Também testados o deslizar da
+janela, o teto horário, conta inexistente e o isolamento entre contas.
+
+### 8. Quick replies
+
+O botão de link era `web_url`: clicar abre o navegador, o que **não** conta como
+resposta. A janela de 24h seguia fechada e todo follow-up agendado depois dele
+caía em `skipped` — o recurso existia e quase nunca entregava.
+
+O quick reply é uma chip que, ao ser tocada, envia uma mensagem **da pessoa**.
+Isso abre a janela. O link então sai numa segunda mensagem, já dentro da janela,
+pelo handler novo no webhook (`messaging_postbacks` já era assinado no OAuth mas
+nenhum handler o consumia).
+
+Duas proteções que o caminho exige:
+
+- A chip continua na conversa depois de tocada. Sem marca, cada toque mandaria
+  outro link — o comportamento de spam que o resto deste trabalho evita.
+  `claim_instagram_link_send()` garante um envio só (8 toques simultâneos → 1
+  envio, verificado). Falha de envio ou falta de cota revertem a marca, senão o
+  link ficaria "enviado" sem nunca ter saído.
+- A triagem do payload só reage ao que nós emitimos: texto livre, JSON de outra
+  ferramenta e payload malformado são ignorados (10 casos testados).
+
+Na UI é uma caixa dentro do bloco do botão, ligada por padrão em regra nova.
+Regra **já existente** mantém o comportamento com que foi salva — herdar o
+default mudaria automações em produção sozinho. O texto explica a consequência
+de desligar, em vez de só nomear o recurso.
+
+---
+
 ## Pendências, em ordem sugerida
 
 1. **Gatilho por DM com palavra-chave** (9) e **resposta a story** (10) — hoje o
    CHECK do banco só aceita `trigger_type = 'comment_keyword'`; ampliar o enum,
    o webhook e a UI. O webhook já detecta `story_reply`, só não automatiza.
-2. **Rate limit de envio** (11) — o limite atual é por contato/dia e opt-in; não
-   protege o teto da conta. Sem isso, um post viral vira rajada de DMs e risco de
-   bloqueio para o cliente.
-3. **Quick replies** (13) — hoje o botão é `web_url`, que abre o navegador e
-   **não** abre a janela de 24h. Um quick reply faria a pessoa responder com um
-   toque, abrindo a janela e destravando o follow-up. Note que
-   `messaging_postbacks` já é assinado no OAuth, mas nenhum handler o consome.
-4. **Variações de resposta pública** (12) — resposta pública idêntica repetida é
+2. **Variações de resposta pública** (12) — resposta pública idêntica repetida é
    sinal de spam para a Meta.
-5. **Seletor visual de posts** (14) — hoje o usuário digita o media ID à mão, o
+3. **Seletor visual de posts** (14) — hoje o usuário digita o media ID à mão, o
    que na prática é inviável para quem não é técnico.
 
 ## Limites reais (do prompt de referência — confirmados, não contornáveis)

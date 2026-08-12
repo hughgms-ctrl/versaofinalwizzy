@@ -1,6 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { AccessError, assertActiveOrganizationAccess } from '../_shared/access.ts';
-import { sendInstagramMessage } from '../_shared/instagramProvider.ts';
+import { reserveInstagramSendSlot, sendInstagramMessage } from '../_shared/instagramProvider.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -83,6 +83,20 @@ Deno.serve(async (req) => {
         code: 'window_closed',
       }), {
         status: 409,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // A resposta manual consome a mesma cota da conta que a automação — se ela
+    // ficasse de fora, uma inbox movimentada durante um post viral estouraria o
+    // teto que a automação está justamente tentando respeitar.
+    const hasSlot = await reserveInstagramSendSlot(supabase, account.id, 'manual');
+    if (!hasSlot) {
+      return new Response(JSON.stringify({
+        error: 'Limite de envio da conta atingido. Aguarde alguns instantes e tente de novo.',
+        code: 'rate_limited',
+      }), {
+        status: 429,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }

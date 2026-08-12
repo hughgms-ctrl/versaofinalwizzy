@@ -55,6 +55,8 @@ interface RuleFormState {
   buttonEnabled: boolean;
   buttonLabel: string;
   buttonUrl: string;
+  quickReplyEnabled: boolean;
+  quickReplyLabel: string;
   followupEnabled: boolean;
   followupWaitValue: string;
   followupWaitUnit: 'minutes' | 'hours' | 'days';
@@ -83,6 +85,10 @@ function emptyForm(defaultAccountId?: string): RuleFormState {
     buttonEnabled: false,
     buttonLabel: 'Ver mais',
     buttonUrl: '',
+    // Ligado por padrão: é a opção que faz o contato responder e abrir a janela
+    // de 24h. Só tem efeito quando há link configurado.
+    quickReplyEnabled: true,
+    quickReplyLabel: 'Quero sim!',
     followupEnabled: false,
     followupWaitValue: '60',
     followupWaitUnit: 'minutes',
@@ -115,6 +121,10 @@ function ruleToForm(rule: InstagramAutomationRule): RuleFormState {
     buttonEnabled: !!find('send_dm')?.button,
     buttonLabel: find('send_dm')?.button?.label || 'Ver mais',
     buttonUrl: find('send_dm')?.button?.url || '',
+    // Regra que já existe mantém o comportamento com que foi salva. Herdar o
+    // default de criação (ligado) mudaria automações em produção sozinho.
+    quickReplyEnabled: !!find('send_dm')?.quickReply?.enabled,
+    quickReplyLabel: find('send_dm')?.quickReply?.label || 'Quero sim!',
     followupEnabled: !!find('send_dm')?.followup,
     followupWaitValue: String(find('send_dm')?.followup?.waitValue || 60),
     followupWaitUnit: find('send_dm')?.followup?.waitUnit || 'minutes',
@@ -133,6 +143,11 @@ function formToPayload(form: RuleFormState) {
       text: form.dmText,
       button: form.buttonEnabled && form.buttonUrl.trim()
         ? { label: form.buttonLabel.trim() || 'Ver mais', url: form.buttonUrl.trim() }
+        : undefined,
+      // Só faz sentido com link: o quick reply é o que abre a janela de 24h
+      // para o link poder ser enviado em seguida.
+      quickReply: form.buttonEnabled && form.buttonUrl.trim() && form.quickReplyEnabled
+        ? { enabled: true, label: form.quickReplyLabel.trim() || 'Quero sim!' }
         : undefined,
       followup: form.followupEnabled
         ? {
@@ -459,17 +474,53 @@ export default function InstagramAutomationsPage() {
                         <Label className="font-normal text-sm">Adicionar botão de link na DM</Label>
                       </div>
                       {form.buttonEnabled && (
-                        <div className="grid grid-cols-2 gap-2">
-                          <Input
-                            value={form.buttonLabel}
-                            onChange={(e) => setForm({ ...form, buttonLabel: e.target.value })}
-                            placeholder="Texto do botão"
-                          />
-                          <Input
-                            value={form.buttonUrl}
-                            onChange={(e) => setForm({ ...form, buttonUrl: e.target.value })}
-                            placeholder="https://..."
-                          />
+                        <div className="space-y-2">
+                          <div className="grid grid-cols-2 gap-2">
+                            <Input
+                              value={form.buttonLabel}
+                              onChange={(e) => setForm({ ...form, buttonLabel: e.target.value })}
+                              placeholder="Texto do botão"
+                            />
+                            <Input
+                              value={form.buttonUrl}
+                              onChange={(e) => setForm({ ...form, buttonUrl: e.target.value })}
+                              placeholder="https://..."
+                            />
+                          </div>
+
+                          <div className="rounded-md bg-muted/50 p-3 space-y-2">
+                            <div className="flex items-center gap-2">
+                              <Checkbox
+                                checked={form.quickReplyEnabled}
+                                onCheckedChange={(c) => setForm({ ...form, quickReplyEnabled: !!c })}
+                              />
+                              <Label className="font-normal text-sm">
+                                Pedir confirmação antes de mandar o link (recomendado)
+                              </Label>
+                            </div>
+                            {form.quickReplyEnabled ? (
+                              <>
+                                <Input
+                                  value={form.quickReplyLabel}
+                                  onChange={(e) => setForm({ ...form, quickReplyLabel: e.target.value })}
+                                  placeholder="Texto do botão de resposta"
+                                  maxLength={20}
+                                />
+                                <p className="text-xs text-muted-foreground">
+                                  A DM chega com um botão de resposta rápida. Ao tocar, o contato
+                                  responde de verdade — e é isso que libera o envio do link e das
+                                  mensagens de acompanhamento pelas 24h seguintes.
+                                </p>
+                              </>
+                            ) : (
+                              <p className="text-xs text-muted-foreground">
+                                Sem confirmação, o link vai direto no botão. Clicar nele abre o
+                                navegador, mas <strong>não</strong> conta como resposta: o Instagram
+                                mantém a conversa fechada e as mensagens de acompanhamento não serão
+                                entregues a quem não responder.
+                              </p>
+                            )}
+                          </div>
                         </div>
                       )}
 

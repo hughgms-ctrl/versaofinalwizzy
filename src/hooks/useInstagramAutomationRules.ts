@@ -17,6 +17,11 @@ export interface InstagramRuleAction {
   // send_dm only: adds a link button to the DM (tracked via a Wizzy
   // short-link redirect, so click-through can be detected).
   button?: { label: string; url: string };
+  // send_dm only: sends the DM with a quick-reply chip instead of the link
+  // button. Tapping it is a real message from the person, which opens Meta's
+  // 24-hour window — the link then goes out in a second message. A web_url
+  // button click does not open that window, so follow-ups after it are skipped.
+  quickReply?: { enabled: boolean; label: string };
   // send_dm only: schedules a delayed follow-up message after waitValue
   // waitUnit(s), branching on whether the button link was clicked.
   followup?: {

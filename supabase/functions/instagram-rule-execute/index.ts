@@ -4,8 +4,10 @@ import {
   ensureInstagramConversation,
   likeComment,
   replyToComment,
+  reserveInstagramSendSlot,
   sendInstagramButtonMessage,
   sendInstagramMessage,
+  sendInstagramQuickReplyMessage,
 } from '../_shared/instagramProvider.ts';
 
 const WAIT_UNIT_MS: Record<string, number> = { minutes: 60_000, hours: 3_600_000, days: 86_400_000 };
@@ -132,8 +134,48 @@ Deno.serve(async (req) => {
           // per comment, within 7 days of the comment.
           const recipient = { comment_id: event.commentId };
 
+          // Reserva a cota da CONTA antes de gastar rede. Um post viral traz
+          // centenas de comentários de uma vez, e responder a todos em rajada é
+          // o que faz a Meta restringir a conta do cliente.
+          const hasSlot = await reserveInstagramSendSlot(supabase, account.id, 'automation');
+          if (!hasSlot) {
+            steps.push({
+              type: 'send_dm',
+              status: 'skipped',
+              detail: 'limite de envio da conta atingido — tente escalonar o volume',
+            });
+            continue;
+          }
+
           let result;
-          if (action.button?.url) {
+          if (action.quickReply?.enabled && action.button?.url) {
+            // Quick reply em vez do botão de link: o botão web_url abre o
+            // navegador, o que NÃO conta como resposta — a janela de 24h fica
+            // fechada e todo follow-up depois dele cai em 'skipped'. O toque no
+            // quick reply é mensagem da pessoa, abre a janela, e o link sai na
+            // sequência (ver handleQuickReplyPostback no webhook).
+            //
+            // O tracked link é criado aqui, antes do envio, para que o payload
+            // já carregue o destino — quem responde ao postback não precisa
+            // reabrir a regra para descobrir para onde mandar.
+            const { data: trackedLink } = await supabase
+              .from('instagram_tracked_links')
+              .insert({
+                organization_id: account.organization_id,
+                rule_id: ruleId,
+                contact_id: contact.id,
+                destination_url: action.button.url,
+              })
+              .select('id')
+              .single();
+            trackedLinkId = trackedLink?.id || null;
+            result = await sendInstagramQuickReplyMessage(account, recipient, message, [
+              {
+                title: action.quickReply.label || 'Quero sim!',
+                payload: JSON.stringify({ k: 'ig_link', r: ruleId, t: trackedLinkId }),
+              },
+            ]);
+          } else if (action.button?.url) {
             const { data: trackedLink } = await supabase
               .from('instagram_tracked_links')
               .insert({

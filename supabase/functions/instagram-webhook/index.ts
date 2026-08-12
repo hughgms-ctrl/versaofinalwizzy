@@ -4,6 +4,8 @@ import {
   ensureInstagramConversation,
   findInstagramAccountByBusinessId,
   loadInstagramAppConfig,
+  reserveInstagramSendSlot,
+  sendInstagramButtonMessage,
   verifyWebhookSignature,
 } from '../_shared/instagramProvider.ts';
 
@@ -63,6 +65,111 @@ async function handleMessagingEvent(supabase: any, account: any, messagingEvent:
     last_inbound_at: new Date().toISOString(),
     unread_count: (conversation.unread_count || 0) + 1,
   }).eq('id', conversation.id);
+}
+
+// Responde ao toque num quick reply enviado pela automação.
+//
+// Este é o momento em que a janela de 24h ABRE: o toque é uma mensagem da
+// pessoa, ao contrário do clique num botão web_url, que só abre o navegador e
+// deixa a janela fechada. Por isso o link é enviado agora, e não antes — aqui
+// ele é um DM comum legítimo.
+//
+// Devolve true quando tratou o payload, para o chamador saber que já cuidou do
+// envio (a mensagem em si continua sendo registrada normalmente).
+async function handleQuickReplyPostback(
+  supabase: any,
+  account: any,
+  supabaseUrl: string,
+  messagingEvent: any,
+): Promise<boolean> {
+  const rawPayload = messagingEvent?.message?.quick_reply?.payload;
+  if (!rawPayload) return false;
+
+  let parsed: any = null;
+  try {
+    parsed = JSON.parse(rawPayload);
+  } catch {
+    return false;
+  }
+  // Só payloads que nós mesmos emitimos (ver instagram-rule-execute).
+  if (parsed?.k !== 'ig_link' || !parsed?.t) return false;
+
+  const senderId = messagingEvent?.sender?.id;
+  if (!senderId) return false;
+
+  try {
+    const { data: link } = await supabase
+      .from('instagram_tracked_links')
+      .select('id, destination_url')
+      .eq('id', parsed.t)
+      .maybeSingle();
+    if (!link?.destination_url) return false;
+
+    // A chip continua na conversa depois de tocada, então a pessoa pode tocar
+    // várias vezes. Reservar o envio ANTES de gastar cota garante que só o
+    // primeiro toque manda o link — e que um toque repetido não consuma o slot
+    // de outra pessoa esperando resposta.
+    const { data: claimed, error: claimError } = await supabase
+      .rpc('claim_instagram_link_send', { p_link_id: link.id });
+    if (claimError) {
+      console.error('[instagram-webhook] claim_instagram_link_send falhou:', claimError);
+      return false;
+    }
+    if (claimed !== true) return true; // já enviado antes; nada a fazer
+
+    // O envio do link também consome cota da conta — se o teto estourou, não
+    // insistir. A pessoa acabou de abrir a janela de 24h, então o follow-up
+    // agendado ainda alcança ela mesmo que este envio não saia agora.
+    const hasSlot = await reserveInstagramSendSlot(supabase, account.id, 'automation');
+    if (!hasSlot) {
+      console.warn('[instagram-webhook] quick reply sem cota de envio', { accountId: account.id });
+      // Devolve o direito de envio: sem isto, o link ficaria marcado como
+      // enviado sem nunca ter saído, e a pessoa que tocou nunca o receberia.
+      await supabase.from('instagram_tracked_links')
+        .update({ link_sent_at: null })
+        .eq('id', link.id);
+      return false;
+    }
+
+    const contact = await ensureInstagramContact(supabase, account, senderId);
+    const conversation = await ensureInstagramConversation(supabase, account, contact);
+
+    const redirectUrl = `${supabaseUrl}/functions/v1/instagram-link-redirect?id=${link.id}`;
+    const text = 'Perfeito! Aqui está o link 👇';
+    const result = await sendInstagramButtonMessage(
+      account,
+      { id: senderId },
+      text,
+      'Acessar',
+      redirectUrl,
+    );
+
+    if (result.ok) {
+      await supabase.from('instagram_messages').insert({
+        conversation_id: conversation.id,
+        direction: 'outbound',
+        type: 'text',
+        content: text,
+        ig_message_id: result.igMessageId,
+        is_from_bot: true,
+        metadata: { quick_reply_payload: parsed, tracked_link_id: link.id },
+      });
+      await supabase.from('instagram_conversations').update({
+        last_message_at: new Date().toISOString(),
+        last_message_direction: 'outbound',
+      }).eq('id', conversation.id);
+    } else {
+      console.error('[instagram-webhook] falha ao enviar link do quick reply:', result.responseText?.slice(0, 300));
+      // Falhou na Meta: liberar para um novo toque poder tentar de novo.
+      await supabase.from('instagram_tracked_links')
+        .update({ link_sent_at: null })
+        .eq('id', link.id);
+    }
+    return true;
+  } catch (error) {
+    console.error('[instagram-webhook] quick reply handler error:', error);
+    return false;
+  }
 }
 
 async function handleCommentChange(
@@ -201,7 +308,11 @@ Deno.serve(async (req) => {
       }
 
       for (const messagingEvent of entry?.messaging || []) {
+        // Registrar ANTES de responder: é este insert que grava last_inbound_at
+        // e portanto abre a janela de 24h. Responder primeiro faria o envio
+        // acontecer com a janela ainda fechada no nosso registro.
         await handleMessagingEvent(supabase, account, messagingEvent);
+        await handleQuickReplyPostback(supabase, account, supabaseUrl, messagingEvent);
       }
     }
 
