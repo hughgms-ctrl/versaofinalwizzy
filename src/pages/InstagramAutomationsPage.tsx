@@ -31,12 +31,15 @@ import { useInstagramAccounts } from '@/hooks/useInstagramAccounts';
 import {
   InstagramAutomationRule,
   InstagramRuleAction,
+  InstagramTriggerType,
   useDeleteInstagramAutomationRule,
   useInstagramAutomationRules,
   useInstagramRuleExecutions,
   useToggleInstagramAutomationRule,
   useUpsertInstagramAutomationRule,
 } from '@/hooks/useInstagramAutomationRules';
+import { InstagramDmPreview } from '@/components/instagram/InstagramDmPreview';
+import { InstagramMediaPicker } from '@/components/instagram/InstagramMediaPicker';
 
 type ActionKey = 'like_comment' | 'reply_comment_public' | 'send_dm' | 'add_tag' | 'notify_assignee';
 
@@ -44,6 +47,7 @@ interface RuleFormState {
   id?: string;
   name: string;
   instagramAccountId: string;
+  triggerType: InstagramTriggerType;
   keywords: string;
   matchType: 'any' | 'all';
   scope: 'all_posts' | 'specific_media';
@@ -64,10 +68,69 @@ interface RuleFormState {
   followupNotClickedText: string;
 }
 
+/**
+ * Como cada gatilho se comporta na tela.
+ *
+ * `keywords` diz se o campo de palavras-chave aparece; `keywordsRequired`
+ * separa o comentário (onde regra sem palavra-chave responderia a qualquer
+ * comentário do perfil, o que ninguém quer) da resposta a story (onde reagir a
+ * qualquer resposta é justamente o caso comum).
+ */
+const TRIGGERS: Record<InstagramTriggerType, {
+  label: string;
+  description: string;
+  keywords: boolean;
+  keywordsRequired: boolean;
+  mediaScope: boolean;
+  commentActions: boolean;
+}> = {
+  comment_keyword: {
+    label: 'Comentário em post',
+    description: 'Alguém comenta uma palavra-chave num post ou reel.',
+    keywords: true,
+    keywordsRequired: true,
+    mediaScope: true,
+    commentActions: true,
+  },
+  dm_keyword: {
+    label: 'Mensagem no direct',
+    description: 'Alguém manda uma DM contendo uma palavra-chave.',
+    keywords: true,
+    keywordsRequired: true,
+    mediaScope: false,
+    commentActions: false,
+  },
+  story_reply: {
+    label: 'Resposta a story',
+    description: 'Alguém responde um story seu. Sem palavras-chave, vale para qualquer resposta.',
+    keywords: true,
+    keywordsRequired: false,
+    mediaScope: false,
+    commentActions: false,
+  },
+  story_mention: {
+    label: 'Menção em story',
+    description: 'Alguém menciona seu perfil no story dele.',
+    keywords: false,
+    keywordsRequired: false,
+    mediaScope: false,
+    commentActions: false,
+  },
+  first_message: {
+    label: 'Primeira mensagem',
+    description: 'Boas-vindas: dispara na primeira vez que um contato escreve.',
+    keywords: false,
+    keywordsRequired: false,
+    mediaScope: false,
+    commentActions: false,
+  },
+};
+
 function emptyForm(defaultAccountId?: string): RuleFormState {
   return {
     name: '',
     instagramAccountId: defaultAccountId || '',
+    triggerType: 'comment_keyword',
     keywords: '',
     matchType: 'any',
     scope: 'all_posts',
@@ -104,6 +167,7 @@ function ruleToForm(rule: InstagramAutomationRule): RuleFormState {
     id: rule.id,
     name: rule.name,
     instagramAccountId: rule.instagram_account_id,
+    triggerType: rule.trigger_type || 'comment_keyword',
     keywords: (rule.trigger_config?.keywords || []).join(', '),
     matchType: rule.trigger_config?.match_type || 'any',
     scope: rule.trigger_config?.scope || 'all_posts',
@@ -134,9 +198,13 @@ function ruleToForm(rule: InstagramAutomationRule): RuleFormState {
 }
 
 function formToPayload(form: RuleFormState) {
+  const trigger = TRIGGERS[form.triggerType];
   const actions: InstagramRuleAction[] = [];
-  if (form.enabledActions.like_comment) actions.push({ type: 'like_comment' });
-  if (form.enabledActions.reply_comment_public) actions.push({ type: 'reply_comment_public', text: form.replyText });
+  // Curtir e responder publicamente não existem fora de um comentário. Sem
+  // este filtro, trocar o gatilho de uma regra já salva deixaria as ações
+  // antigas gravadas, para depois virarem 'skipped' silenciosos na execução.
+  if (trigger.commentActions && form.enabledActions.like_comment) actions.push({ type: 'like_comment' });
+  if (trigger.commentActions && form.enabledActions.reply_comment_public) actions.push({ type: 'reply_comment_public', text: form.replyText });
   if (form.enabledActions.send_dm) {
     actions.push({
       type: 'send_dm',
@@ -166,12 +234,18 @@ function formToPayload(form: RuleFormState) {
     id: form.id,
     name: form.name,
     instagram_account_id: form.instagramAccountId,
-    trigger_type: 'comment_keyword' as const,
+    trigger_type: form.triggerType,
     trigger_config: {
-      keywords: form.keywords.split(',').map((k) => k.trim()).filter(Boolean),
+      keywords: trigger.keywords
+        ? form.keywords.split(',').map((k) => k.trim()).filter(Boolean)
+        : [],
       match_type: form.matchType,
-      scope: form.scope,
-      media_ids: form.mediaIds.split(',').map((m) => m.trim()).filter(Boolean),
+      // Escopo por post só faz sentido para comentário: uma DM não vem de um
+      // post. Gravar o escopo herdado confundiria a leitura da regra.
+      scope: trigger.mediaScope ? form.scope : 'all_posts',
+      media_ids: trigger.mediaScope && form.scope === 'specific_media'
+        ? form.mediaIds.split(',').map((m) => m.trim()).filter(Boolean)
+        : [],
     },
     actions,
   };
@@ -199,6 +273,9 @@ export default function InstagramAutomationsPage() {
 
   const connectedAccounts = accounts.filter((a) => a.status === 'connected');
   const ruleNameById = useMemo(() => Object.fromEntries(rules.map((r) => [r.id, r.name])), [rules]);
+  const activeTrigger = TRIGGERS[form.triggerType];
+  // Alimenta o preview com o @ e o avatar reais da conta escolhida.
+  const selectedAccount = accounts.find((a) => a.id === form.instagramAccountId);
 
   const openCreateDialog = () => {
     setForm(emptyForm(connectedAccounts[0]?.id));
@@ -211,8 +288,19 @@ export default function InstagramAutomationsPage() {
   };
 
   const handleSave = async () => {
-    if (!form.name.trim() || !form.instagramAccountId || !form.keywords.trim()) {
-      toast({ title: 'Preencha nome, conta e ao menos uma palavra-chave', variant: 'destructive' });
+    const trigger = TRIGGERS[form.triggerType];
+    if (!form.name.trim() || !form.instagramAccountId) {
+      toast({ title: 'Preencha o nome e a conta', variant: 'destructive' });
+      return;
+    }
+    // Palavra-chave só é exigida onde a ausência dela seria um tiro no escuro:
+    // regra de comentário sem palavra-chave responderia a todo mundo.
+    if (trigger.keywordsRequired && !form.keywords.trim()) {
+      toast({ title: 'Informe ao menos uma palavra-chave', variant: 'destructive' });
+      return;
+    }
+    if (trigger.mediaScope && form.scope === 'specific_media' && !form.mediaIds.trim()) {
+      toast({ title: 'Selecione ao menos um post', variant: 'destructive' });
       return;
     }
     setSaving(true);
@@ -361,7 +449,7 @@ export default function InstagramAutomationsPage() {
         <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{form.id ? 'Editar automação' : 'Nova automação'}</DialogTitle>
-            <DialogDescription>Comentário com palavra-chave → curtir, responder e enviar DM</DialogDescription>
+            <DialogDescription>{activeTrigger.description}</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
@@ -383,70 +471,115 @@ export default function InstagramAutomationsPage() {
             </div>
 
             <div className="space-y-2">
-              <Label>Palavras-chave (separadas por vírgula)</Label>
-              <Input value={form.keywords} onChange={(e) => setForm({ ...form, keywords: e.target.value })} placeholder="quero, informações, preço" />
+              <Label>Quando isto acontecer</Label>
+              <Select
+                value={form.triggerType}
+                onValueChange={(v: InstagramTriggerType) => setForm({ ...form, triggerType: v })}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {(Object.keys(TRIGGERS) as InstagramTriggerType[]).map((key) => (
+                    <SelectItem key={key} value={key}>{TRIGGERS[key].label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">{activeTrigger.description}</p>
             </div>
+
+            {activeTrigger.keywords && (
+              <div className="space-y-2">
+                <Label>
+                  Palavras-chave (separadas por vírgula)
+                  {!activeTrigger.keywordsRequired && (
+                    <span className="ml-1 font-normal text-muted-foreground">— opcional</span>
+                  )}
+                </Label>
+                <Input
+                  value={form.keywords}
+                  onChange={(e) => setForm({ ...form, keywords: e.target.value })}
+                  placeholder={activeTrigger.keywordsRequired ? 'quero, informações, preço' : 'deixe vazio para qualquer resposta'}
+                />
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label>Corresponder a</Label>
-                <Select value={form.matchType} onValueChange={(v: 'any' | 'all') => setForm({ ...form, matchType: v })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="any">Qualquer palavra</SelectItem>
-                    <SelectItem value="all">Todas as palavras</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Escopo</Label>
-                <Select value={form.scope} onValueChange={(v: 'all_posts' | 'specific_media') => setForm({ ...form, scope: v })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all_posts">Todos os posts</SelectItem>
-                    <SelectItem value="specific_media">Posts específicos</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              {activeTrigger.keywords && (
+                <div className="space-y-2">
+                  <Label>Corresponder a</Label>
+                  <Select value={form.matchType} onValueChange={(v: 'any' | 'all') => setForm({ ...form, matchType: v })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="any">Qualquer palavra</SelectItem>
+                      <SelectItem value="all">Todas as palavras</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              {activeTrigger.mediaScope && (
+                <div className="space-y-2">
+                  <Label>Escopo</Label>
+                  <Select value={form.scope} onValueChange={(v: 'all_posts' | 'specific_media') => setForm({ ...form, scope: v })}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all_posts">Todos os posts</SelectItem>
+                      <SelectItem value="specific_media">Posts específicos</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
 
-            {form.scope === 'specific_media' && (
+            {activeTrigger.mediaScope && form.scope === 'specific_media' && (
               <div className="space-y-2">
-                <Label>IDs dos posts/reels (separados por vírgula)</Label>
-                <Input value={form.mediaIds} onChange={(e) => setForm({ ...form, mediaIds: e.target.value })} placeholder="17900000000000000" />
+                <Label>Em quais posts</Label>
+                {form.instagramAccountId ? (
+                  <InstagramMediaPicker
+                    accountId={form.instagramAccountId}
+                    value={form.mediaIds.split(',').map((m) => m.trim()).filter(Boolean)}
+                    onChange={(ids) => setForm({ ...form, mediaIds: ids.join(', ') })}
+                  />
+                ) : (
+                  <p className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+                    Selecione uma conta para escolher os posts.
+                  </p>
+                )}
               </div>
             )}
 
             <div className="space-y-3 border-t pt-4">
               <Label className="text-sm font-semibold">Ações</Label>
 
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  checked={form.enabledActions.like_comment}
-                  onCheckedChange={(c) => setForm({ ...form, enabledActions: { ...form.enabledActions, like_comment: !!c } })}
-                />
-                <Label className="font-normal text-sm">
-                  Curtir o comentário <span className="text-muted-foreground">(beta — pode não ser suportado pela API)</span>
-                </Label>
-              </div>
+              {activeTrigger.commentActions && (
+                <>
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      checked={form.enabledActions.like_comment}
+                      onCheckedChange={(c) => setForm({ ...form, enabledActions: { ...form.enabledActions, like_comment: !!c } })}
+                    />
+                    <Label className="font-normal text-sm">
+                      Curtir o comentário <span className="text-muted-foreground">(beta — pode não ser suportado pela API)</span>
+                    </Label>
+                  </div>
 
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    checked={form.enabledActions.reply_comment_public}
-                    onCheckedChange={(c) => setForm({ ...form, enabledActions: { ...form.enabledActions, reply_comment_public: !!c } })}
-                  />
-                  <Label className="font-normal text-sm">Responder o comentário publicamente</Label>
-                </div>
-                {form.enabledActions.reply_comment_public && (
-                  <Textarea
-                    value={form.replyText}
-                    onChange={(e) => setForm({ ...form, replyText: e.target.value })}
-                    placeholder="Use {{username}} para citar o autor"
-                    rows={2}
-                  />
-                )}
-              </div>
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        checked={form.enabledActions.reply_comment_public}
+                        onCheckedChange={(c) => setForm({ ...form, enabledActions: { ...form.enabledActions, reply_comment_public: !!c } })}
+                      />
+                      <Label className="font-normal text-sm">Responder o comentário publicamente</Label>
+                    </div>
+                    {form.enabledActions.reply_comment_public && (
+                      <Textarea
+                        value={form.replyText}
+                        onChange={(e) => setForm({ ...form, replyText: e.target.value })}
+                        placeholder="Use {{username}} para citar o autor"
+                        rows={2}
+                      />
+                    )}
+                  </div>
+                </>
+              )}
 
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
@@ -570,6 +703,21 @@ export default function InstagramAutomationsPage() {
                         </div>
                       )}
                     </div>
+
+                    <InstagramDmPreview
+                      text={form.dmText}
+                      accountUsername={selectedAccount?.ig_username}
+                      accountAvatarUrl={selectedAccount?.ig_profile_pic_url}
+                      button={form.buttonEnabled && form.buttonUrl.trim()
+                        ? { label: form.buttonLabel, url: form.buttonUrl }
+                        : null}
+                      quickReply={form.buttonEnabled && form.buttonUrl.trim() && form.quickReplyEnabled
+                        ? { label: form.quickReplyLabel }
+                        : null}
+                      // Mostra o caminho "não clicou", que é o que a maioria
+                      // recebe — e o que revela se a janela de 24h vai barrar.
+                      followupText={form.followupEnabled ? form.followupNotClickedText : null}
+                    />
                   </>
                 )}
               </div>

@@ -25,16 +25,30 @@ function jsonResponse(data: unknown, status = 200) {
   });
 }
 
-async function handleMessagingEvent(supabase: any, account: any, messagingEvent: any) {
+/** O que a mensagem recebida representa, para decidir qual gatilho ela aciona. */
+interface IngestedMessage {
+  contact: any;
+  conversation: any;
+  messageType: string;
+  text: string;
+  /** Primeira mensagem que este contato manda — base do gatilho first_message. */
+  isFirstMessage: boolean;
+}
+
+async function handleMessagingEvent(
+  supabase: any,
+  account: any,
+  messagingEvent: any,
+): Promise<IngestedMessage | null> {
   const senderId = messagingEvent?.sender?.id;
   const isEcho = messagingEvent?.message?.is_echo === true;
   // Echoes are Meta replaying our own outbound sends back through the webhook —
   // we already record those at send time, so skip to avoid duplicate rows.
-  if (!senderId || senderId === account.ig_business_account_id || isEcho) return;
+  if (!senderId || senderId === account.ig_business_account_id || isEcho) return null;
 
   const messageText = messagingEvent?.message?.text || null;
   const igMessageId = messagingEvent?.message?.mid || null;
-  if (!messageText && !messagingEvent?.message?.attachments?.length) return;
+  if (!messageText && !messagingEvent?.message?.attachments?.length) return null;
 
   const contact = await ensureInstagramContact(supabase, account, senderId);
   const conversation = await ensureInstagramConversation(supabase, account, contact);
@@ -43,6 +57,9 @@ async function handleMessagingEvent(supabase: any, account: any, messagingEvent:
   const messageType = attachment?.type === 'image' ? 'image'
     : attachment?.type === 'video' ? 'video'
     : attachment?.type === 'audio' ? 'audio'
+    // Menção da conta no story de outra pessoa: chega como anexo, não como
+    // resposta. É um gatilho distinto do story_reply.
+    : attachment?.type === 'story_mention' ? 'story_mention'
     : messagingEvent?.message?.reply_to?.story ? 'story_reply'
     : 'text';
 
@@ -65,6 +82,95 @@ async function handleMessagingEvent(supabase: any, account: any, messagingEvent:
     last_inbound_at: new Date().toISOString(),
     unread_count: (conversation.unread_count || 0) + 1,
   }).eq('id', conversation.id);
+
+  // Marca a primeira mensagem do contato de forma atômica: o UPDATE só encontra
+  // a linha enquanto first_inbound_at for NULL, então duas mensagens que
+  // cheguem juntas não disparam o gatilho de boas-vindas duas vezes.
+  const { data: firstMarked } = await supabase
+    .from('instagram_contacts')
+    .update({ first_inbound_at: new Date().toISOString() })
+    .eq('id', contact.id)
+    .is('first_inbound_at', null)
+    .select('id');
+
+  return {
+    contact,
+    conversation,
+    messageType,
+    text: messageText || '',
+    isFirstMessage: (firstMarked?.length || 0) > 0,
+  };
+}
+
+/** Testa o texto recebido contra as palavras-chave configuradas na regra. */
+function matchesKeywords(config: any, text: string): boolean {
+  const keywords: string[] = (config?.keywords || [])
+    .map((k: string) => String(k).toLowerCase().trim())
+    .filter(Boolean);
+
+  // Lista vazia = "qualquer mensagem serve". É o padrão para story_reply, onde
+  // exigir palavra-chave anularia o caso de uso mais comum (responder quem
+  // reagiu ao story, seja lá o que tenha escrito).
+  if (!keywords.length) return true;
+
+  const lowerText = String(text || '').toLowerCase();
+  const matches = keywords.map((k) => lowerText.includes(k));
+  return config?.match_type === 'all' ? matches.every(Boolean) : matches.some(Boolean);
+}
+
+/**
+ * Dispara as regras cujo gatilho é uma mensagem recebida (DM, resposta a story,
+ * menção em story, primeira mensagem).
+ *
+ * Diferente do comentário, aqui a pessoa acabou de escrever para a empresa — ou
+ * seja, a janela de 24h está aberta e o envio é DM comum, endereçada por IGSID.
+ * Quem decide isso é o rule-execute, a partir do `event.type`.
+ */
+async function handleMessageTriggers(
+  supabase: any,
+  account: any,
+  serviceRoleKey: string,
+  supabaseUrl: string,
+  webhookEventId: string,
+  ingested: IngestedMessage,
+) {
+  const triggerTypes: string[] = [];
+  if (ingested.messageType === 'story_reply') triggerTypes.push('story_reply');
+  else if (ingested.messageType === 'story_mention') triggerTypes.push('story_mention');
+  else triggerTypes.push('dm_keyword');
+  if (ingested.isFirstMessage) triggerTypes.push('first_message');
+
+  const { data: rules } = await supabase
+    .from('instagram_automation_rules')
+    .select('*')
+    .eq('instagram_account_id', account.id)
+    .in('trigger_type', triggerTypes)
+    .eq('is_active', true);
+
+  for (const rule of rules || []) {
+    // Palavra-chave só filtra onde ela faz sentido. Menção em story não traz
+    // texto nosso para casar, e "primeira mensagem" é sobre ser a primeira,
+    // não sobre o que foi dito.
+    const keywordApplies = rule.trigger_type === 'dm_keyword' || rule.trigger_type === 'story_reply';
+    if (keywordApplies && !matchesKeywords(rule.trigger_config, ingested.text)) continue;
+
+    await fetch(`${supabaseUrl}/functions/v1/instagram-rule-execute`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${serviceRoleKey}` },
+      body: JSON.stringify({
+        ruleId: rule.id,
+        webhookEventId,
+        event: {
+          type: 'message',
+          messageType: ingested.messageType,
+          text: ingested.text,
+          fromIgsid: ingested.contact.igsid,
+          fromUsername: ingested.contact.username,
+          conversationId: ingested.conversation.id,
+        },
+      }),
+    }).catch((err) => console.error('[instagram-webhook] rule-execute (message) falhou:', err));
+  }
 }
 
 // Responde ao toque num quick reply enviado pela automação.
@@ -311,8 +417,20 @@ Deno.serve(async (req) => {
         // Registrar ANTES de responder: é este insert que grava last_inbound_at
         // e portanto abre a janela de 24h. Responder primeiro faria o envio
         // acontecer com a janela ainda fechada no nosso registro.
-        await handleMessagingEvent(supabase, account, messagingEvent);
-        await handleQuickReplyPostback(supabase, account, supabaseUrl, messagingEvent);
+        const ingested = await handleMessagingEvent(supabase, account, messagingEvent);
+        const handledAsQuickReply = await handleQuickReplyPostback(
+          supabase, account, supabaseUrl, messagingEvent,
+        );
+
+        // O toque num quick reply nosso não deve acionar regra de palavra-chave:
+        // o rótulo da chip ("Quero sim!") casaria com a regra de DM que contém
+        // "quero", e a pessoa receberia o link e a automação de boas-vindas ao
+        // mesmo tempo. O postback já teve a resposta dele.
+        if (ingested && !handledAsQuickReply) {
+          await handleMessageTriggers(
+            supabase, account, serviceRoleKey, supabaseUrl, eventRow?.id, ingested,
+          );
+        }
       }
     }
 

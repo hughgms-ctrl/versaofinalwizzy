@@ -76,8 +76,24 @@ Deno.serve(async (req) => {
     const webhookEventId = body.webhookEventId || null;
     const event = body.event || {};
 
-    if (!ruleId || event.type !== 'comment') {
-      return jsonResponse({ error: 'ruleId e event.type=comment são obrigatórios (Fase 1)' }, 400);
+    // 'comment' = alguém comentou num post. 'message' = alguém escreveu para a
+    // empresa (DM, resposta a story, menção em story, primeira mensagem).
+    //
+    // A distinção decide como a DM é endereçada, e é a escolha mais
+    // consequente do módulo: comentário não abre janela de mensagem, então o
+    // envio tem de ser private reply pelo comment_id; mensagem abre, então o
+    // envio é DM comum pelo IGSID. Ver InstagramRecipient no provider.
+    const isComment = event.type === 'comment';
+    const isMessage = event.type === 'message';
+
+    if (!ruleId || (!isComment && !isMessage)) {
+      return jsonResponse({ error: 'ruleId e event.type (comment|message) são obrigatórios' }, 400);
+    }
+    if (isComment && !event.commentId) {
+      return jsonResponse({ error: 'event.commentId é obrigatório para type=comment' }, 400);
+    }
+    if (isMessage && !event.fromIgsid) {
+      return jsonResponse({ error: 'event.fromIgsid é obrigatório para type=message' }, 400);
     }
 
     const { data: rule, error: ruleError } = await supabase
@@ -112,6 +128,19 @@ Deno.serve(async (req) => {
 
     for (const action of (rule.actions || [])) {
       try {
+        // Curtir e responder publicamente só existem no contexto de um
+        // comentário. Numa regra disparada por DM ou story, marcar 'skipped'
+        // deixa o log honesto — melhor do que chamar a API com id vazio e
+        // registrar um erro que parece falha técnica.
+        if (!isComment && (action.type === 'like_comment' || action.type === 'reply_comment_public')) {
+          steps.push({
+            type: action.type,
+            status: 'skipped',
+            detail: 'ação só se aplica a gatilho por comentário',
+          });
+          continue;
+        }
+
         if (action.type === 'like_comment') {
           const result = await likeComment(account, event.commentId);
           steps.push({
@@ -128,11 +157,16 @@ Deno.serve(async (req) => {
           const message = interpolate(action.text, vars);
           let trackedLinkId: string | null = null;
 
-          // Addressed by comment_id, NOT by IGSID: whoever just commented has no
-          // open 24-hour window, so this has to go out as a private reply (see
-          // InstagramRecipient in instagramProvider.ts). Meta allows exactly one
-          // per comment, within 7 days of the comment.
-          const recipient = { comment_id: event.commentId };
+          // Comentário: endereçado por comment_id, NÃO por IGSID — quem acabou
+          // de comentar não tem janela de 24h aberta, então só a private reply
+          // é aceita (uma por comentário, até 7 dias).
+          //
+          // Mensagem: a pessoa acabou de escrever para a empresa, o que abre a
+          // janela. Aqui o envio é DM comum pelo IGSID — e não existe
+          // comment_id nenhum para usar.
+          const recipient = isComment
+            ? { comment_id: event.commentId }
+            : { id: event.fromIgsid };
 
           // Reserva a cota da CONTA antes de gastar rede. Um post viral traz
           // centenas de comentários de uma vez, e responder a todos em rajada é
@@ -200,11 +234,16 @@ Deno.serve(async (req) => {
             await supabase.from('instagram_messages').insert({
               conversation_id: conversation.id,
               direction: 'outbound',
-              type: 'comment_reply',
+              // 'comment_reply' identifica a private reply nascida de um
+              // comentário. Resposta a DM/story é mensagem comum e precisa ser
+              // distinguível no histórico da conversa.
+              type: isComment ? 'comment_reply' : 'text',
               content: message,
               ig_message_id: result.igMessageId,
               is_from_bot: true,
-              metadata: { comment_id: event.commentId, media_id: event.mediaId },
+              metadata: isComment
+                ? { comment_id: event.commentId, media_id: event.mediaId }
+                : { trigger_type: rule.trigger_type, message_type: event.messageType },
             });
             await supabase.from('instagram_conversations').update({
               last_message_at: new Date().toISOString(),

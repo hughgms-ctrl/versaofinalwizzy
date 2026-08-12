@@ -183,7 +183,17 @@ semana em vez de olhar para uma tela em branco.
 
 ---
 
-## Decisões que preciso de você
+## Decisões tomadas (2026-08-12)
+
+**Arquitetura da Fase C: opção C2** — builder compartilhado, motor separado. A
+UI do construtor é reusada; o Instagram ganha um `instagram-flow-execute`
+próprio. O motor do WhatsApp não é tocado. Fluxo multi-canal fica para uma
+unificação futura, quando o Instagram estiver maduro.
+
+**Ritmo: Fases A + B juntas.** Preview, seletor visual de post e os gatilhos que
+faltam, numa entrega só.
+
+O restante desta seção é o registro do que foi decidido e por quê.
 
 ### 1. Arquitetura da Fase C
 

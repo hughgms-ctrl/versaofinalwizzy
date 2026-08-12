@@ -246,6 +246,11 @@ verify_jwt = false
 [functions.instagram-check-status]
 verify_jwt = false
 
+# Lista os posts da conta para o seletor visual. Valida o JWT no corpo da
+# função (mesmo padrão das demais deste módulo).
+[functions.instagram-list-media]
+verify_jwt = false
+
 [functions.instagram-disconnect]
 verify_jwt = false
 

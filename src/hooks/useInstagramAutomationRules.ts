@@ -2,6 +2,20 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './useAuth';
 
+/**
+ * O que dispara a regra.
+ *
+ * `comment_keyword` nasce de um comentário em post — o único caso em que a DM
+ * sai como private reply. Os demais nascem de uma mensagem que a pessoa enviou,
+ * o que abre a janela de 24h e faz o envio ser DM comum.
+ */
+export type InstagramTriggerType =
+  | 'comment_keyword'
+  | 'dm_keyword'
+  | 'story_reply'
+  | 'story_mention'
+  | 'first_message';
+
 export type InstagramRuleActionType =
   | 'like_comment'
   | 'reply_comment_public'
@@ -38,10 +52,11 @@ export interface InstagramAutomationRule {
   instagram_account_id: string;
   workspace_id: string | null;
   name: string;
-  trigger_type: 'comment_keyword';
+  trigger_type: InstagramTriggerType;
   trigger_config: {
     keywords: string[];
     match_type: 'any' | 'all';
+    /** Só usados por comment_keyword. */
     scope: 'all_posts' | 'specific_media';
     media_ids: string[];
   };
