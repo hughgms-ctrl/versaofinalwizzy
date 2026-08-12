@@ -20,6 +20,9 @@ export interface InstagramConversationRow {
   status: 'open' | 'pending' | 'resolved' | 'archived';
   last_message_at: string | null;
   last_message_direction: 'inbound' | 'outbound' | null;
+  // Última mensagem recebida DO contato — é ela que abre a janela de 24h da
+  // Meta. Comentário não abre, e mensagem nossa também não.
+  last_inbound_at: string | null;
   unread_count: number;
   created_at: string;
   contact: InstagramConversationContact | null;

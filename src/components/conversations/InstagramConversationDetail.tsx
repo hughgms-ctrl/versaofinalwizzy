@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Loader2, Send, Instagram } from 'lucide-react';
+import { Loader2, Send, Instagram, Clock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import {
@@ -25,6 +25,17 @@ export function InstagramConversationDetail({ conversation }: InstagramConversat
   const bottomRef = useRef<HTMLDivElement>(null);
   const contact = conversation.contact;
   const displayName = contact?.name || (contact?.username ? `@${contact.username}` : 'Instagram');
+
+  // Mesma regra que instagram-send-message aplica no servidor. Repetida aqui só
+  // para bloquear a caixa antes do envio: deixar digitar e falhar depois não dá
+  // ao atendente nenhuma pista de que a bola está com o contato, não com ele.
+  const lastInbound = conversation.last_inbound_at;
+  const windowOpen = Boolean(
+    lastInbound && Date.now() - new Date(lastInbound).getTime() < 24 * 60 * 60 * 1000
+  );
+  const windowExpiresAt = lastInbound
+    ? new Date(new Date(lastInbound).getTime() + 24 * 60 * 60 * 1000)
+    : null;
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -96,22 +107,45 @@ export function InstagramConversationDetail({ conversation }: InstagramConversat
         <div ref={bottomRef} />
       </div>
 
-      <div className="p-3 border-t border-border flex-shrink-0 flex gap-2">
-        <Input
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault();
-              handleSend();
-            }
-          }}
-          placeholder="Digite uma mensagem..."
-          disabled={sendMessage.isPending}
-        />
-        <Button onClick={handleSend} disabled={sendMessage.isPending || !text.trim()} size="icon">
-          {sendMessage.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-        </Button>
+      <div className="p-3 border-t border-border flex-shrink-0 space-y-2">
+        {!windowOpen && (
+          <div className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2">
+            <Clock className="h-4 w-4 text-amber-600 mt-0.5 flex-shrink-0" />
+            <p className="text-xs text-amber-700 dark:text-amber-500">
+              {lastInbound
+                ? 'A janela de 24 horas do Instagram fechou. Só é possível responder até 24h após a última mensagem do contato.'
+                : 'Este contato ainda não enviou nenhuma mensagem. O Instagram só permite responder depois que a pessoa escrever — comentar em uma publicação não abre essa janela.'}
+            </p>
+          </div>
+        )}
+
+        {windowOpen && windowExpiresAt && (
+          <p className="text-[11px] text-muted-foreground">
+            Janela aberta até {windowExpiresAt.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+          </p>
+        )}
+
+        <div className="flex gap-2">
+          <Input
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSend();
+              }
+            }}
+            placeholder={windowOpen ? 'Digite uma mensagem...' : 'Aguardando a mensagem do contato'}
+            disabled={sendMessage.isPending || !windowOpen}
+          />
+          <Button
+            onClick={handleSend}
+            disabled={sendMessage.isPending || !text.trim() || !windowOpen}
+            size="icon"
+          >
+            {sendMessage.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+          </Button>
+        </div>
       </div>
     </div>
   );
