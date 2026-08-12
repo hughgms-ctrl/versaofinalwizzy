@@ -6,6 +6,7 @@ import {
   loadInstagramAppConfig,
   reserveInstagramSendSlot,
   sendInstagramButtonMessage,
+  sendInstagramMessage,
   verifyWebhookSignature,
 } from '../_shared/instagramProvider.ts';
 
@@ -162,18 +163,15 @@ async function triggerFlows(
     .eq('is_active', true);
 
   for (const flow of flows || []) {
+    const isComment = flow.trigger_type === 'comment_keyword';
     const keywordApplies = flow.trigger_type === 'dm_keyword'
       || flow.trigger_type === 'story_reply'
-      || flow.trigger_type === 'comment_keyword';
-    if (keywordApplies && !matchesKeywords(flow.trigger_config, text)) continue;
+      || isComment;
+    if (keywordApplies && !matchesKeywords(flow.trigger_config, text, !isComment)) continue;
 
     // Escopo por post, quando o gatilho é comentário.
-    if (flow.trigger_type === 'comment_keyword') {
-      const config = flow.trigger_config || {};
-      const mediaId = event.mediaId as string | undefined;
-      if (config.scope === 'specific_media' && mediaId && !(config.media_ids || []).includes(mediaId)) {
-        continue;
-      }
+    if (isComment && !matchesPostScope(flow.trigger_config, event.mediaId as string | undefined)) {
+      continue;
     }
 
     await fetch(`${supabaseUrl}/functions/v1/instagram-flow-execute`, {
@@ -184,20 +182,51 @@ async function triggerFlows(
   }
 }
 
-/** Testa o texto recebido contra as palavras-chave configuradas na regra. */
-function matchesKeywords(config: any, text: string): boolean {
+/**
+ * Testa o texto recebido contra as palavras-chave configuradas.
+ *
+ * `emptyMeansAny` separa dois mundos que o mesmo campo vazio significa coisas
+ * opostas:
+ *
+ *  - mensagem e resposta a story (true): sem palavra-chave, vale qualquer
+ *    texto. É o caso de uso mais comum — responder quem reagiu ao story, seja
+ *    lá o que tenha escrito.
+ *  - comentário (false): sem palavra-chave, NÃO vale nada. Uma regra de
+ *    comentário que responde a todo mundo responderia também a críticas e spam,
+ *    e nunca foi intenção de quem simplesmente deixou o campo em branco.
+ *
+ * Quem quer "qualquer comentário" agora tem como dizer isso de propósito:
+ * `keyword_mode: 'any'`, escolhido na tela.
+ */
+function matchesKeywords(config: any, text: string, emptyMeansAny = true): boolean {
+  if (config?.keyword_mode === 'any') return true;
+
   const keywords: string[] = (config?.keywords || [])
     .map((k: string) => String(k).toLowerCase().trim())
     .filter(Boolean);
 
-  // Lista vazia = "qualquer mensagem serve". É o padrão para story_reply, onde
-  // exigir palavra-chave anularia o caso de uso mais comum (responder quem
-  // reagiu ao story, seja lá o que tenha escrito).
-  if (!keywords.length) return true;
+  if (!keywords.length) return emptyMeansAny;
 
   const lowerText = String(text || '').toLowerCase();
   const matches = keywords.map((k) => lowerText.includes(k));
   return config?.match_type === 'all' ? matches.every(Boolean) : matches.some(Boolean);
+}
+
+/**
+ * O comentário veio de uma publicação em que esta automação vale?
+ *
+ * `next_post` só passa depois que o vinculador (instagram-bind-next-post) achou
+ * a publicação nova e gravou o id. Antes disso a lista está vazia e a regra não
+ * vale para nenhum post — o que é o comportamento certo: "vale na próxima" não
+ * pode significar "vale em todas enquanto a próxima não sai".
+ */
+function matchesPostScope(config: any, mediaId: string | null | undefined): boolean {
+  const scope = config?.scope || 'all_posts';
+  if (scope === 'all_posts') return true;
+
+  const ids: string[] = config?.media_ids || [];
+  if (!ids.length || !mediaId) return false;
+  return ids.includes(mediaId);
 }
 
 /**
@@ -286,78 +315,200 @@ async function handleQuickReplyPostback(
   if (!senderId) return false;
 
   try {
-    const { data: link } = await supabase
-      .from('instagram_tracked_links')
-      .select('id, destination_url')
-      .eq('id', parsed.t)
-      .maybeSingle();
-    if (!link?.destination_url) return false;
-
-    // A chip continua na conversa depois de tocada, então a pessoa pode tocar
-    // várias vezes. Reservar o envio ANTES de gastar cota garante que só o
-    // primeiro toque manda o link — e que um toque repetido não consuma o slot
-    // de outra pessoa esperando resposta.
-    const { data: claimed, error: claimError } = await supabase
-      .rpc('claim_instagram_link_send', { p_link_id: link.id });
-    if (claimError) {
-      console.error('[instagram-webhook] claim_instagram_link_send falhou:', claimError);
-      return false;
-    }
-    if (claimed !== true) return true; // já enviado antes; nada a fazer
-
-    // O envio do link também consome cota da conta — se o teto estourou, não
-    // insistir. A pessoa acabou de abrir a janela de 24h, então o follow-up
-    // agendado ainda alcança ela mesmo que este envio não saia agora.
-    const hasSlot = await reserveInstagramSendSlot(supabase, account.id, 'automation');
-    if (!hasSlot) {
-      console.warn('[instagram-webhook] quick reply sem cota de envio', { accountId: account.id });
-      // Devolve o direito de envio: sem isto, o link ficaria marcado como
-      // enviado sem nunca ter saído, e a pessoa que tocou nunca o receberia.
-      await supabase.from('instagram_tracked_links')
-        .update({ link_sent_at: null })
-        .eq('id', link.id);
-      return false;
-    }
-
-    const contact = await ensureInstagramContact(supabase, account, senderId);
-    const conversation = await ensureInstagramConversation(supabase, account, contact);
-
-    const redirectUrl = `${supabaseUrl}/functions/v1/instagram-link-redirect?id=${link.id}`;
-    const text = 'Perfeito! Aqui está o link 👇';
-    const result = await sendInstagramButtonMessage(
-      account,
-      { id: senderId },
-      text,
-      'Acessar',
-      redirectUrl,
-    );
-
-    if (result.ok) {
-      await supabase.from('instagram_messages').insert({
-        conversation_id: conversation.id,
-        direction: 'outbound',
-        type: 'text',
-        content: text,
-        ig_message_id: result.igMessageId,
-        is_from_bot: true,
-        metadata: { quick_reply_payload: parsed, tracked_link_id: link.id },
-      });
-      await supabase.from('instagram_conversations').update({
-        last_message_at: new Date().toISOString(),
-        last_message_direction: 'outbound',
-      }).eq('id', conversation.id);
-    } else {
-      console.error('[instagram-webhook] falha ao enviar link do quick reply:', result.responseText?.slice(0, 300));
-      // Falhou na Meta: liberar para um novo toque poder tentar de novo.
-      await supabase.from('instagram_tracked_links')
-        .update({ link_sent_at: null })
-        .eq('id', link.id);
-    }
-    return true;
+    return await deliverTrackedLink(supabase, account, supabaseUrl, senderId, parsed.t, {
+      quick_reply_payload: parsed,
+    });
   } catch (error) {
     console.error('[instagram-webhook] quick reply handler error:', error);
     return false;
   }
+}
+
+/**
+ * Envia o link prometido, uma vez só.
+ *
+ * Dois caminhos chegam aqui — o toque no quick reply e a resposta com o e-mail
+ * — e os dois têm o mesmo problema: podem acontecer mais de uma vez. A chip
+ * continua na conversa depois de tocada, e nada impede a pessoa de responder
+ * duas vezes. A reserva no banco (claim_instagram_link_send) é o que garante
+ * que só o primeiro chegue à Meta.
+ *
+ * Devolve true quando o assunto está resolvido — inclusive no caso de o link já
+ * ter sido enviado antes, em que não há nada a fazer.
+ */
+async function deliverTrackedLink(
+  supabase: any,
+  account: any,
+  supabaseUrl: string,
+  senderId: string,
+  linkId: string,
+  metadata: Record<string, unknown>,
+): Promise<boolean> {
+  const { data: link } = await supabase
+    .from('instagram_tracked_links')
+    .select('id, destination_url, link_message, link_label')
+    .eq('id', linkId)
+    .maybeSingle();
+  if (!link?.destination_url) return false;
+
+  // Reservar ANTES de gastar cota: um toque repetido não deve consumir o slot
+  // de outra pessoa esperando resposta.
+  const { data: claimed, error: claimError } = await supabase
+    .rpc('claim_instagram_link_send', { p_link_id: link.id });
+  if (claimError) {
+    console.error('[instagram-webhook] claim_instagram_link_send falhou:', claimError);
+    return false;
+  }
+  if (claimed !== true) return true; // já enviado antes; nada a fazer
+
+  // O envio do link também consome cota da conta — se o teto estourou, não
+  // insistir. A pessoa acabou de abrir a janela de 24h, então o follow-up
+  // agendado ainda alcança ela mesmo que este envio não saia agora.
+  const hasSlot = await reserveInstagramSendSlot(supabase, account.id, 'automation');
+  if (!hasSlot) {
+    console.warn('[instagram-webhook] entrega de link sem cota de envio', { accountId: account.id });
+    // Devolve o direito de envio: sem isto, o link ficaria marcado como enviado
+    // sem nunca ter saído, e a pessoa nunca o receberia.
+    await supabase.from('instagram_tracked_links')
+      .update({ link_sent_at: null })
+      .eq('id', link.id);
+    return false;
+  }
+
+  const contact = await ensureInstagramContact(supabase, account, senderId);
+  const conversation = await ensureInstagramConversation(supabase, account, contact);
+
+  const redirectUrl = `${supabaseUrl}/functions/v1/instagram-link-redirect?id=${link.id}`;
+  // Texto gravado junto do link na criação. O padrão cobre os links criados
+  // antes desta coluna existir.
+  const text = link.link_message || 'Perfeito! Aqui está o link 👇';
+  const result = await sendInstagramButtonMessage(
+    account,
+    { id: senderId },
+    text,
+    link.link_label || 'Acessar',
+    redirectUrl,
+  );
+
+  if (result.ok) {
+    await supabase.from('instagram_messages').insert({
+      conversation_id: conversation.id,
+      direction: 'outbound',
+      type: 'text',
+      content: text,
+      ig_message_id: result.igMessageId,
+      is_from_bot: true,
+      metadata: { ...metadata, tracked_link_id: link.id },
+    });
+    await supabase.from('instagram_conversations').update({
+      last_message_at: new Date().toISOString(),
+      last_message_direction: 'outbound',
+    }).eq('id', conversation.id);
+  } else {
+    console.error('[instagram-webhook] falha ao enviar link:', result.responseText?.slice(0, 300));
+    // Falhou na Meta: liberar para uma nova tentativa.
+    await supabase.from('instagram_tracked_links')
+      .update({ link_sent_at: null })
+      .eq('id', link.id);
+  }
+  return true;
+}
+
+/**
+ * A mensagem é a resposta a uma pergunta que a automação fez?
+ *
+ * Este é o primeiro caso em que uma REGRA (não um fluxo) espera resposta. Sem
+ * esta checagem, quem respondesse "ana@email.com" cairia nos gatilhos normais:
+ * a automação de DM veria uma mensagem nova e mandaria a pergunta outra vez.
+ *
+ * Devolve true quando consumiu a mensagem.
+ */
+async function handlePendingCollection(
+  supabase: any,
+  account: any,
+  supabaseUrl: string,
+  ingested: IngestedMessage,
+): Promise<boolean> {
+  // Só texto é resposta a uma pergunta escrita. Uma foto ou uma menção em story
+  // que chegue no meio da espera não é tentativa de responder — gastaria uma
+  // das três chances e ainda faria a automação avisar "isso não parece um
+  // e-mail" a quem não estava respondendo nada.
+  if (!ingested.text.trim()) return false;
+
+  const { data: pending } = await supabase
+    .from('instagram_pending_collections')
+    .select('*')
+    .eq('conversation_id', ingested.conversation.id)
+    .eq('status', 'waiting')
+    .maybeSingle();
+
+  if (!pending) return false;
+
+  const config = pending.collect_config || {};
+  // Deliberadamente permissiva: a pessoa costuma escrever "meu email é x@y.com"
+  // em vez de só o endereço, e recusar isso seria recusar a resposta certa.
+  const match = String(ingested.text || '').match(/[\w.+-]+@[\w-]+\.[\w.-]+/);
+  const email = match?.[0]?.replace(/[.,;:]+$/, '') || null;
+
+  if (!email) {
+    const attempts = (pending.attempts || 0) + 1;
+    // Teto de 3: quem responde outra coisa três vezes não vai responder na
+    // quarta, e cada aviso gasta cota de envio da conta. Depois disso a espera
+    // é encerrada e a conversa volta ao comportamento normal.
+    const exhausted = attempts >= 3;
+
+    await supabase.from('instagram_pending_collections').update({
+      attempts,
+      status: exhausted ? 'abandoned' : 'waiting',
+      completed_at: exhausted ? new Date().toISOString() : null,
+    }).eq('id', pending.id);
+
+    if (!exhausted && config.invalid_text) {
+      const hasSlot = await reserveInstagramSendSlot(supabase, account.id, 'automation');
+      if (hasSlot) {
+        const result = await sendInstagramMessage(
+          account,
+          { id: ingested.contact.igsid },
+          config.invalid_text,
+        );
+        if (result.ok) {
+          await supabase.from('instagram_messages').insert({
+            conversation_id: ingested.conversation.id,
+            direction: 'outbound',
+            type: 'text',
+            content: config.invalid_text,
+            ig_message_id: result.igMessageId,
+            is_from_bot: true,
+            metadata: { collection_id: pending.id, attempt: attempts },
+          });
+          await supabase.from('instagram_conversations').update({
+            last_message_at: new Date().toISOString(),
+            last_message_direction: 'outbound',
+          }).eq('id', ingested.conversation.id);
+        }
+      }
+    }
+    return true;
+  }
+
+  await supabase.from('instagram_contacts')
+    .update({ email })
+    .eq('id', pending.contact_id);
+
+  await supabase.from('instagram_pending_collections').update({
+    status: 'collected',
+    collected_value: email,
+    completed_at: new Date().toISOString(),
+  }).eq('id', pending.id);
+
+  if (pending.tracked_link_id) {
+    await deliverTrackedLink(
+      supabase, account, supabaseUrl, ingested.contact.igsid, pending.tracked_link_id,
+      { collection_id: pending.id },
+    );
+  }
+
+  return true;
 }
 
 async function handleCommentChange(
@@ -387,16 +538,9 @@ async function handleCommentChange(
     .eq('is_active', true);
 
   for (const rule of rules || []) {
-    const config = rule.trigger_config || {};
-    const scope = config.scope || 'all_posts';
-    if (scope === 'specific_media' && mediaId && !(config.media_ids || []).includes(mediaId)) continue;
-
-    const keywords: string[] = (config.keywords || []).map((k: string) => k.toLowerCase().trim()).filter(Boolean);
-    if (!keywords.length) continue;
-    const lowerText = text.toLowerCase();
-    const matches = keywords.map((k) => lowerText.includes(k));
-    const isMatch = config.match_type === 'all' ? matches.every(Boolean) : matches.some(Boolean);
-    if (!isMatch) continue;
+    if (!matchesPostScope(rule.trigger_config, mediaId)) continue;
+    // `false`: comentário sem palavra-chave não dispara — ver matchesKeywords.
+    if (!matchesKeywords(rule.trigger_config, text, false)) continue;
 
     // Delegate the actual action pipeline (like/reply/DM/tag/...) to
     // instagram-rule-execute, keeping the webhook handler focused on ingest +
@@ -523,7 +667,16 @@ Deno.serve(async (req) => {
         if (ingested && !handledAsQuickReply) {
           // Quem já está numa jornada e responde está continuando aquela
           // conversa. Só quem não está é candidato a entrar numa nova.
-          const resumed = await resumeWaitingFlow(
+          //
+          // A coleta vem antes do fluxo por ser a espera mais específica: uma
+          // pergunta direta ("qual seu e-mail?") acabou de ser feita a esta
+          // pessoa, e a resposta é dela. Deixar o fluxo consumir a mensagem
+          // faria a automação perguntar de novo em seguida.
+          const collected = await handlePendingCollection(
+            supabase, account, supabaseUrl, ingested,
+          );
+
+          const resumed = collected || await resumeWaitingFlow(
             supabase, serviceRoleKey, supabaseUrl, ingested.conversation.id, ingested.text,
           );
 

@@ -1,9 +1,8 @@
-import { useEffect, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
-import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Check, Film, Images, Loader2, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useInstagramMedia } from '@/hooks/useInstagramMedia';
+import type { InstagramMediaItem } from '@/hooks/useInstagramMedia';
 
 /**
  * Grade de posts da conta, para escolher onde a automação vale.
@@ -14,51 +13,19 @@ import { cn } from '@/lib/utils';
  * todos os posts.
  */
 
-export interface InstagramMediaItem {
-  id: string;
-  caption: string | null;
-  mediaType: string | null;
-  thumbnailUrl: string | null;
-  permalink: string | null;
-  timestamp: string | null;
-}
+export type { InstagramMediaItem };
 
 interface InstagramMediaPickerProps {
   accountId: string;
   /** IDs selecionados (controlado pelo formulário da regra). */
   value: string[];
   onChange: (mediaIds: string[]) => void;
+  /** Quantas linhas mostrar antes de rolar. A tela guiada mostra menos. */
+  compact?: boolean;
 }
 
-export function InstagramMediaPicker({ accountId, value, onChange }: InstagramMediaPickerProps) {
-  const { session } = useAuth();
-  const [items, setItems] = useState<InstagramMediaItem[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = async () => {
-    if (!accountId) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const { data, error: fnError } = await supabase.functions.invoke(
-        `instagram-list-media?accountId=${encodeURIComponent(accountId)}`,
-        { headers: { Authorization: `Bearer ${session?.access_token}` } },
-      );
-      if (fnError) throw fnError;
-      if (data?.error) throw new Error(data.error);
-      setItems(data?.items || []);
-    } catch (err: any) {
-      setError(err?.message || 'Não foi possível carregar os posts');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    load();
-    // Recarrega ao trocar de conta: os posts são de uma conta específica.
-  }, [accountId]);
+export function InstagramMediaPicker({ accountId, value, onChange, compact }: InstagramMediaPickerProps) {
+  const { data: items = [], isLoading, error, refetch, isFetching } = useInstagramMedia(accountId);
 
   const toggle = (mediaId: string) => {
     onChange(
@@ -68,7 +35,7 @@ export function InstagramMediaPicker({ accountId, value, onChange }: InstagramMe
     );
   };
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center gap-2 rounded-md border border-dashed py-8 text-sm text-muted-foreground">
         <Loader2 className="h-4 w-4 animate-spin" />
@@ -80,8 +47,10 @@ export function InstagramMediaPicker({ accountId, value, onChange }: InstagramMe
   if (error) {
     return (
       <div className="space-y-2 rounded-md border border-dashed p-4 text-center">
-        <p className="text-sm text-muted-foreground">{error}</p>
-        <Button type="button" variant="outline" size="sm" onClick={load}>
+        <p className="text-sm text-muted-foreground">
+          {(error as Error).message || 'Não foi possível carregar os posts'}
+        </p>
+        <Button type="button" variant="outline" size="sm" onClick={() => refetch()}>
           <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
           Tentar de novo
         </Button>
@@ -105,12 +74,24 @@ export function InstagramMediaPicker({ accountId, value, onChange }: InstagramMe
             ? `${value.length} ${value.length === 1 ? 'post selecionado' : 'posts selecionados'}`
             : 'Toque nos posts em que a automação vale'}
         </span>
-        <Button type="button" variant="ghost" size="sm" onClick={load} className="h-7 px-2">
-          <RefreshCw className="h-3.5 w-3.5" />
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => refetch()}
+          className="h-7 px-2"
+          aria-label="Recarregar posts"
+        >
+          <RefreshCw className={cn('h-3.5 w-3.5', isFetching && 'animate-spin')} />
         </Button>
       </div>
 
-      <div className="grid max-h-64 grid-cols-3 gap-1.5 overflow-y-auto rounded-md border p-1.5">
+      <div
+        className={cn(
+          'grid grid-cols-4 gap-1.5 overflow-y-auto rounded-md border p-1.5',
+          compact ? 'max-h-40' : 'max-h-64',
+        )}
+      >
         {items.map((item) => {
           const selected = value.includes(item.id);
           return (

@@ -157,6 +157,61 @@ Deno.serve(async (req) => {
           const message = interpolate(action.text, vars);
           let trackedLinkId: string | null = null;
 
+          /**
+           * Cria o link rastreado já com o texto que vai entregá-lo.
+           *
+           * O texto viaja junto do link porque quem envia nem sempre é quem
+           * criou: no caminho do quick reply e no da coleta de e-mail, a
+           * entrega acontece minutos depois, noutra função, a partir do
+           * postback. Guardar aqui evita que ela precise reabrir a regra — e
+           * evita que uma edição da regra no meio do caminho troque o texto de
+           * quem já recebeu a pergunta.
+           */
+          const createTrackedLink = async () => {
+            if (!action.button?.url) return null;
+            const { data: trackedLink } = await supabase
+              .from('instagram_tracked_links')
+              .insert({
+                organization_id: account.organization_id,
+                rule_id: ruleId,
+                contact_id: contact.id,
+                destination_url: action.button.url,
+                link_message: interpolate(action.button.message || 'Perfeito! Aqui está o link 👇', vars),
+                link_label: action.button.label || 'Acessar',
+              })
+              .select('id')
+              .single();
+            return trackedLink?.id || null;
+          };
+
+          /**
+           * Agenda o lembrete (drenado a cada minuto por
+           * instagram-process-followups).
+           *
+           * A contagem começa no envio da PRIMEIRA mensagem, e não na entrega
+           * do link, porque é a primeira que a pessoa recebe — "lembre em uma
+           * hora" quer dizer uma hora depois do contato, não uma hora depois de
+           * um evento que talvez nunca aconteça. Quem não respondeu está com a
+           * janela de 24h fechada e o processador marca 'skipped' sozinho.
+           */
+          const scheduleFollowup = async (conversationId: string | null) => {
+            if (!action.followup?.waitValue || !action.followup?.waitUnit) return;
+            const waitMs = Number(action.followup.waitValue)
+              * (WAIT_UNIT_MS[action.followup.waitUnit] || WAIT_UNIT_MS.minutes);
+            await supabase.from('instagram_pending_followups').insert({
+              organization_id: account.organization_id,
+              rule_id: ruleId,
+              contact_id: contact.id,
+              conversation_id: conversationId,
+              tracked_link_id: trackedLinkId,
+              resume_at: new Date(Date.now() + waitMs).toISOString(),
+              followup_config: {
+                clicked_text: interpolate(action.followup.clickedText || '', vars),
+                not_clicked_text: interpolate(action.followup.notClickedText || '', vars),
+              },
+            });
+          };
+
           // Comentário: endereçado por comment_id, NÃO por IGSID — quem acabou
           // de comentar não tem janela de 24h aberta, então só a private reply
           // é aceita (uma por comentário, até 7 dias).
@@ -181,6 +236,86 @@ Deno.serve(async (req) => {
             continue;
           }
 
+          // ─────────────────────────────────────────────────────────────
+          // Coleta de dado: a DM faz uma pergunta e a automação espera a
+          // resposta (hoje só e-mail).
+          //
+          // A espera é reservada ANTES do envio, e não depois: se já houver
+          // uma pergunta aberta nesta conversa, a segunda automação não deve
+          // sequer perguntar — sem isso, a pessoa receberia duas perguntas e
+          // uma única resposta serviria para as duas.
+          // ─────────────────────────────────────────────────────────────
+          if (action.collect?.field === 'email') {
+            const conversation = await ensureInstagramConversation(supabase, account, contact);
+            trackedLinkId = await createTrackedLink();
+
+            const { data: collection, error: collectionError } = await supabase
+              .from('instagram_pending_collections')
+              .insert({
+                organization_id: account.organization_id,
+                rule_id: ruleId,
+                contact_id: contact.id,
+                conversation_id: conversation.id,
+                field: 'email',
+                tracked_link_id: trackedLinkId,
+                collect_config: {
+                  invalid_text: interpolate(
+                    action.collect.invalidText || 'Hmm, isso não parece um e-mail. Pode mandar de novo? 🙂',
+                    vars,
+                  ),
+                  success_text: interpolate(action.collect.successText || '', vars),
+                },
+              })
+              .select('id')
+              .single();
+
+            if (collectionError) {
+              // 23505 = o índice parcial de "uma pergunta viva por conversa".
+              // Não é falha: é a automação respeitando uma conversa que já
+              // está esperando resposta.
+              const alreadyWaiting = collectionError.code === '23505';
+              steps.push({
+                type: 'send_dm',
+                status: alreadyWaiting ? 'skipped' : 'error',
+                detail: alreadyWaiting
+                  ? 'já existe uma pergunta aguardando resposta nesta conversa'
+                  : String(collectionError.message).slice(0, 200),
+              });
+              if (!alreadyWaiting) hadError = true;
+              continue;
+            }
+
+            const askResult = await sendInstagramMessage(account, recipient, message);
+            if (askResult.ok) {
+              await supabase.from('instagram_messages').insert({
+                conversation_id: conversation.id,
+                direction: 'outbound',
+                type: isComment ? 'comment_reply' : 'text',
+                content: message,
+                ig_message_id: askResult.igMessageId,
+                is_from_bot: true,
+                metadata: { collection_id: collection?.id, collect_field: 'email' },
+              });
+              await supabase.from('instagram_conversations').update({
+                last_message_at: new Date().toISOString(),
+                last_message_direction: 'outbound',
+              }).eq('id', conversation.id);
+              await scheduleFollowup(conversation.id);
+            } else {
+              // A pergunta não saiu, então não há resposta a esperar. Deixar a
+              // linha em 'waiting' bloquearia esta conversa para sempre — é o
+              // índice único que a impediria de receber qualquer outra
+              // pergunta.
+              await supabase.from('instagram_pending_collections')
+                .update({ status: 'abandoned', completed_at: new Date().toISOString() })
+                .eq('id', collection?.id);
+              hadError = true;
+            }
+
+            steps.push({ type: 'send_dm', status: askResult.ok ? 'success' : 'error', detail: 'pergunta de e-mail' });
+            continue;
+          }
+
           let result;
           if (action.quickReply?.enabled && action.button?.url) {
             // Quick reply em vez do botão de link: o botão web_url abre o
@@ -192,17 +327,7 @@ Deno.serve(async (req) => {
             // O tracked link é criado aqui, antes do envio, para que o payload
             // já carregue o destino — quem responde ao postback não precisa
             // reabrir a regra para descobrir para onde mandar.
-            const { data: trackedLink } = await supabase
-              .from('instagram_tracked_links')
-              .insert({
-                organization_id: account.organization_id,
-                rule_id: ruleId,
-                contact_id: contact.id,
-                destination_url: action.button.url,
-              })
-              .select('id')
-              .single();
-            trackedLinkId = trackedLink?.id || null;
+            trackedLinkId = await createTrackedLink();
             result = await sendInstagramQuickReplyMessage(account, recipient, message, [
               {
                 title: action.quickReply.label || 'Quero sim!',
@@ -210,17 +335,7 @@ Deno.serve(async (req) => {
               },
             ]);
           } else if (action.button?.url) {
-            const { data: trackedLink } = await supabase
-              .from('instagram_tracked_links')
-              .insert({
-                organization_id: account.organization_id,
-                rule_id: ruleId,
-                contact_id: contact.id,
-                destination_url: action.button.url,
-              })
-              .select('id')
-              .single();
-            trackedLinkId = trackedLink?.id || null;
+            trackedLinkId = await createTrackedLink();
             const redirectUrl = `${supabaseUrl}/functions/v1/instagram-link-redirect?id=${trackedLinkId}`;
             result = await sendInstagramButtonMessage(account, recipient, message, action.button.label || 'Ver mais', redirectUrl);
           } else {
@@ -250,23 +365,10 @@ Deno.serve(async (req) => {
               last_message_direction: 'outbound',
             }).eq('id', conversation.id);
 
-            // Schedule the delayed follow-up (picked up every minute by
-            // instagram-process-followups) — only once the DM itself sent ok.
-            if (action.followup?.waitValue && action.followup?.waitUnit) {
-              const waitMs = Number(action.followup.waitValue) * (WAIT_UNIT_MS[action.followup.waitUnit] || WAIT_UNIT_MS.minutes);
-              await supabase.from('instagram_pending_followups').insert({
-                organization_id: account.organization_id,
-                rule_id: ruleId,
-                contact_id: contact.id,
-                conversation_id: conversationId,
-                tracked_link_id: trackedLinkId,
-                resume_at: new Date(Date.now() + waitMs).toISOString(),
-                followup_config: {
-                  clicked_text: interpolate(action.followup.clickedText || '', vars),
-                  not_clicked_text: interpolate(action.followup.notClickedText || '', vars),
-                },
-              });
-            }
+            // Só depois de a DM ter saído: agendar um lembrete de uma mensagem
+            // que nunca chegou deixaria a pessoa recebendo o segundo capítulo
+            // de uma conversa que não começou.
+            await scheduleFollowup(conversationId);
           }
           steps.push({ type: 'send_dm', status: result.ok ? 'success' : 'error' });
           if (!result.ok) hadError = true;

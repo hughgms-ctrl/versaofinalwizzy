@@ -272,6 +272,11 @@ verify_jwt = false
 [functions.instagram-process-followups]
 verify_jwt = false
 
+# Vincula as automações de "próxima publicação" ao post recém-publicado.
+# Chamada pelo pg_cron a cada 5 minutos (sem JWT); não recebe entrada.
+[functions.instagram-bind-next-post]
+verify_jwt = false
+
 # Renovação semanal do token de 60 dias, chamada pelo pg_cron (sem JWT).
 [functions.instagram-refresh-tokens]
 verify_jwt = false

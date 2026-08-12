@@ -116,9 +116,10 @@ Levantado da documentação oficial e material de produto (fontes no fim).
 
 | # | Recurso | ManyChat | Wizzy |
 |---|---|---|---|
-| P1 | **Preview da mensagem** enquanto edita | ✅ | ✅ feito |
+| P1 | **Preview da mensagem** enquanto edita | ✅ | ✅ feito (prévia em celular, publicação + conversa) |
 | P2 | Construtor visual de fluxo | ✅ | ✅ WhatsApp e Instagram |
-| P3 | Templates prontos | ✅ 50+ | ❌ |
+| P2b | **Modo guiado** (formulário de perguntas) | ✅ | ✅ feito |
+| P3 | Templates prontos | ✅ 50+ | ✅ 7 modelos |
 | P4 | Seletor visual de post (escolher o post numa grade) | ✅ | ✅ feito |
 | P5 | Analytics por fluxo (taxa de resposta, clique) | ✅ | ⚠️ logs crus |
 | P6 | Broadcast / disparo | ✅ | ❌ ⚠️ |
@@ -202,10 +203,102 @@ falta a interface.
 
 ### Fase D — Biblioteca e medição (média)
 
-P3 (templates prontos: "captar lead do post", "entregar material", "agendar"),
-P5 (analytics por fluxo: quantos entraram, responderam, clicaram, viraram
-conversa). Templates são o que faz o cliente novo ter sucesso na primeira
-semana em vez de olhar para uma tela em branco.
+**Modo guiado + templates entregues em 2026-08-13.** Falta P5 (analytics).
+
+O ManyChat oferece dois caminhos para montar a mesma automação, e a Wizzy
+passou a oferecer os dois:
+
+| Caminho | Para quem | Onde |
+|---|---|---|
+| **Modelo pronto + formulário guiado** | quem nunca montou automação | aba **Início** |
+| **Construtor visual de fluxo** | quem precisa ramificar e esperar | aba **Fluxos** |
+
+O modo guiado é uma sequência de perguntas em português — "quando alguém faz um
+comentário…", "e esse comentário possui…", "eles receberão…", "e então, eles vão
+receber…" — com a prévia ao lado desenhando a publicação e a conversa. Ele
+grava `instagram_automation_rules` comum: não é um terceiro motor, é outra porta
+para o mesmo.
+
+O que a Fase D acrescentou ao motor, porque a tela guiada exigia:
+
+| Recurso | Onde |
+|---|---|
+| Escopo **próxima publicação** | `instagram-bind-next-post` (cron de 5 min) + `trigger_config.scope='next_post'` |
+| **Qualquer palavra** no comentário | `trigger_config.keyword_mode='any'` |
+| **Coleta de e-mail** na DM | `instagram_pending_collections` + `instagram_contacts.email` |
+| Texto da DM do link configurável | `instagram_tracked_links.link_message/link_label` |
+
+Três decisões que valem registro:
+
+- **"Próxima publicação" é resolvida por cron, não no comentário.** O webhook
+  recebe o `media_id`, não a data de publicação; descobrir "este post é mais
+  novo que a regra?" na hora custaria uma chamada à Meta por comentário — num
+  post que viraliza, centenas por minuto, disputando a mesma cota que envia as
+  DMs. O vinculador pergunta "saiu post novo?" a cada 5 minutos e grava o id na
+  regra. Entre publicar e a automação valer há alguns minutos, e isso está dito
+  na tela.
+- **Campo de palavra-chave vazio continua não disparando comentário.** Regra de
+  comentário sem palavra responderia a todo mundo — inclusive a críticas. Quem
+  quer isso agora escolhe "qualquer palavra" de propósito; o campo em branco
+  quase nunca era intenção. Em DM e resposta a story, vazio continua valendo
+  como "qualquer texto", que lá é o caso comum.
+- **Pedir para seguir antes do link é cortesia, não condição.** A Meta não expõe
+  quem segue a conta. O ManyChat funciona igual: o pedido está no texto, e quem
+  toca no botão recebe o link de qualquer forma. A tela diz isso em vez de
+  prometer o que a API não faz.
+
+Falta em P5: quantos entraram, responderam, clicaram e viraram conversa, por
+automação. Hoje só há o log cru por execução.
+
+---
+
+## Contatos e disparo em massa no Instagram (analisado em 2026-08-13)
+
+Pergunta do dono: mostrar os contatos do Instagram na aba **Contatos** da Wizzy
+e permitir disparo (em massa ou individual) para eles em **Campanhas**.
+
+**As duas coisas esbarram em regras diferentes, e só uma delas é nossa.**
+
+### Contatos: barrado por uma regra da Wizzy, contornável
+
+`contacts.phone` é `NOT NULL` — a tabela de contatos da Wizzy é, por definição,
+uma lista de telefones. Um contato do Instagram tem IGSID e @, e pode nunca
+revelar um telefone. Jogá-lo em `contacts` exigiria telefone falso (que
+contaminaria disparo de WhatsApp, deduplicação e pipeline) ou afrouxar a coluna
+(que mexe na tabela mais usada do produto).
+
+A separação, aliás, foi deliberada — está escrita na migration original do canal:
+*"keeping Instagram contacts fully separate from WhatsApp contacts (no auto-merge
+across channels)"*. Duas pessoas diferentes podem ser o mesmo humano, e a Wizzy
+não tem como saber.
+
+**Caminho recomendado:** uma aba **Contatos** dentro do próprio Wizzy Engage,
+lendo `instagram_contacts` — com @, foto, etiquetas, e-mail coletado, última
+conversa e origem. Depois, opcionalmente, um botão explícito de "vincular a um
+contato da Wizzy" quando o telefone aparecer na conversa. Vínculo por ação
+humana, nunca automático.
+
+### Disparo em massa: barrado pela Meta, não por nós
+
+A Meta só permite mensagem fora da janela de 24 horas em casos etiquetados
+(`HUMAN_AGENT`, entre outros) — disparo promocional para base fria não é um
+deles. Fazer isso derruba a conta do cliente, e é a conta dele, não a nossa.
+
+**O que é possível, e é bastante:**
+
+- envio individual para uma conversa aberta (a tela de conversas já faz);
+- envio para o grupo de contatos com janela de 24h aberta — na prática, quem
+  interagiu no último dia. É o "broadcast" real do ManyChat;
+- sequências disparadas por interação, que é o que as automações já fazem.
+
+Ou seja: cabe em **Campanhas** como um tipo de campanha com público próprio
+("contatos do Instagram com janela aberta"), com o contador de elegíveis visível
+antes do envio — para a pessoa entender por que 2.000 contatos viram 80
+destinatários. O que não cabe é a lista inteira.
+
+**Nenhuma das duas foi implementada nesta entrega**: a primeira é uma decisão de
+produto (aba própria vs. mexer em `contacts`) e a segunda depende de aceitar que
+o público é sempre um recorte. Ambas ficam prontas para a próxima.
 
 ---
 

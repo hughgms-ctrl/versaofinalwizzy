@@ -30,7 +30,25 @@ export interface InstagramRuleAction {
   tag?: string;
   // send_dm only: adds a link button to the DM (tracked via a Wizzy
   // short-link redirect, so click-through can be detected).
-  button?: { label: string; url: string };
+  //
+  // `message` é o texto da DM que ENTREGA o link quando ele não vai na primeira
+  // mensagem — o caso do quick reply e o da coleta de e-mail, em que a entrega
+  // acontece depois, na resposta da pessoa. Ignorado quando o link já sai no
+  // botão da primeira DM.
+  button?: { label: string; url: string; message?: string };
+  // send_dm only: a primeira DM faz uma pergunta e a automação espera a
+  // resposta para gravá-la no contato. Hoje só e-mail — é o único dado que o
+  // Instagram não entrega e que o cliente precisa levar para fora da Wizzy.
+  //
+  // Enquanto espera, a próxima mensagem da pessoa é lida como resposta e não
+  // dispara gatilho novo (ver instagram_pending_collections).
+  collect?: {
+    field: 'email';
+    /** Resposta que não parece um e-mail. Até 3 tentativas. */
+    invalidText?: string;
+    /** Confirmação enviada junto com o link, depois de gravar. */
+    successText?: string;
+  };
   // send_dm only: sends the DM with a quick-reply chip instead of the link
   // button. Tapping it is a real message from the person, which opens Meta's
   // 24-hour window — the link then goes out in a second message. A web_url
@@ -56,9 +74,20 @@ export interface InstagramAutomationRule {
   trigger_config: {
     keywords: string[];
     match_type: 'any' | 'all';
+    /**
+     * 'any' dispensa palavra-chave: qualquer comentário serve. Ausente vale
+     * como 'specific', que é como toda regra criada antes do modo guiado se
+     * comporta — sem palavra-chave, nunca dispara.
+     */
+    keyword_mode?: 'specific' | 'any';
     /** Só usados por comment_keyword. */
-    scope: 'all_posts' | 'specific_media';
+    scope: 'all_posts' | 'specific_media' | 'next_post';
     media_ids: string[];
+    /**
+     * Só em next_post: quando o vinculador achou o post novo e gravou o id em
+     * media_ids. Antes disso a regra existe mas ainda não vale para nada.
+     */
+    next_post_bound_at?: string | null;
   };
   actions: InstagramRuleAction[];
   is_active: boolean;
