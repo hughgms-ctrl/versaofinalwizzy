@@ -2578,7 +2578,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
           delete cleanMeta.ai_handoff_context;
           cleanMeta.flow_ended_at = new Date().toISOString();
           await supabase.from('conversations').update({
-            service_mode: 'humano', ai_agent_id: null, metadata: cleanMeta,
+            service_mode: 'ativo', ai_agent_id: null, metadata: cleanMeta,
           }).eq('id', conversation.id);
         }
       } else if (isAtContentBlockWaiting && activeFlowExec.status === 'waiting_input') {
@@ -2635,7 +2635,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
           delete cleanMeta2.ai_handoff_context;
           cleanMeta2.flow_ended_at = new Date().toISOString();
           await supabase.from('conversations').update({
-            service_mode: 'humano', ai_agent_id: null, metadata: cleanMeta2,
+            service_mode: 'ativo', ai_agent_id: null, metadata: cleanMeta2,
           }).eq('id', conversation.id);
         }
       } else if ((isAtMessageButtons || isAtMessageList) && activeFlowExec.status === 'waiting_input') {
@@ -2748,7 +2748,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
           delete cleanMetaBtn.ai_handoff_context;
           cleanMetaBtn.flow_ended_at = new Date().toISOString();
           await supabase.from('conversations').update({
-            service_mode: 'humano', ai_agent_id: null, metadata: cleanMetaBtn,
+            service_mode: 'ativo', ai_agent_id: null, metadata: cleanMetaBtn,
           }).eq('id', conversation.id);
         }
       } else if (activeFlowExec.status === 'waiting_input') {
@@ -2797,7 +2797,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
           delete cleanMeta3.ai_handoff_context;
           cleanMeta3.flow_ended_at = new Date().toISOString();
           await supabase.from('conversations').update({
-            service_mode: 'humano', ai_agent_id: null, metadata: cleanMeta3,
+            service_mode: 'ativo', ai_agent_id: null, metadata: cleanMeta3,
           }).eq('id', conversation.id);
         } else {
           console.log(`[WEBHOOK] Flow waiting_input at node ${activeFlowExec.current_node_id} — resuming flow execution`);
@@ -2951,8 +2951,8 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
           const elapsedMs = Date.now() - new Date(flowEndedAt).getTime();
           if (elapsedMs < 60000) {
             console.log(`[WEBHOOK] service_mode=ia but flow ended ${Math.round(elapsedMs/1000)}s ago — NOT triggering agent`);
-            // Force reset to humano since it's stale
-            await supabase.from('conversations').update({ service_mode: 'humano', ai_agent_id: null }).eq('id', conversation.id);
+            // Force reset to ativo (humano no comando) since it's stale
+            await supabase.from('conversations').update({ service_mode: 'ativo', ai_agent_id: null }).eq('id', conversation.id);
             shouldTrigger = false;
           } else {
             shouldTrigger = true;

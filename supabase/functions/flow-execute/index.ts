@@ -519,13 +519,13 @@ async function cleanupFlowEnd(
     await supabase
       .from('conversations')
       .update({
-        service_mode: 'humano',
+        service_mode: 'ativo',
         ai_agent_id: null,
         metadata: cleanMetadata,
       })
       .eq('id', conversationId);
 
-    console.log(`[FLOW EXECUTE] Flow ended — reset service_mode to humano, cleared ai_agent_id`);
+    console.log(`[FLOW EXECUTE] Flow ended — reset service_mode to ativo, cleared ai_agent_id`);
   } else {
     const parentExec = otherActiveFlows[0];
     console.log(`[FLOW EXECUTE] Sub-flow ended — parent flow ${parentExec.id} still active. RESUMING parent.`);
@@ -1265,7 +1265,7 @@ async function executeTransfer(
     const notifyMessageTemplate = String(data.notifyMessage || '').trim();
 
     // 1) Update conversation: switch to human mode and apply assignment/department
-    const updateData: Record<string, unknown> = { service_mode: 'humano' };
+    const updateData: Record<string, unknown> = { service_mode: 'ativo' };
     if (departmentId) updateData.department_id = departmentId;
     if (assignedUserId) updateData.assigned_to = assignedUserId;
 

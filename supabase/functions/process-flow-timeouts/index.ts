@@ -976,7 +976,7 @@ Deno.serve(async (req) => {
             cleanMeta.flow_ended_at = new Date().toISOString();
 
             await supabase.from('conversations').update({
-              service_mode: 'humano',
+              service_mode: 'ativo',
               ai_agent_id: null,
               metadata: cleanMeta,
             }).eq('id', exec.conversation_id);

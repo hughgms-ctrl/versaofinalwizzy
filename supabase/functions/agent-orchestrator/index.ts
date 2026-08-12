@@ -1031,10 +1031,10 @@ async function walkFlowForward(
   while (safetyCounter++ < 20) {
     const currentEdges = edges.filter((e: any) => e.source === state.current_node_id);
     if (currentEdges.length === 0) {
-      console.log('End of flow reached — resetting service_mode to humano');
+      console.log('End of flow reached — resetting service_mode to ativo');
       state.flow_completed = true;
       // Reset service_mode so AI stops responding after flow ends
-      await supabase.from('conversations').update({ service_mode: 'humano' }).eq('id', ctx.conversationId);
+      await supabase.from('conversations').update({ service_mode: 'ativo' }).eq('id', ctx.conversationId);
       break;
     }
 
@@ -1283,7 +1283,7 @@ async function walkFlowForward(
       case 'orch-human':
       case 'action-transfer': {
         // Escalate to human - switch service mode
-        await supabase.from('conversations').update({ service_mode: 'humano' }).eq('id', ctx.conversationId);
+        await supabase.from('conversations').update({ service_mode: 'ativo' }).eq('id', ctx.conversationId);
         console.log('Escalated to human');
         toolsExecuted.push({ name: 'escalate_human', arguments: {}, result: { success: true } });
         state.completed_nodes.push(nextNode.id);
@@ -1758,13 +1758,13 @@ async function invokeAgentAI(
           const { data: convData } = await supabase.from('conversations').select('metadata').eq('id', ctx.conversationId).single();
           const metadata = { ...(convData?.metadata || {}) };
           delete metadata.ai_handoff_context;
-          await supabase.from('conversations').update({ metadata, service_mode: 'humano' }).eq('id', ctx.conversationId);
+          await supabase.from('conversations').update({ metadata, service_mode: 'ativo' }).eq('id', ctx.conversationId);
         } catch (e) {
           console.error('[AGENT] Error stopping flow on rejection-without-handle:', e);
         }
       } else {
         try {
-          await supabase.from('conversations').update({ service_mode: 'humano' }).eq('id', ctx.conversationId);
+          await supabase.from('conversations').update({ service_mode: 'ativo' }).eq('id', ctx.conversationId);
         } catch (_e) { /* ignore */ }
       }
       shouldAdvance = false;
@@ -2561,7 +2561,7 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
                 completed_at: new Date().toISOString(),
               }).eq('id', ctx.flowExecutionId);
               // Reset service_mode so AI stops responding
-              await supabase.from('conversations').update({ service_mode: 'humano' }).eq('id', ctx.conversationId);
+              await supabase.from('conversations').update({ service_mode: 'ativo' }).eq('id', ctx.conversationId);
 
               // 4. TRIGGER AI ANALYSIS / SUMMARY on flow completion
               const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -2658,7 +2658,7 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
           const { data: convData } = await supabase.from('conversations').select('metadata').eq('id', ctx.conversationId).single();
           const metadata = { ...(convData?.metadata || {}) };
           delete metadata.ai_handoff_context;
-          await supabase.from('conversations').update({ metadata, service_mode: 'humano' }).eq('id', ctx.conversationId);
+          await supabase.from('conversations').update({ metadata, service_mode: 'ativo' }).eq('id', ctx.conversationId);
         } catch (e) {
           console.error('[LEGACY] Error stopping flow on rejection-without-handle:', e);
         }
@@ -2708,7 +2708,7 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
           await supabase.from('flow_executions').update({
             status: 'completed', variables, completed_at: new Date().toISOString(),
           }).eq('id', ctx.flowExecutionId);
-          await supabase.from('conversations').update({ service_mode: 'humano' }).eq('id', ctx.conversationId);
+          await supabase.from('conversations').update({ service_mode: 'ativo' }).eq('id', ctx.conversationId);
         }
 
         toolsExecuted.push({

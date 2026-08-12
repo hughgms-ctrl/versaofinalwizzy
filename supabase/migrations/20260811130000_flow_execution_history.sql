@@ -189,7 +189,9 @@ BEGIN
   ),
   released AS (
     UPDATE public.conversations conv
-       SET service_mode = 'humano',
+       -- 'ativo' é o valor do enum service_mode para "humano no comando".
+       -- Não existe 'humano' no tipo: ('ia','ativo','pendente','arquivado').
+       SET service_mode = 'ativo',
            ai_agent_id = NULL
       FROM freed
      WHERE conv.id = freed.conversation_id
