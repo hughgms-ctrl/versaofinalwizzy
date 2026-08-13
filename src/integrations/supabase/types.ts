@@ -14,6 +14,51 @@ export type Database = {
   }
   public: {
     Tables: {
+      _merge_orfas_20260730: {
+        Row: {
+          boa_id: string | null
+          column_id: string | null
+          contact_id: string | null
+          order: number | null
+          orfa_id: string | null
+          pipeline_id: string | null
+          position_id: string | null
+        }
+        Insert: {
+          boa_id?: string | null
+          column_id?: string | null
+          contact_id?: string | null
+          order?: number | null
+          orfa_id?: string | null
+          pipeline_id?: string | null
+          position_id?: string | null
+        }
+        Update: {
+          boa_id?: string | null
+          column_id?: string | null
+          contact_id?: string | null
+          order?: number | null
+          orfa_id?: string | null
+          pipeline_id?: string | null
+          position_id?: string | null
+        }
+        Relationships: []
+      }
+      _merge_orfas_msgs_20260730: {
+        Row: {
+          conversation_id_original: string | null
+          message_id: string | null
+        }
+        Insert: {
+          conversation_id_original?: string | null
+          message_id?: string | null
+        }
+        Update: {
+          conversation_id_original?: string | null
+          message_id?: string | null
+        }
+        Relationships: []
+      }
       activated_packages: {
         Row: {
           activated_at: string
@@ -2474,6 +2519,44 @@ export type Database = {
           },
         ]
       }
+      contact_custom_fields: {
+        Row: {
+          created_at: string
+          id: string
+          key: string
+          label: string
+          organization_id: string
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          key: string
+          label: string
+          organization_id: string
+          type?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          key?: string
+          label?: string
+          organization_id?: string
+          type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contact_custom_fields_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       contact_files: {
         Row: {
           contact_id: string
@@ -2795,6 +2878,84 @@ export type Database = {
         ]
       }
       contacts_backup_20260701: {
+        Row: {
+          avatar_url: string | null
+          created_at: string | null
+          email: string | null
+          id: string | null
+          metadata: Json | null
+          name: string | null
+          organization_id: string | null
+          phone: string | null
+          updated_at: string | null
+          workspace_id: string | null
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string | null
+          email?: string | null
+          id?: string | null
+          metadata?: Json | null
+          name?: string | null
+          organization_id?: string | null
+          phone?: string | null
+          updated_at?: string | null
+          workspace_id?: string | null
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string | null
+          email?: string | null
+          id?: string | null
+          metadata?: Json | null
+          name?: string | null
+          organization_id?: string | null
+          phone?: string | null
+          updated_at?: string | null
+          workspace_id?: string | null
+        }
+        Relationships: []
+      }
+      contacts_backup_20260809: {
+        Row: {
+          avatar_url: string | null
+          created_at: string | null
+          email: string | null
+          id: string | null
+          metadata: Json | null
+          name: string | null
+          organization_id: string | null
+          phone: string | null
+          updated_at: string | null
+          workspace_id: string | null
+        }
+        Insert: {
+          avatar_url?: string | null
+          created_at?: string | null
+          email?: string | null
+          id?: string | null
+          metadata?: Json | null
+          name?: string | null
+          organization_id?: string | null
+          phone?: string | null
+          updated_at?: string | null
+          workspace_id?: string | null
+        }
+        Update: {
+          avatar_url?: string | null
+          created_at?: string | null
+          email?: string | null
+          id?: string | null
+          metadata?: Json | null
+          name?: string | null
+          organization_id?: string | null
+          phone?: string | null
+          updated_at?: string | null
+          workspace_id?: string | null
+        }
+        Relationships: []
+      }
+      contacts_backup_20260809_v2: {
         Row: {
           avatar_url: string | null
           created_at: string | null
@@ -5128,6 +5289,7 @@ export type Database = {
           organization_id: string
           page_access_token: string | null
           scopes: string[]
+          send_rate_limit: Json
           status: Database["public"]["Enums"]["instagram_account_status"]
           token_expires_at: string | null
           updated_at: string
@@ -5152,6 +5314,7 @@ export type Database = {
           organization_id: string
           page_access_token?: string | null
           scopes?: string[]
+          send_rate_limit?: Json
           status?: Database["public"]["Enums"]["instagram_account_status"]
           token_expires_at?: string | null
           updated_at?: string
@@ -5176,6 +5339,7 @@ export type Database = {
           organization_id?: string
           page_access_token?: string | null
           scopes?: string[]
+          send_rate_limit?: Json
           status?: Database["public"]["Enums"]["instagram_account_status"]
           token_expires_at?: string | null
           updated_at?: string
@@ -5279,6 +5443,166 @@ export type Database = {
           },
         ]
       }
+      instagram_broadcast_recipients: {
+        Row: {
+          attempts: number
+          broadcast_id: string
+          claimed_at: string | null
+          contact_id: string
+          conversation_id: string
+          created_at: string
+          error: string | null
+          id: string
+          organization_id: string
+          sent_at: string | null
+          status: string
+          tracked_link_id: string | null
+        }
+        Insert: {
+          attempts?: number
+          broadcast_id: string
+          claimed_at?: string | null
+          contact_id: string
+          conversation_id: string
+          created_at?: string
+          error?: string | null
+          id?: string
+          organization_id: string
+          sent_at?: string | null
+          status?: string
+          tracked_link_id?: string | null
+        }
+        Update: {
+          attempts?: number
+          broadcast_id?: string
+          claimed_at?: string | null
+          contact_id?: string
+          conversation_id?: string
+          created_at?: string
+          error?: string | null
+          id?: string
+          organization_id?: string
+          sent_at?: string | null
+          status?: string
+          tracked_link_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "instagram_broadcast_recipients_broadcast_id_fkey"
+            columns: ["broadcast_id"]
+            isOneToOne: false
+            referencedRelation: "instagram_broadcasts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instagram_broadcast_recipients_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "instagram_contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instagram_broadcast_recipients_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "instagram_conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instagram_broadcast_recipients_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instagram_broadcast_recipients_tracked_link_id_fkey"
+            columns: ["tracked_link_id"]
+            isOneToOne: false
+            referencedRelation: "instagram_tracked_links"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      instagram_broadcasts: {
+        Row: {
+          audience: Json
+          button: Json | null
+          completed_at: string | null
+          created_at: string
+          created_by: string | null
+          failed_count: number
+          id: string
+          instagram_account_id: string
+          message: string
+          name: string
+          organization_id: string
+          sent_count: number
+          skipped_count: number
+          status: string
+          total_recipients: number
+          workspace_id: string | null
+        }
+        Insert: {
+          audience?: Json
+          button?: Json | null
+          completed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          failed_count?: number
+          id?: string
+          instagram_account_id: string
+          message: string
+          name: string
+          organization_id: string
+          sent_count?: number
+          skipped_count?: number
+          status?: string
+          total_recipients?: number
+          workspace_id?: string | null
+        }
+        Update: {
+          audience?: Json
+          button?: Json | null
+          completed_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          failed_count?: number
+          id?: string
+          instagram_account_id?: string
+          message?: string
+          name?: string
+          organization_id?: string
+          sent_count?: number
+          skipped_count?: number
+          status?: string
+          total_recipients?: number
+          workspace_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "instagram_broadcasts_instagram_account_id_fkey"
+            columns: ["instagram_account_id"]
+            isOneToOne: false
+            referencedRelation: "instagram_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instagram_broadcasts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instagram_broadcasts_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       instagram_contact_tags: {
         Row: {
           added_by: string | null
@@ -5324,9 +5648,14 @@ export type Database = {
       instagram_contacts: {
         Row: {
           created_at: string
+          email: string | null
+          first_inbound_at: string | null
           id: string
           igsid: string
           instagram_account_id: string
+          linked_at: string | null
+          linked_by: string | null
+          linked_contact_id: string | null
           metadata: Json
           name: string | null
           organization_id: string
@@ -5337,9 +5666,14 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          email?: string | null
+          first_inbound_at?: string | null
           id?: string
           igsid: string
           instagram_account_id: string
+          linked_at?: string | null
+          linked_by?: string | null
+          linked_contact_id?: string | null
           metadata?: Json
           name?: string | null
           organization_id: string
@@ -5350,9 +5684,14 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          email?: string | null
+          first_inbound_at?: string | null
           id?: string
           igsid?: string
           instagram_account_id?: string
+          linked_at?: string | null
+          linked_by?: string | null
+          linked_contact_id?: string | null
           metadata?: Json
           name?: string | null
           organization_id?: string
@@ -5367,6 +5706,13 @@ export type Database = {
             columns: ["instagram_account_id"]
             isOneToOne: false
             referencedRelation: "instagram_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instagram_contacts_linked_contact_id_fkey"
+            columns: ["linked_contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
             referencedColumns: ["id"]
           },
           {
@@ -5395,6 +5741,7 @@ export type Database = {
           department_id: string | null
           id: string
           instagram_account_id: string
+          last_inbound_at: string | null
           last_message_at: string | null
           last_message_direction:
             | Database["public"]["Enums"]["message_direction"]
@@ -5415,6 +5762,7 @@ export type Database = {
           department_id?: string | null
           id?: string
           instagram_account_id: string
+          last_inbound_at?: string | null
           last_message_at?: string | null
           last_message_direction?:
             | Database["public"]["Enums"]["message_direction"]
@@ -5435,6 +5783,7 @@ export type Database = {
           department_id?: string | null
           id?: string
           instagram_account_id?: string
+          last_inbound_at?: string | null
           last_message_at?: string | null
           last_message_direction?:
             | Database["public"]["Enums"]["message_direction"]
@@ -5491,6 +5840,209 @@ export type Database = {
           },
           {
             foreignKeyName: "instagram_conversations_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      instagram_data_deletion_requests: {
+        Row: {
+          confirmation_code: string
+          created_at: string
+          deleted_counts: Json
+          error: string | null
+          id: string
+          igsid: string
+          organization_id: string | null
+          status: string
+        }
+        Insert: {
+          confirmation_code: string
+          created_at?: string
+          deleted_counts?: Json
+          error?: string | null
+          id?: string
+          igsid: string
+          organization_id?: string | null
+          status?: string
+        }
+        Update: {
+          confirmation_code?: string
+          created_at?: string
+          deleted_counts?: Json
+          error?: string | null
+          id?: string
+          igsid?: string
+          organization_id?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "instagram_data_deletion_requests_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      instagram_flow_executions: {
+        Row: {
+          completed_at: string | null
+          contact_id: string
+          conversation_id: string
+          current_node_id: string | null
+          error_message: string | null
+          execution_log: Json
+          flow_id: string
+          id: string
+          organization_id: string
+          parked_status: string | null
+          started_at: string
+          status: string
+          timeout_at: string | null
+          trigger_source: Json
+          variables: Json
+        }
+        Insert: {
+          completed_at?: string | null
+          contact_id: string
+          conversation_id: string
+          current_node_id?: string | null
+          error_message?: string | null
+          execution_log?: Json
+          flow_id: string
+          id?: string
+          organization_id: string
+          parked_status?: string | null
+          started_at?: string
+          status?: string
+          timeout_at?: string | null
+          trigger_source?: Json
+          variables?: Json
+        }
+        Update: {
+          completed_at?: string | null
+          contact_id?: string
+          conversation_id?: string
+          current_node_id?: string | null
+          error_message?: string | null
+          execution_log?: Json
+          flow_id?: string
+          id?: string
+          organization_id?: string
+          parked_status?: string | null
+          started_at?: string
+          status?: string
+          timeout_at?: string | null
+          trigger_source?: Json
+          variables?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "instagram_flow_executions_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "instagram_contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instagram_flow_executions_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "instagram_conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instagram_flow_executions_flow_id_fkey"
+            columns: ["flow_id"]
+            isOneToOne: false
+            referencedRelation: "instagram_flows"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instagram_flow_executions_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      instagram_flows: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          description: string | null
+          edges: Json
+          id: string
+          instagram_account_id: string
+          is_active: boolean
+          name: string
+          nodes: Json
+          organization_id: string
+          trigger_config: Json
+          trigger_type: string
+          triggers_count: number
+          updated_at: string
+          variables: Json
+          workspace_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          edges?: Json
+          id?: string
+          instagram_account_id: string
+          is_active?: boolean
+          name: string
+          nodes?: Json
+          organization_id: string
+          trigger_config?: Json
+          trigger_type?: string
+          triggers_count?: number
+          updated_at?: string
+          variables?: Json
+          workspace_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          edges?: Json
+          id?: string
+          instagram_account_id?: string
+          is_active?: boolean
+          name?: string
+          nodes?: Json
+          organization_id?: string
+          trigger_config?: Json
+          trigger_type?: string
+          triggers_count?: number
+          updated_at?: string
+          variables?: Json
+          workspace_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "instagram_flows_instagram_account_id_fkey"
+            columns: ["instagram_account_id"]
+            isOneToOne: false
+            referencedRelation: "instagram_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instagram_flows_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instagram_flows_workspace_id_fkey"
             columns: ["workspace_id"]
             isOneToOne: false
             referencedRelation: "workspaces"
@@ -5560,8 +6112,94 @@ export type Database = {
           },
         ]
       }
+      instagram_pending_collections: {
+        Row: {
+          attempts: number
+          collect_config: Json
+          collected_value: string | null
+          completed_at: string | null
+          contact_id: string
+          conversation_id: string | null
+          created_at: string
+          field: string
+          id: string
+          organization_id: string
+          rule_id: string
+          status: string
+          tracked_link_id: string | null
+        }
+        Insert: {
+          attempts?: number
+          collect_config?: Json
+          collected_value?: string | null
+          completed_at?: string | null
+          contact_id: string
+          conversation_id?: string | null
+          created_at?: string
+          field?: string
+          id?: string
+          organization_id: string
+          rule_id: string
+          status?: string
+          tracked_link_id?: string | null
+        }
+        Update: {
+          attempts?: number
+          collect_config?: Json
+          collected_value?: string | null
+          completed_at?: string | null
+          contact_id?: string
+          conversation_id?: string | null
+          created_at?: string
+          field?: string
+          id?: string
+          organization_id?: string
+          rule_id?: string
+          status?: string
+          tracked_link_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "instagram_pending_collections_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "instagram_contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instagram_pending_collections_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "instagram_conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instagram_pending_collections_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instagram_pending_collections_rule_id_fkey"
+            columns: ["rule_id"]
+            isOneToOne: false
+            referencedRelation: "instagram_automation_rules"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instagram_pending_collections_tracked_link_id_fkey"
+            columns: ["tracked_link_id"]
+            isOneToOne: false
+            referencedRelation: "instagram_tracked_links"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       instagram_pending_followups: {
         Row: {
+          attempts: number
+          claimed_at: string | null
           contact_id: string
           conversation_id: string | null
           created_at: string
@@ -5576,6 +6214,8 @@ export type Database = {
           tracked_link_id: string | null
         }
         Insert: {
+          attempts?: number
+          claimed_at?: string | null
           contact_id: string
           conversation_id?: string | null
           created_at?: string
@@ -5590,6 +6230,8 @@ export type Database = {
           tracked_link_id?: string | null
         }
         Update: {
+          attempts?: number
+          claimed_at?: string | null
           contact_id?: string
           conversation_id?: string | null
           created_at?: string
@@ -5696,6 +6338,45 @@ export type Database = {
           },
         ]
       }
+      instagram_send_ledger: {
+        Row: {
+          created_at: string
+          id: number
+          instagram_account_id: string
+          organization_id: string
+          source: string
+        }
+        Insert: {
+          created_at?: string
+          id?: number
+          instagram_account_id: string
+          organization_id: string
+          source?: string
+        }
+        Update: {
+          created_at?: string
+          id?: number
+          instagram_account_id?: string
+          organization_id?: string
+          source?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "instagram_send_ledger_instagram_account_id_fkey"
+            columns: ["instagram_account_id"]
+            isOneToOne: false
+            referencedRelation: "instagram_accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "instagram_send_ledger_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       instagram_tracked_links: {
         Row: {
           clicked_at: string | null
@@ -5703,6 +6384,9 @@ export type Database = {
           created_at: string
           destination_url: string
           id: string
+          link_label: string | null
+          link_message: string | null
+          link_sent_at: string | null
           organization_id: string
           rule_id: string | null
         }
@@ -5712,6 +6396,9 @@ export type Database = {
           created_at?: string
           destination_url: string
           id?: string
+          link_label?: string | null
+          link_message?: string | null
+          link_sent_at?: string | null
           organization_id: string
           rule_id?: string | null
         }
@@ -5721,6 +6408,9 @@ export type Database = {
           created_at?: string
           destination_url?: string
           id?: string
+          link_label?: string | null
+          link_message?: string | null
+          link_sent_at?: string | null
           organization_id?: string
           rule_id?: string | null
         }
@@ -9280,6 +9970,67 @@ export type Database = {
           },
         ]
       }
+      whatsapp_labels: {
+        Row: {
+          color: string | null
+          created_at: string
+          deleted_at: string | null
+          id: string
+          label_id: string
+          name: string
+          organization_id: string
+          tag_id: string | null
+          updated_at: string
+          whatsapp_instance_id: string
+        }
+        Insert: {
+          color?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          label_id: string
+          name: string
+          organization_id: string
+          tag_id?: string | null
+          updated_at?: string
+          whatsapp_instance_id: string
+        }
+        Update: {
+          color?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          label_id?: string
+          name?: string
+          organization_id?: string
+          tag_id?: string | null
+          updated_at?: string
+          whatsapp_instance_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_labels_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_labels_tag_id_fkey"
+            columns: ["tag_id"]
+            isOneToOne: false
+            referencedRelation: "tags"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "whatsapp_labels_whatsapp_instance_id_fkey"
+            columns: ["whatsapp_instance_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_instances"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       widget_custom_fields: {
         Row: {
           created_at: string
@@ -10095,6 +10846,84 @@ export type Database = {
           reason: string
         }[]
       }
+      claim_instagram_broadcast_recipients: {
+        Args: { p_limit?: number }
+        Returns: {
+          attempts: number
+          broadcast_id: string
+          claimed_at: string | null
+          contact_id: string
+          conversation_id: string
+          created_at: string
+          error: string | null
+          id: string
+          organization_id: string
+          sent_at: string | null
+          status: string
+          tracked_link_id: string | null
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "instagram_broadcast_recipients"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
+      claim_instagram_flow_resumes: {
+        Args: { p_limit?: number }
+        Returns: {
+          completed_at: string | null
+          contact_id: string
+          conversation_id: string
+          current_node_id: string | null
+          error_message: string | null
+          execution_log: Json
+          flow_id: string
+          id: string
+          organization_id: string
+          parked_status: string | null
+          started_at: string
+          status: string
+          timeout_at: string | null
+          trigger_source: Json
+          variables: Json
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "instagram_flow_executions"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
+      claim_instagram_followups: {
+        Args: { p_limit?: number }
+        Returns: {
+          attempts: number
+          claimed_at: string | null
+          contact_id: string
+          conversation_id: string | null
+          created_at: string
+          error: string | null
+          followup_config: Json
+          id: string
+          organization_id: string
+          processed_at: string | null
+          resume_at: string
+          rule_id: string
+          status: string
+          tracked_link_id: string | null
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "instagram_pending_followups"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
+      claim_instagram_link_send: {
+        Args: { p_link_id: string }
+        Returns: boolean
+      }
       create_case_from_template:
         | {
             Args: {
@@ -10137,6 +10966,7 @@ export type Database = {
         Args: {
           _org: string
           _since?: string
+          _unassigned_only?: boolean
           _until?: string
           _workspace_id?: string
         }
@@ -10156,6 +10986,7 @@ export type Database = {
           _org: string
           _pipeline_id?: string
           _since?: string
+          _unassigned_only?: boolean
           _until?: string
           _workspace_id?: string
         }
@@ -10255,6 +11086,10 @@ export type Database = {
         }
         Returns: undefined
       }
+      reserve_instagram_send_slot: {
+        Args: { p_account_id: string; p_source?: string }
+        Returns: boolean
+      }
       search_messages: {
         Args: { _org: string; _q: string }
         Returns: {
@@ -10307,6 +11142,7 @@ export type Database = {
         | "connected"
         | "disconnected"
         | "error"
+        | "expired"
       instagram_execution_status: "success" | "error" | "skipped"
       instagram_message_type:
         | "text"
@@ -10471,6 +11307,7 @@ export const Constants = {
         "connected",
         "disconnected",
         "error",
+        "expired",
       ],
       instagram_execution_status: ["success", "error", "skipped"],
       instagram_message_type: [
