@@ -5,6 +5,8 @@ const corsHeaders = {
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Campanha de um workspace só usa o número desse workspace. Sem número vinculado,
+// retorna null — nunca cai no fallback da org (que seria o número de outro workspace).
 async function resolveCampaignInstance(supabase: any, organizationId: string, workspaceId?: string | null) {
     if (workspaceId) {
         const { data: workspace } = await supabase
@@ -13,20 +15,21 @@ async function resolveCampaignInstance(supabase: any, organizationId: string, wo
             .eq('id', workspaceId)
             .eq('organization_id', organizationId)
             .maybeSingle();
-        if (workspace?.whatsapp_instance_id) {
-            const { data: instance } = await supabase
-                .from('whatsapp_instances')
-                .select('id, phone_number, logical_phone')
-                .eq('id', workspace.whatsapp_instance_id)
-                .eq('organization_id', organizationId)
-                .maybeSingle();
-            if (instance?.id) return instance;
-        }
+        if (!workspace?.whatsapp_instance_id) return null;
+
+        const { data: instance, error } = await supabase
+            .from('whatsapp_instances')
+            .select('id, phone_number')
+            .eq('id', workspace.whatsapp_instance_id)
+            .eq('organization_id', organizationId)
+            .maybeSingle();
+        if (error) console.error('[trigger-campaign-on-tag] erro ao buscar instância do workspace:', error);
+        return instance || null;
     }
 
     const { data: instance } = await supabase
         .from('whatsapp_instances')
-        .select('id, phone_number, logical_phone')
+        .select('id, phone_number')
         .eq('organization_id', organizationId)
         .eq('status', 'connected')
         .eq('is_active', true)
@@ -58,9 +61,10 @@ Deno.serve(async (req) => {
         const tagId = record.tag_id;
 
         // 1. Get contact's organization
+        // `name`/`phone` alimentam as variáveis {{name}}/{{phone}} do fluxo.
         const { data: contact } = await supabase
             .from('contacts')
-            .select('organization_id, phone')
+            .select('organization_id, name, phone')
             .eq('id', contactId)
             .single();
 
@@ -86,6 +90,7 @@ Deno.serve(async (req) => {
         }
 
         let processed = 0;
+        let failed = 0;
 
         for (const campaign of campaigns) {
             const campaignInstance = await resolveCampaignInstance(supabase, organizationId, campaign.workspace_id);
@@ -97,9 +102,13 @@ Deno.serve(async (req) => {
                 .eq('contact_id', contactId)
                 .eq('organization_id', organizationId);
 
-            conversationQuery = campaignInstance?.id
-                ? conversationQuery.eq('whatsapp_instance_id', campaignInstance.id)
-                : conversationQuery.is('whatsapp_instance_id', null);
+            // Regra: campanha de um workspace atua SOMENTE sobre a conversa daquele
+            // workspace — nunca pega a conversa do contato em outro workspace.
+            conversationQuery = campaign.workspace_id
+                ? conversationQuery.eq('workspace_id', campaign.workspace_id)
+                : campaignInstance?.id
+                    ? conversationQuery.eq('whatsapp_instance_id', campaignInstance.id)
+                    : conversationQuery.is('whatsapp_instance_id', null);
 
             let { data: conversation } = await conversationQuery
                 .order('updated_at', { ascending: false })
@@ -114,7 +123,7 @@ Deno.serve(async (req) => {
                         organization_id: organizationId,
                         workspace_id: campaign.workspace_id || null,
                         whatsapp_instance_id: campaignInstance?.id || null,
-                        source_phone: campaignInstance?.phone_number || campaignInstance?.logical_phone || null,
+                        source_phone: campaignInstance?.phone_number || null,
                         status: 'open'
                     })
                     .select('id')
@@ -124,35 +133,51 @@ Deno.serve(async (req) => {
 
             if (!conversation) continue;
 
-            // Increment campaign trigger count
-            await supabase.rpc('increment_campaign_count', { campaign_id: campaign.id });
-
             // Since tag added is mostly internal, we can just trigger the flow directly
-            // No strict business hours check for internal tags unless requested, 
+            // No strict business hours check for internal tags unless requested,
             // but let's just trigger it directly via flow-execute
-            
+
             console.log(`Triggering campaign ${campaign.id} (Flow ${campaign.flow_id}) for conversation ${conversation.id}`);
 
-            const flowExecPromise = fetch(`${supabaseUrl}/functions/v1/flow-execute`, {
+            // O flow-execute responde assim que enfileira a execução em background,
+            // então aguardar aqui é barato. Disparar sem aguardar mata a requisição
+            // junto com o isolate quando esta função retorna, e o fluxo nunca roda.
+            const flowResp = await fetch(`${supabaseUrl}/functions/v1/flow-execute`, {
                 method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json', 
-                    'Authorization': `Bearer ${supabaseKey}` 
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${supabaseKey}`
                 },
                 body: JSON.stringify({
                     flowId: campaign.flow_id,
                     conversationId: conversation.id,
                     organizationId: organizationId,
-                    variables: { campaign_id: campaign.id, campaign_name: campaign.name },
+                    isFromOrchestrator: true,
+                    variables: {
+                        name: contact.name || '',
+                        phone: contact.phone || '',
+                        campaign_id: campaign.id,
+                        campaign_name: campaign.name,
+                    },
                 }),
+            }).catch(err => {
+                console.error('Flow exec error:', err);
+                return null;
             });
 
-            // Run in background without waiting for completion to not block the trigger
-            flowExecPromise.catch(err => console.error('Flow exec error:', err));
+            if (!flowResp || !flowResp.ok) {
+                const detail = flowResp ? await flowResp.text().catch(() => '') : 'fetch falhou';
+                console.error(`Flow exec rejeitado para campanha ${campaign.id}:`, detail);
+                failed++;
+                continue;
+            }
+
+            // Só conta o gatilho depois que o fluxo foi aceito.
+            await supabase.rpc('increment_campaign_count', { campaign_id: campaign.id });
             processed++;
         }
 
-        return new Response(JSON.stringify({ processed, success: true }), {
+        return new Response(JSON.stringify({ processed, failed, success: true }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
     } catch (error) {

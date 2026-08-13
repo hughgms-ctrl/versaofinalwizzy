@@ -299,7 +299,7 @@ async function resolveCampaignInstance(admin: any, organizationId: string, works
     if (workspace?.whatsapp_instance_id) {
       const { data: instance } = await admin
         .from('whatsapp_instances')
-        .select('id, phone_number, logical_phone')
+        .select('id, phone_number')
         .eq('id', workspace.whatsapp_instance_id)
         .eq('organization_id', organizationId)
         .maybeSingle();
@@ -309,7 +309,7 @@ async function resolveCampaignInstance(admin: any, organizationId: string, works
 
   const { data: instance } = await admin
     .from('whatsapp_instances')
-    .select('id, phone_number, logical_phone')
+    .select('id, phone_number')
     .eq('organization_id', organizationId)
     .eq('status', 'connected')
     .eq('is_active', true)
@@ -392,7 +392,7 @@ async function bulkAddToCampaign(
             status: 'open',
             workspace_id: campaign.workspace_id || null,
             whatsapp_instance_id: campaignInstance?.id || null,
-            source_phone: campaignInstance?.phone_number || campaignInstance?.logical_phone || null,
+            source_phone: campaignInstance?.phone_number || null,
             metadata: { source: 'contacts_bulk_action', campaign_id: campaign.id },
           })
           .select('id')

@@ -176,6 +176,50 @@ function firstObject(...values: any[]): any | null {
   return null;
 }
 
+/**
+ * Texto de uma resposta a botão/lista nativo do WhatsApp.
+ *
+ * O formato muda conforme o tipo de mensagem enviada e a versão do aparelho:
+ * botão antigo (buttonsResponseMessage), botão de template
+ * (templateButtonReplyMessage), lista (listResponseMessage) e o formato atual
+ * que a Evolution usa, nativeFlow (interactiveResponseMessage, com display_text
+ * e id dentro de um JSON em paramsJson).
+ *
+ * Devolve o texto exibido quando existe e o id da opção quando não — o
+ * casamento com as saídas do nó aceita os dois.
+ */
+function extractInteractiveReplyText(reply: any): string | null {
+  const nativeFlow = reply.nativeFlowResponseMessage || reply.NativeFlowResponseMessage;
+  let nativeFlowText: string | null = null;
+  let nativeFlowId: string | null = null;
+  if (nativeFlow?.paramsJson || nativeFlow?.ParamsJson) {
+    try {
+      const params = JSON.parse(nativeFlow.paramsJson || nativeFlow.ParamsJson);
+      nativeFlowText = params?.display_text || params?.displayText || null;
+      nativeFlowId = params?.id || params?.selectedId || null;
+    } catch {
+      // paramsJson malformado: sobra o texto do corpo, tratado abaixo.
+    }
+  }
+
+  const singleSelect = reply.singleSelectReply || reply.SingleSelectReply;
+
+  // O nativeFlow vem antes do corpo de propósito: no quick_reply da Evolution o
+  // body.text é o texto genérico "Sent a quick reply", que não casa com saída
+  // nenhuma — o rótulo real está no paramsJson.
+  const value = reply.selectedDisplayText || reply.SelectedDisplayText
+    || nativeFlowText
+    || nativeFlowId
+    || reply.title || reply.Title
+    || reply.selectedButtonId || reply.SelectedButtonId
+    || reply.selectedId || reply.SelectedId
+    || singleSelect?.selectedRowId || singleSelect?.SelectedRowId
+    || reply.body?.text || reply.Body?.text
+    || null;
+
+  return value ? String(value).trim() : null;
+}
+
 function firstNonEmptyObject(...values: any[]): any | null {
   for (const value of values) {
     if (value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length > 0) return value;
@@ -354,7 +398,11 @@ function followUpHandleId(label: string): string {
  * O parcial fica por último de propósito: com botões "Não" e "Não sei", "não sei"
  * precisa ganhar do "Não" que apareceria primeiro num casamento único.
  */
-function matchFollowUpButtonHandle(node: any, remarketingStep: number, userText: string): string | null {
+function matchFollowUpButtonHandle(
+  node: any,
+  remarketingStep: number,
+  userText: string,
+): { handleId: string; exact: boolean } | null {
   const steps = (node?.data?.remarketingSteps || []) as any[];
   const text = (userText || '').trim().toLowerCase();
   // remarketing_step 0 = nenhuma tentativa saiu ainda, então nenhum botão foi mostrado.
@@ -375,19 +423,21 @@ function matchFollowUpButtonHandle(node: any, remarketingStep: number, userText:
     if (!labels.length) continue;
 
     for (const label of labels) {
-      if (text === label.toLowerCase()) return followUpHandleId(label);
+      if (text === label.toLowerCase()) return { handleId: followUpHandleId(label), exact: true };
     }
 
     if (step === sentStep) {
       const index = Number(text);
       if (Number.isInteger(index) && index >= 1 && index <= labels.length) {
-        return followUpHandleId(labels[index - 1]);
+        return { handleId: followUpHandleId(labels[index - 1]), exact: true };
       }
     }
 
     for (const label of labels) {
       const lower = label.toLowerCase();
-      if (text.includes(lower) || lower.includes(text)) return followUpHandleId(label);
+      if (text.includes(lower) || lower.includes(text)) {
+        return { handleId: followUpHandleId(label), exact: false };
+      }
     }
   }
 
@@ -1163,6 +1213,17 @@ Deno.serve(async (req) => {
       return await handlePresence(supabase, payload, instanceId, instanceName);
     }
 
+    // Handle WhatsApp Business label events (Evolution: labels.edit / labels.association)
+    const labelEventTypes = ['labels.edit', 'labels_edit', 'labels-edit', 'labels.association', 'labels_association', 'labels-association'];
+    if (labelEventTypes.includes(eventType)) {
+      try {
+        return await handleLabelEvent(supabase, payload, instanceId, instanceName, eventType);
+      } catch (labelError) {
+        console.error('[WEBHOOK] handleLabelEvent crashed but returning 200 to prevent retry loop:', labelError);
+        return respond({ success: false, error: 'label_handler_error', detail: String(labelError) });
+      }
+    }
+
     // Handle message and media events - catch ALL possible UAZAPI event types for messages/media
     const messageEventTypes = ['messages', 'message', 'media', 'document', 'audio', 'video', 'image', 'sticker', 'location', 'contact', 'ptt', 'messages-upsert', 'messages.upsert', 'messages_upsert', 'send_message'];
     if (messageEventTypes.includes(eventType)) {
@@ -1318,7 +1379,27 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
   const locationMsg = eventMessage.locationMessage || eventMessage.LocationMessage || evolutionMessage.locationMessage;
   const contactMsg = eventMessage.contactMessage || eventMessage.ContactMessage || evolutionMessage.contactMessage;
 
-  if (conversationText) {
+  // Toque em botão/lista nativo não chega como texto: vem numa mensagem de
+  // resposta própria, que varia com o formato usado no envio e com o aparelho.
+  // Sem isto o texto sai vazio e o fluxo não casa a escolha com nenhuma saída.
+  const interactiveReply = firstObject(
+    eventMessage.interactiveResponseMessage, eventMessage.InteractiveResponseMessage,
+    eventMessage.buttonsResponseMessage, eventMessage.ButtonsResponseMessage,
+    eventMessage.templateButtonReplyMessage, eventMessage.TemplateButtonReplyMessage,
+    eventMessage.listResponseMessage, eventMessage.ListResponseMessage,
+    evolutionMessage.interactiveResponseMessage, evolutionMessage.buttonsResponseMessage,
+    evolutionMessage.templateButtonReplyMessage, evolutionMessage.listResponseMessage,
+    payload.interactiveResponseMessage, payload.buttonsResponseMessage,
+    payload.templateButtonReplyMessage, payload.listResponseMessage,
+    msg.interactiveResponseMessage, msg.buttonsResponseMessage,
+    msg.templateButtonReplyMessage, msg.listResponseMessage,
+  );
+
+  if (interactiveReply) {
+    messageType = 'text';
+    textContent = extractInteractiveReplyText(interactiveReply);
+    console.log(`[WEBHOOK] Interactive reply detected -> "${textContent}"`);
+  } else if (conversationText) {
     messageType = 'text';
     textContent = conversationText;
   } else if (extendedText) {
@@ -2388,7 +2469,10 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
       .from('flow_executions')
       .select('id, status, current_node_id, flow_id, variables, remarketing_step, flow:flows(nodes, edges, master_prompt, is_master_active, name)')
       .eq('conversation_id', conversation.id)
-      .in('status', ['running', 'waiting_input'])
+      // waiting_delay = parado num "Atraso Inteligente". Continua sendo fluxo
+      // ativo: sem ele aqui, uma mensagem do contato durante a espera cairia
+      // no Campaign Trigger e dispararia um segundo fluxo em paralelo.
+      .in('status', ['running', 'waiting_input', 'waiting_delay'])
       .order('started_at', { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -2407,16 +2491,17 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
 
       // Botão de follow-up com saída própria desenhada no fluxo: tem precedência
       // sobre o 'responded', porque é uma resposta específica, não "respondeu algo".
-      const followUpHandle = activeFlowExec.status === 'waiting_input'
+      const followUpMatch = activeFlowExec.status === 'waiting_input'
         ? matchFollowUpButtonHandle(currentNode, (activeFlowExec as any).remarketing_step || 0, triggerText || '')
         : null;
+      const followUpHandle = followUpMatch?.handleId || null;
       const followUpEdge = followUpHandle
         ? ((activeFlowExec.flow?.edges || []) as any[]).find(
             (e: any) => e.source === activeFlowExec.current_node_id && e.sourceHandle === followUpHandle
           )
         : null;
       if (followUpHandle) {
-        console.log(`[WEBHOOK] Follow-up button matched handle=${followUpHandle}, edge=${followUpEdge ? followUpEdge.target : 'nenhuma (cai no fluxo normal)'}`);
+        console.log(`[WEBHOOK] Follow-up button matched handle=${followUpHandle} (exact=${followUpMatch?.exact}), edge=${followUpEdge ? followUpEdge.target : 'nenhuma (cai no fluxo normal)'}`);
       }
 
       if (isAtAIHandoff && activeFlowExec.status === 'waiting_input') {
@@ -2493,7 +2578,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
           delete cleanMeta.ai_handoff_context;
           cleanMeta.flow_ended_at = new Date().toISOString();
           await supabase.from('conversations').update({
-            service_mode: 'humano', ai_agent_id: null, metadata: cleanMeta,
+            service_mode: 'ativo', ai_agent_id: null, metadata: cleanMeta,
           }).eq('id', conversation.id);
         }
       } else if (isAtContentBlockWaiting && activeFlowExec.status === 'waiting_input') {
@@ -2550,7 +2635,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
           delete cleanMeta2.ai_handoff_context;
           cleanMeta2.flow_ended_at = new Date().toISOString();
           await supabase.from('conversations').update({
-            service_mode: 'humano', ai_agent_id: null, metadata: cleanMeta2,
+            service_mode: 'ativo', ai_agent_id: null, metadata: cleanMeta2,
           }).eq('id', conversation.id);
         }
       } else if ((isAtMessageButtons || isAtMessageList) && activeFlowExec.status === 'waiting_input') {
@@ -2563,9 +2648,21 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
 
         // Casamento em duas passadas: exato/número antes de parcial. Numa passada só,
         // a opção "Não" ganharia de "Não sei" só por vir antes na lista.
-        const matchOption = (options: string[], handlePrefix: string): string | null => {
+        // O tipo do casamento é devolvido junto porque o parcial não pode ganhar de um
+        // casamento exato num botão do follow-up (ver a escolha da aresta abaixo).
+        let matchedExact = false;
+        const matchOption = (options: string[], handlePrefix: string, ids?: string[]): string | null => {
+          // Botão nativo volta como o rótulo na maioria dos aparelhos, mas alguns
+          // devolvem o id da opção ("btn_0") — aceita os dois antes do parcial.
           for (let i = 0; i < options.length; i++) {
-            if (userResponse === options[i].toLowerCase() || userResponse === String(i + 1)) {
+            const optionId = ids?.[i]?.toLowerCase();
+            if (
+              userResponse === options[i].toLowerCase() ||
+              userResponse === String(i + 1) ||
+              (!!optionId && userResponse === optionId) ||
+              userResponse === `${handlePrefix}${i}`
+            ) {
+              matchedExact = true;
               return `${handlePrefix}${i}`;
             }
           }
@@ -2580,7 +2677,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
 
         if (isAtMessageButtons) {
           const buttons = (currentNode.data?.buttons || []) as Array<{ id: string; label: string }>;
-          matchedHandle = matchOption(buttons.map((b) => b.label || ''), 'btn_');
+          matchedHandle = matchOption(buttons.map((b) => b.label || ''), 'btn_', buttons.map((b) => b.id || ''));
           if (matchedHandle) console.log(`[WEBHOOK] Matched button handle: ${matchedHandle}`);
         } else {
           // List: match rows
@@ -2594,6 +2691,13 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
         let targetEdge = matchedHandle ? flowEdges.find((e: any) => e.source === activeFlowExec.current_node_id && e.sourceHandle === matchedHandle) : null;
         // A opção do próprio nó vem primeiro (o botão do follow-up costuma repetir
         // o rótulo dela); a saída exclusiva do follow-up entra quando não casou.
+        // Exceção: com o rótulo batendo exatamente num botão do follow-up, a saída dele
+        // ganha do casamento PARCIAL do nó — senão "Quero saber mais" (follow-up) seria
+        // engolido pelo "Quero" (bloco) e o clique iria para a saída errada.
+        if (targetEdge && !matchedExact && followUpEdge && followUpMatch?.exact) {
+          console.log(`[WEBHOOK] Follow-up exact match beats partial node match — using ${followUpHandle}`);
+          targetEdge = followUpEdge;
+        }
         if (!targetEdge) targetEdge = followUpEdge || null;
         if (!targetEdge) {
           // Fallback: try 'responded' handle or any edge without specific handle
@@ -2644,7 +2748,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
           delete cleanMetaBtn.ai_handoff_context;
           cleanMetaBtn.flow_ended_at = new Date().toISOString();
           await supabase.from('conversations').update({
-            service_mode: 'humano', ai_agent_id: null, metadata: cleanMetaBtn,
+            service_mode: 'ativo', ai_agent_id: null, metadata: cleanMetaBtn,
           }).eq('id', conversation.id);
         }
       } else if (activeFlowExec.status === 'waiting_input') {
@@ -2693,7 +2797,7 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
           delete cleanMeta3.ai_handoff_context;
           cleanMeta3.flow_ended_at = new Date().toISOString();
           await supabase.from('conversations').update({
-            service_mode: 'humano', ai_agent_id: null, metadata: cleanMeta3,
+            service_mode: 'ativo', ai_agent_id: null, metadata: cleanMeta3,
           }).eq('id', conversation.id);
         } else {
           console.log(`[WEBHOOK] Flow waiting_input at node ${activeFlowExec.current_node_id} — resuming flow execution`);
@@ -2847,8 +2951,8 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
           const elapsedMs = Date.now() - new Date(flowEndedAt).getTime();
           if (elapsedMs < 60000) {
             console.log(`[WEBHOOK] service_mode=ia but flow ended ${Math.round(elapsedMs/1000)}s ago — NOT triggering agent`);
-            // Force reset to humano since it's stale
-            await supabase.from('conversations').update({ service_mode: 'humano', ai_agent_id: null }).eq('id', conversation.id);
+            // Force reset to ativo (humano no comando) since it's stale
+            await supabase.from('conversations').update({ service_mode: 'ativo', ai_agent_id: null }).eq('id', conversation.id);
             shouldTrigger = false;
           } else {
             shouldTrigger = true;
@@ -3402,3 +3506,291 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
   function stripPunctuation(text: string): string {
     return text.replace(/[^\p{L}\p{N}\s]/gu, " ").replace(/\s+/g, " ").trim();
   }
+
+// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+// WHATSAPP BUSINESS LABELS (Evolution API)
+// \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+// A Evolution emite (whatsapp.baileys.service.ts, sendDataWebhook):
+//   labels.edit        \u2192 data = { id, name, color (\u00edndice 0-19), deleted?, ... }
+//   labels.association \u2192 data = { instance, type: 'add'|'remove', chatId, labelId }
+// N\u00e3o existe GET oficial de "labels do contato X" \u2014 por isso cada evento \u00e9
+// persistido aqui na hora, e a function sync-whatsapp-labels reconcilia o drift.
+
+// Paleta de cores de etiqueta do WhatsApp, indexada 0-19. A cor exata importa
+// pouco (\u00e9 s\u00f3 a cor default da tag criada); o fallback cobre \u00edndices novos.
+const WHATSAPP_LABEL_COLORS = [
+  '#FF9485', '#64C4FF', '#FFD429', '#DFAEF0', '#99B6C1',
+  '#55CCB3', '#D3A91D', '#F74848', '#6D7CCE', '#8B6990',
+  '#D1D451', '#00D0E2', '#FFC5C7', '#790611', '#00A62F',
+  '#8FF6BB', '#C70362', '#0068C7', '#5A0A46', '#00DBDE',
+];
+
+function whatsappLabelColorToHex(color: unknown): string {
+  const idx = Number(color);
+  if (Number.isInteger(idx) && idx >= 0 && idx < WHATSAPP_LABEL_COLORS.length) {
+    return WHATSAPP_LABEL_COLORS[idx];
+  }
+  if (typeof color === 'string' && /^#[0-9a-fA-F]{6}$/.test(color)) return color;
+  return '#6366f1';
+}
+
+function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, (match) => `\\${match}`);
+}
+
+// O findLabels da Evolution devolve tamb\u00e9m as LISTAS internas do WhatsApp
+// (Favoritos/Grupos/N\u00e3o lidas/Comunidades) misturadas com etiquetas reais \u2014
+// confirmado na inst\u00e2ncia viva (v2.3.6). Sincronizar essas viraria tag lixo
+// ("N\u00e3o lidas" taggearia contato em massa). Compara\u00e7\u00e3o com acentos removidos
+// porque a pr\u00f3pria Evolution grava os nomes j\u00e1 sem acento ("No lidas").
+const WHATSAPP_SYSTEM_LIST_NAMES = new Set([
+  'favoritos', 'grupos', 'comunidades', 'nao lidas', 'no lidas',
+  'favorites', 'groups', 'communities', 'unread',
+]);
+
+function isWhatsappSystemList(name: string): boolean {
+  const normalized = name
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return WHATSAPP_SYSTEM_LIST_NAMES.has(normalized);
+}
+
+// Acha (case-insensitive) ou cria a tag da org correspondente \u00e0 etiqueta.
+// A unique (organization_id, name) resolve corrida entre webhooks concorrentes.
+async function ensureTagForLabel(supabase: any, organizationId: string, name: string, colorHex: string): Promise<string | null> {
+  const { data: existing } = await supabase
+    .from('tags')
+    .select('id')
+    .eq('organization_id', organizationId)
+    .ilike('name', escapeLikePattern(name))
+    .limit(1)
+    .maybeSingle();
+  if (existing?.id) return existing.id;
+
+  const { data: inserted, error } = await supabase
+    .from('tags')
+    .upsert(
+      { organization_id: organizationId, name, color: colorHex },
+      { onConflict: 'organization_id,name' },
+    )
+    .select('id')
+    .maybeSingle();
+  if (error) {
+    console.error('[LABELS] ensureTagForLabel failed:', error);
+    const { data: retry } = await supabase
+      .from('tags')
+      .select('id')
+      .eq('organization_id', organizationId)
+      .ilike('name', escapeLikePattern(name))
+      .limit(1)
+      .maybeSingle();
+    return retry?.id || null;
+  }
+  return inserted?.id || null;
+}
+
+async function upsertWhatsappLabelMapping(
+  supabase: any,
+  instance: any,
+  label: { labelId: string; name: string; color: unknown },
+): Promise<string | null> {
+  const tagId = await ensureTagForLabel(
+    supabase,
+    instance.organization_id,
+    label.name,
+    whatsappLabelColorToHex(label.color),
+  );
+  const { error } = await supabase.from('whatsapp_labels').upsert({
+    organization_id: instance.organization_id,
+    whatsapp_instance_id: instance.id,
+    label_id: label.labelId,
+    name: label.name,
+    color: label.color === null || label.color === undefined ? null : String(label.color),
+    tag_id: tagId,
+    deleted_at: null,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'whatsapp_instance_id,label_id' });
+  if (error) console.error('[LABELS] whatsapp_labels upsert failed:', error);
+  return tagId;
+}
+
+// Etiqueta chegou numa associa\u00e7\u00e3o sem termos o cat\u00e1logo dela (criada antes do
+// webhook estar inscrito em LABELS_EDIT). Busca em /label/findLabels e mapeia.
+async function hydrateLabelFromEvolution(supabase: any, instance: any, labelId: string): Promise<{ tag_id: string | null } | null> {
+  try {
+    const settings = await loadConnectionSettings(supabase);
+    const baseUrl = settings.evolutionBaseUrl;
+    const apiKey = instance.evolution_api_key || settings.evolutionApiKey || instance.zapi_token;
+    const evoName = instance.evolution_instance_name || instance.zapi_instance_id;
+    if (!baseUrl || !apiKey || !evoName) return null;
+
+    const response = await fetch(`${baseUrl}/label/findLabels/${evoName}`, { headers: { apikey: apiKey } });
+    if (!response.ok) {
+      console.warn(`[LABELS] findLabels failed: ${response.status}`);
+      return null;
+    }
+    const body = await response.json().catch(() => null);
+    const list = Array.isArray(body) ? body : (Array.isArray(body?.labels) ? body.labels : []);
+    // Resposta real da v2.3.6: [{ id: '5', name, color: '0', predefinedId }]
+    // (o labelId do WhatsApp vem no campo `id`; `labelId` é fallback defensivo)
+    const found = list.find((item: any) => String(item?.labelId ?? item?.id ?? '') === labelId);
+    if (!found?.name) return null;
+    if (isWhatsappSystemList(String(found.name))) return null;
+
+    const tagId = await upsertWhatsappLabelMapping(supabase, instance, {
+      labelId,
+      name: String(found.name).trim(),
+      color: found.color,
+    });
+    return { tag_id: tagId };
+  } catch (error) {
+    console.error('[LABELS] hydrateLabelFromEvolution failed:', error);
+    return null;
+  }
+}
+
+async function handleLabelEvent(supabase: any, payload: any, instanceId: string, instanceName: string, eventType: string) {
+  const data = payload.data || payload;
+
+  const orFilters = [
+    instanceId ? `zapi_instance_id.eq.${instanceId}` : '',
+    instanceName ? `zapi_instance_id.eq.${instanceName}` : '',
+    instanceName ? `evolution_instance_name.eq.${instanceName}` : '',
+    instanceId ? `evolution_instance_id.eq.${instanceId}` : '',
+  ].filter(Boolean);
+  if (!orFilters.length) return respond({ success: false, error: 'instance_not_identified' });
+
+  const { data: instance } = await supabase
+    .from('whatsapp_instances')
+    .select('id, organization_id, provider, evolution_instance_name, evolution_api_key, zapi_instance_id, zapi_token')
+    .or(orFilters.join(','))
+    .maybeSingle();
+  if (!instance) {
+    console.warn(`[LABELS] Instance not found: ID=${instanceId}, Name=${instanceName}`);
+    return respond({ success: false, error: 'instance_not_found' });
+  }
+
+  if (eventType.includes('association')) {
+    return await handleLabelAssociation(supabase, instance, data);
+  }
+  return await handleLabelEdit(supabase, instance, data);
+}
+
+async function handleLabelEdit(supabase: any, instance: any, data: any) {
+  const labelId = String(data.id ?? data.labelId ?? '').trim();
+  if (!labelId) return respond({ success: true, ignored: true, reason: 'label_without_id' });
+
+  if (data.deleted === true) {
+    const { data: mapping } = await supabase
+      .from('whatsapp_labels')
+      .select('id, tag_id')
+      .eq('whatsapp_instance_id', instance.id)
+      .eq('label_id', labelId)
+      .maybeSingle();
+    if (mapping) {
+      await supabase
+        .from('whatsapp_labels')
+        .update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+        .eq('id', mapping.id);
+      // S\u00f3 derruba associa\u00e7\u00f5es que ESTA sync criou; tags manuais/flow/ai s\u00e3o
+      // inten\u00e7\u00e3o do usu\u00e1rio no Wizzy e sobrevivem \u00e0 exclus\u00e3o da etiqueta.
+      if (mapping.tag_id) {
+        const { data: rows } = await supabase
+          .from('contact_tags')
+          .select('id, contacts!inner(organization_id)')
+          .eq('tag_id', mapping.tag_id)
+          .eq('added_by_type', 'whatsapp')
+          .eq('contacts.organization_id', instance.organization_id)
+          .limit(1000);
+        const ids = (rows || []).map((row: any) => row.id);
+        if (ids.length) await supabase.from('contact_tags').delete().in('id', ids);
+      }
+    }
+    return respond({ success: true, labelId, deleted: true });
+  }
+
+  const name = String(data.name || '').trim();
+  if (!name) return respond({ success: true, ignored: true, reason: 'label_without_name' });
+  if (isWhatsappSystemList(name)) return respond({ success: true, ignored: true, reason: 'system_list' });
+
+  const tagId = await upsertWhatsappLabelMapping(supabase, instance, { labelId, name, color: data.color });
+  return respond({ success: true, labelId, tagId });
+}
+
+async function handleLabelAssociation(supabase: any, instance: any, data: any) {
+  const action = String(data.type || '').toLowerCase();
+  const chatId = String(data.chatId || data.chatid || '');
+  const labelId = String(data.labelId || data.labelid || '').trim();
+  if (!labelId || !chatId || !['add', 'remove'].includes(action)) {
+    return respond({ success: true, ignored: true, reason: 'association_incomplete' });
+  }
+  // Etiquetas em grupos n\u00e3o t\u00eam contato correspondente no Wizzy.
+  if (isGroupChat(chatId)) return respond({ success: true, ignored: true, reason: 'group_chat' });
+
+  // chatId @lid n\u00e3o cont\u00e9m o telefone (endere\u00e7amento an\u00f4nimo \u2014 a maioria dos
+  // chats hoje). Quem sabe traduzir lid\u2192telefone \u00e9 a tabela IsOnWhatsapp no
+  // Postgres da Evolution, que a sync-whatsapp-labels acessa. Delegamos a ela
+  // em background, escopada \u00e0 inst\u00e2ncia \u2014 corrige em segundos, n\u00e3o no cron.
+  if (chatId.includes('@lid')) {
+    const baseUrl = Deno.env.get('SUPABASE_URL')!;
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    runBackground(fetch(`${baseUrl}/functions/v1/sync-whatsapp-labels`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${serviceRoleKey}` },
+      body: JSON.stringify({ instanceId: instance.id }),
+    }));
+    return respond({ success: true, deferred: true, reason: 'lid_chat_delegated_to_reconciliation' });
+  }
+
+  let { data: mapping } = await supabase
+    .from('whatsapp_labels')
+    .select('id, tag_id')
+    .eq('whatsapp_instance_id', instance.id)
+    .eq('label_id', labelId)
+    .maybeSingle();
+
+  if (!mapping?.tag_id && action === 'add') {
+    mapping = await hydrateLabelFromEvolution(supabase, instance, labelId) || mapping;
+  }
+  if (!mapping?.tag_id) {
+    return respond({ success: true, ignored: true, reason: 'label_not_mapped', labelId });
+  }
+
+  const phone = cleanPhone(chatId);
+  if (!phone) return respond({ success: true, ignored: true, reason: 'invalid_phone' });
+  const variants = phoneVariants(phone);
+  const { data: contact } = await supabase
+    .from('contacts')
+    .select('id')
+    .eq('organization_id', instance.organization_id)
+    .in('phone', variants.length ? variants : [phone])
+    .limit(1)
+    .maybeSingle();
+  if (!contact) {
+    // Chat etiquetado que nunca conversou com o Wizzy \u2014 nada a sincronizar.
+    return respond({ success: true, ignored: true, reason: 'contact_not_found' });
+  }
+
+  if (action === 'remove') {
+    // Remo\u00e7\u00e3o no aparelho remove no Wizzy independente da origem: o estado do
+    // WhatsApp \u00e9 a fonte de verdade para o par (contato, tag mapeada).
+    await supabase
+      .from('contact_tags')
+      .delete()
+      .eq('contact_id', contact.id)
+      .eq('tag_id', mapping.tag_id);
+    return respond({ success: true, action, contactId: contact.id, tagId: mapping.tag_id });
+  }
+
+  const { error } = await supabase.from('contact_tags').upsert({
+    contact_id: contact.id,
+    tag_id: mapping.tag_id,
+    added_by: null,
+    added_by_type: 'whatsapp',
+  }, { onConflict: 'contact_id,tag_id', ignoreDuplicates: true });
+  if (error) console.error('[LABELS] contact_tags upsert failed:', error);
+  return respond({ success: !error, action, contactId: contact.id, tagId: mapping.tag_id });
+}

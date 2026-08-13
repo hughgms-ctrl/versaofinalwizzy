@@ -3,6 +3,7 @@ import { resolveWorkspaceInstanceBinding, sendWhatsAppMessage } from '../_shared
 import { resolveCaller, assertCallerCanAccessOrg, AccessError, type CallerAuth } from '../_shared/access.ts';
 import { buildPersonalityBlock } from '../_shared/agentPersonality.ts';
 import { buildKnowledgeBlock } from '../_shared/agentKnowledge.ts';
+import { moveConversationToPipeline } from '../_shared/pipelineMove.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -1030,10 +1031,10 @@ async function walkFlowForward(
   while (safetyCounter++ < 20) {
     const currentEdges = edges.filter((e: any) => e.source === state.current_node_id);
     if (currentEdges.length === 0) {
-      console.log('End of flow reached — resetting service_mode to humano');
+      console.log('End of flow reached — resetting service_mode to ativo');
       state.flow_completed = true;
       // Reset service_mode so AI stops responding after flow ends
-      await supabase.from('conversations').update({ service_mode: 'humano' }).eq('id', ctx.conversationId);
+      await supabase.from('conversations').update({ service_mode: 'ativo' }).eq('id', ctx.conversationId);
       break;
     }
 
@@ -1097,15 +1098,14 @@ async function walkFlowForward(
       case 'orch-pipeline':
       case 'action-pipeline': {
         const pipelineId = nextNode.data?.pipelineId;
-        const columnId = nextNode.data?.columnId;
+        // orch-pipeline salva `columnId`; action-pipeline (editor de fluxo) salva
+        // `pipelineColumnId`. Sem o fallback, o no do fluxo virava no-op aqui.
+        const columnId = nextNode.data?.columnId || nextNode.data?.pipelineColumnId;
         if (pipelineId && columnId) {
-          const { data: oldPos } = await supabase.from('conversation_pipeline_positions')
-            .select('column_id').eq('conversation_id', ctx.conversationId).eq('pipeline_id', pipelineId).maybeSingle();
-          const fromColumnId = oldPos?.column_id || null;
-          await supabase.from('conversation_pipeline_positions').upsert({
-            conversation_id: ctx.conversationId, pipeline_id: pipelineId,
-            column_id: columnId, updated_at: new Date().toISOString(),
-          }, { onConflict: 'conversation_id,pipeline_id' });
+          const { fromColumnId, error: moveError } = await moveConversationToPipeline(
+            supabase, ctx.conversationId, pipelineId, columnId,
+          );
+          if (moveError) console.error('[ORCH] move_pipeline error:', moveError);
           await supabase.from('conversation_stage_history').insert({
             conversation_id: ctx.conversationId, pipeline_id: pipelineId, from_column_id: fromColumnId,
             to_column_id: columnId, changed_by_type: 'orchestrator', organization_id: ctx.organizationId,
@@ -1283,7 +1283,7 @@ async function walkFlowForward(
       case 'orch-human':
       case 'action-transfer': {
         // Escalate to human - switch service mode
-        await supabase.from('conversations').update({ service_mode: 'humano' }).eq('id', ctx.conversationId);
+        await supabase.from('conversations').update({ service_mode: 'ativo' }).eq('id', ctx.conversationId);
         console.log('Escalated to human');
         toolsExecuted.push({ name: 'escalate_human', arguments: {}, result: { success: true } });
         state.completed_nodes.push(nextNode.id);
@@ -1758,13 +1758,13 @@ async function invokeAgentAI(
           const { data: convData } = await supabase.from('conversations').select('metadata').eq('id', ctx.conversationId).single();
           const metadata = { ...(convData?.metadata || {}) };
           delete metadata.ai_handoff_context;
-          await supabase.from('conversations').update({ metadata, service_mode: 'humano' }).eq('id', ctx.conversationId);
+          await supabase.from('conversations').update({ metadata, service_mode: 'ativo' }).eq('id', ctx.conversationId);
         } catch (e) {
           console.error('[AGENT] Error stopping flow on rejection-without-handle:', e);
         }
       } else {
         try {
-          await supabase.from('conversations').update({ service_mode: 'humano' }).eq('id', ctx.conversationId);
+          await supabase.from('conversations').update({ service_mode: 'ativo' }).eq('id', ctx.conversationId);
         } catch (_e) { /* ignore */ }
       }
       shouldAdvance = false;
@@ -2247,12 +2247,10 @@ async function invokeDocumentAgentAI(
                   if (firstCol) targetColumnId = firstCol.id;
                 }
                 if (targetColumnId) {
-                  await supabase.from('conversation_pipeline_positions').upsert({
-                    conversation_id: ctx.conversationId,
-                    pipeline_id: docPipelineId,
-                    column_id: targetColumnId,
-                    order: 0,
-                  }, { onConflict: 'conversation_id' });
+                  const { error: docMoveError } = await moveConversationToPipeline(
+                    supabase, ctx.conversationId, docPipelineId, targetColumnId,
+                  );
+                  if (docMoveError) throw new Error(docMoveError);
 
                   await supabase.from('conversation_stage_history').insert({
                     conversation_id: ctx.conversationId,
@@ -2563,7 +2561,7 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
                 completed_at: new Date().toISOString(),
               }).eq('id', ctx.flowExecutionId);
               // Reset service_mode so AI stops responding
-              await supabase.from('conversations').update({ service_mode: 'humano' }).eq('id', ctx.conversationId);
+              await supabase.from('conversations').update({ service_mode: 'ativo' }).eq('id', ctx.conversationId);
 
               // 4. TRIGGER AI ANALYSIS / SUMMARY on flow completion
               const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -2660,7 +2658,7 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
           const { data: convData } = await supabase.from('conversations').select('metadata').eq('id', ctx.conversationId).single();
           const metadata = { ...(convData?.metadata || {}) };
           delete metadata.ai_handoff_context;
-          await supabase.from('conversations').update({ metadata, service_mode: 'humano' }).eq('id', ctx.conversationId);
+          await supabase.from('conversations').update({ metadata, service_mode: 'ativo' }).eq('id', ctx.conversationId);
         } catch (e) {
           console.error('[LEGACY] Error stopping flow on rejection-without-handle:', e);
         }
@@ -2710,7 +2708,7 @@ async function executeLegacyOrchestration(supabase: any, ctx: any, messageConten
           await supabase.from('flow_executions').update({
             status: 'completed', variables, completed_at: new Date().toISOString(),
           }).eq('id', ctx.flowExecutionId);
-          await supabase.from('conversations').update({ service_mode: 'humano' }).eq('id', ctx.conversationId);
+          await supabase.from('conversations').update({ service_mode: 'ativo' }).eq('id', ctx.conversationId);
         }
 
         toolsExecuted.push({
@@ -2741,11 +2739,8 @@ async function executeToolDirect(supabase: any, toolName: string, args: any, ctx
 
     case 'move_pipeline': {
       const { pipeline_id, column_id } = args;
-      const { error } = await supabase.from('conversation_pipeline_positions').upsert({
-        conversation_id: ctx.conversationId, pipeline_id, column_id,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'conversation_id,pipeline_id' });
-      return error ? { success: false, error: error.message } : { success: true };
+      const { error } = await moveConversationToPipeline(supabase, ctx.conversationId, pipeline_id, column_id);
+      return error ? { success: false, error } : { success: true };
     }
 
     case 'add_tag': {

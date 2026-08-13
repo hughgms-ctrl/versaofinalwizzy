@@ -29,6 +29,23 @@ export interface ScheduledMessage {
   delay_between_contacts: number | null;
   batch_size_max: number | null;
   batch_pause_minutes: number | null;
+  batch_current_target: number | null;
+  batch_sent_count: number | null;
+  batch_paused_until: string | null;
+  /**
+   * Retrato congelado da última execução (total/enviados/não entregues + quem
+   * não recebeu), gravado pelo motor ao finalizar. É o que mantém o painel de
+   * um disparo concluído acessível para sempre: scheduled_message_contacts é
+   * reciclada entre ocorrências de uma recorrência.
+   */
+  last_run_summary: {
+    finished_at?: string;
+    total?: number;
+    sent?: number;
+    failed?: number;
+    undelivered?: Array<{ name: string | null; phone: string | null }>;
+    undelivered_truncated?: boolean;
+  } | null;
   created_at: string;
   updated_at: string;
   // Relations

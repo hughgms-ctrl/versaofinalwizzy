@@ -1,0 +1,15 @@
+-- Novo estado 'expired' para conta do Instagram.
+--
+-- CONTEXTO: o token longo da Meta dura 60 dias e nada o renovava — toda conexão
+-- morria em dois meses, sem aviso, parecendo "a automação parou de funcionar".
+-- A renovação semanal (instagram-refresh-tokens) resolve o caso normal, mas um
+-- token que JÁ passou da validade não pode ser renovado: só reautorizando.
+--
+-- Esse caso precisa de estado próprio. 'disconnected' significa "alguém
+-- desconectou de propósito" e 'error' é falha técnica genérica — nenhum dos dois
+-- diz para a tela "peça ao cliente para reconectar".
+--
+-- Migration separada de propósito: o Postgres não aceita usar um valor de enum
+-- adicionado na mesma transação, então juntar isso à migration seguinte (que
+-- referencia estados de conta) quebraria a aplicação.
+ALTER TYPE public.instagram_account_status ADD VALUE IF NOT EXISTS 'expired';

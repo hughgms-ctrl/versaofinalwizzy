@@ -246,16 +246,57 @@ verify_jwt = false
 [functions.instagram-check-status]
 verify_jwt = false
 
+# Lista os posts da conta para o seletor visual. Valida o JWT no corpo da
+# função (mesmo padrão das demais deste módulo).
+[functions.instagram-list-media]
+verify_jwt = false
+
 [functions.instagram-disconnect]
 verify_jwt = false
 
 [functions.instagram-rule-execute]
 verify_jwt = false
 
+# Motor dos fluxos visuais do Instagram. Interno: exige a service role key no
+# Authorization, checada dentro da função.
+[functions.instagram-flow-execute]
+verify_jwt = false
+
+# Retomada das execuções estacionadas (espera longa / sem resposta), pelo cron.
+[functions.instagram-flow-timeouts]
+verify_jwt = false
+
 [functions.instagram-link-redirect]
 verify_jwt = false
 
 [functions.instagram-process-followups]
+verify_jwt = false
+
+# Vincula as automações de "próxima publicação" ao post recém-publicado.
+# Chamada pelo pg_cron a cada 5 minutos (sem JWT); não recebe entrada.
+[functions.instagram-bind-next-post]
+verify_jwt = false
+
+# Monta o disparo e sua lista. Chamada pela tela; a autorização é feita dentro
+# da função (getRequestUser + assertActiveOrganizationAccess pela org DONA da
+# conta), como nas demais funções do módulo.
+[functions.instagram-broadcast-create]
+verify_jwt = false
+
+# Drenagem do disparo, chamada pelo pg_cron a cada minuto (sem JWT).
+[functions.instagram-broadcast-send]
+verify_jwt = false
+
+# Renovação semanal do token de 60 dias, chamada pelo pg_cron (sem JWT).
+[functions.instagram-refresh-tokens]
+verify_jwt = false
+
+# Callbacks obrigatórios da Meta (App Review). Chamados pelos servidores da Meta
+# sem JWT; a autenticidade vem do signed_request assinado com o app secret.
+[functions.instagram-deauthorize]
+verify_jwt = false
+
+[functions.instagram-data-deletion]
 verify_jwt = false
 
 # Webhook do Asaas (gateway de pagamento): chamado pelos servidores do Asaas, que
@@ -265,4 +306,10 @@ verify_jwt = false
 # secret ASAAS_WEBHOOK_TOKEN, timing-safe e fail-closed), igual aos demais webhooks
 # externos (zapi-webhook, campaign-webhook, instagram-webhook).
 [functions.asaas-webhook]
+verify_jwt = false
+
+# Reconciliação de etiquetas do WhatsApp Business: chamada pelo pg_cron via
+# net.http_post SEM JWT (como recompute-org-usage). A função se protege sozinha:
+# caller anônimo é limitado a 1 execução a cada 30min via platform_job_runs.
+[functions.sync-whatsapp-labels]
 verify_jwt = false

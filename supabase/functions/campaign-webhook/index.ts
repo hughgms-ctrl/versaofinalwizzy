@@ -52,6 +52,118 @@ function extractPhone(item: AnyObj): string {
     return String(raw).replace(/\D/g, '');
 }
 
+// DDDs brasileiros válidos — usado para decidir se um número cru de 10/11 dígitos
+// é nacional (e merece o prefixo 55) ou já é internacional.
+const VALID_DDDS = new Set([
+    11, 12, 13, 14, 15, 16, 17, 18, 19,
+    21, 22, 24, 27, 28,
+    31, 32, 33, 34, 35, 37, 38,
+    41, 42, 43, 44, 45, 46, 47, 48, 49,
+    51, 53, 54, 55,
+    61, 62, 63, 64, 65, 66, 67, 68, 69,
+    71, 73, 74, 75, 77, 79,
+    81, 82, 83, 84, 85, 86, 87, 88, 89,
+    91, 92, 93, 94, 95, 96, 97, 98, 99,
+]);
+
+function uniquePhones(values: Array<string | null | undefined>): string[] {
+    return Array.from(new Set(values.filter((value): value is string => !!value && value.length >= 8)));
+}
+
+// Retorna o número em E.164 completo, de forma country-aware.
+// - Já começa com 55 (Brasil) → mantém.
+// - Número NACIONAL brasileiro cru (10 díg. = DDD+8; ou 11 díg. com o 9º dígito
+//   de celular) com DDD válido → prefixa 55.
+// - Qualquer outro caso é tratado como número internacional que JÁ traz o
+//   código de país (ex.: EUA +1) → preserva. Forçar 55 aqui corromperia
+//   números estrangeiros (ex.: 18572664160 viraria 5518572664160).
+function withCountryCode(phone: string): string {
+    const clean = phone.replace(/\D/g, '');
+    if (!clean) return '';
+    if (clean.startsWith('55')) return clean;
+    const ddd = parseInt(clean.substring(0, 2), 10);
+    if (clean.length === 10 && VALID_DDDS.has(ddd)) return `55${clean}`;
+    if (clean.length === 11 && clean[2] === '9' && VALID_DDDS.has(ddd)) return `55${clean}`;
+    return clean;
+}
+
+function withoutCountryCode(phone: string): string {
+    const clean = phone.replace(/\D/g, '');
+    return clean.startsWith('55') ? clean.slice(2) : clean;
+}
+
+/**
+ * Todas as representações plausíveis do mesmo número. Um gateway de pagamento
+ * manda o telefone no formato que quiser (com/sem 55, com/sem o nono dígito),
+ * enquanto o contato foi gravado pelo zapi-webhook no formato do WhatsApp.
+ * Sem isto, a busca por igualdade exata falha e nasce um contato duplicado.
+ * Mesma lógica de zapi-webhook para as duas portas de entrada concordarem.
+ */
+function phoneVariants(raw: string): string[] {
+    const clean = raw.replace(/@.*$/, '').replace(/\D/g, '');
+    if (!clean) return [];
+
+    const variants = new Set<string>();
+    const add = (value: string) => {
+        if (!value) return;
+        variants.add(value);
+        const with55 = withCountryCode(value);
+        if (with55) variants.add(with55);
+        const no55 = withoutCountryCode(value);
+        if (no55) variants.add(no55);
+    };
+
+    add(clean);
+
+    const local = withoutCountryCode(clean);
+    if (local.length === 10) {
+        // DDD + 8 dígitos -> possível forma de celular com o 9 depois do DDD
+        add(`${local.slice(0, 2)}9${local.slice(2)}`);
+    }
+    if (local.length === 11 && local[2] === '9') {
+        // DDD + 9 + 8 dígitos -> forma legada sem o 9
+        add(`${local.slice(0, 2)}${local.slice(3)}`);
+    }
+
+    return uniquePhones(Array.from(variants));
+}
+
+function canonicalPhone(raw: string): string {
+    const clean = raw.replace(/@.*$/, '').replace(/\D/g, '');
+    if (!clean) return '';
+    return withCountryCode(clean) || clean;
+}
+
+/**
+ * Escolhe qual contato vence quando mais de uma variante casa. Mesmo critério do
+ * zapi-webhook: canônico primeiro, depois quem tem código de país, depois o mais
+ * recente. Assim o webhook de pagamento e a entrada de WhatsApp elegem o MESMO
+ * contato — se divergissem, a tag iria para um registro e a conversa para outro.
+ */
+function pickBestContact(contacts: AnyObj[], canonical: string): AnyObj | undefined {
+    return [...contacts].sort((a, b) => {
+        const aCanonical = canonicalPhone(a.phone || '') === canonical || a.metadata?.canonical_phone === canonical;
+        const bCanonical = canonicalPhone(b.phone || '') === canonical || b.metadata?.canonical_phone === canonical;
+        if (aCanonical !== bCanonical) return aCanonical ? -1 : 1;
+        const aHasCountryCode = String(a.phone || '').replace(/\D/g, '').startsWith('55');
+        const bHasCountryCode = String(b.phone || '').replace(/\D/g, '').startsWith('55');
+        if (aHasCountryCode !== bHasCountryCode) return aHasCountryCode ? -1 : 1;
+        return new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime();
+    })[0];
+}
+
+// ATENÇÃO: whatsapp_instances NÃO tem a coluna logical_phone. Pedir uma coluna
+// inexistente faz o PostgREST rejeitar o SELECT inteiro (não é campo nulo, é erro),
+// e como o erro era ignorado a instância vinha sempre null — a campanha então
+// procurava conversa com whatsapp_instance_id IS NULL e pegava a conversa errada.
+const INSTANCE_COLUMNS = 'id, phone_number';
+
+/**
+ * Regra de negócio: campanha de um workspace SÓ envia pelo número desse workspace.
+ * Se o workspace não tem número, a campanha não envia por nenhum outro — retorna
+ * `blocked`. NÃO existe fallback por organização quando há workspace; o fallback
+ * só vale para campanha sem workspace nenhum.
+ */
 async function resolveCampaignInstance(supabase: any, organizationId: string, workspaceId?: string | null) {
     if (workspaceId) {
         const { data: workspace } = await supabase
@@ -61,20 +173,24 @@ async function resolveCampaignInstance(supabase: any, organizationId: string, wo
             .eq('organization_id', organizationId)
             .maybeSingle();
 
-        if (workspace?.whatsapp_instance_id) {
-            const { data: instance } = await supabase
-                .from('whatsapp_instances')
-                .select('id, phone_number, logical_phone')
-                .eq('id', workspace.whatsapp_instance_id)
-                .eq('organization_id', organizationId)
-                .maybeSingle();
-            if (instance?.id) return instance;
+        if (!workspace?.whatsapp_instance_id) {
+            return { instance: null, blocked: true };
         }
+
+        const { data: instance, error } = await supabase
+            .from('whatsapp_instances')
+            .select(INSTANCE_COLUMNS)
+            .eq('id', workspace.whatsapp_instance_id)
+            .eq('organization_id', organizationId)
+            .maybeSingle();
+        if (error) console.error('[campaign-webhook] erro ao buscar instância do workspace:', error);
+
+        return { instance: instance || null, blocked: !instance?.id };
     }
 
-    const { data: instance } = await supabase
+    const { data: instance, error } = await supabase
         .from('whatsapp_instances')
-        .select('id, phone_number, logical_phone')
+        .select(INSTANCE_COLUMNS)
         .eq('organization_id', organizationId)
         .eq('status', 'connected')
         .eq('is_active', true)
@@ -82,7 +198,8 @@ async function resolveCampaignInstance(supabase: any, organizationId: string, wo
         .limit(1)
         .maybeSingle();
 
-    return instance || null;
+    if (error) console.error('[campaign-webhook] erro ao buscar instância da org:', error);
+    return { instance: instance || null, blocked: false };
 }
 
 Deno.serve(async (req) => {
@@ -135,7 +252,25 @@ Deno.serve(async (req) => {
             });
         }
 
-        const campaignInstance = await resolveCampaignInstance(supabase, campaign.organization_id, campaign.workspace_id);
+        const { instance: campaignInstance, blocked: instanceBlocked } = await resolveCampaignInstance(
+            supabase,
+            campaign.organization_id,
+            campaign.workspace_id,
+        );
+
+        // Workspace da campanha sem número: recusamos AQUI, antes de criar contato
+        // ou conversa. Antes seguíamos em frente e a conversa nascia num estado que
+        // nunca conseguiria enviar.
+        if (instanceBlocked) {
+            return new Response(JSON.stringify({
+                error: 'O workspace desta campanha não tem número de WhatsApp vinculado. Vincule um número ao workspace para a campanha poder enviar.',
+                reason: 'campaign_workspace_without_number',
+                campaign_workspace_id: campaign.workspace_id,
+            }), {
+                status: 422,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+        }
 
         // 3. Body: objeto único ou array -> normaliza para array
         let body: unknown;
@@ -177,7 +312,13 @@ Deno.serve(async (req) => {
         const orgId = campaign.organization_id;
         const window = computeWindow(campaign.start_time, campaign.end_time);
 
-        const results: Array<{ phone: string; conversation_id: string | null; status: string; error?: string }> = [];
+        const results: Array<{
+            phone: string;
+            conversation_id: string | null;
+            status: string;
+            error?: string;
+            conversation_workspace_id?: string | null;
+        }> = [];
         let processed = 0;
         let queued = 0;
         let skipped = 0;
@@ -192,32 +333,54 @@ Deno.serve(async (req) => {
             }
 
             try {
-            // Upsert do contato por (organization_id, phone)
+            // Upsert do contato por (organization_id, phone). A busca testa TODAS as
+            // representações do número, não só a string recebida: o contato quase
+            // sempre já existe (gravado pelo zapi-webhook em formato WhatsApp) e o
+            // gateway manda o telefone em outro formato. Igualdade exata aqui gerava
+            // contato duplicado, e a tag acabava num registro sem conversa.
+            const variants = phoneVariants(phone);
+            const canonical = canonicalPhone(phone);
+
             let contactId: string | null = null;
-            const { data: existingContact } = await supabase
+            const { data: matchingContacts } = await supabase
                 .from('contacts')
-                .select('id')
+                .select('id, phone, name, email, metadata, updated_at, created_at')
                 .eq('organization_id', orgId)
-                .eq('phone', phone)
-                .maybeSingle();
+                .in('phone', variants.length > 0 ? variants : [phone])
+                .order('updated_at', { ascending: false })
+                .limit(20);
+
+            const existingContact = pickBestContact(matchingContacts || [], canonical);
 
             if (existingContact) {
                 contactId = existingContact.id;
                 const updates: AnyObj = {};
                 if (item.name) updates.name = item.name;
                 if (item.email) updates.email = item.email;
-                if (Object.keys(updates).length > 0) {
-                    await supabase.from('contacts').update(updates).eq('id', contactId);
-                }
+                // Registra os formatos já vistos deste número para que buscas futuras
+                // reconheçam o contato mesmo vindo de outra origem.
+                const metadata = { ...(existingContact.metadata || {}) };
+                updates.metadata = {
+                    ...metadata,
+                    phone_aliases: uniquePhones([...(metadata.phone_aliases || []), phone, canonical, ...variants]),
+                    canonical_phone: canonical,
+                };
+                await supabase.from('contacts').update(updates).eq('id', contactId);
             } else {
                 const { data: newContact, error: contactError } = await supabase
                     .from('contacts')
                     .insert({
                         organization_id: orgId,
-                        phone,
+                        // Grava em E.164 canônico, igual ao zapi-webhook — senão o
+                        // próximo contato vindo do WhatsApp não encontraria este.
+                        phone: canonical || phone,
                         name: item.name || null,
                         email: item.email || null,
                         workspace_id: campaign.workspace_id || null,
+                        metadata: {
+                            phone_aliases: uniquePhones([phone, canonical, ...variants]),
+                            canonical_phone: canonical,
+                        },
                     })
                     .select('id')
                     .single();
@@ -232,15 +395,22 @@ Deno.serve(async (req) => {
 
             // Encontra ou cria a conversa
             let conversationId: string | null = null;
+            let conversationWorkspaceId: string | null = null;
             let existingConversationQuery = supabase
                 .from('conversations')
-                .select('id')
+                .select('id, workspace_id')
                 .eq('organization_id', orgId)
                 .eq('contact_id', contactId);
 
-            existingConversationQuery = campaignInstance?.id
-                ? existingConversationQuery.eq('whatsapp_instance_id', campaignInstance.id)
-                : existingConversationQuery.is('whatsapp_instance_id', null);
+            // Regra: campanha de um workspace atua SOMENTE sobre a conversa daquele
+            // workspace. Sem este escopo, a busca por instância pegava a conversa do
+            // contato em OUTRO workspace, e o fluxo passava a enviar (ou a ser
+            // bloqueado) pelo número de um workspace que não é o da campanha.
+            existingConversationQuery = campaign.workspace_id
+                ? existingConversationQuery.eq('workspace_id', campaign.workspace_id)
+                : campaignInstance?.id
+                    ? existingConversationQuery.eq('whatsapp_instance_id', campaignInstance.id)
+                    : existingConversationQuery.is('whatsapp_instance_id', null);
 
             const { data: existingConv } = await existingConversationQuery
                 .order('updated_at', { ascending: false })
@@ -248,7 +418,11 @@ Deno.serve(async (req) => {
                 .maybeSingle();
 
             if (existingConv) {
+                // ATENÇÃO: conversa preexistente mantém o workspace que já tinha.
+                // Se ele for diferente do workspace da campanha, é o workspace ANTIGO
+                // que decide por qual número o fluxo envia (ou se envia).
                 conversationId = existingConv.id;
+                conversationWorkspaceId = existingConv.workspace_id || null;
                 await supabase.from('conversations').update({ status: 'open' }).eq('id', conversationId);
             } else {
                 const { data: newConv, error: convError } = await supabase
@@ -259,7 +433,7 @@ Deno.serve(async (req) => {
                         status: 'open',
                         workspace_id: campaign.workspace_id || null,
                         whatsapp_instance_id: campaignInstance?.id || null,
-                        source_phone: campaignInstance?.phone_number || campaignInstance?.logical_phone || null,
+                        source_phone: campaignInstance?.phone_number || null,
                         metadata: { source: 'campaign_webhook', campaign_id: campaign.id },
                     })
                     .select('id')
@@ -271,25 +445,49 @@ Deno.serve(async (req) => {
                     continue;
                 }
                 conversationId = newConv.id;
+                conversationWorkspaceId = campaign.workspace_id || null;
             }
 
             // Variáveis = todo o payload do item, com o telefone normalizado.
+            // Usa o canônico (E.164), não o cru: um gateway que mande "11987654321"
+            // sem código de país deixaria {{phone}} inutilizável para envio.
             // Inclui identificação da campanha que disparou o fluxo (id é único; name é para exibição).
-            const variables: AnyObj = { ...item, phone, campaign_id: campaign.id, campaign_name: campaign.name };
+            const variables: AnyObj = { ...item, phone: canonical || phone, campaign_id: campaign.id, campaign_name: campaign.name };
 
             if (window.within) {
-                // Dentro da janela -> dispara o fluxo agora (em background) e conta o gatilho.
-                await supabase.rpc('increment_campaign_count', { campaign_id: campaign.id });
-
-                const flowPromise = fetch(`${supabaseUrl}/functions/v1/flow-execute`, {
+                // Dentro da janela -> dispara o fluxo agora.
+                // O flow-execute responde assim que enfileira a execução em background
+                // (EdgeRuntime.waitUntil), então o await aqui é barato. Disparar sem
+                // aguardar mata a requisição junto com o isolate quando esta função
+                // retorna, e o fluxo nunca chega a rodar.
+                const flowResp = await fetch(`${supabaseUrl}/functions/v1/flow-execute`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseKey}` },
-                    body: JSON.stringify({ flowId: campaign.flow_id, conversationId, variables }),
+                    body: JSON.stringify({ flowId: campaign.flow_id, conversationId, isFromOrchestrator: true, variables }),
+                }).catch((err) => {
+                    console.error('[campaign-webhook] flow-execute error:', err);
+                    return null;
                 });
-                flowPromise.catch((err) => console.error('[campaign-webhook] flow-execute error:', err));
+
+                if (!flowResp || !flowResp.ok) {
+                    const detail = flowResp ? await flowResp.text().catch(() => '') : 'fetch falhou';
+                    console.error('[campaign-webhook] flow-execute rejeitou o disparo:', detail);
+                    skipped++;
+                    results.push({
+                        phone,
+                        conversation_id: conversationId,
+                        conversation_workspace_id: conversationWorkspaceId,
+                        status: 'error_flow',
+                        error: detail,
+                    });
+                    continue;
+                }
+
+                // Só conta o gatilho depois que o fluxo foi aceito.
+                await supabase.rpc('increment_campaign_count', { campaign_id: campaign.id });
 
                 processed++;
-                results.push({ phone, conversation_id: conversationId, status: 'triggered' });
+                results.push({ phone, conversation_id: conversationId, conversation_workspace_id: conversationWorkspaceId, status: 'triggered' });
             } else {
                 // Fora da janela -> enfileira para o próximo horário válido.
                 await supabase.from('campaign_queue').insert({
@@ -321,7 +519,15 @@ Deno.serve(async (req) => {
             contacts_processed: processed + queued,
         });
 
-        return new Response(JSON.stringify({ success: true, version: 'diag-v3', processed, queued, skipped, results }), {
+        return new Response(JSON.stringify({
+            success: true,
+            version: 'diag-v7',
+            campaign_workspace_id: campaign.workspace_id || null,
+            processed,
+            queued,
+            skipped,
+            results,
+        }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
     } catch (error) {

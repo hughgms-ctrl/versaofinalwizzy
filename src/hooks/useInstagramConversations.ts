@@ -20,6 +20,9 @@ export interface InstagramConversationRow {
   status: 'open' | 'pending' | 'resolved' | 'archived';
   last_message_at: string | null;
   last_message_direction: 'inbound' | 'outbound' | null;
+  // Última mensagem recebida DO contato — é ela que abre a janela de 24h da
+  // Meta. Comentário não abre, e mensagem nossa também não.
+  last_inbound_at: string | null;
   unread_count: number;
   created_at: string;
   contact: InstagramConversationContact | null;
@@ -91,7 +94,11 @@ export function useSendInstagramMessage() {
         headers: { Authorization: `Bearer ${session?.access_token}` },
         body: { conversationId, text },
       });
-      if (response.error) throw new Error(response.error.message);
+      // A função responde com motivos acionáveis (janela de 24h fechada, teto de
+      // envio, recusa da Meta), e todos vinham parar no atendente como "Edge
+      // Function returned a non-2xx status code": o supabase-js só expõe o corpo
+      // da resposta em error.context.
+      if (response.error) throw await getFunctionError(response.error);
       if (response.data?.error) throw new Error(response.data.error);
       return response.data;
     },
@@ -116,4 +123,19 @@ export function useMarkInstagramConversationRead() {
       queryClient.invalidateQueries({ queryKey: ['instagram-conversations'] });
     },
   });
+}
+
+// Mesmo padrão de useWorkspaces.ts / AddUserDialog.tsx: o supabase-js devolve
+// sempre a mesma mensagem genérica para qualquer status não-2xx e guarda o corpo
+// real em error.context.
+async function getFunctionError(error: any) {
+  if (error?.context && typeof error.context.json === 'function') {
+    try {
+      const body = await error.context.json();
+      if (body?.error) return new Error(body.error);
+    } catch {
+      // Fall back to the Supabase error message below.
+    }
+  }
+  return error;
 }

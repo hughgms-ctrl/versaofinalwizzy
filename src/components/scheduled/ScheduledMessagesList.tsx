@@ -52,6 +52,7 @@ import { cn } from '@/lib/utils';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { EditScheduledMessageDialog } from './EditScheduledMessageDialog';
 import { CreateScheduledMessageDialog } from './CreateScheduledMessageDialog';
+import { ScheduledMessageDetailDialog } from './ScheduledMessageDetailDialog';
 
 const statusConfig = {
   pending: { label: 'Pendente', icon: Clock, color: 'bg-blue-500/10 text-blue-500' },
@@ -142,6 +143,7 @@ export function ScheduledMessagesList() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [editMessage, setEditMessage] = useState<ScheduledMessage | null>(null);
   const [rescheduleMessage, setRescheduleMessage] = useState<ScheduledMessage | null>(null);
+  const [detailMessage, setDetailMessage] = useState<ScheduledMessage | null>(null);
   const [pageSize, setPageSize] = useState(10);
   const [pendingPage, setPendingPage] = useState(1);
   const [historyPage, setHistoryPage] = useState(1);
@@ -216,6 +218,7 @@ export function ScheduledMessagesList() {
                 onDelete={setDeleteId}
                 onEdit={setEditMessage}
                 onReschedule={setRescheduleMessage}
+                onOpenDetail={setDetailMessage}
               />
             ))}
           </div>
@@ -244,6 +247,7 @@ export function ScheduledMessagesList() {
                 onDelete={setDeleteId}
                 onEdit={setEditMessage}
                 onReschedule={setRescheduleMessage}
+                onOpenDetail={setDetailMessage}
               />
             ))}
           </div>
@@ -256,6 +260,13 @@ export function ScheduledMessagesList() {
           />
         </div>
       )}
+
+      {/* Painel do disparo: progresso, fila e não entregues (clique no card) */}
+      <ScheduledMessageDetailDialog
+        open={!!detailMessage}
+        onOpenChange={(open) => !open && setDetailMessage(null)}
+        message={detailMessage}
+      />
 
       {/* Edit dialog */}
       <EditScheduledMessageDialog
@@ -295,13 +306,15 @@ function ScheduledMessageCard({
   onCancel,
   onDelete,
   onEdit,
-  onReschedule
+  onReschedule,
+  onOpenDetail
 }: {
   message: ScheduledMessage;
   onCancel: (id: string) => void;
   onDelete: (id: string) => void;
   onEdit: (message: ScheduledMessage) => void;
   onReschedule: (message: ScheduledMessage) => void;
+  onOpenDetail: (message: ScheduledMessage) => void;
 }) {
   const status = statusConfig[message.status];
   const StatusIcon = status.icon;
@@ -326,7 +339,18 @@ function ScheduledMessageCard({
   const delay = (message as any).delay_between_contacts;
 
   return (
-    <div className="p-4 rounded-lg border bg-card hover:bg-accent/50 transition-colors">
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => onOpenDetail(message)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onOpenDetail(message);
+        }
+      }}
+      className="p-4 rounded-lg border bg-card hover:bg-accent/50 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-3 mb-2">
@@ -379,7 +403,8 @@ function ScheduledMessageCard({
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        {/* Ações do card: impedem o clique de borbulhar e abrir o painel. */}
+        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
           <Badge variant="secondary" className={cn("text-xs", status.color)}>
             <StatusIcon className={cn("h-3 w-3 mr-1", message.status === 'processing' && 'animate-spin')} />
             {status.label}

@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './useAuth';
 import { toast } from './use-toast';
@@ -25,10 +25,116 @@ export interface Contact {
   }[];
 }
 
-// Cap server-side: traz os N contatos mais recentes (created_at desc) em vez da
-// tabela inteira. Busca/tag/data continuam client-side dentro desse conjunto, e
-// a lista é virtualizada na UI. Se a contagem bater no cap, a UI avisa.
+// Cap server-side usado por consumidores que precisam da lista inteira de uma vez
+// (ex.: seletor de participantes de grupo). A página de contatos usa
+// useInfiniteContacts, que pagina sob demanda.
 export const CONTACTS_CAP = 1000;
+
+// Tamanho de cada página do scroll infinito da página de contatos.
+export const CONTACTS_PAGE_SIZE = 100;
+
+const CONTACT_SELECT = `
+  *,
+  tags:contact_tags(
+    id,
+    tag:tags(id, name, color)
+  )
+`;
+
+function applyWorkspaceFilter<T extends { is: any; eq: any }>(query: T, selectedWorkspaceId: string | null | undefined): T {
+  if (!selectedWorkspaceId) return query;
+  if (selectedWorkspaceId === 'unassigned') return query.is('workspace_id', null);
+  return query.eq('workspace_id', selectedWorkspaceId);
+}
+
+// Escapa os caracteres que o PostgREST usa como separadores dentro de `or(...)`
+// e os curingas do LIKE, pra que uma busca com vírgula/parêntese/% não quebre o
+// filtro (ou vaze como curinga).
+function escapeSearchTerm(term: string): string {
+  return term.replace(/[\\%_]/g, m => `\\${m}`).replace(/[(),]/g, ' ');
+}
+
+/**
+ * Lista paginada de contatos (scroll infinito). A busca por texto roda no
+ * servidor pra alcançar a base inteira, não só as páginas já carregadas.
+ */
+export function useInfiniteContacts(searchTerm?: string) {
+  const { session } = useAuth();
+  const { selectedWorkspaceId } = useWorkspaceContext();
+  const search = (searchTerm || '').trim();
+
+  return useInfiniteQuery({
+    queryKey: ['contacts', 'infinite', selectedWorkspaceId, search],
+    initialPageParam: 0,
+    queryFn: async ({ pageParam }): Promise<Contact[]> => {
+      const from = (pageParam as number) * CONTACTS_PAGE_SIZE;
+      const to = from + CONTACTS_PAGE_SIZE - 1;
+
+      let query = supabase
+        .from('contacts')
+        .select(CONTACT_SELECT)
+        .order('created_at', { ascending: false })
+        .range(from, to);
+
+      query = applyWorkspaceFilter(query as any, selectedWorkspaceId) as any;
+
+      if (search) {
+        const term = escapeSearchTerm(search);
+        // Telefone é gravado só com dígitos; buscar "(11) 99999" deve achar.
+        const digits = search.replace(/\D/g, '');
+        const clauses = [
+          `name.ilike.%${term}%`,
+          `email.ilike.%${term}%`,
+          `phone.ilike.%${digits || term}%`,
+        ];
+        query = query.or(clauses.join(','));
+      }
+
+      const { data, error } = await query;
+
+      if (error) throw error;
+      return (data || []) as unknown as Contact[];
+    },
+    // Página cheia => provavelmente há mais; página curta => fim da lista.
+    getNextPageParam: (lastPage, allPages) =>
+      lastPage.length === CONTACTS_PAGE_SIZE ? allPages.length : undefined,
+    enabled: !!session,
+  });
+}
+
+/** Contagem total de contatos (respeita o workspace e a busca ativa). */
+export function useContactsCount(searchTerm?: string) {
+  const { session } = useAuth();
+  const { selectedWorkspaceId } = useWorkspaceContext();
+  const search = (searchTerm || '').trim();
+
+  return useQuery({
+    queryKey: ['contacts', 'count', selectedWorkspaceId, search],
+    queryFn: async (): Promise<number> => {
+      let query = supabase
+        .from('contacts')
+        .select('id', { count: 'exact', head: true });
+
+      query = applyWorkspaceFilter(query as any, selectedWorkspaceId) as any;
+
+      if (search) {
+        const term = escapeSearchTerm(search);
+        const digits = search.replace(/\D/g, '');
+        query = query.or([
+          `name.ilike.%${term}%`,
+          `email.ilike.%${term}%`,
+          `phone.ilike.%${digits || term}%`,
+        ].join(','));
+      }
+
+      const { count, error } = await query;
+
+      if (error) throw error;
+      return count ?? 0;
+    },
+    enabled: !!session,
+  });
+}
 
 export function useContacts() {
   const { session } = useAuth();
@@ -39,28 +145,16 @@ export function useContacts() {
     queryFn: async (): Promise<Contact[]> => {
       let query = supabase
         .from('contacts')
-        .select(`
-          *,
-          tags:contact_tags(
-            id,
-            tag:tags(id, name, color)
-          )
-        `)
+        .select(CONTACT_SELECT)
         .order('created_at', { ascending: false })
         .limit(CONTACTS_CAP);
 
-      if (selectedWorkspaceId) {
-        if (selectedWorkspaceId === 'unassigned') {
-          query = query.is('workspace_id', null);
-        } else {
-          query = query.eq('workspace_id', selectedWorkspaceId);
-        }
-      }
+      query = applyWorkspaceFilter(query as any, selectedWorkspaceId) as any;
 
       const { data, error } = await query;
 
       if (error) throw error;
-      return (data || []) as Contact[];
+      return (data || []) as unknown as Contact[];
     },
     enabled: !!session,
   });
@@ -99,6 +193,7 @@ export function useUpdateContact() {
 export function useCreateContact() {
   const queryClient = useQueryClient();
   const { profile } = useAuth();
+  const { selectedWorkspaceId } = useWorkspaceContext();
 
   return useMutation({
     mutationFn: async (data: Partial<Contact>) => {
@@ -128,12 +223,24 @@ export function useCreateContact() {
         }
       }
 
+      // Herda o workspace selecionado quando o chamador não informou um. Sem
+      // isto o contato nasce com workspace_id null e some da própria lista que
+      // acabou de criá-lo (a lista filtra por workspace), além de esbarrar na
+      // policy de contacts, que exige workspace_id não nulo.
+      const workspaceId =
+        data.workspace_id !== undefined
+          ? data.workspace_id
+          : selectedWorkspaceId && selectedWorkspaceId !== 'unassigned'
+            ? selectedWorkspaceId
+            : null;
+
       const { data: newContact, error } = await supabase
         .from('contacts')
         .insert({
           ...data,
           phone: formattedPhone || data.phone, // use formatted if available
           organization_id: profile.organization_id,
+          workspace_id: workspaceId,
         } as any)
         .select()
         .single();

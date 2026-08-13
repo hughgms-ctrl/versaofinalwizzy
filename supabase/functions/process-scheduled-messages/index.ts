@@ -24,6 +24,7 @@ const CONTACT_PAGE_SIZE = 25;
 
 interface ScheduledMessage {
   id: string;
+  name: string | null;
   organization_id: string;
   workspace_id: string | null;
   content_type: 'message' | 'flow';
@@ -46,10 +47,13 @@ interface ScheduledMessage {
   batch_current_target: number | null;
   batch_sent_count: number | null;
   batch_paused_until: string | null;
+  // Retrato congelado da última execução (ver buildRunSummary).
+  last_run_summary: Record<string, unknown> | null;
 }
 
 interface Contact {
   id: string;
+  name: string | null;
   phone: string;
   organization_id: string;
 }
@@ -362,7 +366,8 @@ async function fetchPendingContactPage(
 ): Promise<Contact[]> {
   const { data } = await supabase
     .from('scheduled_message_contacts')
-    .select('contact_id, contacts(id, phone, organization_id)')
+    // `name` é obrigatório aqui: alimenta a variável {{name}} do fluxo agendado.
+    .select('contact_id, contacts(id, name, phone, organization_id)')
     .eq('scheduled_message_id', scheduledId)
     .eq('status', 'pending')
     .limit(pageSize);
@@ -454,8 +459,17 @@ async function sendOneContact(
 async function runFlowForContact(
   scheduled: ScheduledMessage,
   conversation: any,
+  contact: Contact,
 ): Promise<void> {
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+  // Sem isto o fluxo agendado roda com variables={} e {{name}} sai vazio —
+  // ao contrário da campanha, que já semeia nome/telefone.
+  const variables = {
+    name: contact.name || '',
+    phone: contact.phone || '',
+    schedule_id: scheduled.id,
+    schedule_name: scheduled.name || '',
+  };
   const r = await fetch(`${supabaseUrl}/functions/v1/flow-execute`, {
     method: 'POST',
     headers: {
@@ -466,6 +480,7 @@ async function runFlowForContact(
       flowId: scheduled.flow_id,
       conversationId: conversation.id,
       organizationId: scheduled.organization_id,
+      variables,
     }),
   });
   if (!r.ok) {
@@ -557,7 +572,7 @@ async function processContactCampaign(
 
       try {
         if (isFlow) {
-          await runFlowForContact(scheduled, conversation);
+          await runFlowForContact(scheduled, conversation, contact);
         } else {
           await sendOneContact(supabase, scheduled, contact, conversation, scheduledInstanceId);
         }
@@ -614,6 +629,12 @@ async function finalizeCampaign(
   const sent = sentCount || 0;
   const fail = failCount || 0;
 
+  // Retrato congelado desta execução para o painel do disparo. Precisa ser
+  // montado ANTES de resetProgressForRecurrence(), que apaga/zera as linhas de
+  // progresso — sem isto, o histórico da ocorrência some quando a próxima
+  // começa e o painel passaria a mostrar os números da execução seguinte.
+  const runSummary = await buildRunSummary(supabase, scheduled, sent, fail);
+
   // Puxa a última mensagem de erro real para o resumo.
   let lastError: string | undefined;
   if (fail > 0) {
@@ -637,6 +658,7 @@ async function finalizeCampaign(
         error_message: lastError || 'Falha em todos os envios',
         last_executed_at: new Date().toISOString(),
         execution_count: (scheduled.execution_count || 0) + 1,
+        last_run_summary: runSummary,
       })
       .eq('id', scheduled.id);
     return 'failed';
@@ -646,7 +668,11 @@ async function finalizeCampaign(
     // Nenhum contato-alvo encontrado.
     await supabase
       .from('scheduled_messages')
-      .update({ status: 'failed', error_message: 'Nenhum contato encontrado para envio' })
+      .update({
+        status: 'failed',
+        error_message: 'Nenhum contato encontrado para envio',
+        last_run_summary: runSummary,
+      })
       .eq('id', scheduled.id);
     return 'failed';
   }
@@ -663,9 +689,52 @@ async function finalizeCampaign(
 
   await supabase
     .from('scheduled_messages')
-    .update({ ...next, error_message: partialError })
+    .update({ ...next, error_message: partialError, last_run_summary: runSummary })
     .eq('id', scheduled.id);
   return 'sent-or-recurring';
+}
+
+// Teto de contatos não entregues guardados no resumo. É uma lista para o
+// usuário reenviar à mão; acima disso vira ruído e incha o JSON à toa.
+const SUMMARY_UNDELIVERED_LIMIT = 200;
+
+/**
+ * Monta o retrato congelado da execução que acabou de fechar.
+ *
+ * Só guarda o que o produto mostra: contagens e QUEM não recebeu (nome/telefone).
+ * A mensagem de erro técnica de cada contato fica DE FORA de propósito — ela não
+ * é exibida ao usuário final, só existe nos logs e no SQL de suporte.
+ */
+async function buildRunSummary(
+  supabase: any,
+  scheduled: ScheduledMessage,
+  sent: number,
+  fail: number,
+): Promise<Record<string, unknown>> {
+  let undelivered: Array<{ name: string | null; phone: string | null }> = [];
+
+  if (fail > 0) {
+    const { data } = await supabase
+      .from('scheduled_message_contacts')
+      .select('contact:contacts(name, phone)')
+      .eq('scheduled_message_id', scheduled.id)
+      .eq('status', 'failed')
+      .limit(SUMMARY_UNDELIVERED_LIMIT);
+
+    undelivered = (data || [])
+      .map((row: any) => row.contact)
+      .filter(Boolean)
+      .map((c: any) => ({ name: c.name ?? null, phone: c.phone ?? null }));
+  }
+
+  return {
+    finished_at: new Date().toISOString(),
+    total: sent + fail,
+    sent,
+    failed: fail,
+    undelivered,
+    undelivered_truncated: fail > undelivered.length,
+  };
 }
 
 // Prepara scheduled_message_contacts para a próxima ocorrência de uma recorrência.

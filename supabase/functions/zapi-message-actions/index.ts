@@ -1,6 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { decode as decodeBase64 } from 'https://deno.land/std@0.168.0/encoding/base64.ts';
-import { getUserOrganizationIds } from '../_shared/access.ts';
+import { assertActiveOrganizationAccess, AccessError, getUserOrganizationIds } from '../_shared/access.ts';
 
 const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
@@ -119,6 +119,108 @@ async function loadConnectionSettings(supabase: any) {
         evolutionBaseUrl: normalizeBaseUrl(value.evolution_base_url || Deno.env.get('EVOLUTION_BASE_URL')),
         evolutionApiKey: value.evolution_api_key || Deno.env.get('EVOLUTION_API_KEY') || '',
     };
+}
+
+/**
+ * Credenciais/endereço do provedor para UMA instância. Extraído de dentro do
+ * delete unitário para poder ser resolvido UMA vez por instância no delete em
+ * lote — sem isso, um disparo de 500 mensagens releria platform_settings e a
+ * linha da instância 500 vezes.
+ */
+function resolveInstanceTransport(instance: any, settings: any) {
+    const provider = instance.provider === 'evolution' || instance.evolution_instance_name || instance.evolution_instance_id
+        ? 'evolution'
+        : 'uazapi';
+    return {
+        provider,
+        token: provider === 'evolution'
+            ? (instance.evolution_api_key || settings.evolutionApiKey || instance.zapi_token)
+            : instance.zapi_token,
+        baseUrl: provider === 'evolution' ? settings.evolutionBaseUrl : settings.uazapiBaseUrl,
+        instanceName: instance.evolution_instance_name || instance.zapi_instance_id || instance.evolution_instance_id || '',
+    };
+}
+
+/**
+ * Chama o "apagar para todos" no provedor. A lista de candidatos existe porque
+ * Evolution e UAZAPI mudaram o formato do payload entre versões e não há como
+ * saber qual a VPS do cliente aceita: tentamos do mais provável ao mais antigo
+ * e paramos no primeiro 2xx.
+ */
+async function revokeOnProvider(
+    transport: { provider: string; token: string; baseUrl: string; instanceName: string },
+    providerMessageId: string,
+    number: string,
+): Promise<{ ok: boolean; providerResult?: any; error?: string }> {
+    const { provider, token, baseUrl, instanceName } = transport;
+    const remoteJid = number ? `${number}@s.whatsapp.net` : undefined;
+    const alternateRemoteJid = number ? `${number}@s.whatsapp.com` : undefined;
+    const key = { id: providerMessageId, remoteJid, fromMe: true };
+
+    const candidates = provider === 'evolution'
+        ? [
+            { method: 'DELETE', endpoint: `${baseUrl}/chat/deleteMessageForEveryone/${instanceName}`, headers: { apikey: token }, body: { id: providerMessageId, remoteJid, fromMe: true } },
+            { method: 'DELETE', endpoint: `${baseUrl}/chat/deleteMessageForEveryone/${instanceName}`, headers: { apikey: token }, body: { id: providerMessageId, remoteJid: alternateRemoteJid, fromMe: true } },
+            { method: 'POST', endpoint: `${baseUrl}/chat/deleteMessageForEveryone/${instanceName}`, headers: { apikey: token }, body: { id: providerMessageId, remoteJid, fromMe: true } },
+            { method: 'POST', endpoint: `${baseUrl}/chat/deleteMessageForEveryone/${instanceName}`, headers: { apikey: token }, body: { key } },
+            { method: 'POST', endpoint: `${baseUrl}/message/delete/${instanceName}`, headers: { apikey: token }, body: { id: providerMessageId, key } },
+        ]
+        : [
+            { method: 'POST', endpoint: `${baseUrl}/message/delete`, headers: { token }, body: { messageId: providerMessageId, number, phone: number, owner: true } },
+            { method: 'POST', endpoint: `${baseUrl}/message/delete`, headers: { token }, body: { id: providerMessageId, number, phone: number, owner: true } },
+            { method: 'POST', endpoint: `${baseUrl}/message/delete`, headers: { token }, body: { key, number, phone: number, owner: true } },
+            { method: 'POST', endpoint: `${baseUrl}/chat/delete`, headers: { token }, body: { messageId: providerMessageId, number, phone: number, owner: true } },
+            { method: 'POST', endpoint: `${baseUrl}/chat/deleteMessage`, headers: { token }, body: { messageId: providerMessageId, number, phone: number, owner: true } },
+        ];
+
+    let lastError = '';
+    for (const candidate of candidates.filter(c => !c.endpoint.endsWith('/'))) {
+        try {
+            const response = await fetch(candidate.endpoint, {
+                method: candidate.method,
+                headers: { 'Content-Type': 'application/json', ...candidate.headers },
+                body: JSON.stringify(candidate.body),
+            });
+            const raw = await response.text();
+            let providerResult: any = null;
+            try { providerResult = raw ? JSON.parse(raw) : {}; } catch { providerResult = raw; }
+            if (response.ok) return { ok: true, providerResult };
+            lastError = `${response.status} ${raw}`.slice(0, 500);
+        } catch (error) {
+            lastError = String(error);
+        }
+    }
+
+    return { ok: false, error: lastError || 'O provedor nao confirmou a exclusao da mensagem.' };
+}
+
+/** Marca a mensagem como apagada no banco, guardando o original no metadata. */
+async function markMessageDeleted(supabase: any, message: any, userId: string, userName: string) {
+    const deletedAt = new Date().toISOString();
+    const metadata = {
+        ...(message.metadata || {}),
+        whatsapp_deleted: true,
+        whatsapp_deleted_by_us: true,
+        whatsapp_deleted_at: deletedAt,
+        whatsapp_delete_source: 'wizzy',
+        deleted_by_user_id: userId,
+        deleted_by_name: userName,
+        original_type: message.type,
+        original_content: message.content,
+        original_media_url: message.media_url,
+    };
+
+    await supabase
+        .from('messages')
+        .update({
+            content: message.type === 'image' ? 'Imagem apagada' : 'Mensagem apagada',
+            type: 'text',
+            media_url: null,
+            metadata,
+        })
+        .eq('id', message.id);
+
+    return deletedAt;
 }
 
 async function recoverMediaFile(supabase: any, messageId: string, userId: string) {
@@ -355,87 +457,289 @@ async function deleteMessageForEveryone(
     if (!instance) throw new Error('Instancia do WhatsApp nao encontrada');
 
     const settings = await loadConnectionSettings(supabase);
-    const provider = instance.provider === 'evolution' || instance.evolution_instance_name || instance.evolution_instance_id ? 'evolution' : 'uazapi';
-    const token = provider === 'evolution'
-        ? (instance.evolution_api_key || settings.evolutionApiKey || instance.zapi_token)
-        : instance.zapi_token;
-    const baseUrl = provider === 'evolution' ? settings.evolutionBaseUrl : settings.uazapiBaseUrl;
-    const instanceName = instance.evolution_instance_name || instance.zapi_instance_id || instance.evolution_instance_id || '';
+    const transport = resolveInstanceTransport(instance, settings);
 
-    if (!baseUrl || !token) throw new Error('Provedor de WhatsApp sem credenciais para apagar mensagem');
+    if (!transport.baseUrl || !transport.token) {
+        throw new Error('Provedor de WhatsApp sem credenciais para apagar mensagem');
+    }
 
     const phone = Array.isArray(conversation.contact) ? conversation.contact[0]?.phone : conversation.contact?.phone;
     const number = String(phone || '').replace(/\D/g, '');
-    const remoteJid = number ? `${number}@s.whatsapp.net` : undefined;
-    const alternateRemoteJid = number ? `${number}@s.whatsapp.com` : undefined;
     const providerMessageId = message.zapi_message_id;
-    const key = { id: providerMessageId, remoteJid, fromMe: true };
 
-    const candidates = provider === 'evolution'
-        ? [
-            { method: 'DELETE', endpoint: `${baseUrl}/chat/deleteMessageForEveryone/${instanceName}`, headers: { apikey: token }, body: { id: providerMessageId, remoteJid, fromMe: true } },
-            { method: 'DELETE', endpoint: `${baseUrl}/chat/deleteMessageForEveryone/${instanceName}`, headers: { apikey: token }, body: { id: providerMessageId, remoteJid: alternateRemoteJid, fromMe: true } },
-            { method: 'POST', endpoint: `${baseUrl}/chat/deleteMessageForEveryone/${instanceName}`, headers: { apikey: token }, body: { id: providerMessageId, remoteJid, fromMe: true } },
-            { method: 'POST', endpoint: `${baseUrl}/chat/deleteMessageForEveryone/${instanceName}`, headers: { apikey: token }, body: { key } },
-            { method: 'POST', endpoint: `${baseUrl}/message/delete/${instanceName}`, headers: { apikey: token }, body: { id: providerMessageId, key } },
-        ]
-        : [
-            { method: 'POST', endpoint: `${baseUrl}/message/delete`, headers: { token }, body: { messageId: providerMessageId, number, phone: number, owner: true } },
-            { method: 'POST', endpoint: `${baseUrl}/message/delete`, headers: { token }, body: { id: providerMessageId, number, phone: number, owner: true } },
-            { method: 'POST', endpoint: `${baseUrl}/message/delete`, headers: { token }, body: { key, number, phone: number, owner: true } },
-            { method: 'POST', endpoint: `${baseUrl}/chat/delete`, headers: { token }, body: { messageId: providerMessageId, number, phone: number, owner: true } },
-            { method: 'POST', endpoint: `${baseUrl}/chat/deleteMessage`, headers: { token }, body: { messageId: providerMessageId, number, phone: number, owner: true } },
-        ];
+    const result = await revokeOnProvider(transport, providerMessageId, number);
 
-    let providerResult: any = null;
-    let lastError = '';
-    for (const candidate of candidates.filter(c => !c.endpoint.endsWith('/'))) {
-        try {
-            const response = await fetch(candidate.endpoint, {
-                method: candidate.method,
-                headers: { 'Content-Type': 'application/json', ...candidate.headers },
-                body: JSON.stringify(candidate.body),
-            });
-            const raw = await response.text();
-            try { providerResult = raw ? JSON.parse(raw) : {}; } catch { providerResult = raw; }
-            if (response.ok) {
-                const deletedAt = new Date().toISOString();
-                const metadata = {
-                    ...(message.metadata || {}),
-                    whatsapp_deleted: true,
-                    whatsapp_deleted_by_us: true,
-                    whatsapp_deleted_at: deletedAt,
-                    whatsapp_delete_source: 'wizzy',
-                    deleted_by_user_id: userId,
-                    deleted_by_name: profile.full_name || 'Usuario da Wizzy',
-                    original_type: message.type,
-                    original_content: message.content,
-                    original_media_url: message.media_url,
-                };
-
-                await supabase
-                    .from('messages')
-                    .update({
-                        content: message.type === 'image' ? 'Imagem apagada' : 'Mensagem apagada',
-                        type: 'text',
-                        media_url: null,
-                        metadata,
-                    })
-                    .eq('id', message.id);
-                return { deleted: true, provider, providerResult, deletedAt };
-            }
-            lastError = `${response.status} ${raw}`.slice(0, 500);
-        } catch (error) {
-            lastError = String(error);
-        }
+    if (result.ok) {
+        const deletedAt = await markMessageDeleted(supabase, message, userId, profile.full_name || 'Usuario da Wizzy');
+        return { deleted: true, provider: transport.provider, providerResult: result.providerResult, deletedAt };
     }
 
     return {
         deleted: false,
-        provider,
-        providerError: lastError || 'O provedor nao confirmou a exclusao da mensagem.',
+        provider: transport.provider,
+        providerError: result.error,
         providerMessageId,
         number,
+    };
+}
+
+/** Teto de linhas lidas no índice do disparo — evita varrer um disparo gigante. */
+const BULK_SCAN_CAP = 5000;
+/** Quantas mensagens revogar por invocação (limite de wall clock da edge function). */
+const BULK_DEFAULT_LIMIT = 40;
+/** Respiro entre revogações, para não queimar o número no provedor. */
+const BULK_DEFAULT_DELAY_MS = 350;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Escapa curingas de LIKE para que o texto da mensagem case literalmente. */
+function escapeLikePattern(value: string): string {
+    return value.replace(/[\\%_]/g, (char) => `\\${char}`);
+}
+
+/**
+ * Apaga PARA TODOS uma mensagem que foi enviada em massa.
+ *
+ * O SELETOR É O TEXTO (`contentStartsWith`), não o disparo. Isso é deliberado: o
+ * pedido real nesses casos é "apaga ESTA mensagem de todo mundo que recebeu", e
+ * ela pode ter saído por mais de um agendamento, ou por agendamento + reenvio
+ * manual. Filtrar por scheduled_id primeiro deixaria sobreviventes.
+ *
+ * `scheduledId` continua aceito como filtro OPCIONAL, para restringir a um único
+ * disparo quando esse é o recorte desejado.
+ *
+ * Não é idempotente por acaso — é por construção: mensagens já marcadas como
+ * apagadas são puladas, então a função pode ser chamada em loop até `remaining`
+ * zerar sem revogar nada duas vezes.
+ *
+ * LIMITE DO WHATSAPP: o "apagar para todos" só vale dentro da janela de ~2 dias
+ * do envio. Fora dela o provedor aceita a chamada mas o destinatário continua
+ * vendo a mensagem — por isso o resultado do provedor não é garantia de entrega.
+ */
+async function deleteBlastForEveryone(
+    supabase: any,
+    userId: string,
+    options: {
+        contentStartsWith: string;
+        organizationId?: string | null;
+        scheduledId?: string | null;
+        dryRun?: boolean;
+        limit?: number;
+        delayMs?: number;
+        since?: string | null;
+        until?: string | null;
+    },
+) {
+    const contentStartsWith = String(options.contentStartsWith || '').trim();
+    // Um prefixo curto ("Oi") casaria com meio banco. O piso torna impossível
+    // disparar uma limpeza ampla por descuido.
+    if (contentStartsWith.length < 20) {
+        throw new Error('contentStartsWith e obrigatorio e precisa ter ao menos 20 caracteres, para nao casar com mensagens legitimas.');
+    }
+
+    const limit = Math.min(Math.max(Number(options.limit) || BULK_DEFAULT_LIMIT, 1), 200);
+    const delayMs = Math.min(Math.max(Number(options.delayMs ?? BULK_DEFAULT_DELAY_MS), 0), 5000);
+    const dryRun = options.dryRun !== false; // seguro por padrão: só apaga com dryRun:false explícito
+
+    // Resolve a org: explícita, ou a do disparo, ou a única do usuário.
+    let organizationId = options.organizationId || null;
+    let scheduled: any = null;
+
+    if (options.scheduledId) {
+        const { data } = await supabase
+            .from('scheduled_messages')
+            .select('id, organization_id, name')
+            .eq('id', options.scheduledId)
+            .maybeSingle();
+        if (!data) throw new Error('Disparo nao encontrado');
+        scheduled = data;
+        organizationId = organizationId || data.organization_id;
+    }
+
+    if (!organizationId) {
+        const orgIds = await getUserOrganizationIds(supabase, userId);
+        if (orgIds.length === 1) {
+            organizationId = orgIds[0];
+        } else {
+            throw new Error('organizationId e obrigatorio: o usuario pertence a mais de uma organizacao.');
+        }
+    }
+
+    // Ação destrutiva em massa: exige owner/admin, não só ser membro da org.
+    // skipPlanCheck porque consertar um envio errado não pode depender de fatura.
+    await assertActiveOrganizationAccess(supabase, userId, organizationId, {
+        requireManager: true,
+        skipPlanCheck: true,
+    });
+
+    const { data: profile } = await supabase
+        .from('profiles')
+        .select('full_name')
+        .eq('user_id', userId)
+        .maybeSingle();
+    const userName = profile?.full_name || 'Usuario da Wizzy';
+
+    // Fase 1 — índice leve. Só id + flag de apagado, para não trazer o conteúdo
+    // de milhares de mensagens só para contar quantas faltam.
+    let indexQuery = supabase
+        .from('messages')
+        .select('id, created_at, deleted:metadata->>whatsapp_deleted, conversation:conversations!inner(organization_id)')
+        .ilike('content', `${escapeLikePattern(contentStartsWith)}%`)
+        .eq('conversation.organization_id', organizationId)
+        .eq('direction', 'outbound')
+        .not('zapi_message_id', 'is', null)
+        .order('created_at', { ascending: true })
+        .limit(BULK_SCAN_CAP);
+
+    if (options.scheduledId) indexQuery = indexQuery.eq('metadata->>scheduled_id', options.scheduledId);
+    if (options.since) indexQuery = indexQuery.gte('created_at', options.since);
+    if (options.until) indexQuery = indexQuery.lte('created_at', options.until);
+
+    const { data: indexRows, error: indexError } = await indexQuery;
+    if (indexError) throw new Error(`Falha ao listar mensagens do disparo: ${indexError.message}`);
+
+    const all = indexRows || [];
+    const pending = all.filter((row: any) => row.deleted !== 'true');
+    const alreadyDeleted = all.length - pending.length;
+
+    const batchIds = pending.slice(0, limit).map((row: any) => row.id);
+
+    if (batchIds.length === 0) {
+        return {
+            scheduled: scheduled ? { id: scheduled.id, name: scheduled.name } : null,
+            dryRun,
+            total: all.length,
+            alreadyDeleted,
+            pending: 0,
+            processed: 0,
+            deleted: 0,
+            failed: 0,
+            skipped: 0,
+            remaining: 0,
+            scanCapped: all.length >= BULK_SCAN_CAP,
+            errors: [],
+        };
+    }
+
+    // Fase 2 — carrega só o lote que vai ser processado.
+    const { data: messages, error: messagesError } = await supabase
+        .from('messages')
+        .select('id, conversation_id, zapi_message_id, content, type, media_url, metadata, conversation:conversations!inner(id, whatsapp_instance_id, contact:contacts(phone))')
+        .in('id', batchIds);
+
+    if (messagesError) throw new Error(`Falha ao carregar o lote: ${messagesError.message}`);
+
+    const settings = await loadConnectionSettings(supabase);
+    // Uma leitura por instância, não por mensagem.
+    const instanceCache = new Map<string, any>();
+    const loadInstance = async (instanceId: string | null) => {
+        const cacheKey = instanceId || '__fallback__';
+        if (instanceCache.has(cacheKey)) return instanceCache.get(cacheKey);
+
+        let instance = null;
+        if (instanceId) {
+            const { data } = await supabase
+                .from('whatsapp_instances')
+                .select('*')
+                .eq('id', instanceId)
+                .eq('organization_id', organizationId)
+                .maybeSingle();
+            instance = data;
+        }
+        if (!instance) {
+            const { data: instances } = await supabase
+                .from('whatsapp_instances')
+                .select('*')
+                .eq('organization_id', organizationId)
+                .eq('status', 'connected')
+                .limit(1);
+            instance = instances?.[0] || null;
+        }
+        instanceCache.set(cacheKey, instance);
+        return instance;
+    };
+
+    // Segunda checagem do texto, agora em JS. O ILIKE do banco já filtrou, mas
+    // ele é sensível a espaço/quebra de linha; esta normaliza antes de comparar
+    // e é a trava final antes de revogar cada mensagem.
+    const normalize = (value: string) => value.replace(/\s+/g, ' ').trim().toLowerCase();
+    const normalizedPrefix = normalize(contentStartsWith);
+
+    let deleted = 0;
+    let failed = 0;
+    let skipped = 0;
+    const errors: any[] = [];
+    const preview: any[] = [];
+
+    for (const message of messages || []) {
+        const conversation = Array.isArray(message.conversation) ? message.conversation[0] : message.conversation;
+        const contact = Array.isArray(conversation?.contact) ? conversation.contact[0] : conversation?.contact;
+        const number = String(contact?.phone || '').replace(/\D/g, '');
+
+        if (!normalize(String(message.content || '')).startsWith(normalizedPrefix)) {
+            skipped++;
+            continue;
+        }
+
+        if (dryRun) {
+            if (preview.length < 10) {
+                preview.push({ phone: number || null, preview: String(message.content || '').slice(0, 120) });
+            }
+            continue;
+        }
+
+        if (!number) {
+            failed++;
+            errors.push({ messageId: message.id, error: 'Contato sem telefone para montar o remoteJid' });
+            continue;
+        }
+
+        const instance = await loadInstance(conversation?.whatsapp_instance_id || null);
+        if (!instance) {
+            failed++;
+            errors.push({ messageId: message.id, phone: number, error: 'Instancia do WhatsApp nao encontrada' });
+            continue;
+        }
+
+        const transport = resolveInstanceTransport(instance, settings);
+        if (!transport.baseUrl || !transport.token) {
+            failed++;
+            errors.push({ messageId: message.id, phone: number, error: 'Instancia sem credenciais do provedor' });
+            continue;
+        }
+
+        const result = await revokeOnProvider(transport, message.zapi_message_id, number);
+        if (result.ok) {
+            await markMessageDeleted(supabase, message, userId, userName);
+            deleted++;
+        } else {
+            failed++;
+            if (errors.length < 20) {
+                errors.push({ messageId: message.id, phone: number, error: result.error });
+            }
+        }
+
+        if (delayMs > 0) await sleep(delayMs);
+    }
+
+    const processed = dryRun ? 0 : deleted + failed;
+
+    return {
+        scheduled: scheduled ? { id: scheduled.id, name: scheduled.name } : null,
+        dryRun,
+        total: all.length,
+        alreadyDeleted,
+        pending: pending.length,
+        matchedInBatch: (messages || []).length - skipped,
+        processed,
+        deleted,
+        failed,
+        skipped,
+        // Falhas continuam pendentes: uma nova chamada tenta de novo.
+        remaining: dryRun ? pending.length : pending.length - deleted,
+        scanCapped: all.length >= BULK_SCAN_CAP,
+        preview: dryRun ? preview : undefined,
+        errors,
     };
 }
 
@@ -465,9 +769,30 @@ Deno.serve(async (req) => {
             });
         }
 
-        const { action, messageId, content, reaction, instanceId } = await req.json();
+        const payload = await req.json();
+        const { action, messageId, content, reaction, instanceId } = payload;
 
-        // action: 'find' | 'read' | 'react' | 'delete' | 'edit' | 'recover_media'
+        // action: 'find' | 'read' | 'react' | 'delete' | 'delete_blast' | 'edit' | 'recover_media'
+
+        // Apagar para todos, em lote, uma mensagem enviada em massa. O recorte é
+        // o TEXTO da mensagem; scheduledId é filtro opcional.
+        // Chamar em loop até `remaining` chegar a 0 — cada invocação processa um
+        // lote para caber no wall clock da edge function.
+        if (action === 'delete_blast') {
+            const result = await deleteBlastForEveryone(supabase, user.id, {
+                contentStartsWith: payload.contentStartsWith,
+                organizationId: payload.organizationId,
+                scheduledId: payload.scheduledId,
+                dryRun: payload.dryRun,
+                limit: payload.limit,
+                delayMs: payload.delayMs,
+                since: payload.since,
+                until: payload.until,
+            });
+            return new Response(JSON.stringify({ success: true, ...result }), {
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
+        }
 
         if (action === 'recover_media') {
             const result = await recoverMediaFile(supabase, messageId, user.id);
@@ -570,7 +895,7 @@ Deno.serve(async (req) => {
     } catch (error) {
         console.error('zapi-message-actions error:', error);
         return new Response(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }), {
-            status: 500,
+            status: error instanceof AccessError ? error.status : 500,
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
     }

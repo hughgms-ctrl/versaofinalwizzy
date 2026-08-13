@@ -1,6 +1,13 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { resolveWorkspaceInstanceBinding, sendWhatsAppMessage } from '../_shared/whatsappProvider.ts';
 import { resolveCaller, assertCallerCanAccessOrg, AccessError, type CallerAuth } from '../_shared/access.ts';
+import { moveConversationToPipeline } from '../_shared/pipelineMove.ts';
+import {
+  MAX_EVOLUTION_REPLY_BUTTONS,
+  evolutionButtonsAccepted,
+  evolutionTargetFrom,
+  sendEvolutionReplyButtons,
+} from '../_shared/evolutionButtons.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -186,8 +193,12 @@ Deno.serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const { flowId, conversationId, startNodeId, isFromOrchestrator, triggerMessage, variables: initialVariables } = await req.json();
-    console.log(`[FLOW EXECUTE] Received request: flowId=${flowId}, conversationId=${conversationId}, startNodeId=${startNodeId}, isFromOrchestrator=${isFromOrchestrator}, triggerMessage=${triggerMessage}`);
+    // resumedFromExecutionId: mandado pelo cron ao acordar um atraso. Um atraso
+    // não pausa a execução — ela é fechada e outra nasce no nó de retomada. Sem
+    // esse elo, a passagem do contato pelo fluxo fica quebrada em N linhas soltas
+    // e o histórico não consegue remontar a jornada.
+    const { flowId, conversationId, startNodeId, isFromOrchestrator, triggerMessage, variables: initialVariables, resumedFromExecutionId } = await req.json();
+    console.log(`[FLOW EXECUTE] Received request: flowId=${flowId}, conversationId=${conversationId}, startNodeId=${startNodeId}, isFromOrchestrator=${isFromOrchestrator}, triggerMessage=${triggerMessage}, resumedFrom=${resumedFromExecutionId || '-'}`);
 
     if (!flowId || !conversationId) {
       return new Response(
@@ -229,61 +240,177 @@ Deno.serve(async (req) => {
       }
     }
 
+    // PRÉ-VOO (síncrono, antes de responder). Estas quatro checagens rodavam
+    // dentro do promise de background: quando falhavam, a função já tinha
+    // respondido 200 e o fluxo simplesmente não acontecia, sem registro em
+    // flow_executions e sem nada visível para quem chamou. Agora o chamador
+    // (campaign-webhook, process-campaign-queue, zapi-webhook) recebe o motivo.
+    // fnVersion serve só para saber, pela resposta, se o deploy desta função subiu.
+    const fail = (reason: string, detail: string, status = 422) => {
+      console.error(`[FLOW EXECUTE] ${detail}`);
+      return new Response(JSON.stringify({ error: detail, reason, fnVersion: 'fe-v2' }), {
+        status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    };
+
+    // 1. Get the flow
+    const { data: flow, error: flowError } = await supabase
+      .from('flows')
+      .select('*')
+      .eq('id', flowId)
+      .single();
+
+    if (flowError || !flow) {
+      return fail('flow_not_found', `Flow ${flowId} not found: ${flowError?.message || 'sem registro'}`, 404);
+    }
+
+    // 2. Get conversation and contact
+    const { data: conversation, error: convError } = await supabase
+      .from('conversations')
+      .select('*, contacts(*)')
+      .eq('id', conversationId)
+      .single();
+
+    if (convError || !conversation) {
+      return fail('conversation_not_found', `Conversation ${conversationId} not found`, 404);
+    }
+
+    // A org de ENVIO é a da conversa, não a do fluxo: o workspace, o número e o
+    // contato pertencem à conversa. Usar flow.organization_id aqui fazia o SELECT
+    // do workspace não achar linha nenhuma quando as duas orgs divergiam, e o
+    // resultado aparecia como "workspace sem número" — mesmo com número vinculado.
+    // Todos os outros caminhos de envio (zapi-send-message, agent-orchestrator,
+    // process-scheduled-messages) já usam a org da conversa.
+    const sendOrganizationId = conversation.organization_id || flow.organization_id;
+
+    // Fluxo de uma org rodando sobre conversa de outra é sempre erro de dados —
+    // e antes ficava mascarado como workspace sem número. Falha explícita.
+    if (
+      flow.organization_id && conversation.organization_id &&
+      flow.organization_id !== conversation.organization_id
+    ) {
+      return fail(
+        'org_mismatch',
+        `Fluxo ${flowId} (org ${flow.organization_id}) não pertence à org da conversa ${conversationId} (org ${conversation.organization_id}).`,
+      );
+    }
+
+    // REGRA: um fluxo de um workspace NUNCA envia pelo número de outro workspace.
+    // Cada fluxo tem UM workspace. A coluna workspace_ids é legado (pastas
+    // multi-workspace escreviam nela); só a usamos como fallback para linhas
+    // antigas em que workspace_id ficou nulo — sempre a primeira posição.
+    const flowWorkspaceId: string | null = flow.workspace_id
+      || (Array.isArray(flow.workspace_ids) ? flow.workspace_ids[0] : null)
+      || null;
+
+    if (
+      conversation.workspace_id &&
+      flowWorkspaceId &&
+      conversation.workspace_id !== flowWorkspaceId
+    ) {
+      return fail(
+        'workspace_mismatch',
+        `Fluxo ${flowId} é do workspace ${flowWorkspaceId} e não pode enviar na conversa ` +
+        `${conversationId}, que está no workspace ${conversation.workspace_id}.`,
+      );
+    }
+
+    // Conversa sem workspace: envia pelo número do workspace DO FLUXO, em vez de
+    // cair no fallback da org (que poderia ser o número de outro workspace —
+    // exatamente o que a regra proíbe).
+    const effectiveWorkspaceId = conversation.workspace_id || flowWorkspaceId;
+
+    // Regra de negócio: conversa dentro de um workspace só envia pelo número
+    // do workspace. Se o workspace não tem número associado, abortamos — sem
+    // fallback por organização.
+    const workspaceBinding = await resolveWorkspaceInstanceBinding(
+      supabase,
+      sendOrganizationId,
+      effectiveWorkspaceId,
+    );
+    if (workspaceBinding.blocked) {
+      return fail(
+        'workspace_without_number',
+        `Workspace ${effectiveWorkspaceId} (org ${sendOrganizationId}) sem número associado; abortando envio.`,
+      );
+    }
+
+    // 3. Get WhatsApp instance according to the admin provider strategy.
+    const { instance, error: instanceError } = await resolveWhatsAppInstance(
+      supabase,
+      sendOrganizationId,
+      workspaceBinding.workspaceInstanceId || conversation.whatsapp_instance_id,
+    );
+
+    if (instanceError || !instance) {
+      return fail('no_connected_instance', `No connected instance for org ${sendOrganizationId}`);
+    }
+    const connectionSettings = await loadConnectionSettings(supabase);
+    const provider = instance.provider === 'evolution' ? 'evolution' : 'uazapi';
+
+    // Semeia name/phone a partir do contato da conversa. Cada chamador semeava
+    // (ou esquecia de semear) essas variáveis por conta própria: disparo manual
+    // pela conversa e zapi-webhook não mandavam nada, e a mensagem saía com
+    // {{name}} cru. O contato já está carregado aqui, então o motor resolve para
+    // TODO caminho de entrada. O que o chamador manda continua tendo prioridade.
+    const contactSeed: Record<string, unknown> = {};
+    const contactName = conversation.contacts?.name?.trim();
+    const contactPhone = conversation.contacts?.phone;
+    if (contactName) contactSeed.name = contactName;
+    if (contactPhone) contactSeed.phone = contactPhone;
+
+    // Campos customizados do contato (metadata.custom_fields), gravados pela
+    // importação por planilha. É o que permite mandar uma mensagem diferente
+    // para cada contato: a coluna da planilha vira {{minha_coluna}} no fluxo.
+    // Semeados ANTES do merge de initialVariables, então uma variável de mesmo
+    // nome vinda da campanha continua tendo prioridade.
+    // metadata é jsonb: quase sempre chega como objeto, mas se algum caminho
+    // gravou uma string JSON o acesso direto devolveria undefined e os campos
+    // sumiriam sem erro nenhum. Faz o parse defensivo antes de ler.
+    let contactMetadata = conversation.contacts?.metadata;
+    if (typeof contactMetadata === 'string') {
+      try {
+        contactMetadata = JSON.parse(contactMetadata);
+      } catch {
+        contactMetadata = null;
+      }
+    }
+
+    const customFields = contactMetadata?.custom_fields;
+    if (customFields && typeof customFields === 'object' && !Array.isArray(customFields)) {
+      for (const [key, value] of Object.entries(customFields)) {
+        if (value === undefined || value === null || value === '') continue;
+        contactSeed[key] = value;
+      }
+    }
+
+    const seededVariables: Record<string, unknown> = { ...contactSeed };
+    if (initialVariables && typeof initialVariables === 'object') {
+      // Só sobrescreve o seed com valor de verdade: process-scheduled-messages e
+      // trigger-campaign-on-tag mandam name: contact?.name, que vem null quando o
+      // contato não tem nome salvo — e um null do chamador não pode apagar o seed.
+      for (const [key, value] of Object.entries(initialVariables)) {
+        if (value === undefined || value === null || value === '') continue;
+        seededVariables[key] = value;
+      }
+    }
+
     // Start background execution
     const executionPromise = (async () => {
       try {
-        // 1. Get the flow
-        const { data: flow, error: flowError } = await supabase
-          .from('flows')
-          .select('*')
-          .eq('id', flowId)
-          .single();
-
-        if (flowError || !flow) {
-          console.error(`[FLOW EXECUTE] Flow ${flowId} not found:`, flowError);
-          return;
+        // Retomada de atraso: herda a raiz da execução anterior para que todos os
+        // trechos continuem sendo a MESMA passagem no histórico. Se a anterior
+        // sumiu (retenção/exclusão), esta vira raiz de si mesma — jornada mais
+        // curta é melhor do que jornada órfã.
+        let rootExecutionId: string | null = null;
+        if (resumedFromExecutionId) {
+          const { data: previous } = await supabase
+            .from('flow_executions')
+            .select('root_execution_id')
+            .eq('id', resumedFromExecutionId)
+            .maybeSingle();
+          rootExecutionId = previous?.root_execution_id || resumedFromExecutionId;
         }
-
-        // 2. Get conversation and contact
-        const { data: conversation, error: convError } = await supabase
-          .from('conversations')
-          .select('*, contacts(*)')
-          .eq('id', conversationId)
-          .single();
-
-        if (convError || !conversation) {
-          console.error(`[FLOW EXECUTE] Conversation ${conversationId} not found`);
-          return;
-        }
-
-        // Regra de negócio: conversa dentro de um workspace só envia pelo número
-        // do workspace. Se o workspace não tem número associado, abortamos — sem
-        // fallback por organização.
-        const workspaceBinding = await resolveWorkspaceInstanceBinding(
-          supabase,
-          flow.organization_id,
-          conversation.workspace_id,
-        );
-        if (workspaceBinding.blocked) {
-          console.error(
-            `[FLOW EXECUTE] Workspace ${conversation.workspace_id} sem número associado; abortando envio.`,
-          );
-          return;
-        }
-
-        // 3. Get WhatsApp instance according to the admin provider strategy.
-        const { instance, error: instanceError } = await resolveWhatsAppInstance(
-          supabase,
-          flow.organization_id,
-          workspaceBinding.workspaceInstanceId || conversation.whatsapp_instance_id,
-        );
-
-        if (instanceError || !instance) {
-          console.error(`[FLOW EXECUTE] No connected instance for org ${flow.organization_id}`);
-          return;
-        }
-        const connectionSettings = await loadConnectionSettings(supabase);
-        const provider = instance.provider === 'evolution' ? 'evolution' : 'uazapi';
 
         // 4. Create flow execution record
         const { data: execution, error: execError } = await supabase
@@ -291,10 +418,13 @@ Deno.serve(async (req) => {
           .insert({
             flow_id: flowId,
             conversation_id: conversationId,
-            organization_id: flow.organization_id,
+            organization_id: sendOrganizationId,
             status: 'running',
             current_node_id: startNodeId || 'start-1',
-            variables: initialVariables && typeof initialVariables === 'object' ? initialVariables : {},
+            variables: seededVariables,
+            resumed_from_execution_id: resumedFromExecutionId || null,
+            // Insert sem raiz é preenchido pelo trigger do banco com o próprio id.
+            ...(rootExecutionId ? { root_execution_id: rootExecutionId } : {}),
           })
           .select()
           .single();
@@ -311,8 +441,8 @@ Deno.serve(async (req) => {
           conversationId,
           contactPhone: conversation.contacts?.phone || '',
           contactId: conversation.contact_id,
-          variables: initialVariables && typeof initialVariables === 'object' ? { ...initialVariables } : {},
-          organizationId: flow.organization_id,
+          variables: { ...seededVariables },
+          organizationId: sendOrganizationId,
           zapiInstanceId: instance.zapi_instance_id!,
           zapiToken: instance.zapi_token!,
           provider,
@@ -367,7 +497,10 @@ async function cleanupFlowEnd(
     .select('id')
     .eq('conversation_id', conversationId)
     .neq('id', executionId)
-    .in('status', ['running', 'waiting_input'])
+    // waiting_delay também é fluxo vivo (pai parado num atraso inteligente):
+    // sem isso, o fim de um sub-fluxo jogaria a conversa para 'humano' e
+    // mataria o pai que só estava esperando a hora de continuar.
+    .in('status', ['running', 'waiting_input', 'waiting_delay'])
     .limit(1);
 
   const hasParentFlow = otherActiveFlows && otherActiveFlows.length > 0;
@@ -386,13 +519,13 @@ async function cleanupFlowEnd(
     await supabase
       .from('conversations')
       .update({
-        service_mode: 'humano',
+        service_mode: 'ativo',
         ai_agent_id: null,
         metadata: cleanMetadata,
       })
       .eq('id', conversationId);
 
-    console.log(`[FLOW EXECUTE] Flow ended — reset service_mode to humano, cleared ai_agent_id`);
+    console.log(`[FLOW EXECUTE] Flow ended — reset service_mode to ativo, cleared ai_agent_id`);
   } else {
     const parentExec = otherActiveFlows[0];
     console.log(`[FLOW EXECUTE] Sub-flow ended — parent flow ${parentExec.id} still active. RESUMING parent.`);
@@ -519,6 +652,33 @@ async function runFlowExecution(
 
       // CORE FLOW LOGIC: Find next node via EDGE connection
       const nextNodeId = findNextNode(currentNode, edges, result.outputHandle);
+
+      // ESPERA LONGA (atraso inteligente, ou atraso comum acima de 30s): para a
+      // execução e agenda a retomada JÁ NO PRÓXIMO NÓ. Guardar o nó de atraso
+      // faria o cron reexecutá-lo e reagendar de novo, prendendo o contato num
+      // laço infinito de espera.
+      if (result.resumeAt) {
+        if (!nextNodeId) {
+          console.log(`[FLOW EXECUTE] Node ${currentNode.id} (${currentNode.type}) has NO connected next node — flow STOPS`);
+          currentNodeId = null;
+          break;
+        }
+
+        console.log(`[FLOW EXECUTE] Delay: parking execution until ${result.resumeAt.toISOString()}, resuming at node ${nextNodeId}`);
+
+        await supabase
+          .from('flow_executions')
+          .update({
+            status: 'waiting_delay',
+            current_node_id: nextNodeId,
+            timeout_at: result.resumeAt.toISOString(),
+            variables: context.variables,
+            execution_log: executionLog,
+            remarketing_step: 0,
+          })
+          .eq('id', executionId);
+        return;
+      }
       
       if (!nextNodeId) {
         console.log(`[FLOW EXECUTE] Node ${currentNode.id} (${currentNode.type}) has NO connected next node — flow STOPS`);
@@ -572,6 +732,10 @@ interface NodeResult {
   outputHandle?: string;
   variables?: Record<string, unknown>;
   waitForInput?: boolean;
+  // Espera longa (atraso inteligente): a execução para aqui e o cron
+  // process-flow-timeouts retoma no nó seguinte quando a hora chegar.
+  // Não dá para usar setTimeout: a edge function morre antes.
+  resumeAt?: Date;
   metadata?: any;
 }
 
@@ -585,8 +749,36 @@ async function executeNode(
   const { type, data } = node;
 
   // Log node entry for timeline visibility
-  await logNodeExecution(supabase, context, node, executionId);
+  const logId = await logNodeExecution(supabase, context, node, executionId);
+  const nodeStartedAt = Date.now();
 
+  try {
+    const result = await runNodeByType(type, data, node, context, supabase, flow, executionId);
+    await finishNodeLog(
+      supabase,
+      logId,
+      result.success ? 'success' : 'failed',
+      nodeStartedAt,
+      result.error,
+    );
+    return result;
+  } catch (err) {
+    // Exceção crua do nó: marca no log e repassa para runFlowExecution, que já
+    // sabe encerrar a execução.
+    await finishNodeLog(supabase, logId, 'error', nodeStartedAt, String(err));
+    throw err;
+  }
+}
+
+async function runNodeByType(
+  type: string,
+  data: Record<string, unknown>,
+  node: FlowNode,
+  context: ExecutionContext,
+  supabase: SupabaseClientType,
+  flow?: any,
+  executionId?: string
+): Promise<NodeResult> {
   switch (type) {
     case 'start':
       return { success: true };
@@ -602,6 +794,9 @@ async function executeNode(
 
     case 'action-delay':
       return await executeDelay(data);
+
+    case 'smart-delay':
+      return executeSmartDelay(data);
 
     case 'action-tag':
       return await executeTagAction(data, context, supabase);
@@ -1070,7 +1265,7 @@ async function executeTransfer(
     const notifyMessageTemplate = String(data.notifyMessage || '').trim();
 
     // 1) Update conversation: switch to human mode and apply assignment/department
-    const updateData: Record<string, unknown> = { service_mode: 'humano' };
+    const updateData: Record<string, unknown> = { service_mode: 'ativo' };
     if (departmentId) updateData.department_id = departmentId;
     if (assignedUserId) updateData.assigned_to = assignedUserId;
 
@@ -1535,11 +1730,13 @@ async function sendMediaItem(
   }
 
   let zapiMessageId: string | null = null;
+  let sendError: string | null = null;
 
   if (!response.ok) {
     const error = await response.text();
     console.error(`[FLOW EXECUTE] Failed to send ${mediaType}. Status: ${response.status}, Error: ${error}`);
-    // Don't throw — still save to DB so user sees it was attempted
+    // Don't throw — still save to DB, but marked as failed so the UI shows it
+    sendError = (error || `Provider returned ${response.status}`).slice(0, 500);
   } else {
     zapiMessageId = await parseProviderMessageId(response);
     console.log(`[FLOW EXECUTE] ${mediaType} sent successfully via ${context.provider} (ID: ${zapiMessageId})`);
@@ -1555,14 +1752,16 @@ async function sendMediaItem(
       is_from_bot: !!context.isFromOrchestrator,
       media_url: mediaUrl,
       zapi_message_id: zapiMessageId,
-      metadata: { 
-        source: 'flow_execute', 
+      ...(sendError ? { failed_at: new Date().toISOString(), error_message: sendError } : {}),
+      metadata: {
+        source: 'flow_execute',
         provider: context.provider,
-        type: mediaType, 
+        type: mediaType,
         is_from_orchestrator: !!context.isFromOrchestrator,
         node_id: nodeId,
         flow_id: context.flowId,
-        has_fixed_transcription: mediaType === 'audio' && !!processedTranscription
+        has_fixed_transcription: mediaType === 'audio' && !!processedTranscription,
+        ...(sendError ? { send_error: sendError } : {})
       },
     }).select('id').single();
 
@@ -1594,47 +1793,82 @@ async function sendButtonsMessage(data: Record<string, unknown>, context: Execut
   try {
     const content = replaceVariables(String(data.text || data.content || ''), context.variables);
     const buttons = data.buttons as Array<{ id: string; label: string }> || [];
+    const title = replaceVariables(String(data.title || ''), context.variables).trim();
+    const footer = replaceVariables(String(data.footer || ''), context.variables).trim();
 
     if (!content || buttons.length === 0) {
       return { success: true };
     }
 
     const normalizedPhone = context.contactPhone.replace(/\D/g, '');
-    
+
+    // Só a Evolution tem campo próprio de título/rodapé; nos outros caminhos eles
+    // entram no corpo do texto para não sumirem.
+    const composedContent = [title ? `*${title}*` : '', content, footer].filter(Boolean).join('\n\n');
+
     // Build fallback text (always included in body for devices that don't render buttons)
     const buttonsText = buttons.map((b, i) => `${i + 1}. ${b.label}`).join('\n');
-    const fallbackMessage = `${content}\n\n${buttonsText}`;
-
-    if (context.provider === 'evolution') {
-      await sendTextMessage(fallbackMessage, context, createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!), nodeId);
-      return { success: true, waitForInput: true };
-    }
-
-    if (!context.uazapiBaseUrl) {
-      return { success: false, error: 'UAZAPI not configured for native buttons' };
-    }
+    const fallbackMessage = `${composedContent}\n\n${buttonsText}`;
 
     let response: Response;
     let sentNativeButtons = false;
-    let displayMessage = fallbackMessage;
 
-    // Try native Z-API buttons first (up to 3 buttons supported)
-    if (buttons.length <= 3) {
+    if (context.provider === 'evolution') {
+      // Botão nativo via /message/sendButtons. A Evolution monta o corpo como
+      // "*título*\n\ndescrição", então a primeira linha do texto do nó vira o
+      // título quando não há um título próprio configurado.
+      const target = evolutionTargetFrom(context.evolutionBaseUrl, context.evolutionApiKey, context.evolutionInstanceName);
+
+      if (target && buttons.length <= MAX_EVOLUTION_REPLY_BUTTONS) {
+        try {
+          const nativeResponse = await sendEvolutionReplyButtons(target, {
+            phone: normalizedPhone,
+            text: content,
+            title,
+            footer,
+            buttons,
+          });
+
+          const accepted = await evolutionButtonsAccepted(nativeResponse);
+          if (accepted.ok) {
+            response = nativeResponse;
+            sentNativeButtons = true;
+            console.log('[FLOW EXECUTE] Native Evolution buttons sent successfully');
+          } else {
+            console.log(`[FLOW EXECUTE] Native Evolution buttons failed (${accepted.detail}), falling back to text`);
+          }
+        } catch (nativeErr) {
+          console.log(`[FLOW EXECUTE] Native Evolution buttons exception: ${nativeErr}, falling back to text`);
+        }
+      } else if (!target) {
+        return { success: false, error: 'Evolution API not configured for native buttons' };
+      } else {
+        console.log(`[FLOW EXECUTE] ${buttons.length} buttons > ${MAX_EVOLUTION_REPLY_BUTTONS}, using text fallback`);
+      }
+
+      if (!sentNativeButtons) {
+        // Fallback: a lista numerada no corpo do texto, que o casamento da
+        // resposta no webhook também aceita.
+        await sendTextMessage(fallbackMessage, context, createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!), nodeId);
+        return { success: true, waitForInput: true };
+      }
+    } else if (!context.uazapiBaseUrl) {
+      return { success: false, error: 'UAZAPI not configured for native buttons' };
+    } else if (buttons.length <= 3) {
+      // Try native UAZAPI buttons first (WhatsApp renders at most 3 reply buttons)
       try {
+        // /send/menu é o endpoint unificado (button/list/poll). Cada opção vai como
+        // "rótulo|id" — o pipe é o separador, então some com ele no rótulo.
         const nativeBody = {
           number: normalizedPhone,
-          title: '',
-          message: content,
-          footer: '',
-          buttons: buttons.map((b, i) => ({
-            id: `btn_${i}`,
-            label: b.label,
-          })),
+          type: 'button',
+          text: composedContent,
+          choices: buttons.map((b, i) => `${String(b.label || '').replace(/\|/g, '/')}|btn_${i}`),
         };
 
-        console.log(`[FLOW EXECUTE] Trying native buttons via /send/buttons: ${JSON.stringify(nativeBody)}`);
-        
-        const nativeResponse = await fetch(`${context.uazapiBaseUrl}/send/buttons`, {
+        console.log(`[FLOW EXECUTE] Trying native buttons via /send/menu: ${JSON.stringify(nativeBody)}`);
+
+        const nativeResponse = await fetch(`${context.uazapiBaseUrl}/send/menu`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -1649,7 +1883,6 @@ async function sendButtonsMessage(data: Record<string, unknown>, context: Execut
           if (!nativeResult?.error) {
             response = nativeResponse;
             sentNativeButtons = true;
-            displayMessage = content; // Native buttons show the content separately
             console.log(`[FLOW EXECUTE] Native buttons sent successfully`);
           } else {
             console.log(`[FLOW EXECUTE] Native buttons API returned error: ${JSON.stringify(nativeResult)}, falling back to text`);
@@ -1706,7 +1939,7 @@ async function sendButtonsMessage(data: Record<string, unknown>, context: Execut
 
       await supabase.from('messages').insert({
         conversation_id: context.conversationId,
-        content: sentNativeButtons ? content : fallbackMessage,
+        content: sentNativeButtons ? composedContent : fallbackMessage,
         type: 'text',
         direction: 'outbound',
         is_from_bot: !!context.isFromOrchestrator,
@@ -1739,6 +1972,8 @@ async function sendListMessage(data: Record<string, unknown>, context: Execution
     const content = replaceVariables(String(data.content || ''), context.variables);
 
     // Lists are sent as formatted text for both providers.
+    // (Na Evolution, /message/sendList continua estourando 400
+    // "this.isZero is not a function" — só os botões têm caminho nativo.)
     const sections = data.sections as Array<{ title: string; rows: Array<{ title: string; description?: string }> }> || [];
 
     let listText = content;
@@ -1818,6 +2053,10 @@ async function sendListMessage(data: Record<string, unknown>, context: Execution
   }
 }
 
+// Teto do que dá para esperar bloqueando dentro da edge function. Acima disso a
+// espera precisa ser parqueada no banco, senão a função morre antes da hora.
+const INLINE_DELAY_MAX_MS = 30000;
+
 async function executeDelay(data: Record<string, unknown>): Promise<NodeResult> {
   const duration = Number(data.duration) || 3;
   const unit = String(data.unit) || 'seconds';
@@ -1826,10 +2065,178 @@ async function executeDelay(data: Record<string, unknown>): Promise<NodeResult> 
   if (unit === 'minutes') ms = duration * 60 * 1000;
   if (unit === 'hours') ms = duration * 60 * 60 * 1000;
 
-  ms = Math.min(ms, 30000);
+  // ESPERA LONGA: antes isto era `ms = Math.min(ms, 30000)` — quem configurava
+  // 2 horas recebia 30 segundos, sem aviso nenhum. O atraso simplesmente não
+  // acontecia e o fluxo seguia direto. Agora a espera longa é parqueada no banco
+  // e o cron retoma na hora certa, igual ao Atraso Inteligente.
+  if (ms > INLINE_DELAY_MAX_MS) {
+    const resumeAt = new Date(Date.now() + ms);
+    console.log(`[FLOW EXECUTE] Delay of ${duration} ${unit} exceeds inline limit — parking until ${resumeAt.toISOString()}`);
+    return { success: true, resumeAt };
+  }
 
+  // Espera curta continua bloqueando: é o que dá o ritmo natural entre mensagens
+  // e não vale o custo de uma volta pelo cron.
   await new Promise(resolve => setTimeout(resolve, ms));
   return { success: true };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ATRASO INTELIGENTE (smart-delay)
+// Diferente do action-delay (que espera uma duração fixa), aqui a espera é
+// calculada a partir de horário comercial / hora do dia. Nos dois casos a
+// espera longa não bloqueia: devolvemos o instante da retomada e o motor
+// parqueia a execução para o cron acordar.
+// Todo o cálculo de horário é feito no fuso de São Paulo, que é o que o
+// usuário vê e configura no editor do fluxo.
+// ═══════════════════════════════════════════════════════════════════════════
+
+const FLOW_TIMEZONE = 'America/Sao_Paulo';
+
+// Partes da data/hora local de São Paulo para um instante UTC qualquer.
+function getSaoPauloParts(date: Date): { year: number; month: number; day: number; hour: number; minute: number; weekday: number } {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: FLOW_TIMEZONE,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', weekday: 'short',
+    hour12: false,
+  }).formatToParts(date);
+
+  const get = (t: string) => parts.find(p => p.type === t)?.value || '0';
+  const weekdayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+
+  return {
+    year: Number(get('year')),
+    month: Number(get('month')),
+    day: Number(get('day')),
+    // Intl devolve "24" para meia-noite em hourCycle h23/h24; normalizamos.
+    hour: Number(get('hour')) % 24,
+    minute: Number(get('minute')),
+    weekday: weekdayMap[get('weekday')] ?? 0,
+  };
+}
+
+// Offset do fuso (em minutos) vigente naquele instante — respeita horário de verão.
+function getSaoPauloOffsetMinutes(date: Date): number {
+  const p = getSaoPauloParts(date);
+  const asUTC = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute);
+  // Zera segundos/ms para não introduzir ruído no arredondamento.
+  const base = Math.floor(date.getTime() / 60000) * 60000;
+  return (asUTC - base) / 60000;
+}
+
+// Converte uma data/hora "de parede" de São Paulo para o instante UTC correto.
+function saoPauloWallClockToUtc(year: number, month: number, day: number, hour: number, minute: number): Date {
+  const naiveUtc = Date.UTC(year, month - 1, day, hour, minute);
+  // Primeira estimativa com o offset vigente na data alvo, depois refina uma vez
+  // (cobre a virada de horário de verão perto do instante calculado).
+  let offset = getSaoPauloOffsetMinutes(new Date(naiveUtc));
+  let result = new Date(naiveUtc - offset * 60000);
+  const refined = getSaoPauloOffsetMinutes(result);
+  if (refined !== offset) {
+    offset = refined;
+    result = new Date(naiveUtc - offset * 60000);
+  }
+  return result;
+}
+
+function parseHHMM(value: unknown, fallback: string): { hour: number; minute: number } {
+  const [fh, fm] = fallback.split(':').map(Number);
+  const [h, m] = String(value || fallback).split(':').map(Number);
+  if (!Number.isFinite(h) || !Number.isFinite(m) || h < 0 || h > 23 || m < 0 || m > 59) {
+    return { hour: fh, minute: fm };
+  }
+  return { hour: h, minute: m };
+}
+
+function executeSmartDelay(data: Record<string, unknown>): NodeResult {
+  const delayType = String(data.delayType || 'fixed');
+  const now = new Date();
+
+  try {
+    if (delayType === 'fixed') {
+      const minutes = Number(data.fixedMinutes);
+      const safeMinutes = Number.isFinite(minutes) && minutes > 0 ? minutes : 30;
+      return { success: true, resumeAt: new Date(now.getTime() + safeMinutes * 60 * 1000) };
+    }
+
+    if (delayType === 'until_time') {
+      const { hour, minute } = parseHHMM(data.time, '09:00');
+      const p = getSaoPauloParts(now);
+      let target = saoPauloWallClockToUtc(p.year, p.month, p.day, hour, minute);
+      // Horário já passou hoje → mesma hora amanhã.
+      if (target.getTime() <= now.getTime()) {
+        const t = getSaoPauloParts(new Date(now.getTime() + 24 * 60 * 60 * 1000));
+        target = saoPauloWallClockToUtc(t.year, t.month, t.day, hour, minute);
+      }
+      return { success: true, resumeAt: target };
+    }
+
+    if (delayType === 'until_business_hours') {
+      const start = parseHHMM(data.businessHoursStart, '08:00');
+      const end = parseHHMM(data.businessHoursEnd, '18:00');
+      const weekdaysOnly = data.weekdaysOnly !== false;
+
+      const startMin = start.hour * 60 + start.minute;
+      const endMin = end.hour * 60 + end.minute;
+
+      // Procura o próximo instante dentro da janela comercial. O laço anda no
+      // máximo 8 dias, o que cobre feriado prolongado + fim de semana.
+      for (let i = 0; i <= 8; i++) {
+        const probe = new Date(now.getTime() + i * 24 * 60 * 60 * 1000);
+        const p = getSaoPauloParts(probe);
+        const isWeekend = p.weekday === 0 || p.weekday === 6;
+        if (weekdaysOnly && isWeekend) continue;
+
+        const nowMin = p.hour * 60 + p.minute;
+        // Hoje, já dentro do expediente → segue imediatamente.
+        if (i === 0 && nowMin >= startMin && nowMin < endMin) {
+          return { success: true, resumeAt: new Date(now.getTime() + 1000) };
+        }
+        // Ainda vai abrir neste dia → espera a abertura.
+        if (i > 0 || nowMin < startMin) {
+          return { success: true, resumeAt: saoPauloWallClockToUtc(p.year, p.month, p.day, start.hour, start.minute) };
+        }
+        // Passou do fechamento: cai para o próximo dia candidato.
+      }
+
+      // Configuração impossível (ex.: só dias úteis com janela inválida).
+      console.log('[FLOW EXECUTE] smart-delay: no business-hours slot found in 8 days, continuing immediately');
+      return { success: true, resumeAt: new Date(now.getTime() + 1000) };
+    }
+
+    if (delayType === 'until_date') {
+      const raw = String(data.date || '').trim();
+      if (!raw) {
+        console.log('[FLOW EXECUTE] smart-delay: until_date without a date, continuing immediately');
+        return { success: true };
+      }
+      // O input datetime-local manda "YYYY-MM-DDTHH:mm" sem fuso: é hora de
+      // parede de São Paulo, não UTC. Interpretar como UTC adiantaria 3h.
+      const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
+      const target = m
+        ? saoPauloWallClockToUtc(Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4]), Number(m[5]))
+        : new Date(raw);
+
+      if (Number.isNaN(target.getTime())) {
+        console.log(`[FLOW EXECUTE] smart-delay: invalid date "${raw}", continuing immediately`);
+        return { success: true };
+      }
+      // Data no passado não trava o fluxo — segue em frente.
+      if (target.getTime() <= now.getTime()) {
+        console.log(`[FLOW EXECUTE] smart-delay: date ${raw} already passed, continuing immediately`);
+        return { success: true };
+      }
+      return { success: true, resumeAt: target };
+    }
+
+    console.log(`[FLOW EXECUTE] smart-delay: unknown delayType "${delayType}", continuing immediately`);
+    return { success: true };
+  } catch (error) {
+    // Um atraso mal configurado não deve matar o fluxo do contato.
+    console.error('[FLOW EXECUTE] smart-delay error, continuing immediately:', error);
+    return { success: true };
+  }
 }
 
 async function executeTagAction(
@@ -1929,7 +2336,7 @@ async function executePipelineAction(
   supabase: SupabaseClientType
 ): Promise<NodeResult> {
   try {
-    const columnId = String(data.pipelineColumnId || '');
+    const columnId = String(data.pipelineColumnId || data.columnId || '');
     const pipelineId = String(data.pipelineId || '');
     const columnName = String(data.pipelineColumnName || 'Etapa');
 
@@ -1943,36 +2350,12 @@ async function executePipelineAction(
       .update({ status: 'open' }) // Ensure it's open if moved in pipeline
       .eq('id', context.conversationId);
 
-    // 2. Get old position for history (unique constraint on conversation_id means only one pipeline at a time)
-    let fromColumnId: string | null = null;
-    const { data: existingPos } = await supabase
-      .from('conversation_pipeline_positions')
-      .select('id, column_id, pipeline_id')
-      .eq('conversation_id', context.conversationId)
-      .maybeSingle();
-
-    if (existingPos) {
-      fromColumnId = existingPos.pipeline_id === pipelineId ? existingPos.column_id : null;
-      const { error } = await supabase
-        .from('conversation_pipeline_positions')
-        .update({
-          pipeline_id: pipelineId,
-          column_id: columnId,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', existingPos.id);
-      if (error) throw error;
-    } else {
-      const { error } = await supabase
-        .from('conversation_pipeline_positions')
-        .insert({
-          conversation_id: context.conversationId,
-          pipeline_id: pipelineId,
-          column_id: columnId,
-          order: 0,
-        });
-      if (error) throw error;
-    }
+    // 2. Move de verdade: reaproveita a posicao existente e apaga sobras em
+    //    outros pipelines (senao o card continua aparecendo na origem).
+    const { fromColumnId, error: moveError } = await moveConversationToPipeline(
+      supabase, context.conversationId, pipelineId, columnId,
+    );
+    if (moveError) throw new Error(moveError);
 
     // 3. Log stage history
     await supabase
@@ -2224,22 +2607,75 @@ function findNextNode(currentNode: FlowNode, edges: FlowEdge[], outputHandle?: s
   return edge?.target || null;
 }
 
-function replaceVariables(text: string, variables: Record<string, unknown>): string {
-  return text.replace(/\{\{(\w+)\}\}/g, (match, varName) => {
-    return String(variables[varName] || match);
-  });
+// Nomes alternativos aceitos para a mesma variável. A UI anuncia {{name}}, mas
+// {{nome}} é o que todo mundo escreve por reflexo — sem isso a mensagem sairia
+// com a chave crua para o cliente.
+const VARIABLE_ALIASES: Record<string, string[]> = {
+  name: ['nome'],
+  nome: ['name'],
+  phone: ['telefone'],
+  telefone: ['phone'],
+};
+
+function lookupVariable(variables: Record<string, unknown>, varName: string): unknown {
+  const direct = variables[varName];
+  if (direct !== undefined && direct !== null && direct !== '') return direct;
+
+  for (const alias of VARIABLE_ALIASES[varName] || []) {
+    const value = variables[alias];
+    if (value !== undefined && value !== null && value !== '') return value;
+  }
+  return undefined;
 }
+
+// "Olá {{name}}, tudo bem?" sem nome viraria "Olá , tudo bem?" — costura a
+// pontuação órfã deixada pelo buraco. Só roda em linha que perdeu variável,
+// para nunca reformatar texto que o usuário escreveu de propósito.
+function tidyLineAfterEmptyVariable(line: string): string {
+  return line
+    .replace(/[ \t]+([,;:!?.])/g, '$1')       // espaço antes de pontuação
+    .replace(/([,;:])\s*(?=[,;:])/g, '')      // pontuação duplicada consecutiva
+    .replace(/[ \t]{2,}/g, ' ')               // espaços duplos no meio da frase
+    .replace(/^[ \t]*[,;:][ \t]*/, '')        // linha começando com pontuação
+    .replace(/[ \t]+$/, '')                   // espaço sobrando no fim da linha
+    // "{{name}}, bom dia." vira "bom dia." — recupera a maiúscula inicial.
+    .replace(/^\p{Ll}/u, (c) => c.toUpperCase());
+}
+
+function replaceVariables(text: string, variables: Record<string, unknown>): string {
+  // Variável sem valor vira string vazia, NUNCA o {{placeholder}} literal:
+  // o cliente não pode receber "Olá {{name}}," numa mensagem do WhatsApp.
+  return text.split('\n').map((line) => {
+    let hasEmptyVariable = false;
+    const replaced = line.replace(/\{\{(\w+)\}\}/g, (_match, varName) => {
+      const value = lookupVariable(variables, varName);
+      if (value === undefined) {
+        hasEmptyVariable = true;
+        return '';
+      }
+      return String(value);
+    });
+
+    return hasEmptyVariable ? tidyLineAfterEmptyVariable(replaced) : replaced;
+  }).join('\n');
+}
+// Grava a ENTRADA no nó e devolve o id da linha, para que o resultado possa ser
+// carimbado quando o nó terminar (ver finishNodeLog).
+//
+// O insert continua acontecendo ANTES da execução de propósito: se o nó travar
+// ou a edge function morrer no meio, a passagem do contato por ele fica
+// registrada do mesmo jeito. O que faltava era o desfecho.
 async function logNodeExecution(
   supabase: SupabaseClientType,
   context: ExecutionContext,
   node: any,
   executionId?: string
-) {
+): Promise<string | null> {
   try {
     const { id: nodeId, type: nodeType, data } = node;
     const nodeName = data?.label || data?.name || nodeType;
 
-    await supabase.from('flow_node_logs').insert({
+    const { data: logRow } = await supabase.from('flow_node_logs').insert({
       organization_id: context.organizationId,
       conversation_id: context.conversationId,
       flow_execution_id: executionId,
@@ -2247,8 +2683,32 @@ async function logNodeExecution(
       node_name: nodeName,
       node_type: nodeType,
       input_data: data,
-    });
+    }).select('id').single();
+
+    return logRow?.id || null;
   } catch (err) {
     console.error('[FLOW EXECUTE] Error logging node execution:', err);
+    return null;
+  }
+}
+
+// Carimba o desfecho do nó no log da entrada. Nunca lança: o histórico é
+// observabilidade, e falhar aqui não pode derrubar a execução do fluxo.
+async function finishNodeLog(
+  supabase: SupabaseClientType,
+  logId: string | null,
+  status: 'success' | 'failed' | 'error',
+  startedAt: number,
+  errorMessage?: string,
+) {
+  if (!logId) return;
+  try {
+    await supabase.from('flow_node_logs').update({
+      status,
+      duration_ms: Date.now() - startedAt,
+      error_message: errorMessage ? String(errorMessage).slice(0, 500) : null,
+    }).eq('id', logId);
+  } catch (err) {
+    console.error('[FLOW EXECUTE] Error finishing node log:', err);
   }
 }

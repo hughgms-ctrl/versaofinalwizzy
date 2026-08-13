@@ -248,7 +248,7 @@ export function useAddTagToContact() {
       queryClient.invalidateQueries({ queryKey: ['contact-tags', variables.contactId] });
       if (variables.addedByType === 'manual') {
         supabase.functions.invoke('zapi-contact-tags', {
-          body: { contactId: variables.contactId, tagId: variables.tagId },
+          body: { contactId: variables.contactId, tagId: variables.tagId, action: 'add' },
         }).catch((error) => {
           console.warn('WhatsApp tag sync failed:', error);
         });
@@ -287,6 +287,12 @@ export function useRemoveTagFromContact() {
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['contact-tags', variables.contactId] });
+      // Espelha a remoção na etiqueta do WhatsApp (best-effort, como no add).
+      supabase.functions.invoke('zapi-contact-tags', {
+        body: { contactId: variables.contactId, tagId: variables.tagId, action: 'remove' },
+      }).catch((error) => {
+        console.warn('WhatsApp tag unsync failed:', error);
+      });
     },
   });
 }

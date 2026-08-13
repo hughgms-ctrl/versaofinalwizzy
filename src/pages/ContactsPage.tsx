@@ -1,8 +1,8 @@
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { MainLayout } from '@/components/layout/MainLayout';
-import { useContacts, Contact, CONTACTS_CAP } from '@/hooks/useContacts';
+import { useInfiniteContacts, useContactsCount, Contact } from '@/hooks/useContacts';
 import { useWhatsAppStatus } from '@/hooks/useWhatsAppStatus';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { useContactFilterJoins, ContactFilterJoins } from '@/hooks/useContactFilterJoins';
@@ -13,6 +13,8 @@ import {
   Users,
   Smartphone,
   Settings,
+  Upload,
+  Loader2,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -29,6 +31,7 @@ import { ContactFilters, ContactFiltersState, FilterCondition, defaultContactFil
 import { ContactListItem } from '@/components/contacts/ContactListItem';
 import { ContactBulkActionsBar } from '@/components/contacts/ContactBulkActionsBar';
 import { NewContactDialog } from '@/components/contacts/NewContactDialog';
+import { ImportContactsDialog } from '@/components/contacts/ImportContactsDialog';
 import { Checkbox } from '@/components/ui/checkbox';
 
 function matchesCondition(contact: Contact, condition: FilterCondition, joins?: ContactFilterJoins): boolean {
@@ -73,15 +76,37 @@ function matchesCondition(contact: Contact, condition: FilterCondition, joins?: 
 }
 
 const ContactsPage = () => {
-  const { data: contacts, isLoading } = useContacts();
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Debounce de 300ms: a busca agora roda no servidor (alcança a base inteira,
+  // não só as páginas já carregadas), então não dispara a cada tecla.
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchQuery), 300);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
+
+  const {
+    data: contactsPages,
+    isLoading,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteContacts(debouncedSearch);
+  const { data: totalCount } = useContactsCount(debouncedSearch);
   const { connected: whatsappConnected, isLoading: whatsappLoading } = useWhatsAppStatus();
   const { selectedWorkspace, selectedWorkspaceId } = useWorkspaceContext();
   const { data: filterJoins } = useContactFilterJoins();
 
-  const [searchQuery, setSearchQuery] = useState('');
+  const contacts = useMemo(
+    () => contactsPages?.pages.flat() ?? [],
+    [contactsPages]
+  );
+
   const [filters, setFilters] = useState<ContactFiltersState>(defaultContactFilters);
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [showNewContactDialog, setShowNewContactDialog] = useState(false);
+  const [showImportDialog, setShowImportDialog] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   // Filter contacts
@@ -98,16 +123,8 @@ const ContactsPage = () => {
         }
       }
 
-      // Search filter
-      if (searchQuery.trim()) {
-        const query = searchQuery.toLowerCase().trim();
-        const name = contact.name?.toLowerCase() || '';
-        const phone = contact.phone.toLowerCase();
-        const email = contact.email?.toLowerCase() || '';
-        if (!name.includes(query) && !phone.includes(query) && !email.includes(query)) {
-          return false;
-        }
-      }
+      // A busca por texto é aplicada no servidor (useInfiniteContacts), pra
+      // alcançar a base inteira e não só as páginas já carregadas.
 
       // Condições do filtro avançado (tag/workspace/pipeline/data/responsável).
       // matchMode 'all' = precisa bater em todas (E); 'any' = basta bater em uma (OU).
@@ -120,7 +137,7 @@ const ContactsPage = () => {
 
       return true;
     });
-  }, [contacts, searchQuery, filters, selectedWorkspaceId, selectedWorkspace, filterJoins]);
+  }, [contacts, filters, selectedWorkspaceId, selectedWorkspace, filterJoins]);
 
   // Seleção múltipla para ações em massa
   const selectedContacts = useMemo(
@@ -154,18 +171,29 @@ const ContactsPage = () => {
 
   const clearSelection = () => setSelectedIds(new Set());
 
-  // Aviso quando a lista atingiu o teto server-side (busca/filtros operam só
-  // sobre os CONTACTS_CAP mais recentes carregados).
-  const capReached = (contacts?.length ?? 0) >= CONTACTS_CAP;
-
-  // Virtualização: só renderiza as linhas visíveis (lista pode ter ~1000 itens).
+  // Virtualização: só renderiza as linhas visíveis. A lista cresce conforme o
+  // scroll (páginas de CONTACTS_PAGE_SIZE), então pode ficar grande.
   const listParentRef = useRef<HTMLDivElement>(null);
+
+  // Uma linha extra no fim serve de sentinela: quando ela entra em cena, busca
+  // a próxima página.
+  const rowCount = filteredContacts.length + (hasNextPage ? 1 : 0);
   const rowVirtualizer = useVirtualizer({
-    count: filteredContacts.length,
+    count: rowCount,
     getScrollElement: () => listParentRef.current,
     estimateSize: () => 57,
     overscan: 10,
   });
+
+  const virtualItems = rowVirtualizer.getVirtualItems();
+  const lastVirtualIndex = virtualItems.length ? virtualItems[virtualItems.length - 1].index : -1;
+
+  useEffect(() => {
+    if (!hasNextPage || isFetchingNextPage) return;
+    if (lastVirtualIndex >= filteredContacts.length - 1) {
+      fetchNextPage();
+    }
+  }, [lastVirtualIndex, hasNextPage, isFetchingNextPage, filteredContacts.length, fetchNextPage]);
 
   // Show disconnected state if WhatsApp is not connected
   if (!whatsappLoading && !whatsappConnected) {
@@ -235,6 +263,16 @@ const ContactsPage = () => {
           onFiltersChange={setFilters}
           filteredCount={filteredContacts.length}
         />
+
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8"
+          onClick={() => setShowImportDialog(true)}
+        >
+          <Upload className="mr-2 h-3.5 w-3.5" />
+          Importar
+        </Button>
       </div>
 
       {/* Bulk actions bar */}
@@ -245,10 +283,15 @@ const ContactsPage = () => {
         />
       )}
 
-      {/* Cap reached notice */}
-      {capReached && (
-        <div className="mb-2 text-xs text-muted-foreground bg-secondary/40 rounded-md px-3 py-1.5">
-          Mostrando os {CONTACTS_CAP.toLocaleString('pt-BR')} contatos mais recentes. A busca e os filtros operam sobre esse conjunto — contatos mais antigos podem não aparecer.
+      {/* Contador: quantos já carregaram vs. o total */}
+      {!isLoading && filteredContacts.length > 0 && (
+        <div className="mb-2 text-xs text-muted-foreground px-1">
+          {typeof totalCount === 'number' && contacts.length < totalCount
+            ? `Mostrando ${filteredContacts.length.toLocaleString('pt-BR')} de ${totalCount.toLocaleString('pt-BR')} contatos — role para carregar mais.`
+            : `${filteredContacts.length.toLocaleString('pt-BR')} contato(s)`}
+          {filters.conditions.length > 0 && hasNextPage && (
+            <span className="ml-1">Os filtros avançados se aplicam aos contatos já carregados.</span>
+          )}
         </div>
       )}
 
@@ -275,6 +318,20 @@ const ContactsPage = () => {
                 ? 'Tente ajustar os filtros para encontrar o que procura.'
                 : 'Os contatos aparecerão aqui quando você receber mensagens.'}
             </p>
+            {/* Filtro avançado escondeu tudo o que já veio, mas ainda há páginas:
+                sem linhas visíveis não há scroll para disparar a próxima. */}
+            {hasNextPage && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-4"
+                disabled={isFetchingNextPage}
+                onClick={() => fetchNextPage()}
+              >
+                {isFetchingNextPage && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+                Carregar mais contatos
+              </Button>
+            )}
           </div>
         ) : (
           <>
@@ -295,8 +352,27 @@ const ContactsPage = () => {
               <div
                 style={{ height: `${rowVirtualizer.getTotalSize()}px`, position: 'relative', width: '100%' }}
               >
-                {rowVirtualizer.getVirtualItems().map(virtualRow => {
+                {virtualItems.map(virtualRow => {
                   const contact = filteredContacts[virtualRow.index];
+
+                  // Linha sentinela do fim da lista: dispara/mostra o carregamento.
+                  if (!contact) {
+                    return (
+                      <div
+                        key="load-more"
+                        data-index={virtualRow.index}
+                        ref={rowVirtualizer.measureElement}
+                        className="absolute left-0 top-0 w-full"
+                        style={{ transform: `translateY(${virtualRow.start}px)` }}
+                      >
+                        <div className="flex items-center gap-2 px-3 py-3 text-xs text-muted-foreground">
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          Carregando mais contatos...
+                        </div>
+                      </div>
+                    );
+                  }
+
                   return (
                     <div
                       key={contact.id}
@@ -366,6 +442,12 @@ const ContactsPage = () => {
       <NewContactDialog
         open={showNewContactDialog}
         onOpenChange={setShowNewContactDialog}
+      />
+
+      {/* Import Contacts Dialog */}
+      <ImportContactsDialog
+        open={showImportDialog}
+        onOpenChange={setShowImportDialog}
       />
     </MainLayout>
   );

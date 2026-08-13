@@ -1,9 +1,24 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { moveConversationToPipeline } from '../_shared/pipelineMove.ts';
+import {
+  MAX_EVOLUTION_REPLY_BUTTONS,
+  evolutionButtonsAccepted,
+  evolutionTargetFrom,
+  sendEvolutionReplyButtons,
+} from '../_shared/evolutionButtons.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+/**
+ * Janela de espera após a última tentativa de follow-up, antes de rotear pela saída
+ * "Não respondeu". Precisa ser generosa: os botões da última mensagem só funcionam
+ * enquanto a execução continua parada no nó. O nó pode sobrescrever com
+ * remarketingFinalWaitMinutes, ou desligar o roteamento com remarketingRouteOnTimeout.
+ */
+const DEFAULT_FINAL_WAIT_MINUTES = 1440; // 24h
 
 /**
  * CRITICAL SAFETY: Check if a contact responded AFTER the last follow-up message.
@@ -120,12 +135,54 @@ async function loadConnectionSettings(supabase: any) {
   };
 }
 
-function replaceVars(text: string, variables: Record<string, any> | null | undefined): string {
-  let out = text || '';
-  for (const [key, val] of Object.entries(variables || {})) {
-    out = out.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), String(val));
+// Espelha replaceVariables de flow-execute. Antes esta versão só trocava as
+// chaves que existiam em variables e deixava o resto literal, então o follow-up
+// mandava "Olá {{name}}" para o cliente mesmo depois do motor já estar corrigido.
+const VARIABLE_ALIASES: Record<string, string[]> = {
+  name: ['nome'],
+  nome: ['name'],
+  phone: ['telefone'],
+  telefone: ['phone'],
+};
+
+function lookupVariable(variables: Record<string, any>, varName: string): unknown {
+  const direct = variables[varName];
+  if (direct !== undefined && direct !== null && direct !== '') return direct;
+
+  for (const alias of VARIABLE_ALIASES[varName] || []) {
+    const value = variables[alias];
+    if (value !== undefined && value !== null && value !== '') return value;
   }
-  return out;
+  return undefined;
+}
+
+// "Olá {{name}}, tudo bem?" sem nome viraria "Olá , tudo bem?". Só roda em linha
+// que perdeu variável, para não reformatar texto escrito de propósito.
+function tidyLineAfterEmptyVariable(line: string): string {
+  return line
+    .replace(/[ \t]+([,;:!?.])/g, '$1')
+    .replace(/([,;:])\s*(?=[,;:])/g, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/^[ \t]*[,;:][ \t]*/, '')
+    .replace(/[ \t]+$/, '')
+    .replace(/^\p{Ll}/u, (c) => c.toUpperCase());
+}
+
+function replaceVars(text: string, variables: Record<string, any> | null | undefined): string {
+  const vars = variables || {};
+  return (text || '').split('\n').map((line) => {
+    let hasEmptyVariable = false;
+    const replaced = line.replace(/\{\{(\w+)\}\}/g, (_match, varName) => {
+      const value = lookupVariable(vars, varName);
+      if (value === undefined) {
+        hasEmptyVariable = true;
+        return '';
+      }
+      return String(value);
+    });
+
+    return hasEmptyVariable ? tidyLineAfterEmptyVariable(replaced) : replaced;
+  }).join('\n');
 }
 
 function getProvider(instance: any): Provider {
@@ -218,12 +275,12 @@ async function sendFollowUpProviderMessage(params: {
   const mediaType = (params.mediaType || 'image') as 'image' | 'video' | 'audio' | 'document';
   const hasMedia = !!mediaUrl;
 
-  // Quick-reply buttons: native on UAZAPI (text-only, up to 3). Everywhere else,
-  // they degrade to a numbered list appended to the text — same rule as flow-execute.
+  // Quick-reply buttons: native on UAZAPI and Evolution (text-only, up to 3).
+  // Sem caminho nativo, viram lista numerada no texto — mesma regra do flow-execute.
   const buttons = (params.buttons || []).filter((b) => (b?.label || '').trim());
   const buttonsText = buttons.length ? buttons.map((b, i) => `${i + 1}. ${b.label}`).join('\n') : '';
   const fallbackText = buttonsText ? `${messageText}\n\n${buttonsText}`.trim() : messageText;
-  const canSendNativeButtons = buttons.length > 0 && buttons.length <= 3 && !hasMedia && provider === 'uazapi';
+  const canSendNativeButtons = buttons.length > 0 && buttons.length <= MAX_EVOLUTION_REPLY_BUTTONS && !hasMedia;
 
   if (provider === 'evolution') {
     const evolutionBaseUrl = settings.evolutionBaseUrl;
@@ -257,6 +314,31 @@ async function sendFollowUpProviderMessage(params: {
       if (!response.ok) throw new Error(`Evolution media send failed: ${response.status} ${await response.text()}`);
       // Audio has no caption on Evolution — nothing but the media itself goes out.
       return { provider, zapiMessageId: await parseProviderMessageId(response), msgType: mediaType, sentText: mediaType === 'audio' ? '' : fallbackText, nativeButtons: false };
+    }
+
+    if (canSendNativeButtons) {
+      try {
+        // O id de cada botão é o próprio rótulo: o casamento da resposta do
+        // follow-up é por rótulo, e alguns aparelhos devolvem só o id.
+        const nativeResponse = await sendEvolutionReplyButtons(
+          { baseUrl: evolutionBaseUrl, apiKey: evolutionApiKey, instanceName: evolutionInstanceName },
+          {
+            phone: normalizedPhone,
+            text: messageText,
+            buttons: buttons.map((b) => ({ id: b.label, label: b.label })),
+          },
+        );
+
+        const accepted = await evolutionButtonsAccepted(nativeResponse);
+        if (accepted.ok) {
+          console.log('[FLOW TIMEOUTS] Native Evolution follow-up buttons sent successfully');
+          // Native buttons render separately, so the saved text is just the message body.
+          return { provider, zapiMessageId: await parseProviderMessageId(nativeResponse), msgType: 'text', sentText: messageText, nativeButtons: true };
+        }
+        console.log(`[FLOW TIMEOUTS] Native Evolution buttons failed (${accepted.detail}) — falling back to text`);
+      } catch (nativeErr) {
+        console.log(`[FLOW TIMEOUTS] Native Evolution buttons exception: ${nativeErr} — falling back to text`);
+      }
     }
 
     const response = await fetch(`${evolutionBaseUrl}/message/sendText/${evolutionInstanceName}`, {
@@ -294,15 +376,18 @@ async function sendFollowUpProviderMessage(params: {
 
   if (canSendNativeButtons) {
     try {
-      const nativeResponse = await fetch(`${settings.uazapiBaseUrl}/send/buttons`, {
+      // /send/menu é o endpoint unificado da UAZAPI (button/list/poll). Cada opção
+      // vai só com o rótulo: sem "|id" a UAZAPI usa o próprio texto como id, que é
+      // exatamente o que o casamento da resposta do follow-up espera. O pipe é o
+      // separador do formato, então some com ele no rótulo.
+      const nativeResponse = await fetch(`${settings.uazapiBaseUrl}/send/menu`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', token: instance.zapi_token },
         body: JSON.stringify({
           number: normalizedPhone,
-          title: '',
-          message: messageText,
-          footer: '',
-          buttons: buttons.map((b, i) => ({ id: b.id || `btn_${i}`, label: b.label })),
+          type: 'button',
+          text: messageText,
+          choices: buttons.map((b) => String(b.label || '').replace(/\|/g, '/')),
         }),
       });
 
@@ -432,6 +517,71 @@ Deno.serve(async (req) => {
     }
 
     // ═══════════════════════════════════════════════════════════════════
+    // PHASE 1.8: SMART DELAY — retoma execuções paradas no "Atraso Inteligente"
+    // O nó já gravou current_node_id como o PRÓXIMO nó; aqui só destravamos e
+    // mandamos o motor seguir. Sem checagem de "respondeu": um atraso é uma
+    // pausa programada, não uma espera por resposta do contato.
+    // ═══════════════════════════════════════════════════════════════════
+    const { data: delayedExecs } = await supabase
+      .from('flow_executions')
+      .select('id, flow_id, conversation_id, current_node_id, variables')
+      .eq('status', 'waiting_delay')
+      .not('timeout_at', 'is', null)
+      .lt('timeout_at', nowIso)
+      .limit(50);
+
+    let delaysResumed = 0;
+    for (const exec of (delayedExecs || [])) {
+      try {
+        if (!exec.current_node_id) {
+          console.error(`[FLOW TIMEOUTS] Smart delay exec ${exec.id} has no current_node_id — completing`);
+          await supabase.from('flow_executions').update({
+            status: 'completed',
+            timeout_at: null,
+            completed_at: new Date().toISOString(),
+            error_message: 'Smart delay without a resume node',
+          }).eq('id', exec.id);
+          continue;
+        }
+
+        // flow-execute SEMPRE cria uma execução nova (não reaproveita esta), então
+        // encerramos a atual antes de chamar. Deixá-la aberta a manteria para
+        // sempre como "fluxo ativo" e travaria os gatilhos da conversa.
+        // Fechar ANTES da chamada também evita reprocessar a cada rodada do cron
+        // caso o fetch falhe.
+        await supabase.from('flow_executions').update({
+          status: 'completed',
+          timeout_at: null,
+          completed_at: new Date().toISOString(),
+        }).eq('id', exec.id);
+
+        console.log(`[FLOW TIMEOUTS] Smart delay elapsed for exec ${exec.id} — resuming at node ${exec.current_node_id}`);
+
+        await fetch(`${supabaseUrl}/functions/v1/flow-execute`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${supabaseKey}` },
+          body: JSON.stringify({
+            flowId: exec.flow_id,
+            conversationId: exec.conversation_id,
+            startNodeId: exec.current_node_id,
+            // Liga a execução nova à que acabou de fechar: as duas são a MESMA
+            // passagem do contato pelo fluxo, só fatiada pela espera. Sem isso o
+            // histórico mostraria cada trecho como uma entrada independente.
+            resumedFromExecutionId: exec.id,
+            // As variáveis acumuladas até aqui precisam atravessar a espera —
+            // senão o trecho depois do atraso perde o que o fluxo já coletou.
+            variables: exec.variables || {},
+          }),
+        });
+
+        delaysResumed++;
+      } catch (delayErr) {
+        console.error(`[FLOW TIMEOUTS] Error resuming smart delay exec ${exec.id}:`, delayErr);
+      }
+    }
+    if (delaysResumed > 0) console.log(`[FLOW TIMEOUTS] Resumed ${delaysResumed} smart-delay executions.`);
+
+    // ═══════════════════════════════════════════════════════════════════
     // PHASE 2: Process timed-out executions (send follow-ups or route)
     // ═══════════════════════════════════════════════════════════════════
     const { data: timedOut, error } = await supabase
@@ -452,7 +602,7 @@ Deno.serve(async (req) => {
 
     if (!timedOut || timedOut.length === 0) {
       console.log('[FLOW TIMEOUTS] No timed-out executions found.');
-      return new Response(JSON.stringify({ success: true, processed: 0, autoFixed, recoveredFromQuietBug }), {
+      return new Response(JSON.stringify({ success: true, processed: 0, autoFixed, recoveredFromQuietBug, delaysResumed }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -477,7 +627,9 @@ Deno.serve(async (req) => {
     if (contactIds.length) {
       const { data: contactRows } = await supabase
         .from('contacts')
-        .select('id, phone')
+        // name entra aqui porque o follow-up resolve {{name}} na mensagem; sem a
+        // coluna a variável nunca tinha valor e a chave crua ia para o cliente.
+        .select('id, phone, name')
         .in('id', contactIds);
       for (const ct of contactRows || []) contactById.set(ct.id, ct);
     }
@@ -662,7 +814,14 @@ Deno.serve(async (req) => {
               const instance = resolveInstance(conv.organization_id, conv.whatsapp_instance_id);
 
               if (contact?.phone && instance) {
-                const variables = exec.variables || {};
+                // Execuções antigas gravaram variables vazio (o motor só passou a
+                // semear name/phone depois), e o follow-up roda dias após o start.
+                // Semear a partir do contato aqui conserta as que já estão na fila
+                // sem depender do que foi gravado no disparo.
+                const variables: Record<string, any> = { ...(exec.variables || {}) };
+                if (!variables.name && contact.name?.trim()) variables.name = contact.name.trim();
+                if (!variables.phone && contact.phone) variables.phone = contact.phone;
+
                 const messageText = replaceVars(step.message || '', variables);
 
                 const hasMedia = !!step.mediaUrl;
@@ -743,9 +902,24 @@ Deno.serve(async (req) => {
             nextTimeoutAt = new Date(Date.now() + delayMs).toISOString();
             console.log(`[FLOW TIMEOUTS] Next step ${nextStepIndex + 1} scheduled in ${nextStep.delayMinutes}min`);
           } else {
-            // Last step done — short timeout to trigger the timeout edge
-            nextTimeoutAt = new Date(Date.now() + 1000).toISOString();
-            console.log(`[FLOW TIMEOUTS] All ${remarketingSteps.length} steps sent — will route via timeout edge next`);
+            // Última tentativa enviada. Rotear pelo timeout 1s depois matava os botões
+            // dessa última mensagem: a execução saía do nó antes de o contato clicar,
+            // e o clique não achava mais os remarketingSteps (cai no fluxo genérico).
+            // Agora a janela de espera é configurável no nó, e pode ser desligada.
+            const nodeDataForWait = isChatFollowUp ? execVars : (currentNode?.data || {});
+            const routeOnTimeout = nodeDataForWait.remarketingRouteOnTimeout !== false;
+
+            if (!routeOnTimeout) {
+              nextTimeoutAt = null;
+              console.log(`[FLOW TIMEOUTS] All ${remarketingSteps.length} steps sent — timeout routing OFF, waiting indefinitely for a reply`);
+            } else {
+              const configuredWait = Number(nodeDataForWait.remarketingFinalWaitMinutes);
+              const waitMinutes = Number.isFinite(configuredWait) && configuredWait > 0
+                ? configuredWait
+                : DEFAULT_FINAL_WAIT_MINUTES;
+              nextTimeoutAt = new Date(Date.now() + waitMinutes * 60 * 1000).toISOString();
+              console.log(`[FLOW TIMEOUTS] All ${remarketingSteps.length} steps sent — waiting ${waitMinutes}min for a reply before the timeout edge`);
+            }
           }
 
           await supabase.from('flow_executions').update({
@@ -802,7 +976,7 @@ Deno.serve(async (req) => {
             cleanMeta.flow_ended_at = new Date().toISOString();
 
             await supabase.from('conversations').update({
-              service_mode: 'humano',
+              service_mode: 'ativo',
               ai_agent_id: null,
               metadata: cleanMeta,
             }).eq('id', exec.conversation_id);
@@ -817,29 +991,10 @@ Deno.serve(async (req) => {
             if (movePipelineId && moveColumnId) {
               console.log(`[FLOW TIMEOUTS] Exec ${exec.id}: moving conversation to pipeline ${movePipelineId} column ${moveColumnId}`);
               
-              const { data: existingPos } = await supabase
-                .from('conversation_pipeline_positions')
-                .select('id, column_id')
-                .eq('conversation_id', exec.conversation_id)
-                .maybeSingle();
-
-              const fromColumnId = existingPos?.column_id || null;
-
-              if (existingPos) {
-                await supabase.from('conversation_pipeline_positions').update({
-                  pipeline_id: movePipelineId,
-                  column_id: moveColumnId,
-                  order: 0,
-                  updated_at: new Date().toISOString(),
-                }).eq('id', existingPos.id);
-              } else {
-                await supabase.from('conversation_pipeline_positions').insert({
-                  conversation_id: exec.conversation_id,
-                  pipeline_id: movePipelineId,
-                  column_id: moveColumnId,
-                  order: 0,
-                });
-              }
+              const { fromColumnId, error: moveError } = await moveConversationToPipeline(
+                supabase, exec.conversation_id, movePipelineId, moveColumnId,
+              );
+              if (moveError) console.error(`[FLOW TIMEOUTS] Exec ${exec.id}: move error:`, moveError);
 
               // Log stage change
               await supabase.from('conversation_stage_history').insert({
@@ -862,9 +1017,9 @@ Deno.serve(async (req) => {
       }
     }
 
-    console.log(`[FLOW TIMEOUTS] ✅ Processed ${processed} executions, auto-fixed ${autoFixed}, recovered ${recoveredFromQuietBug}.`);
+    console.log(`[FLOW TIMEOUTS] ✅ Processed ${processed} executions, auto-fixed ${autoFixed}, recovered ${recoveredFromQuietBug}, delays resumed ${delaysResumed}.`);
 
-    return new Response(JSON.stringify({ success: true, processed, autoFixed, recoveredFromQuietBug }), {
+    return new Response(JSON.stringify({ success: true, processed, autoFixed, recoveredFromQuietBug, delaysResumed }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {

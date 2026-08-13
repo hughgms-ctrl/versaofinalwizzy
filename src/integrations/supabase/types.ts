@@ -4298,6 +4298,9 @@ export type Database = {
       }
       flow_executions: {
         Row: {
+          cancel_reason: string | null
+          cancelled_at: string | null
+          cancelled_by: string | null
           completed_at: string | null
           conversation_id: string
           current_node_id: string | null
@@ -4307,12 +4310,17 @@ export type Database = {
           id: string
           organization_id: string
           remarketing_step: number
+          resumed_from_execution_id: string | null
+          root_execution_id: string | null
           started_at: string
           status: string
           timeout_at: string | null
           variables: Json | null
         }
         Insert: {
+          cancel_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
           completed_at?: string | null
           conversation_id: string
           current_node_id?: string | null
@@ -4322,12 +4330,17 @@ export type Database = {
           id?: string
           organization_id: string
           remarketing_step?: number
+          resumed_from_execution_id?: string | null
+          root_execution_id?: string | null
           started_at?: string
           status?: string
           timeout_at?: string | null
           variables?: Json | null
         }
         Update: {
+          cancel_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
           completed_at?: string | null
           conversation_id?: string
           current_node_id?: string | null
@@ -4337,6 +4350,8 @@ export type Database = {
           id?: string
           organization_id?: string
           remarketing_step?: number
+          resumed_from_execution_id?: string | null
+          root_execution_id?: string | null
           started_at?: string
           status?: string
           timeout_at?: string | null
@@ -4362,6 +4377,13 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "flow_executions_resumed_from_execution_id_fkey"
+            columns: ["resumed_from_execution_id"]
+            isOneToOne: false
+            referencedRelation: "flow_executions"
             referencedColumns: ["id"]
           },
         ]
@@ -4431,6 +4453,8 @@ export type Database = {
         Row: {
           conversation_id: string | null
           created_at: string
+          duration_ms: number | null
+          error_message: string | null
           flow_execution_id: string | null
           id: string
           input_data: Json | null
@@ -4439,10 +4463,13 @@ export type Database = {
           node_type: string | null
           organization_id: string | null
           output_data: Json | null
+          status: string | null
         }
         Insert: {
           conversation_id?: string | null
           created_at?: string
+          duration_ms?: number | null
+          error_message?: string | null
           flow_execution_id?: string | null
           id?: string
           input_data?: Json | null
@@ -4451,10 +4478,13 @@ export type Database = {
           node_type?: string | null
           organization_id?: string | null
           output_data?: Json | null
+          status?: string | null
         }
         Update: {
           conversation_id?: string | null
           created_at?: string
+          duration_ms?: number | null
+          error_message?: string | null
           flow_execution_id?: string | null
           id?: string
           input_data?: Json | null
@@ -4463,6 +4493,7 @@ export type Database = {
           node_type?: string | null
           organization_id?: string | null
           output_data?: Json | null
+          status?: string | null
         }
         Relationships: [
           {
@@ -7940,6 +7971,7 @@ export type Database = {
           group_jids: Json
           id: string
           last_executed_at: string | null
+          last_run_summary: Json | null
           media_type: string | null
           media_url: string | null
           message_content: string | null
@@ -7972,6 +8004,7 @@ export type Database = {
           group_jids?: Json
           id?: string
           last_executed_at?: string | null
+          last_run_summary?: Json | null
           media_type?: string | null
           media_url?: string | null
           message_content?: string | null
@@ -8004,6 +8037,7 @@ export type Database = {
           group_jids?: Json
           id?: string
           last_executed_at?: string | null
+          last_run_summary?: Json | null
           media_type?: string | null
           media_url?: string | null
           message_content?: string | null
@@ -10033,6 +10067,13 @@ export type Database = {
           _workspace_id: string
         }
         Returns: number
+      }
+      cancel_flow_executions: {
+        Args: { p_reason?: string; p_root_execution_ids: string[] }
+        Returns: {
+          conversation_id: string
+          execution_id: string
+        }[]
       }
       check_rate_limit: {
         Args: {

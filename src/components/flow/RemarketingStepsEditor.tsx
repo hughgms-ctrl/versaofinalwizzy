@@ -29,6 +29,11 @@ export function RemarketingStepsEditor({ localData, handleChange }: RemarketingS
   const quietStart = (localData.remarketingQuietStart as string) || '22:00';
   const quietEnd = (localData.remarketingQuietEnd as string) || '08:00';
 
+  // Roteamento pela saída "Não respondeu" após a última tentativa. Ligado por padrão
+  // (só é desligado com o valor explícito false), espelhando o backend.
+  const routeOnTimeout = (localData.remarketingRouteOnTimeout as boolean) !== false;
+  const finalWaitMinutes = String((localData.remarketingFinalWaitMinutes as number) || 1440);
+
   const handleMediaUpload = async (stepId: string, file: File) => {
     // flow-media com WRITE escopado por org (migration 20260714130000): path começa com orgId.
     const orgId = profile?.organization_id;
@@ -299,6 +304,53 @@ export function RemarketingStepsEditor({ localData, handleChange }: RemarketingS
         <Plus className="h-3.5 w-3.5" />
         Adicionar tentativa
       </Button>
+
+      {/* Após a última tentativa */}
+      {steps.length > 0 && (
+        <div className="p-3 rounded-lg border border-border bg-muted/30 space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-[10px] font-semibold">Seguir pela saída "Não respondeu"</span>
+            </div>
+            <Switch
+              checked={routeOnTimeout}
+              onCheckedChange={(v) => handleChange('remarketingRouteOnTimeout', v)}
+            />
+          </div>
+          {routeOnTimeout ? (
+            <div className="space-y-1.5">
+              <Label className="text-[10px] text-muted-foreground">
+                Tempo de espera após a última tentativa
+              </Label>
+              <Select
+                value={finalWaitMinutes}
+                onValueChange={(v) => handleChange('remarketingFinalWaitMinutes', parseFloat(v))}
+              >
+                <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="30">30 min</SelectItem>
+                  <SelectItem value="60">1 hora</SelectItem>
+                  <SelectItem value="360">6 horas</SelectItem>
+                  <SelectItem value="720">12 horas</SelectItem>
+                  <SelectItem value="1440">1 dia</SelectItem>
+                  <SelectItem value="4320">3 dias</SelectItem>
+                  <SelectItem value="10080">7 dias</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-muted-foreground">
+                Os botões da última mensagem só funcionam durante esta espera. Depois dela o fluxo
+                segue pela saída vermelha e o clique deixa de ter efeito.
+              </p>
+            </div>
+          ) : (
+            <p className="text-[10px] text-muted-foreground">
+              O fluxo fica parado neste bloco esperando a resposta, sem prazo. Os botões continuam
+              valendo indefinidamente e a saída vermelha nunca é usada.
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Quiet Hours */}
       {steps.length > 0 && (

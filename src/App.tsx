@@ -46,6 +46,7 @@ const QuizBuilderPage = lazy(() => import("./pages/QuizBuilderPage"));
 const PublicQuizPage = lazy(() => import("./pages/PublicQuizPage"));
 const IntegrationsPage = lazy(() => import("./pages/IntegrationsPage"));
 const InstagramAutomationsPage = lazy(() => import("./pages/InstagramAutomationsPage"));
+const InstagramFlowBuilderPage = lazy(() => import("./pages/InstagramFlowBuilderPage"));
 const PrivacyPolicyPage = lazy(() => import("./pages/PrivacyPolicyPage"));
 const TermsOfServicePage = lazy(() => import("./pages/TermsOfServicePage"));
 const DataDeletionPage = lazy(() => import("./pages/DataDeletionPage"));
@@ -61,6 +62,7 @@ const CampaignsPage = lazy(() => import("./pages/CampaignsPage"));
 const CalendarPage = lazy(() => import("./pages/CalendarPage"));
 const LandingPage = lazy(() => import("./pages/LandingPage"));
 const LandingPageV2 = lazy(() => import("./pages/LandingPageV2"));
+const LandingPageGeneral = lazy(() => import("./pages/LandingPageGeneral"));
 const CheckoutNoticePage = lazy(() => import("./pages/CheckoutNoticePage"));
 const PlansPage = lazy(() => import("./pages/PlansPage"));
 const SubscriptionPage = lazy(() => import("./pages/SubscriptionPage"));
@@ -108,6 +110,8 @@ const App = () => (
                     <Routes>
                       <Route path="/landing" element={<LandingPage />} />
                       <Route path="/landing-v2" element={<LandingPageV2 />} />
+                      <Route path="/landing-geral" element={<LandingPageGeneral />} />
+                      <Route path="/geral" element={<LandingPageGeneral />} />
                       <Route path="/auth" element={<AuthPage />} />
                       <Route path="/" element={<LandingPage />} />
                       <Route path="/dashboard" element={<ProtectedRoute><Index /></ProtectedRoute>} />
@@ -143,6 +147,7 @@ const App = () => (
                       <Route path="/documents" element={<ProtectedRoute><DocumentsPage /></ProtectedRoute>} />
                       <Route path="/integrations" element={<ProtectedRoute><IntegrationsPage /></ProtectedRoute>} />
                       <Route path="/tools/wizzy-engage" element={<ProtectedRoute><InstagramAutomationsPage /></ProtectedRoute>} />
+                      <Route path="/tools/wizzy-engage/fluxo" element={<ProtectedRoute><InstagramFlowBuilderPage /></ProtectedRoute>} />
                       <Route path="/privacidade" element={<PrivacyPolicyPage />} />
                       <Route path="/termos" element={<TermsOfServicePage />} />
                       <Route path="/exclusao-de-dados" element={<DataDeletionPage />} />
