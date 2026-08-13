@@ -184,7 +184,9 @@ function PipelineSection() {
               <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
                 Equipe neste Pipeline
               </p>
-              <p className="mt-0.5 text-sm text-muted-foreground">Atendimentos registrados</p>
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                Atendimentos registrados neste pipeline, todo o período (não segue o filtro de data acima)
+              </p>
             </div>
             <div className="p-4 md:p-5">
               {loadingTeamPipeline ? (

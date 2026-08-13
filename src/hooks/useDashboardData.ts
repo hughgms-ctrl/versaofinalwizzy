@@ -37,6 +37,18 @@ export interface RecentConversation {
   unreadCount: number;
 }
 
+// Helper: monta os parâmetros de workspace pras RPCs get_dashboard_metrics /
+// get_team_performance. selectedWorkspaceId pode ser um uuid, null (sem filtro)
+// ou a string literal 'unassigned' (workspace_id IS NULL) — RPC não aceita
+// 'unassigned' como uuid, por isso o _unassigned_only separado.
+function workspaceRpcFilter(selectedWorkspaceId: string | null) {
+  const isUnassigned = selectedWorkspaceId === 'unassigned';
+  return {
+    _workspace_id: isUnassigned ? null : (selectedWorkspaceId ?? null),
+    _unassigned_only: isUnassigned,
+  };
+}
+
 // Helper: get conversation IDs filtered by workspace tags
 async function getWorkspaceConversationIds(
   orgId: string,
@@ -88,7 +100,7 @@ export function useDashboardMetrics(range?: DateRange) {
       // de mensagens em memória). Isolamento e filtro por workspace ficam na RPC.
       const { data, error } = await (supabase as any).rpc('get_dashboard_metrics', {
         _org: organizationId,
-        _workspace_id: selectedWorkspaceId ?? null,
+        ...workspaceRpcFilter(selectedWorkspaceId),
         _since: sinceISO,
         _until: untilISO,
       });
@@ -468,8 +480,14 @@ export interface AgentPerformanceData {
 
 export function useReportsMetrics(period: string) {
   const { profile } = useAuth();
-  const { selectedOrganizationId, selectedWorkspaceId, workspaces } = useWorkspaceContext();
+  const { selectedOrganizationId, selectedWorkspaceId } = useWorkspaceContext();
   const organizationId = selectedOrganizationId || profile?.organization_id || null;
+
+  const daysMap: Record<string, number> = { today: 0, '7d': 7, '30d': 30, '90d': 90 };
+  const days = daysMap[period] ?? 7;
+  const since = days === 0
+    ? startOfDay(new Date()).toISOString()
+    : subDays(new Date(), days).toISOString();
 
   return useQuery({
     queryKey: ['reports-metrics', organizationId, selectedWorkspaceId, period],
@@ -478,57 +496,21 @@ export function useReportsMetrics(period: string) {
         return { totalConversations: 0, avgResponseTime: 0, aiPercentage: 0, totalMessages: 0 };
       }
 
-      const daysMap: Record<string, number> = { today: 0, '7d': 7, '30d': 30, '90d': 90 };
-      const days = daysMap[period] ?? 7;
-      const since = days === 0
-        ? startOfDay(new Date()).toISOString()
-        : subDays(new Date(), days).toISOString();
-
-      const wsConvIds = await getWorkspaceConversationIds(
-        organizationId,
-        selectedWorkspaceId,
-        workspaces
-      );
-
-      if (wsConvIds !== null && wsConvIds.length === 0) {
-        return { totalConversations: 0, avgResponseTime: 0, aiPercentage: 0, totalMessages: 0 };
-      }
-
-      let convQuery = supabase
-        .from('conversations')
-        .select('id', { count: 'exact' })
-        .eq('organization_id', organizationId)
-        .gte('created_at', since);
-      if (wsConvIds) convQuery = convQuery.in('id', wsConvIds);
-
-      const { data: convs, count: totalConversations } = await convQuery;
-      const convIds = convs?.map(c => c.id) || [];
-
-      let totalMessages = 0;
-      let aiMessages = 0;
-
-      if (convIds.length > 0) {
-        const { count: msgCount } = await (supabase as any)
-          .from('messages')
-          .select('*', { count: 'exact', head: true })
-          .in('conversation_id', convIds)
-          .gte('created_at', since);
-        totalMessages = msgCount || 0;
-
-        const { count: aiCount } = await (supabase as any)
-          .from('messages')
-          .select('*', { count: 'exact', head: true })
-          .in('conversation_id', convIds)
-          .eq('is_from_bot', true)
-          .gte('created_at', since);
-        aiMessages = aiCount || 0;
-      }
+      // Mesma RPC e mesma definição de "conversa" do Dashboard (atividade —
+      // last_message_at no período), pra não divergir do que aparece lá.
+      const { data, error } = await (supabase as any).rpc('get_dashboard_metrics', {
+        _org: organizationId,
+        ...workspaceRpcFilter(selectedWorkspaceId),
+        _since: since,
+        _until: null,
+      });
+      if (error) throw error;
 
       return {
-        totalConversations: totalConversations || 0,
-        avgResponseTime: 0,
-        aiPercentage: totalMessages > 0 ? Math.round((aiMessages / totalMessages) * 100) : 0,
-        totalMessages,
+        totalConversations: data?.conversationsToday ?? 0,
+        avgResponseTime: data?.avgResponseTime ?? 0,
+        aiPercentage: data?.aiHandledPercentage ?? 0,
+        totalMessages: data?.totalMessages ?? 0,
       };
     },
     enabled: !!organizationId,
@@ -687,7 +669,7 @@ export function useReportsAgentPerformance(period: string) {
       // por membro). Workspace e isolamento ficam na RPC. Já vem ordenado DESC.
       const { data, error } = await (supabase as any).rpc('get_team_performance', {
         _org: organizationId,
-        _workspace_id: selectedWorkspaceId ?? null,
+        ...workspaceRpcFilter(selectedWorkspaceId),
         _since: since,
         _until: null,
         _pipeline_id: null,

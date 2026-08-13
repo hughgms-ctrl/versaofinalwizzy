@@ -356,6 +356,9 @@ export default function ReportsPage() {
                   <Card className="bg-card border-border">
                     <CardHeader>
                       <CardTitle className="text-foreground">Performance por Equipe</CardTitle>
+                      <p className="text-sm text-muted-foreground">
+                        Atendimentos registrados neste pipeline, todo o período (não segue o filtro de período acima)
+                      </p>
                     </CardHeader>
                     <CardContent>
                       {loadingTeamPipeline ? (
