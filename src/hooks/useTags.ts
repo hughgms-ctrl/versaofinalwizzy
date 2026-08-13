@@ -24,6 +24,15 @@ export interface ContactTag {
   tag?: Tag;
 }
 
+// O seletor de workspace usa a string 'unassigned' como sentinela de "Sem
+// Workspace" — ela NÃO é um uuid. Mandá-la pro PostgREST derruba a query inteira
+// (`invalid input syntax for type uuid`), e num insert derruba a criação da tag.
+// Aqui ela vira NULL, que é como "sem workspace" é gravado no banco.
+function normalizeWorkspaceId(workspaceId: string | null | undefined): string | null {
+  if (!workspaceId || workspaceId === 'unassigned') return null;
+  return workspaceId;
+}
+
 export function useTags() {
   const { selectedWorkspaceId } = useWorkspaceContext();
 
@@ -36,7 +45,10 @@ export function useTags() {
         .order('name');
 
       // Filter by workspace: show tags for this workspace or without workspace
-      if (selectedWorkspaceId) {
+      if (selectedWorkspaceId === 'unassigned') {
+        // "Sem Workspace": só as tags globais
+        query = query.is('workspace_id', null);
+      } else if (selectedWorkspaceId) {
         query = query.or(`workspace_id.eq.${selectedWorkspaceId},workspace_id.is.null`);
       }
 
@@ -116,12 +128,13 @@ export function useCreateTag() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Usuário não autenticado');
       
-      const { data: profile } = await supabase
+      const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('organization_id')
         .eq('user_id', user.id)
         .single();
-      
+
+      if (profileError) throw profileError;
       if (!profile) throw new Error('Perfil não encontrado');
 
       const { data, error } = await supabase
@@ -130,7 +143,7 @@ export function useCreateTag() {
           name: tag.name,
           color: tag.color,
           description: tag.description,
-          workspace_id: tag.workspace_id || null,
+          workspace_id: normalizeWorkspaceId(tag.workspace_id),
           organization_id: profile.organization_id,
         })
         .select()
@@ -163,9 +176,13 @@ export function useUpdateTag() {
 
   return useMutation({
     mutationFn: async ({ id, ...updates }: { id: string; name?: string; color?: string; description?: string; workspace_id?: string | null }) => {
+      const payload = 'workspace_id' in updates
+        ? { ...updates, workspace_id: normalizeWorkspaceId(updates.workspace_id) }
+        : updates;
+
       const { data, error } = await supabase
         .from('tags' as any)
-        .update(updates)
+        .update(payload)
         .eq('id', id)
         .select()
         .single();

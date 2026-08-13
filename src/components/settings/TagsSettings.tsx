@@ -59,8 +59,14 @@ export function TagsSettings() {
     workspace_id: '' as string,
   });
 
+  // 'unassigned' é a sentinela de "Sem Workspace" do seletor, não um uuid:
+  // nesse modo a tag nova nasce global.
+  const defaultWorkspaceId = !selectedWorkspaceId || selectedWorkspaceId === 'unassigned'
+    ? ''
+    : selectedWorkspaceId;
+
   const resetForm = () => {
-    setFormData({ name: '', color: '#6366f1', description: '', workspace_id: selectedWorkspaceId || '' });
+    setFormData({ name: '', color: '#6366f1', description: '', workspace_id: defaultWorkspaceId });
     setEditingTag(null);
   };
 
