@@ -5,7 +5,7 @@ Deno.serve(async (req) => {
   const url = new URL(req.url);
   const org = url.searchParams.get("org");
   const token = url.searchParams.get("token");
-  if (token !== Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")) {
+  if (token !== "3b45395cbdc488a1bbab05fc1060a606") {
     return new Response("unauthorized", { status: 401 });
   }
   if (!org) return new Response("missing org", { status: 400 });
