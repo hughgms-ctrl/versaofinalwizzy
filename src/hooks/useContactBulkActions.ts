@@ -77,10 +77,18 @@ export function useBulkMoveWorkspace() {
 
   return useMutation({
     mutationFn: async ({ contactIds, workspaceId }: { contactIds: string[]; workspaceId: string | null }) => {
-      const { error } = await supabase.functions.invoke('safe-record-actions', {
-        body: { type: 'set_contacts_workspace', contactIds, workspaceId },
-      });
-      if (error) throw error;
+      // A Edge Function limita ações em massa a 100 contatos por chamada.
+      // Divide seleções maiores para que operações como mover 288 contatos
+      // não sejam rejeitadas integralmente pelo servidor.
+      const chunkSize = 100;
+      for (let index = 0; index < contactIds.length; index += chunkSize) {
+        const chunk = contactIds.slice(index, index + chunkSize);
+        const { data, error } = await supabase.functions.invoke('safe-record-actions', {
+          body: { type: 'set_contacts_workspace', contactIds: chunk, workspaceId },
+        });
+        if (error) throw error;
+        if (data?.error) throw new Error(data.error);
+      }
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['contacts'] });
