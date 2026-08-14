@@ -412,13 +412,12 @@ function MediaUploadField({
 
       {/* Caption Input (except for audio) */}
       {item.type !== 'audio' && (
-        <Input
+        <CaptionEditor
           value={item.caption || ''}
-          onChange={(e) => onUpdate({ ...item, caption: e.target.value })}
-          placeholder="Legenda (opcional)..."
-          className="text-sm"
+          onChange={(caption) => onUpdate({ ...item, caption })}
         />
       )}
+
 
       {item.type === 'audio' && (
         <div className="rounded-lg border border-border bg-muted/20 p-3 space-y-3">
