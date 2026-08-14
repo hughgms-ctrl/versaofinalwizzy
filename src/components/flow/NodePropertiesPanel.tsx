@@ -41,6 +41,64 @@ import { VariableTextarea } from './VariableInserter';
 // Generate simple unique ID
 const generateId = () => Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 
+/**
+ * Editor de legenda de midia com quebra de linha e formatacao do WhatsApp.
+ */
+function CaptionEditor({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+
+  const wrap = (marker: string) => {
+    const el = ref.current;
+    if (!el) return;
+    const start = el.selectionStart ?? 0;
+    const end = el.selectionEnd ?? 0;
+    const selected = value.slice(start, end) || 'texto';
+    const next = value.slice(0, start) + marker + selected + marker + value.slice(end);
+    onChange(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(start + marker.length, start + marker.length + selected.length);
+    });
+  };
+
+  const formatButtons: Array<{ marker: string; label: string; title: string; className?: string }> = [
+    { marker: '*', label: 'B', title: 'Negrito (*texto*)', className: 'font-bold' },
+    { marker: '_', label: 'I', title: 'Italico (_texto_)', className: 'italic' },
+    { marker: '~', label: 'S', title: 'Riscado (~texto~)', className: 'line-through' },
+    { marker: '```', label: '</>', title: 'Monoespacado (```texto```)', className: 'font-mono text-[10px]' },
+  ];
+
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-1">
+        {formatButtons.map((btn) => (
+          <Button
+            key={btn.marker}
+            type="button"
+            variant="outline"
+            size="sm"
+            className={cn('h-7 w-8 p-0 text-xs', btn.className)}
+            title={btn.title}
+            onClick={() => wrap(btn.marker)}
+          >
+            {btn.label}
+          </Button>
+        ))}
+        <span className="ml-auto text-[10px] text-muted-foreground">Enter = nova linha</span>
+      </div>
+      <Textarea
+        ref={ref}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="Legenda (opcional)... use Enter para quebrar linha"
+        rows={3}
+        className="text-sm whitespace-pre-wrap resize-y"
+      />
+    </div>
+  );
+}
+
+
 interface NodePropertiesPanelProps {
   node: Node | null;
   onClose: () => void;
