@@ -2,6 +2,10 @@ export type WhatsAppProvider = 'evolution' | 'uazapi';
 
 export type WhatsAppSendType = 'text' | 'image' | 'video' | 'audio' | 'document';
 
+// Tetos de tempo para a chamada HTTP ao provedor (ver sendWhatsAppMessage).
+const SEND_TIMEOUT_MS = 30_000;
+const SEND_TIMEOUT_MEDIA_MS = 90_000;
+
 export interface WhatsAppSendRequest {
   organizationId: string;
   phone: string;
@@ -290,11 +294,31 @@ export async function sendWhatsAppMessage(supabase: any, request: WhatsAppSendRe
     }
   }
 
-  const response = await fetch(endpoint, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(body),
-  });
+  // Teto de tempo por envio. Sem isto, um provedor que aceita a conexão e nunca
+  // responde pendura o caller indefinidamente — no disparo agendado isso queimava
+  // o orçamento da execução inteira e deixava o lock do job expirar, abrindo
+  // espaço para um segundo worker reprocessar os mesmos contatos.
+  // Mídia ganha um teto maior porque o provedor baixa a URL antes de enviar.
+  const timeoutMs = type === 'text' ? SEND_TIMEOUT_MS : SEND_TIMEOUT_MEDIA_MS;
+
+  let response: Response;
+  try {
+    response = await fetch(endpoint, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (err: any) {
+    if (err?.name === 'TimeoutError' || err?.name === 'AbortError') {
+      // ATENÇÃO: timeout NÃO garante que a mensagem não saiu — o provedor pode
+      // ter enviado e demorado a responder. Quem for reenviar à mão precisa
+      // conferir antes.
+      throw new Error(`${provider} nao respondeu em ${timeoutMs / 1000}s (timeout no envio)`);
+    }
+    throw err;
+  }
+
   const responseText = await response.text();
   const responseJson = parseJson(responseText);
 

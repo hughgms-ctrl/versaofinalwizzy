@@ -6,21 +6,45 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Orçamento de tempo por execução do cron. Funções Edge têm limite de wall-clock
-// (poucos minutos); um disparo com dezenas de contatos + delay antibloqueio
-// pode levar 10-15min. Em vez de tentar tudo numa execução (e estourar o tempo,
-// perdendo registros e travando o status em 'processing'), cada execução do cron
-// processa contatos até esgotar este orçamento e devolve o job para 'pending';
-// o cron (roda a cada minuto) retoma de onde parou usando scheduled_message_contacts.
-const MAX_RUN_MS = 50_000;
+// ============================================================================
+// MODOS DE EXECUÇÃO
+//
+// 1) Modo job (normal): o cron despacha UM http_post por agendamento vencido —
+//    no máximo um por organização — e cada invocação recebe { scheduled_id } e
+//    cuida só daquele disparo. É isso que permite N orgs enviarem em paralelo:
+//    o delay antibloqueio de uma org deixa de consumir o tempo das outras.
+//
+// 2) Modo varredura (compatibilidade): invocação SEM scheduled_id processa a
+//    fila em série, como antes. Existe para o caso de a migration do cron ainda
+//    não ter subido quando esta função subir — sem ela, o cron antigo (que posta
+//    body vazio) pararia de enviar qualquer coisa. Também serve para disparo
+//    manual da função. Não é o caminho normal.
+// ============================================================================
+
+// Orçamento de tempo do modo job. Edge Functions têm limite de wall-clock na
+// casa dos ~400s; ficamos bem abaixo de propósito — o resume via
+// scheduled_message_contacts já garante que nada se perde entre execuções, e
+// orçamento curto significa lock liberado mais cedo se a função morrer.
+const MAX_RUN_MS_JOB = 240_000;
+
+// Orçamento do modo varredura: precisa caber na janela de 1 minuto do cron.
+const MAX_RUN_MS_SCAN = 50_000;
 
 // Uma linha 'processing' mais antiga que isto é considerada lock órfão (a função
-// morreu no meio) e pode ser retomada. Precisa ser MUITO maior que MAX_RUN_MS
-// para nunca reprocessar um lote saudável ainda em andamento.
-const STALE_LOCK_MS = 4 * 60_000;
+// morreu no meio) e pode ser retomada. Um job saudável renova updated_at a cada
+// HEARTBEAT_MS, então nunca é confundido com órfão por mais longo que seja.
+// Precisa ser IGUAL ao intervalo usado pelo dispatcher no cron.
+const STALE_LOCK_MS = 3 * 60_000;
+
+// Frequência com que o job em andamento renova o lock.
+const HEARTBEAT_MS = 30_000;
 
 // Quantos contatos pendentes buscar por página dentro do lote.
 const CONTACT_PAGE_SIZE = 25;
+
+// Timeout do fetch para flow-execute. Fluxo é síncrono e pode ser longo, mas
+// sem teto uma chamada pendurada trava o job até o lock expirar.
+const FLOW_TIMEOUT_MS = 120_000;
 
 interface ScheduledMessage {
   id: string;
@@ -47,8 +71,15 @@ interface ScheduledMessage {
   batch_current_target: number | null;
   batch_sent_count: number | null;
   batch_paused_until: string | null;
+  // Progresso por JID no envio para grupos (ver sendMessageToGroups).
+  group_progress: Record<string, GroupProgressEntry> | null;
   // Retrato congelado da última execução (ver buildRunSummary).
   last_run_summary: Record<string, unknown> | null;
+}
+
+interface GroupProgressEntry {
+  status: 'sent' | 'failed';
+  error?: string;
 }
 
 interface Contact {
@@ -84,29 +115,161 @@ async function resolveScheduledInstance(
 const WORKSPACE_WITHOUT_NUMBER_ERROR =
   'Workspace sem número de WhatsApp conectado. Conecte um número ao workspace para enviar mensagens.';
 
+/**
+ * Lock atômico: assume o agendamento em UM único UPDATE cuja cláusula WHERE
+ * carrega a regra inteira (está pendente OU o lock está órfão). Dois workers
+ * que corram pelo mesmo job serializam no lock de linha do Postgres e o segundo
+ * reavalia o WHERE contra a versão nova — encontrando 0 linhas. Sem isso, um
+ * despacho duplicado do cron viraria envio duplicado.
+ *
+ * A pausa entre lotes entra na condição de propósito: o dispatcher já filtra por
+ * ela, mas quem garante a cadência do número é este UPDATE. Assim uma invocação
+ * manual não fura a pausa antibloqueio.
+ *
+ * Retorna a linha JÁ ATUALIZADA (batch_*, group_progress etc. frescos) ou null.
+ */
+async function claimScheduled(supabase: any, scheduledId: string): Promise<ScheduledMessage | null> {
+  const now = new Date().toISOString();
+  const staleBefore = new Date(Date.now() - STALE_LOCK_MS).toISOString();
+
+  const { data, error } = await supabase
+    .from('scheduled_messages')
+    .update({ status: 'processing', updated_at: now })
+    .eq('id', scheduledId)
+    .or(
+      `and(status.eq.pending,or(batch_paused_until.is.null,batch_paused_until.lte.${now})),` +
+      `and(status.eq.processing,updated_at.lt.${staleBefore})`,
+    )
+    .select('*');
+
+  if (error) {
+    console.error(`[scheduled ${scheduledId}] claim failed:`, error);
+    return null;
+  }
+  return (data && data[0]) || null;
+}
+
+/**
+ * Renova o lock enquanto o job roda. Sem isto, um job legítimo mais longo que
+ * STALE_LOCK_MS seria tratado como órfão e um segundo worker o pegaria,
+ * reenviando para quem ainda estivesse pendente.
+ *
+ * O filtro por status='processing' faz o heartbeat virar no-op assim que o job
+ * termina, então uma corrida com o update final não desfaz nada.
+ */
+function startHeartbeat(supabase: any, scheduledId: string): () => void {
+  const timer = setInterval(() => {
+    supabase
+      .from('scheduled_messages')
+      .update({ updated_at: new Date().toISOString() })
+      .eq('id', scheduledId)
+      .eq('status', 'processing')
+      .then(
+        ({ error }: any) => { if (error) console.error(`[scheduled ${scheduledId}] heartbeat error:`, error); },
+        (err: any) => console.error(`[scheduled ${scheduledId}] heartbeat threw:`, err),
+      );
+  }, HEARTBEAT_MS);
+
+  return () => clearInterval(timer);
+}
+
+type JobOutcome = 'processed' | 'partial' | 'failed';
+
+/**
+ * Executa UM agendamento já lockado, até terminar ou até o orçamento de tempo.
+ * Devolve o job para 'pending' quando parou no meio — o cron retoma no próximo
+ * minuto usando o progresso persistido.
+ */
+async function runScheduledJob(
+  supabase: any,
+  scheduled: ScheduledMessage,
+  deadlineAt: number,
+): Promise<JobOutcome> {
+  try {
+    // Grupos: envio direto para os JIDs, sem contato/conversa.
+    if (scheduled.target_type === 'group' || scheduled.target_type === 'groups') {
+      const groups = await sendMessageToGroups(supabase, scheduled, deadlineAt);
+      if (!groups.done) {
+        await supabase.from('scheduled_messages').update({ status: 'pending' }).eq('id', scheduled.id);
+        return 'partial';
+      }
+      return await finalizeGroups(supabase, scheduled);
+    }
+
+    // Contatos (single/tag/manual): materializa o progresso em
+    // scheduled_message_contacts (se ainda não existir) e processa em lote.
+    await ensureProgressRows(supabase, scheduled);
+
+    const batch = await processContactCampaign(supabase, scheduled, deadlineAt);
+
+    if (batch.done) {
+      // Terminou a campanha inteira: finaliza (ou reprograma recorrência).
+      return await finalizeCampaign(supabase, scheduled);
+    }
+
+    // Ainda há contatos pendentes (ou o lote entrou em pausa): devolve para
+    // 'pending' para o cron retomar (mantém next_execution_at atual).
+    await supabase.from('scheduled_messages').update({ status: 'pending' }).eq('id', scheduled.id);
+    return 'partial';
+  } catch (err: any) {
+    console.error(`Error processing scheduled message ${scheduled.id}:`, err);
+    await supabase
+      .from('scheduled_messages')
+      .update({
+        status: 'failed',
+        error_message: err?.message || 'Erro ao processar',
+      })
+      .eq('id', scheduled.id);
+    return 'failed';
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
-
-  const startedAt = Date.now();
 
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
+    const body = await req.json().catch(() => ({}));
+    const scheduledId: string | null = body?.scheduled_id || body?.scheduledId || null;
+
+    // ---------- Modo job: uma invocação dedicada a um agendamento ----------
+    if (scheduledId) {
+      const scheduled = await claimScheduled(supabase, scheduledId);
+      if (!scheduled) {
+        // Já está sendo processado por outro worker, ou mudou de status entre
+        // o despacho e a chegada. Não é erro.
+        return new Response(
+          JSON.stringify({ message: 'Skipped (not claimable)', scheduled_id: scheduledId }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
+
+      const stopHeartbeat = startHeartbeat(supabase, scheduled.id);
+      try {
+        const outcome = await runScheduledJob(supabase, scheduled, Date.now() + MAX_RUN_MS_JOB);
+        return new Response(
+          JSON.stringify({ message: 'Processing complete', scheduled_id: scheduled.id, outcome }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      } finally {
+        stopHeartbeat();
+      }
+    }
+
+    // ---------- Modo varredura: compatibilidade com o cron antigo ----------
+    const startedAt = Date.now();
+    const deadlineAt = startedAt + MAX_RUN_MS_SCAN;
     const now = new Date().toISOString();
     const staleBefore = new Date(Date.now() - STALE_LOCK_MS).toISOString();
 
-    // Busca:
-    //  - agendamentos 'pending' já vencidos, e
-    //  - locks 'processing' órfãos (função morreu antes de finalizar/liberar).
-    // O lote saudável em andamento fica 'processing' por poucos segundos e é
-    // sempre < STALE_LOCK_MS, então nunca é repescado por uma execução paralela.
     const { data: scheduledMessages, error: fetchError } = await supabase
       .from('scheduled_messages')
-      .select('*')
+      .select('id')
       .or(
         // Pendente e vencido, E fora de pausa entre lotes (sem pausa ou já expirada).
         `and(status.eq.pending,next_execution_at.lte.${now},or(batch_paused_until.is.null,batch_paused_until.lte.${now})),` +
@@ -120,104 +283,43 @@ Deno.serve(async (req) => {
     if (!scheduledMessages || scheduledMessages.length === 0) {
       return new Response(
         JSON.stringify({ message: 'No scheduled messages to process', processed: 0 }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       );
     }
 
     let processed = 0;
     let failed = 0;
 
-    for (const scheduled of scheduledMessages as ScheduledMessage[]) {
-      // Respeita o orçamento de tempo: se já esgotou, para e deixa o restante
-      // para a próxima execução do cron (os jobs continuam 'pending'/'processing').
-      if (Date.now() - startedAt > MAX_RUN_MS) break;
+    for (const row of scheduledMessages as Array<{ id: string }>) {
+      if (Date.now() > deadlineAt) break;
 
-      // Lock otimista: só assume o job se ninguém já mudou o status. Como só
-      // buscamos 'pending' vencido ou 'processing' órfão, o .in cobre ambos.
-      const { data: lockRows } = await supabase
-        .from('scheduled_messages')
-        .update({ status: 'processing' })
-        .eq('id', scheduled.id)
-        .in('status', ['pending', 'processing'])
-        .select('id');
-      if (!lockRows || lockRows.length === 0) continue;
+      const scheduled = await claimScheduled(supabase, row.id);
+      if (!scheduled) continue;
 
+      const stopHeartbeat = startHeartbeat(supabase, scheduled.id);
       try {
-        // Grupos: envio direto para os JIDs, sem contato/conversa. Poucos itens
-        // na prática — mantido em execução única.
-        if (scheduled.target_type === 'group' || scheduled.target_type === 'groups') {
-          const groupResult = await sendMessageToGroups(supabase, scheduled);
-          if (groupResult.successCount === 0 && groupResult.failCount > 0) {
-            await supabase
-              .from('scheduled_messages')
-              .update({
-                status: 'failed',
-                error_message: groupResult.lastError || 'Falha em todos os envios para grupos',
-                last_executed_at: new Date().toISOString(),
-                execution_count: (scheduled.execution_count || 0) + 1,
-              })
-              .eq('id', scheduled.id);
-            failed++;
-            continue;
-          }
-          const next = calculateNextExecution(scheduled);
-          const partialError = groupResult.failCount > 0
-            ? `${groupResult.successCount} enviada(s), ${groupResult.failCount} falharam. Último erro: ${groupResult.lastError || 'desconhecido'}`
-            : null;
-          await supabase
-            .from('scheduled_messages')
-            .update({ ...next, error_message: partialError })
-            .eq('id', scheduled.id);
-          processed++;
-          continue;
-        }
-
-        // Contatos (single/tag/manual): materializa o progresso em
-        // scheduled_message_contacts (se ainda não existir) e processa em lote.
-        await ensureProgressRows(supabase, scheduled);
-
-        const batch = await processContactCampaign(supabase, scheduled, startedAt);
-
-        if (batch.done) {
-          // Terminou a campanha inteira: finaliza (ou reprograma recorrência).
-          const finalStatus = await finalizeCampaign(supabase, scheduled);
-          if (finalStatus === 'failed') failed++; else processed++;
-        } else {
-          // Ainda há contatos pendentes: devolve para 'pending' para o cron
-          // retomar no próximo minuto (mantém next_execution_at atual).
-          await supabase
-            .from('scheduled_messages')
-            .update({ status: 'pending' })
-            .eq('id', scheduled.id);
-          processed++;
-        }
-      } catch (err: any) {
-        console.error(`Error processing scheduled message ${scheduled.id}:`, err);
-        await supabase
-          .from('scheduled_messages')
-          .update({
-            status: 'failed',
-            error_message: err.message || 'Erro ao processar',
-          })
-          .eq('id', scheduled.id);
-        failed++;
+        const outcome = await runScheduledJob(supabase, scheduled, deadlineAt);
+        if (outcome === 'failed') failed++; else processed++;
+      } finally {
+        stopHeartbeat();
       }
     }
 
     return new Response(
       JSON.stringify({
         message: 'Processing complete',
+        mode: 'scan',
         processed,
         failed,
         total: scheduledMessages.length,
       }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
   } catch (error: any) {
     console.error('Error in process-scheduled-messages:', error);
     return new Response(
       JSON.stringify({ error: error.message }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     );
   }
 });
@@ -470,19 +572,30 @@ async function runFlowForContact(
     schedule_id: scheduled.id,
     schedule_name: scheduled.name || '',
   };
-  const r = await fetch(`${supabaseUrl}/functions/v1/flow-execute`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
-    },
-    body: JSON.stringify({
-      flowId: scheduled.flow_id,
-      conversationId: conversation.id,
-      organizationId: scheduled.organization_id,
-      variables,
-    }),
-  });
+
+  let r: Response;
+  try {
+    r = await fetch(`${supabaseUrl}/functions/v1/flow-execute`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+      },
+      body: JSON.stringify({
+        flowId: scheduled.flow_id,
+        conversationId: conversation.id,
+        organizationId: scheduled.organization_id,
+        variables,
+      }),
+      signal: AbortSignal.timeout(FLOW_TIMEOUT_MS),
+    });
+  } catch (err: any) {
+    if (err?.name === 'TimeoutError' || err?.name === 'AbortError') {
+      throw new Error(`flow-execute nao respondeu em ${FLOW_TIMEOUT_MS / 1000}s`);
+    }
+    throw err;
+  }
+
   if (!r.ok) {
     const t = await r.text();
     throw new Error(`flow-execute ${r.status}: ${t.slice(0, 300)}`);
@@ -492,12 +605,12 @@ async function runFlowForContact(
 /**
  * Processa contatos pendentes até esgotar o orçamento de tempo.
  * Retorna { done: true } quando não há mais pendentes (campanha completa),
- * ou { done: false } quando parou por tempo (há contatos restantes).
+ * ou { done: false } quando parou por tempo/pausa de lote (há contatos restantes).
  */
 async function processContactCampaign(
   supabase: any,
   scheduled: ScheduledMessage,
-  startedAt: number,
+  deadlineAt: number,
 ): Promise<{ done: boolean }> {
   const { instance: scheduledInstance, blocked: workspaceBlocked } = await resolveScheduledInstance(supabase, scheduled);
   if (workspaceBlocked) {
@@ -548,7 +661,7 @@ async function processContactCampaign(
   let firstSend = true;
 
   while (true) {
-    if (Date.now() - startedAt > MAX_RUN_MS) { await saveBatchProgress(); return { done: false }; }
+    if (Date.now() > deadlineAt) { await saveBatchProgress(); return { done: false }; }
 
     const page = await fetchPendingContactPage(supabase, scheduled.id, CONTACT_PAGE_SIZE);
     if (page.length === 0) return { done: true };
@@ -556,7 +669,7 @@ async function processContactCampaign(
     const convByContact = await preloadConversations(supabase, scheduled, page, scheduledInstanceId, scheduledInstance);
 
     for (const contact of page) {
-      if (Date.now() - startedAt > MAX_RUN_MS) { await saveBatchProgress(); return { done: false }; }
+      if (Date.now() > deadlineAt) { await saveBatchProgress(); return { done: false }; }
 
       // Delay antibloqueio entre envios (pula o primeiro para não gastar orçamento).
       if (!firstSend && delayMs > 0) {
@@ -609,12 +722,11 @@ async function processContactCampaign(
 /**
  * Fecha a campanha após todos os contatos serem processados: calcula o status
  * final (ou a próxima recorrência) e grava o resumo de sucesso/falha parcial.
- * Retorna 'failed' | 'sent-or-recurring'.
  */
 async function finalizeCampaign(
   supabase: any,
   scheduled: ScheduledMessage,
-): Promise<'failed' | 'sent-or-recurring'> {
+): Promise<JobOutcome> {
   const { count: sentCount } = await supabase
     .from('scheduled_message_contacts')
     .select('id', { count: 'exact', head: true })
@@ -691,7 +803,7 @@ async function finalizeCampaign(
     .from('scheduled_messages')
     .update({ ...next, error_message: partialError, last_run_summary: runSummary })
     .eq('id', scheduled.id);
-  return 'sent-or-recurring';
+  return 'processed';
 }
 
 // Teto de contatos não entregues guardados no resumo. É uma lista para o
@@ -741,10 +853,16 @@ async function buildRunSummary(
 // tag: apaga as linhas (re-materializa na próxima execução, pegando a membership atual).
 // single/manual: reseta as linhas existentes para 'pending'.
 async function resetProgressForRecurrence(supabase: any, scheduled: ScheduledMessage): Promise<void> {
-  // Zera o estado de lote para a próxima ocorrência sortear um novo lote do zero.
+  // Zera o estado de lote e o progresso de grupos para a próxima ocorrência
+  // começar do zero.
   await supabase
     .from('scheduled_messages')
-    .update({ batch_sent_count: 0, batch_current_target: null, batch_paused_until: null })
+    .update({
+      batch_sent_count: 0,
+      batch_current_target: null,
+      batch_paused_until: null,
+      group_progress: {},
+    })
     .eq('id', scheduled.id);
 
   if (scheduled.target_type === 'tag') {
@@ -760,16 +878,24 @@ async function resetProgressForRecurrence(supabase: any, scheduled: ScheduledMes
     .eq('scheduled_message_id', scheduled.id);
 }
 
+/**
+ * Envia para os grupos, respeitando o orçamento de tempo e persistindo o
+ * progresso POR JID em scheduled_messages.group_progress.
+ *
+ * O progresso é o que torna o resume seguro: sem ele, um disparo para muitos
+ * grupos com delay estoura o tempo, o lock vira órfão e a execução seguinte
+ * reenviaria para TODOS os grupos desde o início.
+ *
+ * Retorna { done: false } quando parou por tempo (ainda há JIDs pendentes).
+ */
 async function sendMessageToGroups(
   supabase: any,
   scheduled: ScheduledMessage,
-): Promise<{ successCount: number; failCount: number; lastError?: string }> {
+  deadlineAt: number,
+): Promise<{ done: boolean }> {
   const groupJids = Array.isArray(scheduled.group_jids) ? scheduled.group_jids : [];
   const delayMs = ((scheduled as any).delay_between_contacts || 0) * 1000;
-
-  let successCount = 0;
-  let failCount = 0;
-  let lastError: string | undefined;
+  const progress: Record<string, GroupProgressEntry> = { ...(scheduled.group_progress || {}) };
 
   let sendType: 'text' | 'image' | 'video' | 'audio' | 'document' = 'text';
   if (scheduled.media_url) {
@@ -779,13 +905,20 @@ async function sendMessageToGroups(
     else sendType = 'document';
   }
 
-  for (let i = 0; i < groupJids.length; i++) {
-    const groupJid = groupJids[i];
-    try {
-      if (i > 0 && delayMs > 0) {
-        await new Promise(resolve => setTimeout(resolve, delayMs));
-      }
+  // Se já processamos algum grupo num run anterior, o delay vale para o primeiro
+  // desta rodada também (a cadência é do número, não da invocação).
+  let firstSend = Object.keys(progress).length === 0;
 
+  for (const groupJid of groupJids) {
+    if (progress[groupJid]) continue; // já processado (sucesso ou falha)
+    if (Date.now() > deadlineAt) return { done: false };
+
+    if (!firstSend && delayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+    firstSend = false;
+
+    try {
       const sendResult = await sendWhatsAppMessage(supabase, {
         organizationId: scheduled.organization_id,
         phone: groupJid,
@@ -801,15 +934,94 @@ async function sendMessageToGroups(
       if (!sendResult.ok) {
         throw new Error(`${sendResult.provider} ${sendResult.status}: ${sendResult.responseText.slice(0, 300)}`);
       }
-      successCount++;
+      progress[groupJid] = { status: 'sent' };
     } catch (err: any) {
       console.error(`Error sending to group ${groupJid}:`, err?.message || err);
-      lastError = err?.message || String(err);
-      failCount++;
+      progress[groupJid] = { status: 'failed', error: String(err?.message || err).slice(0, 300) };
     }
+
+    // Persiste a CADA grupo: se a função morrer aqui, o resume não reenvia.
+    const { error: progErr } = await supabase
+      .from('scheduled_messages')
+      .update({ group_progress: progress })
+      .eq('id', scheduled.id);
+    if (progErr) console.error(`[scheduled ${scheduled.id}] group_progress update failed:`, progErr);
   }
 
-  return { successCount, failCount, lastError };
+  return { done: true };
+}
+
+/**
+ * Fecha um disparo para grupos, lendo as contagens de group_progress.
+ */
+async function finalizeGroups(supabase: any, scheduled: ScheduledMessage): Promise<JobOutcome> {
+  const { data: fresh } = await supabase
+    .from('scheduled_messages')
+    .select('group_progress')
+    .eq('id', scheduled.id)
+    .maybeSingle();
+
+  const progress: Record<string, GroupProgressEntry> = fresh?.group_progress || {};
+  const entries = Object.entries(progress);
+  const sent = entries.filter(([, v]) => v?.status === 'sent').length;
+  const fail = entries.filter(([, v]) => v?.status === 'failed').length;
+  const lastError = entries.find(([, v]) => v?.status === 'failed' && v?.error)?.[1]?.error;
+
+  const runSummary = {
+    finished_at: new Date().toISOString(),
+    total: sent + fail,
+    sent,
+    failed: fail,
+    // Para grupos não há nome/telefone: identificamos pelo JID.
+    undelivered: entries.filter(([, v]) => v?.status === 'failed').map(([jid]) => ({ name: null, phone: jid })),
+    undelivered_truncated: false,
+  };
+
+  if (sent === 0 && fail > 0) {
+    await supabase
+      .from('scheduled_messages')
+      .update({
+        status: 'failed',
+        error_message: lastError || 'Falha em todos os envios para grupos',
+        last_executed_at: new Date().toISOString(),
+        execution_count: (scheduled.execution_count || 0) + 1,
+        last_run_summary: runSummary,
+      })
+      .eq('id', scheduled.id);
+    return 'failed';
+  }
+
+  if (sent === 0 && fail === 0) {
+    await supabase
+      .from('scheduled_messages')
+      .update({
+        status: 'failed',
+        error_message: 'Nenhum grupo encontrado para envio',
+        last_run_summary: runSummary,
+      })
+      .eq('id', scheduled.id);
+    return 'failed';
+  }
+
+  const next = calculateNextExecution(scheduled);
+  const partialError = fail > 0
+    ? `${sent} enviada(s), ${fail} falharam. Último erro: ${lastError || 'desconhecido'}`
+    : null;
+
+  // Recorrência continua: zera o progresso para a próxima ocorrência reenviar
+  // para todos os grupos.
+  if (next.status === 'pending') {
+    await supabase
+      .from('scheduled_messages')
+      .update({ group_progress: {} })
+      .eq('id', scheduled.id);
+  }
+
+  await supabase
+    .from('scheduled_messages')
+    .update({ ...next, error_message: partialError, last_run_summary: runSummary })
+    .eq('id', scheduled.id);
+  return 'processed';
 }
 
 function calculateNextExecution(scheduled: ScheduledMessage): Record<string, any> {
