@@ -115,6 +115,13 @@ async function resolveScheduledInstance(
 const WORKSPACE_WITHOUT_NUMBER_ERROR =
   'Workspace sem número de WhatsApp conectado. Conecte um número ao workspace para enviar mensagens.';
 
+// Folga na comparação do carimbo do claim (ver claimScheduled): cobre a defasagem
+// de relógio entre a edge function e o Postgres. Curta de propósito — tem que ser
+// bem menor que HEARTBEAT_MS, senão o carimbo recente de OUTRO worker caberia na
+// janela e dois workers processariam o mesmo job. Perder um claim custa 3 min de
+// espera; assumir um lock alheio custa envio duplicado.
+const CLAIM_STAMP_TOLERANCE_MS = 5_000;
+
 /**
  * Lock atômico: assume o agendamento em UM único UPDATE cuja cláusula WHERE
  * carrega a regra inteira (está pendente OU o lock está órfão). Dois workers
@@ -126,12 +133,23 @@ const WORKSPACE_WITHOUT_NUMBER_ERROR =
  * ela, mas quem garante a cadência do número é este UPDATE. Assim uma invocação
  * manual não fura a pausa antibloqueio.
  *
+ * ATENÇÃO — por que existe o passo 2 (reconferência):
+ * o WHERE deste UPDATE filtra exatamente as colunas que o próprio UPDATE escreve
+ * (status e updated_at). O PostgREST aplica o filtro TAMBÉM na representação que
+ * devolve, e a linha já gravada não casa mais com nenhum dos dois ramos — então
+ * `data` volta VAZIO mesmo com a gravação tendo acontecido, e sem erro nenhum.
+ * Confiar só no retorno fazia o job ser marcado 'processing' e nunca ser
+ * processado: travava em 'processing' até o lock vencer, era re-clamado, travava
+ * de novo — disparo parado sem uma única linha de erro no log.
+ *
  * Retorna a linha JÁ ATUALIZADA (batch_*, group_progress etc. frescos) ou null.
  */
 async function claimScheduled(supabase: any, scheduledId: string): Promise<ScheduledMessage | null> {
-  const now = new Date().toISOString();
-  const staleBefore = new Date(Date.now() - STALE_LOCK_MS).toISOString();
+  const claimStartedAt = Date.now();
+  const now = new Date(claimStartedAt).toISOString();
+  const staleBefore = new Date(claimStartedAt - STALE_LOCK_MS).toISOString();
 
+  // Passo 1: o UPDATE condicional — quem de fato serializa dois workers.
   const { data, error } = await supabase
     .from('scheduled_messages')
     .update({ status: 'processing', updated_at: now })
@@ -146,7 +164,34 @@ async function claimScheduled(supabase: any, scheduledId: string): Promise<Sched
     console.error(`[scheduled ${scheduledId}] claim failed:`, error);
     return null;
   }
-  return (data && data[0]) || null;
+
+  if (data && data[0]) return data[0];
+
+  // Passo 2: sem representação. Ou o UPDATE não casou (outro worker chegou antes,
+  // pausa ainda vigente) ou casou e o PostgREST filtrou a linha de volta. Uma
+  // releitura decide: se a linha está 'processing' com carimbo desta chamada, o
+  // lock é nosso. Carimbo mais velho = de outro worker; não assumimos.
+  const { data: row, error: reReadError } = await supabase
+    .from('scheduled_messages')
+    .select('*')
+    .eq('id', scheduledId)
+    .maybeSingle();
+
+  if (reReadError) {
+    console.error(`[scheduled ${scheduledId}] claim re-read failed:`, reReadError);
+    return null;
+  }
+  if (!row || row.status !== 'processing') return null;
+
+  // O trigger update_updated_at_column sobrescreve updated_at com o now() da
+  // transação, então comparamos por janela, não por igualdade.
+  const stampedAt = Date.parse(row.updated_at);
+  if (!Number.isFinite(stampedAt) || stampedAt < claimStartedAt - CLAIM_STAMP_TOLERANCE_MS) {
+    return null;
+  }
+
+  console.warn(`[scheduled ${scheduledId}] claim sem representação do PostgREST; assumido pela releitura`);
+  return row as ScheduledMessage;
 }
 
 /**
