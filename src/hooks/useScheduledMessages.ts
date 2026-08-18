@@ -33,6 +33,13 @@ export interface ScheduledMessage {
   batch_sent_count: number | null;
   batch_paused_until: string | null;
   /**
+   * Pausa manual pelo painel (null = rodando normal). É coluna própria, e não um
+   * status, porque o motor reescreve `status` o tempo todo (pending↔processing)
+   * e engoliria a pausa de um disparo em andamento. Ver a migration
+   * 20260817230000.
+   */
+  paused_at: string | null;
+  /**
    * Retrato congelado da última execução (total/enviados/não entregues + quem
    * não recebeu), gravado pelo motor ao finalizar. É o que mantém o painel de
    * um disparo concluído acessível para sempre: scheduled_message_contacts é
@@ -260,6 +267,66 @@ export function useCancelScheduledMessage() {
       toast({
         title: 'Erro ao cancelar',
         description: error.message || 'Não foi possível cancelar o agendamento.',
+        variant: 'destructive',
+      });
+    },
+  });
+}
+
+/**
+ * Pausa ou retoma um disparo. Pausar não mexe no progresso: o que já saiu
+ * continua marcado como enviado em scheduled_message_contacts, e retomar
+ * continua daí — ninguém recebe duas vezes.
+ *
+ * Um disparo que está EM ANDAMENTO na hora da pausa termina a fatia atual
+ * (segundos) e só então para; o motor checa paused_at ao pegar o job, não no
+ * meio do lote.
+ */
+export function useSetScheduledMessagePaused() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ id, paused }: { id: string; paused: boolean }) => {
+      // Filtra por id e escreve paused_at: colunas diferentes de propósito. Um
+      // update cujo WHERE usa a coluna que ele mesmo altera volta sem linha no
+      // PostgREST (foi o que travou o disparo em 17/08).
+      const { data, error } = await supabase
+        .from('scheduled_messages')
+        .update({ paused_at: paused ? new Date().toISOString() : null })
+        .eq('id', id)
+        .select('id');
+
+      if (error) {
+        // A coluna chega numa migration à parte; se o banco ainda não recebeu,
+        // o erro cru ("schema cache") não diz nada ao usuário.
+        const missingColumn =
+          error.code === 'PGRST204' || String(error.message || '').includes('paused_at');
+        throw new Error(
+          missingColumn
+            ? 'Atualização do banco ainda não aplicada — a pausa estará disponível assim que a migration subir.'
+            : error.message,
+        );
+      }
+      // RLS não gera erro em update de 0 linhas: sem isto, um usuário sem
+      // permissão veria toast de sucesso e o disparo continuaria enviando.
+      if (!data || data.length === 0) {
+        throw new Error('Sem permissão para alterar este agendamento.');
+      }
+      return paused;
+    },
+    onSuccess: (paused) => {
+      queryClient.invalidateQueries({ queryKey: ['scheduled-messages'] });
+      toast({
+        title: paused ? 'Disparo pausado' : 'Disparo retomado',
+        description: paused
+          ? 'Nenhuma mensagem nova será enviada até você retomar.'
+          : 'O envio continua de onde parou.',
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Não foi possível alterar a pausa',
+        description: error.message || 'Tente novamente.',
         variant: 'destructive',
       });
     },

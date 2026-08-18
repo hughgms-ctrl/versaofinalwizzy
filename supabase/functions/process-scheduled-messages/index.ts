@@ -65,6 +65,9 @@ interface ScheduledMessage {
   scheduled_at: string;
   next_execution_at: string | null;
   execution_count: number;
+  // Pausa manual pelo painel. O motor só LÊ este campo — quem escreve é o app.
+  // Ver a migration 20260817230000 para o porquê de não ser um status.
+  paused_at: string | null;
   // Envio em lotes (opcional). batch_size_max null/0 = desligado.
   batch_size_max: number | null;
   batch_pause_minutes: number | null;
@@ -115,6 +118,42 @@ async function resolveScheduledInstance(
 const WORKSPACE_WITHOUT_NUMBER_ERROR =
   'Workspace sem número de WhatsApp conectado. Conecte um número ao workspace para enviar mensagens.';
 
+/**
+ * A coluna paused_at (pausa manual pelo painel) chega numa migration separada.
+ * Neste projeto o deploy da edge function e a aplicação da migration acontecem em
+ * momentos diferentes — já houve 7h de intervalo. Citar uma coluna inexistente
+ * em `.or()` faz o PostgREST recusar a query INTEIRA, o que derrubaria TODO o
+ * disparo agendado até a migration subir. Então detectamos uma vez por isolate e,
+ * sem a coluna, seguimos enviando (sem honrar a pausa) em vez de parar tudo.
+ */
+let pausedAtSupported: boolean | null = null;
+
+async function supportsPausedAt(supabase: any): Promise<boolean> {
+  if (pausedAtSupported !== null) return pausedAtSupported;
+
+  const { error } = await supabase.from('scheduled_messages').select('paused_at').limit(1);
+  if (!error) {
+    pausedAtSupported = true;
+    return true;
+  }
+  // 42703 = undefined_column.
+  if (error.code === '42703' || String(error.message || '').includes('paused_at')) {
+    console.error(
+      '[scheduled] coluna paused_at ausente — migration 20260817230000 pendente. ' +
+      'O envio continua, mas pausar pelo painel não vai segurar o disparo.',
+    );
+    pausedAtSupported = false;
+    return false;
+  }
+  // Erro de outra natureza (transitório): não cacheia e assume o caminho normal.
+  return true;
+}
+
+/** Trecho `paused_at.is.null,` do filtro — vazio quando a coluna ainda não existe. */
+function pausedGuard(supported: boolean): string {
+  return supported ? 'paused_at.is.null,' : '';
+}
+
 // Folga na comparação do carimbo do claim (ver claimScheduled): cobre a defasagem
 // de relógio entre a edge function e o Postgres. Curta de propósito — tem que ser
 // bem menor que HEARTBEAT_MS, senão o carimbo recente de OUTRO worker caberia na
@@ -129,9 +168,10 @@ const CLAIM_STAMP_TOLERANCE_MS = 5_000;
  * reavalia o WHERE contra a versão nova — encontrando 0 linhas. Sem isso, um
  * despacho duplicado do cron viraria envio duplicado.
  *
- * A pausa entre lotes entra na condição de propósito: o dispatcher já filtra por
- * ela, mas quem garante a cadência do número é este UPDATE. Assim uma invocação
- * manual não fura a pausa antibloqueio.
+ * A pausa entre lotes e a pausa manual (paused_at) entram na condição de
+ * propósito: o dispatcher já filtra por elas, mas quem garante a cadência do
+ * número — e que um disparo pausado no painel não volte a enviar — é este
+ * UPDATE. Assim nem uma invocação manual fura a pausa.
  *
  * ATENÇÃO — por que existe o passo 2 (reconferência):
  * o WHERE deste UPDATE filtra exatamente as colunas que o próprio UPDATE escreve
@@ -145,6 +185,7 @@ const CLAIM_STAMP_TOLERANCE_MS = 5_000;
  * Retorna a linha JÁ ATUALIZADA (batch_*, group_progress etc. frescos) ou null.
  */
 async function claimScheduled(supabase: any, scheduledId: string): Promise<ScheduledMessage | null> {
+  const pausa = pausedGuard(await supportsPausedAt(supabase));
   const claimStartedAt = Date.now();
   const now = new Date(claimStartedAt).toISOString();
   const staleBefore = new Date(claimStartedAt - STALE_LOCK_MS).toISOString();
@@ -155,8 +196,8 @@ async function claimScheduled(supabase: any, scheduledId: string): Promise<Sched
     .update({ status: 'processing', updated_at: now })
     .eq('id', scheduledId)
     .or(
-      `and(status.eq.pending,or(batch_paused_until.is.null,batch_paused_until.lte.${now})),` +
-      `and(status.eq.processing,updated_at.lt.${staleBefore})`,
+      `and(status.eq.pending,${pausa}or(batch_paused_until.is.null,batch_paused_until.lte.${now})),` +
+      `and(status.eq.processing,${pausa}updated_at.lt.${staleBefore})`,
     )
     .select('*');
 
@@ -318,14 +359,16 @@ Deno.serve(async (req) => {
     const deadlineAt = startedAt + MAX_RUN_MS_SCAN;
     const now = new Date().toISOString();
     const staleBefore = new Date(Date.now() - STALE_LOCK_MS).toISOString();
+    const pausa = pausedGuard(await supportsPausedAt(supabase));
 
     const { data: scheduledMessages, error: fetchError } = await supabase
       .from('scheduled_messages')
       .select('id')
       .or(
-        // Pendente e vencido, E fora de pausa entre lotes (sem pausa ou já expirada).
-        `and(status.eq.pending,next_execution_at.lte.${now},or(batch_paused_until.is.null,batch_paused_until.lte.${now})),` +
-        `and(status.eq.processing,updated_at.lt.${staleBefore})`,
+        // Pendente e vencido, E fora de pausa entre lotes (sem pausa ou já expirada),
+        // E não pausado à mão no painel (paused_at).
+        `and(status.eq.pending,${pausa}next_execution_at.lte.${now},or(batch_paused_until.is.null,batch_paused_until.lte.${now})),` +
+        `and(status.eq.processing,${pausa}updated_at.lt.${staleBefore})`,
       )
       .order('next_execution_at', { ascending: true })
       .limit(50);

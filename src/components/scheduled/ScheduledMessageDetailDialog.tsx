@@ -9,6 +9,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
@@ -19,11 +20,12 @@ import {
   Layers,
   Loader2,
   Pause,
+  Play,
   Timer,
   Users,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { ScheduledMessage } from '@/hooks/useScheduledMessages';
+import { useSetScheduledMessagePaused, type ScheduledMessage } from '@/hooks/useScheduledMessages';
 import { useScheduledMessageProgress } from '@/hooks/useScheduledMessageProgress';
 
 /**
@@ -97,6 +99,8 @@ export function ScheduledMessageDetailDialog({
   message: ScheduledMessage | null;
 }) {
   const isRunning = message ? ['pending', 'processing'].includes(message.status) : false;
+  const isPaused = isRunning && !!message?.paused_at;
+  const pauseMutation = useSetScheduledMessagePaused();
 
   // Disparo encerrado usa o retrato congelado gravado pelo motor — é o que faz
   // o painel de uma execução antiga continuar acessível mesmo depois de uma
@@ -119,6 +123,8 @@ export function ScheduledMessageDetailDialog({
   /** Estimativa para terminar: pendentes × delay + pausas restantes. */
   const remainingEstimate = useMemo(() => {
     if (!message || !progress || progress.pending === 0) return null;
+    // Pausado não tem previsão: depende de quando o usuário retomar.
+    if (message.paused_at) return null;
     const base = waitSecondsForPosition(message, progress.pending);
     const pauseNow = pausedUntil ? (pausedUntil.getTime() - Date.now()) / 1000 : 0;
     return humanizeSeconds(base + pauseNow);
@@ -139,6 +145,13 @@ export function ScheduledMessageDetailDialog({
         tone: 'warn',
         text: 'O disparo não pôde ser concluído. Verifique se o número de WhatsApp deste workspace está conectado e reagende.',
       };
+    }
+    // Pausa manual vem antes da pausa entre lotes: se o usuário pausou, é isso
+    // que ele precisa ler, mesmo que exista uma pausa automática em curso.
+    if (message.paused_at && (message.status === 'pending' || message.status === 'processing')) {
+      return message.status === 'processing'
+        ? { tone: 'info', text: 'Pausado — terminando o lote em andamento. Nada novo será enviado depois disso.' }
+        : { tone: 'info', text: 'Pausado. Nenhuma mensagem sai até você retomar.' };
     }
     if (pausedUntil) {
       return {
@@ -187,6 +200,29 @@ export function ScheduledMessageDetailDialog({
             })}
           </DialogDescription>
         </DialogHeader>
+
+        {isRunning && (
+          <div className="flex justify-end">
+            <Button
+              variant={isPaused ? 'default' : 'outline'}
+              size="sm"
+              disabled={pauseMutation.isPending}
+              onClick={() => pauseMutation.mutate({ id: message.id, paused: !isPaused })}
+            >
+              {isPaused ? (
+                <>
+                  <Play className="mr-2 h-4 w-4" />
+                  Retomar disparo
+                </>
+              ) : (
+                <>
+                  <Pause className="mr-2 h-4 w-4" />
+                  Pausar disparo
+                </>
+              )}
+            </Button>
+          </div>
+        )}
 
         {isLoading ? (
           <div className="flex h-40 items-center justify-center">

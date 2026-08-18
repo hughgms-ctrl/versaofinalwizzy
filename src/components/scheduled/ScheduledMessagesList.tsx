@@ -5,6 +5,7 @@ import {
   useScheduledMessages, 
   useCancelScheduledMessage, 
   useDeleteScheduledMessage,
+  useSetScheduledMessagePaused,
   ScheduledMessage 
 } from '@/hooks/useScheduledMessages';
 import { 
@@ -22,6 +23,7 @@ import {
   XCircle,
   AlertCircle,
   Pause,
+  Play,
   Trash2,
   Ban,
   Pencil,
@@ -138,6 +140,7 @@ export function ScheduledMessagesList() {
   const { data: scheduledMessages = [], isLoading } = useScheduledMessages();
   const cancelMutation = useCancelScheduledMessage();
   const deleteMutation = useDeleteScheduledMessage();
+  const pauseMutation = useSetScheduledMessagePaused();
   const { selectedWorkspaceId } = useWorkspaceContext();
   
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -155,6 +158,10 @@ export function ScheduledMessagesList() {
 
   const handleCancel = (id: string) => {
     cancelMutation.mutate(id);
+  };
+
+  const handleTogglePause = (message: ScheduledMessage) => {
+    pauseMutation.mutate({ id: message.id, paused: !message.paused_at });
   };
 
   const handleDelete = () => {
@@ -215,6 +222,7 @@ export function ScheduledMessagesList() {
                 key={message.id}
                 message={message}
                 onCancel={handleCancel}
+                onTogglePause={handleTogglePause}
                 onDelete={setDeleteId}
                 onEdit={setEditMessage}
                 onReschedule={setRescheduleMessage}
@@ -244,6 +252,7 @@ export function ScheduledMessagesList() {
                 key={message.id}
                 message={message}
                 onCancel={handleCancel}
+                onTogglePause={handleTogglePause}
                 onDelete={setDeleteId}
                 onEdit={setEditMessage}
                 onReschedule={setRescheduleMessage}
@@ -304,6 +313,7 @@ export function ScheduledMessagesList() {
 function ScheduledMessageCard({
   message,
   onCancel,
+  onTogglePause,
   onDelete,
   onEdit,
   onReschedule,
@@ -311,12 +321,25 @@ function ScheduledMessageCard({
 }: {
   message: ScheduledMessage;
   onCancel: (id: string) => void;
+  onTogglePause: (message: ScheduledMessage) => void;
   onDelete: (id: string) => void;
   onEdit: (message: ScheduledMessage) => void;
   onReschedule: (message: ScheduledMessage) => void;
   onOpenDetail: (message: ScheduledMessage) => void;
 }) {
-  const status = statusConfig[message.status];
+  // Um disparo ativo pode estar pausado à mão (paused_at). Nesse caso o badge
+  // mostra a pausa, que é a informação que importa — 'pending' apareceria como
+  // "Pendente" e daria a entender que ainda vai sair sozinho.
+  const isActive = message.status === 'pending' || message.status === 'processing';
+  const isPaused = isActive && !!message.paused_at;
+  const status = isPaused
+    ? {
+        // 'processing' + pausa = o motor ainda está terminando a fatia atual.
+        label: message.status === 'processing' ? 'Pausando...' : 'Pausado',
+        icon: Pause,
+        color: 'bg-amber-500/10 text-amber-600',
+      }
+    : statusConfig[message.status];
   const StatusIcon = status.icon;
 
   const getTargetLabel = () => {
@@ -406,7 +429,7 @@ function ScheduledMessageCard({
         {/* Ações do card: impedem o clique de borbulhar e abrir o painel. */}
         <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
           <Badge variant="secondary" className={cn("text-xs", status.color)}>
-            <StatusIcon className={cn("h-3 w-3 mr-1", message.status === 'processing' && 'animate-spin')} />
+            <StatusIcon className={cn("h-3 w-3 mr-1", message.status === 'processing' && !isPaused && 'animate-spin')} />
             {status.label}
           </Badge>
           
@@ -417,6 +440,21 @@ function ScheduledMessageCard({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
+              {isActive && (
+                <DropdownMenuItem onClick={() => onTogglePause(message)}>
+                  {isPaused ? (
+                    <>
+                      <Play className="h-4 w-4 mr-2" />
+                      Retomar
+                    </>
+                  ) : (
+                    <>
+                      <Pause className="h-4 w-4 mr-2" />
+                      Pausar
+                    </>
+                  )}
+                </DropdownMenuItem>
+              )}
               {message.status === 'pending' && (
                 <>
                   <DropdownMenuItem onClick={() => onEdit(message)}>
@@ -424,12 +462,12 @@ function ScheduledMessageCard({
                     Editar
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => onCancel(message.id)}>
-                    <Pause className="h-4 w-4 mr-2" />
+                    <Ban className="h-4 w-4 mr-2" />
                     Cancelar
                   </DropdownMenuItem>
-                  <DropdownMenuSeparator />
                 </>
               )}
+              {isActive && <DropdownMenuSeparator />}
               <DropdownMenuItem onClick={() => onReschedule(message)}>
                 <CalendarPlus className="h-4 w-4 mr-2" />
                 Reagendar

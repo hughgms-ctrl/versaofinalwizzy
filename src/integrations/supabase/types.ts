@@ -8668,6 +8668,7 @@ export type Database = {
           name: string | null
           next_execution_at: string | null
           organization_id: string
+          paused_at: string | null
           recurrence_end_at: string | null
           recurrence_type: string | null
           scheduled_at: string
@@ -8701,6 +8702,7 @@ export type Database = {
           name?: string | null
           next_execution_at?: string | null
           organization_id: string
+          paused_at?: string | null
           recurrence_end_at?: string | null
           recurrence_type?: string | null
           scheduled_at: string
@@ -8734,6 +8736,7 @@ export type Database = {
           name?: string | null
           next_execution_at?: string | null
           organization_id?: string
+          paused_at?: string | null
           recurrence_end_at?: string | null
           recurrence_type?: string | null
           scheduled_at?: string
