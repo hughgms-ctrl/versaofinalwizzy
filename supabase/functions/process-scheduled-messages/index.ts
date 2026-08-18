@@ -187,6 +187,13 @@ async function claimScheduled(supabase: any, scheduledId: string): Promise<Sched
   // transação, então comparamos por janela, não por igualdade.
   const stampedAt = Date.parse(row.updated_at);
   if (!Number.isFinite(stampedAt) || stampedAt < claimStartedAt - CLAIM_STAMP_TOLERANCE_MS) {
+    // Carimbo de outro worker (ou defasagem de relógio maior que a tolerância).
+    // Logamos porque, se isto se repetir sempre para o mesmo job, o sintoma é
+    // exatamente o do incidente de 17/08: disparo parado sem erro nenhum.
+    console.warn(
+      `[scheduled ${scheduledId}] claim não assumido: updated_at=${row.updated_at} ` +
+      `(claim iniciado em ${new Date(claimStartedAt).toISOString()})`,
+    );
     return null;
   }
 
@@ -348,6 +355,16 @@ Deno.serve(async (req) => {
       } finally {
         stopHeartbeat();
       }
+    }
+
+    // Achou trabalho e não conseguiu tocar em nada: com um cron de um chamador só,
+    // isso não é disputa entre workers — é o claim falhando. Grita no log, porque
+    // no incidente de 17/08 este exato estado (total>0, processed=0, failed=0) foi
+    // a única pista de que o disparo estava morto.
+    if (scheduledMessages.length > 0 && processed === 0 && failed === 0) {
+      console.error(
+        `[scheduled] ${scheduledMessages.length} agendamento(s) vencido(s) e nenhum foi assumido — claim travado?`,
+      );
     }
 
     return new Response(
