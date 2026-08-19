@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { fetchAllContactTagLinks } from '@/lib/contactTagLinks';
 import { useToast } from '@/hooks/use-toast';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 
@@ -80,17 +81,15 @@ export function useAllTags() {
 
 // All contact<->tag links, unfiltered by contact. Used to avoid firing one
 // request per contact when rendering a list (e.g. conversation list badges).
+//
+// Paginado: um `.select()` solto aqui volta CORTADO no teto de linhas do
+// PostgREST, e como isso chega como sucesso todo consumidor (badge da lista,
+// filtro por tag do funil, filtro por permissao) simplesmente deixava de ver
+// parte das ligacoes, sem erro nenhum.
 export function useAllContactTags() {
   return useQuery({
     queryKey: ['all-contact-tags'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('contact_tags' as any)
-        .select('contact_id, tag_id') as { data: { contact_id: string; tag_id: string }[] | null; error: any };
-
-      if (error) throw error;
-      return data || [];
-    },
+    queryFn: fetchAllContactTagLinks,
   });
 }
 

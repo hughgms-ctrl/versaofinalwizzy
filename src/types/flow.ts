@@ -14,6 +14,7 @@ export type FlowNodeType =
   | 'action-document'
   | 'action-delay'
   | 'action-workspace'
+  | 'action-contact-field'
   | 'action-whatsapp-group'
   | 'condition'
   | 'user-input'
@@ -21,6 +22,21 @@ export type FlowNodeType =
   | 'ai-return'
   | 'randomizer'
   | 'smart-delay';
+
+// === SALVAR NO CONTATO ===
+
+/**
+ * Uma gravacao do no 'action-contact-field': manda o valor (texto livre, com
+ * {{variavel}}) para uma chave de contact_custom_fields, que o motor persiste em
+ * contacts.metadata.custom_fields.
+ */
+export interface ContactFieldAssignment {
+  id: string;
+  /** key de contact_custom_fields. E tambem o nome da variavel {{key}}. */
+  fieldKey: string;
+  /** Valor a gravar. Passa por replaceVariables antes de ir pro banco. */
+  value: string;
+}
 
 // Content Block Item Types
 export type ContentItemType = 'text' | 'image' | 'video' | 'audio' | 'document' | 'delay';

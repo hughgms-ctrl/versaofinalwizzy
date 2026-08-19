@@ -770,6 +770,15 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
         break;
       }
 
+      case 'action-contact-field': {
+        const saved = Array.isArray(d.assignments) ? (d.assignments as { fieldKey?: string }[]) : [];
+        const names = saved.map((a) => a.fieldKey).filter(Boolean).join(', ');
+        addMsg({ type: 'action', content: names ? `Salvando no contato: ${names}` : 'Salvando no contato', actionIcon: '💾' });
+        await wait(600);
+        await advanceOrEnd();
+        break;
+      }
+
       case 'action-webhook': {
         addMsg({ type: 'action', content: `Executando webhook: ${d.url || '...'}`, actionIcon: '🌐' });
         await wait(1000);

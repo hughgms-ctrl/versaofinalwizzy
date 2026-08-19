@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './useAuth';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { startOfDay, subDays, endOfDay } from 'date-fns';
+import { fetchContactIdsByTags } from '@/lib/contactTagLinks';
 
 export interface FunnelStageData {
   column_id: string;
@@ -61,11 +62,9 @@ export function useFunnelData(
         if (tagIds.length === 0) {
           allowedConvIds = [];
         } else {
-          const { data: contactTags } = await supabase
-            .from('contact_tags')
-            .select('contact_id')
-            .in('tag_id', tagIds);
-          const contactIds = [...new Set((contactTags || []).map((c: any) => c.contact_id))];
+          // Paginado: contact_tags sem limite volta cortada no teto do
+          // PostgREST e a contagem do funil cai sem avisar.
+          const contactIds = await fetchContactIdsByTags(tagIds);
           if (contactIds.length === 0) {
             allowedConvIds = [];
           } else {

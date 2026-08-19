@@ -829,6 +829,9 @@ async function runNodeByType(
     case 'orch-human':
       return await executeTransfer(data, context, supabase);
 
+    case 'action-contact-field':
+      return await executeContactFieldAction(data, context, supabase);
+
     case 'action-workspace':
       return await executeWorkspaceAssignment(data, context, supabase);
 
@@ -838,6 +841,71 @@ async function runNodeByType(
     default:
       console.log(`Unknown node type: ${type}`);
       return { success: true };
+  }
+}
+
+// Grava respostas do fluxo nos campos personalizados do contato.
+//
+// O contrario ja existia desde sempre: o inicio da execucao SEMEIA as
+// variaveis a partir de contacts.metadata.custom_fields. Faltava o caminho de
+// volta — sem ele, tudo o que o cliente respondia ficava preso em
+// flow_executions.variables e sumia para o resto do sistema.
+async function executeContactFieldAction(
+  data: Record<string, unknown>,
+  context: ExecutionContext,
+  supabase: SupabaseClientType
+): Promise<NodeResult> {
+  const assignments = Array.isArray(data.assignments) ? data.assignments : [];
+  if (assignments.length === 0) {
+    return { success: true, metadata: { skipped: 'no_assignments' } };
+  }
+  if (!context.contactId) {
+    return { success: true, metadata: { skipped: 'no_contact' } };
+  }
+
+  const values: Record<string, string> = {};
+  for (const raw of assignments) {
+    const item = (raw || {}) as Record<string, unknown>;
+    const key = String(item.fieldKey || '').trim();
+    // Mesma regra do CHECK de contact_custom_fields.key. Chave fora do formato
+    // seria gravada mas nunca voltaria como {{chave}}, porque o replace so casa
+    // \w+ — melhor ignorar do que sujar o metadata em silencio.
+    if (!key || !/^[a-z][a-z0-9_]*$/.test(key)) continue;
+
+    const value = replaceVariables(String(item.value ?? ''), context.variables).trim();
+    // Variavel nao preenchida vira string vazia depois do replace. Gravar isso
+    // APAGARIA o que o contato ja tinha (importacao de planilha, fluxo
+    // anterior), entao vazio nao escreve.
+    if (!value) continue;
+
+    values[key] = value;
+  }
+
+  if (Object.keys(values).length === 0) {
+    return { success: true, metadata: { skipped: 'no_values' } };
+  }
+
+  try {
+    // RPC em vez de ler-mesclar-regravar aqui: metadata guarda tambem note e
+    // phone_aliases, e a mescla no cliente perde escrita concorrente.
+    const { error } = await supabase.rpc('merge_contact_custom_fields', {
+      _contact_id: context.contactId,
+      _values: values,
+    });
+
+    if (error) {
+      console.error('[FLOW EXECUTE] action-contact-field error:', error.message);
+      return { success: false, error: error.message };
+    }
+
+    console.log(`[FLOW EXECUTE] Saved ${Object.keys(values).join(', ')} on contact ${context.contactId}`);
+
+    // Devolvido como variaveis tambem: os nos seguintes desta mesma passagem
+    // passam a ver {{chave}} com o valor recem-gravado.
+    return { success: true, variables: values, metadata: { savedFields: Object.keys(values) } };
+  } catch (error) {
+    console.error('[FLOW EXECUTE] action-contact-field error:', error);
+    return { success: false, error: String(error) };
   }
 }
 

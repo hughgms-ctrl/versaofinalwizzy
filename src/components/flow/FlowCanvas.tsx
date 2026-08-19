@@ -39,6 +39,7 @@ import {
   DocumentActionNode,
   WorkspaceActionNode,
   WhatsAppGroupActionNode,
+  ContactFieldActionNode,
 } from './nodes/ActionNodes';
 import { ConditionNode, UserInputNode, RandomizerNode, SmartDelayNode } from './nodes/LogicNodes';
 import { AIHandoffNode, AIMasterNode, AIReturnNode } from './nodes/AINodes';
@@ -71,6 +72,7 @@ const nodeTypes = {
   'action-document': DocumentActionNode,
   'action-workspace': WorkspaceActionNode,
   'action-whatsapp-group': WhatsAppGroupActionNode,
+  'action-contact-field': ContactFieldActionNode,
   'condition': ConditionNode,
   'user-input': UserInputNode,
   'randomizer': RandomizerNode,
@@ -593,6 +595,7 @@ function FlowCanvasInner() {
                   case 'randomizer': return '#a855f7';
                   case 'smart-delay': return '#f97316';
                   case 'action-whatsapp-group': return '#10b981';
+                  case 'action-contact-field': return '#0d9488';
                   default: return '#6b7280';
                 }
               }}

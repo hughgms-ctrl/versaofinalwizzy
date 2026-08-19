@@ -1,5 +1,5 @@
 import { Handle, Position, NodeProps, Node } from '@xyflow/react';
-import { Tag, Kanban, UserPlus, Clock, Webhook, IterationCw, FileText, GitBranch, Building2, Users } from 'lucide-react';
+import { Tag, Kanban, UserPlus, Clock, Webhook, IterationCw, FileText, GitBranch, Building2, Users, UserCog } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getFollowUpOutputs } from './followUpHandles';
 import { WaitOutputRows } from './followUpOutputs';
@@ -23,6 +23,7 @@ interface ActionNodeData extends Record<string, unknown> {
   groupJid?: string;
   groupName?: string;
   items?: unknown[];
+  assignments?: unknown[];
 }
 
 type ActionNode = Node<ActionNodeData>;
@@ -301,6 +302,19 @@ export function WorkspaceActionNode({ data, selected }: NodeProps<ActionNode>) {
     <BaseActionNode selected={!!selected} icon={Building2} color="bg-sky-500" title="Atribuir Workspace">
       <p className="text-xs text-muted-foreground">
         Workspace: <span className="font-medium text-foreground">{String(data.workspaceName || 'Selecionar...')}</span>
+      </p>
+    </BaseActionNode>
+  );
+}
+
+export function ContactFieldActionNode({ data, selected }: NodeProps<ActionNode>) {
+  const count = Array.isArray(data.assignments) ? (data.assignments as unknown[]).length : 0;
+  return (
+    <BaseActionNode selected={!!selected} icon={UserCog} color="bg-teal-600" title="Salvar no Contato">
+      <p className="text-xs text-muted-foreground">
+        {count > 0
+          ? `${count} campo${count > 1 ? 's' : ''} do contato`
+          : 'Configurar campos...'}
       </p>
     </BaseActionNode>
   );

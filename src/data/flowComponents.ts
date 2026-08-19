@@ -98,6 +98,13 @@ export const flowComponentCategories: FlowComponentCategory[] = [
         color: 'bg-sky-500',
       },
       {
+        type: 'action-contact-field',
+        label: 'Salvar no Contato',
+        description: 'Grava respostas do fluxo nos campos do contato',
+        icon: 'UserCog',
+        color: 'bg-teal-600',
+      },
+      {
         type: 'action-whatsapp-group',
         label: 'Enviar Grupo WhatsApp',
         description: 'Envia mensagem para um grupo de WhatsApp',

@@ -4,7 +4,7 @@ import {
   X, Layers, MousePointerClick, List, Tag, Kanban, UserPlus, Webhook,
   GitBranch, FormInput, Bot, IterationCw, Plus, Trash2, GripVertical,
   Type, Image, Video, Music, FileText, Clock, Upload, Loader2, Save, Sparkles,
-  Link, ChevronRight, ChevronDown, Folder, Shuffle, User, MessageSquare, Building2, Users, Settings2,
+  Link, ChevronRight, ChevronDown, Folder, Shuffle, User, MessageSquare, Building2, Users, Settings2, UserCog,
   AlertTriangle
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -14,7 +14,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
-import { FlowNodeType, ContentItem, ContentItemType, ConditionRule, ConditionRuleType, RandomizerVariant } from '@/types/flow';
+import { FlowNodeType, ContentItem, ContentItemType, ConditionRule, ConditionRuleType, RandomizerVariant, ContactFieldAssignment } from '@/types/flow';
 import { RemarketingStepsEditor } from './RemarketingStepsEditor';
 import { useTeamMembers } from '@/hooks/useTeamMembers';
 import { useAllTags } from '@/hooks/useTags';
@@ -35,8 +35,8 @@ import { QualificationRulesPanel } from '@/components/agents/QualificationRulesP
 import { QuickEditAgentDialog } from '@/components/agents/QuickEditAgentDialog';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { getAvailableVariables, FlowVariableGroup } from '@/lib/flowVariables';
-import { useContactCustomFields } from '@/hooks/useContactCustomFields';
-import { VariableTextarea } from './VariableInserter';
+import { useContactCustomFields, useCreateContactCustomField } from '@/hooks/useContactCustomFields';
+import { VariableTextarea, VariableInput } from './VariableInserter';
 
 // Generate simple unique ID
 const generateId = () => Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
@@ -132,6 +132,7 @@ const nodeIcons: Record<string, React.ComponentType<{ className?: string }>> = {
   'action-delay': Clock,
   'action-workspace': Building2,
   'action-whatsapp-group': Users,
+  'action-contact-field': UserCog,
   'randomizer': Shuffle,
   'smart-delay': Clock,
 };
@@ -155,6 +156,7 @@ const nodeLabels: Record<FlowNodeType, string> = {
   'user-input': 'Pergunta (Variável)',
   'action-workspace': 'Atribuir Workspace',
   'action-whatsapp-group': 'Enviar Grupo WhatsApp',
+  'action-contact-field': 'Salvar no Contato',
   'randomizer': 'Randomizador',
   'smart-delay': 'Atraso Inteligente',
 };
@@ -640,6 +642,8 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
   const [quickEditAgentOpen, setQuickEditAgentOpen] = useState(false);
   const { data: allTags = [] } = useAllTags();
   const { data: contactCustomFields = [] } = useContactCustomFields();
+  const createContactCustomField = useCreateContactCustomField();
+  const [newFieldLabel, setNewFieldLabel] = useState('');
   const { data: agents = [] } = useAIAgents();
   const { data: allFlows = [] } = useFlows();
   const { data: flowFolders = [] } = useFlowFolders();
@@ -2286,6 +2290,151 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
             </div>
           </div>
         );
+
+      case 'action-contact-field': {
+        // Grava resposta do fluxo no contato. Sem este no, tudo o que o cliente
+        // responde morre em flow_executions.variables: o motor SEMEIA
+        // contacts.metadata.custom_fields no comeco da execucao, mas nao tinha
+        // nenhum caminho de volta pra la.
+        const assignments = (Array.isArray(localData.assignments) ? localData.assignments : []) as ContactFieldAssignment[];
+
+        const setAssignments = (next: ContactFieldAssignment[]) => handleChange('assignments', next);
+
+        const updateAssignment = (index: number, patch: Partial<ContactFieldAssignment>) => {
+          setAssignments(assignments.map((a, i) => (i === index ? { ...a, ...patch } : a)));
+        };
+
+        const addAssignment = () => {
+          const id = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+            ? crypto.randomUUID()
+            : `f_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+          setAssignments([...assignments, { id, fieldKey: '', value: '' }]);
+        };
+
+        const handleCreateField = async () => {
+          const label = newFieldLabel.trim();
+          if (!label) return;
+          try {
+            const created = await createContactCustomField.mutateAsync({ label });
+            setNewFieldLabel('');
+            // Ja emenda o campo recem-criado na ultima linha vazia, senao o
+            // usuario cria o campo e precisa procurar ele no select.
+            const emptyIndex = assignments.findIndex((a) => !a.fieldKey);
+            if (emptyIndex >= 0) {
+              updateAssignment(emptyIndex, { fieldKey: created.key });
+            } else {
+              const id = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+                ? crypto.randomUUID()
+                : `f_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+              setAssignments([...assignments, { id, fieldKey: created.key, value: '' }]);
+            }
+          } catch {
+            // o hook ja mostra o toast de erro
+          }
+        };
+
+        return (
+          <div className="space-y-4">
+            <div className="p-3 bg-teal-50 dark:bg-teal-950/30 rounded-lg flex items-center gap-3">
+              <UserCog className="h-5 w-5 text-teal-600" />
+              <div>
+                <p className="text-xs font-semibold">Salvar no Contato</p>
+                <p className="text-[10px] text-muted-foreground">
+                  Grava valores nos campos personalizados do contato. Ficam disponiveis como {'{{campo}}'} em qualquer fluxo futuro.
+                </p>
+              </div>
+            </div>
+
+            {contactCustomFields.length === 0 && (
+              <div className="p-3 rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 flex gap-2">
+                <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                <p className="text-[11px] text-muted-foreground">
+                  Nenhum campo personalizado cadastrado ainda. Crie o primeiro abaixo.
+                </p>
+              </div>
+            )}
+
+            <div className="space-y-3">
+              {assignments.map((assignment, index) => (
+                <div key={assignment.id || index} className="p-3 rounded-lg border border-border space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Select
+                      value={assignment.fieldKey || ''}
+                      onValueChange={(value) => updateAssignment(index, { fieldKey: value })}
+                    >
+                      <SelectTrigger className="flex-1">
+                        <SelectValue placeholder="Escolha o campo..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {contactCustomFields.map((field) => (
+                          <SelectItem key={field.id} value={field.key}>
+                            {field.label}
+                            <span className="text-muted-foreground"> ({field.key})</span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="text-destructive shrink-0"
+                      onClick={() => setAssignments(assignments.filter((_, i) => i !== index))}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <VariableInput
+                    value={assignment.value || ''}
+                    onValueChange={(value) => updateAssignment(index, { value })}
+                    variables={availableVariables}
+                    placeholder="{{resposta}}"
+                  />
+                </div>
+              ))}
+
+              <Button variant="outline" size="sm" className="w-full" onClick={addAssignment}>
+                <Plus className="h-4 w-4 mr-2" />
+                Adicionar campo
+              </Button>
+            </div>
+
+            <div className="space-y-2 pt-2 border-t border-border">
+              <Label className="text-xs">Criar novo campo personalizado</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  value={newFieldLabel}
+                  onChange={(e) => setNewFieldLabel(e.target.value)}
+                  placeholder="Ex: CNPJ"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleCreateField();
+                    }
+                  }}
+                />
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="shrink-0"
+                  disabled={!newFieldLabel.trim() || createContactCustomField.isPending}
+                  onClick={handleCreateField}
+                >
+                  {createContactCustomField.isPending
+                    ? <Loader2 className="h-4 w-4 animate-spin" />
+                    : 'Criar'}
+                </Button>
+              </div>
+              <p className="text-[10px] text-muted-foreground">
+                O campo vale para a organizacao inteira e aparece tambem na importacao de contatos.
+              </p>
+            </div>
+
+            <p className="text-[10px] text-muted-foreground">
+              Valor vazio nao apaga o que ja estava gravado no contato.
+            </p>
+          </div>
+        );
+      }
 
       case 'action-delay':
         return (

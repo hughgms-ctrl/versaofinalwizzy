@@ -51,7 +51,7 @@ import { usePipelineRealtime } from '@/hooks/usePipelineRealtime';
 import { ConversationFiltersState } from '@/components/shared/ConversationFilters';
 import { useUserPermissions, useCurrentUserRole } from '@/hooks/useUserPermissions';
 import { useAuth } from '@/hooks/useAuth';
-import { useTags } from '@/hooks/useTags';
+import { useTags, useAllContactTags } from '@/hooks/useTags';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useFollowUpStatus } from '@/hooks/useFollowUpStatus';
 import { useMessageSearch } from '@/hooks/useMessageSearch';
@@ -409,16 +409,14 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
   const handlePointerCancel = useCallback(() => endPan(), [endPan]);
 
   // Fetch contact tags for filtering
-  const { data: allContactTags = [] } = useQuery({
-    queryKey: ['all-contact-tags'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('contact_tags')
-        .select('contact_id, tag_id');
-      if (error) throw error;
-      return data || [];
-    },
-  });
+  //
+  // Hook compartilhado, mesma chave ['all-contact-tags'] que a lista de
+  // conversas usa e que ConversationCardActions/usePipelineRealtime invalidam.
+  // Aqui existia uma copia inline dessa query — mesma chave, e sem paginacao:
+  // passando do teto de linhas do PostgREST a resposta vinha cortada COMO
+  // SUCESSO, e todo filtro montado em cima dela (tag, permissao por tag, chips
+  // do card) escondia card sem dar erro.
+  const { data: allContactTags = [] } = useAllContactTags();
 
   // Apply all filters to conversations (including search)
   const filteredConversations = useMemo(() => {

@@ -716,23 +716,29 @@ export function useMoveConversation() {
 
       // Auto-transition: check if this is the last column and pipeline has next_pipeline_id
       if (stageChanged && !skipAutoTransition && profile?.organization_id) {
-        // Fetch all columns of current pipeline to check if we're at the last one
-        const { data: allColumns } = await (supabase as any)
-          .from('pipeline_columns')
-          .select('id, order')
-          .eq('pipeline_id', pipelineId)
-          .order('order', { ascending: false })
-          .limit(1);
+        // A transicao dispara na COLUNA DE CONCLUSAO configurada no funil.
+        // completion_column_id era gravado pela tela de configuracao e nunca
+        // lido aqui: o gatilho era sempre a ultima coluna por ordem, entao
+        // configurar 'concluir em X' nao tinha efeito nenhum. Sem configuracao
+        // (null = 'ultima coluna'), o padrao antigo continua valendo.
+        const { data: currentPipeline } = await (supabase as any)
+          .from('pipelines')
+          .select('next_pipeline_id, next_pipeline_column_id, completion_column_id, default_assigned_to')
+          .eq('id', pipelineId)
+          .single();
 
-        const lastColumn = allColumns?.[0];
-        if (lastColumn && lastColumn.id === columnId) {
-          // Fetch pipeline to get next_pipeline_id
-          const { data: currentPipeline } = await (supabase as any)
-            .from('pipelines')
-            .select('next_pipeline_id, next_pipeline_column_id, default_assigned_to')
-            .eq('id', pipelineId)
-            .single();
+        let completionColumnId: string | null = currentPipeline?.completion_column_id ?? null;
+        if (!completionColumnId) {
+          const { data: allColumns } = await (supabase as any)
+            .from('pipeline_columns')
+            .select('id, order')
+            .eq('pipeline_id', pipelineId)
+            .order('order', { ascending: false })
+            .limit(1);
+          completionColumnId = allColumns?.[0]?.id ?? null;
+        }
 
+        if (completionColumnId && completionColumnId === columnId) {
           if (currentPipeline?.next_pipeline_id) {
             // Use configured column or fall back to first column of next pipeline
             let targetColumnId = currentPipeline.next_pipeline_column_id;
