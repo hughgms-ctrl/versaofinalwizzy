@@ -325,10 +325,21 @@ Deno.serve(async (req) => {
     const providerStrategy = await loadProviderStrategy(supabase);
 
 
-    const { data: currentPosition } = await supabase
+    // A conversa pode ter card em mais de um funil, entao "a posicao atual" so
+    // faz sentido dentro do funil da notificacao. Sem esse filtro, um card de
+    // outro funil (mais recente) descartaria a notificacao como obsoleta.
+    let currentPositionQuery = supabase
       .from("conversation_pipeline_positions")
       .select("pipeline_id, column_id")
-      .eq("conversation_id", conversationId)
+      .eq("conversation_id", conversationId);
+
+    if (pipelineId) {
+      currentPositionQuery = currentPositionQuery.eq("pipeline_id", pipelineId);
+    } else {
+      currentPositionQuery = currentPositionQuery.eq("column_id", columnId);
+    }
+
+    const { data: currentPosition } = await currentPositionQuery
       .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle();

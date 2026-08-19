@@ -194,6 +194,11 @@ export interface TagActionConfig {
 
 export interface PipelineActionConfig {
   pipelineColumnId: string;
+  /**
+   * 'move' (padrao) tira o card do funil de origem; 'add' inscreve a conversa
+   * neste funil sem tirar dos outros — e assim que nasce o "funil por evento".
+   */
+  pipelineAction?: 'move' | 'add';
 }
 
 export interface TransferActionConfig {

@@ -40,7 +40,15 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import { useQueryClient } from '@tanstack/react-query';
 import { DbConversation } from '@/hooks/useConversations';
-import { usePipelines, usePipelineColumns, useMoveConversation, useTransferConversationToWorkspace, Pipeline } from '@/hooks/usePipelines';
+import {
+  usePipelines,
+  usePipelineColumns,
+  useMoveConversation,
+  useTransferConversationToWorkspace,
+  useConversationPipelinePositions,
+  useRemoveConversationFromPipeline,
+  Pipeline,
+} from '@/hooks/usePipelines';
 import { Workspace } from '@/hooks/useWorkspaces';
 import { useTags, useAllContactTags, useAddTagToContact, useRemoveTagFromContact, useCreateTag } from '@/hooks/useTags';
 import { useNavigate } from 'react-router-dom';
@@ -76,6 +84,7 @@ export function ConversationCardActions({
   workspaceId
 }: ConversationCardActionsProps) {
   const [isUpdating, setIsUpdating] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [showCreateTagDialog, setShowCreateTagDialog] = useState(false);
   const [newTagName, setNewTagName] = useState('');
@@ -86,6 +95,10 @@ export function ConversationCardActions({
   const { selectedWorkspaceId, selectedOrganizationId, allAvailableWorkspaces } = useWorkspaceContext();
   const moveConversation = useMoveConversation();
   const transferToWorkspace = useTransferConversationToWorkspace();
+  const removeFromPipeline = useRemoveConversationFromPipeline();
+  // So consulta com o menu aberto: este componente e renderizado uma vez por
+  // conversa da lista, e a consulta e por conversa.
+  const { data: cardPositions = [] } = useConversationPipelinePositions(menuOpen ? conversation.id : null);
   const activeWorkspaceId = workspaceId ?? selectedWorkspaceId;
 
   const contactId = conversation.contact?.id || null;
@@ -140,6 +153,20 @@ export function ConversationCardActions({
     return pipelines.filter(pipeline => pipeline.workspace_ids?.includes(activeWorkspaceId));
   }, [pipelines, activeWorkspaceId]);
 
+  // Funis onde esta conversa ja tem card — usado para tirar de um funil so e
+  // para nao oferecer "adicionar" a um funil onde ela ja esta.
+  const pipelinesWithCard = useMemo(() => {
+    const byId = new Map((pipelines || []).map(pipeline => [pipeline.id, pipeline]));
+    return cardPositions
+      .map(position => byId.get(position.pipeline_id))
+      .filter((pipeline): pipeline is Pipeline => !!pipeline);
+  }, [cardPositions, pipelines]);
+
+  const pipelinesWithCardIds = useMemo(
+    () => new Set(pipelinesWithCard.map(pipeline => pipeline.id)),
+    [pipelinesWithCard]
+  );
+
   // Workspaces the user can transfer this card to: only workspaces they have access
   // to, within the same organization as the current board/conversation.
   const transferWorkspaces = useMemo(() => {
@@ -189,43 +216,28 @@ export function ConversationCardActions({
     }
   };
 
-  const handleRemoveFromPipeline = async (e?: React.MouseEvent) => {
-    e?.stopPropagation();
+  // Tira o card de UM funil. A conversa pode ter card em varios (funil por
+  // evento), entao remover "de todos" apagaria trabalho que ninguem mandou apagar.
+  const handleRemoveFromPipeline = async (pipelineId: string) => {
     setIsUpdating(true);
     try {
-      // Remove from all pipeline positions
-      const { error } = await supabase
-        .from('conversation_pipeline_positions')
-        .delete()
-        .eq('conversation_id', conversation.id);
-
-      if (error) throw error;
-
-      queryClient.invalidateQueries({ queryKey: ['conversation-positions'] });
-      
-      toast({
-        title: 'Removido do pipeline',
-        description: 'A conversa foi removida de todas as colunas',
-      });
+      await removeFromPipeline.mutateAsync({ conversationId: conversation.id, pipelineId });
     } catch (error) {
-      toast({
-        title: 'Erro',
-        description: 'Não foi possível remover do pipeline',
-        variant: 'destructive',
-      });
+      // o erro ja aparece no toast da mutation
     } finally {
       setIsUpdating(false);
     }
   };
 
-  const handleMoveToColumn = async (pipelineId: string, columnId: string) => {
-    console.log('handleMoveToColumn called:', { pipelineId, columnId, conversationId: conversation.id });
+  const handleMoveToColumn = async (pipelineId: string, columnId: string, mode: 'move' | 'add' = 'move') => {
+    console.log('handleMoveToColumn called:', { pipelineId, columnId, mode, conversationId: conversation.id });
     setIsUpdating(true);
     try {
       await moveConversation.mutateAsync({
         conversationId: conversation.id,
         pipelineId,
         columnId,
+        mode,
         skipAutoTransition: true,
       });
       console.log('Move successful');
@@ -321,7 +333,7 @@ export function ConversationCardActions({
   };
 
   return (
-    <DropdownMenu>
+    <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
       <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
         <Button 
           variant="ghost" 
@@ -473,13 +485,55 @@ export function ConversationCardActions({
           </DropdownMenuSubContent>
         </DropdownMenuSub>
 
-        <DropdownMenuItem 
-          onClick={(e) => handleRemoveFromPipeline(e)}
-          className="text-destructive focus:text-destructive"
-        >
-          <Trash2 className="h-4 w-4 mr-2" />
-          Remover do pipeline
-        </DropdownMenuItem>
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            <Plus className="h-4 w-4 mr-2" />
+            Adicionar a outro funil
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="w-52">
+            <div className="px-2 py-1.5 text-[11px] text-muted-foreground">
+              Cria um card a mais. A conversa continua nos funis onde já está.
+            </div>
+            {visiblePipelines.filter(pipeline => !pipelinesWithCardIds.has(pipeline.id)).length === 0 ? (
+              <DropdownMenuItem disabled>Já está em todos os funis</DropdownMenuItem>
+            ) : (
+              visiblePipelines
+                .filter(pipeline => !pipelinesWithCardIds.has(pipeline.id))
+                .map(pipeline => (
+                  <PipelineColumnSubmenu
+                    key={pipeline.id}
+                    pipeline={pipeline}
+                    onSelectColumn={(columnId) => handleMoveToColumn(pipeline.id, columnId, 'add')}
+                  />
+                ))
+            )}
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger className="text-destructive focus:text-destructive">
+            <Trash2 className="h-4 w-4 mr-2" />
+            Remover de um funil
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="w-52">
+            {pipelinesWithCard.length === 0 ? (
+              <DropdownMenuItem disabled>Não está em nenhum funil</DropdownMenuItem>
+            ) : (
+              pipelinesWithCard.map(pipeline => (
+                <DropdownMenuItem
+                  key={pipeline.id}
+                  className="text-destructive focus:text-destructive"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleRemoveFromPipeline(pipeline.id);
+                  }}
+                >
+                  {pipeline.name}
+                </DropdownMenuItem>
+              ))
+            )}
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
       </DropdownMenuContent>
 
       <ShareConversationDialog

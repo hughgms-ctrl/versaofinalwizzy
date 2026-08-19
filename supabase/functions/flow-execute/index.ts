@@ -2339,6 +2339,9 @@ async function executePipelineAction(
     const columnId = String(data.pipelineColumnId || data.columnId || '');
     const pipelineId = String(data.pipelineId || '');
     const columnName = String(data.pipelineColumnName || 'Etapa');
+    // 'add' inscreve a conversa neste funil sem tirar dos outros (funil por
+    // evento). 'move' (padrao) mantem o comportamento historico do no.
+    const placementMode = String(data.pipelineAction || 'move') === 'add' ? 'add' : 'move';
 
     if (!columnId || !pipelineId) {
       return { success: false, error: 'Pipeline ID or Column ID missing in node data' };
@@ -2350,10 +2353,10 @@ async function executePipelineAction(
       .update({ status: 'open' }) // Ensure it's open if moved in pipeline
       .eq('id', context.conversationId);
 
-    // 2. Move de verdade: reaproveita a posicao existente e apaga sobras em
-    //    outros pipelines (senao o card continua aparecendo na origem).
+    // 2. Coloca a conversa no funil. No modo 'move' o card sai do funil de
+    //    origem; no modo 'add' os outros funis ficam como estao.
     const { fromColumnId, error: moveError } = await moveConversationToPipeline(
-      supabase, context.conversationId, pipelineId, columnId,
+      supabase, context.conversationId, pipelineId, columnId, { mode: placementMode },
     );
     if (moveError) throw new Error(moveError);
 
@@ -2391,7 +2394,7 @@ async function executePipelineAction(
       console.error('[FLOW EXECUTE] Stage notification error:', notifErr);
     }
 
-    return { success: true, metadata: { pipelineId, columnId, columnName } };
+    return { success: true, metadata: { pipelineId, columnId, columnName, mode: placementMode } };
   } catch (error) {
     console.error('[FLOW EXECUTE] Pipeline move error:', error);
     return { success: false, error: String(error) };

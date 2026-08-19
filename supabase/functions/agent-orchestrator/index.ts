@@ -1101,9 +1101,11 @@ async function walkFlowForward(
         // orch-pipeline salva `columnId`; action-pipeline (editor de fluxo) salva
         // `pipelineColumnId`. Sem o fallback, o no do fluxo virava no-op aqui.
         const columnId = nextNode.data?.columnId || nextNode.data?.pipelineColumnId;
+        // 'add' inscreve a conversa neste funil sem tirar dos outros.
+        const placementMode = String(nextNode.data?.pipelineAction || 'move') === 'add' ? 'add' : 'move';
         if (pipelineId && columnId) {
           const { fromColumnId, error: moveError } = await moveConversationToPipeline(
-            supabase, ctx.conversationId, pipelineId, columnId,
+            supabase, ctx.conversationId, pipelineId, columnId, { mode: placementMode },
           );
           if (moveError) console.error('[ORCH] move_pipeline error:', moveError);
           await supabase.from('conversation_stage_history').insert({

@@ -1,18 +1,41 @@
-// Mover uma conversa de pipeline.
+// Colocar uma conversa num funil.
 //
-// Regra do produto: uma conversa ocupa UMA posicao de pipeline por vez (a tabela
-// tem UNIQUE(conversation_id) desde 20260309020135, e o board do frontend assume
-// isso). Um upsert com onConflict 'conversation_id,pipeline_id' NAO move: ele
-// cria uma linha no pipeline de destino e deixa a linha antiga viva, entao o card
-// aparece nos dois pipelines. Este helper faz o movimento de verdade: reaproveita
-// a linha existente e apaga qualquer sobra.
+// Regra do produto (desde 20260819130000): a conversa pode ter card em VARIOS
+// funis — um por evento, por exemplo — mas apenas UM card dentro de cada funil
+// (UNIQUE(conversation_id, pipeline_id)). Antes disso a tabela tinha
+// UNIQUE(conversation_id) e este helper era obrigado a apagar as demais
+// posicoes; hoje ele so apaga a origem quando o chamador pede movimento.
+//
+//   mode: 'move' (padrao) — leva o card de um funil para outro.
+//   mode: 'add'           — coloca um card a mais, sem tirar dos outros funis.
+//
+// No modo 'move', informe `fromPipelineId` sempre que souber de onde o card
+// esta saindo. Sem essa informacao, so e seguro mover quando a conversa tem um
+// unico card: com varios, escolher um "na sorte" para apagar e exatamente o
+// sumico silencioso que a regra nova veio corrigir — nesse caso o helper apenas
+// adiciona.
+
+export type PipelinePlacementMode = 'move' | 'add';
+
+export interface PipelinePlacementOptions {
+  /** 'move' (padrao) tira o card da origem; 'add' mantem os outros funis. */
+  mode?: PipelinePlacementMode;
+  /** Funil de onde o card esta saindo. So usado no modo 'move'. */
+  fromPipelineId?: string | null;
+}
 
 export interface PipelineMoveResult {
   /** Coluna anterior, apenas quando a conversa ja estava no MESMO pipeline. */
   fromColumnId: string | null;
-  /** Pipeline anterior, mesmo quando era outro. Null se a conversa nao tinha posicao. */
+  /** Pipeline de onde o card saiu. Null se nao saiu de lugar nenhum. */
   fromPipelineId: string | null;
   error: string | null;
+}
+
+interface PositionRow {
+  id: string;
+  pipeline_id: string;
+  column_id: string;
 }
 
 export async function moveConversationToPipeline(
@@ -20,10 +43,12 @@ export async function moveConversationToPipeline(
   conversationId: string,
   pipelineId: string,
   columnId: string,
+  options: PipelinePlacementOptions = {},
 ): Promise<PipelineMoveResult> {
+  const mode: PipelinePlacementMode = options.mode === 'add' ? 'add' : 'move';
+
   // Todas as posicoes da conversa, mais recente primeiro. Sem .maybeSingle():
-  // bases legadas podem ter mais de uma linha, e maybeSingle() erraria e faria o
-  // codigo achar que nao existe posicao (criando mais uma duplicata).
+  // agora existir mais de uma linha e o comportamento normal.
   const { data: rows, error: selectError } = await supabase
     .from('conversation_pipeline_positions')
     .select('id, pipeline_id, column_id')
@@ -34,27 +59,48 @@ export async function moveConversationToPipeline(
     return { fromColumnId: null, fromPipelineId: null, error: selectError.message };
   }
 
-  const existingRows = (rows || []) as Array<{ id: string; pipeline_id: string; column_id: string }>;
-  // Prefere reaproveitar a linha do pipeline de destino (se ja existir) para nao
-  // esbarrar no UNIQUE(conversation_id, pipeline_id) ao atualizar outra linha.
-  const keep = existingRows.find((r) => r.pipeline_id === pipelineId) || existingRows[0] || null;
-  const fromPipelineId = existingRows[0]?.pipeline_id ?? null;
-  const fromColumnId = existingRows[0]?.pipeline_id === pipelineId ? existingRows[0].column_id : null;
+  const existingRows = (rows || []) as PositionRow[];
+  const inTarget = existingRows.filter((r) => r.pipeline_id === pipelineId);
+  const target = inTarget[0] ?? null;
 
-  // Apaga as sobras ANTES do update: a linha antiga em outro pipeline e
-  // exatamente o que fazia o card continuar aparecendo no pipeline de origem.
-  const staleIds = existingRows.filter((r) => r.id !== keep?.id).map((r) => r.id);
-  if (staleIds.length > 0) {
-    const { error: deleteError } = await supabase
+  // Sobras dentro do MESMO funil (base legada): a constraint composta so aceita
+  // uma. Apagar aqui e seguro — nao tira o card de nenhum outro funil.
+  const duplicateIds = inTarget.slice(1).map((r) => r.id);
+  if (duplicateIds.length > 0) {
+    const { error: dupError } = await supabase
       .from('conversation_pipeline_positions')
       .delete()
-      .in('id', staleIds);
-    if (deleteError) {
-      return { fromColumnId, fromPipelineId, error: deleteError.message };
+      .in('id', duplicateIds);
+    if (dupError) {
+      return { fromColumnId: null, fromPipelineId: null, error: dupError.message };
     }
   }
 
-  if (keep) {
+  let source: PositionRow | null = null;
+  if (mode === 'move') {
+    if (options.fromPipelineId && options.fromPipelineId !== pipelineId) {
+      source = existingRows.find((r) => r.pipeline_id === options.fromPipelineId) ?? null;
+    } else if (!options.fromPipelineId && existingRows.length === 1 && !target) {
+      // Origem nao declarada e um unico card: e o caso classico de "mover".
+      source = existingRows[0];
+    }
+  }
+
+  const fromColumnId = target ? target.column_id : null;
+  const fromPipelineId = source?.pipeline_id ?? (target ? pipelineId : null);
+
+  if (target) {
+    const { error } = await supabase
+      .from('conversation_pipeline_positions')
+      .update({
+        column_id: columnId,
+        order: 0,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', target.id);
+    if (error) return { fromColumnId, fromPipelineId, error: error.message };
+  } else if (source) {
+    // Movimento de verdade: a mesma linha troca de funil.
     const { error } = await supabase
       .from('conversation_pipeline_positions')
       .update({
@@ -63,17 +109,28 @@ export async function moveConversationToPipeline(
         order: 0,
         updated_at: new Date().toISOString(),
       })
-      .eq('id', keep.id);
+      .eq('id', source.id);
+    return { fromColumnId, fromPipelineId, error: error?.message ?? null };
+  } else {
+    const { error } = await supabase
+      .from('conversation_pipeline_positions')
+      .insert({
+        conversation_id: conversationId,
+        pipeline_id: pipelineId,
+        column_id: columnId,
+        order: 0,
+      });
     return { fromColumnId, fromPipelineId, error: error?.message ?? null };
   }
 
-  const { error } = await supabase
-    .from('conversation_pipeline_positions')
-    .insert({
-      conversation_id: conversationId,
-      pipeline_id: pipelineId,
-      column_id: columnId,
-      order: 0,
-    });
-  return { fromColumnId, fromPipelineId, error: error?.message ?? null };
+  // Destino ja existia E ha origem a esvaziar: sem isto o card ficaria nos dois.
+  if (source) {
+    const { error } = await supabase
+      .from('conversation_pipeline_positions')
+      .delete()
+      .eq('id', source.id);
+    if (error) return { fromColumnId, fromPipelineId, error: error.message };
+  }
+
+  return { fromColumnId, fromPipelineId, error: null };
 }

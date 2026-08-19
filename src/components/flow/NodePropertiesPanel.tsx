@@ -1582,9 +1582,32 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
             <div className="p-3 bg-blue-50 rounded-lg flex items-center gap-3">
               <Kanban className="h-5 w-5 text-blue-500" />
               <div>
-                <p className="text-xs font-semibold">Mover Pipeline</p>
-                <p className="text-[10px] text-muted-foreground text-blue-700/70">Move o contato para uma etapa do funil.</p>
+                <p className="text-xs font-semibold">Pipeline</p>
+                <p className="text-[10px] text-muted-foreground text-blue-700/70">
+                  {(localData.pipelineAction as string) === 'add'
+                    ? 'Inscreve o contato nesta etapa sem tirar dos outros funis.'
+                    : 'Move o contato para uma etapa do funil.'}
+                </p>
               </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>O que fazer</Label>
+              <Select
+                value={(localData.pipelineAction as string) || 'move'}
+                onValueChange={(val) => handleChange('pipelineAction', val)}
+              >
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="move">Mover para este funil</SelectItem>
+                  <SelectItem value="add">Adicionar a este funil</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-muted-foreground">
+                {(localData.pipelineAction as string) === 'add'
+                  ? 'O contato ganha um card aqui e continua nos funis onde ja estava.'
+                  : 'O card sai do funil onde estava e passa para este.'}
+              </p>
             </div>
 
             <div className="space-y-2">

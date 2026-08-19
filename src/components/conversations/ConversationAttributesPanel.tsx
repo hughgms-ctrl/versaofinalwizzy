@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import {
@@ -18,12 +18,18 @@ import {
 } from '@/hooks/useCrmEntities';
 import { useProfiles } from '@/hooks/useConversations';
 import { useAuth } from '@/hooks/useAuth';
-import { usePipelines, usePipelineColumns, useConversationPositions, useMoveConversation } from '@/hooks/usePipelines';
+import {
+  usePipelines,
+  usePipelineColumns,
+  useConversationPositions,
+  useConversationPipelinePositions,
+  useMoveConversation,
+} from '@/hooks/usePipelines';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
 import { cn } from '@/lib/utils';
 import { functionErrorMessage } from '@/lib/supabaseErrors';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 
@@ -49,7 +55,7 @@ export function ConversationAttributesPanel({
   conversation, 
   compact = false 
 }: ConversationAttributesPanelProps) {
-  const { profile, session } = useAuth();
+  const { profile } = useAuth();
   const { data: leadSources = [], isLoading: loadingLeadSources } = useLeadSources();
   const { data: profiles = [] } = useProfiles();
   const { data: pipelines = [] } = usePipelines();
@@ -60,19 +66,14 @@ export function ConversationAttributesPanel({
   const moveConversation = useMoveConversation();
   const queryClient = useQueryClient();
 
-  // Find which pipeline this conversation is currently in
-  const { data: allPositions = [] } = useQuery({
-    queryKey: ['all-conversation-positions', conversation.id],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('conversation_pipeline_positions')
-        .select('*')
-        .eq('conversation_id', conversation.id);
-      if (error) throw error;
-      return data || [];
-    },
-    enabled: !!session && !!conversation.id,
-  });
+  // Em quais funis esta conversa tem card. Podem ser varios desde 20260819130000
+  // (um por evento, por exemplo), e o seletor abaixo mostra um de cada vez.
+  const { data: allPositions = [] } = useConversationPipelinePositions(conversation.id);
+
+  const pipelineIdsWithCard = useMemo(
+    () => new Set(allPositions.map((position) => position.pipeline_id)),
+    [allPositions]
+  );
 
   // Determine active pipeline: the one where the conversation has a position, or first pipeline
   const positionPipelineId = allPositions.length > 0 ? allPositions[0].pipeline_id : null;
@@ -190,7 +191,16 @@ export function ConversationAttributesPanel({
               <SelectContent>
                 {pipelines.map((p) => (
                   <SelectItem key={p.id} value={p.id}>
-                    {p.name}
+                    <span className="flex items-center gap-1.5">
+                      {/* ponto = a conversa tem card neste funil */}
+                      <span
+                        className={cn(
+                          'h-1.5 w-1.5 rounded-full shrink-0',
+                          pipelineIdsWithCard.has(p.id) ? 'bg-primary' : 'bg-transparent'
+                        )}
+                      />
+                      {p.name}
+                    </span>
                   </SelectItem>
                 ))}
               </SelectContent>

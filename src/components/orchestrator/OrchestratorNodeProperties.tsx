@@ -263,6 +263,21 @@ export function OrchestratorNodeProperties({ node, onClose, onUpdate, onDelete, 
         return (
           <div className="space-y-3">
             <div>
+              <Label className="text-xs">O que fazer</Label>
+              <Select value={(data.pipelineAction as string) || 'move'} onValueChange={(v) => handleChange('pipelineAction', v)}>
+                <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="move">Mover para este funil</SelectItem>
+                  <SelectItem value="add">Adicionar a este funil</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-[10px] text-muted-foreground mt-1">
+                {(data.pipelineAction as string) === 'add'
+                  ? 'Ganha um card aqui e continua nos funis onde ja estava.'
+                  : 'O card sai do funil onde estava e passa para este.'}
+              </p>
+            </div>
+            <div>
               <Label className="text-xs">Pipeline</Label>
               <Select value={(data.pipelineId as string) || ''} onValueChange={(v) => {
                 handleChange('pipelineId', v);

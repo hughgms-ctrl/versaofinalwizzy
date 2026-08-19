@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
 import { sendWhatsAppMessage, resolveWhatsAppInstance, resolveWorkspaceInstanceBinding } from "../_shared/whatsappProvider.ts";
 import { getClientIp, checkRateLimitDb, safeErrorResponse } from "../_shared/middleware.ts";
+import { moveConversationToPipeline } from "../_shared/pipelineMove.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -339,19 +340,17 @@ Deno.serve(async (req) => {
             }
 
             if (conv) {
-              // Upsert pipeline position
-              await supabaseAdmin
-                .from("conversation_pipeline_positions")
-                .upsert(
-                  {
-                    conversation_id: conv.id,
-                    pipeline_id,
-                    column_id,
-                    order: 0,
-                  },
-                  { onConflict: "conversation_id" }
-                );
-              results.pipeline_set = true;
+              // Coloca no funil escolhido. O upsert antigo usava
+              // onConflict: "conversation_id", que so existia por causa do
+              // UNIQUE global — sem ele o upsert quebraria. O helper move o
+              // card (comportamento de sempre) respeitando um card por funil.
+              const { error: placementError } = await moveConversationToPipeline(
+                supabaseAdmin, conv.id, pipeline_id, column_id,
+              );
+              if (placementError) {
+                console.error("Quiz pipeline placement error:", placementError);
+              }
+              results.pipeline_set = !placementError;
             }
           }
 

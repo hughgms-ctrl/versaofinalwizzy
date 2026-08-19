@@ -942,6 +942,9 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
             pipelineId: pipeline.id,
             columnId,
             order,
+            // Arrastar dentro do board so mexe NESTE funil: se a conversa tiver
+            // card em outro (funil por evento), ele fica onde esta.
+            fromPipelineId: pipeline.id,
             skipInvalidate: true,
           });
           await normalizeColumnOrder(columnId, movedConversationId, order);
@@ -976,6 +979,7 @@ export function PipelineBoard({ pipeline, filters, searchQuery = '', onConversat
       conversationId: conversation.id,
       pipelineId: pipeline.id,
       columnId,
+      fromPipelineId: pipeline.id,
     });
     await applyColumnChecklistTemplate(conversation.id, columnId);
   }, [applyColumnChecklistTemplate, moveConversation, pipeline]);

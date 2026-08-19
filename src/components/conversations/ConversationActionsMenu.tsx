@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   MoreVertical,
   Archive,
@@ -47,7 +47,12 @@ import { toast } from '@/hooks/use-toast';
 import { useQueryClient } from '@tanstack/react-query';
 import { DbConversation } from '@/hooks/useConversations';
 import { useTags, useContactTags, useAddTagToContact, useRemoveTagFromContact } from '@/hooks/useTags';
-import { usePipelines, usePipelineColumns, useMoveConversation } from '@/hooks/usePipelines';
+import {
+  usePipelines,
+  usePipelineColumns,
+  useMoveConversation,
+  useConversationPipelinePositions,
+} from '@/hooks/usePipelines';
 import { cn } from '@/lib/utils';
 import { ShareConversationDialog } from './ShareConversationDialog';
 
@@ -92,6 +97,12 @@ export function ConversationActionsMenu({ conversation, onShowMediaGallery }: Co
   const addTagMutation = useAddTagToContact();
   const removeTagMutation = useRemoveTagFromContact();
   const moveConversation = useMoveConversation();
+  const { data: cardPositions = [] } = useConversationPipelinePositions(conversation.id);
+  // Funis onde a conversa ja tem card: "adicionar" so faz sentido nos outros.
+  const pipelinesWithoutCard = useMemo(() => {
+    const taken = new Set(cardPositions.map(position => position.pipeline_id));
+    return (pipelines || []).filter(pipeline => !taken.has(pipeline.id));
+  }, [cardPositions, pipelines]);
 
   // Fetch all columns for all pipelines
   const [allColumns, setAllColumns] = useState<Record<string, any[]>>({});
@@ -241,11 +252,12 @@ export function ConversationActionsMenu({ conversation, onShowMediaGallery }: Co
     }
   };
 
-  const handleMoveToColumn = async (pipelineId: string, columnId: string) => {
+  const handleMoveToColumn = async (pipelineId: string, columnId: string, mode: 'move' | 'add' = 'move') => {
     await moveConversation.mutateAsync({
       conversationId: conversation.id,
       pipelineId,
       columnId,
+      mode,
     });
   };
 
@@ -608,6 +620,32 @@ export function ConversationActionsMenu({ conversation, onShowMediaGallery }: Co
                   key={pipeline.id}
                   pipeline={pipeline}
                   onSelectColumn={(columnId) => handleMoveToColumn(pipeline.id, columnId)}
+                />
+              ))
+            )}
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+
+        {/* Um card a mais, sem sair dos funis onde a conversa ja esta */}
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            <Kanban className="h-4 w-4 mr-2" />
+            Adicionar a outro funil
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="w-56">
+            <div className="px-2 py-1.5 text-[11px] text-muted-foreground">
+              A conversa continua nos funis onde já está.
+            </div>
+            {pipelinesWithoutCard.length === 0 ? (
+              <DropdownMenuItem disabled>
+                {!pipelines || pipelines.length === 0 ? 'Nenhum pipeline criado' : 'Já está em todos os funis'}
+              </DropdownMenuItem>
+            ) : (
+              pipelinesWithoutCard.map(pipeline => (
+                <PipelineSubmenu
+                  key={pipeline.id}
+                  pipeline={pipeline}
+                  onSelectColumn={(columnId) => handleMoveToColumn(pipeline.id, columnId, 'add')}
                 />
               ))
             )}
