@@ -2114,7 +2114,13 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
     organizationId,
     whatsappInstance.id,
     whatsappInstance.phone_number,
-    fallbackWorkspaceId || (fallbackWorkspaceIds.length === 0 ? contact.workspace_id : null),
+    // O workspace da conversa sai do NÚMERO que recebeu a mensagem, e só dele.
+    // Antes, quando a instância não resolvia para nenhum workspace, isto caía em
+    // `contact.workspace_id` — o workspace do CRM, que não tem relação com o
+    // número. Bastava o contato ter ficado apontando para um workspace antigo
+    // (ex.: conversas movidas na mão, contatos não) para a primeira mensagem nova
+    // recriar a conversa lá, inclusive em workspace sem número algum.
+    fallbackWorkspaceId,
   );
   const connectedPhoneSnapshot = getConnectedPhoneSnapshot(whatsappInstance, payload);
   await recordConversationOriginAudit(supabase, {
