@@ -10,37 +10,57 @@
 -- transação: mover card para coluna com tag automática falhava por inteiro.
 --
 -- As partes 1 a 3 só leem. A parte 4 escreve e está comentada.
+--
+-- Rode UMA PARTE POR VEZ: o SQL Editor do Supabase mostra apenas o resultado da
+-- última instrução do bloco selecionado, então rodar o arquivo inteiro esconde
+-- tudo menos a parte 4.
 -- ============================================================================
 
 
 -- ---------------------------------------------------------------------------
 -- PARTE 1 — o trigger existe e a função está com o valor certo?
 -- ---------------------------------------------------------------------------
--- Esperado: 1 linha, enabled = 'O' (habilitado).
+-- Uma query só, de propósito: em três instruções separadas o SQL Editor
+-- mostraria apenas o resultado da última.
+--
+-- Esperado depois da migration:
+--   trigger_existe  = true
+--   trigger_enabled = 'O'  (habilitado)
+--   grava_flow      = true
+--   grava_system    = false
+--   check_atual     contendo 'flow'
+--
+-- trigger_existe = false significa que a migration 20260507040048 nunca rodou
+-- neste banco: nesse caso o card movia normalmente e a tag só nunca era
+-- aplicada. Com o trigger presente e grava_system = true, o cenário era o
+-- outro: mover o card para a coluna falhava por inteiro.
 SELECT
-  t.tgname          AS trigger_name,
-  c.relname         AS tabela,
-  t.tgenabled       AS enabled,
-  p.proname         AS funcao
-FROM pg_trigger t
-JOIN pg_class c ON c.oid = t.tgrelid
-JOIN pg_proc  p ON p.oid = t.tgfoid
-WHERE NOT t.tgisinternal
-  AND c.relname = 'conversation_pipeline_positions'
-  AND t.tgname  = 'trg_apply_column_auto_tags';
-
--- Esperado: grava_flow = true, grava_system = false.
-SELECT
-  position('''flow''' IN prosrc)   > 0 AS grava_flow,
-  position('''system''' IN prosrc) > 0 AS grava_system
-FROM pg_proc
-WHERE proname = 'apply_column_auto_tags';
-
--- Valores aceitos hoje em contact_tags.added_by_type.
--- Confira que 'flow' está na lista.
-SELECT pg_get_constraintdef(oid) AS check_atual
-FROM pg_constraint
-WHERE conname = 'contact_tags_added_by_type_check';
+  EXISTS (
+    SELECT 1 FROM pg_trigger t
+    JOIN pg_class c ON c.oid = t.tgrelid
+    WHERE NOT t.tgisinternal
+      AND c.relname = 'conversation_pipeline_positions'
+      AND t.tgname  = 'trg_apply_column_auto_tags'
+  ) AS trigger_existe,
+  (
+    SELECT t.tgenabled FROM pg_trigger t
+    JOIN pg_class c ON c.oid = t.tgrelid
+    WHERE NOT t.tgisinternal
+      AND c.relname = 'conversation_pipeline_positions'
+      AND t.tgname  = 'trg_apply_column_auto_tags'
+  ) AS trigger_enabled,
+  (
+    SELECT position('''flow''' IN prosrc) > 0 FROM pg_proc
+    WHERE proname = 'apply_column_auto_tags' AND pronamespace = 'public'::regnamespace
+  ) AS grava_flow,
+  (
+    SELECT position('''system''' IN prosrc) > 0 FROM pg_proc
+    WHERE proname = 'apply_column_auto_tags' AND pronamespace = 'public'::regnamespace
+  ) AS grava_system,
+  (
+    SELECT pg_get_constraintdef(oid) FROM pg_constraint
+    WHERE conname = 'contact_tags_added_by_type_check'
+  ) AS check_atual;
 
 
 -- ---------------------------------------------------------------------------
