@@ -24,21 +24,21 @@ WHERE id = 'eabfa5ee-f3b1-4a7a-b53d-e454c98ee0bd'
 -- PASSO 2 — rodar SEPARADO, ~2 minutos depois, para ver o que o cron fez.
 -- (statement própria de propósito: checar na mesma query veria o estado antigo)
 --
--- SELECT status,
---        batch_sent_count,
---        batch_current_target,
---        to_char(updated_at AT TIME ZONE 'America/Sao_Paulo','HH24:MI:SS') AS updated_brt,
---        to_char(batch_paused_until AT TIME ZONE 'America/Sao_Paulo','HH24:MI:SS') AS pausa_brt,
---        (SELECT count(*) FROM public.scheduled_message_contacts
---          WHERE scheduled_message_id = s.id AND status = 'sent')    AS enviados,
---        (SELECT count(*) FROM public.scheduled_message_contacts
---          WHERE scheduled_message_id = s.id AND status = 'pending') AS pendentes
--- FROM public.scheduled_messages s
--- WHERE s.id = 'eabfa5ee-f3b1-4a7a-b53d-e454c98ee0bd';
+ SELECT status,
+       batch_sent_count,
+        batch_current_target,
+        to_char(updated_at AT TIME ZONE 'America/Sao_Paulo','HH24:MI:SS') AS updated_brt,
+        to_char(batch_paused_until AT TIME ZONE 'America/Sao_Paulo','HH24:MI:SS') AS pausa_brt,
+        (SELECT count(*) FROM public.scheduled_message_contacts
+         WHERE scheduled_message_id = s.id AND status = 'sent')    AS enviados,
+        (SELECT count(*) FROM public.scheduled_message_contacts
+          WHERE scheduled_message_id = s.id AND status = 'pending') AS pendentes
+ FROM public.scheduled_messages s
+ WHERE s.id = 'eabfa5ee-f3b1-4a7a-b53d-e454c98ee0bd';
 --
 -- LEITURA DO RESULTADO:
---  a) enviados > 37 (e batch_current_target preenchido) => era só o lock preso.
---     O disparo voltou a andar sozinho; nada mais a fazer agora.
---  b) status='processing', enviados=37, batch_current_target ainda NULL
---     => o claim está pegando o job e morrendo ANTES do primeiro envio.
---     É bug de código (claimScheduled/processContactCampaign), me avise.
+  a) enviados > 37 (e batch_current_target preenchido) => era só o lock preso.
+     O disparo voltou a andar sozinho; nada mais a fazer agora.
+  b) status='processing', enviados=37, batch_current_target ainda NULL
+     => o claim está pegando o job e morrendo ANTES do primeiro envio.
+     É bug de código (claimScheduled/processContactCampaign), me avise.
