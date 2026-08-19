@@ -396,7 +396,7 @@ Deno.serve(async (req) => {
             // Encontra ou cria a conversa
             let conversationId: string | null = null;
             let conversationWorkspaceId: string | null = null;
-            let existingConversationQuery = supabase
+            const conversationBaseQuery = () => supabase
                 .from('conversations')
                 .select('id, workspace_id')
                 .eq('organization_id', orgId)
@@ -406,16 +406,35 @@ Deno.serve(async (req) => {
             // workspace. Sem este escopo, a busca por instância pegava a conversa do
             // contato em OUTRO workspace, e o fluxo passava a enviar (ou a ser
             // bloqueado) pelo número de um workspace que não é o da campanha.
-            existingConversationQuery = campaign.workspace_id
-                ? existingConversationQuery.eq('workspace_id', campaign.workspace_id)
+            let existingConversationQuery = campaign.workspace_id
+                ? conversationBaseQuery().eq('workspace_id', campaign.workspace_id)
                 : campaignInstance?.id
-                    ? existingConversationQuery.eq('whatsapp_instance_id', campaignInstance.id)
-                    : existingConversationQuery.is('whatsapp_instance_id', null);
+                    ? conversationBaseQuery().eq('whatsapp_instance_id', campaignInstance.id)
+                    : conversationBaseQuery().is('whatsapp_instance_id', null);
 
-            const { data: existingConv } = await existingConversationQuery
+            let { data: existingConv } = await existingConversationQuery
                 .order('updated_at', { ascending: false })
                 .limit(1)
                 .maybeSingle();
+
+            // Dois workspaces podem atender o MESMO número (é o que o vínculo em
+            // Configurações > WhatsApp permite). Aí o escopo por workspace acima não
+            // acha a conversa que o contato já tem naquele número — e o insert
+            // abaixo ou colidia no índice único (contato, org, instância) e a
+            // campanha pulava o contato, ou criava um segundo chat do mesmo número
+            // em outro workspace. Conversa é do NÚMERO: se já existe uma nesse
+            // número, é ela que a campanha usa, mantendo o workspace que ela tem.
+            if (!existingConv && campaign.workspace_id && campaignInstance?.id) {
+                const { data: sameNumberConv } = await conversationBaseQuery()
+                    .eq('whatsapp_instance_id', campaignInstance.id)
+                    .order('updated_at', { ascending: false })
+                    .limit(1)
+                    .maybeSingle();
+                if (sameNumberConv) {
+                    console.log(`[campaign-webhook] conversa ${sameNumberConv.id} reaproveitada pelo número (workspace ${sameNumberConv.workspace_id} != campanha ${campaign.workspace_id})`);
+                    existingConv = sameNumberConv;
+                }
+            }
 
             if (existingConv) {
                 // ATENÇÃO: conversa preexistente mantém o workspace que já tinha.

@@ -2841,10 +2841,16 @@ async function handleMessage(supabase: any, payload: any, instanceId: string, in
             campaign_id: campaignId,
             campaign_name: campaignFull?.name || '',
           };
-          if (campaignFull?.workspace_id) {
+          // PREENCHE, NÃO MOVE. Uma palavra-chave de campanha do workspace B não
+          // pode arrastar para B a conversa que já vive no workspace A: era assim
+          // que conversas do "Comercial" apareciam no "Comercial 2" — só as dos
+          // contatos que dispararam a palavra-chave, daí "não são todas, algumas".
+          if (campaignFull?.workspace_id && !conversation.workspace_id) {
             console.log(`[CAMPAIGN] Assigning workspace ${campaignFull.workspace_id} from campaign`);
             await supabase.from('contacts').update({ workspace_id: campaignFull.workspace_id }).eq('id', contact.id);
             await supabase.from('conversations').update({ workspace_id: campaignFull.workspace_id }).eq('id', conversation.id);
+          } else if (campaignFull?.workspace_id) {
+            console.log(`[CAMPAIGN] Conversa ${conversation.id} já pertence ao workspace ${conversation.workspace_id} — campanha não move`);
           }
 
           // Increment campaign counter
@@ -3314,9 +3320,14 @@ async function handlePresence(supabase: any, payload: any, instanceId: string, i
 
     if (existing) {
       const updates: any = {};
-      // If the receiving WhatsApp instance has an unambiguous workspace, keep
-      // the conversation there even if it was created in the wrong workspace.
-      if (workspaceId && existing.workspace_id !== workspaceId) updates.workspace_id = workspaceId;
+      // PREENCHE, NÃO MOVE. Antes isto reescrevia o workspace da conversa a cada
+      // mensagem recebida, sempre que a instância resolvia para um workspace só.
+      // Com dois workspaces disputando o mesmo número, basta o vínculo mudar uma
+      // vez para que TODA conversa que receba mensagem migre junto — e o usuário
+      // vê conversas trocando de workspace sozinhas. Reparo de workspace errado
+      // agora é operação explícita (docs/sanear-conversas-workspace-errado.sql),
+      // não efeito colateral de uma mensagem chegar.
+      if (workspaceId && !existing.workspace_id) updates.workspace_id = workspaceId;
 
       if (!existing.source_phone && sourcePhone) updates.source_phone = sourcePhone;
       if (Object.keys(updates).length > 0) {

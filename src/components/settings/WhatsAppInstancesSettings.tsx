@@ -654,6 +654,7 @@ function EditInstanceDialog({ open, onOpenChange, instance }: { open: boolean; o
   const queryClient = useQueryClient();
   const updateLabel = useUpdateInstanceLabel();
   const { data: workspaces = [] } = useWorkspaces();
+  const { data: allInstances = [] } = useWhatsAppInstances();
 
   const [label, setLabel] = useState(instance.label || '');
   const [isLoading, setIsLoading] = useState(false);
@@ -765,13 +766,36 @@ function EditInstanceDialog({ open, onOpenChange, instance }: { open: boolean; o
                       <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: workspace.color }} />
                       <span className="flex-1 text-sm">{workspace.name}</span>
                       {linkedToAnother && (
-                        <Badge variant="outline" className="text-[10px]">outro numero</Badge>
+                        <Badge variant={checked ? 'destructive' : 'outline'} className="text-[10px]">
+                          {(() => {
+                            const other = allInstances.find(i => i.id === workspace.whatsapp_instance_id);
+                            const numero = other?.phone_number || other?.label || 'outro numero';
+                            return checked ? `sai de ${numero}` : `hoje em ${numero}`;
+                          })()}
+                        </Badge>
                       )}
                     </label>
                   );
                 })
               )}
             </div>
+            {(() => {
+              // Marcar um workspace aqui o DESVINCULA do numero em que ele esta hoje
+              // (o save sobrescreve o vinculo, nao acumula). Antes isso era so um
+              // badge discreto "outro numero" e passava batido -- foi assim que dois
+              // workspaces acabaram no mesmo numero, sem ninguem perceber.
+              const roubados = workspaces.filter(w =>
+                workspaceIds.includes(w.id) &&
+                !!w.whatsapp_instance_id &&
+                w.whatsapp_instance_id !== instance.id
+              );
+              if (roubados.length === 0) return null;
+              return (
+                <p className="mt-2 rounded-md border border-destructive/40 bg-destructive/5 px-2 py-1.5 text-xs text-destructive">
+                  {roubados.map(w => w.name).join(', ')} {roubados.length === 1 ? 'sera desvinculado' : 'serao desvinculados'} do numero atual e {roubados.length === 1 ? 'passa' : 'passam'} a usar este.
+                </p>
+              );
+            })()}
             <p className="mt-2 text-xs text-muted-foreground">
               O numero fica disponivel para os workspaces selecionados. Conversas existentes nao sao movidas automaticamente.
             </p>

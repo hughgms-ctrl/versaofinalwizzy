@@ -21,6 +21,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { usePipelines, usePipelineColumns, useConversationPositions, useMoveConversation } from '@/hooks/usePipelines';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
 import { cn } from '@/lib/utils';
+import { functionErrorMessage } from '@/lib/supabaseErrors';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
@@ -327,7 +328,9 @@ export function ConversationAttributesPanel({
                     },
                   });
 
-                  if (error) throw error;
+                  // A mensagem útil (ex.: "esta conversa pertence a outro
+                  // número") vem no corpo da resposta 400, não em error.message.
+                  if (error) throw new Error(await functionErrorMessage(error, 'Erro ao alterar workspace.'));
 
                   queryClient.invalidateQueries({ queryKey: ['conversations'] });
                   queryClient.invalidateQueries({ queryKey: ['contacts'] });

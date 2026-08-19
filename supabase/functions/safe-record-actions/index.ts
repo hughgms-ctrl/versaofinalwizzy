@@ -204,12 +204,24 @@ async function setConversationWorkspace(
     if (workspaceError || !workspace) throw new Error('Workspace não encontrado');
   }
 
-  const { error: conversationUpdateError } = await admin
+  const { data: updatedConversation, error: conversationUpdateError } = await admin
     .from('conversations')
     .update({ workspace_id: workspaceId })
     .eq('id', conversationId)
-    .eq('organization_id', organizationId);
+    .eq('organization_id', organizationId)
+    .select('id, workspace_id')
+    .maybeSingle();
   if (conversationUpdateError) throw conversationUpdateError;
+
+  // A guarda no banco (trg_guard_conversation_workspace_number) recusa em
+  // silêncio o carimbo num workspace que não atende o número desta conversa —
+  // silêncio é certo para webhook/campanha, mas aqui há um humano esperando
+  // resposta. Confere e devolve o motivo antes de mexer no contato.
+  if (workspaceId && updatedConversation && updatedConversation.workspace_id !== workspaceId) {
+    throw new Error(
+      'Esta conversa pertence a outro número de WhatsApp. Só um workspace que atende esse número pode recebê-la.'
+    );
+  }
 
   const { error: contactUpdateError } = await admin
     .from('contacts')
@@ -228,16 +240,19 @@ async function setContactsWorkspace(
   if (!contactIds?.length) throw new Error('Nenhum contato informado');
   if (contactIds.length > MAX_BULK_ITEMS) throw new Error(`Máximo de ${MAX_BULK_ITEMS} contatos por chamada.`);
 
+  let workspaceInstanceId: string | null = null;
+
   if (workspaceId) {
     const { data: workspace, error: workspaceError } = await admin
       .from('workspaces')
-      .select('id')
+      .select('id, whatsapp_instance_id')
       .eq('id', workspaceId)
       .eq('organization_id', organizationId)
       .eq('is_active', true)
       .single();
 
     if (workspaceError || !workspace) throw new Error('Workspace não encontrado');
+    workspaceInstanceId = workspace.whatsapp_instance_id || null;
   }
 
   const { error: contactsUpdateError } = await admin
@@ -247,11 +262,24 @@ async function setContactsWorkspace(
     .eq('organization_id', organizationId);
   if (contactsUpdateError) throw contactsUpdateError;
 
-  const { error: conversationsUpdateError } = await admin
+  // Regra "workspace = número": o contato pode falar com a empresa por vários
+  // números, e cada número é uma conversa. Mover o CONTATO para um workspace não
+  // pode arrastar junto a conversa que pertence a outro número — era assim que a
+  // conversa do número antigo/desconectado reaparecia no workspace novo.
+  // Quando o workspace de destino atende um número, só as conversas daquele
+  // número acompanham. Workspace sem número vinculado mantém o comportamento
+  // antigo (não há número para respeitar).
+  let conversationsUpdate = admin
     .from('conversations')
     .update({ workspace_id: workspaceId })
     .in('contact_id', contactIds)
     .eq('organization_id', organizationId);
+
+  if (workspaceInstanceId) {
+    conversationsUpdate = conversationsUpdate.eq('whatsapp_instance_id', workspaceInstanceId);
+  }
+
+  const { error: conversationsUpdateError } = await conversationsUpdate;
   if (conversationsUpdateError) throw conversationsUpdateError;
 }
 

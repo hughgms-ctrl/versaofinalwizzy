@@ -505,12 +505,31 @@ export function useCreateConversation() {
         contactId = newContact.id;
       }
 
-      const { data: activeInstance } = await supabase
+      // Regra "workspace = número": se o workspace escolhido atende um número,
+      // a conversa nasce NESSE número. Pegar "a última instância conectada da
+      // org" criava a conversa no número de outro workspace — ela caía no
+      // workspace errado (ou, com a guarda no banco, sem workspace nenhum) e
+      // ainda sairia pelo número errado.
+      let workspaceInstanceId: string | null = null;
+      if (data.workspaceId) {
+        const { data: workspaceRow } = await supabase
+          .from('workspaces')
+          .select('whatsapp_instance_id')
+          .eq('id', data.workspaceId)
+          .maybeSingle();
+        workspaceInstanceId = (workspaceRow as any)?.whatsapp_instance_id || null;
+      }
+
+      let instanceQuery = supabase
         .from('whatsapp_instances')
         .select('id, phone_number')
-        .eq('organization_id', profile.organization_id)
-        .eq('status', 'connected')
-        .eq('is_active', true)
+        .eq('organization_id', profile.organization_id);
+
+      instanceQuery = workspaceInstanceId
+        ? instanceQuery.eq('id', workspaceInstanceId)
+        : instanceQuery.eq('status', 'connected').eq('is_active', true);
+
+      const { data: activeInstance } = await instanceQuery
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
