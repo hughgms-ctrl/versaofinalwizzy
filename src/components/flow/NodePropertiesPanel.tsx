@@ -671,11 +671,16 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
   const { data: workspaces = [] } = useWorkspaces();
   const { data: whatsappGroups = [] } = useWhatsAppGroups();
 
+  // Atraso inteligente "até data": campo fixo (datetime-local) ou variável.
+  // O modo sai do valor já salvo para que reabrir o nó mostre o campo certo.
+  const [dateAsVariable, setDateAsVariable] = useState(false);
+
   const prevNodeIdRef = useRef<string | null>(null);
   useEffect(() => {
     if (node && node.id !== prevNodeIdRef.current) {
       prevNodeIdRef.current = node.id;
       setLocalData(node.data as Record<string, unknown>);
+      setDateAsVariable(String((node.data as Record<string, unknown>)?.date || '').includes('{{'));
     }
   }, [node]);
 
@@ -1229,12 +1234,51 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
 
         {delayType === 'until_date' && (
           <div className="space-y-2">
-            <Label>Data e hora</Label>
-            <Input
-              type="datetime-local"
-              value={(localData.date as string) || ''}
-              onChange={(e) => handleChange('date', e.target.value)}
-            />
+            <div className="flex items-center justify-between gap-2">
+              <Label>Data e hora</Label>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-[11px] text-muted-foreground"
+                onClick={() => {
+                  // Trocar de modo limpa o campo: um "2026-09-20T19:00" deixado
+                  // no modo variável, ou um "{{x}}" deixado no datetime-local,
+                  // ficaria invisível no outro campo e a espera erraria calada.
+                  setDateAsVariable(!dateAsVariable);
+                  handleChange('date', '');
+                }}
+              >
+                {dateAsVariable ? 'Usar data fixa' : 'Usar variável'}
+              </Button>
+            </div>
+
+            {dateAsVariable ? (
+              <>
+                {/* O datetime-local do navegador recusa qualquer texto fora do
+                    formato dele — não dá para digitar {{data_evento}} ali. Por
+                    isso o modo variável troca o campo por texto livre: é o que
+                    permite um fluxo só atender várias datas, com o valor vindo
+                    de um campo do contato. */}
+                <VariableInput
+                  value={(localData.date as string) || ''}
+                  onValueChange={(value) => handleChange('date', value)}
+                  variables={availableVariables}
+                  placeholder="{{data_evento}}"
+                />
+                <p className="text-[10px] text-muted-foreground leading-tight">
+                  Aceita <code>2026-09-20 19:00</code> ou <code>20/09/2026 19:00</code>, no horário de
+                  Brasília. Sem hora, espera até as 9h. Valor vazio ou em outro formato não segura o
+                  contato: o fluxo segue na hora.
+                </p>
+              </>
+            ) : (
+              <Input
+                type="datetime-local"
+                value={(localData.date as string) || ''}
+                onChange={(e) => handleChange('date', e.target.value)}
+              />
+            )}
           </div>
         )}
       </div>

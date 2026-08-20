@@ -886,7 +886,7 @@ async function runNodeByType(
       return await executeDelay(data);
 
     case 'smart-delay':
-      return executeSmartDelay(data);
+      return executeSmartDelay(data, context);
 
     case 'action-tag':
       return await executeTagAction(data, context, supabase);
@@ -2323,7 +2323,69 @@ function parseHHMM(value: unknown, fallback: string): { hour: number; minute: nu
   return { hour: h, minute: m };
 }
 
-function executeSmartDelay(data: Record<string, unknown>): NodeResult {
+// Sem hora no texto, 09:00: a espera existe para disparar mensagem, e meia-noite
+// seria a hora errada de chegar no WhatsApp de alguém.
+const DATE_ONLY_FALLBACK_HOUR = 9;
+
+// Monta o instante a partir de uma data de PAREDE de São Paulo, recusando o que
+// não existe no calendário.
+function buildSaoPauloTarget(
+  year: number,
+  month: number,
+  day: number,
+  hourText: string | undefined,
+  minuteText: string | undefined,
+): Date | null {
+  const hour = hourText === undefined ? DATE_ONLY_FALLBACK_HOUR : Number(hourText);
+  const minute = minuteText === undefined ? 0 : Number(minuteText);
+  if (month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59) return null;
+
+  const target = saoPauloWallClockToUtc(year, month, day, hour, minute);
+  if (Number.isNaN(target.getTime())) return null;
+
+  // Date.UTC transborda em silêncio: 31/02 vira 03/03. Melhor recusar do que
+  // parar o contato até uma data que ninguém escreveu.
+  const back = getSaoPauloParts(target);
+  if (back.year !== year || back.month !== month || back.day !== day) return null;
+
+  return target;
+}
+
+// Aceita o que o input datetime-local manda ("YYYY-MM-DDTHH:mm") e também o que
+// costuma vir por variável — planilha, formulário, campo do contato —, onde o
+// valor chega em formato brasileiro ou sem hora nenhuma. Formato irreconhecível
+// devolve null, e quem chama decide o que fazer.
+function parseFlowDate(raw: string): Date | null {
+  const value = raw.trim();
+  if (!value) return null;
+
+  // Fuso escrito no texto (Z ou ±HH:MM) já diz o instante exato: converter como
+  // hora de parede aplicaria o offset duas vezes.
+  if (/(?:Z|[+-]\d{2}:?\d{2})$/i.test(value)) {
+    const withZone = new Date(value);
+    return Number.isNaN(withZone.getTime()) ? null : withZone;
+  }
+
+  // Os dois formatos são ancorados no fim de propósito. Casando só o começo,
+  // "20/09/2026 as 19h" casaria a data, a hora escaparia do grupo e o contato
+  // esperaria até as 9h sem ninguém entender por quê. Sobrando texto que o
+  // parser não entende, é melhor recusar e logar.
+
+  // ISO "AAAA-MM-DD", hora opcional (segundos e milissegundos ignorados).
+  const iso = value.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T ](\d{1,2}):(\d{2})(?::\d{2})?(?:\.\d+)?)?$/);
+  if (iso) return buildSaoPauloTarget(Number(iso[1]), Number(iso[2]), Number(iso[3]), iso[4], iso[5]);
+
+  // Brasileiro "DD/MM/AAAA", hora opcional. Aceita como as pessoas escrevem:
+  // "20/09/2026 19:00", "20/09/2026 às 19h", "20/09/2026, 19h30".
+  const br = value.match(
+    /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[\s,]+(?:[aà]s\s+)?(\d{1,2})(?::|h)(\d{2})?(?::\d{2})?h?)?$/i,
+  );
+  if (br) return buildSaoPauloTarget(Number(br[3]), Number(br[2]), Number(br[1]), br[4], br[5]);
+
+  return null;
+}
+
+function executeSmartDelay(data: Record<string, unknown>, context: ExecutionContext): NodeResult {
   const delayType = String(data.delayType || 'fixed');
   const now = new Date();
 
@@ -2380,19 +2442,20 @@ function executeSmartDelay(data: Record<string, unknown>): NodeResult {
     }
 
     if (delayType === 'until_date') {
-      const raw = String(data.date || '').trim();
+      // Interpolado como qualquer campo de mensagem. Ia cru, entao {{data_evento}}
+      // nao casava com formato nenhum, virava Invalid Date e o no seguia na hora:
+      // a espera sumia em silencio. Com a interpolacao, um unico fluxo serve
+      // varias datas — a data vem de campo do contato, nao do desenho do fluxo.
+      const raw = replaceVariables(String(data.date || ''), context.variables).trim();
       if (!raw) {
         console.log('[FLOW EXECUTE] smart-delay: until_date without a date, continuing immediately');
         return { success: true };
       }
       // O input datetime-local manda "YYYY-MM-DDTHH:mm" sem fuso: é hora de
       // parede de São Paulo, não UTC. Interpretar como UTC adiantaria 3h.
-      const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
-      const target = m
-        ? saoPauloWallClockToUtc(Number(m[1]), Number(m[2]), Number(m[3]), Number(m[4]), Number(m[5]))
-        : new Date(raw);
+      const target = parseFlowDate(raw);
 
-      if (Number.isNaN(target.getTime())) {
+      if (!target) {
         console.log(`[FLOW EXECUTE] smart-delay: invalid date "${raw}", continuing immediately`);
         return { success: true };
       }
