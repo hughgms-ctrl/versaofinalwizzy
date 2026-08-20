@@ -52,27 +52,31 @@ type Provider = 'evolution' | 'uazapi';
 // raramente (agents, tags, pipelines). O orquestrador é o caminho mais quente do
 // produto; isso evita 3 queries por turno de IA. TTL curto = staleness ≤20s.
 const ORG_CONFIG_TTL_MS = 20_000;
-const orgConfigCache = new Map<string, { at: number; agents: any[]; tags: any[]; pipelines: any[] }>();
+const orgConfigCache = new Map<string, { at: number; agents: any[]; tags: any[]; pipelines: any[]; customFields: any[] }>();
 
 async function loadOrgConfigCached(supabase: any, organizationId: string) {
   const now = Date.now();
   const cached = orgConfigCache.get(organizationId);
   if (cached && (now - cached.at) < ORG_CONFIG_TTL_MS) {
-    return { agents: cached.agents, tags: cached.tags, pipelines: cached.pipelines };
+    return { agents: cached.agents, tags: cached.tags, pipelines: cached.pipelines, customFields: cached.customFields };
   }
-  const [agentsResult, tagsResult, pipelinesResult] = await Promise.all([
+  const [agentsResult, tagsResult, pipelinesResult, customFieldsResult] = await Promise.all([
     supabase.from('ai_agents').select('*').eq('organization_id', organizationId).eq('is_active', true),
     supabase.from('tags').select('*').eq('organization_id', organizationId),
     supabase.from('pipelines').select('*, columns:pipeline_columns!pipeline_columns_pipeline_id_fkey(*)').eq('organization_id', organizationId),
+    // Catalogo dos campos personalizados da org: e o que permite oferecer a
+    // ferramenta save_contact_field com a lista de chaves validas.
+    supabase.from('contact_custom_fields').select('key, label, type').eq('organization_id', organizationId),
   ]);
   const value = {
     at: now,
     agents: agentsResult.data || [],
     tags: tagsResult.data || [],
     pipelines: pipelinesResult.data || [],
+    customFields: customFieldsResult.data || [],
   };
   orgConfigCache.set(organizationId, value);
-  return { agents: value.agents, tags: value.tags, pipelines: value.pipelines };
+  return { agents: value.agents, tags: value.tags, pipelines: value.pipelines, customFields: value.customFields };
 }
 
 function normalizeBaseUrl(value?: string | null): string {
@@ -439,6 +443,7 @@ Deno.serve(async (req) => {
     const allTags = orgConfig.tags;
     const contactTags = contactTagsResult.data || [];
     const pipelines = orgConfig.pipelines;
+    const customFields = orgConfig.customFields;
     const pipelinePositions = pipelinePositionsResult.data || [];
     const flows = flowsResult.data || [];
     const trainingRules = trainingRulesResult.data || [];
@@ -485,7 +490,7 @@ Deno.serve(async (req) => {
 
     const context = {
       conversationId, contactId, organizationId, conversation,
-      messages, agents, allTags, contactTags, pipelines, pipelinePositions,
+      messages, agents, allTags, contactTags, pipelines, pipelinePositions, customFields,
       flows, aiModel, masterPrompt, LOVABLE_API_KEY,
       aiEndpoint: aiConfig.endpoint, aiApiKey: aiConfig.apiKey,
       integrationConfig: effectiveIntegrationConfig, flowExecutionId, trainingRules, qualificationRules,
@@ -594,7 +599,7 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
   if (!organizationId) return { error: 'organizationId is required for simulation' };
 
   // Load context from DB (same as production)
-  const [agentsResult, tagsResult, pipelinesResult, trainingRulesResult, qualificationRulesResult, integrationConfigResult, organizationResult] = await Promise.all([
+  const [agentsResult, tagsResult, pipelinesResult, trainingRulesResult, qualificationRulesResult, integrationConfigResult, organizationResult, customFieldsResult] = await Promise.all([
     supabase.from('ai_agents').select('*').eq('organization_id', organizationId).eq('is_active', true),
     supabase.from('tags').select('*').eq('organization_id', organizationId),
     supabase.from('pipelines').select('*, columns:pipeline_columns!pipeline_columns_pipeline_id_fkey(*)').eq('organization_id', organizationId),
@@ -602,11 +607,13 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
     supabase.from('agent_qualification_rules').select('*').eq('organization_id', organizationId).eq('is_active', true),
     resolveIntegrationConfig(supabase, organizationId),
     supabase.from('organizations').select('timezone').eq('id', organizationId).maybeSingle(),
+    supabase.from('contact_custom_fields').select('key, label, type').eq('organization_id', organizationId),
   ]);
 
   const agents = agentsResult.data || [];
   const allTags = tagsResult.data || [];
   const pipelines = pipelinesResult.data || [];
+  const customFields = customFieldsResult.data || [];
   const trainingRules = trainingRulesResult.data || [];
   const qualificationRules = qualificationRulesResult.data || [];
   const integrationConfig = integrationConfigResult;
@@ -701,6 +708,9 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
     systemPrompt += '\n';
   }
 
+  // Campos personalizados disponíveis
+  systemPrompt += buildContactFieldsBlock(customFields);
+
   systemPrompt += `INSTRUÇÕES IMPORTANTES:\n`;
   systemPrompt += `- Use send_reply para responder ao cliente. A resposta DEVE ser em português brasileiro.\n`;
   systemPrompt += `- Leia TODA a conversa anterior antes de responder. Considere o contexto completo.\n`;
@@ -792,6 +802,9 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
       },
     },
   ];
+
+  const saveContactFieldToolSim = buildSaveContactFieldTool(customFields);
+  if (saveContactFieldToolSim) tools.push(saveContactFieldToolSim);
 
   if (hasNextNodes && !isFirstActivation) {
     tools.push({
@@ -897,6 +910,11 @@ async function handleSimulation(supabase: any, payload: any, LOVABLE_API_KEY: st
         const col = pip?.columns?.find((c: any) => c.id === fnArgs.column_id);
         toolResults.push({ role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify({ success: true, pipeline: pip?.name, column: col?.name }) });
         toolsExecuted.push({ name: 'move_pipeline', arguments: fnArgs, pipeline_name: pip?.name, column_name: col?.name });
+      } else if (fnName === 'save_contact_field') {
+        // Simulação não grava (contato é fictício) — só reporta, como as tags.
+        const fieldLabel = customFields.find((f: any) => f.key === fnArgs.field_key)?.label || fnArgs.field_key;
+        toolResults.push({ role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify({ success: true, field: fieldLabel }) });
+        toolsExecuted.push({ name: 'save_contact_field', arguments: fnArgs, field_label: fieldLabel });
       } else {
         toolResults.push({ role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify({ success: false, error: 'Unknown tool' }) });
       }
@@ -1450,6 +1468,9 @@ async function invokeAgentAI(
     systemPrompt += '\n';
   }
 
+  // Campos personalizados disponíveis
+  systemPrompt += buildContactFieldsBlock(ctx.customFields);
+
   systemPrompt += `INSTRUÇÕES IMPORTANTES:\n`;
   systemPrompt += `- Use send_reply para responder ao cliente. A resposta DEVE ser em português brasileiro.\n`;
   systemPrompt += `- Leia TODA a conversa anterior antes de responder. Considere o contexto completo.\n`;
@@ -1569,6 +1590,9 @@ async function invokeAgentAI(
       },
     },
   ];
+
+  const saveContactFieldTool = buildSaveContactFieldTool(ctx.customFields);
+  if (saveContactFieldTool) tools.push(saveContactFieldTool);
 
   // Logic for outcome-based tools or advance_flow
   const outcomes = parseExpectedOutcomes(agentNode.data?.expectedOutcomes);
@@ -1701,6 +1725,10 @@ async function invokeAgentAI(
         toolsExecuted.push({ name: fnName, arguments: fnArgs, result });
       } else if (fnName === 'move_pipeline') {
         const result = await executeToolDirect(supabase, 'move_pipeline', fnArgs, ctx);
+        toolResults.push({ role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify(result) });
+        toolsExecuted.push({ name: fnName, arguments: fnArgs, result });
+      } else if (fnName === 'save_contact_field') {
+        const result = await executeToolDirect(supabase, 'save_contact_field', fnArgs, ctx);
         toolResults.push({ role: 'tool', tool_call_id: toolCall.id, content: JSON.stringify(result) });
         toolsExecuted.push({ name: fnName, arguments: fnArgs, result });
       } else {
@@ -2761,6 +2789,56 @@ async function executeToolDirect(supabase: any, toolName: string, args: any, ctx
       return { success: true };
     }
 
+    // Par da ferramenta com o nó action-contact-field do fluxo: quando quem
+    // conduz a triagem é a IA (e não uma sequência de perguntas do fluxo), este
+    // é o único caminho das respostas para contacts.metadata.custom_fields.
+    case 'save_contact_field': {
+      const key = String(args?.field_key || '').trim();
+      const value = String(args?.value ?? '').trim();
+
+      if (!ctx.contactId) return { success: false, error: 'Conversa sem contato' };
+      // Só chave declarada pela org. O enum da tool já filtra, mas o modelo pode
+      // ignorá-lo — e gravar chave inventada sujaria o metadata com um campo que
+      // nenhuma tela sabe exibir.
+      const known = (ctx.customFields || []).some((f: any) => f?.key === key);
+      if (!known) {
+        return { success: false, error: `Campo "${key}" não existe. Use uma das chaves listadas no prompt.` };
+      }
+      // Vazio não escreve: sobrescreveria com nada o que o contato já tinha
+      // (importação de planilha, fluxo anterior). Mesma regra do nó.
+      if (!value) return { success: false, error: 'Valor vazio — nada gravado' };
+
+      const { error } = await supabase.rpc('merge_contact_custom_fields', {
+        _contact_id: ctx.contactId,
+        _values: { [key]: value },
+      });
+      if (error) {
+        console.error('[ORCH] save_contact_field error:', error.message);
+        return { success: false, error: error.message };
+      }
+      console.log(`[ORCH] save_contact_field: ${key} gravado no contato ${ctx.contactId}`);
+
+      // Espelha em flow_executions.variables, como o nó action-contact-field faz
+      // ao devolver `variables`. A execução só semeia custom_fields no INÍCIO:
+      // sem isto, o nó seguinte do mesmo fluxo mandaria "{{key}}" vazio, mesmo
+      // com o dado já no contato. Falha aqui não invalida a gravação.
+      if (ctx.flowExecutionId) {
+        try {
+          const { data: exec } = await supabase
+            .from('flow_executions').select('variables').eq('id', ctx.flowExecutionId).maybeSingle();
+          if (exec) {
+            await supabase.from('flow_executions')
+              .update({ variables: { ...(exec.variables || {}), [key]: value } })
+              .eq('id', ctx.flowExecutionId);
+          }
+        } catch (e) {
+          console.error('[ORCH] save_contact_field: falha ao espelhar em flow_executions.variables:', e);
+        }
+      }
+
+      return { success: true, field_key: key, value };
+    }
+
     case 'trigger_flow': {
       const { flow_id } = args;
       const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -2941,6 +3019,55 @@ function buildHolisticAnalysisBlock(): string {
 }
 
 /**
+ * Catálogo dos campos personalizados do contato, para a ferramenta
+ * save_contact_field.
+ *
+ * Sem este bloco a IA não teria como saber quais chaves existem — o par
+ * inevitável da ferramenta, do mesmo jeito que add_tag depende da lista de tags.
+ */
+function buildContactFieldsBlock(customFields: any[] | undefined | null): string {
+  const fields = (customFields || []).filter((f: any) => f?.key);
+  if (fields.length === 0) return '';
+
+  let block = `CAMPOS DO CADASTRO DO CONTATO (para save_contact_field):\n`;
+  for (const f of fields) {
+    block += `- "${f.label || f.key}" → field_key: "${f.key}" (tipo: ${f.type || 'text'})\n`;
+  }
+  block += `- Sempre que o cliente informar um destes dados, chame save_contact_field NA MESMA RODADA em que responder. Um dado que fica só na conversa não entra em nenhum relatório.\n`;
+  block += `- Grave o valor limpo (só o dado), não a frase inteira do cliente. Se ele corrigir depois, chame de novo — o valor novo substitui o antigo.\n`;
+  block += `- NÃO invente field_key: use exatamente uma das chaves acima.\n\n`;
+  return block;
+}
+
+/**
+ * Definição da ferramenta save_contact_field, ou null quando a organização não
+ * tem campo personalizado nenhum (aí a ferramenta não teria valor válido a
+ * receber e só serviria para a IA alucinar chave).
+ */
+function buildSaveContactFieldTool(customFields: any[] | undefined | null): any | null {
+  const keys = (customFields || []).map((f: any) => f?.key).filter(Boolean);
+  if (keys.length === 0) return null;
+
+  return {
+    type: 'function',
+    function: {
+      name: 'save_contact_field',
+      description: 'Gravar no cadastro do contato um dado que ele informou (campo personalizado da organização). Use assim que o cliente responder — é o que faz o dado aparecer no contato e nos relatórios.',
+      parameters: {
+        type: 'object',
+        properties: {
+          // enum em vez de string livre: o RPC ignora chave desconhecida, mas
+          // aqui o modelo nem chega a inventar uma.
+          field_key: { type: 'string', enum: keys, description: 'Chave do campo, exatamente como listada no prompt' },
+          value: { type: 'string', description: 'Valor informado pelo cliente, já limpo (sem a frase inteira)' },
+        },
+        required: ['field_key', 'value'],
+      },
+    },
+  };
+}
+
+/**
  * Bloco de checklist de qualificação por agente.
  * Lista os critérios obrigatórios definidos pelo gestor — a IA deve validar
  * TODOS antes de qualquer rejeição. Se algum estiver pendente, deve PERGUNTAR.
@@ -3085,6 +3212,9 @@ async function buildLegacySystemPrompt(supabase: any, ctx: any, messageContent: 
 
   // 3.6. ANÁLISE HOLÍSTICA — força a IA a ler todo histórico antes de rejeitar
   prompt += buildHolisticAnalysisBlock();
+
+  // 3.65. CAMPOS PERSONALIZADOS — chaves válidas para save_contact_field
+  prompt += buildContactFieldsBlock(ctx.customFields);
 
   // 3.7. CHECKLIST DE QUALIFICAÇÃO — critérios obrigatórios do agente ativo
   prompt += buildQualificationChecklistBlock(
@@ -3291,6 +3421,11 @@ function buildLegacyTools(ctx?: any) {
     { type: 'function', function: { name: 'trigger_flow', description: 'Disparar fluxo', parameters: { type: 'object', properties: { flow_id: { type: 'string' } }, required: ['flow_id'] } } },
     { type: 'function', function: { name: 'switch_agent', description: 'Trocar agente', parameters: { type: 'object', properties: { agent_id: { type: 'string' } }, required: ['agent_id'] } } },
   ];
+
+  // Campos personalizados: o dispatch legado cai direto em executeToolDirect,
+  // então basta declarar a ferramenta aqui.
+  const saveContactFieldTool = buildSaveContactFieldTool(ctx?.customFields);
+  if (saveContactFieldTool) tools.push(saveContactFieldTool as any);
 
   // Add finalizar_interacao tool when inside a flow execution (ai-handoff context)
   if (ctx?.flowExecutionId) {

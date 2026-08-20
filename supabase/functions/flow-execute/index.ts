@@ -943,7 +943,15 @@ async function executeAIHandoff(
   try {
     const agentId = String(data.agentId || '');
     // The node stores the prompt as "additionalPrompt", not "contextMessage"
-    const additionalPrompt = String(data.additionalPrompt || data.contextMessage || '');
+    //
+    // Interpolado como qualquer no de mensagem. Ia cru para o prompt do agente,
+    // entao uma instrucao do tipo "confirme a inscricao para {{evento_cidade}}"
+    // chegava com as chaves literais e a IA nao tinha como saber de que edicao
+    // estava falando — justamente o dado que o fluxo acabou de coletar.
+    const additionalPrompt = replaceVariables(
+      String(data.additionalPrompt || data.contextMessage || ''),
+      context.variables,
+    );
     const expectedOutcomes = String(data.expectedOutcomes || '');
 
     // Parse outcomes for the prompt

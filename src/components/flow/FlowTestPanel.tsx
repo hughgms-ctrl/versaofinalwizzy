@@ -278,7 +278,13 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
     try {
       const agentId = nodeData.agentId;
       const agent = agentId ? resolveAgent(agentId) : null;
-      const additionalPrompt = nodeData.additionalPrompt || nodeData.contextMessage || '';
+      // Interpolado antes de ir para a IA, igual ao flow-execute faz em produção:
+      // a instrução do nó costuma citar dado já coletado ({{evento_cidade}}), e
+      // crua ela deixaria a simulação divergindo do comportamento real.
+      let additionalPrompt = nodeData.additionalPrompt || nodeData.contextMessage || '';
+      Object.entries(simState.variables).forEach(([k, v]) => {
+        additionalPrompt = additionalPrompt.replace(new RegExp(`{{${k}}}`, 'g'), String(v));
+      });
       const masterPrompt = simState.activeFlowData?.master_prompt || '';
 
       // Determine if this is the first activation of this agent
@@ -369,6 +375,15 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
           addMsg({ type: 'action', content: `🏷️ Tag removida: ${tagName}`, actionIcon: '🏷️' });
         } else if (tool.name === 'move_pipeline') {
           addMsg({ type: 'action', content: `📋 Pipeline: ${tool.pipeline_name || '...'} → ${tool.column_name || '...'}`, actionIcon: '📋' });
+        } else if (tool.name === 'save_contact_field') {
+          const fieldKey = tool.arguments?.field_key;
+          const fieldValue = tool.arguments?.value ?? '';
+          addMsg({ type: 'action', content: `📝 Campo do contato: ${tool.field_label || fieldKey} = ${fieldValue}`, actionIcon: '📝' });
+          // Espelha na simulação o que o nó action-contact-field faria: o valor
+          // vira {{chave}} para os próximos nós desta mesma passagem.
+          if (fieldKey) {
+            setSimState(prev => ({ ...prev, variables: { ...prev.variables, [fieldKey]: fieldValue } }));
+          }
         }
       }
 
