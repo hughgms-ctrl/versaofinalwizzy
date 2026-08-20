@@ -907,7 +907,7 @@ async function runNodeByType(
       return await executeAIHandoff(data, context, supabase, flow, executionId);
 
     case 'ai-return':
-      return { success: true };
+      return await executeAIReturn(context, supabase);
 
     case 'action-flow':
       return await executeSubFlow(data, context, supabase);
@@ -1146,6 +1146,47 @@ async function executeAIHandoff(
     return { success: true, waitForInput: true };
   } catch (error) {
     console.error('Error in executeAIHandoff:', error);
+    return { success: false, error: String(error) };
+  }
+}
+
+/**
+ * "Retorna ao Fluxo" (ai-return): encerra o turno da IA e devolve o controle
+ * para o grafo, que continua nos nós seguintes.
+ *
+ * Antes era um no-op (`return { success: true }`), o que enganava: o fluxo
+ * seguia, mas a conversa continuava com `ai_agent_id` e `ai_handoff_context`
+ * gravados. Uma mensagem que chegasse com o fluxo parado fora de um nó de
+ * handoff ainda achava o agente no lugar e voltava para o orquestrador.
+ *
+ * Não mexe em `ai_paused_until`: aqui a IA sai de cena por decisão do fluxo,
+ * e um `ai-handoff` mais à frente pode legitimamente reassumir. Quem quer
+ * silenciar a IA de vez usa o "Encerrar a IA" do nó de Escalação Humana.
+ */
+async function executeAIReturn(
+  context: ExecutionContext,
+  supabase: SupabaseClientType
+): Promise<NodeResult> {
+  try {
+    const { data: convData } = await supabase
+      .from('conversations')
+      .select('metadata')
+      .eq('id', context.conversationId)
+      .single();
+
+    const cleanMetadata = { ...((convData?.metadata as Record<string, unknown>) || {}) };
+    delete cleanMetadata.ai_handoff_context;
+
+    await supabase.from('conversations').update({
+      service_mode: 'ativo',
+      ai_agent_id: null,
+      metadata: cleanMetadata,
+    }).eq('id', context.conversationId);
+
+    console.log('[FLOW EXECUTE] AI Return: handoff encerrado, fluxo continua nos nós seguintes');
+    return { success: true, metadata: { aiReturned: true } };
+  } catch (error) {
+    console.error('[FLOW EXECUTE] AI Return error:', error);
     return { success: false, error: String(error) };
   }
 }
@@ -1437,14 +1478,38 @@ async function executeTransfer(
     const assignedUserId = String(data.assignedUserId || '');
     const notifyUserIds = Array.isArray(data.notifyUserIds) ? (data.notifyUserIds as string[]) : [];
     const notifyMessageTemplate = String(data.notifyMessage || '').trim();
+    // Desligado por padrão: fluxo já desenhado não tem a chave e não pode
+    // mudar de comportamento sozinho.
+    const stopAI = data.stopAI === true;
 
     // 1) Update conversation: switch to human mode and apply assignment/department
     const updateData: Record<string, unknown> = { service_mode: 'ativo' };
     if (departmentId) updateData.department_id = departmentId;
     if (assignedUserId) updateData.assigned_to = assignedUserId;
 
+    // 1b) "Encerrar a IA": service_mode='ativo' sozinho NÃO cala a IA.
+    // checkMasterPromptTriggers (zapi-webhook) volta o modo para 'ia' na
+    // primeira mensagem que bater numa keyword/tag de master prompt — o
+    // cliente é transferido, responde "orçamento", e a IA reassume por cima
+    // do atendente. O único freio que o webhook respeita antes disso é
+    // ai_paused_until (isAIPaused), então é ele que precisa ser gravado.
+    if (stopAI) {
+      const { data: convData } = await supabase
+        .from('conversations')
+        .select('metadata')
+        .eq('id', context.conversationId)
+        .single();
+
+      const metadata = { ...((convData?.metadata as Record<string, unknown>) || {}) };
+      delete metadata.ai_handoff_context;
+      metadata.ai_paused_until = 'permanent';
+
+      updateData.ai_agent_id = null;
+      updateData.metadata = metadata;
+    }
+
     await supabase.from('conversations').update(updateData).eq('id', context.conversationId);
-    console.log('[FLOW EXECUTE] Transferred to human', { assignedUserId, departmentId, notifyCount: notifyUserIds.length });
+    console.log('[FLOW EXECUTE] Transferred to human', { assignedUserId, departmentId, notifyCount: notifyUserIds.length, stopAI });
 
     // 2) Send WhatsApp notifications to selected users (best-effort, non-blocking failures)
     if (notifyUserIds.length > 0) {
@@ -1461,7 +1526,7 @@ async function executeTransfer(
       }
     }
 
-    return { success: true, metadata: { transferred: true, departmentId, assignedUserId, notifiedUsers: notifyUserIds.length } };
+    return { success: true, metadata: { transferred: true, departmentId, assignedUserId, notifiedUsers: notifyUserIds.length, stopAI } };
   } catch (error) {
     console.error('[FLOW EXECUTE] Transfer error:', error);
     return { success: false, error: String(error) };

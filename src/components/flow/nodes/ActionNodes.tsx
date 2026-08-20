@@ -267,6 +267,11 @@ export function TransferActionNode({ data, selected }: NodeProps<ActionNode>) {
       <p className="text-xs text-muted-foreground">
         Atendimento humano ativado
       </p>
+      {data.stopAI === true && (
+        <p className="text-[10px] text-rose-500 font-medium mt-1">
+          IA encerrada nesta conversa
+        </p>
+      )}
     </BaseActionNode>
   );
 }

@@ -32,6 +32,7 @@ const NODE_TYPE_META: Record<string, { label: string; icon: typeof Tag }> = {
   'action-delay': { label: 'Aguardar', icon: Clock },
   'action-flow': { label: 'Iniciar Fluxo', icon: Workflow },
   'ai-handoff': { label: 'Agente de IA', icon: Bot },
+  'ai-return': { label: 'Retorna ao Fluxo', icon: Bot },
   condition: { label: 'Condição', icon: GitBranch },
 };
 

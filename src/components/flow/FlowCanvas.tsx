@@ -42,7 +42,7 @@ import {
   ContactFieldActionNode,
 } from './nodes/ActionNodes';
 import { ConditionNode, UserInputNode, RandomizerNode, SmartDelayNode } from './nodes/LogicNodes';
-import { AIHandoffNode, AIMasterNode, AIReturnNode } from './nodes/AINodes';
+import { AIHandoffNode, AIReturnNode } from './nodes/AINodes';
 import { FlowNodeType } from '@/types/flow';
 import { useFlow, useSaveFlow, useCreateFlow, useFlows } from '@/hooks/useFlows';
 import { useAIAgents } from '@/hooks/useAIAgents';

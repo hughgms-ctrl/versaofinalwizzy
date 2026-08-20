@@ -770,10 +770,27 @@ export function FlowTestPanel({ open, onOpenChange, flowId, flowName }: FlowTest
         break;
       }
 
+      case 'ai-return': {
+        addMsg({ type: 'action', content: 'Encerrando agente de IA', actionIcon: '↩️' });
+        setSimState(prev => ({
+          ...prev,
+          activeAgentId: undefined,
+          activeAgentName: undefined,
+          activeAgentPrompt: undefined,
+          expectedOutcomes: [],
+        }));
+        await wait(600);
+        await advanceOrEnd();
+        break;
+      }
+
       case 'action-transfer': {
         addMsg({ type: 'action', content: `Transferindo para atendimento humano`, actionIcon: '👤' });
         await wait(800);
         addMsg({ type: 'system', content: 'Conversa transferida para um atendente humano' });
+        if (d.stopAI === true) {
+          addMsg({ type: 'system', content: 'IA encerrada — não responde mais nesta conversa' });
+        }
         endFlow();
         break;
       }

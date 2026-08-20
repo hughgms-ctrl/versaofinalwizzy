@@ -2117,6 +2117,38 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
           </div>
         );
 
+      case 'ai-return':
+        return (
+          <div className="space-y-4">
+            <div className="p-3 bg-fuchsia-500/10 rounded-lg flex items-center gap-3">
+              <IterationCw className="h-5 w-5 text-fuchsia-500" />
+              <div>
+                <p className="text-xs font-semibold">Retorna ao Fluxo</p>
+                <p className="text-[10px] text-muted-foreground">
+                  Encerra o agente de IA e devolve o controle ao fluxo.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2 text-xs text-muted-foreground leading-relaxed">
+              <p>Ao passar por este nó, a conversa:</p>
+              <ul className="list-disc pl-4 space-y-1">
+                <li>sai do modo IA e volta para atendimento humano;</li>
+                <li>perde o agente e o contexto do handoff, então mensagens novas
+                  deixam de ser roteadas para a IA;</li>
+                <li>continua pela saída deste nó, normalmente.</li>
+              </ul>
+              <p className="pt-1">
+                Um nó de <span className="font-medium text-foreground">Agente IA</span> mais
+                adiante no fluxo volta a ativar a IA. Para silenciar a IA de vez, use o
+                <span className="font-medium text-foreground"> Encerrar a IA</span> do nó de Escalação Humana.
+              </p>
+            </div>
+
+            <p className="text-[10px] text-muted-foreground">Este nó não tem configuração.</p>
+          </div>
+        );
+
       case 'action-transfer': {
         const notifyUserIds = (localData.notifyUserIds as string[]) || [];
         const toggleNotifyUser = (userId: string) => {
@@ -2131,8 +2163,23 @@ export function NodePropertiesPanel({ node, onClose, onUpdate, onDelete, onSave,
               <UserPlus className="h-5 w-5 text-rose-500" />
               <div>
                 <p className="text-xs font-semibold">Escalação Humana</p>
-                <p className="text-[10px] text-muted-foreground">Pausa a IA e direciona a conversa para um atendente humano.</p>
+                <p className="text-[10px] text-muted-foreground">Direciona a conversa para um atendente humano.</p>
               </div>
+            </div>
+
+            <div className="flex items-center justify-between p-3 rounded-xl border border-border/50 bg-muted/30">
+              <div className="space-y-0.5 pr-3">
+                <Label className="text-xs font-semibold">Encerrar a IA</Label>
+                <p className="text-[10px] text-muted-foreground leading-tight">
+                  A IA para de responder nesta conversa e só volta se um atendente reativar.
+                  Sem isto, um master prompt por palavra-chave pode fazer a IA reassumir
+                  depois da transferência.
+                </p>
+              </div>
+              <Switch
+                checked={localData.stopAI === true}
+                onCheckedChange={(checked) => handleChange('stopAI', checked)}
+              />
             </div>
 
             <div className="space-y-2">

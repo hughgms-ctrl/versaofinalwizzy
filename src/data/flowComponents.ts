@@ -41,6 +41,13 @@ export const flowComponentCategories: FlowComponentCategory[] = [
         icon: 'Bot',
         color: 'bg-violet-500',
       },
+      {
+        type: 'ai-return',
+        label: 'Retorna ao Fluxo',
+        description: 'Encerra o agente de IA e devolve o controle ao fluxo',
+        icon: 'IterationCw',
+        color: 'bg-fuchsia-500',
+      },
     ],
   },
   {

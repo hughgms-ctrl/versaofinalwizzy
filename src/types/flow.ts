@@ -220,6 +220,12 @@ export interface PipelineActionConfig {
 export interface TransferActionConfig {
   agentType: 'human' | 'ai';
   agentId: string;
+  /**
+   * Encerra a IA de vez: limpa o agente da conversa e grava
+   * ai_paused_until='permanent'. Sem isto, transferir para humano só troca o
+   * service_mode e um master prompt por keyword reassume a conversa depois.
+   */
+  stopAI?: boolean;
 }
 
 export interface DelayActionConfig {
@@ -253,9 +259,12 @@ export interface AIHandoffConfig {
   contextMessage?: string;
 }
 
-export interface AIReturnConfig {
-  returnToNodeId?: string;
-}
+/**
+ * O nó 'ai-return' não tem configuração: ele encerra o handoff e o fluxo segue
+ * pela aresta de saída. (Havia um `returnToNodeId` aqui que nunca teve
+ * implementação — o roteamento sempre foi pela aresta.)
+ */
+export type AIReturnConfig = Record<string, never>;
 
 // Sidebar Component Categories
 export interface FlowComponentCategory {
